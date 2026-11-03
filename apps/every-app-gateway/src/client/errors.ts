@@ -117,13 +117,6 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
   ADMIN_REQUIRED: "Only an owner or admin can do that.",
   PROVIDER_HOSTED:
     "On a hosted gateway the platform's operator manages providers and their clients.",
-  SCOPE_SET_INVALID: "That scope set isn't one this client takes.",
-  SCOPE_SET_PROVIDER_UNKNOWN:
-    "Scope sets are added to a built-in OAuth client with scope sets.",
-  SCOPE_SET_BUILTIN: "That scope set is the client's own.",
-  SCOPE_SET_EXISTS: "That scope set is added already.",
-  SCOPE_SET_NOT_FOUND: "No scope set of that name was added here.",
-  SCOPE_SET_IN_USE: "An app still lists that scope set.",
   GATEWAY_OUTDATED: "This Gateway needs an update first.",
 };
 
@@ -156,12 +149,6 @@ const RULE_MESSAGE_CODES: ReadonlySet<string> = new Set<PublicErrorCode>([
   "OAUTH_CLIENT_REQUIRED",
   "SEALING_UNAVAILABLE",
   "PROVIDER_HOSTED",
-  "SCOPE_SET_INVALID",
-  "SCOPE_SET_PROVIDER_UNKNOWN",
-  "SCOPE_SET_BUILTIN",
-  "SCOPE_SET_EXISTS",
-  "SCOPE_SET_NOT_FOUND",
-  "SCOPE_SET_IN_USE",
   "GATEWAY_OUTDATED",
 ]);
 

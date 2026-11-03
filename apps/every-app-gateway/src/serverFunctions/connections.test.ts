@@ -1,8 +1,7 @@
 /**
- * Connected accounts' server functions: a member reads and disconnects
- * their own, an owner or admin everyone's and the organization's; a
- * member asking for another's is refused before the service is reached;
- * the connectable listing carries ids and names only.
+ * Connected accounts' server functions: a member reads their own, an
+ * owner or admin everyone's; a disconnect names the connection by id and
+ * the service decides whose it may remove.
  */
 import { describe, expect, it, vi } from "vitest";
 
@@ -11,7 +10,6 @@ const mocks = vi.hoisted(() => ({
   organizationMemberMiddleware: { name: "organizationMemberMiddleware" },
   organizationAdminMiddleware: { name: "organizationAdminMiddleware" },
   service: {
-    listOAuthProviders: vi.fn(),
     listConnections: vi.fn(),
     disconnect: vi.fn(),
   },
@@ -47,7 +45,6 @@ vi.mock("@/server/oauth/service", () => mocks.service);
 import {
   disconnectConnection,
   listAllConnections,
-  listConnectableProviders,
   listMyConnections,
 } from "./connections";
 
@@ -65,7 +62,6 @@ type ServerFnBuilder = {
 
 const fns = {
   listMyConnections,
-  listConnectableProviders,
   listAllConnections,
   disconnectConnection,
 } as unknown as Record<string, ServerFnBuilder>;
@@ -81,11 +77,7 @@ const admin = {
 
 describe("connection server functions", () => {
   it("gates the member functions on membership and the organization listing on admin", () => {
-    for (const name of [
-      "listMyConnections",
-      "listConnectableProviders",
-      "disconnectConnection",
-    ]) {
+    for (const name of ["listMyConnections", "disconnectConnection"]) {
       expect(fns[name]!.middlewares).toEqual([
         mocks.publicErrorMiddleware,
         mocks.organizationMemberMiddleware,
@@ -109,91 +101,43 @@ describe("connection server functions", () => {
     });
   });
 
-  it("lists connectable providers as ids and names, those with a live client only", async () => {
-    mocks.service.listOAuthProviders.mockResolvedValueOnce([
-      {
-        id: "github-oauth",
-        name: "GitHub",
-        client: { source: "d1", clientId: "x" },
-        redirectUri: "r",
-      },
-      { id: "notion-oauth", name: "Notion", client: { source: null } },
-    ]);
-    const result = await fns["listConnectableProviders"]!.serverHandler({
-      context: member,
-    });
-    expect(result).toEqual({
-      providers: [{ id: "github-oauth", name: "GitHub" }],
-    });
-  });
-
   describe("disconnectConnection", () => {
     const fn = fns["disconnectConnection"]!;
 
-    it("validates the target", () => {
-      expect(
-        fn.validatorFn!({ providerId: "github-oauth", account: "user" }),
-      ).toEqual({
-        providerId: "github-oauth",
-        account: "user",
+    it("validates the target: a connection id", () => {
+      expect(fn.validatorFn!({ connectionId: "conn_1" })).toEqual({
+        connectionId: "conn_1",
       });
+      expect(() => fn.validatorFn!({ connectionId: "" })).toThrow();
       expect(() =>
-        fn.validatorFn!({ providerId: "github-oauth", account: "team" }),
+        fn.validatorFn!({ providerId: "github-oauth", account: "user" }),
       ).toThrow();
     });
 
-    it("a member disconnects their own account", async () => {
-      await fn.serverHandler({
-        data: { providerId: "github-oauth", account: "user" },
+    it("passes the connection id and the caller to the service", async () => {
+      mocks.service.disconnect.mockResolvedValueOnce({
+        removed: true,
+        revoked: false,
+      });
+      const result = await fn.serverHandler({
+        data: { connectionId: "conn_1" },
         context: member,
       });
+      expect(result).toEqual({ ok: true, revoked: false });
       expect(mocks.service.disconnect).toHaveBeenLastCalledWith(
         member.org,
         expect.objectContaining({ id: "user_m" }),
-        { providerId: "github-oauth", account: "user", userId: "user_m" },
+        { connectionId: "conn_1" },
       );
     });
 
-    it("a member is refused another member's and the organization's", async () => {
-      mocks.service.disconnect.mockClear();
-      await expect(
-        fn.serverHandler({
-          data: {
-            providerId: "github-oauth",
-            account: "user",
-            userId: "user_a",
-          },
-          context: member,
-        }),
-      ).rejects.toThrow(/owner or admin/);
-      await expect(
-        fn.serverHandler({
-          data: { providerId: "github-oauth", account: "organization" },
-          context: member,
-        }),
-      ).rejects.toThrow(/owner or admin/);
-      expect(mocks.service.disconnect).not.toHaveBeenCalled();
-    });
-
-    it("an admin disconnects anyone's and the organization's", async () => {
-      await fn.serverHandler({
-        data: { providerId: "github-oauth", account: "user", userId: "user_m" },
-        context: admin,
-      });
-      expect(mocks.service.disconnect).toHaveBeenLastCalledWith(
-        admin.org,
-        expect.objectContaining({ id: "user_a" }),
-        { providerId: "github-oauth", account: "user", userId: "user_m" },
+    it("lets the service's refusal through", async () => {
+      mocks.service.disconnect.mockRejectedValueOnce(
+        new Error("Only an owner or admin can manage OAuth providers"),
       );
-      await fn.serverHandler({
-        data: { providerId: "github-oauth", account: "organization" },
-        context: admin,
-      });
-      expect(mocks.service.disconnect).toHaveBeenLastCalledWith(
-        admin.org,
-        expect.objectContaining({ id: "user_a" }),
-        { providerId: "github-oauth", account: "organization" },
-      );
+      await expect(
+        fn.serverHandler({ data: { connectionId: "conn_2" }, context: member }),
+      ).rejects.toThrow(/owner or admin/);
     });
   });
 });

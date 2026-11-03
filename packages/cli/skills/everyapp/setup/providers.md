@@ -79,8 +79,8 @@ The three ways of [README.md](README.md), one line each (the rules, and the code
 | [`groq`](#groq) | Groq | AI | `GROQ_API_KEY` |  |
 | [`cohere`](#cohere) | Cohere | AI | `COHERE_API_KEY` |  |
 | [`slack`](#slack) | Slack | OAuth client | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | [slack.md](slack.md) |
-| [`google-workspace`](#google-workspace) | Google (Gmail, Calendar, Search Console and Analytics) | OAuth client | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET` | [google.md](google.md) |
-| [`microsoft-365`](#microsoft-365) | Microsoft 365 (Outlook mail and calendar) | OAuth client | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | [microsoft-365.md](microsoft-365.md) |
+| [`google-workspace`](#google-workspace) | Google | OAuth client | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET` | [google.md](google.md) |
+| [`microsoft-365`](#microsoft-365) | Microsoft 365 | OAuth client | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | [microsoft-365.md](microsoft-365.md) |
 
 Gateway services have no key of this kind: `email`, `members` (sending mail is [email.md](email.md); the members list needs nothing).
 
@@ -1077,36 +1077,36 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 
 ### slack
 
-**Slack** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
+**Slack** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
 
 - **Settings:** `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`
 - **Where the client comes from:** https://api.slack.com/apps
-- **Redirect URIs to register:** `https://<gateway host>/connect/slack/callback`, and each callback an app lists under `redirectPaths` in its manifest entry, as `https://<app>.<APP_BASE_DOMAIN><path>` (`everyapp provider show slack` prints them)
-- **How it is sent:** POST `slack.com/api/oauth.v2.access` (the client in the form body)
-- **Scope sets an app lists:** `channels.read`, `users.read`, `users.email`, `messages.write`, `channels.join`, `channels.manage`, `files.write`, `user-channels.manage`
+- **Redirect URI to register:** `https://<gateway host>/connect/slack/callback`
+- **Hosts the token goes to:** `slack.com`, over https
+- **Scopes an app lists:** the provider's own, as the provider names them, as `"slack": { scopes: [...], why: "..." }`; the provider's list: https://api.slack.com/scopes
 - **Set it:** `pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET`
 - **Guide:** [slack.md](slack.md)
 
 ### google-workspace
 
-**Google (Gmail, Calendar, Search Console and Analytics)** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
+**Google** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
 
 - **Settings:** `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`
 - **Where the client comes from:** https://console.cloud.google.com/apis/credentials
-- **Redirect URIs to register:** `https://<gateway host>/connect/google-workspace/callback`, and each callback an app lists under `redirectPaths` in its manifest entry, as `https://<app>.<APP_BASE_DOMAIN><path>` (`everyapp provider show google-workspace` prints them)
-- **How it is sent:** POST `oauth2.googleapis.com/token` (the client in the form body)
-- **Scope sets an app lists:** `identity`, `gmail.read`, `calendar.read`, `search-console.read`, `analytics.read`
+- **Redirect URI to register:** `https://<gateway host>/connect/google-workspace/callback`
+- **Hosts the token goes to:** `gmail.googleapis.com`, `www.googleapis.com`, `searchconsole.googleapis.com`, `analyticsdata.googleapis.com`, `analyticsadmin.googleapis.com`, `openidconnect.googleapis.com`, over https
+- **Scopes an app lists:** the provider's own, short (joined onto `https://www.googleapis.com/auth/`) or in full, as `"google-workspace": { scopes: [...], why: "..." }`; the Gateway adds `openid`, `email` to every connect; the provider's list: https://developers.google.com/identity/protocols/oauth2/scopes
 - **Set it:** `pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET`
 - **Guide:** [google.md](google.md)
 
 ### microsoft-365
 
-**Microsoft 365 (Outlook mail and calendar)** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
+**Microsoft 365** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
 
 - **Settings:** `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET`
 - **Where the client comes from:** https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
-- **Redirect URIs to register:** `https://<gateway host>/connect/microsoft-365/callback`, and each callback an app lists under `redirectPaths` in its manifest entry, as `https://<app>.<APP_BASE_DOMAIN><path>` (`everyapp provider show microsoft-365` prints them)
-- **How it is sent:** POST `login.microsoftonline.com/common/oauth2/v2.0/token` (the client in the form body)
-- **Scope sets an app lists:** `identity`, `mail.read`, `calendar.read`
+- **Redirect URI to register:** `https://<gateway host>/connect/microsoft-365/callback`
+- **Hosts the token goes to:** `graph.microsoft.com`, over https
+- **Scopes an app lists:** the provider's own, short (joined onto `https://graph.microsoft.com/`) or in full, as `"microsoft-365": { scopes: [...], why: "..." }`; the Gateway adds `User.Read`, `offline_access` to every connect; the provider's list: https://learn.microsoft.com/graph/permissions-reference
 - **Set it:** `pnpm everyapp secret set MICROSOFT_365_CLIENT_ID MICROSOFT_365_CLIENT_SECRET`
 - **Guide:** [microsoft-365.md](microsoft-365.md)

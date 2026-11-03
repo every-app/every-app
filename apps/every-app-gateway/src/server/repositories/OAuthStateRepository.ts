@@ -3,10 +3,10 @@ import { db } from "@/db";
 import { oauthStates } from "@/db/schema";
 
 /**
- * The authorize flows in progress (docs/design/2026-10-oauth-providers.md
- * section 5): one row per `state` the provider will send back, holding the
- * PKCE verifier, who started it, for which account, which scope sets and
- * where to return. `take` reads and deletes in one go, so a state is used
+ * The authorize flows in progress (docs/design/2026-11-oauth-simplify.md):
+ * one row per `state` the provider will send back, holding the PKCE
+ * verifier, who started it, in which app, the scopes asked for and where
+ * to return. `take` reads and deletes in one go, so a state is used
  * once; `put` deletes every expired row first.
  */
 interface OAuthState {
@@ -14,9 +14,10 @@ interface OAuthState {
   providerId: string;
   organizationId: string;
   userId: string;
-  accountKind: "user" | "organization";
+  appRowId: string;
   codeVerifier: string;
-  scopeSets: string[];
+  /** The scopes asked for, in the provider's spelling. */
+  scopes: string[];
   returnTo: string | null;
   createdAt: number;
   expiresAt: number;
@@ -41,9 +42,9 @@ async function put(input: {
   providerId: string;
   organizationId: string;
   userId: string;
-  accountKind: "user" | "organization";
+  appRowId: string;
   codeVerifier: string;
-  scopeSets: readonly string[];
+  scopes: readonly string[];
   returnTo: string | null;
   now?: Date;
   ttlMs?: number;
@@ -58,9 +59,9 @@ async function put(input: {
     providerId: input.providerId,
     organizationId: input.organizationId,
     userId: input.userId,
-    accountKind: input.accountKind,
+    appRowId: input.appRowId,
     codeVerifier: input.codeVerifier,
-    scopeSets: JSON.stringify([...input.scopeSets]),
+    scopes: JSON.stringify([...input.scopes]),
     returnTo: input.returnTo,
     createdAt: now,
     expiresAt,
@@ -70,9 +71,9 @@ async function put(input: {
     providerId: input.providerId,
     organizationId: input.organizationId,
     userId: input.userId,
-    accountKind: input.accountKind,
+    appRowId: input.appRowId,
     codeVerifier: input.codeVerifier,
-    scopeSets: [...input.scopeSets],
+    scopes: [...input.scopes],
     returnTo: input.returnTo,
     createdAt: now.getTime(),
     expiresAt: expiresAt.getTime(),
@@ -98,9 +99,9 @@ async function take(
     providerId: row.providerId,
     organizationId: row.organizationId,
     userId: row.userId,
-    accountKind: row.accountKind === "organization" ? "organization" : "user",
+    appRowId: row.appRowId,
     codeVerifier: row.codeVerifier,
-    scopeSets: strings(row.scopeSets),
+    scopes: strings(row.scopes),
     returnTo: row.returnTo,
     createdAt: row.createdAt.getTime(),
     expiresAt: row.expiresAt.getTime(),

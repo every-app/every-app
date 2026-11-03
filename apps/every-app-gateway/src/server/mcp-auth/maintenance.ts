@@ -19,10 +19,7 @@
  *  - sweep expired and orphaned OAuth grants and tokens from OAUTH_KV with
  *    the library's purgeExpiredData, resuming from a cursor kept in KV;
  *  - re-list the tools of every active remote MCP app whose snapshot is
- *    older than an hour (server/remote-mcp/relist.ts), up to 50 a run;
- *  - end members' background grants on their OAuth connections that
- *    lapsed: idle 90 days, access or membership lost, the app removed,
- *    the connection gone (server/oauth/background.ts).
+ *    older than an hour (server/remote-mcp/relist.ts), up to 50 a run.
  *
  * Each step runs even when another fails, and the run logs one summary line.
  */
@@ -185,10 +182,6 @@ export async function runMcpMaintenance(
     );
     return relistStaleRemoteMcpApps(now);
   });
-  const backgroundLapsed = await step("background_grants", async () => {
-    const { lapseBackgroundGrants } = await import("@/server/oauth/background");
-    return lapseBackgroundGrants(now);
-  });
   // Rows left past the retention after a full run: more calls an hour than
   // a run deletes, which needs a look. Usage rows age out a month at a
   // time, so being behind for a few runs after a month boundary is normal.
@@ -214,7 +207,6 @@ export async function runMcpMaintenance(
           : deliveriesPruned.deleted,
       oauth_purge: purge,
       remote_mcp_relisted: remoteMcp,
-      background_grants_lapsed: backgroundLapsed,
     },
     auditBehind ? "warn" : "log",
   );

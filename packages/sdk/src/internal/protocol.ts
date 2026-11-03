@@ -41,25 +41,14 @@ export const GATEWAY_ERROR_HEADER = "x-everyapp-error";
  */
 export const ORG_HEADER = "x-everyapp-org";
 /**
- * Which connection an app's call to an OAuth provider uses: the person's
- * (`user`, the default when a person is behind the call) or the
- * organization's (`organization`, the default for background work),
- * docs/design/2026-10-oauth-providers.md section 7. Set by
- * `integrationFetch({ account })`; the gateway reads it on the held-token
- * branch and ignores it elsewhere.
- */
-export const ACCOUNT_HEADER = "x-everyapp-account";
-/**
  * On background work's call to an OAuth provider's API: the member whose
- * own connection the call uses, which only that member's opt-in on the
- * Gateway's page allows (docs/design/2026-11-birds-decisions/888-background-oauth.md).
- * Set by `for: { background: true, userId }`; the gateway reads it on the
- * held-token branch only, never with a person's identity on the call, and
- * the perimeter strips it, with every `x-everyapp-*`, from browsers.
+ * connection to this app the call uses. Set by `for: { background: true,
+ * userId }`; the gateway reads it on the held-token branch only, for an
+ * organization's own app, and the perimeter strips it, with every
+ * `x-everyapp-*`, from browsers. It addresses a connection; it is not a
+ * permission: connecting in the app already lets the app use it.
  */
 export const USER_HEADER = "x-everyapp-user";
-/** The values {@link ACCOUNT_HEADER} may carry. */
-export type ConnectionAccount = "user" | "organization";
 /** 120-second lifetime — caps revocation staleness while surviving clock skew. */
 export const IDENTITY_TTL_SECONDS = 120;
 /** System tokens are minted per call and live at most a minute. */

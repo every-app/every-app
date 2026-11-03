@@ -1419,42 +1419,23 @@ describe("the event bus (SQLite)", () => {
       "provider.connected": catalogue.providerConnected({
         provider: { id: "github", name: "GitHub", kind: "oauth" },
         account: {
-          kind: "user",
           user: { id: "u2", email: "jo@acme.example" },
           label: "jo",
         },
-        scopeSets: ["identity", "repo.read"],
+        app: { id: "agent", rowId: "app-row-2", name: "Agent" },
+        scopes: ["repo", "read:user"],
       }),
       "provider.disconnected": catalogue.providerDisconnected({
         provider: { id: "github", name: "GitHub", kind: "oauth" },
-        account: { kind: "organization", label: "acme" },
+        account: { user: { id: "u2", email: "jo@acme.example" }, label: "jo" },
+        app: { id: "agent", rowId: "app-row-2", name: "Agent" },
         revoked: true,
       }),
       "provider.connection_expired": catalogue.providerConnectionExpired({
         provider: { id: "github", name: "GitHub", kind: "oauth" },
-        account: { kind: "user", user: { id: "u2", email: "jo@acme.example" } },
+        account: { user: { id: "u2", email: "jo@acme.example" } },
+        app: { id: "agent", rowId: "app-row-2", name: "Agent" },
         connectionId: "conn_1",
-      }),
-      "provider.background_granted": catalogue.providerBackgroundGranted({
-        provider: { id: "github", name: "GitHub", kind: "oauth" },
-        app: { id: "agent", rowId: "app-row-2", name: "Agent" },
-        user: { id: "u2", email: "jo@acme.example", name: "Jo" },
-        grantId: "bgg_1",
-        scopeSets: ["repo.read"],
-      }),
-      "provider.background_revoked": catalogue.providerBackgroundRevoked({
-        provider: { id: "github", name: "GitHub", kind: "oauth" },
-        app: { id: "agent", rowId: "app-row-2", name: "Agent" },
-        user: { id: "u2", email: "jo@acme.example", name: "Jo" },
-        grantId: "bgg_1",
-        by: "admin",
-      }),
-      "provider.background_lapsed": catalogue.providerBackgroundLapsed({
-        provider: { id: "github", name: "GitHub", kind: "oauth" },
-        app: { id: "agent", rowId: "app-row-2", name: "Agent" },
-        user: { id: "u2", email: "jo@acme.example", name: "Jo" },
-        grantId: "bgg_1",
-        reason: "idle",
       }),
       "ai.default_changed": catalogue.aiDefaultChanged({
         aiDefault: {
@@ -1580,10 +1561,10 @@ describe("the event bus (SQLite)", () => {
         "GitHub's OAuth client was replaced",
       );
       expect(line("provider.connected")).toBe(
-        "jo@acme.example connected GitHub",
+        "jo@acme.example connected GitHub in Agent",
       );
       expect(line("provider.disconnected")).toBe(
-        "The workspace's GitHub account was disconnected",
+        "jo@acme.example's GitHub account was disconnected from Agent",
       );
       expect(line("provider.connection_expired")).toBe(
         "jo@acme.example's GitHub connection expired and needs reconnecting",

@@ -103,6 +103,11 @@ interface FakeOAuthProviderState {
   failNextToken: string | null;
   /** Make the next API answer this status, once. */
   failNextApi: number | null;
+  /**
+   * Scopes every token issued from now on carries beyond what was asked:
+   * a client that remembers what the person approved for another app.
+   */
+  grantExtra: string[];
 }
 
 interface FakeOAuthProvider {
@@ -213,6 +218,7 @@ export function fakeOAuthProvider(
     counters: { authorize: 0, token: 0, refresh: 0, revoke: 0, api: 0 },
     failNextToken: null,
     failNextApi: null,
+    grantExtra: [],
   };
 
   const scopeField = (scopes: string[]): Record<string, string> => {
@@ -364,7 +370,7 @@ export function fakeOAuthProvider(
       const tokenIssued: IssuedToken = {
         accessToken: next("access"),
         refreshToken: issueRefresh ? next("refresh") : null,
-        scopes: issued.scopes,
+        scopes: [...new Set([...issued.scopes, ...state.grantExtra])],
         revoked: false,
       };
       state.tokens.push(tokenIssued);
@@ -382,9 +388,10 @@ export function fakeOAuthProvider(
       const refreshed: IssuedToken = {
         accessToken: next("access"),
         refreshToken: rotate ? next("refresh") : current.refreshToken,
-        scopes: current.scopes,
+        scopes: [...new Set([...current.scopes, ...state.grantExtra])],
         revoked: false,
       };
+      if (!rotate) current.scopes = refreshed.scopes;
       if (rotate) current.revoked = true;
       else current.accessToken = refreshed.accessToken;
       if (rotate) state.tokens.push(refreshed);

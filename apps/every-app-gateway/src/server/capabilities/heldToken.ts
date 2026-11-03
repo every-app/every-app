@@ -1,40 +1,34 @@
 /**
  * An app's call to an OAuth provider's API with the token the Gateway
- * holds for the person (or the organization)
- * (docs/design/2026-10-oauth-providers.md section 7):
+ * holds for a person in that app (docs/design/2026-11-oauth-simplify.md):
  *
- *   ANY /api/integrations/<id>/<api host>/<path>    x-everyapp-account: user|organization
+ *   ANY /api/integrations/<id>/<api host>/<path>     [x-everyapp-user: <user id>]
  *
- * Checked in order, each a refusal with its code: the app lists the
- * provider; the method is one the grant allows; the provider has a live
- * client; whom the call is for (an agent's read-only connection never
- * writes); the account's connection exists and is not expired and holds
- * every set the app declares; the path is one a declared set unlocks;
- * then the token (refreshed first when due) goes on as the bearer, the
- * app's own credentials and cookies stripped, and the provider's answer
- * comes back without its cookies. The token, the refresh token and the
- * client never reach the app (`oauth.held-token-never-to-app`).
+ * Checked in order, each a refusal with its code:
  *
- * Background work naming a member (`x-everyapp-user`, from
- * `for: { background: true, userId }`) takes that member's own connection
- * only through their opt-in (docs/design/2026-11-birds-decisions/888-background-oauth.md,
- * {@link backgroundAccount}), and only for the sets the entry marks
- * `background`: those stand in for the declared sets in step 6.
+ *  1. the app's manifest lists the provider;
+ *  2. the provider has a live client;
+ *  3. whose connection: the member `x-everyapp-user` names (an
+ *     organization's own app only, the member still active and opening the
+ *     app), else the person behind the call;
+ *  4. that person's connection in this app exists and isn't expired;
+ *  5. it holds every scope the app's entry declares;
+ *  6. the host is one of the provider's (the route already parsed it);
+ *  7. the token (refreshed first when due) goes on as the bearer, the
+ *     app's own credentials and cookies stripped, no redirect followed,
+ *     and the provider's answer comes back without its cookies.
+ *
+ * The token, the refresh token and the client never reach the app
+ * (`oauth.held-token-never-to-app`).
  */
 import {
-  ACCOUNT_HEADER,
   GATEWAY_ERROR_HEADER,
   USER_HEADER,
-  declaredScopeSets,
-  heldTokenCallAllowed,
-  oauthReadMethods,
-  oauthWriteMethods,
-  MCP_WRITE_SCOPE,
+  capabilitySettings,
+  missingScopes,
   type CapabilityLookup,
   type CapabilitySettings,
-  type ConnectionAccount,
   type OAuthClientCapability,
-  capabilitySettings,
 } from "@every-app/sdk/internal";
 import { logEvent } from "@every-app/perimeter";
 import type { CapabilityRequest } from "@every-app/perimeter/manifest";
@@ -47,6 +41,45 @@ import { capabilityRefusal, notConfiguredRefusal } from "./refusal";
 
 /** The query keys an app's call never carries to the provider: a token of its own. */
 const STRIPPED_QUERY = ["access_token", "token"];
+/** What `x-everyapp-user` may hold: a user id. */
+const USER_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+/** The app making the call, as the registry knows it. */
+export interface CallingApp {
+  /** apps.id; absent for an app the registry has no row id for. */
+  rowId?: string;
+  /** The app's id (its slug). */
+  appId: string;
+  /** "org" for an organization's own app, "shared" for the platform's. */
+  scope: string;
+  tier?: string;
+  organizationId: string;
+  /**
+   * Linked dev (`everyapp dev --gateway`): the caller is a developer's
+   * computer, which never names another member's connection.
+   */
+  linkedDev?: boolean;
+}
+
+/**
+ * What the proxy asks about members when background work names one
+ * (`x-everyapp-user`): whether they may still use a connection in the app,
+ * and dropping theirs when they may not.
+ */
+export interface MemberAccessPort {
+  /** Active in the organization, not deactivated, and opens the app. */
+  mayUse(input: {
+    organizationId: string;
+    userId: string;
+    appRowId: string;
+  }): Promise<boolean>;
+  /** They may not: their connections in the app go. */
+  revoke(input: {
+    organizationId: string;
+    userId: string;
+    appRowId: string;
+  }): Promise<void>;
+}
 
 interface HeldTokenCallOptions {
   /** `pnpm everyapp configure <app>`, or null (server/setup-info.ts). */
@@ -54,8 +87,11 @@ interface HeldTokenCallOptions {
   request: Request;
   id: string;
   capability: OAuthClientCapability;
-  /** The provider host and path the app named, already parsed from the route. */
-  upstream: URL;
+  /**
+   * The provider host and path the app named, parsed from the route; null
+   * when the host isn't one of the provider's or the path could leave it.
+   */
+  upstream: URL | null;
   entry: CapabilityRequest | undefined;
   env: CapabilitySettings;
   lookup: CapabilityLookup;
@@ -63,70 +99,35 @@ interface HeldTokenCallOptions {
   fetchUpstream: (request: Request) => Promise<Response>;
   resolveClient: OAuthClientResolver;
   connections: HeldTokenPort;
-  /** The calling app's background grants; absent, no background call names a member. */
-  background?: BackgroundGrantPort;
+  /** The calling app; absent, no connection can be found (409). */
+  app?: CallingApp;
+  /** For background work naming a member; absent, `x-everyapp-user` is refused. */
+  members?: MemberAccessPort;
   onCall?: (report: { capability: string; status: number }) => void;
 }
 
-/**
- * What the proxy asks about one calling app's background use of members'
- * connections (oauth/background.ts in the gateway).
- */
-export interface BackgroundGrantPort {
-  /** The Gateway page where a member allows this app's background use of the provider. */
-  consentPath(providerId: string): string;
-  /**
-   * Whether the app may use this member's connection now, for `sets`: the
-   * app is a first-party organization app, the member allowed it (for
-   * these sets), hasn't let it lapse, is active in the organization and
-   * opens the app. Re-checked on every call.
-   */
-  authorize(input: {
-    organizationId: string;
-    userId: string;
-    providerId: string;
-    connectionId: string;
-    sets: readonly string[];
-  }): Promise<{ ok: true; grantId: string } | { ok: false; reason: string }>;
-  /** The call went through: a daily `connection.used`, after the response. */
-  used(input: {
-    grantId: string;
-    organizationId: string;
-    userId: string;
-    providerId: string;
-    providerLabel: string;
-  }): void;
+/** The scopes an app's entry declares, as it wrote them. */
+export function entryScopes(entry: CapabilityRequest | undefined): string[] {
+  const raw = (entry as { scopes?: unknown } | undefined)?.scopes;
+  return Array.isArray(raw)
+    ? raw.filter((scope): scope is string => typeof scope === "string")
+    : [];
 }
 
-/** The scope sets an entry marks `background`, among those it declares; null when it marks none. */
-export function backgroundSetsOf(
-  entry: CapabilityRequest,
-  declaredSets: readonly string[],
-): string[] | null {
-  const raw = (entry as { background?: unknown }).background;
-  if (!raw || typeof raw !== "object") return null;
-  const scopes = (raw as { scopes?: unknown }).scopes;
-  if (!Array.isArray(scopes)) return null;
-  const sets = scopes.filter(
-    (name): name is string =>
-      typeof name === "string" && declaredSets.includes(name),
+/** Where a person connects the provider for this app. */
+export function connectPathFor(providerId: string, appId: string): string {
+  return `/connect/${encodeURIComponent(providerId)}?app=${encodeURIComponent(appId)}`;
+}
+
+/** Whether background work from `app` may name a member of `organizationId`. */
+function namesMembers(app: CallingApp, organizationId: string): boolean {
+  return (
+    !app.linkedDev &&
+    Boolean(app.rowId) &&
+    app.scope === "org" &&
+    (app.tier === undefined || app.tier === "service_binding") &&
+    organizationId === app.organizationId
   );
-  return sets.length > 0 ? sets : null;
-}
-
-/** The member a background call names (`x-everyapp-user`), or undefined; null when malformed. */
-function backgroundUserOf(request: Request): string | null | undefined {
-  const value = request.headers.get(USER_HEADER);
-  if (value === null || value === "") return undefined;
-  const text = value.trim();
-  return /^[A-Za-z0-9_-]{1,128}$/.test(text) ? text : null;
-}
-
-/** Whether a header value names an account kind. */
-function accountOf(value: string | null): ConnectionAccount | null | undefined {
-  if (value === null || value === "") return undefined;
-  const text = value.trim().toLowerCase();
-  return text === "user" || text === "organization" ? text : null;
 }
 
 export async function handleHeldTokenCall({
@@ -141,14 +142,17 @@ export async function handleHeldTokenCall({
   fetchUpstream,
   resolveClient,
   connections,
-  background,
+  app,
+  members,
   onCall,
   setupCommand,
 }: HeldTokenCallOptions): Promise<Response> {
-  let connectPath = `/connect/${encodeURIComponent(id)}`;
+  const connectPath = app
+    ? connectPathFor(id, app.appId)
+    : `/connect/${encodeURIComponent(id)}`;
   const notConnected = (
     message: string,
-    extra: { reconnect: boolean; missingSets?: string[]; background?: true },
+    extra: { reconnect: boolean; missingScopes?: string[] },
   ) =>
     Response.json(
       {
@@ -172,35 +176,7 @@ export async function handleHeldTokenCall({
       `This app doesn't list ${capability.label} in its capabilities. Add it to everyapp.config.ts (capabilities.${id}) and deploy again.`,
     );
   }
-  // 2. The method: reads on any grant, writes on a write grant for a
-  // provider that offers it (a set's routes may still admit a read-shaped
-  // POST below).
-  const method = request.method.toUpperCase();
-  const readMethods = oauthReadMethods(capability);
-  const reads = readMethods.includes(method);
-  const offersWrite = (capability.access as readonly string[]).includes(
-    "write",
-  );
-  const writes =
-    !reads &&
-    offersWrite &&
-    entry.access === "write" &&
-    oauthWriteMethods(capability).includes(method);
-  // 2b. With scope sets, the ones the entry declares are the grant; a
-  // void grant is refused whole.
-  const policy = capability.scopePolicy;
-  const declared = policy
-    ? declaredScopeSets(policy, { scopes: entry["scopes"] })
-    : [];
-  if (policy && Object.keys(policy.sets).length > 0 && !declared) {
-    return capabilityRefusal(
-      403,
-      "integration_scopes_undeclared",
-      `This app's entry for ${capability.label} must list the scope sets it uses (scopes: [...] in everyapp.config.ts; this gateway offers ${Object.keys(policy.sets).join(", ")}).`,
-    );
-  }
-  const declaredSets = declared ?? [];
-  // 3. A live client.
+  // 2. A live client.
   const client = await resolveClient({
     id,
     capability,
@@ -218,119 +194,70 @@ export async function handleHeldTokenCall({
       }),
     );
   }
-  // 4. Whom the call is for.
-  const { caller, user } = await admit();
-  if (
-    writes &&
-    user?.channel === "mcp" &&
-    !user.scopes.some((scope) => scope === MCP_WRITE_SCOPE || scope === "*")
-  ) {
-    return capabilityRefusal(
-      403,
-      "integration_read_only",
-      `This agent connection is read-only, and ${method} on ${capability.label} writes. Reconnect the agent with write access.`,
-    );
-  }
-  // 5. Whose connection: the header, else the person's, else the organization's.
-  const asked = accountOf(request.headers.get(ACCOUNT_HEADER));
-  if (asked === null) {
-    return capabilityRefusal(
-      400,
-      "integration_body_invalid",
-      `${ACCOUNT_HEADER} must be user or organization.`,
-    );
-  }
-  // 5a. Background work naming a member: their opt-in, checked below.
-  const onBehalfOf = backgroundUserOf(request);
-  if (onBehalfOf === null) {
+  // 3. Whose connection: the member background work names (this wins even
+  // when a person is behind the call: an app may use any member's
+  // connection to it), else the person's.
+  const named = request.headers.get(USER_HEADER)?.trim() || null;
+  if (named !== null && !USER_ID.test(named)) {
     return capabilityRefusal(
       400,
       "integration_body_invalid",
       `${USER_HEADER} must be a user id.`,
     );
   }
-  if (onBehalfOf !== undefined) {
-    if (user) {
+  const { caller, user } = await admit();
+  if (named !== null) {
+    if (!app || !members || !namesMembers(app, caller.organizationId)) {
       return capabilityRefusal(
-        400,
-        "integration_body_invalid",
-        `${USER_HEADER} is for background work; a call a person is behind uses their own connection.`,
+        403,
+        "integration_user_not_allowed",
+        `Only an organization's own app can use a member's ${capability.label} connection by naming them (${USER_HEADER}); a shared app or linked dev uses the connection of the person behind the call.`,
       );
     }
-    if (asked === "organization") {
-      return capabilityRefusal(
-        400,
-        "integration_body_invalid",
-        `${USER_HEADER} names a member's own connection; leave out account: "organization".`,
-      );
-    }
-  }
-  const backgroundSets =
-    onBehalfOf === undefined ? null : backgroundSetsOf(entry, declaredSets);
-  if (onBehalfOf !== undefined && (!background || !backgroundSets)) {
-    return capabilityRefusal(
-      403,
-      "integration_scope_not_allowed",
-      background
-        ? `This app's entry for ${capability.label} marks no scope sets for background use (background: { scopes: [...], why } in everyapp.config.ts).`
-        : `${capability.label} can't be used on a member's connection in the background from here.`,
-    );
-  }
-  if (onBehalfOf !== undefined && background) {
-    connectPath = background.consentPath(id);
-  }
-  const account: ConnectionAccount =
-    asked ?? (user || onBehalfOf !== undefined ? "user" : "organization");
-  if (account === "user" && !user && onBehalfOf === undefined) {
-    return notConnected(
-      `No person is behind this call, so there is no ${capability.label} account to use; pass account: "organization" for background work.`,
-      { reconnect: false },
-    );
-  }
-  const connection = await connections.find({
-    organizationId: caller.organizationId,
-    providerId: id,
-    account,
-    userId: user?.id ?? onBehalfOf ?? null,
-  });
-  // 5b. In the background, the member's opt-in comes first and is
-  // re-checked on every call; a member with no connection, an expired one
-  // or no grant gets the same answer, so an app can't tell which.
-  let grantId: string | null = null;
-  if (onBehalfOf !== undefined && background && backgroundSets) {
-    const granted = connection
-      ? await background.authorize({
+    const may = await members.mayUse({
+      organizationId: caller.organizationId,
+      userId: named,
+      appRowId: app.rowId!,
+    });
+    if (!may) {
+      // They left, were deactivated or lost the app: their connection in it
+      // goes now, and the answer is the same as for no connection.
+      await members
+        .revoke({
           organizationId: caller.organizationId,
-          userId: onBehalfOf,
-          providerId: id,
-          connectionId: connection.id,
-          sets: backgroundSets,
+          userId: named,
+          appRowId: app.rowId!,
         })
-      : { ok: false as const, reason: "no connection" };
-    if (!granted.ok || connection?.status === "expired") {
+        .catch(() => undefined);
       logEvent(
-        "integration.proxy.background_refused",
-        {
-          capability: id,
-          ...caller,
-          onBehalfOf,
-          reason: granted.ok ? "expired" : granted.reason,
-        },
+        "integration.proxy.member_refused",
+        { capability: id, ...caller, onBehalfOf: named },
         "warn",
       );
       return notConnected(
-        `${capability.label} can't be used in the background for this member: they haven't allowed this app's background use, or it ended. They allow it at ${connectPath}.`,
-        { reconnect: false, background: true, missingSets: backgroundSets },
+        `${capability.label} isn't connected for this member in this app.`,
+        { reconnect: false },
       );
     }
-    grantId = granted.grantId;
   }
+  const userId = named ?? user?.id ?? null;
+  if (!userId || !app?.rowId) {
+    return notConnected(
+      `No person is behind this call, so there is no ${capability.label} connection to use; name the member whose connection to use (for: { background: true, userId }).`,
+      { reconnect: false },
+    );
+  }
+  // 4. The connection: this person's, in this app.
+  const connection = await connections.find({
+    organizationId: caller.organizationId,
+    providerId: id,
+    userId,
+    appRowId: app.rowId,
+  });
   if (!connection) {
     return notConnected(
-      account === "user"
-        ? `${capability.label} isn't connected for this person yet. Send them to ${connectPath}.`
-        : `${capability.label} isn't connected for this organization yet. An owner or admin connects it at ${connectPath}?account=organization.`,
-      { reconnect: false, missingSets: declaredSets },
+      `${capability.label} isn't connected for this person in this app yet. Send them to ${connectPath}.`,
+      { reconnect: false },
     );
   }
   if (connection.status === "expired") {
@@ -339,41 +266,28 @@ export async function handleHeldTokenCall({
       { reconnect: true },
     );
   }
-  // 6. What the connection unlocks for this call: in the background, the
-  // background sets alone.
-  const allowed = policy
-    ? heldTokenCallAllowed({
-        policy,
-        declaredSets: backgroundSets ?? declaredSets,
-        connectionSets: connection.scopeSets,
-        hosts: capability.api,
-        method,
-        upstream,
-        readMethods,
-        writes,
-      })
-    : reads || writes
-      ? { ok: true as const, set: "" }
-      : {
-          ok: false as const,
-          code: "integration_method_not_allowed" as const,
-          message: `${capability.label} calls may use ${readMethods.join(" or ")} with access: "read"; ${method} needs access: "write" in the app's capabilities entry.`,
-        };
-  if (!allowed.ok) {
-    if (allowed.code === "integration_not_connected") {
-      return notConnected(
-        `This ${capability.label} connection lacks ${allowed.missingSets.join(", ")}, which this app needs; connect it again at ${connectPath}.`,
-        {
-          reconnect: true,
-          missingSets: allowed.missingSets,
-          ...(grantId ? { background: true as const } : {}),
-        },
-      );
-    }
+  // 5. It holds every scope the app declares.
+  const missing = missingScopes(
+    capability.flow,
+    connection.scopes,
+    entryScopes(entry),
+  );
+  if (missing.length > 0) {
+    return notConnected(
+      `This ${capability.label} connection lacks ${missing.join(", ")}, which this app needs; connect it again at ${connectPath}.`,
+      { reconnect: true, missingScopes: missing },
+    );
+  }
+  // 6. The host is one of the provider's.
+  if (
+    !upstream ||
+    upstream.protocol !== "https:" ||
+    !(capability.api as readonly string[]).includes(upstream.host)
+  ) {
     return capabilityRefusal(
-      allowed.code === "integration_method_not_allowed" ? 405 : 403,
-      allowed.code,
-      allowed.message,
+      400,
+      "invalid_integration_route",
+      `${capability.label} calls go to ${capability.api.join(", ")}.`,
     );
   }
   // 7. The token, refreshed first when due.
@@ -406,6 +320,7 @@ export async function handleHeldTokenCall({
     );
   }
 
+  const method = request.method.toUpperCase();
   const headers = forwardableHeaders(request.headers);
   headers.delete("x-http-method-override");
   headers.set("authorization", `Bearer ${token.accessToken}`);
@@ -426,11 +341,9 @@ export async function handleHeldTokenCall({
     host: upstream.host,
     path: upstream.pathname,
     method,
-    account,
-    ...(allowed.set ? { scopeSet: allowed.set } : {}),
     attribution: user ? "user" : "app",
     ...(user ? { userId: user.id } : {}),
-    ...(grantId ? { background: true, onBehalfOf } : {}),
+    ...(named !== null ? { onBehalfOf: named } : {}),
   };
   let response: Response;
   try {
@@ -451,16 +364,15 @@ export async function handleHeldTokenCall({
   responseHeaders.delete("set-cookie");
   onCall?.({ capability: id, status: response.status });
   logEvent("integration.proxy.call", { ...logged, status: response.status });
-  await connections.touch(connection.id).catch(() => undefined);
-  if (grantId && background && onBehalfOf) {
-    background.used({
-      grantId,
-      organizationId: caller.organizationId,
-      userId: onBehalfOf,
+  await connections
+    .used({
+      connection,
       providerId: id,
-      providerLabel: capability.label,
-    });
-  }
+      capability,
+      organizationId: caller.organizationId,
+      appId: app.appId,
+    })
+    .catch(() => undefined);
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,

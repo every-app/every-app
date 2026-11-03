@@ -517,88 +517,83 @@ binding, the event is checked as the gateway would, printed as
 `[everyapp dev] event app.<id>.<event>` (never its data) and answered
 `{ id: "dev-<uuid>", type }`.
 
-### Social networks' OAuth clients
+### OAuth providers
 
-The gateway holds a client for each social network its operator set up
-(`docs/capabilities.md`, "OAuth clients": `linkedin`, `facebook`,
-`instagram`, `threads`, `youtube`, `tiktok`, `tiktok-business`, `reddit`,
-`pinterest`, `discord`, `slack`, `mastodon`, `kick`, `twitch`, `tumblr`,
-`dribbble`; and for mail and calendar, `google-workspace` and
-`microsoft-365`). List one for writing, send people to the provider's
-authorize URL (for a client with scope sets, the one `authorizeUrl()`
-builds from its status; for the others, one you build from the status's
-`clientId` and the network's documented scopes), and exchange or refresh
-tokens through the gateway without any client:
+For a person's own account at a provider (Google, Microsoft 365, Slack built
+in; GitHub, Notion and others added from a preset with `everyapp provider
+add`), the gateway holds the client, runs the flow and keeps the tokens. The
+app lists the provider's own scopes, sends people to connect inside the app,
+and calls the provider's API; it never sees a token.
 
 ```ts
 // everyapp.config.ts
 capabilities: {
-  linkedin: { access: "write" },
-  // A client several apps share lists the scope sets it uses.
   "google-workspace": {
-    access: "write",
-    scopes: ["identity", "search-console.read"],
-    why: "Reads Search Console for the sites you connect",
+    scopes: ["webmasters.readonly", "analytics.readonly"],
+    why: "Reads Search Console and Analytics for the sites you connect.",
   },
 }
 ```
 
+A short scope (`gmail.modify`) is joined onto the provider's prefix
+(`https://www.googleapis.com/auth/`); a full one is used as written; `[]`
+for a provider with no scopes (Notion). The gateway adds the scopes that
+name the account (Google's `openid email`), so don't list them. An OAuth
+entry takes no `access`.
+
 ```ts
 import {
-  authorizeUrl,
+  connectUrl,
+  gatewayRefusal,
   integrationFetch,
   integrationStatus,
 } from "@every-app/sdk/server";
 
 const status = await integrationStatus({ env, provider: "google-workspace" });
-if (!status.ready) return notAvailable(); // the operator hasn't set it up
-// ...redirect to
-const url = authorizeUrl({
-  provider: "google-workspace",
-  status,
-  redirectUri: `${origin}/integrations/google/callback`,
-  state,
-  codeChallenge, // optional PKCE (S256)
-});
-// ...and on the callback, exchange the code:
-const tokens = await integrationFetch({
-  env,
-  provider: "google-workspace",
-  for: request,
-})("https://oauth2.googleapis.com/token", {
-  method: "POST",
-  headers: { "content-type": "application/x-www-form-urlencoded" },
-  body: new URLSearchParams({
-    grant_type: "authorization_code",
-    code,
-    redirect_uri,
-    code_verifier,
-  }),
-});
+if (!status.connection?.ready) {
+  // A "Connect Google" button: the gateway asks Google for exactly this
+  // app's scopes and sends the person back.
+  return redirect(
+    connectUrl({ env, provider: "google-workspace", returnTo: request.url }),
+  );
+}
+const google = integrationFetch({ env, provider: "google-workspace" });
+const sites = await google(
+  "https://searchconsole.googleapis.com/webmasters/v3/sites",
+);
 ```
 
-The gateway completes the network's token endpoints only, putting its client
-where each one takes it (form body, HTTP Basic, query string or JSON body);
-anything else throws a `TypeError` before it is sent. Call the network's API
-with the user's token directly. Mastodon's status also gives the instance as
-`origin`.
+`connectUrl({ env, provider, returnTo })` is
+`<gateway>/connect/<id>?app=<this app>&return=<returnTo>`. The connection
+belongs to that person and this app: another app that needs the same
+provider connects for its own scopes. The gateway refuses a token that
+carries more scopes than the app lists.
 
-For a client with scope sets (`google-workspace`, `microsoft-365`, `slack`),
-the status carries the sets the manifest declares as `scopeSets` and the
-provider's scope strings they ask for as `scopes`, which `authorizeUrl()`
-puts on the URL (with Google's `access_type=offline`, Microsoft's
-`response_mode=query`, Slack's comma-joined `scope` and `user_scope`, and
-never `include_granted_scopes`); the gateway
-refuses an exchange or refresh whose granted scopes exceed the sets
-(`integration_scope_exceeded`), so a person's wider consent on another app
-never reaches this one. A manifest entry without usable `scopes` is not
-`ready`. The manifest's `scopes` field needs a gateway and CLI from the
-same release as this SDK: an older `everyapp dev` refuses a manifest that
-has it at startup. In local dev, with no binding, `.dev.vars` holds your
-own client under the gateway's names (`LINKEDIN_CLIENT_ID`,
-`LINKEDIN_CLIENT_SECRET`, `MASTODON_URL`, ...), the same rule puts it on
-the call, and the same scope checks apply, from the manifest `everyapp dev`
-passes the Worker.
+`integrationFetch` reaches the provider's API hosts only (a token endpoint or
+any other host throws a `TypeError` before anything is sent); the gateway
+puts the person's token on the call. Without a connection, or when the
+connection lacks a scope the app now lists, the gateway answers 409
+`integration_not_connected` with `connectPath` (and `missingScopes`): send
+the person to `connectUrl()`.
+
+`integrationStatus` for an OAuth provider adds `scopes` (as the manifest
+lists them), `connectPath` (`/connect/<id>?app=<app>`, or null) and
+`connection` (`{ label, scopes, ready, missingScopes?, reconnect? }`, or
+null) for the person.
+
+An app may use a connection made in it at any time, including from a cron
+or a Durable Object alarm. `for: { background: true, userId }` names any
+member's connection to this app, even while serving another member's
+request: OpenSEO reads a project's Search Console with the connection of the
+member who picked the property, whoever is viewing. The call carries that
+member (`x-everyapp-user`), not the person being served. Only an
+organization's own app may, and only for a member who may still open the
+app.
+
+In local dev, with no binding, put a token you obtained yourself in
+`.dev.vars` as `<PREFIX>_ACCESS_TOKEN` (`GOOGLE_WORKSPACE_ACCESS_TOKEN`,
+`GITHUB_OAUTH_ACCESS_TOKEN`; `devAccessTokenName(id)` names it). It goes on
+calls to the provider's hosts as the bearer; without it calls answer the same 409.
 
 ### Whom a call is for
 
@@ -610,6 +605,9 @@ passes the Worker.
 - `for: { background: true, organizationId }`, for work no request started
   (a cron, a Workflow step, a queue): sent as `x-everyapp-org` with no
   identity.
+- `for: { background: true, userId }`, for a call to an OAuth provider on a
+  member's connection to this app: sent as `x-everyapp-user`, with no
+  identity, even while a request is being served.
 - Omitted: allowed only in an organization's own app, whose background
   calls are the app's, in its own organization (the same as
   `{ background: true }`). Naming another organization is refused.

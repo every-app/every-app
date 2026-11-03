@@ -887,8 +887,8 @@ function devGatewayUrl(): TextBinding {
 
 /**
  * The manifest's `capabilities` as the SDK's local-dev twin of the gateway
- * reads them: with no gateway to hold an OAuth client's calls to the scope
- * sets the app declares, `integrationFetch()` holds them to these.
+ * reads them: with no gateway, `integrationStatus()` reports an OAuth
+ * provider's declared scopes, and whether the app lists it, from these.
  */
 function devCapabilities(manifest: EveryAppWorkerManifest): TextBinding {
   return { type: "text", value: JSON.stringify(manifest.capabilities ?? {}) };
@@ -969,8 +969,9 @@ function addDevProviders(
 /**
  * The Gateway settings the spec files name for the capabilities the
  * manifest lists outside {@link DEV_GATEWAY_KEYS} (a registered provider's
- * key, a Basic username held as a setting, its host setting), read
- * loosely: the SDK parses the spec when the app calls the provider.
+ * key, a Basic username held as a setting, its host setting, an OAuth
+ * provider's dev token), read loosely: the SDK parses the spec when the
+ * app calls the provider.
  */
 function devProviderKeys(
   manifest: EveryAppWorkerManifest,
@@ -1000,6 +1001,11 @@ function devProviderKeys(
       auth?.["secret"],
       record(auth?.["user"])?.["secret"],
       fields["hostSetting"],
+      // An OAuth provider: the token that stands in for a connection in
+      // dev (devAccessTokenName() in ../server/integrationFetch.ts).
+      auth?.["kind"] === "oauth2-user"
+        ? `${id.toUpperCase().replace(/-/g, "_")}_ACCESS_TOKEN`
+        : undefined,
     ]) {
       if (typeof name === "string" && /^[A-Z][A-Z0-9_]*$/.test(name)) {
         names.push(name);

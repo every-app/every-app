@@ -76,7 +76,7 @@ function harness(providers?: boolean) {
 }
 
 describe("the provider tool definitions", () => {
-  it("are the seven the designs name: the list and the connections for any member, add, remove and the scope-set pair for admins where the host registers providers, disconnect for a member's own", () => {
+  it("are the five the designs name: the list and the connections for any member, add and remove for admins where the host registers providers, disconnect for a member's own", () => {
     expect(
       PROVIDER_TOOLS.map((tool) => [
         tool.name,
@@ -88,8 +88,6 @@ describe("the provider tool definitions", () => {
       ["provider_list", "read", "member", null],
       ["provider_add", "write", "admin", "providers"],
       ["provider_remove", "write", "admin", "providers"],
-      ["provider_scope_set_add", "write", "admin", "providers"],
-      ["provider_scope_set_remove", "write", "admin", "providers"],
       ["provider_connections", "read", "member", null],
       ["provider_disconnect", "write", "member", null],
     ]);
@@ -150,9 +148,10 @@ describe("the provider tool definitions", () => {
       (tool) => tool.name === "provider_disconnect",
     )!;
     expect(Object.keys(disconnect.inputSchema["properties"] as object)).toEqual(
-      ["provider", "account", "user"],
+      ["provider", "app", "connection", "user"],
     );
-    expect(disconnect.inputSchema["required"]).toEqual(["provider"]);
+    // One of connection or provider: the handler says which is missing.
+    expect(disconnect.inputSchema["required"]).toBeUndefined();
     const remove = PROVIDER_TOOLS.find(
       (tool) => tool.name === "provider_remove",
     )!;
@@ -290,7 +289,7 @@ describe("running a provider tool", () => {
       ["everyapp_provider_remove", {}],
       ["everyapp_provider_remove", { id: "x" }],
       ["everyapp_provider_remove", { id: "stripe", force: true }],
-      ["everyapp_provider_disconnect", {}],
+      ["everyapp_provider_disconnect", { connection: "" }],
       [
         "everyapp_provider_disconnect",
         { provider: "github-oauth", account: "team" },

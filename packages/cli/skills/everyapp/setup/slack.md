@@ -1,22 +1,39 @@
 # Slack for the Gateway
 
 One Slack app, registered once at api.slack.com, whose OAuth client the
-Gateway holds. Open CRM uses it: an owner or admin connects their workspace
-from **Settings → Connections**, and the CRM's team agents post to approved
-channels, manage those channels and match members to Slack users by email.
-At the end the person has a Slack app in their workspace, the Gateway holds
-its Client ID and Client Secret, and **Connect Slack** in Open CRM completes.
+Gateway holds. A member connects Slack inside each app that lists `slack`,
+for exactly the bot scopes that app's `everyapp.config.ts` names; the
+Gateway runs the flow on its own callback, keeps the bot token Slack issues
+(the top-level token of `oauth.v2.access`; no user token) and puts it on
+the app's calls to `slack.com`. No app sees a token or the client. Open CRM
+uses it: an owner or admin connects the workspace in **Settings →
+Connections**, and the CRM's team agents post to approved channels, manage
+those channels and match members to Slack users by email. At the end the
+person has a Slack app in their workspace whose redirect URL is the
+Gateway's `https://<gateway host>/connect/slack/callback`, the Gateway holds
+its Client ID and Client Secret, and connecting in the app completes.
 
 ## Settings
 
-Through the Gateway's own flow (since 2026-10-25) the same client also serves apps that list `slack` with `scopes`, without an app callback: register `https://<gateway>/connect/slack/callback` as a second redirect URL, and each person connects under Connected accounts in the account menu (the agent docs' `providers` page, "OAuth providers"). The client may be pasted in Manage workspace → Providers instead of set below; a setting set here wins.
+The client may be pasted in Manage workspace → Providers instead of set
+below; a setting set here wins.
 
 | Name                  | Required | What it holds                                                                                          |
 | --------------------- | -------- | ------------------------------------------------------------------------------------------------------ |
-| `SLACK_CLIENT_ID`     | required | The app's **Client ID** (Basic Information → App Credentials), as shown. Public; apps get it for the authorize URL. |
+| `SLACK_CLIENT_ID`     | required | The app's **Client ID** (Basic Information → App Credentials), as shown. Public. |
 | `SLACK_CLIENT_SECRET` | required | The app's **Client Secret** from the same section, as shown. The Gateway puts it on `oauth.v2.access` only. |
 
 Set both: the Gateway offers Slack only when it holds the two.
+
+An app lists Slack's own bot scopes as written (no prefix), comma-joined on
+the wire: `"slack": { scopes: ["channels:read", "chat:write"], why }`. The
+Gateway asks for exactly those (Slack's built-in spec,
+`packages/sdk/src/internal/oauthBuiltIns.ts`, adds none) and refuses a bot
+token whose `scope` carries more, at connect and at every refresh. Slack's
+scopes add up per workspace installation of one Slack app: if two apps on
+this client list different scopes, a reinstall for one can carry the
+other's and be refused. Give each such app a Slack app of its own (If it
+fails).
 
 ## Costs and plans
 
@@ -37,110 +54,71 @@ an internal app installed in its own workspace.
 - Create the app in the browser, or generate the app configuration token
   that lets you create it.
 - Copy the Client ID and Client Secret off Basic Information (path A).
-- Click **Allow** on Slack's consent page when connecting Open CRM.
+- Click **Allow** on Slack's consent page when connecting in each app.
 
 ## Before you start
 
-1. `pnpm everyapp secret list crm --json`, from any directory (the id reads
-   the manifest Open CRM's last deploy stored; in its directory the id can
-   be left off), before the Slack side, not at Verify. The rule: read
-   `data.app.setup.settings`, `unmet` and `command`. The client is one
-   setting there, `id: "slack"`, `kind: "capability"`, `holder:
-   "gateway"`, `names: ["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET"]` (an
-   OAuth client's id and secret are the two names of one setting, set
-   only when both are), `need.kind` as the CRM's manifest declares it
-   (Open CRM: `optional`: it sits in `settings` with `set: false`, never
-   in `unmet`, the CRM opens without Slack and `command`,
-   `pnpm everyapp configure crm`, offers it after the required ones;
-   `required` would put it in `unmet`, close the CRM and have configure
-   ask for both names first), `setup: "setup/slack.md"` (this file). While
-   its `set` is false this file applies.
-   The same entry in `data.app.setup.settings` with `set: true`: ask
-   before replacing (a new app, or a regenerated secret). Not deployed
-   yet: `secret list crm` stops with `APP_NOT_FOUND`; a bare
+1. `pnpm everyapp secret list <app id> --json` for each app that lists
+   `slack` (from any directory; in the app's directory the id can be left
+   off), before the Slack side. Read `data.app.setup.settings`, `unmet`
+   and `command`. The client is one setting there, `id: "slack"`, `kind:
+   "capability"`, `holder: "gateway"`, `names: ["SLACK_CLIENT_ID",
+   "SLACK_CLIENT_SECRET"]` (the two names of one setting, set only when
+   both are), `need.kind` as the app's manifest declares it (`optional`: in
+   `settings` with `set: false`, never in `unmet`, and
+   `pnpm everyapp configure <app>` offers it after the required ones;
+   `required`: in `unmet`, the app closed until both are set), `setup:
+   "setup/slack.md"` (this file). While its `set` is false this file
+   applies. With `set: true`: ask before replacing (a new app, or a
+   regenerated secret). Not deployed yet: `APP_NOT_FOUND`; a bare
    `pnpm everyapp secret list --json` from the checkout still says whether
-   the two names are in `data.gateway.names` (ask before replacing), and
-   the rest of this item waits for the first deploy.
+   the two names are in `data.gateway.names`. Note the scopes each app's
+   `everyapp.config.ts` lists under `slack`: step 1 registers their union.
 2. `pnpm everyapp status --json`: `data.installed` and `data.claimed` are
-   true; `data.appBaseDomain` is `<app base domain>` (the redirect URL to
-   register is `https://<app>.<app base domain>/integrations/slack/callback`,
-   deployed as `crm`: `https://crm.<app base domain>/integrations/slack/callback`);
-   Open CRM's entry in `data.apps[]` (its `id`, `crm` below) has
-   `"status": "active"`, `"bound": true`, the `workerName` Verify 4 needs
-   and, as `setup`, 1's `data.app.setup` again: what else the CRM needs.
-   Not deployed yet: the URL is the same, so the Slack side can go first;
-   Verify 3 needs the CRM deployed.
-3. In 1's answer, `data.app.workers[].names` must hold
-   `TOKEN_ENCRYPTION_KEY`, the CRM's own secret its Slack connect needs (it
-   stores the tokens encrypted under it; optional in the manifest, so its
-   entry sits in `settings` with `holder: "app"`, never in `unmet`).
-   Unset: set it first, after the CRM's first deploy, at the hidden prompt
-   of `pnpm everyapp configure crm` (which offers it with the optional
-   ones) or `pnpm everyapp secret set TOKEN_ENCRYPTION_KEY --app crm`, from
-   anywhere, 32 or more random characters, never through the chat; without
-   it **Connect Slack** stops
-   before Slack opens (the table). Not deployed yet: set it right after its
-   first deploy, before Verify 3.
-4. Ask: which workspace; whether a Slack app for this exists already at
+   true, and the Gateway's host: the redirect URL to register is
+   `https://<gateway host>/connect/slack/callback`, the same for every app.
+3. Ask: which workspace; whether a Slack app for this exists already at
    https://api.slack.com/apps (reuse it: step 2a's second paragraph); and
    whether they have `curl` and `jq` (path B).
-5. Pick a path. **A**: they create the app from a manifest in the browser
+4. Pick a path. **A**: they create the app from a manifest in the browser
    and type the client at a hidden prompt. **B**: they generate an app
    configuration token; `apps.manifest.create` returns the client, piped in.
 
 ## Steps
 
 1. **You:** write the manifest to a file outside the repository, say
-   `/tmp/slack-manifest.json`, with `<app>` (Open CRM's `id`) and
-   `<app base domain>` filled in. Nothing in it is secret.
+   `/tmp/slack-manifest.json`, with `<gateway host>` filled in and the bot
+   scopes the union of what the apps list. Nothing in it is secret.
 
    ```json
    {
      "_metadata": { "major_version": 2, "minor_version": 1 },
      "display_information": {
-       "name": "Open CRM",
-       "description": "Team agents post to your Slack channels from Open CRM."
+       "name": "EveryApp",
+       "description": "Your EveryApp apps post to Slack and read channels and members."
      },
-     "features": { "bot_user": { "display_name": "open-crm", "always_online": false } },
+     "features": { "bot_user": { "display_name": "everyapp", "always_online": false } },
      "oauth_config": {
-       "redirect_urls": ["https://<app>.<app base domain>/integrations/slack/callback"],
+       "redirect_urls": ["https://<gateway host>/connect/slack/callback"],
        "scopes": {
-         "bot": ["users:read", "users:read.email", "channels:read", "groups:read", "chat:write", "chat:write.public", "im:write", "channels:join", "channels:manage", "groups:write", "channels:write.invites", "groups:write.invites"],
-         "user": ["channels:read", "channels:write", "groups:read", "groups:write"]
+         "bot": ["channels:read", "chat:write"]
        }
      },
      "settings": { "org_deploy_enabled": false, "socket_mode_enabled": false, "token_rotation_enabled": false }
    }
    ```
 
-   Use these lists as written: they are Open CRM's own (its
-   `src/shared/slack.ts`, which matters only when a newer CRM changes them;
-   a CRM directory with no `src/` has nothing to compare, and needs none):
-   bot scopes to post, manage channels and match members by email; user
-   scopes so the installer can invite the bot to private channels. Its
-   authorize URL carries them as `scope` (bot) and `user_scope` (user), and
-   that URL decides what Slack asks the installer for: Slack's docs name
-   only `invalid_scope` (a scope that doesn't exist, or conflicting ones)
-   and `unapproved_scope` (a published Marketplace app requesting scopes
-   its review didn't cover) on the authorize URL. The manifest's lists are
-   what the console's own Install button and a reinstall request. The
-   registry (`packages/sdk/src/internal/capabilities.ts`, the `slack`
-   entry's `scopePolicy`, #425) groups them into sets an app lists in its
-   manifest entry (`everyapp deploy` refuses `slack` without `scopes`):
-   bot sets `channels.read`, `users.read`, `users.email`,
-   `messages.write`, `channels.join`, `channels.manage`, `files.write`,
-   user set `user-channels.manage` (the table in docs/capabilities.md,
-   "OAuth clients"). Open CRM lists all but `files.write`; the lists
-   above are the provider scopes behind its sets, less
-   `chat:write.customize` (in `messages.write`; the CRM doesn't ask for
-   it). The Gateway holds the CRM to its sets at `oauth.v2.access` (#411):
-   an entry without `scopes` is refused (`integration_scopes_undeclared`),
-   an installation carrying a scope outside them too
-   (`integration_scope_exceeded`: reinstall from the CRM); a CRM deployed
-   before its manifest carried `scopes` must redeploy before the Gateway
-   is updated from main (TODO.md "OAuth scopes (2026-10-24)", follow-up 0).
-   Slack's limits: `name` 35 characters, `description` 140; `display_name`
-   takes a-z, 0-9, `-`, `_` and `.` only. Step 3b validates the file first.
+   Replace the `bot` list with the scopes every app that lists `slack`
+   names in its `everyapp.config.ts` (Open CRM's entry lists the scopes to
+   post, manage channels and match members by email, such as
+   `users:read.email`, `chat:write.public` and `channels:manage`; read its
+   manifest rather than guessing). No user scopes: the Gateway keeps the
+   bot token only. The Gateway's authorize URL carries exactly an app's
+   list as `scope`; the manifest's list is what the console's own Install
+   button and a reinstall request, so keep it no wider than the apps'
+   union. Slack's limits: `name` 35 characters, `description` 140;
+   `display_name` takes a-z, 0-9, `-`, `_` and `.` only. Step 3b validates
+   the file first.
 
 2a. **Person (path A):** open https://api.slack.com/apps, signed in to
    Slack: **Create New App** (https://api.slack.com/apps?new_app=1 opens
@@ -152,18 +130,15 @@ an internal app installed in its own workspace.
    **Client Secret**; 3a uses both.
    Reusing an app: **OAuth & Permissions**, add the redirect URL under
    **Redirect URLs** and save; under **Scopes**, add the bot scopes to **Bot
-   Token Scopes** (**Add an OAuth Scope**) and the user scopes to **User
-   Token Scopes**. Or, with path B's token, `apps.manifest.update` with
+   Token Scopes** (**Add an OAuth Scope**). Or, with path B's token, `apps.manifest.update` with
    `app_id=` and the same manifest; it returns no credentials.
 
 3a. **Person (path A):** in a second terminal, in the `every-app` folder:
-   `pnpm everyapp configure crm` (it asks for the client's two names, id
-   then secret, with hidden prompts, after the CRM's required settings;
-   the client is optional for Open CRM, so Yes to `Set the N optional
-   settings too?`, Enter skipping the others; with one of the two
-   names set it asks only for the other; or pick
-   `SLACK_CLIENT_ID + SLACK_CLIENT_SECRET` from the menu once the CRM is
-   ready) or `pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET`
+   `pnpm everyapp configure <app>` (it asks for the client's two names, id
+   then secret, with hidden prompts, after the app's required settings;
+   for an app where the client is optional, Yes to `Set the N optional
+   settings too?`, Enter skipping the others) or
+   `pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET`
    for just these two (README's first way; no `--json`, so it prompts).
    Paste the Client ID at the first prompt; click **Show** next to Client
    Secret and paste it at the second. Nothing is echoed. Give 2a and 3a in
@@ -213,15 +188,11 @@ an internal app installed in its own workspace.
 
 ## Verify
 
-1. `pnpm everyapp secret list crm --json`, from anywhere: the `slack`
-   setting has `set: true` (optional for Open CRM, so it was never in
-   `data.app.setup.unmet`; a manifest that requires it has it leave
-   `unmet`, with `ready: true` and `command` null once nothing else is
-   missing); both names in `data.gateway.names`, `"set": true` in
-   `data.gateway.needed`, not in `data.gateway.missing`. Then
-   `pnpm everyapp status --json`: the `crm` entry's `setup.ready` is true
-   and `data.fixes` has no `APP_NEEDS_SETUP` for it (the Gateway opens the
-   CRM again).
+1. `pnpm everyapp secret list <app id> --json`, from anywhere: the `slack`
+   setting has `set: true`; both names in `data.gateway.names`,
+   `"set": true` in `data.gateway.needed`, not in `data.gateway.missing`.
+   Then `pnpm everyapp status --json`: the app's `setup.ready` is true and
+   `data.fixes` has no `APP_NEEDS_SETUP` for it.
 2. Smoke check, in the person's terminal while `SLACK_CONFIG_TOKEN` is
    exported (path B), after `export SLACK_APP_ID=<app_id>` (fish:
    `set -x SLACK_APP_ID <app_id>`; the id isn't secret):
@@ -231,76 +202,47 @@ an internal app installed in its own workspace.
    ```
 
    Expected: `redirect_urls` holds exactly
-   `https://<app>.<app base domain>/integrations/slack/callback`, and
-   `scopes.bot` and `scopes.user` the lists in step 1. Then
-   `unset SLACK_CONFIG_TOKEN SLACK_APP_ID` (fish: `set -e`). Path A: the
-   same is on the app's **OAuth & Permissions** page.
-3. The app, deployed and open: 1's `data.app.setup.ready` true. While
-   another required setting of the CRM is unmet, the Gateway sends a
-   browser to its setup dialog instead of the CRM (anything else gets 503
-   `app_needs_setup`): finish those first (each `unmet` entry's `setup`
-   names its file); until then 1 is the check of the Slack client. Then
-   at `https://<app>.<app base domain>`, **Settings →
-   Connections → Slack** (an owner or admin). With the client on the
-   Gateway the card has **Connect Slack**; without it the section reads
-   **Slack is not configured** and, for an owner or admin, shows the
-   redirect URL and `pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET`
-   (Verify 1 again; the same when the deployed CRM doesn't list `slack`,
-   or lists it without `scopes`).
-   **Connect Slack**: Slack's page names the app and the workspace and
-   lists the permissions; **Allow**; the CRM comes back connected and shows
-   the workspace. Otherwise its page says why, `?error=` naming one of
-   seven: `access_denied` (Cancel was clicked), `invalid_state` (the
-   approval is older than ten minutes, was used already, or was started by
-   someone else: start again), `forbidden` (not an owner or admin),
-   `rejected` (Slack sent another error, or no code: try again),
-   `exchange_failed` (the token call returned no token: Verify 4, then the
-   table), `failed` (the CRM couldn't store the tokens: its log has
-   `[slack] connect failed`), `not_configured` (local dev only: the CRM
-   has no Gateway binding).
-4. Logs. Slack's error code is in Open CRM's Worker, not the Gateway's: the
-   Cloudflare dashboard, README's path with the CRM's Worker in place of
-   the Gateway's: **Workers & Pages** → the `crm` entry's `workerName` →
-   **Observability** (**Logs** on older accounts) → **Live** (Workers Logs keeps them; `cf workers` has
-   no tail, and `cf o11y telemetry query` needs a query body). On
-   `exchange_failed` the line `[slack] connect refused` carries `status`
-   and `reason`: Slack's code (`invalid_code`, `bad_redirect_uri`,
-   `invalid_client_id`, `bad_client_secret`: the table), or a Gateway
-   refusal that reached the callback (`status` 503, reason
-   `Service Unavailable`: `integration_not_configured`; 403, `Forbidden`:
-   `capability_not_requested`, `integration_scopes_undeclared` (the
-   deployed CRM lists `slack` without `scopes`) or
-   `integration_scope_exceeded` (the installation carries a scope outside
-   the CRM's sets: reinstall from the CRM)). The Gateway's own log (`every-app-gateway`,
-   same path) has one `integration.proxy.call` per token call:
-   `capability`, host, path, method, `grantType` (the request's
-   `grant_type`) and `status`; never the body, and Slack answers `200` with
-   `"ok": false` on a bad client, so it says only whether the call went
-   through.
+   `https://<gateway host>/connect/slack/callback`, and `scopes.bot` the
+   list from step 1. Then `unset SLACK_CONFIG_TOKEN SLACK_APP_ID` (fish:
+   `set -e`). Path A: the same is on the app's **OAuth & Permissions** page.
+3. The app, deployed and open: 1's `data.app.setup.ready` true (while
+   another required setting is unmet the Gateway opens the app's setup
+   dialog instead: finish those first). In the app (Open CRM: **Settings →
+   Connections → Slack**, as an owner or admin), its Connect Slack button:
+   Slack's page names the Slack app and the workspace and lists the
+   permissions; **Allow**; the Gateway returns the browser to the app,
+   which shows Slack connected. No Connect button: the app's
+   `integrationStatus()` says `configured: false` (Verify 1 again).
+   `pnpm everyapp provider connections --all --json` lists the connection
+   with its app and scopes.
+4. Logs, when a connect fails: Slack's refusal shows on the Gateway's
+   error page; the Gateway's own log (**Workers & Pages** →
+   `every-app-gateway` → **Observability** (**Logs** on older accounts) →
+   **Live**) has one `integration.proxy.call` per API call afterwards:
+   `capability`, host, path, method and `status`, never a token or a body.
+   Slack answers `200` with `"ok": false` on many errors, so `status` says
+   only whether the call went through; the app reads Slack's `error`.
 
 ## If it fails
 
 | Error or symptom                                                               | Meaning                                                                                  | What to do                                                                                              |
 | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| The app shows Slack as not set up, no Connect button; or `integration_not_configured` (503) | The Gateway holds no client, or one of the two names | `secret set` both, then Verify 1 |
+| `capability_not_requested` (403)                                               | The deployed manifest doesn't list `slack` | Add `"slack": { scopes: [...], why }` to its `everyapp.config.ts`, then `pnpm everyapp deploy --json` in its directory |
+| `integration_not_connected` (409)                                              | Nobody connected Slack in this app yet, the connection expired, or the app now lists a scope it lacks (`missingScopes`) | Connect (again) in the app at `connectPath`, so Slack asks for the new scopes |
+| After **Allow**, the Gateway's error page says Slack granted scopes the app doesn't list | The workspace's installation of this Slack app carries scopes another app on the same client asked for, so the Gateway refused the token | A Slack app per app: a provider of its own for the second app (a copy of this spec under another id and setting names, `pnpm everyapp provider show slack` prints it, added with `pnpm everyapp provider add --oauth <file>`), its own Slack app, and that id in the app's manifest |
+| `invalid_scope` on Slack's page                                                | A scope an app lists doesn't exist, or is a user scope                                   | Fix the app's `scopes` (bot scopes only), deploy, connect again                                          |
+| `access_denied`                                                                | The person clicked Cancel on Slack's page                                                | Connect again and **Allow**                                                                              |
 | `SECRET_VALUE_REQUIRED`                                                        | Nothing was piped (path B: the field was missing, so `// empty` piped nothing) and there is no terminal to prompt at | `jq '.error' /tmp/slack-app.json`; or one of README's three ways (its `data.rerun` shows the `--from-env` form) |
-| `SECRET_VALUE_REQUIRED` from `pnpm everyapp configure crm --json`             | Nothing was piped (with `--from-env`, stdin isn't read), no variable of a missing name was found, and there is no terminal; the message names what the CRM still needs (this client is optional for Open CRM, so never among them) | The pipes in 3b, or the person's terminal (3a)                                              |
 | `SECRET_SEVERAL_NAMES`                                                         | A pipe or `--from-env` with two names                                                    | One name per call (the fix in `data.fix`)                                                                |
 | `SECRET_NOT_DECLARED` with `data.didYouMean`                                   | The name differs from a known one in case or underscores only                            | rerun with the name in `data.didYouMean` and the same value source (`--from-env VAR --json`, or the same pipe); `data.rerun` carries only the names, so run as is it stops with `SECRET_VALUE_REQUIRED` |
-| `SECRET_NOT_DECLARED` without it                                               | A misspelt name; in Open CRM's directory its `data.fix` offers to add it to the CRM's own `secrets` | Retype the name from Settings above; never add a `SLACK_*` name to Open CRM's `secrets`            |
-| CRM: **Slack is not configured**, the `secret set` command, no **Connect Slack** | The Gateway holds no client, or one of the two names (a call would get `integration_not_configured`); or the deployed CRM doesn't list `slack` with `access: "write"` and `scopes` (`capability_not_requested`; without `scopes`, `integration_scopes_undeclared`) | `secret set` both, then Verify 1; or its `everyapp.config.ts` (`slack: { access: "write", scopes: [...], why }`), then `pnpm everyapp deploy --json` in its directory |
-| CRM: `exchange_failed`; its log `[slack] connect refused` with `status` 503 or 403 | The Gateway refused between **Connect Slack** and the callback: the client was unset, or the manifest changed, meanwhile | The row above, then connect again                                                              |
-| CRM: **Connect Slack** fails before Slack opens: "Connections aren't set up on this CRM yet" | The CRM's own `TOKEN_ENCRYPTION_KEY` is unset, or under 32 characters                 | Set it after the CRM's first deploy: `pnpm everyapp configure crm` (which asks for it) or `pnpm everyapp secret set TOKEN_ENCRYPTION_KEY --app crm` from anywhere (in the CRM's directory the flag can be left off), the value in one of README's three ways (Before you start 3); connect again |
-| Slack's page: "redirect_uri did not match any configured URIs", then `Passed URI: …` | The URI the CRM sent isn't registered on the app exactly, or under a registered URL  | Register the Passed URI, `https://<app>.<app base domain>/integrations/slack/callback` (https only, no `#`), under OAuth & Permissions → Redirect URLs; Verify 2 |
-| `bad_redirect_uri` (token call)                                                | `redirect_uri` differed between the authorize and token calls                            | The CRM sends its own host; check the app runs on `https://<app>.<app base domain>`                     |
-| `invalid_scope`                                                                | A scope name doesn't exist, or bot and user scopes are mixed up                          | Compare with step 1; bot scopes go in `scope`, user scopes in `user_scope`                               |
+| Slack's page: "redirect_uri did not match any configured URIs", then `Passed URI: …` | The Gateway's callback isn't registered on the Slack app exactly                     | Register `https://<gateway host>/connect/slack/callback` (https only, no `#`) under OAuth & Permissions → Redirect URLs; Verify 2 |
 | `invalid_client_id`                                                            | `SLACK_CLIENT_ID` is wrong, or another app's                                             | Set it again from Basic Information → App Credentials                                                    |
 | `bad_client_secret`                                                            | `SLACK_CLIENT_SECRET` is wrong or was regenerated                                        | Set it again (Rotate, below)                                                                             |
 | `invalid_code`                                                                 | The code was used already or is older than ten minutes; also when `SLACK_CLIENT_ID` is another app's (Slack checks the code before the client) | Connect again and **Allow**; a second failure: compare the Client ID on Basic Information |
-| CRM: `access_denied`                                                           | The person clicked Cancel on Slack's page                                                | Connect again and **Allow**                                                                              |
 | `invalid_team_for_non_distributed_app`                                         | Installing into a workspace other than the one the app was created in                    | Create the app in that workspace, or **Manage Distribution → Activate Public Distribution**             |
 | `token_expired`, `invalid_auth`, `not_authed` from `apps.manifest.*`           | The configuration token is past 12 hours, wrong, or missing from the body                | Generate a new one (step 2b)                                                                             |
 | `invalid_manifest` with `errors[]`                                             | The manifest breaks Slack's schema                                                       | Fix what each `pointer` names; validate again                                                            |
-| CRM: "Slack refused: a permission is missing. Reconnect Slack."                | The workspace's install predates a scope                                                 | Disconnect and connect again, so Slack asks for the new scopes                                           |
 
 ## Rerun, rotate, remove
 
@@ -317,7 +259,8 @@ an internal app installed in its own workspace.
   secret works for 24 hours unless revoked manually. The person sets
   `SLACK_CLIENT_SECRET` again at the hidden prompt (step 3a); no API
   returns the new secret.
-- **Remove.** In Open CRM, **Settings → Connections → Disconnect Slack**.
+- **Remove.** People disconnect in each app or under Connected accounts
+  (owners and admins: `pnpm everyapp provider disconnect slack --all`).
   Then `pnpm everyapp secret unset SLACK_CLIENT_ID SLACK_CLIENT_SECRET --json --yes`
   (`--yes` only when the person said so). Then delete the app: the
   `apps.manifest.delete` line above (path B, token still valid, person
@@ -334,7 +277,6 @@ an internal app installed in its own workspace.
 - https://docs.slack.dev/authentication/installing-with-oauth/ (authorize parameters, redirect rules: https, no `#`, a subdirectory matches; `invalid_scope`, `unapproved_scope`, `bad_redirect_uri`; the code expires after ten minutes)
 - https://docs.slack.dev/legacy/legacy-authentication/ (`error=access_denied` on Cancel; codes exchanged once, expire 10 minutes)
 - https://docs.slack.dev/reference/methods/oauth.v2.access/ (token-call errors)
-- https://docs.slack.dev/reference/scopes/channels.write (User only) and …/channels.manage (Bot only)
 - https://docs.slack.dev/distribution/ (own workspace only until **Activate Public Distribution**)
 - https://slack.com/help/articles/1500009181142 (no setting stops members creating internal apps) and https://slack.com/help/articles/222386767 (app approval: Workspace Owners and app managers approve requests)
 - https://docs.slack.dev/authentication/verifying-requests-from-slack/ (**Regenerate**; the old secret valid 24 hours unless revoked) and https://docs.slack.dev/faq/ (**Change secret**)
@@ -343,4 +285,4 @@ an internal app installed in its own workspace.
 - https://community.n8n.io/t/slack-oauth-redirect-uri-did-not-match-any-configured-uris-self-hosted-on-windows/271936 (the redirect error's wording, with its `Passed URI:` line)
 - https://developers.cloudflare.com/workers/observability/logs/real-time-logs/ (Workers & Pages → Overview → the Worker → Logs → Live)
 - https://api.slack.com/apps (the console; `?new_app=1` opens the create dialog)
-- Local, 2026-10-24: `packages/sdk/src/internal/capabilities.ts` (the `slack` entry: its `scopePolicy`, seven bot sets and one user set, #425), docs/capabilities.md ("OAuth clients": the scope sets table), TODO.md ("OAuth scopes (2026-10-24)", the Slack bullet)
+- Local: `packages/sdk/src/internal/oauthBuiltIns.ts` (the `slack` spec: comma-separated, no prefix, PKCE off, the bot token only), `docs/design/2026-11-oauth-simplify.md` (per-app connections, the shared-client limit) and docs/capabilities.md ("OAuth clients")

@@ -544,6 +544,15 @@ export function createAuth() {
               organization.id,
               user.id,
             );
+            // Their OAuth connections in its apps go too (loaded here,
+            // so signing in never loads the connections' repository).
+            const { ProviderConnectionRepository } = await import(
+              "@/server/repositories/ProviderConnectionRepository"
+            );
+            await ProviderConnectionRepository.removeForMember(
+              organization.id,
+              user.id,
+            );
           },
         },
       }),

@@ -1,5 +1,7 @@
 # OAuth providers: upload a client, the Gateway runs the flow
 
+Superseded by docs/design/2026-11-oauth-simplify.md.
+
 Date: 2026-10-25. Status: design, built in the PRs of section 10. Ben, the night of 2026-10-25: "Could you please actually support OAuth providers? They'll need to just upload a client ID and a client secret, and then we'll need logic to handle OAuth flows. Implement that. GitHub in particular is something people may want. I want people to be able to add whatever they want to the gateway." And then: build the general pattern and prove it with Google first (OpenSEO on the port checkout), GitHub second as the proof that a provider with no hand-written entry works by upload alone.
 
 This is the "later note" the provider registry design ([2026-10-provider-registry.md](2026-10-provider-registry.md) section 2) left for `oauth2-user` rows, and section 10 of the scopes design ([2026-10-oauth-scopes.md](2026-10-oauth-scopes.md)) built: the Gateway holds the person's tokens, so the route allowlist becomes a live boundary.

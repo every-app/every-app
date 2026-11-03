@@ -35,6 +35,7 @@ import {
   CATEGORY_OF,
   CATEGORY_OF_TAG,
   COMPANY_OF,
+  EXAMPLE_SCOPES,
   GUIDES,
   type CompanyGuide,
   type ProviderCategory,
@@ -262,23 +263,15 @@ function keySection(company: Company, [id, capability]: KeyEntry, heading: strin
 
 function connectSection(company: Company, { id, client }: ClientEntry, heading: string): string[] {
   const guide = company.guide;
-  const gatewayFlow = client.flow !== undefined;
-  const sets = Object.entries(client.scopePolicy?.sets ?? {});
   const console = link(client.console);
   const name = prose(shortLabel(client.label));
   const out: string[] = [`## ${heading}`, ""];
   out.push(
-    gatewayFlow
-      ? `Each person connects their own ${name} account in the Gateway, once, and every app that asks uses it. Apps never see the tokens. [How connecting works](/docs/connect-oauth)`
-      : "The Gateway holds the OAuth client; the app runs the sign-in itself.",
+    `Each person connects their own ${name} account in each app that uses it, for the scopes that app lists. Apps never see the tokens. [How connecting works](/docs/connect-oauth)`,
     "",
   );
   if (client.description && company.clients.length > 1) out.push(prose(sentence(client.description)), "");
-  if (gatewayFlow) {
-    out.push("The redirect URI to register, with your Gateway's address (like `apps.example.com`):", "", "```text", `https://<your gateway>/connect/${id}/callback`, "```", "");
-  } else {
-    out.push(`Register the app's own callback URLs; \`everyapp provider show ${id}\` prints them.`, "");
-  }
+  out.push("The redirect URI to register, with your Gateway's address (like `apps.example.com`):", "", "```text", `https://<your gateway>/connect/${id}/callback`, "```", "");
 
   if (guide.connect && company.clients.length === 1) {
     out.push(numbered(guide.connect), "");
@@ -302,38 +295,30 @@ function connectSection(company: Company, { id, client }: ClientEntry, heading: 
     "",
   );
 
-  // The example asks for the first set beyond `identity`, with the access that set needs.
-  const [example] = sets.filter(([setName]) => setName !== "identity").concat(sets);
+  // The provider's own scope strings, as the app writes them.
+  const example = EXAMPLE_SCOPES[id];
+  const scopes = example ? example.map((scope) => JSON.stringify(scope)).join(", ") : `/* ${name}'s scopes */`;
+  const { flow } = client;
+  const reference = client.reference ? `[${name}'s scopes](${client.reference})` : `${name}'s scopes`;
   out.push(
     "### Use it in an app",
     "",
+    "List the provider's own scopes in the app's `everyapp.config.ts`:",
+    "",
     "```ts",
     "capabilities: {",
-    `  ${capabilityKey(id)}: { access: "${example?.[1].access ?? "read"}",${example ? ` scopes: [${JSON.stringify(example[0])}],` : ""} why: "What the app does with it." },`,
+    `  ${capabilityKey(id)}: { scopes: [${scopes}], why: "What the app does with it." },`,
     "},",
     "```",
     "",
+    `Use ${reference}${flow.scopePrefix ? `, short as above or in full (${code(`${flow.scopePrefix}…`)})` : ""}. ${
+      flow.identityScopes.length > 0 ? `The Gateway adds ${flow.identityScopes.map(code).join(", ")} itself; don't list them. ` : ""
+    }The app calls ${name}'s API with \`integrationFetch()\`, and the Gateway adds the person's token. A token with more scopes than the app lists is refused.`,
+    "",
   );
-  if (sets.length > 0) {
-    const scopes = (set: (typeof sets)[number][1]) => [...set.scopes, ...(set.userScopes ?? [])];
-    const withScopes = sets.some(([, set]) => scopes(set).length > 0);
-    out.push(
-      "Apps ask for these scope sets:",
-      "",
-      withScopes ? "| Set | Allows | Provider scopes |" : "| Set | Allows |",
-      withScopes ? "| --- | --- | --- |" : "| --- | --- |",
-      ...sets.map(
-        ([setName, set]) =>
-          `| ${code(setName)} | ${prose(set.label).replace(/\|/g, "\\|")} |${withScopes ? ` ${scopes(set).map(code).join(", ")} |` : ""}`,
-      ),
-      "",
-    );
-  }
 
   out.push(
-    `**Check it worked:** \`everyapp provider show ${id}\` shows the client as set.${
-      gatewayFlow ? ` Then open the account menu → **Connected accounts** → **Connect ${name}**.` : ""
-    }`,
+    `**Check it worked:** \`everyapp provider show ${id}\` shows the client as set. Then open an app that lists it and select its **Connect** button.`,
     "",
   );
   return out;
@@ -448,7 +433,7 @@ function companyPage(company: Company): string {
     out.push(...keySection(company, entry, company.keys.length > 1 ? `${base}: ${capability.label}` : base));
   }
   for (const entry of company.clients) {
-    const base = entry.client.flow !== undefined ? "Connect accounts" : "OAuth client for apps";
+    const base = "Connect accounts";
     out.push(...connectSection(company, entry, company.clients.length > 1 ? `${base}: ${shortLabel(entry.client.label)}` : base));
   }
   for (const extra of guide.extra ?? []) out.push(`## ${extra.title}`, "", extra.body, "");

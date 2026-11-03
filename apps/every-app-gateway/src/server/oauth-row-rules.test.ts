@@ -1,10 +1,10 @@
 /**
  * A registered OAuth provider (`auth.kind: "oauth2-user"`) through the
- * capability proxy's token-endpoint branch: its client is read only while
- * the row still has the endpoints, hosts and setting names the client
- * was set for (`oauth.client-bound-to-endpoints`), as an API-key row's
- * key is (`providers.value-bound-to-hosts`). An unbound row never sends
- * the client anywhere, and its status hides the client id.
+ * capability proxy: its client counts only while the row still has the
+ * endpoints, hosts and setting names the client was set for
+ * (`oauth.client-bound-to-endpoints`), as an API-key row's key is
+ * (`providers.value-bound-to-hosts`). The status never shows the client
+ * id, and nothing is sent upstream from here.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -45,7 +45,10 @@ async function call(
         : {}),
     }),
     capabilities: {
-      "github-oauth": { access: "write", scopes: ["repo.read"] },
+      "github-oauth": {
+        scopes: ["repo"],
+        why: "Reads the person's repositories.",
+      },
     },
     lookup: registry,
     env: ENV,
@@ -70,32 +73,24 @@ async function call(
 }
 
 describe("a registered OAuth provider's client", () => {
-  const token =
-    "/api/integrations/github-oauth/github.com/login/oauth/access_token";
+  const api = "/api/integrations/github-oauth/api.github.com/user";
 
-  it("completes a token call while the row is bound, with the client on the request", async () => {
+  it("reads as configured while the row is bound, and the status never shows the client", async () => {
     const registry = providerRegistry([
       { id: "github-oauth", spec: GITHUB, boundTo: KEY },
     ]);
-    const { response, upstream } = await call(registry, token);
-    expect(response.status).toBe(200);
-    expect(upstream?.url).toBe("https://github.com/login/oauth/access_token");
-    const body = new URLSearchParams(await upstream!.text());
-    expect(body.get("client_id")).toBe("gh-id");
-    expect(body.get("client_secret")).toBe("gh-secret");
     const status = await call(
       registry,
       "/api/integrations/github-oauth",
       "GET",
     );
-    expect(await status.response.json()).toMatchObject({
-      configured: true,
-      ready: true,
-      clientId: "gh-id",
-    });
+    const answer = (await status.response.json()) as Record<string, unknown>;
+    expect(answer).toMatchObject({ requested: true, configured: true });
+    expect(answer.clientId).toBeUndefined();
+    expect(status.upstream).toBeUndefined();
   });
 
-  it("never sends the client once the row's endpoints changed, and the status hides it", async () => {
+  it("reads as unset once the row's endpoints changed, and never calls out", async () => {
     // The same row with its token URL re-pointed: the key the client was
     // set for no longer matches, so the client reads as unset.
     const moved = {
@@ -109,15 +104,6 @@ describe("a registered OAuth provider's client", () => {
       { id: "github-oauth", spec: moved, boundTo: KEY },
     ]);
     expect(registry.bound("github-oauth")).toBe(false);
-    const { response, upstream } = await call(
-      registry,
-      "/api/integrations/github-oauth/github.com/login/oauth/elsewhere",
-    );
-    expect(response.status).toBe(503);
-    expect(await response.json()).toMatchObject({
-      code: "integration_not_configured",
-    });
-    expect(upstream).toBeUndefined();
     const status = await call(
       registry,
       "/api/integrations/github-oauth",
@@ -132,8 +118,15 @@ describe("a registered OAuth provider's client", () => {
     expect(answer.clientId).toBeUndefined();
     // Never bound at all: the same.
     const fresh = providerRegistry([{ id: "github-oauth", spec: GITHUB }]);
-    const unbound = await call(fresh, token);
-    expect(unbound.response.status).toBe(503);
-    expect(unbound.upstream).toBeUndefined();
+    const unbound = await call(fresh, "/api/integrations/github-oauth", "GET");
+    expect(await unbound.response.json()).toMatchObject({ configured: false });
+    // An API call with no connection store behind it is refused before
+    // anything leaves the gateway.
+    const refused = await call(registry, api);
+    expect(refused.response.status).toBe(503);
+    expect(await refused.response.json()).toMatchObject({
+      code: "integration_not_configured",
+    });
+    expect(refused.upstream).toBeUndefined();
   });
 });

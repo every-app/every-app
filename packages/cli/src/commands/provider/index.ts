@@ -19,7 +19,6 @@ import {
   CAPABILITIES,
   capabilitySettings,
   DEV_PROVIDERS_DIR,
-  describeTokenEndpoints,
   devProviderFile,
   OAUTH_PRESETS,
   parseProviderSpec,
@@ -55,6 +54,7 @@ import type { GatewayCommandFlags } from "../flags";
 import { turnOff, turnOn } from "../mcp";
 import {
   addOAuth,
+  describeScopeRules,
   disconnectProvider,
   isOAuthCapability,
   listPresets,
@@ -386,7 +386,9 @@ async function finishKey(
   const extra = [
     capability.mode === "ai"
       ? `In an app's manifest: providers: [${JSON.stringify(id)}]`
-      : `In an app's capabilities: { ${JSON.stringify(id)}: { access: "${capability.mode === "api_key" ? capability.access[0] : "read"}", why: "..." } }`,
+      : capability.mode === "oauth_client"
+        ? `In an app's capabilities: { ${JSON.stringify(id)}: { scopes: [<${capability.label}'s own scopes>], why: "..." } }`
+        : `In an app's capabilities: { ${JSON.stringify(id)}: { access: "${capability.mode === "api_key" ? capability.access[0] : "read"}", why: "..." } }`,
   ];
   out.emit({
     type: "done",
@@ -559,8 +561,9 @@ function hostsOf(capability: Capability): { hosts: string[]; hostSetting?: strin
     case "ai":
       return { hosts: [new URL(capability.origin).host] };
     case "oauth_client":
+      // Where the client goes (the token endpoint) and where people's tokens go (the API hosts).
       return {
-        hosts: [...new Set(capability.token.map((endpoint) => endpoint.host))],
+        hosts: [...new Set([new URL(capability.flow.tokenUrl).host, ...capability.api])],
       };
     case "service":
       return { hosts: [] };
@@ -582,23 +585,6 @@ function appsUsing(
     .map((app) => app.appSlug);
 }
 
-/**
- * The redirect URIs the apps listing OAuth client `id` declare in their
- * manifest entry (`redirectPaths`), on each app's host under the Gateway's
- * (`https://<app>.<gateway host><path>`): the callbacks of apps that run
- * the flow themselves, which the operator registers beside the Gateway's.
- */
-function appCallbacks(apps: Awaited<ReturnType<typeof listApps>>, id: string, gatewayUrl: string): string[] {
-  const gatewayHost = new URL(gatewayUrl).host;
-  return apps.flatMap((app) => {
-    const entry = app.manifest?.capabilities?.[id] as { redirectPaths?: unknown } | undefined;
-    if (!entry || !Array.isArray(entry.redirectPaths)) return [];
-    return entry.redirectPaths
-      .filter((path): path is string => typeof path === "string")
-      .map((path) => `https://${app.appSlug}.${gatewayHost}${path}`);
-  });
-}
-
 /** One provider as `provider list --json` reports it. */
 interface ListedProvider {
   id: string;
@@ -613,11 +599,11 @@ interface ListedProvider {
   addedBy?: string | null;
   addedAt?: number | null;
   apps: string[];
-  /** An OAuth entry's flow, redirect URI, console, scope sets, client source and connections (`oauthFacts`). */
-  flow?: "app" | "both";
+  /** An OAuth entry's redirect URI, console, API hosts, scope rules, client source and connections (`oauthFacts`). */
   redirectUri?: string;
   console?: string;
-  scopeSets?: unknown[];
+  apiHosts?: string[];
+  scopes?: unknown;
   client?: { source: "env" | "uploaded" | "none"; clientId?: string };
   connections?: number;
 }
@@ -688,7 +674,7 @@ export async function listProviders(options: ProviderOptions): Promise<void> {
     providers.map((provider) => [
       provider.id,
       provider.name,
-      provider.kind === "oauth client" && provider.flow && provider.flow !== "app" ? "oauth" : provider.kind,
+      provider.kind === "oauth client" ? "oauth" : provider.kind,
       [...provider.hosts, ...(provider.hostSetting ? [`<${provider.hostSetting}>`] : [])].join(", ") || chalk.dim("-"),
       [
         // An uploaded client counts as set: the Gateway reads it when the env lacks the setting.
@@ -734,11 +720,9 @@ export async function listProviders(options: ProviderOptions): Promise<void> {
 /**
  * The spec of `id` as `provider show` prints it: an API-key entry's whole
  * spec (`providerSpecOf`, what `provider add` takes), or for an AI
- * provider or an OAuth client, what a person needs to set it up. A
- * built-in client's scope sets come with where each is from: the catalog,
- * or an operator's `provider scope-set add`.
+ * provider or a built-in OAuth client, what a person needs to set it up.
  */
-function specOf(id: string, capability: Capability, registry?: ProviderRegistry): Record<string, unknown> {
+function specOf(id: string, capability: Capability): Record<string, unknown> {
   const settings = [...capabilitySettings(capability)];
   switch (capability.mode) {
     case "api_key":
@@ -759,31 +743,27 @@ function specOf(id: string, capability: Capability, registry?: ProviderRegistry)
         routes: [...capability.inferenceRoutes],
         ...(capability.setup ? { setup: capability.setup } : {}),
       };
-    case "oauth_client":
+    case "oauth_client": {
       // A registered OAuth provider's whole spec (what `provider add --oauth` took); a built-in client's setup facts.
-      if (capability.flow && !capability.setup) return providerSpecOf(id, capability);
+      if (!capability.setup) return providerSpecOf(id, capability);
+      const { flow } = capability;
       return {
         id,
         kind: "oauth client",
         name: capability.label,
         docs: capability.console,
+        ...(capability.reference ? { scopesReference: capability.reference } : {}),
         settings,
-        tokenEndpoints: describeTokenEndpoints(capability).split(", "),
-        authorize: { url: capability.authorize.url, scopes: [...capability.authorize.scopes] },
-        ...(capability.scopePolicy
-          ? {
-              scopeSets: Object.entries(capability.scopePolicy.sets).map(([name, set]) => ({
-                name,
-                label: set.label,
-                access: set.access,
-                scopes: [...set.scopes],
-                hosts: [...new Set(set.routes.map((route) => route.host))],
-                source: registry?.scopeSetSource(id, name) ?? "catalog",
-              })),
-            }
-          : {}),
-        ...(capability.setup ? { setup: capability.setup } : {}),
+        hosts: [...capability.api],
+        authorizeUrl: flow.authorizeUrl,
+        tokenUrl: flow.tokenUrl,
+        scopeSeparator: flow.scopeSeparator,
+        ...(flow.scopePrefix ? { scopePrefix: flow.scopePrefix } : {}),
+        identityScopes: [...flow.identityScopes],
+        tolerated: [...flow.tolerated],
+        setup: capability.setup,
       };
+    }
     case "service":
       return { id, name: capability.label };
   }
@@ -830,7 +810,7 @@ export async function showProvider(
     );
   }
   const row = registry.rows().find((each) => each.id === id);
-  const spec = specOf(id, capability, registry);
+  const spec = specOf(id, capability);
   let saved: string | null = null;
   if (flags.save) {
     if (!row || capability.mode === "oauth_client") {
@@ -844,7 +824,6 @@ export async function showProvider(
     saved = devProviderFile(id);
   }
   const using = appsUsing(apps, id, capability);
-  const appRedirectUris = capability.mode === "oauth_client" ? appCallbacks(apps, id, gateway.gatewayUrl) : [];
   const bound = registry.bound(id);
   const oauth = isOAuthCapability(capability)
     ? oauthFacts(id, capability, {
@@ -875,19 +854,11 @@ export async function showProvider(
     ...(oauth
       ? [
           `Redirect URI to register at ${String(oauth["console"])}: ${String(oauth["redirectUri"])}`,
-          `${String(oauth["connections"])} connected; people connect at ${gateway.gatewayUrl}/connect/${id}.`,
+          `Scopes: ${describeScopeRules(oauth["scopes"] as Parameters<typeof describeScopeRules>[0])}. Apps list the provider's own scopes in everyapp.config.ts.`,
+          `${String(oauth["connections"])} connected; people connect inside each app that lists it, for that app's scopes.`,
         ]
       : []),
-    ...(appRedirectUris.length > 0
-      ? [`Apps that run the flow themselves list these callbacks; register them too: ${appRedirectUris.join(", ")}`]
-      : []),
     using.length > 0 ? `Used by ${listed(using)}.` : "No app lists it yet.",
-    ...(() => {
-      const added = registry.scopeSets().filter((set) => set.providerId === id);
-      return added.length > 0
-        ? [`Scope sets added here: ${listed(added.map((set) => `${set.name} (by ${set.addedBy ?? "someone"})`))}; ${CLI} provider scope-set remove ${id} <name> removes one.`]
-        : [];
-    })(),
     ...(saved ? [`Wrote ${saved} for everyapp dev.`] : []),
   ];
   out.emit({
@@ -899,7 +870,6 @@ export async function showProvider(
       source: row ? "row" : "catalog",
       bound,
       ...(oauth ?? {}),
-      ...(capability.mode === "oauth_client" ? { appRedirectUris } : {}),
       addedBy: row?.addedBy ?? null,
       addedAt: row?.addedAt ?? null,
       apps: using,

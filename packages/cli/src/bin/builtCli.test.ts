@@ -67,8 +67,8 @@ const EVENT_TYPES = new Set(["step", "progress", "warning", "error", "action_req
 const REBUILT = /Updated everyapp CLI/;
 
 /**
- * Members, email and the API-key capabilities take no scope sets (what #543
- * fixed); Slack has a scope policy, so its entry names sets. Inserted into
+ * Members, email and the API-key capabilities take no scopes (what #543
+ * fixed); Slack is an OAuth provider, so its entry lists Slack's own scopes. Inserted into
  * the created app's own manifest so its id and resources stay the starter's
  * and `dev` and `release` still work.
  */
@@ -78,13 +78,12 @@ const CAPABILITIES = `capabilities: {
     dataforseo: { access: "read", why: "Keyword data for the digest." },
     context: { access: "read", optional: true, why: "Renders the pages the digest links." },
     slack: {
-      access: "write",
       why: "Posts the digest to a channel.",
-      scopes: ["channels.read", "messages.write"],
+      scopes: ["channels:read", "chat:write"],
     },
   },`;
 
-/** Refused: members takes no scope sets. */
+/** Refused: members takes no scopes. */
 const NEGATIVE_CAPABILITIES = `capabilities: {
     members: { access: "read", why: "Whom the weekly digest goes to.", scopes: ["anything"] },
   },`;
@@ -750,8 +749,7 @@ describe.runIf(process.env["EVERYAPP_BUILT_CLI"] === "1")("the built CLI", { tim
           ["context", "dataforseo", "email", "members", "slack"],
         );
         expect(release.manifest.capabilities?.["slack"]).toMatchObject({
-          access: "write",
-          scopes: ["channels.read", "messages.write"],
+          scopes: ["channels:read", "chat:write"],
         });
         expect(fs.existsSync(path.join(release.dir, "release.json"))).toBe(true);
         // A production build, not the development one a run that inherited

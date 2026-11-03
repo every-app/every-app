@@ -8,6 +8,7 @@ import {
   mcpConnectionApps,
   mcpConnections,
   orgAppSettings,
+  providerConnections,
   remoteMcpTools,
   userAccessTokens,
   userAppAccess,
@@ -283,9 +284,10 @@ async function findBinding(limit = BINDING_SWEEP_MAX) {
  * slug, and the old Worker would accept identity tokens minted for it.)
  * Everyone's access (direct and through groups), any personal access
  * tokens bound to it, its agent tools snapshot (for a remote MCP app,
- * what its server listed too), its place in AI connections and every
- * organization's settings on it (a monthly cap) go with it: the writes the CLI's `delete` makes (`deleteUpdate` in
- * the perimeter), plus the group grants and the cap.
+ * what its server listed too), its place in AI connections, every
+ * organization's settings on it (a monthly cap) and every OAuth
+ * connection made in it go with it: the writes the CLI's `delete` makes
+ * (`deleteUpdate` in the perimeter), plus the group grants and the cap.
  */
 async function tombstone(
   app: Pick<AppRow, "id" | "organizationId" | "status">,
@@ -395,6 +397,17 @@ async function tombstone(
     db.delete(orgAppSettings).where(
       inArray(
         orgAppSettings.appRowId,
+        db
+          .select({ id: apps.id })
+          .from(apps)
+          .where(and(eq(apps.id, id), eq(apps.organizationId, organizationId))),
+      ),
+    ),
+    // Every OAuth connection people made in it, in every organization (a
+    // shared app's are in each member's own): a connection is one app's.
+    db.delete(providerConnections).where(
+      inArray(
+        providerConnections.appRowId,
         db
           .select({ id: apps.id })
           .from(apps)

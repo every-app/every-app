@@ -1,5 +1,11 @@
 import { db } from "@/db";
-import { members, sessions, userAccessTokens, users } from "@/db/schema";
+import {
+  members,
+  providerConnections,
+  sessions,
+  userAccessTokens,
+  users,
+} from "@/db/schema";
 import { and, eq, exists, gte, isNull, not, sql } from "drizzle-orm";
 import {
   liveUser,
@@ -58,8 +64,9 @@ async function markEmailVerified(userId: string): Promise<void> {
 
 /**
  * Deactivate a user everywhere, in one D1 transaction: ban the account
- * (Better Auth's admin fields, so new sign-ins fail), end every session, and
- * revoke their personal access tokens. With `unlessLastOwnerOf`, the ban
+ * (Better Auth's admin fields, so new sign-ins fail), end every session,
+ * revoke their personal access tokens and drop the OAuth accounts they
+ * connected in any app. With `unlessLastOwnerOf`, the ban
  * refuses, in its own WHERE, an owner of that organization no other live
  * owner would outlast (OrganizationMembersRepository.wouldLeaveNoLiveOwner),
  * and the sessions and tokens go only once the account is deactivated, so
@@ -108,6 +115,9 @@ async function deactivate(
           deactivatedNow,
         ),
       ),
+    db
+      .delete(providerConnections)
+      .where(and(eq(providerConnections.userId, userId), deactivatedNow)),
   ]);
   return banned.length > 0;
 }

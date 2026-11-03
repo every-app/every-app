@@ -1,5 +1,7 @@
 # Per-app OAuth scopes, enforced at the gateway: design
 
+Superseded by docs/design/2026-11-oauth-simplify.md.
+
 Written 2026-10-23 for the launch. Ben's question: the operator's Google
 OAuth client can reach Gmail, Calendar, Search Console and Analytics; is it
 all or nothing per app, and can the gateway limit each app to the scopes it

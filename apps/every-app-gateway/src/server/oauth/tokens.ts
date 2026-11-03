@@ -12,9 +12,10 @@ import { logEvent } from "@every-app/perimeter";
 import {
   OAUTH_TOKEN_BODY_LIMIT,
   base64Utf8,
+  grantedScopes,
   jsonObject,
+  scopeExcess,
   type OAuthClientCapability,
-  type OAuthFlow,
 } from "@every-app/sdk/internal";
 import { ProviderConnectionRepository } from "@/server/repositories/ProviderConnectionRepository";
 import type { SealingEnv } from "@/server/secrets/sealed";
@@ -22,24 +23,13 @@ import type { ResolvedOAuthClient } from "./client";
 
 export type Fetch = (request: Request) => Promise<Response>;
 
-/** The flow block a Gateway-owned call needs; null for an app-driven-only entry. */
-export function flowOf(capability: OAuthClientCapability): OAuthFlow | null {
-  return capability.flow ?? null;
-}
-
-/** How the client goes on the token request: the first token endpoint's rule. */
-function injection(capability: OAuthClientCapability): "form" | "basic" {
-  const inject = capability.token[0]?.inject;
-  return inject === "basic" ? "basic" : "form";
-}
-
 /** The parsed token answer the Gateway keeps. */
 interface IssuedTokens {
   accessToken: string;
   refreshToken: string | null;
   /** Epoch milliseconds, or null when the provider gave no `expires_in`. */
   expiresAt: number | null;
-  /** The whole JSON answer, for the scope parsers and Slack's `authed_user`. */
+  /** The whole JSON answer, for the scopes it says it granted. */
   body: Record<string, unknown>;
 }
 
@@ -78,31 +68,6 @@ async function readCapped(response: Response): Promise<string | undefined> {
   return new TextDecoder().decode(joined);
 }
 
-/** Slack puts the person's token under `authed_user`; everyone else at the top. */
-function tokenFields(
-  body: Record<string, unknown>,
-  dialect: OAuthFlow["scopeDialect"],
-): { access: unknown; refresh: unknown; expiresIn: unknown } {
-  if (dialect === "slack") {
-    const user = body["authed_user"];
-    if (user && typeof user === "object" && !Array.isArray(user)) {
-      const record = user as Record<string, unknown>;
-      if (typeof record["access_token"] === "string") {
-        return {
-          access: record["access_token"],
-          refresh: record["refresh_token"] ?? body["refresh_token"],
-          expiresIn: record["expires_in"] ?? body["expires_in"],
-        };
-      }
-    }
-  }
-  return {
-    access: body["access_token"],
-    refresh: body["refresh_token"],
-    expiresIn: body["expires_in"],
-  };
-}
-
 /**
  * POST the token endpoint with `fields` and the client, as the provider's
  * rule says. `now` fixes `expiresAt` for tests.
@@ -123,10 +88,7 @@ export async function tokenCall({
   /** What a log line says about this call, never a value. */
   log: { provider: string; grant: string; org?: string };
 }): Promise<TokenCallResult> {
-  const flow = flowOf(capability);
-  if (!flow) {
-    return { ok: false, kind: "failed", error: "no_flow", status: null };
-  }
+  const flow = capability.flow;
   const form = new URLSearchParams(fields);
   const headers = new Headers({
     "content-type": "application/x-www-form-urlencoded",
@@ -135,7 +97,7 @@ export async function tokenCall({
   for (const [name, value] of Object.entries(flow.tokenHeaders ?? {})) {
     headers.set(name, value);
   }
-  if (injection(capability) === "basic") {
+  if (flow.inject === "basic") {
     headers.set(
       "authorization",
       `Basic ${base64Utf8(`${encodeURIComponent(client.clientId)}:${encodeURIComponent(client.clientSecret ?? "")}`)}`,
@@ -208,7 +170,12 @@ export async function tokenCall({
       status: response.status,
     };
   }
-  const fieldsOut = tokenFields(body, flow.scopeDialect);
+  // The top-level token only (Slack's is its bot token).
+  const fieldsOut = {
+    access: body["access_token"],
+    refresh: body["refresh_token"],
+    expiresIn: body["expires_in"],
+  };
   if (typeof fieldsOut.access !== "string" || !fieldsOut.access) {
     logEvent(
       "oauth.token_call_failed",
@@ -260,11 +227,14 @@ export type RefreshOutcome =
  * {@link REFRESH_SKEW_MS} of expiry and a refresh token is held, under a
  * lease so parallel calls don't race the provider. A refresh the provider
  * refuses marks the connection expired (the caller emits the event once);
- * one that fails for another reason keeps the old token for the caller to
- * try with, or reports `unavailable` when that one has already expired.
+ * so does one whose answer names scopes beyond the connection's (the mint
+ * check, against `scopes`), its tokens dropped. One that fails for another
+ * reason keeps the old token for the caller to try with, or reports
+ * `unavailable` when that one has already expired.
  */
 export async function accessTokenFor({
   connectionId,
+  scopes,
   capability,
   client,
   env,
@@ -273,6 +243,8 @@ export async function accessTokenFor({
   log,
 }: {
   connectionId: string;
+  /** The scopes the connection holds, canonical: what a refreshed token may carry. */
+  scopes: readonly string[];
   capability: OAuthClientCapability;
   client: ResolvedOAuthClient;
   env: SealingEnv;
@@ -332,6 +304,31 @@ export async function accessTokenFor({
     log: { ...log, grant: "refresh_token" },
   });
   if (result.ok) {
+    // The mint check again: a refreshed token that names scopes beyond the
+    // connection's is dropped, never stored or used, and the connection
+    // needs a reconnect. One that names none keeps the stored scopes.
+    const named = "scope" in result.tokens.body;
+    const granted = named
+      ? grantedScopes(capability.flow, result.tokens.body, scopes)
+      : null;
+    const excess =
+      named && granted
+        ? scopeExcess(capability.flow, granted, scopes)
+        : named
+          ? ["(unreadable)"]
+          : [];
+    if (excess.length > 0) {
+      logEvent(
+        "oauth.refresh_refused",
+        { ...log, reason: "scope_excess", excess: excess.slice(0, 10) },
+        "warn",
+      );
+      await ProviderConnectionRepository.markExpired(
+        connectionId,
+        new Date(now),
+      );
+      return { ok: false, reason: "expired" };
+    }
     await ProviderConnectionRepository.storeTokens(
       connectionId,
       {
@@ -339,6 +336,7 @@ export async function accessTokenFor({
         // A provider that rotates sends a new one; one that doesn't keeps ours.
         refreshToken: result.tokens.refreshToken,
         expiresAt: result.tokens.expiresAt,
+        ...(named && granted ? { scopes: granted } : {}),
         now: new Date(now),
       },
       env,
@@ -375,8 +373,8 @@ export async function revokeAtProvider({
   fetchUpstream: Fetch;
   log: { provider: string; org?: string };
 }): Promise<boolean> {
-  const flow = flowOf(capability);
-  if (!flow?.revokeUrl) return false;
+  const flow = capability.flow;
+  if (!flow.revokeUrl) return false;
   const method = flow.revokeMethod ?? "POST";
   const url = flow.revokeUrl.replace(
     "{client_id}",
@@ -390,13 +388,13 @@ export async function revokeAtProvider({
   } else {
     headers.set("content-type", "application/x-www-form-urlencoded");
     const form = new URLSearchParams({ token: accessToken });
-    if (injection(capability) !== "basic") {
+    if (flow.inject !== "basic") {
       form.set("client_id", client.clientId);
       if (client.clientSecret) form.set("client_secret", client.clientSecret);
     }
     body = form.toString();
   }
-  if (injection(capability) === "basic" || method === "DELETE") {
+  if (flow.inject === "basic" || method === "DELETE") {
     headers.set(
       "authorization",
       `Basic ${base64Utf8(`${encodeURIComponent(client.clientId)}:${encodeURIComponent(client.clientSecret ?? "")}`)}`,

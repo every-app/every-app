@@ -3,7 +3,7 @@
  * which company each entry belongs to, the category it is listed under, which
  * apps use it, and numbered steps for getting the credential where the
  * catalog's one-line hint isn't enough. Everything else on a page (ids,
- * settings, hosts, commands, scope sets, costs, the docs URL) comes from the
+ * settings, hosts, commands, scope spelling, costs, the docs URL) comes from the
  * catalog, the OAuth presets and the sign-in providers through
  * providerPages.ts, so a provider added there gets a page with generic steps
  * the next time `pnpm -C packages/cli docs:update` runs.
@@ -143,6 +143,27 @@ const CRM = "[OpenCRM](/docs/apps/crm)";
 const INBOX = "[OpenMail](/docs/apps/openmail)";
 const ANALYTICS = "[OpenAnalytics](/docs/apps/analytics)";
 const REPOLENS = "[RepoLens](/docs/apps/repolens)";
+
+/**
+ * The scopes an OAuth provider's "Use it in an app" example lists, by
+ * provider id: the provider's own scope strings, as an app writes them in
+ * `everyapp.config.ts`. One a provider page shows when it has no entry
+ * here is a placeholder naming the provider's list.
+ */
+export const EXAMPLE_SCOPES: Readonly<Record<string, readonly string[]>> = {
+  "google-workspace": ["gmail.readonly", "calendar.readonly"],
+  "microsoft-365": ["Mail.Read"],
+  slack: ["chat:write"],
+  "github-oauth": ["repo"],
+  "notion-oauth": [],
+  "linear-oauth": ["read"],
+  "gitlab-oauth": ["read_api"],
+  atlassian: ["read:jira-work"],
+  "hubspot-oauth": ["crm.objects.contacts.read"],
+  zoom: ["meeting:read:list_meetings"],
+  dropbox: ["files.metadata.read"],
+  spotify: ["playlist-read-private"],
+};
 
 /** Hand-written guides, by company page. A company without one gets generic steps. */
 export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
@@ -337,10 +358,10 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
   google: {
     name: "Google",
     blurb:
-      "One OAuth client in your Google Cloud project lets each person connect their Google account: Gmail, Calendar, Search Console and Analytics, read only. Sign in with Google is a separate client, below.",
+      "One OAuth client in your Google Cloud project lets each person connect their Google account in each app: Gmail, Calendar, Search Console, Analytics and the other Google APIs, for the scopes that app lists. Sign in with Google is a separate client, below.",
     usedBy: [
-      `${OPENSEO} for Search Console and Google Analytics (the \`identity\`, \`search-console.read\` and \`analytics.read\` sets)`,
-      `${CRM} for Gmail and Google Calendar (the \`gmail.read\` and \`calendar.read\` sets)`,
+      `${OPENSEO} for Search Console and Google Analytics (\`webmasters.readonly\` and \`analytics.readonly\`)`,
+      `${CRM} for Gmail and Google Calendar (\`gmail.readonly\` and \`calendar.readonly\`)`,
     ],
     connect: [
       "Signed in to Google, [create a Cloud project](https://console.cloud.google.com/projectcreate) (for example `EveryApp`). With Google Workspace, put it in your organization.",
@@ -354,13 +375,14 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
   microsoft: {
     name: "Microsoft",
     blurb:
-      "One app registration in Microsoft Entra lets each person connect their Outlook mail and calendar, read only. Sign in with Microsoft is a separate registration, below.",
-    usedBy: [`${CRM} for Outlook mail (the \`mail.read\` set)`],
+      "One app registration in Microsoft Entra lets each person connect their Outlook mail, calendar and the rest of Microsoft Graph in each app, for the scopes that app lists. Sign in with Microsoft is a separate registration, below.",
+    usedBy: [`${CRM} for Outlook mail (\`Mail.Read\`)`],
     connect: [
       "Sign in to [Microsoft Entra → App registrations](https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade) with an account that administers your tenant, and select **New registration**.",
       "Name it (people see the name). For **Supported account types**, choose any Entra ID tenant plus personal Microsoft accounts.",
       "Under **Redirect URI**, platform **Web**, paste the redirect URI above, and select **Register**. Copy the **Application (client) ID**.",
-      "Under **API permissions → Add a permission → Microsoft Graph → Delegated**, add `User.Read`, `Mail.Read` and `offline_access` (and `Calendars.Read` if an app asks for `calendar.read`).",
+      "Under **API permissions → Add a permission → Microsoft Graph → Delegated**, add `User.Read` and `offline_access` (the Gateway asks for them on every connect) and the scopes your apps list, like `Mail.Read` for OpenCRM.",
+      "If two apps share this registration with different scopes, Microsoft may hand back both apps' scopes and the Gateway refuses the token. Give each such app its own registration.",
       "Under **Certificates & secrets → New client secret**, add one (24 months at most) and copy its **Value** right away. Note the expiry date.",
     ],
   },

@@ -52,7 +52,7 @@ any Gateway setting (`pnpm everyapp secret set <NAME>`, which first names
 the provider and the hosts its key goes to).
 
 An OAuth provider (GitHub, Notion, Linear, GitLab, Atlassian, HubSpot,
-Zoom, Dropbox, Spotify, X, or any custom one; the agent docs'
+Zoom, Dropbox, Spotify, or any custom one; the agent docs'
 `providers` page, "OAuth providers") has no file either: `pnpm everyapp
 provider presets` lists what can be added, and `pnpm everyapp provider add
 <id>` adds it in one step: it prints the redirect URI the person registers
@@ -63,10 +63,10 @@ that command to the person; unattended (`--json`) it sets nothing and its
 pass the values with `--from-env` (an owner or admin may paste them in
 Manage workspace → Providers instead). Only a person can make the OAuth app at the provider
 and approve a consent; after the client is set, each member connects their
-own account under Connected accounts in the account menu. Google,
-Microsoft 365 and Slack below are the same: their files set the client,
-and the same client serves both the app-driven flow those files describe
-and the Gateway-owned one.
+own account inside each app that lists the provider, for the scopes that
+app's `everyapp.config.ts` names (Connected accounts in the account menu
+lists and disconnects them). Google, Microsoft 365 and Slack below are the
+same: their files set the client and the scopes to allow on it.
 
 Which integrations a person needs: the apps they deploy decide. The four
 EveryApp apps (OpenSEO, OpenCRM, OpenAnalytics, OpenMail) are

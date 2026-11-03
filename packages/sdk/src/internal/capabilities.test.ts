@@ -5,14 +5,12 @@ import {
   authSettingNames,
   authorizationFor,
   capabilitySettings,
-  describeTokenEndpoints,
   integrationProxyPath,
   isAccountWidePath,
   isCapabilityId,
   oauthClientSecretSetCommand,
   parseIntegrationProxyPath,
   serviceRoutePath,
-  tokenEndpointFor,
   type AiProviderId,
   type ApiKeyAuth,
   type ApiKeyCapability,
@@ -21,12 +19,9 @@ import {
   type CapabilitySecret,
   type OAuthClientCapability,
   type OAuthClientCapabilityId,
-  type OAuthScopeSet,
-  type OAuthScopeSetName,
   type ServiceCapabilityId,
 } from "./capabilities";
 import { isInstallOwnedGatewaySetting } from "./gatewaySettings";
-import { requestedScopes, scopeRouteAllows } from "./oauthScopes";
 import { providerSettingPrefix } from "./providerRegistry";
 
 describe("integration proxy paths", () => {
@@ -475,24 +470,15 @@ describe("the capability registry", () => {
   });
 });
 
-describe("the OAuth clients", () => {
+describe("the OAuth providers", () => {
   const ids = CAPABILITY_IDS.filter(
     (id): id is OAuthClientCapabilityId =>
       CAPABILITIES[id].mode === "oauth_client",
   );
   const client = (id: OAuthClientCapabilityId): OAuthClientCapability =>
     CAPABILITIES[id];
-  /** Segments and paths that carry other requests inside, or another API: in no set's routes. */
-  const TUNNEL_SEGMENTS = ["batch", "$batch", "beta"];
-  const TUNNELS = [
-    "/batch/gmail/v1",
-    "/batch/calendar/v3",
-    "/v1.0/$batch",
-    "/beta/me/messages",
-    "/beta/me/sendMail",
-  ];
 
-  it("are Slack's and the 2 mail and calendar clients, with 6 gateway settings", () => {
+  it("are Slack, Google and Microsoft, with 6 gateway settings", () => {
     expect(ids).toEqual(["slack", "google-workspace", "microsoft-365"]);
     const settings = ids.flatMap((id) => capabilitySettings(client(id)));
     expect(settings).toHaveLength(6);
@@ -504,479 +490,51 @@ describe("the OAuth clients", () => {
   });
 
   it.each(ids)(
-    "%s completes exact https token endpoints only, for writing",
+    "%s is a flow and API hosts, with no scopes, access or routes of its own",
     (id) => {
       const capability = client(id);
-      expect(capability.access).toEqual(["write"]);
-      expect(capability.token.length).toBeGreaterThan(0);
-      for (const endpoint of capability.token) {
-        // A bare lowercase host: no scheme, port, path or credentials.
-        expect(new URL(`https://${endpoint.host}`).host).toBe(endpoint.host);
-        expect(endpoint.host).toMatch(/^[a-z0-9.-]+$/);
-        expect(new URL(`https://x${endpoint.path}`).pathname).toBe(
-          endpoint.path,
-        );
-        expect(endpoint.methods.length).toBeGreaterThan(0);
-        if (endpoint.inject === "form") {
-          // The client goes in a body: never on a GET.
-          expect(endpoint.methods).toEqual(["POST"]);
-        }
+      for (const field of [
+        "access",
+        "token",
+        "authorize",
+        "scopePolicy",
+        "readMethods",
+        "writeMethods",
+      ]) {
+        expect(capability, field).not.toHaveProperty(field);
       }
-      // The operator's checklist: https URLs.
-      for (const url of [capability.authorize.url, capability.console]) {
+      expect(capability.api.length).toBeGreaterThan(0);
+      for (const host of capability.api) {
+        // A bare lowercase host: no scheme, port, path or credentials.
+        expect(new URL(`https://${host}`).host).toBe(host);
+        expect(host).toMatch(/^[a-z0-9.-]+$/);
+      }
+      const { flow } = capability;
+      for (const url of [
+        flow.authorizeUrl,
+        flow.tokenUrl,
+        capability.console,
+        ...(flow.revokeUrl ? [flow.revokeUrl] : []),
+      ]) {
         expect(new URL(url).protocol, url).toBe("https:");
       }
-      expect(capability.authorize.scopes.length).toBeGreaterThan(0);
-    },
-  );
-
-  const policyIds = ids.filter((id) => client(id).scopePolicy);
-
-  it.each(policyIds)(
-    "%s holds its scope sets to the design's invariants",
-    (id) => {
-      const capability = client(id);
-      const policy = capability.scopePolicy!;
-      // The boundary at the token endpoint exists because the app never
-      // holds the secret; with a public client it could exchange codes
-      // itself.
+      // The identity URL gets the token: it must be one of the API hosts.
+      if (flow.identity) {
+        expect(capability.api).toContain(new URL(flow.identity.url).host);
+      }
       expect(capability.secrets.clientSecret).toBeDefined();
-      // The two grants the gateway completes, spelled as `tokenGrantType()`
-      // reads them: a typo here would refuse every exchange. Slack's code
-      // exchange (`oauth.v2.access`) carries no `grant_type` at all.
-      expect(policy.grantTypes).toEqual(
-        policy.dialect === "slack"
-          ? [null, "refresh_token"]
-          : ["authorization_code", "refresh_token"],
-      );
-      for (const scope of policy.alwaysRequested) {
-        expect(policy.tolerated).toContain(scope);
-      }
-      const names = Object.keys(policy.sets);
-      expect(names.length).toBeGreaterThan(0);
-      // The operator's checklist is the sets' union, nothing more or less.
-      const union = requestedScopes(policy, names);
-      expect([...capability.authorize.scopes].sort()).toEqual(
-        [...new Set([...union.scopes, ...union.userScopes])].sort(),
-      );
-      expect(new Set(capability.authorize.scopes).size).toBe(
-        capability.authorize.scopes.length,
-      );
-      // Never a tunnel, and never one of the policy's own denied segments:
-      // the route allowlist refuses those first, so the route would be dead.
-      const denied = [
-        ...TUNNEL_SEGMENTS,
-        ...policy.deniedSegments.map((segment) => segment.toLowerCase()),
-      ];
-      /** The token endpoints on `host`: Slack's API shares its token host, so the rule is per path. */
-      const tokenPaths = (host: string) =>
-        capability.token.flatMap((endpoint) =>
-          endpoint.host === host && typeof endpoint.path === "string"
-            ? [endpoint.path]
-            : [],
-        );
-      for (const [name, set] of Object.entries(policy.sets)) {
-        expect(name).toMatch(/^(identity|[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*)$/);
-        expect(set.label).toBeTruthy();
-        expect(["read", "write"]).toContain(set.access);
-        expect(
-          set.scopes.length + (set.userScopes?.length ?? 0),
-          name,
-        ).toBeGreaterThan(0);
-        expect(set.routes.length, name).toBeGreaterThan(0);
-        for (const route of set.routes) {
-          // A bare https host the docs list as an API host, never the
-          // token host.
-          expect(new URL(`https://${route.host}`).host).toBe(route.host);
-          expect(route.host).toMatch(/^[a-z0-9.-]+$/);
-          expect(capability.api).toContain(route.host);
-          // Never the token endpoint itself, by exact path, prefix or POST
-          // pattern: the gateway completes that with the client on it.
-          for (const tokenPath of tokenPaths(route.host)) {
-            for (const verb of ["GET", "POST"]) {
-              expect(
-                scopeRouteAllows(
-                  policy,
-                  [name],
-                  verb,
-                  new URL(`https://${route.host}${tokenPath}`),
-                ),
-                `${name} ${verb} ${tokenPath}`,
-              ).toBeNull();
-            }
-          }
-          for (const path of route.paths) {
-            // Plain raw paths: nothing encoded, no doubled separator.
-            expect(path, `${name} ${path}`).toMatch(/^\/[^%\\]*$/);
-            expect(path).not.toContain("//");
-            for (const segment of path.split("/")) {
-              expect(denied, `${name} ${path}`).not.toContain(
-                segment.toLowerCase(),
-              );
-            }
-            // And the allowlist agrees: the set unlocks what it declares.
-            expect(
-              scopeRouteAllows(
-                policy,
-                [name],
-                "GET",
-                new URL(`https://${route.host}${path}`),
-              ),
-              `${name} ${path}`,
-            ).toBe(name);
-          }
-          for (const pattern of route.posts ?? []) {
-            // Anchored at both ends, and stateless.
-            expect(pattern.source).toMatch(/^\^\\\/.*\$$/);
-            expect(pattern.flags).toBe("");
-            for (const tunnel of TUNNELS) {
-              expect(pattern.test(tunnel), `${pattern} ${tunnel}`).toBe(false);
-            }
-            // Each literal segment of the pattern (between escaped slashes,
-            // unescaped) is compared like a path's.
-            for (const fragment of pattern.source.slice(1, -1).split("\\/")) {
-              expect(denied, `${name} ${pattern}`).not.toContain(
-                fragment.replace(/\\(.)/g, "$1").toLowerCase(),
-              );
-            }
-          }
-        }
-      }
+      expect(capability.setup).toMatch(/^setup\/.+\.md$/);
     },
   );
-
-  it("offer scope sets on slack and the shared Google and Microsoft clients, every Google and Microsoft set read-only", () => {
-    expect(ids.filter((id) => client(id).scopePolicy)).toEqual([
-      "slack",
-      "google-workspace",
-      "microsoft-365",
-    ]);
-    const google = CAPABILITIES["google-workspace"].scopePolicy;
-    const microsoft = CAPABILITIES["microsoft-365"].scopePolicy;
-    expect(Object.keys(google.sets)).toEqual([
-      "identity",
-      "gmail.read",
-      "calendar.read",
-      "search-console.read",
-      "analytics.read",
-    ]);
-    expect(Object.keys(microsoft.sets)).toEqual([
-      "identity",
-      "mail.read",
-      "calendar.read",
-    ]);
-    // A deployed manifest is a grant the app declared for itself, so a
-    // write set on these two shared clients is a registry change to
-    // review, not a name to add here. Slack's sets are writes by nature
-    // (posting is the point) and are pinned one by one below.
-    for (const policy of [google, microsoft]) {
-      for (const [name, set] of Object.entries(policy.sets)) {
-        expect(set.access, name).toBe("read");
-      }
-    }
-    // The token host is not an API host.
-    expect(client("google-workspace").api).not.toContain(
-      "oauth2.googleapis.com",
-    );
-    expectTypeOf<OAuthScopeSetName<"google-workspace">>().toEqualTypeOf<
-      | "identity"
-      | "gmail.read"
-      | "calendar.read"
-      | "search-console.read"
-      | "analytics.read"
-    >();
-    expectTypeOf<OAuthScopeSetName<"microsoft-365">>().toEqualTypeOf<
-      "identity" | "mail.read" | "calendar.read"
-    >();
-    // Over a union of ids, every name either offers, not the shared ones.
-    expectTypeOf<
-      OAuthScopeSetName<"google-workspace" | "microsoft-365">
-    >().toEqualTypeOf<
-      | "identity"
-      | "gmail.read"
-      | "calendar.read"
-      | "search-console.read"
-      | "analytics.read"
-      | "identity"
-      | "mail.read"
-      | "calendar.read"
-    >();
-  });
-
-  it("slack: the sets cover Postiz's and Open CRM's requests and nothing else, each unlocking its methods by name", () => {
-    const slack = CAPABILITIES.slack;
-    const policy = slack.scopePolicy;
-    expect(policy.dialect).toBe("slack");
-    expect(policy.requestScope).toBe("keep");
-    expect(policy.alwaysRequested).toEqual([]);
-    expect(policy.tolerated).toEqual([]);
-    expect(policy.deniedSegments).toEqual([]);
-    // Set, access, bot scopes, user scopes, read methods (GET and POST),
-    // write methods (POST only).
-    const table: ReadonlyArray<
-      [
-        OAuthScopeSetName<"slack">,
-        "read" | "write",
-        string[],
-        string[],
-        string[],
-        string[],
-      ]
-    > = [
-      [
-        "channels.read",
-        "read",
-        ["channels:read", "groups:read"],
-        [],
-        [
-          "conversations.list",
-          "conversations.info",
-          "conversations.members",
-          "users.conversations",
-        ],
-        [],
-      ],
-      [
-        "users.read",
-        "read",
-        ["users:read"],
-        [],
-        ["users.list", "users.info", "users.getPresence", "bots.info"],
-        [],
-      ],
-      [
-        "users.email",
-        "read",
-        ["users:read.email"],
-        [],
-        ["users.lookupByEmail"],
-        [],
-      ],
-      [
-        "messages.write",
-        "write",
-        ["chat:write", "chat:write.public", "chat:write.customize"],
-        [],
-        ["chat.scheduledMessages.list"],
-        [
-          "chat.postMessage",
-          "chat.postEphemeral",
-          "chat.update",
-          "chat.delete",
-          "chat.scheduleMessage",
-          "chat.deleteScheduledMessage",
-        ],
-      ],
-      [
-        "channels.join",
-        "write",
-        ["channels:join"],
-        [],
-        [],
-        ["conversations.join"],
-      ],
-      [
-        "channels.manage",
-        "write",
-        [
-          "channels:manage",
-          "groups:write",
-          "channels:write.invites",
-          "groups:write.invites",
-          "im:write",
-        ],
-        [],
-        [],
-        [
-          "conversations.create",
-          "conversations.rename",
-          "conversations.archive",
-          "conversations.unarchive",
-          "conversations.invite",
-          "conversations.open",
-          "conversations.kick",
-          "conversations.leave",
-          "conversations.setTopic",
-          "conversations.setPurpose",
-          "conversations.mark",
-        ],
-      ],
-      [
-        "files.write",
-        "write",
-        ["files:write"],
-        [],
-        [],
-        ["files.getUploadURLExternal", "files.completeUploadExternal"],
-      ],
-      [
-        "user-channels.manage",
-        "write",
-        [],
-        ["channels:read", "channels:write", "groups:read", "groups:write"],
-        [
-          "conversations.list",
-          "conversations.info",
-          "conversations.members",
-          "users.conversations",
-        ],
-        [
-          "conversations.create",
-          "conversations.rename",
-          "conversations.archive",
-          "conversations.unarchive",
-          "conversations.invite",
-          "conversations.kick",
-          "conversations.leave",
-          "conversations.setTopic",
-          "conversations.setPurpose",
-          "conversations.mark",
-        ],
-      ],
-    ];
-    expect(Object.keys(policy.sets)).toEqual(table.map(([name]) => name));
-    const url = (method: string) => new URL(`https://slack.com/api/${method}`);
-    for (const [name, access, scopes, userScopes, reads, writes] of table) {
-      const set: OAuthScopeSet = policy.sets[name];
-      expect(set.access, name).toBe(access);
-      expect(set.scopes, name).toEqual(scopes);
-      expect(set.userScopes ?? [], name).toEqual(userScopes);
-      for (const method of reads) {
-        for (const verb of ["GET", "POST"]) {
-          expect(
-            scopeRouteAllows(policy, [name], verb, url(method)),
-            `${name} ${verb} ${method}`,
-          ).toBe(name);
-        }
-      }
-      for (const method of writes) {
-        expect(
-          scopeRouteAllows(policy, [name], "POST", url(method)),
-          `${name} POST ${method}`,
-        ).toBe(name);
-        expect(
-          scopeRouteAllows(policy, [name], "GET", url(method)),
-          `${name} GET ${method}`,
-        ).toBeNull();
-      }
-    }
-    // A method no set names, the retired upload, and the token endpoint on
-    // the same host stay refused whatever an app declares.
-    const every = Object.keys(policy.sets);
-    for (const method of [
-      "conversations.history",
-      "files.upload",
-      "auth.revoke",
-      "oauth.v2.access",
-    ]) {
-      for (const verb of ["GET", "POST"]) {
-        expect(
-          scopeRouteAllows(policy, every, verb, url(method)),
-          `${verb} ${method}`,
-        ).toBeNull();
-      }
-    }
-    // What each consumer sends today is within what its sets ask for.
-    const postiz = requestedScopes(policy, [
-      "channels.read",
-      "users.read",
-      "messages.write",
-      "channels.join",
-      "files.write",
-    ]);
-    for (const scope of [
-      "channels:read",
-      "chat:write",
-      "users:read",
-      "groups:read",
-      "channels:join",
-      "chat:write.customize",
-      "files:write",
-    ]) {
-      expect(postiz.scopes).toContain(scope);
-    }
-    expect(postiz.userScopes).toEqual([]);
-    const openCrm = requestedScopes(policy, [
-      "channels.read",
-      "users.read",
-      "users.email",
-      "messages.write",
-      "channels.join",
-      "channels.manage",
-      "user-channels.manage",
-    ]);
-    for (const scope of [
-      "users:read",
-      "users:read.email",
-      "channels:read",
-      "groups:read",
-      "chat:write",
-      "chat:write.public",
-      "im:write",
-      "channels:join",
-      "channels:manage",
-      "groups:write",
-      "channels:write.invites",
-      "groups:write.invites",
-    ]) {
-      expect(openCrm.scopes).toContain(scope);
-    }
-    expect(openCrm.userScopes).toEqual([
-      "channels:read",
-      "channels:write",
-      "groups:read",
-      "groups:write",
-    ]);
-    // The operator's checklist in set order, bot scopes then the one user
-    // scope no bot set carries; the four scopes nobody asks for are gone.
-    expect(slack.authorize.scopes).toEqual([
-      "channels:read",
-      "groups:read",
-      "users:read",
-      "users:read.email",
-      "chat:write",
-      "chat:write.public",
-      "chat:write.customize",
-      "channels:join",
-      "channels:manage",
-      "groups:write",
-      "channels:write.invites",
-      "groups:write.invites",
-      "im:write",
-      "files:write",
-      "channels:write",
-    ]);
-    for (const scope of [
-      "channels:history",
-      "groups:history",
-      "conversations.connect:write",
-      "links:write",
-    ]) {
-      expect(slack.authorize.scopes).not.toContain(scope);
-    }
-    expectTypeOf<OAuthScopeSetName<"slack">>().toEqualTypeOf<
-      | "channels.read"
-      | "users.read"
-      | "users.email"
-      | "messages.write"
-      | "channels.join"
-      | "channels.manage"
-      | "files.write"
-      | "user-channels.manage"
-    >();
-  });
 
   it("names the command that gives the gateway each client", () => {
     expect(oauthClientSecretSetCommand(client("slack"))).toBe(
       "pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET",
     );
-    expect(describeTokenEndpoints(client("google-workspace"))).toBe(
-      "POST https://oauth2.googleapis.com/token",
-    );
   });
 });
 
-describe("OAuth client paths", () => {
+describe("OAuth provider paths", () => {
   /** What the gateway makes of an app's call to `url` through `provider`. */
   const parse = (provider: OAuthClientCapabilityId, url: string) => {
     const path = new URL(
@@ -987,16 +545,15 @@ describe("OAuth client paths", () => {
   };
 
   it.each<[OAuthClientCapabilityId, string]>([
-    ["slack", "https://slack.com/api/oauth.v2.access"],
-    ["google-workspace", "https://oauth2.googleapis.com/token?code=x"],
-    ["google-workspace", "https://oauth2.googleapis.com/token"],
+    ["google-workspace", "https://gmail.googleapis.com/gmail/v1/users/me"],
     [
-      "microsoft-365",
-      "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+      "google-workspace",
+      "https://searchconsole.googleapis.com/webmasters/v3/sites?x=1",
     ],
-  ])("%s takes %s", (provider, url) => {
-    const route = parse(provider, url);
-    expect(route).toMatchObject({
+    ["slack", "https://slack.com/api/chat.postMessage"],
+    ["microsoft-365", "https://graph.microsoft.com/v1.0/me/messages"],
+  ])("%s takes a call to its API: %s", (provider, url) => {
+    expect(parse(provider, url)).toMatchObject({
       kind: "oauth_client",
       id: provider,
       upstream: new URL(url),
@@ -1004,33 +561,33 @@ describe("OAuth client paths", () => {
   });
 
   it.each<[OAuthClientCapabilityId, string]>([
-    // The API, on the token host or its own: the app calls it directly.
-    ["google-workspace", "https://gmail.googleapis.com/gmail/v1/users/me"],
+    // The token and authorize endpoints are the Gateway's alone.
+    ["google-workspace", "https://oauth2.googleapis.com/token"],
     ["google-workspace", "https://accounts.google.com/o/oauth2/v2/auth"],
-    ["slack", "https://slack.com/api/chat.postMessage"],
-    ["microsoft-365", "https://graph.microsoft.com/v1.0/me"],
-    // Near misses: a trailing slash, another case, an encoding.
-    ["google-workspace", "https://oauth2.googleapis.com/token/"],
-    ["google-workspace", "https://oauth2.googleapis.com/Token"],
-    ["google-workspace", "https://oauth2.googleapis.com/%74oken"],
-    ["slack", "https://slack.com/api/oauth.v2.Access"],
-    // Another client's endpoint.
-    ["slack", "https://oauth2.googleapis.com/token"],
+    [
+      "microsoft-365",
+      "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+    ],
+    // Another provider's host.
+    ["slack", "https://gmail.googleapis.com/gmail/v1/users/me"],
+    ["google-workspace", "https://attacker.example/x"],
   ])("%s refuses %s", (provider, url) => {
     expect(parse(provider, url)).toBeNull();
   });
 
-  it("matches an endpoint by host and path, never by scheme or method", () => {
-    const google: OAuthClientCapability = CAPABILITIES["google-workspace"];
+  it("refuses a path that could leave the host", () => {
     expect(
-      tokenEndpointFor(google, new URL("http://oauth2.googleapis.com/token")),
+      parseIntegrationProxyPath(
+        "/api/integrations/google-workspace/gmail.googleapis.com//attacker.example/x",
+        "",
+      ),
     ).toBeNull();
     expect(
-      tokenEndpointFor(
-        google,
-        new URL("https://oauth2.googleapis.com/token?x=1"),
+      parseIntegrationProxyPath(
+        "/api/integrations/google-workspace/gmail.googleapis.com/a\\b",
+        "",
       ),
-    ).toMatchObject({ inject: "form", methods: ["POST"] });
+    ).toBeNull();
   });
 });
 

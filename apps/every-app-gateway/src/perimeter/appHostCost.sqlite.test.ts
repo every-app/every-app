@@ -26,12 +26,6 @@ vi.mock("cloudflare:workers", () => ({
   waitUntil: () => undefined,
   WorkerEntrypoint: class {},
 }));
-// The background-grant touch (#888) is one write a day per member and app
-// per isolate, after the response: not what every request costs, and its
-// lazy import would land in whichever request is measured next.
-vi.mock("@/server/oauth/backgroundSeen", () => ({
-  noteMemberSeen: () => undefined,
-}));
 vi.mock("@/db", async () => {
   const { testDbProxy } = await import("@/test/sqlite-db");
   const schema = await import("@/db/schema");

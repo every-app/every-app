@@ -9,6 +9,8 @@
  * setting, a host setting), by manifest id. With no Gateway in
  * development, the SDK reaches them with the developer's own values under
  * the same names, and `everyAppWorker()` declares the ones set locally.
+ * An OAuth provider's is the token that stands in for a connection in dev
+ * (`<PREFIX>_ACCESS_TOKEN`), never its client.
  */
 export const DEV_GATEWAY_KEYS = {
   providers: {
@@ -33,12 +35,9 @@ export const DEV_GATEWAY_KEYS = {
       "EMAIL_PROVIDER",
     ],
     members: [],
-    slack: ["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET"],
-    "google-workspace": [
-      "GOOGLE_WORKSPACE_CLIENT_ID",
-      "GOOGLE_WORKSPACE_CLIENT_SECRET",
-    ],
-    "microsoft-365": ["MICROSOFT_365_CLIENT_ID", "MICROSOFT_365_CLIENT_SECRET"],
+    slack: ["SLACK_ACCESS_TOKEN"],
+    "google-workspace": ["GOOGLE_WORKSPACE_ACCESS_TOKEN"],
+    "microsoft-365": ["MICROSOFT_365_ACCESS_TOKEN"],
     stripe: ["STRIPE_API_KEY"],
     lemonsqueezy: ["LEMONSQUEEZY_API_KEY"],
     paddle: ["PADDLE_API_KEY"],

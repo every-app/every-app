@@ -10,7 +10,7 @@ The person's library, playlists and listening.
 
 ## Connect accounts
 
-Each person connects their own Spotify account in the Gateway, once, and every app that asks uses it. Apps never see the tokens. [How connecting works](/docs/connect-oauth)
+Each person connects their own Spotify account in each app that uses it, for the scopes that app lists. Apps never see the tokens. [How connecting works](/docs/connect-oauth)
 
 The redirect URI to register, with your Gateway's address (like `apps.example.com`):
 
@@ -32,21 +32,16 @@ Or add it in **Manage workspace → Providers**.
 
 ### Use it in an app
 
+List the provider's own scopes in the app's `everyapp.config.ts`:
+
 ```ts
 capabilities: {
-  spotify: { access: "read", scopes: ["library.read"], why: "What the app does with it." },
+  spotify: { scopes: ["playlist-read-private"], why: "What the app does with it." },
 },
 ```
 
-Apps ask for these scope sets:
+Use [Spotify's scopes](https://developer.spotify.com/documentation/web-api/concepts/scopes). The app calls Spotify's API with `integrationFetch()`, and the Gateway adds the person's token. A token with more scopes than the app lists is refused.
 
-| Set | Allows | Provider scopes |
-| --- | --- | --- |
-| `identity` | Spotify account (who you are) | `user-read-email`, `user-read-private` |
-| `library.read` | Saved tracks and albums (read) | `user-library-read` |
-| `playlists.read` | Playlists (read) | `playlist-read-private`, `playlist-read-collaborative` |
-| `playlists.write` | Playlists (read and change) | `playlist-read-private`, `playlist-modify-private`, `playlist-modify-public` |
-
-**Check it worked:** `everyapp provider show spotify` shows the client as set. Then open the account menu → **Connected accounts** → **Connect Spotify**.
+**Check it worked:** `everyapp provider show spotify` shows the client as set. Then open an app that lists it and select its **Connect** button.
 
 Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Spotify).

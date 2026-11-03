@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { PROVIDER_ID, SCOPE_SET_NAME } from "@every-app/sdk/internal";
+import { PROVIDER_ID } from "@every-app/sdk/internal";
 
 /**
- * What Admin → Providers and Settings → Connected accounts send
- * (docs/design/2026-10-oauth-providers.md sections 4, 5 and 9). A client
+ * What Manage workspace → Providers and Settings → Connected accounts send
+ * (docs/design/2026-11-oauth-simplify.md). A client
  * id or secret is bounded by length only: the provider decides its shape.
  * The spec of a custom provider is parsed by the registry's parser on the
  * server, so it is `unknown` here.
@@ -53,61 +53,9 @@ export const setOAuthClientSchema = z.object({
 
 export const providerActionSchema = z.object({ providerId });
 
+/** Disconnect one connection, by its id: the caller's own, or anyone's for an owner or admin. */
 export const disconnectConnectionSchema = z.object({
-  providerId,
-  account: z.enum(["user", "organization"]),
-  /** Another member's connection (owners and admins); absent: the caller's own. */
-  userId: z.string().min(1).max(128).optional(),
-});
-
-/** Revoke an app's background use of a connection: by the grant's id. */
-export const revokeBackgroundGrantSchema = z.object({
-  grantId: z.string().regex(/^bgg_[0-9a-f-]{36}$/),
+  connectionId: z.string().min(1).max(128),
 });
 
 export type AddOAuthProviderInput = z.infer<typeof addOAuthProviderSchema>;
-
-const scopeSetName = z
-  .string()
-  .trim()
-  .regex(
-    SCOPE_SET_NAME,
-    "A set is named identity, or <area>.<access> in lowercase (gmail.send).",
-  );
-
-/**
- * A scope set added to a built-in OAuth client (Admin → Providers → Scope
- * sets): the set's fields as the dialog takes them; the registry's parser
- * checks them on the server (routes on the client's hosts, anchored posts).
- */
-export const addScopeSetSchema = z.object({
-  providerId,
-  name: scopeSetName,
-  label: z
-    .string()
-    .trim()
-    .min(1, "Label the set.")
-    .max(80, "The label is too long."),
-  access: z.enum(["read", "write"]),
-  scopes: z
-    .array(z.string().trim().min(1).max(200))
-    .min(1, "Name at least one scope."),
-  routes: z
-    .array(
-      z.object({
-        host: z.string().trim().min(1).max(253),
-        paths: z
-          .array(z.string().trim().min(1).max(500))
-          .min(1, "Name at least one path."),
-        posts: z.array(z.string().trim().min(1).max(500)).optional(),
-      }),
-    )
-    .min(1, "Name at least one route the set unlocks."),
-});
-
-export const removeScopeSetSchema = z.object({
-  providerId,
-  name: scopeSetName,
-});
-
-export type AddScopeSetInput = z.infer<typeof addScopeSetSchema>;

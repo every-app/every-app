@@ -41,6 +41,8 @@ import {
   type VectorizeBinding,
   aiGatewayUrl,
 } from "./index";
+import type { EveryAppCapabilityEntry } from "../manifest";
+import { devAccessTokenName } from "../server/integrationFetch";
 import { DEV_ISSUER, DEV_PUBLIC_KEY_PEM } from "../dev/index";
 import { aiProviderSettings, DEV_AI_PROVIDERS } from "../internal/aiProviders";
 import { appSettings } from "../internal/appSettings";
@@ -602,8 +604,8 @@ describe("everyAppWorker crons and the app's own secrets", () => {
       ...manifest,
       capabilities: {
         "google-workspace": {
-          access: "write",
-          scopes: ["identity", "gmail.read"],
+          scopes: ["gmail.modify", "gmail.send"],
+          why: "Mirrors your Gmail.",
         },
       },
     } as const;
@@ -611,8 +613,8 @@ describe("everyAppWorker crons and the app's own secrets", () => {
       everyAppWorker({ manifest: scoped, entrypoint, ctx: { mode }, root })
         .env as Record<string, unknown>;
 
-    // As JSON text: the manifest's exact entries, scope sets included, so
-    // integrationFetch() holds a token call to them as the gateway would.
+    // As JSON text: the manifest's exact entries, scopes included, so
+    // integrationStatus() reports them as the gateway would.
     expect(env("development")["EVERYAPP_DEV_CAPABILITIES"]).toEqual({
       type: "text",
       value: JSON.stringify(scoped.capabilities),
@@ -621,7 +623,7 @@ describe("everyAppWorker crons and the app's own secrets", () => {
       "EVERYAPP_DEV_CAPABILITIES",
     );
     // A manifest without capabilities declares none, not nothing: the twin
-    // tells "no sets" from "no manifest".
+    // tells "not listed" from "no manifest".
     expect(
       (
         everyAppWorker({
@@ -638,34 +640,51 @@ describe("everyAppWorker crons and the app's own secrets", () => {
   });
 
   it("knows every setting of every provider and capability the SDK reaches in dev", () => {
+    // The proxy entry (AI Gateway) fronts the gateway's calls only: dev
+    // goes direct, so its settings are never dev settings.
+    const reached = Object.entries(CAPABILITIES).filter(
+      ([, capability]) =>
+        !(
+          capability.mode === "ai" &&
+          "kind" in capability &&
+          capability.kind === "proxy"
+        ),
+    );
+    const aiKeys = Object.values(DEV_AI_PROVIDERS).flatMap(aiProviderSettings);
+    // In dev an OAuth provider's token stands in for the connection; its
+    // client is the Gateway's alone.
     const keys = new Set([
-      ...Object.values(DEV_AI_PROVIDERS).flatMap(aiProviderSettings),
-      // The proxy entry (AI Gateway) fronts the gateway's calls only: dev
-      // goes direct, so its settings are never dev settings.
-      ...Object.values(CAPABILITIES)
-        .filter(
-          (capability) =>
-            !(
-              capability.mode === "ai" &&
-              "kind" in capability &&
-              capability.kind === "proxy"
-            ),
-        )
-        .flatMap(capabilitySettings),
+      ...aiKeys,
+      ...reached.flatMap(([id, capability]) =>
+        capability.mode === "oauth_client"
+          ? [devAccessTokenName(id)]
+          : capabilitySettings(capability),
+      ),
     ]);
+    // What the settings model names: the Gateway's view, OAuth clients included.
+    const gatewayKeys = new Set([
+      ...aiKeys,
+      ...reached.flatMap(([, capability]) => capabilitySettings(capability)),
+    ]);
+    const clients = [...gatewayKeys].filter((name) => !keys.has(name));
     fs.writeFileSync(
       path.join(root, ".dev.vars"),
-      [...keys, "UNRELATED_SETTING"].map((key) => `${key}=set`).join("\n"),
+      [...keys, ...clients, "UNRELATED_SETTING"]
+        .map((key) => `${key}=set`)
+        .join("\n"),
     );
     const everything = {
       ...manifest,
       providers: Object.keys(DEV_AI_PROVIDERS),
       // Every capability; the AI providers are listed under `providers`.
       capabilities: Object.fromEntries(
-        Object.entries(CAPABILITIES).flatMap(([id, capability]) =>
-          capability.mode === "ai"
-            ? []
-            : [[id, { access: capability.access[0] }]],
+        Object.entries(CAPABILITIES).flatMap(
+          ([id, capability]): [string, EveryAppCapabilityEntry][] =>
+            capability.mode === "ai"
+              ? []
+              : capability.mode === "oauth_client"
+                ? [[id, { scopes: [], why: "Everything." }]]
+                : [[id, { access: capability.access[0]! }]],
         ),
       ),
     };
@@ -690,8 +709,8 @@ describe("everyAppWorker crons and the app's own secrets", () => {
         ...setting.alsoReads,
       ]),
     );
-    expect([...modelled].filter((name) => !keys.has(name))).toEqual([]);
-    expect([...keys].filter((name) => !modelled.has(name))).toEqual([
+    expect([...modelled].filter((name) => !gatewayKeys.has(name))).toEqual([]);
+    expect([...gatewayKeys].filter((name) => !modelled.has(name))).toEqual([
       "CLOUDFLARE_ACCOUNT_ID",
     ]);
   });
@@ -859,6 +878,41 @@ describe("everyAppWorker crons and the app's own secrets", () => {
       env("development")[DEV_PROVIDERS_ENV],
     );
     expect(helper["NORTHWIND_API_KEY"]).toEqual({ type: "secret" });
+
+    // A registered OAuth provider: the dev token, never the client.
+    fs.writeFileSync(
+      path.join(dir, "github-oauth.json"),
+      JSON.stringify({
+        id: "github-oauth",
+        name: "GitHub",
+        docs: "https://github.com/settings/developers",
+        hosts: ["api.github.com"],
+        auth: {
+          kind: "oauth2-user",
+          authorizeUrl: "https://github.com/login/oauth/authorize",
+          tokenUrl: "https://github.com/login/oauth/access_token",
+          clientId: "GITHUB_OAUTH_CLIENT_ID",
+          clientSecret: "GITHUB_OAUTH_CLIENT_SECRET",
+        },
+      }),
+    );
+    fs.appendFileSync(
+      path.join(root, ".dev.vars"),
+      "GITHUB_OAUTH_ACCESS_TOKEN=gho_dev\nGITHUB_OAUTH_CLIENT_ID=id\n",
+    );
+    const github = everyAppWorker({
+      manifest: {
+        ...manifest,
+        capabilities: { "github-oauth": { scopes: ["repo"], why: "Issues." } },
+      },
+      entrypoint,
+      ctx: { mode: "development" },
+      root,
+    }).env as Record<string, unknown>;
+    expect(github).toMatchObject({
+      GITHUB_OAUTH_ACCESS_TOKEN: { type: "secret" },
+    });
+    expect(github).not.toHaveProperty("GITHUB_OAUTH_CLIENT_ID");
 
     // Deployed, the gateway holds the specs and the keys.
     expect(env("production")).not.toHaveProperty(DEV_PROVIDERS_ENV);
@@ -1124,7 +1178,7 @@ describe("helper Workers", () => {
 
   it("gives a helper in dev the manifest's capabilities, as the app's Worker gets them", () => {
     const capabilities = {
-      "microsoft-365": { access: "write", scopes: ["mail.read"] },
+      "microsoft-365": { scopes: ["Mail.Read"], why: "Reads mail." },
     } as const;
     const audit = everyAppAuxiliaryWorker({
       manifest: { ...seo, capabilities },

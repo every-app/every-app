@@ -1,23 +1,27 @@
 /**
- * The `oauth2-user` half of a provider spec
- * (docs/design/2026-10-oauth-providers.md section 3): a registered OAuth
- * provider, or a preset (./oauthPresets.ts), as JSON, turned into the
- * same {@link OAuthClientCapability} a catalog client is, with a `flow`
- * the Gateway runs itself. `parseProviderSpec` (./providerSpec.ts) hands
- * the common fields here once it sees `auth.kind: "oauth2-user"`; nothing
- * here reads a value: a spec names Gateway settings, never holds one.
+ * The `oauth2-user` half of a provider spec: a registered OAuth provider,
+ * a preset (./oauthPresets.ts) or a built-in one (./oauthBuiltIns.ts), as
+ * JSON, turned into an {@link OAuthClientCapability} whose `flow` the
+ * Gateway runs. `parseProviderSpec` (./providerSpec.ts) hands the common
+ * fields here once it sees `auth.kind: "oauth2-user"`. Nothing here reads
+ * a value: a spec names Gateway settings, never holds one.
+ *
+ * Every difference between providers is a field here, never code: the
+ * endpoints, how the client goes on the token request, PKCE, the scope
+ * separator and prefix, extra authorize parameters and token headers, the
+ * identity URL with the scopes it needs, and the scopes a token may carry
+ * beyond what was asked (`tolerated`). Which scopes an app gets is its own
+ * `everyapp.config.ts`, never the spec.
+ *
+ * Only type imports from ./capabilities.ts: the catalog builds its
+ * built-in entries with {@link oauthCapabilityFromSpec} at load.
  */
-import {
-  DEFAULT_WRITE_METHODS,
-  type CapabilityAccess,
-  type OAuthClientCapability,
-  type OAuthClientInjection,
-  type OAuthFlow,
-  type OAuthIdentity,
-  type OAuthScopeDialect,
-  type OAuthScopePolicy,
-  type OAuthScopeRoute,
-  type OAuthScopeSet,
+import type {
+  OAuthClientCapability,
+  OAuthClientInjection,
+  OAuthFlow,
+  OAuthIdentity,
+  OAuthScopeSeparator,
 } from "./capabilities.js";
 
 export interface SpecProblem {
@@ -25,16 +29,7 @@ export interface SpecProblem {
   message: string;
 }
 
-/** A scope set's name: `identity`, or `<area>.<access>` (`repo.read`), lowercase. */
-export const SCOPE_SET_NAME =
-  /^[a-z][a-z0-9-]{0,31}(?:\.[a-z][a-z0-9-]{0,31})?$/;
-const DIALECTS: readonly OAuthScopeDialect[] = [
-  "space",
-  "comma",
-  "google",
-  "microsoft",
-  "slack",
-];
+const SEPARATORS: readonly OAuthScopeSeparator[] = ["space", "comma"];
 const INJECTIONS: readonly OAuthClientInjection[] = ["form", "basic"];
 const HEADER_NAME = /^[A-Za-z0-9-]{1,64}$/;
 /** Headers the Gateway sets on the token request itself, or never sends. */
@@ -45,18 +40,28 @@ const RESERVED_TOKEN_HEADERS = new Set([
   "host",
   "cookie",
 ]);
+/**
+ * Authorize parameters the Gateway sets itself, and
+ * `include_granted_scopes`, which would widen a token to every scope the
+ * person ever granted the client (the mint check would refuse it anyway).
+ */
+const RESERVED_AUTHORIZE_PARAMS = [
+  "client_id",
+  "redirect_uri",
+  "response_type",
+  "scope",
+  "state",
+  "code_challenge",
+  "code_challenge_method",
+  "include_granted_scopes",
+];
 const PARAM_NAME = /^[A-Za-z0-9_.-]{1,64}$/;
 /** A dot path into a JSON answer, at most four segments. */
 const DOT_PATH =
   /^[A-Za-z_][A-Za-z0-9_]{0,63}(?:\.[A-Za-z_][A-Za-z0-9_]{0,63}){0,3}$/;
 const UNPRINTABLE = /[\p{Cc}\p{Cf}]/u;
-const MAX_SETS = 20;
 const MAX_SCOPES = 40;
-const MAX_ROUTES = 20;
-const MAX_PATHS = 50;
 const MAX_PARAMS = 10;
-/** Segments no set unlocks on any host: batch tunnels carry whole requests inside. */
-export const DEFAULT_DENIED_SEGMENTS: readonly string[] = ["batch", "$batch"];
 
 /** The fields of `auth` when its kind is `oauth2-user`. */
 export const OAUTH_AUTH_FIELDS = [
@@ -69,11 +74,39 @@ export const OAUTH_AUTH_FIELDS = [
   "clientSecret",
   "inject",
   "pkce",
-  "scopeDialect",
+  "scopeSeparator",
+  "scopePrefix",
   "authorizeParams",
   "tokenHeaders",
   "identity",
+  "tolerated",
 ] as const;
+
+/**
+ * Fields an `oauth2-user` spec had before scopes moved to each app's
+ * `everyapp.config.ts`, each with what to write instead: refused with
+ * that message rather than "unknown field".
+ */
+export const REMOVED_OAUTH_FIELDS: Readonly<Record<string, string>> = {
+  scopeSets:
+    "scope sets are gone: each app lists the provider's own scopes in its everyapp.config.ts. Remove scopeSets.",
+  alwaysRequested:
+    "alwaysRequested is gone: put scopes every connect needs (a refresh token's, the identity URL's) in auth.identity.scopes.",
+  tolerated:
+    "tolerated moved into auth: auth.tolerated lists the scopes a token may carry beyond what was asked.",
+  access:
+    "access is gone for an OAuth provider: the scopes an app lists are the grant, for every method.",
+  readMethods:
+    "readMethods is gone for an OAuth provider: the scopes an app lists are the grant, for every method.",
+  writeMethods:
+    "writeMethods is gone for an OAuth provider: the scopes an app lists are the grant, for every method.",
+};
+
+/** `auth` fields renamed, each with its new name. */
+const RENAMED_AUTH_FIELDS: Readonly<Record<string, string>> = {
+  scopeDialect:
+    "renamed auth.scopeSeparator: space or comma (a provider's prefix goes in auth.scopePrefix)",
+};
 
 /** The common fields `parseProviderSpec` parsed before handing over. */
 export interface OAuthSpecCommon {
@@ -83,9 +116,6 @@ export interface OAuthSpecCommon {
   hosts: readonly string[];
   description?: string;
   reference?: string;
-  access?: readonly CapabilityAccess[];
-  readMethods?: readonly string[];
-  writeMethods?: readonly string[];
   hint?: string;
   example?: string;
   tags?: readonly string[];
@@ -161,9 +191,8 @@ function settingName(
   value: unknown,
   path: string,
   problems: SpecProblem[],
-  pattern: RegExp,
 ): string | undefined {
-  if (typeof value !== "string" || !pattern.test(value)) {
+  if (typeof value !== "string" || !/^[A-Z][A-Z0-9_]{2,63}$/.test(value)) {
     problems.push({
       path,
       message:
@@ -200,7 +229,8 @@ function stringMap(
   return out;
 }
 
-function scopeList(
+/** A list of provider scope strings: each one scope, with no space or comma, each once. */
+export function scopeList(
   value: unknown,
   path: string,
   problems: SpecProblem[],
@@ -232,324 +262,21 @@ function scopeList(
   return out;
 }
 
-function routes(
-  value: unknown,
-  path: string,
-  hosts: readonly string[],
-  problems: SpecProblem[],
-): OAuthScopeRoute[] | undefined {
-  if (value === undefined) return undefined;
-  if (!Array.isArray(value) || value.length > MAX_ROUTES) {
-    problems.push({
-      path,
-      message: `must be a list of at most ${MAX_ROUTES} routes`,
-    });
-    return undefined;
-  }
-  const out: OAuthScopeRoute[] = [];
-  value.forEach((item, index) => {
-    const at = `${path}.${index}`;
-    if (!isRecord(item)) {
-      problems.push({ path: at, message: "must be { host, paths, posts? }" });
-      return;
-    }
-    for (const field of Object.keys(item)) {
-      if (!["host", "paths", "posts"].includes(field)) {
-        problems.push({ path: `${at}.${field}`, message: "unknown field" });
-      }
-    }
-    const host = printable(item["host"], `${at}.host`, problems, 253);
-    if (host !== undefined && !hosts.includes(host)) {
-      problems.push({ path: `${at}.host`, message: "must be one of hosts" });
-    }
-    const paths: string[] = [];
-    if (!Array.isArray(item["paths"]) || item["paths"].length > MAX_PATHS) {
-      problems.push({
-        path: `${at}.paths`,
-        message: `must be a list of at most ${MAX_PATHS} paths`,
-      });
-    } else {
-      item["paths"].forEach((entry, offset) => {
-        const text = printable(entry, `${at}.paths.${offset}`, problems, 500);
-        if (text === undefined) return;
-        if (
-          !text.startsWith("/") ||
-          text.includes("//") ||
-          text.includes("\\") ||
-          text.includes("%") ||
-          /(^|\/)\.\.?(\/|$)/.test(text)
-        ) {
-          problems.push({
-            path: `${at}.paths.${offset}`,
-            message:
-              "must start with / and hold no //, backslash, percent-escape or dot segment",
-          });
-          return;
-        }
-        paths.push(text);
-      });
-    }
-    const posts: RegExp[] = [];
-    if (item["posts"] !== undefined) {
-      if (!Array.isArray(item["posts"]) || item["posts"].length > MAX_PATHS) {
-        problems.push({
-          path: `${at}.posts`,
-          message: `must be a list of at most ${MAX_PATHS} anchored patterns`,
-        });
-      } else {
-        item["posts"].forEach((entry, offset) => {
-          const text = printable(entry, `${at}.posts.${offset}`, problems, 500);
-          if (text === undefined) return;
-          if (!text.startsWith("^") || !text.endsWith("$")) {
-            problems.push({
-              path: `${at}.posts.${offset}`,
-              message: "must be anchored: start with ^ and end with $",
-            });
-            return;
-          }
-          try {
-            posts.push(new RegExp(text));
-          } catch {
-            problems.push({
-              path: `${at}.posts.${offset}`,
-              message: "is not a valid pattern",
-            });
-          }
-        });
-      }
-    }
-    if (host === undefined) return;
-    out.push({
-      host,
-      paths,
-      ...(item["posts"] === undefined ? {} : { posts }),
-    });
-  });
-  return out;
-}
-
-/** The fields one scope set may carry, in a spec's `scopeSets` or an overlay. */
-const SCOPE_SET_FIELDS = ["label", "access", "scopes", "userScopes", "routes"];
-
-/**
- * One scope set (`{ label, access, scopes, userScopes?, routes? }`) at
- * `at`, its routes on `hosts` alone; undefined when a field is wrong,
- * every problem reported. `overlay`: a set added to a built-in client
- * must name a scope and say what it unlocks (a set with no routes unlocks
- * nothing on the held-token path); a spec's own set may leave both empty
- * (Notion's sets carry no scope string).
- */
-export function parseScopeSet(
-  raw: unknown,
-  at: string,
-  hosts: readonly string[],
-  problems: SpecProblem[],
-  { overlay = false }: { overlay?: boolean } = {},
-): OAuthScopeSet | undefined {
-  if (!isRecord(raw)) {
-    problems.push({ path: at, message: "must be { label, access, scopes }" });
-    return undefined;
-  }
-  for (const field of Object.keys(raw)) {
-    if (!SCOPE_SET_FIELDS.includes(field)) {
-      problems.push({ path: `${at}.${field}`, message: "unknown field" });
-    }
-  }
-  const label = printable(raw["label"], `${at}.label`, problems, 80);
-  if (raw["label"] === undefined) {
-    problems.push({ path: `${at}.label`, message: "required" });
-  }
-  const access = raw["access"];
-  if (access !== "read" && access !== "write") {
-    problems.push({ path: `${at}.access`, message: "must be read or write" });
-  }
-  const scopes = scopeList(raw["scopes"], `${at}.scopes`, problems);
-  if (raw["scopes"] === undefined) {
-    problems.push({ path: `${at}.scopes`, message: "required" });
-  } else if (overlay && scopes && scopes.length === 0) {
-    problems.push({ path: `${at}.scopes`, message: "must list a scope" });
-  }
-  const userScopes = scopeList(raw["userScopes"], `${at}.userScopes`, problems);
-  const parsedRoutes = routes(raw["routes"], `${at}.routes`, hosts, problems);
-  if (overlay && (!parsedRoutes || parsedRoutes.length === 0)) {
-    problems.push({
-      path: `${at}.routes`,
-      message:
-        "required: at least one { host, paths } the set unlocks, on one of the client's API hosts",
-    });
-  }
-  if (
-    label === undefined ||
-    (access !== "read" && access !== "write") ||
-    scopes === undefined
-  ) {
-    return undefined;
-  }
-  return {
-    label,
-    access,
-    scopes,
-    ...(userScopes === undefined ? {} : { userScopes }),
-    routes: parsedRoutes ?? [],
-  };
-}
-
-function scopeSets(
-  value: unknown,
-  hosts: readonly string[],
-  problems: SpecProblem[],
-): Record<string, OAuthScopeSet> | undefined {
-  if (!isRecord(value)) {
-    problems.push({
-      path: "scopeSets",
-      message:
-        'required: at least one named set, { "repo.read": { "label", "access", "scopes" } }',
-    });
-    return undefined;
-  }
-  const entries = Object.entries(value);
-  if (entries.length === 0 || entries.length > MAX_SETS) {
-    problems.push({
-      path: "scopeSets",
-      message: `must name 1 to ${MAX_SETS} sets`,
-    });
-    return undefined;
-  }
-  const out: Record<string, OAuthScopeSet> = {};
-  for (const [name, raw] of entries) {
-    const at = `scopeSets.${name}`;
-    if (!SCOPE_SET_NAME.test(name)) {
-      problems.push({
-        path: at,
-        message:
-          "a set is named identity, or <area>.<access> in lowercase (repo.read)",
-      });
-      continue;
-    }
-    const set = parseScopeSet(raw, at, hosts, problems);
-    if (set) out[name] = set;
-  }
-  return out;
-}
-
-/** The fields a scope-set overlay carries: a set's, with its `name` and the client it belongs to. */
-const OVERLAY_FIELDS = ["provider", "name", ...SCOPE_SET_FIELDS];
-
-/** What `parseScopeSetOverlay` returns. */
-export type ParsedScopeSetOverlay =
-  | { ok: true; name: string; set: OAuthScopeSet }
-  | { ok: false; problems: SpecProblem[] };
-
-/**
- * A scope set an operator adds to a built-in OAuth client
- * (`everyapp provider scope-set add google-workspace gmail-send.json`):
- * `{ "name": "gmail.send", "label", "access", "scopes", "routes" }`, held
- * to the rules a built-in set is (the set's shape, routes on the client's
- * `api` hosts alone, anchored `posts`) plus two of its own: `access` is
- * said outright (a write set is never implied by its scopes) and `routes`
- * is required. A `provider` field, when present, must be `id`. The name
- * may not be one of the client's own sets: an overlay adds, never
- * replaces. Nothing here reads a value.
- */
-export function parseScopeSetOverlay(
-  input: unknown,
-  client: { id: string; capability: OAuthClientCapability },
-): ParsedScopeSetOverlay {
-  const problems: SpecProblem[] = [];
-  if (!isRecord(input)) {
-    return {
-      ok: false,
-      problems: [{ path: "(root)", message: "must be a JSON object" }],
-    };
-  }
-  for (const field of Object.keys(input)) {
-    if (!OVERLAY_FIELDS.includes(field)) {
-      problems.push({ path: field, message: "unknown field" });
-    }
-  }
-  const policy = client.capability.scopePolicy;
-  if (!policy) {
-    problems.push({
-      path: "(root)",
-      message: `${client.id} has no scope sets: the whole client is the grant`,
-    });
-  }
-  if (input["provider"] !== undefined && input["provider"] !== client.id) {
-    problems.push({
-      path: "provider",
-      message: `is ${String(input["provider"])}, not ${client.id}`,
-    });
-  }
-  const name = input["name"];
-  if (typeof name !== "string" || !SCOPE_SET_NAME.test(name)) {
-    problems.push({
-      path: "name",
-      message:
-        "required: identity, or <area>.<access> in lowercase (gmail.send)",
-    });
-  } else if (policy && Object.hasOwn(policy.sets, name)) {
-    problems.push({
-      path: "name",
-      message: `${name} is one of ${client.id}'s own sets; an overlay adds a set, never replaces one`,
-    });
-  }
-  // The set's own fields alone: an unknown one was reported above.
-  const fields = Object.fromEntries(
-    Object.entries(input).filter(([field]) => SCOPE_SET_FIELDS.includes(field)),
-  );
-  const set = parseScopeSet(fields, "(set)", client.capability.api, problems, {
-    overlay: true,
-  });
-  if (problems.length > 0 || !set || typeof name !== "string") {
-    return { ok: false, problems };
-  }
-  return { ok: true, name, set };
-}
-
-/**
- * `capability` with `sets` added to its scope policy: the sets after the
- * client's own, in the order given, and each set's scopes added to the
- * authorize URL's list (what the operator's client must be allowed), as
- * `parseOAuthUserSpec` builds it. A name the client already has is left
- * as the client's (the registry refuses such an overlay before this).
- */
-export function withScopeSets(
-  capability: OAuthClientCapability,
-  sets: Readonly<Record<string, OAuthScopeSet>>,
-): OAuthClientCapability {
-  const policy = capability.scopePolicy;
-  if (!policy) return capability;
-  const merged: Record<string, OAuthScopeSet> = { ...policy.sets };
-  const scopes = [...capability.authorize.scopes];
-  for (const [name, set] of Object.entries(sets)) {
-    if (Object.hasOwn(merged, name)) continue;
-    merged[name] = set;
-    for (const scope of set.scopes) {
-      if (!scopes.includes(scope)) scopes.push(scope);
-    }
-  }
-  return {
-    ...capability,
-    authorize: { ...capability.authorize, scopes },
-    scopePolicy: { ...policy, sets: merged },
-  };
-}
-
 function identity(
   value: unknown,
   hosts: readonly string[],
   problems: SpecProblem[],
-): OAuthIdentity | undefined {
+): { identity: OAuthIdentity; scopes: string[] } | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) {
     problems.push({
       path: "auth.identity",
-      message: "must be { url, label, id? }",
+      message: "must be { url, label, id?, scopes? }",
     });
     return undefined;
   }
   for (const field of Object.keys(value)) {
-    if (!["url", "label", "id"].includes(field)) {
+    if (!["url", "label", "id", "scopes"].includes(field)) {
       problems.push({
         path: `auth.identity.${field}`,
         message: "unknown field",
@@ -584,8 +311,12 @@ function identity(
       message: "must be a JSON field name, or a dotted path to a nested one",
     });
   }
+  const scopes = scopeList(value["scopes"], "auth.identity.scopes", problems);
   if (!url || label === undefined) return undefined;
-  return { url: url.url, label, ...(id === undefined ? {} : { id }) };
+  return {
+    identity: { url: url.url, label, ...(id === undefined ? {} : { id }) },
+    scopes: scopes ?? [],
+  };
 }
 
 /** What `parseOAuthUserSpec` returns on success, before the registry's rules. */
@@ -596,21 +327,21 @@ export interface ParsedOAuthSpec {
 }
 
 /**
- * Parse the OAuth half of a spec whose `auth.kind` is `oauth2-user`:
- * `auth` itself, `scopeSets`, `alwaysRequested` and `tolerated`, with
- * the common fields already parsed. Every problem is reported; on
- * success the catalog-shaped capability with its `flow`.
+ * Parse the OAuth half of a spec whose `auth.kind` is `oauth2-user`, with
+ * the common fields already parsed. Every problem is reported; on success
+ * the capability with its `flow`.
  */
 export function parseOAuthUserSpec(
   input: Record<string, unknown>,
   common: OAuthSpecCommon,
   problems: SpecProblem[],
 ): ParsedOAuthSpec | undefined {
-  const settingName_ = (value: unknown, path: string, into: SpecProblem[]) =>
-    settingName(value, path, into, /^[A-Z][A-Z0-9_]{2,63}$/);
   const auth = input["auth"] as Record<string, unknown>;
   for (const field of Object.keys(auth)) {
-    if (!(OAUTH_AUTH_FIELDS as readonly string[]).includes(field)) {
+    const renamed = RENAMED_AUTH_FIELDS[field];
+    if (renamed) {
+      problems.push({ path: `auth.${field}`, message: renamed });
+    } else if (!(OAUTH_AUTH_FIELDS as readonly string[]).includes(field)) {
       problems.push({
         path: `auth.${field}`,
         message: "not a field of auth.kind oauth2-user",
@@ -621,9 +352,7 @@ export function parseOAuthUserSpec(
     auth["authorizeUrl"],
     "auth.authorizeUrl",
     problems,
-    {
-      query: true,
-    },
+    { query: true },
   );
   if (auth["authorizeUrl"] === undefined) {
     problems.push({ path: "auth.authorizeUrl", message: "required" });
@@ -649,16 +378,13 @@ export function parseOAuthUserSpec(
     });
   }
   if (revokeMethod !== undefined && revoke === undefined) {
-    problems.push({
-      path: "auth.revokeMethod",
-      message: "needs a revokeUrl",
-    });
+    problems.push({ path: "auth.revokeMethod", message: "needs a revokeUrl" });
   }
-  const clientId = settingName_(auth["clientId"], "auth.clientId", problems);
+  const clientId = settingName(auth["clientId"], "auth.clientId", problems);
   const clientSecret =
     auth["clientSecret"] === undefined
       ? undefined
-      : settingName_(auth["clientSecret"], "auth.clientSecret", problems);
+      : settingName(auth["clientSecret"], "auth.clientSecret", problems);
   if (clientSecret !== undefined && clientSecret === clientId) {
     problems.push({
       path: "auth.clientSecret",
@@ -676,11 +402,21 @@ export function parseOAuthUserSpec(
   if (typeof pkce !== "boolean") {
     problems.push({ path: "auth.pkce", message: "must be true or false" });
   }
-  const dialect = auth["scopeDialect"] ?? "space";
-  if (!(DIALECTS as readonly unknown[]).includes(dialect)) {
+  const separator = auth["scopeSeparator"] ?? "space";
+  if (!(SEPARATORS as readonly unknown[]).includes(separator)) {
     problems.push({
-      path: "auth.scopeDialect",
-      message: `must be one of ${DIALECTS.join(", ")}`,
+      path: "auth.scopeSeparator",
+      message: `must be one of ${SEPARATORS.join(", ")}`,
+    });
+  }
+  const prefix = endpoint(auth["scopePrefix"], "auth.scopePrefix", problems, {
+    query: false,
+  });
+  if (prefix && !prefix.url.endsWith("/")) {
+    problems.push({
+      path: "auth.scopePrefix",
+      message:
+        "must end in / (https://www.googleapis.com/auth/): an app's scope is joined onto it",
     });
   }
   const authorizeParams = stringMap(
@@ -691,20 +427,13 @@ export function parseOAuthUserSpec(
       if (!PARAM_NAME.test(name)) {
         problems.push({ path: at, message: "must be a query parameter name" });
       }
-      if (
-        [
-          "client_id",
-          "redirect_uri",
-          "response_type",
-          "scope",
-          "state",
-          "code_challenge",
-          "code_challenge_method",
-        ].includes(name)
-      ) {
+      if (RESERVED_AUTHORIZE_PARAMS.includes(name)) {
         problems.push({
           path: at,
-          message: `${name} is a parameter the Gateway sets itself`,
+          message:
+            name === "include_granted_scopes"
+              ? "include_granted_scopes would widen the token beyond the app's scopes; the Gateway never sends it"
+              : `${name} is a parameter the Gateway sets itself`,
         });
       }
     },
@@ -728,82 +457,63 @@ export function parseOAuthUserSpec(
     },
   );
   const parsedIdentity = identity(auth["identity"], common.hosts, problems);
-  const sets = scopeSets(input["scopeSets"], common.hosts, problems);
-  const alwaysRequested = scopeList(
-    input["alwaysRequested"],
-    "alwaysRequested",
-    problems,
-  );
-  const tolerated = scopeList(input["tolerated"], "tolerated", problems);
+  const tolerated = scopeList(auth["tolerated"], "auth.tolerated", problems);
   if (
     !authorize ||
     !token ||
     clientId === undefined ||
-    !sets ||
     typeof pkce !== "boolean" ||
-    !(DIALECTS as readonly unknown[]).includes(dialect) ||
+    !(SEPARATORS as readonly unknown[]).includes(separator) ||
     !(INJECTIONS as readonly unknown[]).includes(inject)
   ) {
     return undefined;
   }
-  const union: string[] = [];
-  const add = (scopes: readonly string[]) => {
-    for (const scope of scopes) if (!union.includes(scope)) union.push(scope);
-  };
-  for (const set of Object.values(sets)) {
-    add(set.scopes);
-    add(set.userScopes ?? []);
-  }
-  add(alwaysRequested ?? []);
-  const policy: OAuthScopePolicy = {
-    sets,
-    tolerated: tolerated ?? [],
-    alwaysRequested: alwaysRequested ?? [],
-    dialect: dialect as OAuthScopeDialect,
-    grantTypes: ["authorization_code", "refresh_token"],
-    requestScope: "keep",
-    deniedSegments: [...DEFAULT_DENIED_SEGMENTS],
-  };
   const flow: OAuthFlow = {
+    authorizeUrl: authorize.url,
     tokenUrl: token.url,
     ...(revoke === undefined ? {} : { revokeUrl: revoke.url }),
     ...(revokeMethod === undefined
       ? {}
       : { revokeMethod: revokeMethod as "POST" | "DELETE" }),
+    inject: inject as OAuthClientInjection,
     pkce,
-    scopeDialect: dialect as OAuthScopeDialect,
+    scopeSeparator: separator as OAuthScopeSeparator,
+    ...(prefix === undefined ? {} : { scopePrefix: prefix.url }),
     ...(authorizeParams === undefined ? {} : { authorizeParams }),
     ...(tokenHeaders === undefined ? {} : { tokenHeaders }),
-    ...(parsedIdentity === undefined ? {} : { identity: parsedIdentity }),
+    ...(parsedIdentity === undefined
+      ? {}
+      : { identity: parsedIdentity.identity }),
+    identityScopes: parsedIdentity?.scopes ?? [],
+    tolerated: tolerated ?? [],
   };
-  const tokenPath = new URL(token.url).pathname;
-  const capability: OAuthClientCapability = {
-    mode: "oauth_client",
-    label: common.name,
-    secrets: {
+  const capability = oauthCapabilityOf(
+    common,
+    {
       clientId,
       ...(clientSecret === undefined ? {} : { clientSecret }),
     },
-    token: [
-      {
-        host: token.host,
-        path: tokenPath,
-        methods: ["POST"],
-        inject: inject as OAuthClientInjection,
-      },
-    ],
-    access: common.access ?? ["read"],
+    flow,
+  );
+  const hosts = [...common.hosts];
+  for (const host of [authorize.host, token.host, revoke?.host]) {
+    if (host && !hosts.includes(host)) hosts.push(host);
+  }
+  return { capability, hosts };
+}
+
+function oauthCapabilityOf(
+  common: OAuthSpecCommon,
+  secrets: { clientId: string; clientSecret?: string },
+  flow: OAuthFlow,
+): OAuthClientCapability {
+  return {
+    mode: "oauth_client",
+    label: common.name,
+    secrets,
     console: common.docs,
-    authorize: { url: authorize.url, scopes: union },
-    scopePolicy: policy,
     api: [...common.hosts],
     flow,
-    ...(common.readMethods === undefined
-      ? {}
-      : { readMethods: common.readMethods }),
-    ...(common.writeMethods === undefined
-      ? {}
-      : { writeMethods: common.writeMethods }),
     ...(common.description === undefined
       ? {}
       : { description: common.description }),
@@ -812,26 +522,125 @@ export function parseOAuthUserSpec(
     ...(common.example === undefined ? {} : { example: common.example }),
     ...(common.tags === undefined ? {} : { tags: common.tags }),
   };
-  const hosts = [...common.hosts];
-  for (const host of [authorize.host, token.host, revoke?.host]) {
-    if (host && !hosts.includes(host)) hosts.push(host);
-  }
-  return { capability, hosts };
+}
+
+/** The JSON shape of an `oauth2-user` spec, as the built-ins and presets write it. */
+export interface OAuthSpecJson {
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string;
+  readonly docs: string;
+  readonly api?: string;
+  readonly hosts: readonly string[];
+  readonly auth: {
+    readonly kind: "oauth2-user";
+    readonly authorizeUrl: string;
+    readonly tokenUrl: string;
+    readonly revokeUrl?: string;
+    readonly revokeMethod?: "POST" | "DELETE";
+    readonly clientId: string;
+    readonly clientSecret?: string;
+    readonly inject?: OAuthClientInjection;
+    readonly pkce?: boolean;
+    readonly scopeSeparator?: OAuthScopeSeparator;
+    readonly scopePrefix?: string;
+    readonly authorizeParams?: Readonly<Record<string, string>>;
+    readonly tokenHeaders?: Readonly<Record<string, string>>;
+    readonly identity?: {
+      readonly url: string;
+      readonly label: string;
+      readonly id?: string;
+      readonly scopes?: readonly string[];
+    };
+    readonly tolerated?: readonly string[];
+  };
+  readonly hint?: string;
+  readonly example?: string;
+  readonly tags?: readonly string[];
 }
 
 /**
- * The JSON spec of an OAuth capability that has a `flow` (`provider
- * show`, a preset's round trip): `parseProviderSpec` of it gives the
- * capability back. A catalog client without a `flow` has no spec.
+ * A spec already known to be good (a built-in, checked by its test) as
+ * its capability, without the parse: what the catalog runs at load, where
+ * calling the full parser would be an import cycle.
+ */
+export function oauthCapabilityFromSpec(
+  spec: OAuthSpecJson,
+): OAuthClientCapability {
+  const { auth } = spec;
+  const flow: OAuthFlow = {
+    authorizeUrl: auth.authorizeUrl,
+    tokenUrl: auth.tokenUrl,
+    ...(auth.revokeUrl === undefined ? {} : { revokeUrl: auth.revokeUrl }),
+    ...(auth.revokeMethod === undefined
+      ? {}
+      : { revokeMethod: auth.revokeMethod }),
+    inject: auth.inject ?? "form",
+    pkce: auth.pkce ?? true,
+    scopeSeparator: auth.scopeSeparator ?? "space",
+    ...(auth.scopePrefix === undefined
+      ? {}
+      : { scopePrefix: auth.scopePrefix }),
+    ...(auth.authorizeParams === undefined
+      ? {}
+      : { authorizeParams: { ...auth.authorizeParams } }),
+    ...(auth.tokenHeaders === undefined
+      ? {}
+      : { tokenHeaders: { ...auth.tokenHeaders } }),
+    ...(auth.identity === undefined
+      ? {}
+      : {
+          identity: {
+            url: auth.identity.url,
+            label: auth.identity.label,
+            ...(auth.identity.id === undefined ? {} : { id: auth.identity.id }),
+          },
+        }),
+    identityScopes: [...(auth.identity?.scopes ?? [])],
+    tolerated: [...(auth.tolerated ?? [])],
+  };
+  return oauthCapabilityOf(
+    {
+      id: spec.id,
+      name: spec.name,
+      docs: spec.docs,
+      hosts: spec.hosts,
+      ...(spec.description === undefined
+        ? {}
+        : { description: spec.description }),
+      ...(spec.api === undefined ? {} : { reference: spec.api }),
+      ...(spec.hint === undefined ? {} : { hint: spec.hint }),
+      ...(spec.example === undefined ? {} : { example: spec.example }),
+      ...(spec.tags === undefined ? {} : { tags: spec.tags }),
+    },
+    {
+      clientId: auth.clientId,
+      ...(auth.clientSecret === undefined
+        ? {}
+        : { clientSecret: auth.clientSecret }),
+    },
+    flow,
+  );
+}
+
+/**
+ * The JSON spec of an OAuth capability (`provider show`, a preset's round
+ * trip): `parseProviderSpec` of it gives the capability back.
  */
 export function oauthSpecOf(
   id: string,
   capability: OAuthClientCapability,
-): Record<string, unknown> | null {
-  const flow = capability.flow;
-  const policy = capability.scopePolicy;
-  if (!flow || !policy) return null;
-  const inject = capability.token[0]?.inject ?? "form";
+): Record<string, unknown> {
+  const { flow } = capability;
+  const identity =
+    flow.identity === undefined
+      ? undefined
+      : {
+          ...flow.identity,
+          ...(flow.identityScopes.length === 0
+            ? {}
+            : { scopes: [...flow.identityScopes] }),
+        };
   return {
     id,
     name: capability.label,
@@ -845,7 +654,7 @@ export function oauthSpecOf(
     hosts: [...capability.api],
     auth: {
       kind: "oauth2-user",
-      authorizeUrl: capability.authorize.url,
+      authorizeUrl: flow.authorizeUrl,
       tokenUrl: flow.tokenUrl,
       ...(flow.revokeUrl === undefined ? {} : { revokeUrl: flow.revokeUrl }),
       ...(flow.revokeMethod === undefined
@@ -855,79 +664,27 @@ export function oauthSpecOf(
       ...(capability.secrets.clientSecret === undefined
         ? {}
         : { clientSecret: capability.secrets.clientSecret }),
-      inject,
+      inject: flow.inject,
       pkce: flow.pkce,
-      scopeDialect: flow.scopeDialect,
+      scopeSeparator: flow.scopeSeparator,
+      ...(flow.scopePrefix === undefined
+        ? {}
+        : { scopePrefix: flow.scopePrefix }),
       ...(flow.authorizeParams === undefined
         ? {}
         : { authorizeParams: { ...flow.authorizeParams } }),
       ...(flow.tokenHeaders === undefined
         ? {}
         : { tokenHeaders: { ...flow.tokenHeaders } }),
-      ...(flow.identity === undefined
+      ...(identity === undefined ? {} : { identity }),
+      ...(flow.tolerated.length === 0
         ? {}
-        : { identity: { ...flow.identity } }),
+        : { tolerated: [...flow.tolerated] }),
     },
-    scopeSets: Object.fromEntries(
-      Object.entries(policy.sets).map(([name, set]) => [
-        name,
-        {
-          label: set.label,
-          access: set.access,
-          scopes: [...set.scopes],
-          ...(set.userScopes === undefined
-            ? {}
-            : { userScopes: [...set.userScopes] }),
-          ...(set.routes.length === 0
-            ? {}
-            : {
-                routes: set.routes.map((route) => ({
-                  host: route.host,
-                  paths: [...route.paths],
-                  // `source` escapes `/` as `\/`; the spec wrote it bare.
-                  ...(route.posts === undefined
-                    ? {}
-                    : {
-                        posts: route.posts.map((pattern) =>
-                          pattern.source.replace(/\\\//g, "/"),
-                        ),
-                      }),
-                })),
-              }),
-        },
-      ]),
-    ),
-    ...(policy.alwaysRequested.length === 0
-      ? {}
-      : { alwaysRequested: [...policy.alwaysRequested] }),
-    ...(policy.tolerated.length === 0
-      ? {}
-      : { tolerated: [...policy.tolerated] }),
-    access: [...capability.access],
-    ...(capability.readMethods === undefined
-      ? {}
-      : { readMethods: [...capability.readMethods] }),
-    ...(capability.writeMethods === undefined
-      ? {}
-      : { writeMethods: [...capability.writeMethods] }),
     ...(capability.hint === undefined ? {} : { hint: capability.hint }),
     ...(capability.example === undefined
       ? {}
       : { example: capability.example }),
     ...(capability.tags === undefined ? {} : { tags: [...capability.tags] }),
   };
-}
-
-/** The methods a held-token write may use on `capability` beyond its reads. */
-export function oauthWriteMethods(
-  capability: OAuthClientCapability,
-): readonly string[] {
-  return capability.writeMethods ?? DEFAULT_WRITE_METHODS;
-}
-
-/** The methods a read grant may use on `capability` (GET and HEAD unless the spec says). */
-export function oauthReadMethods(
-  capability: OAuthClientCapability,
-): readonly string[] {
-  return capability.readMethods ?? ["GET", "HEAD"];
 }

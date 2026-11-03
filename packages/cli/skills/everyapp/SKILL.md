@@ -59,14 +59,15 @@ takes it as fetch, with http://every-app-gateway.internal/api/ai/openai/v1
 as baseURL; the other two base URLs and the code are on the identity
 page); the Gateway holds the key, never the app, and a provider the
 manifest doesn't list is refused provider_not_allowed 403. A capability
-(members, email, an OAuth client, DataForSEO) is listed under
-capabilities with access and a why and called with listMembers(),
-sendEmail() or integrationFetch() (secrets page); an OAuth client with
-scope sets (google-workspace, microsoft-365, slack) is listed with
-scopes: [...] and held to them; after a schema change run pnpm run
-db:generate; a value only dev needs goes in .dev.vars, never in git (dev
-page). The way back: the first row of the app's sidebar (or of its page
-header when it has no sidebar) is a muted "‹ EveryApp" link to
+(members, email, DataForSEO) is listed under capabilities with access
+and a why and called with listMembers(), sendEmail() or
+integrationFetch() (secrets page); an OAuth provider (google-workspace,
+microsoft-365, slack, github-oauth) is listed with { scopes: [...], why },
+the provider's own scopes, and a person connects it in the app
+(connectUrl()); after a schema change run pnpm run db:generate; a value
+only dev needs goes in .dev.vars, never in git (dev page). The way
+back: the first row of the app's sidebar (or of its page header when it
+has no sidebar) is a muted "‹ EveryApp" link to
 GATEWAY_URL (aria-label "Back to EveryApp"), above the app's own name,
 so every app on the Gateway reads the same; put nothing else about the
 Gateway in the footer.

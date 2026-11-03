@@ -14,7 +14,6 @@ import {
   type ApiKeyAuth,
   type ApiKeyCapability,
   type OAuthClientCapability,
-  type OAuthTokenEndpoint,
 } from "./capabilities";
 import { writeMethodsOf } from "./providerSpec";
 
@@ -101,10 +100,6 @@ const clients = Object.entries(CAPABILITIES).flatMap(([id, capability]) =>
     : [],
 );
 
-function endpoint({ host, path, methods, inject }: OAuthTokenEndpoint): string {
-  return `${methods.join("/")} \`${host}${path}\` (${inject})`;
-}
-
 function generated(): string {
   const rows = clients.map(([id, capability]) =>
     [
@@ -114,37 +109,26 @@ function generated(): string {
         .map((name) => `\`${name}\``)
         .join(", "),
       capability.console,
-      capability.token.map(endpoint).join("; "),
+      capability.api.map((host) => `\`${host}\``).join(", "),
     ].join(" | "),
   );
   const commands = clients.map(([, capability]) =>
     oauthClientSecretSetCommand(capability),
   );
-  const scopes = clients.map(([id, capability]) =>
+  const scopes = clients.map(([id, { flow }]) =>
     [
       `\`${id}\``,
-      `\`${capability.authorize.url}\``,
-      capability.authorize.scopes.map((scope) => `\`${scope}\``).join(", "),
+      flow.scopeSeparator,
+      flow.scopePrefix ? `\`${flow.scopePrefix}\`` : "none",
+      flow.identityScopes.length > 0
+        ? flow.identityScopes.map((scope) => `\`${scope}\``).join(", ")
+        : "none",
     ].join(" | "),
-  );
-  const sets = clients.flatMap(([id, capability]) =>
-    Object.entries(capability.scopePolicy?.sets ?? {}).map(([name, set]) =>
-      [
-        `\`${id}\``,
-        `\`${name}\``,
-        set.label,
-        set.access,
-        [
-          ...set.scopes.map((scope) => `\`${scope}\``),
-          ...(set.userScopes ?? []).map((scope) => `\`${scope}\` (user token)`),
-        ].join(", "),
-      ].join(" | "),
-    ),
   );
   return [
     BEGIN,
     "",
-    "| Capability | Provider | Gateway secrets | Developer console | Token endpoints the gateway completes (where the client goes) |",
+    "| Capability | Provider | Gateway secrets | Developer console | API hosts the token is sent to |",
     "| --- | --- | --- | --- | --- |",
     ...rows.map((row) => `| ${row} |`),
     "",
@@ -154,17 +138,11 @@ function generated(): string {
     ...commands,
     "```",
     "",
-    "The authorize page each client sends people to, and the scopes the operator allows on the client; an app lists the scope sets it uses:",
+    "How each provider spells scopes. An app lists the provider's own scopes (`scopes` on its capability entry), short (joined onto the prefix) or in full; the Gateway adds the identity scopes to every connect:",
     "",
-    "| Capability | Authorize URL | Scopes |",
-    "| --- | --- | --- |",
+    "| Capability | Separator | Scope prefix | Identity scopes |",
+    "| --- | --- | --- | --- |",
     ...scopes.map((row) => `| ${row} |`),
-    "",
-    "Scope sets an app may list (`scopes` on its capability entry), each with the provider scopes it asks for; a client with none takes the whole client as the grant:",
-    "",
-    "| Capability | Scope set | Label | Access | Provider scopes |",
-    "| --- | --- | --- | --- | --- |",
-    ...sets.map((row) => `| ${row} |`),
     "",
     END,
   ].join("\n");
@@ -190,7 +168,7 @@ describe("docs/capabilities.md", () => {
     expectGenerated(API_KEY_BEGIN, API_KEY_END, generatedApiKeyProviders());
   });
 
-  it("lists every OAuth client as the registry defines it", () => {
+  it("lists every OAuth provider as the catalog defines it", () => {
     expectGenerated(BEGIN, END, generated());
   });
 });

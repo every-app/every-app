@@ -2,19 +2,10 @@ import { Component, useMemo, useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import {
-  KeyRound,
-  Link2,
-  ListChecks,
-  Plus,
-  Trash2,
-  Unplug,
-} from "lucide-react";
+import { KeyRound, Plus, Trash2, Unplug } from "lucide-react";
 import { toast } from "sonner";
 import { AddOAuthProviderDialog } from "@/client/components/admin/AddOAuthProviderDialog";
 import { ReplaceOAuthClientDialog } from "@/client/components/admin/ReplaceOAuthClientDialog";
-import { ScopeSetsDialog } from "@/client/components/admin/ScopeSetsDialog";
-import { BackgroundGrants } from "@/client/components/BackgroundGrants";
 import { CodeBlock } from "@/client/components/CodeBlock";
 import { ConfirmDialog } from "@/client/components/ConfirmDialog";
 import { ErrorState } from "@/client/components/ErrorState";
@@ -37,11 +28,7 @@ import { DropdownMenuItem } from "@/client/components/ui/dropdown-menu";
 import { Input } from "@/client/components/ui/input";
 import { Skeleton } from "@/client/components/ui/skeleton";
 import { getRuleErrorMessage } from "@/client/errors";
-import {
-  clientSourceLabel,
-  connectPathFor,
-  scopeSetsText,
-} from "@/client/lib/oauthProviders";
+import { clientSourceLabel, scopesText } from "@/client/lib/oauthProviders";
 import { getAiDefault } from "@/serverFunctions/ai";
 import {
   disconnectConnection,
@@ -49,11 +36,9 @@ import {
 } from "@/serverFunctions/connections";
 import {
   addOAuthProvider,
-  addScopeSet,
   listProviders,
   removeOAuthClient,
   removeProvider,
-  removeScopeSet,
   setOAuthClient,
 } from "@/serverFunctions/providers";
 
@@ -77,9 +62,6 @@ const KIND_LABEL: Record<Provider["kind"], string> = {
   ai: "AI",
   service: "Gateway service",
 };
-
-/** The same path the callback returns to after "Connect for the organization". */
-const ADMIN_RETURN_PATH = "/admin/providers";
 
 /** The user docs' provider pages: where to get a key. */
 const PROVIDER_DOCS_URL = "https://everyapp.com/docs/providers";
@@ -325,17 +307,14 @@ function SetKeyDialog({
 interface ProviderActionHandlers {
   onReplaceClient: (provider: OAuthProvider) => void;
   onForgetClient: (provider: OAuthProvider) => void;
-  /** A built-in client's scope sets: the client's own and the ones added here. */
-  onScopeSets: (provider: Provider) => void;
   onRemove: (provider: Provider) => void;
 }
 
-/** A provider's menu: its client for an OAuth one, Scope sets for a built-in client with sets, Remove for a registered row; none for a built-in key. */
+/** A provider's menu: its client for an OAuth one, Remove for a registered row; none for a built-in key. */
 function ProviderActions({
   provider,
   onReplaceClient,
   onForgetClient,
-  onScopeSets,
   onRemove,
 }: { provider: Provider } & ProviderActionHandlers) {
   const entry = provider.oauth;
@@ -352,27 +331,6 @@ function ProviderActions({
         <DropdownMenuItem onClick={() => onForgetClient(entry)}>
           <Unplug />
           Forget pasted client
-        </DropdownMenuItem>
-      ) : null}
-      {entry && provider.source === "catalog" && entry.scopeSets.length > 0 ? (
-        <DropdownMenuItem onClick={() => onScopeSets(provider)}>
-          <ListChecks />
-          Scope sets
-        </DropdownMenuItem>
-      ) : null}
-      {entry?.client.source ? (
-        <DropdownMenuItem
-          render={
-            <a
-              href={connectPathFor(entry.id, {
-                account: "organization",
-                returnTo: ADMIN_RETURN_PATH,
-              })}
-            />
-          }
-        >
-          <Link2 />
-          Connect for the organization
         </DropdownMenuItem>
       ) : null}
       {provider.source === "row" ? (
@@ -491,18 +449,13 @@ function connectionColumns({
   return [
     {
       id: "who",
-      accessorFn: (connection) =>
-        connection.account === "organization"
-          ? "Organization"
-          : (connection.userEmail ?? connection.userId ?? ""),
+      accessorFn: (connection) => connection.userEmail ?? connection.userId,
       header: ({ column }) => <SortableHeader column={column} label="Who" />,
       meta: { label: "Who", cellClassName: "max-w-[240px]" },
       cell: ({ row: { original: connection } }) => (
         <>
           <p className="truncate font-medium">
-            {connection.account === "organization"
-              ? "The organization"
-              : (connection.userEmail ?? connection.userId)}
+            {connection.userEmail ?? connection.userId}
           </p>
           {connection.label ? (
             <p className="truncate text-xs text-muted-foreground">
@@ -520,12 +473,18 @@ function connectionColumns({
       meta: { label: "Provider" },
     },
     {
-      id: "scopeSets",
-      header: "Scope sets",
+      id: "app",
+      accessorFn: (connection) => connection.app.name,
+      header: ({ column }) => <SortableHeader column={column} label="App" />,
+      meta: { label: "App" },
+    },
+    {
+      id: "scopes",
+      header: "Scopes",
       enableSorting: false,
       meta: { cellClassName: "font-mono text-xs text-muted-foreground" },
       cell: ({ row: { original: connection } }) =>
-        scopeSetsText(connection.scopeSets),
+        scopesText(connection.scopes),
     },
     {
       accessorKey: "status",
@@ -533,7 +492,7 @@ function connectionColumns({
       enableSorting: false,
       cell: ({ row: { original: connection } }) =>
         connection.status === "expired" ? (
-          <Badge variant="warning">Needs reconnecting</Badge>
+          <Badge variant="warning">Reconnect in the app</Badge>
         ) : (
           <Badge variant="success">Connected</Badge>
         ),
@@ -559,7 +518,7 @@ function connectionColumns({
       meta: { headerClassName: "w-10" },
       cell: ({ row: { original: connection } }) => (
         <RowActionsMenu
-          label={`Actions for ${connection.providerName} connection`}
+          label={`Actions for ${connection.userEmail ?? connection.userId}'s ${connection.providerName} connection in ${connection.app.name}`}
         >
           <DropdownMenuItem
             variant="destructive"
@@ -576,13 +535,13 @@ function connectionColumns({
 }
 
 /**
- * Manage workspace → Providers (docs/design/2026-10-oauth-providers.md
- * section 9): every provider the Gateway brokers, where each one's key or
- * client comes from (never a value), the OAuth ones with their redirect
- * URI and connection count; Add OAuth provider from a preset or a custom
- * spec with the client pasted in; Replace or Forget a client; Remove a
- * registered provider; and every connection in the organization, each
- * disconnectable. Owners and admins.
+ * Manage workspace → Providers (docs/design/2026-11-oauth-simplify.md):
+ * every provider the Gateway brokers, where each one's key or client comes
+ * from (never a value), the OAuth ones with their redirect URI and
+ * connection count; Add OAuth provider from a preset or a custom spec with
+ * the client pasted in; Replace or Forget a client; Remove a registered
+ * provider; and every connection in the organization (one person's in one
+ * app), each disconnectable. Owners and admins.
  */
 function ProvidersPage() {
   const queryClient = useQueryClient();
@@ -590,7 +549,6 @@ function ProvidersPage() {
   const [replacing, setReplacing] = useState<OAuthProvider | null>(null);
   const [forgetting, setForgetting] = useState<OAuthProvider | null>(null);
   const [removing, setRemoving] = useState<Provider | null>(null);
-  const [scopeSetsFor, setScopeSetsFor] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<Connection | null>(null);
   const [settingKey, setSettingKey] = useState<Provider | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -646,20 +604,6 @@ function ProvidersPage() {
     onError: (error) =>
       toast.error(getRuleErrorMessage(error, "Failed to forget the client")),
   });
-  const addScopeSetMutation = useMutation({
-    mutationFn: addScopeSet,
-    onSuccess: async (provider) => {
-      await refresh();
-      toast.success(`${provider.name} scope set added`);
-    },
-  });
-  const removeScopeSetMutation = useMutation({
-    mutationFn: removeScopeSet,
-    onSuccess: async () => {
-      await refresh();
-      toast.success("Scope set removed");
-    },
-  });
   const removeMutation = useMutation({
     mutationFn: removeProvider,
     onSuccess: async () => {
@@ -683,17 +627,10 @@ function ProvidersPage() {
     () => ({
       onReplaceClient: setReplacing,
       onForgetClient: setForgetting,
-      onScopeSets: (provider) => setScopeSetsFor(provider.id),
       onRemove: setRemoving,
     }),
     [],
   );
-  // The dialog reads the provider from the query, so its list refreshes
-  // after an add or a remove.
-  const scopeSetsProvider =
-    providersQuery.data?.providers.find(
-      (provider) => provider.id === scopeSetsFor,
-    ) ?? null;
   const providerCols = useMemo(() => providerColumns(actions), [actions]);
   const groups = useMemo(
     () => partitionProviders(providersQuery.data?.providers ?? []),
@@ -900,7 +837,7 @@ function ProvidersPage() {
       <section className="space-y-4">
         <SectionHeader
           title="Connections"
-          hint="Every account connected in this workspace: each person's and the organization's. Disconnecting removes the tokens here and, where the provider allows, revokes them."
+          hint="Every account connected in this workspace, each one person's in one app. Disconnecting removes the tokens here and, where the provider allows, revokes them."
         />
         <DataTable
           table={connectionsTable}
@@ -916,13 +853,10 @@ function ProvidersPage() {
           }
           empty={{
             title: "No connections yet",
-            description:
-              "People connect under their account's Connected accounts; the organization's from a provider's menu above.",
+            description: "People connect accounts inside each app.",
           }}
         />
       </section>
-
-      <BackgroundGrants admin />
 
       {adding ? (
         <AddOAuthProviderDialog
@@ -938,27 +872,6 @@ function ProvidersPage() {
         <SetKeyDialog
           provider={settingKey}
           onClose={() => setSettingKey(null)}
-        />
-      ) : null}
-
-      {scopeSetsProvider?.oauth ? (
-        <ScopeSetsDialog
-          provider={{
-            id: scopeSetsProvider.id,
-            name: scopeSetsProvider.name,
-            console: scopeSetsProvider.oauth.console,
-            hosts: scopeSetsProvider.hosts,
-            scopeSets: scopeSetsProvider.oauth.scopeSets,
-          }}
-          onAdd={async (input) => {
-            await addScopeSetMutation.mutateAsync({ data: input });
-          }}
-          onRemove={async (name) => {
-            await removeScopeSetMutation.mutateAsync({
-              data: { providerId: scopeSetsProvider.id, name },
-            });
-          }}
-          onClose={() => setScopeSetsFor(null)}
         />
       ) : null}
 
@@ -1020,29 +933,20 @@ function ProvidersPage() {
 
       {disconnecting ? (
         <ConfirmDialog
-          title={`Disconnect ${disconnecting.providerName}?`}
+          title={`Disconnect ${disconnecting.userEmail ?? disconnecting.userId}'s ${disconnecting.providerName} from ${disconnecting.app.name}?`}
           confirmLabel="Disconnect"
           destructive
           pending={disconnectMutation.isPending}
           onClose={() => setDisconnecting(null)}
           onConfirm={() =>
             disconnectMutation.mutate(
-              {
-                data: {
-                  providerId: disconnecting.providerId,
-                  account: disconnecting.account,
-                  ...(disconnecting.account === "user" && disconnecting.userId
-                    ? { userId: disconnecting.userId }
-                    : {}),
-                },
-              },
+              { data: { connectionId: disconnecting.id } },
               { onSettled: () => setDisconnecting(null) },
             )
           }
         >
-          {disconnecting.account === "organization"
-            ? "Background work that uses the organization's account stops until someone connects it again."
-            : "Apps lose this person's account until they connect again."}
+          {disconnecting.app.name} loses this person&apos;s account until they
+          connect it again there.
         </ConfirmDialog>
       ) : null}
     </div>

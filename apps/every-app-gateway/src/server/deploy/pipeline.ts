@@ -19,7 +19,6 @@
  */
 import type { WorkerModule } from "@/server/deploy/cf-rest";
 import { gatewayNamesOf } from "@/server/gateway-name";
-import { gatewayProviders } from "@/server/providers";
 import {
   bundleModuleType,
   resourceNameFor,
@@ -168,13 +167,11 @@ export async function runDeploy(input: DeployInput): Promise<AppRow> {
 
   // 1. Every refusal first: nothing is created, and the database never
   // changes, for a bundle that can't go.
-  const lookup = await gatewayProviders();
   const problems = bundleProblems(
     bundle.worker,
     manifest,
     limits,
     bundle.assets.size > 0,
-    lookup,
   );
   if (problems.length > 0) throw bundleRefused(problems);
   const modules = workerModules(bundle);
@@ -239,7 +236,6 @@ export async function runDeploy(input: DeployInput): Promise<AppRow> {
       d1,
       limits,
       durableObjects,
-      lookup,
       ...(assetsJwt ? { assetsJwt } : {}),
     },
   });

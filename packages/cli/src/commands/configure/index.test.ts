@@ -649,7 +649,7 @@ describe("configure from a script", () => {
     const manifest: EveryAppCliManifest = {
       id: "crm",
       resources: { d1: ["DB"] },
-      capabilities: { "google-workspace": { access: "write", scopes: ["gmail.read"] } },
+      capabilities: { "google-workspace": { scopes: ["gmail.readonly"], why: "Reads mail." } },
     };
     const dir = appDir(manifest);
     await deploy(dir, manifest);

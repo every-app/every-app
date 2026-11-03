@@ -1,5 +1,7 @@
 # #888: background work on one member's OAuth connection
 
+Superseded by docs/design/2026-11-oauth-simplify.md.
+
 **Agent-assumed, pending Ben's review.** Decided 2026-11-01 by the decide-888 agent. Source: TODO.md, "OAuth provider gaps from OpenMail's Gmail POC (2026-10-31)", the first question. Not built.
 
 Before the plan changed to "decide autonomously", Ben answered two rounds of questions in the question tool on 2026-11-01. He picked the recommended option on all eight, and those answers are what this file records. He never said them in his own words, so treat it as his first look, not a ruling.

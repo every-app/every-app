@@ -352,17 +352,15 @@ describe("everyapp dev", () => {
       );
       expect(devVarsHint(mailer, cwd)).toEqual([]);
 
-      // Slack's client.
-      const poster = { id: "crm", capabilities: { slack: { access: "write", scopes: ["messages.write"] } } } as const;
-      await fs.writeFile(
-        path.join(cwd, ".dev.vars"),
-        "SLACK_CLIENT_ID=id\nSLACK_CLIENT_SECRET=secret\n",
-      );
+      // An OAuth provider: a token of the developer's own stands in for
+      // the connection; the client isn't needed locally.
+      const poster = { id: "crm", capabilities: { slack: { scopes: ["chat:write"], why: "Posts updates." } } } as const;
+      await fs.writeFile(path.join(cwd, ".dev.vars"), "SLACK_ACCESS_TOKEN=xoxb-dev\n");
       expect(devVarsHint(poster, cwd)).toEqual([]);
-      // Its secret alone is named.
-      await fs.writeFile(path.join(cwd, ".dev.vars"), "SLACK_CLIENT_ID=id\n");
+      // Without it, the token is named, never the client.
+      await fs.writeFile(path.join(cwd, ".dev.vars"), "SLACK_CLIENT_ID=id\nSLACK_CLIENT_SECRET=secret\n");
       expect(lines(devVarsHint(poster, cwd))).toEqual([
-        "Dev vars  .dev.vars is missing SLACK_CLIENT_SECRET  (the app's keys for local runs; see pnpm everyapp dev --help)",
+        "Dev vars  .dev.vars is missing SLACK_ACCESS_TOKEN  (the app's keys for local runs; see pnpm everyapp dev --help)",
       ]);
     });
 

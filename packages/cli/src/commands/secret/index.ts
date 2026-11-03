@@ -221,14 +221,21 @@ export async function applySecretValues(options: SetSecretsOptions) {
   return { applied, gatewayHost: reached.gatewayHost };
 }
 
+/** The hosts an OAuth client is sent to (its token and revoke endpoints) and the hosts a person's token goes to (its API hosts). */
+function oauthHosts(capability: Extract<RegistrableCapability, { mode: "oauth_client" }>): string[] {
+  const hosts: string[] = [];
+  for (const url of [capability.flow.tokenUrl, capability.flow.revokeUrl]) {
+    if (!url) continue;
+    const host = new URL(url).host;
+    if (!hosts.includes(host)) hosts.push(host);
+  }
+  for (const host of capability.api) if (!hosts.includes(host)) hosts.push(host);
+  return hosts;
+}
+
 /** "the key is sent to api.stripe.com and the host STRIPE_HOST names"; an OAuth client's goes to its token endpoint, the token to its API hosts. */
 function hostsOf(capability: RegistrableCapability): string {
-  if (capability.mode === "oauth_client") {
-    return listed([
-      ...capability.token.map((endpoint) => endpoint.host ?? "the provider's origin"),
-      ...capability.api,
-    ]);
-  }
+  if (capability.mode === "oauth_client") return listed(oauthHosts(capability));
   if (capability.mode === "ai") return `${capability.origin}${capability.basePath ?? ""}`;
   return listed([
     ...capability.hosts,
@@ -239,7 +246,7 @@ function hostsOf(capability: RegistrableCapability): string {
 /** The hosts a row's settings reach, for a step's data. */
 function rowHosts(capability: RegistrableCapability): string[] {
   return capability.mode === "oauth_client"
-    ? [...capability.token.flatMap((endpoint) => (endpoint.host ? [endpoint.host] : [])), ...capability.api]
+    ? oauthHosts(capability)
     : capability.mode === "ai"
       ? [new URL(capability.origin).host]
       : [...capability.hosts];

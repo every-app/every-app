@@ -12,7 +12,7 @@
  * Types only, and a leaf module: `cloudflare.config.ts` imports the manifest,
  * and the Cloudflare Vite plugin hides from the Worker every file the config
  * imports. The rules beyond the shape (which ids exist, which names are
- * reserved, which scope sets a provider has) are the CLI's: `everyapp deploy`
+ * reserved, which scopes a provider takes) are the CLI's: `everyapp deploy`
  * and `everyapp dev` validate the manifest and say what is wrong. The
  * perimeter's schema (`@every-app/perimeter/manifest`) is held to this type
  * by a test there.
@@ -116,22 +116,31 @@ export interface EveryAppResources {
   readonly artifacts?: readonly { readonly name: string }[];
 }
 
-/** One capability the Gateway serves the app with keys it holds. */
-export interface EveryAppCapabilityEntry extends EveryAppSettingNeed {
+/**
+ * One capability the Gateway serves the app with: an API-key provider or
+ * a service, by `access`; an OAuth provider, by the provider's own scopes.
+ */
+export type EveryAppCapabilityEntry =
+  | EveryAppKeyCapabilityEntry
+  | EveryAppOAuthCapabilityEntry;
+
+/** A provider whose key the Gateway holds, or a Gateway service. */
+export interface EveryAppKeyCapabilityEntry extends EveryAppSettingNeed {
   readonly access: "read" | "write";
-  /** An OAuth client's scope sets, by name (`["gmail.read"]`). */
-  readonly scopes?: readonly string[];
-  /**
-   * For an OAuth provider the Gateway connects people to: the sets (a
-   * subset of `scopes`) the app may use on a member's own connection with
-   * nobody present, once that member allows it on the Gateway's page
-   * (`connectUrl({ background: true })`), and why, which that page shows.
-   * Calls name the member with `for: { background: true, userId }`.
-   */
-  readonly background?: {
-    readonly scopes: readonly string[];
-    readonly why: string;
-  };
+  readonly scopes?: never;
+}
+
+/**
+ * An OAuth provider (`google-workspace`, `github`): the provider's own
+ * scope strings the app needs, short (`gmail.modify`) or in full. A person
+ * connects in the app for exactly these; the Gateway adds the scopes that
+ * name the account, and refuses a token that carries more.
+ */
+export interface EveryAppOAuthCapabilityEntry extends EveryAppSettingNeed {
+  readonly scopes: readonly string[];
+  /** Why the app needs it, shown where people connect. At most 200 characters. */
+  readonly why: string;
+  readonly access?: never;
 }
 
 /**

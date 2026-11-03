@@ -72,7 +72,7 @@ Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379);
                                              │ provider keys stay on the Gateway
                                              ▼
                         OpenAI / OpenRouter / Workers AI / DataForSEO / Context.dev /
-                        social networks' token endpoints / Email Sending
+                        OAuth providers' API hosts (a person's token, per app) / Email Sending
 
                  Gateway Worker ──► subscriber URLs (B9): one signed POST per event
                    (HMAC-SHA256 over t.body, https to a public host, never itself,
@@ -112,7 +112,7 @@ What an attacker would want, roughly in the order it would hurt.
 |---|---|---|---|
 | A1 | The Cloudflare account and its credentials (the operator's login, `CLOUDFLARE_API_TOKEN` in CI, the Gateway's deploy token) | Cloudflare; the operator's machine; the Gateway's secrets when Gateway app installs are on | The operator |
 | A2 | The Gateway's signing material: `JWT_PRIVATE_KEY` (identity tokens), `BETTER_AUTH_SECRET` (sessions, host sessions through HKDF, the setup and invitation hashes) | Worker secrets | Nobody reads them; the Gateway uses them |
-| A3 | Provider keys and OAuth client secrets the operator configured (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `WORKERS_AI_API_TOKEN`, `DATAFORSEO_*`, `CONTEXT_API_KEY`, `SLACK_CLIENT_SECRET`, …, `EMAIL_REST_API_TOKEN`, `RESEND_API_KEY`), the keys of the API providers registered on this Gateway (`everyapp provider add`: settings named after the provider, `STRIPE_API_KEY`), and since 2026-10-25 the OAuth clients pasted in Manage workspace → Providers and the tokens of every connected account (`docs/design/2026-10-oauth-providers.md`) | Worker secrets; a registered provider's spec (no value) in the Gateway's D1 (`providers`); a pasted client's secret and every connection's access and refresh tokens sealed in D1 (`oauth_clients`, `provider_connections`: AES-256-GCM under a key derived from `BETTER_AUTH_SECRET`) | Apps use them only through the Gateway's proxies, never hold them; a registered provider's key is read only for the hosts it was set for; a pasted client only while its row still has the endpoints it was pasted for; a person's token only on a call the app's declared scope sets cover |
+| A3 | Provider keys and OAuth client secrets the operator configured (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `WORKERS_AI_API_TOKEN`, `DATAFORSEO_*`, `CONTEXT_API_KEY`, `SLACK_CLIENT_SECRET`, …, `EMAIL_REST_API_TOKEN`, `RESEND_API_KEY`), the keys of the API providers registered on this Gateway (`everyapp provider add`: settings named after the provider, `STRIPE_API_KEY`), and the OAuth clients pasted in Manage workspace → Providers and the tokens of every account a person connected in an app, one connection per person per app (`docs/design/2026-11-oauth-simplify.md`) | Worker secrets; a registered provider's spec (no value) in the Gateway's D1 (`providers`); a pasted client's secret and every connection's access and refresh tokens sealed in D1 (`oauth_clients`, `provider_connections`: AES-256-GCM under a key derived from `BETTER_AUTH_SECRET`) | Apps use them only through the Gateway's proxies, never hold them; a registered provider's key is read only for the hosts it was set for; a pasted client only while its row still has the endpoints it was pasted for; a person's token only on a call from the app the connection was made in, to the provider's API hosts, for no more scopes than that app lists |
 | A4 | Each app's data: its D1 databases, KV, R2, Durable Objects, Postgres through Hyperdrive | The app's own bindings | That app's Worker, for members with access |
 | A5 | Accounts and sessions: emails, password hashes, Better Auth sessions, verification and reset tokens | The Gateway's D1 | The person; admins act on members of their organization |
 | A6 | Organizations, memberships, roles, app access grants, invitations | The Gateway's D1 | Owners and admins of that organization |
@@ -579,7 +579,7 @@ calls to a user or organization it chose.
 | `toolbus.app-answer-bounded` | An app gets 30 s per call, its answer is read to at most 1 MiB, and only MCP result fields are relayed. | `execute.ts:50-52, 234-271` | `execute.test.ts` :: stops waiting for a slow app |
 | `toolbus.dev-host-dev-kid-localhost` | The dev ToolBus mints with the dev kid for the app id and serves only localhost-class hosts and origins. | `packages/toolbus/src/dev/index.ts:59-129` | `dev/index.test.ts` :: serves the app's live catalog to the dev user with dev-kid identities |
 | `appgateway.caller-props-match-registry` | A call on the AppGateway binding is served only when its upload-time props name a registered active app and equal that row's organization, app id and Worker name. | `apps/every-app-gateway/src/server/app-gateway-entrypoint.ts:112-160` | `app-gateway-entrypoint.test.ts` :: accepts valid props that match an active registry row |
-| `sdk.attribution-for-rules` | The SDK's gateway calls carry either the inbound request's identity or a background organization, delete any identity, org, `Authorization` or `Cookie` header the app set, and a shared Worker refuses a call that names neither. | `packages/sdk/src/server/attribution.ts:37-63` | `attribution.test.ts` :: forwards the request's identity and never an organization the app set |
+| `sdk.attribution-for-rules` | The SDK's gateway calls carry either the inbound request's identity or a background organization (and, on an OAuth provider call, the member `for: { background: true, userId }` names, with no identity), delete any identity, org, `Authorization` or `Cookie` header the app set, and a shared Worker refuses a call that names neither. | `packages/sdk/src/server/attribution.ts:37-63` | `attribution.test.ts` :: forwards the request's identity and never an organization the app set |
 | `sdk.no-direct-provider-outside-dev` | Without the gateway binding, the SDK reaches a provider directly only under `EVERYAPP_DEV` with the developer's own key; a production-shaped env with a key but no binding throws. | `packages/sdk/src/server/gatewayFetch.ts:58-74` | `gatewayFetch.test.ts` :: rejects a production-shaped env even when a provider key is present |
 
 **Not this boundary's job.** Whether the app calls `everyApp()` at all
@@ -639,9 +639,8 @@ gateway mints `aud` from the registry row.
 **What crosses.** Calls an app's Worker makes back to the Gateway over its
 `EVERY_APP_GATEWAY` service binding: the AI proxy (`/api/ai/<provider>/…`),
 the capability proxy (`/api/integrations/<id>/…`: DataForSEO, Context.dev,
-the social networks' and Google's and Microsoft's OAuth clients, the
-held-token branch of every OAuth provider the Gateway runs the flow for,
-email, members), and the tool-catalog fetch. The binding carries the app's
+the held-token branch of every OAuth provider, email, members), and the
+tool-catalog fetch. The binding carries the app's
 upload-time props (`organizationId`, `appId`, `workerName`) and the app
 forwards the identity of the request it is serving, or names an
 organization for background work. On the other side, the operator's
@@ -656,43 +655,41 @@ them itself when a member's AI client calls such a server's tool through
 `/mcp` (B5); no app's Worker ever sees one. The code is
 `apps/every-app-gateway/src/server/remote-mcp/{index.ts,bind.ts,relist.ts}`
 and `packages/toolbus/src/remote/{client.ts,normalize.ts}` (#627); the
-design is `docs/design/2026-10-mcp-by-url.md`. Since 2026-10-25 the
-gateway also holds people's OAuth tokens: an OAuth provider (a catalog
-client with a `flow`, or a row or preset with `auth.kind: "oauth2-user"`)
-is connected at `/connect/<id>` with PKCE and a one-use state, the tokens
-are sealed in `provider_connections`, and an app's call to the provider's
-API hosts crosses this boundary with no token of its own: the gateway
-refreshes under a lease, puts the bearer on, and holds the call to the
-app's declared scope sets, so the route allowlist of the scopes slice is
-now a live boundary. The code is
-`apps/every-app-gateway/src/server/oauth/{flow.ts,tokens.ts,service.ts,client.ts}`,
-`secrets/sealed.ts` and the held-token branch of
-`capabilities/oauthClient.ts`; the design is
-`docs/design/2026-10-oauth-providers.md`, the invariants the
+design is `docs/design/2026-10-mcp-by-url.md`. The gateway also holds
+people's OAuth tokens (`docs/design/2026-11-oauth-simplify.md`): an OAuth
+provider (Google, Microsoft 365 and Slack built in as JSON specs, or a row
+or preset with `auth.kind: "oauth2-user"`) is connected inside one app at
+`/connect/<id>?app=<app>` with PKCE and a one-use state, for exactly the
+scopes that app's manifest lists plus the spec's identity scopes, and the
+tokens are sealed in `provider_connections` under (organization, provider,
+person, app). At the callback and at every refresh a token carrying more
+scopes than were asked is dropped. An app's call to the provider's API
+hosts crosses this boundary with no token of its own: the gateway picks the
+connection of the person behind the call, or of the member background work
+names (`x-everyapp-user`, an organization's own app only, a member who may
+still open the app), checks it holds the declared scopes, refreshes under a
+lease and puts the bearer on, for the spec's hosts alone. The code is
+`apps/every-app-gateway/src/server/oauth/{flow.ts,tokens.ts,service.ts,client.ts,heldTokens.ts}`,
+`secrets/sealed.ts` and `capabilities/heldToken.ts`; the invariants are the
 `oauth.client-bound-to-endpoints`, `oauth.client-secret-sealed-at-rest`,
 `oauth.tokens-sealed-at-rest`, `oauth.held-token-never-to-app`,
-`oauth.held-token-scope-routes-live`, `oauth.pkce-on-connect`,
-`oauth.state-single-use`, `oauth.return-to-own-hosts` and
-`oauth.google-never-revoked` rows of the register. Since #888 background
-work may also name a member (`x-everyapp-user`) and use that member's own
-connection, which crosses this boundary only through the member's opt-in
-on the Gateway's page (`/connect/<id>/background`), for the sets the
-app's entry marks `background`, re-checked on every call and lapsing
-after 90 days without the member opening the app
-(`apps/every-app-gateway/src/server/oauth/{background.ts,backgroundPage.ts}`,
-the held-token branch's 5a and 5b; the rows
-`oauth.background-needs-member-opt-in`,
-`oauth.background-consent-on-gateway-page`, `oauth.background-revocable`
-and `oauth.background-lapses`). The residual risk is the design's: a
-compromised app Worker can act as every member who opted in to it, within
-its background sets, until they revoke it or it lapses.
+`oauth.pkce-on-connect`, `oauth.state-single-use`,
+`oauth.return-to-own-hosts`, `oauth.connection-per-app`,
+`oauth.mint-check`, `oauth.user-header-org-apps-members-only`,
+`oauth.token-only-to-spec-hosts`, `oauth.no-include-granted-scopes` and
+`oauth.google-never-revoked` rows of the register. The residual risk is the
+design's: a compromised app Worker can act as every member who connected
+in it, within the scopes they approved, at any time, until they disconnect,
+lose the app or leave.
 
 **What it stops.** An app learning a provider key, a client secret, or
 whether a key exists for a capability it didn't request. An app reaching a
 provider endpoint that lists the operator's whole account, another
 organization's data, or a non-inference endpoint. An app in one
 organization getting its calls attributed to another. An agent's identity
-sending mail, listing members or minting OAuth tokens it shouldn't. An
+sending mail or listing members it shouldn't. An app using a person's
+provider token beyond the scopes its manifest lists, on another host, or
+from a connection made in another app. An
 app sending as a domain the operator didn't allow, or reading the
 directory of people who can't open it. Provider cookies and credentials
 leaking either way. A remote MCP credential sent anywhere but the origin
@@ -719,14 +716,14 @@ why a provider whose `data` is `account` is refused on a hosted Gateway.
 What it does not change: whoever can deploy an app can list any provider,
 as before. PR 2c added the MCP tools: `everyapp_provider_add` and `everyapp_provider_remove` write rows for owners and admins on a self-hosted Gateway only, never replace a row and never remove a bound or listed one (`providers.tools-self-host-admin`, B5).
 
-**Invariants.** The register has 57. The eight the provider registry added are in the register (`providers.row-secret-is-its-own`, `providers.value-bound-to-hosts`, `providers.row-hosts-public-https`, `providers.builtin-precedence`, `providers.spec-names-no-values`, `providers.add-is-privileged`, `providers.query-key-never-echoed`, `providers.account-data-self-host-only`); the three worth trying first are at the end of the table below. The app emit route's attribution (`events.emit-route-attributed-like-a-capability`, 2026-10-25) is the table's last row; what the event may carry is B9's. The scope-set overlay row (`providers.scope-set-overlay-within-client`, 2026-10-26) follows it.
+**Invariants.** The register has 59. The eight the provider registry added are in the register (`providers.row-secret-is-its-own`, `providers.value-bound-to-hosts`, `providers.row-hosts-public-https`, `providers.builtin-precedence`, `providers.spec-names-no-values`, `providers.add-is-privileged`, `providers.query-key-never-echoed`, `providers.account-data-self-host-only`); the three worth trying first are at the end of the table below. The app emit route's attribution (`events.emit-route-attributed-like-a-capability`, 2026-10-25) is in the table; what the event may carry is B9's. The OAuth rows follow the capability rows.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
 | `attr.caller-identity` | Only a registered, active app whose binding props exactly match its registry row reaches any proxy; malformed props are `401 missing_caller_identity`, unknown apps `403 caller_not_registered`. | `apps/every-app-gateway/src/server.ts:228-241`; `app-gateway-entrypoint.ts` | `app-gateway-entrypoint.test.ts` :: accepts valid props that match an active registry row, and refuses the rest |
 | `attr.org-app-own-organization` | An organization's own app's call is attributed to its props organization; a forwarded identity names the user only if it verifies for the Worker (`aud` = Worker name) and the same organization; an `x-everyapp-org` naming another organization is `403 caller_org_mismatch`. | `app-gateway-entrypoint.ts:363-373` | `app-gateway-entrypoint.test.ts` :: refuses an x-everyapp-org naming another organization |
 | `attr.shared-app-organization` | A shared app's call is attributed to the verified identity's organization (an invalid identity is 401, never a fallback to the platform organization); without one it must name an active organization with a live member in `x-everyapp-org`. | `app-gateway-entrypoint.ts:374-434` | `app-gateway-entrypoint.test.ts` :: attributes the call to the organization of the forwarded identity |
-| `attr.sdk-never-app-chosen` | The SDK puts on a gateway call only the inbound request's identity or background work's organization, deleting any `x-everyapp-identity`/`x-everyapp-org` the app set itself; a shared Worker throws `AttributionError` for a call that names neither. | `packages/sdk/src/server/attribution.ts:37-82` | `packages/sdk/src/server/attribution.test.ts` :: forwards the request's identity and never an organization the app set |
+| `attr.sdk-never-app-chosen` | The SDK puts on a gateway call only the inbound request's identity, background work's organization, or the member `for: { background: true, userId }` names (`x-everyapp-user`, with no identity, even mid-request), deleting any `x-everyapp-identity`/`x-everyapp-org`/`x-everyapp-user` the app set itself; a shared Worker throws `AttributionError` for a call that names neither. | `packages/sdk/src/server/attribution.ts` | `packages/sdk/src/server/attribution.test.ts` :: forwards the request's identity and never an organization the app set; `packages/sdk/src/server/integrationFetch.test.ts` :: names a member's connection with for: { background: true, userId }, never the person being served, even mid-request |
 | `ai.key-never-reaches-app` | The upstream AI request carries only the gateway's key and none of the app's credentials, account selectors (`x-api-key`, `openai-organization`, `openai-project`), `x-everyapp-*`, cookies or forwarding headers. | `ai-proxy.ts:13-42` | `ai-proxy.test.ts` :: forwards request to OpenAI with gateway-managed key and strips internal headers |
 | `ai.inference-only-by-default` | Without both `AI_PROXY_EXTRA_ROUTES` and the manifest's `ai.routes` covering the path, only POST to the provider's exact inference routes is forwarded; files, batches, fine-tunes, assistants and GETs are refused. | `ai-proxy.ts:78-88` | `ai-proxy.test.ts` :: rejects non-inference endpoints (files, batches, stored responses) |
 | `ai.extra-routes-openai-only` | Extra routes widen OpenAI only; OpenRouter and Workers AI serve inference and nothing else, so OpenRouter's credits and keys endpoints and Cloudflare's wider API stay closed. | `ai-proxy.ts:97-104` | `ai-proxy.test.ts` :: allows inference only, whatever the operator allows for OpenAI |
@@ -735,15 +732,16 @@ as before. PR 2c added the MCP tools: `everyapp_provider_add` and `everyapp_prov
 | `ai.path-confinement` | The app's path is joined onto the provider's base URL and can never replace or leave it: `//` and backslashes are 400, dot segments are resolved by the parser before matching. | `ai-proxy.ts:396-421` (`buildUpstreamUrl`) | `ai-proxy.test.ts` :: rejects proxy paths that attempt to override upstream host (partial: encoded slashes and dot segments are unpinned) |
 | `ai.provider-grant` | An AI call reaches the proxy only for a provider the app's registry-row manifest lists; otherwise `403 provider_not_allowed`, before any key-existence check. | `app-gateway-entrypoint.ts:202-209` | `app-gateway-entrypoint.test.ts` :: denies a provider that is not allowlisted |
 | `ai.logs-redacted` | AI logs carry provider, organization, app, route, model, status, request id and token usage, never the prompt, the output or the key. | `ai-proxy.ts:281-295` | `ai-proxy.test.ts` :: logs model, token usage and request id, never the prompt |
-| `cap.grant-required` | A capability call is forwarded only when the app's registry-row manifest lists it with the needed access; otherwise `403 capability_not_requested`. | `integration-proxy.ts:164-170` | `integration-proxy.test.ts` :: refuses a capability the app's registry row doesn't list |
+| `cap.grant-required` | A capability call is forwarded only when the app's registry-row manifest lists it (with the needed access, for email and members); otherwise `403 capability_not_requested`. | `integration-proxy.ts:164-170` | `integration-proxy.test.ts` :: refuses a capability the app's registry row doesn't list |
 | `cap.host-allowlist-https` | The upstream of an API-key call is `https://<host><path>` only for a host in the capability's list, matched before any URL is built; `//`, backslashes and a parse that moves the host are refused. | `packages/sdk/src/internal/capabilities.ts:887-934` | `integration-proxy.test.ts` :: refuses %s before anything leaves the gateway |
 | `cap.account-wide-paths-refused` | DataForSEO paths that list the whole account (`tasks_ready`, `tasks_fixed`, `id_list`, `errors`, `appendix/user_data`, `appendix/webhook_resend`) are refused however spelled. | `capabilities.ts:153-159` | `integration-proxy.test.ts` :: refuses DataForSEO's account-wide %s, which would show one app another's tasks |
 | `cap.credentials-stripped-no-redirect` | The upstream request carries the gateway's key and none of the app's `Authorization`, `x-api-key`, cookies, `x-everyapp-*` or forwarding headers, and follows no redirect. | `capabilities/forward.ts:4-29` | `integration-proxy.test.ts` :: forwards a call with the gateway's key and nothing the app sent |
 | `cap.key-existence-hidden` | Only an app that lists a capability learns whether the gateway holds its key, client or sender. | `integration-proxy.ts:100-127, 164-196` | `integration-proxy.test.ts` :: reports whether calls would go through, without calling the provider |
-| `oauth.token-endpoints-only` | An OAuth-client call is completed only for one of the capability's token endpoints: exact https host, exact path, listed method; the network's API hosts and other paths are refused. | `capabilities.ts:906-919` | `capabilities/oauthClient.test.ts` :: refuses %s |
-| `oauth.credentials-replaced` | Every client credential the app sent (the `Authorization` header; `client_id`/`client_secret`, any case, in the query or the body) is removed and the gateway's put where the endpoint takes it (form body or HTTP Basic); bodies are 64 KiB and form-encoded. | `packages/sdk/src/internal/oauthClient.ts:16, 73-166` | `oauthClient.test.ts` :: form: Google gets the gateway's client in the body, never the app's |
-| `oauth.agents-refused` | A token call under an agent's identity is `403 integration_agent_not_allowed`, with or without `mcp:write`. | `capabilities/oauthClient.ts:126-133` | `oauthClient.test.ts` :: refuses an agent: agents can't connect accounts or mint tokens |
-| `oauth.no-redirect-secret-never-to-app` | The token request follows no redirect; the network's `set-cookie` is dropped; the client secret appears in no response or log; the public client id reaches only an app that lists the network. | `capabilities/oauthClient.ts:160-167` | `oauthClient.test.ts` |
+| `oauth.connection-per-app` | A connection is keyed by (organization, provider, person, app): a connect starts only at `/connect/<id>?app=<app>` for a member who may open that app, whose manifest lists the provider, and a call uses only its own app's connection; removing a member, a member losing the app and deleting the app delete the matching connections. | `apps/every-app-gateway/src/server/oauth/flow.ts`; `apps/every-app-gateway/src/server/repositories/ProviderConnectionRepository.ts`; `apps/every-app-gateway/src/server/capabilities/heldToken.ts` | `spec-flow.sqlite.test.ts` :: asks for exactly the app's scopes and the spec's identity scopes, and stores the connection as this person's in this app; :: drops connections when the member loses the app, leaves, or the app is deleted |
+| `oauth.mint-check` | At the callback and at every refresh, a token whose granted scopes go beyond what was asked for the app, the identity scopes and the spec's `tolerated` ones is dropped, never stored or forwarded (a refresh marks the connection expired); a call needs the connection to hold every scope the manifest lists now, else `409 integration_not_connected` with `missingScopes`. | `packages/sdk/src/internal/oauthScopes.ts` (`grantedScopes`, `scopeExcess`, `missingScopes`); `apps/every-app-gateway/src/server/oauth/flow.ts`; `apps/every-app-gateway/src/server/oauth/tokens.ts` | `spec-flow.sqlite.test.ts` :: refuses a token carrying scopes beyond what the app asked, and keeps nothing (the mint check); :: marks a connection expired when a refresh comes back with scopes beyond the connection's, and drops those tokens |
+| `oauth.user-header-org-apps-members-only` | `x-everyapp-user` names whose connection a call uses only for an organization's own app (a shared app or linked dev is `403 integration_user_not_allowed`), and only for a member who is active and may open the app; otherwise that member's connection in the app is deleted and the call is `409 integration_not_connected`. | `apps/every-app-gateway/src/server/capabilities/heldToken.ts` (step 3); `apps/every-app-gateway/src/server/oauth/appAccess.ts` | `spec-flow.sqlite.test.ts` :: lets an organization's own app use another member's connection by naming them, even while serving someone else; :: refuses to name a member from a shared app |
+| `oauth.token-only-to-spec-hosts` | A person's token goes only to the https API hosts the spec lists, never a token, authorize or other endpoint, with no redirect followed; no route, set or method rules. | `packages/sdk/src/internal/capabilities.ts` (`parseIntegrationProxyPath`); `apps/every-app-gateway/src/server/capabilities/heldToken.ts` (step 6) | `capabilities.test.ts` :: OAuth provider paths; `spec-flow.sqlite.test.ts` :: puts the person's token on calls to the spec's hosts alone, and reports the connection |
+| `oauth.no-include-granted-scopes` | The Gateway never sends `include_granted_scopes`; the spec parser refuses it in `authorizeParams`, so no built-in, preset or row can. | `packages/sdk/src/internal/oauthSpec.ts` | `oauthSpec.test.ts` :: refuses what the design refuses; `oauthBuiltIns.test.ts` :: never send include_granted_scopes, which would widen a token past the app's scopes |
 | `email.sender-rule` | Mail goes out as `EMAIL_FROM` unless `from` matches one of the installation's senders on the app's registry row (`*@domain` is that domain exactly); a hosted gateway refuses any app sender. | `capabilities/email.ts:95-101, 216-237` | `capabilities/email.test.ts` :: sends as an app sender the installation allows, by a domain pattern or an address |
 | `email.header-refusals-and-message-rules` | Headers that would set From, Sender, To, Cc, Bcc, Reply-To, Subject, Return-Path, Date, MIME-Version, Content-Type, Content-Transfer-Encoding or DKIM-Signature are refused, and so are values with line breaks. | `packages/sdk/src/internal/email.ts:294-396` | `capabilities/email.test.ts` :: refuses a message with %s |
 | `email.agent-needs-write-scope` | A send under an agent's identity goes through only with `mcp:write` or `*`. | `capabilities/email.ts:160-169` | `capabilities/email.test.ts` :: refuses an agent's read-only connection, and sends for one with write |
@@ -760,12 +758,11 @@ as before. PR 2c added the MCP tools: `everyapp_provider_add` and `everyapp_prov
 | `events.emit-route-attributed-like-a-capability` | An app's `POST /api/events/emit` over the binding is served only for a registered, active app whose props match its row (`attr.caller-identity`), attributed exactly as a capability call (the forwarded identity verified for the Worker and the organization, or a shared app's named organization with a live member; an `x-everyapp-org` naming another organization is refused), is not a provider call (never counted in usage, never refused by a monthly cap, needs no provider grant), and is refused for an unregistered caller before anything is read. What the event may carry, and how often, is B9's `events.app-emit-attributed-and-bounded`. | `app-gateway-entrypoint.ts:284-296` (the events route, after attributeCall), `:492-505` (routeFromPath) | `app-gateway-entrypoint.test.ts` :: answers 202 with the event's id and the prefixed type, attributed to the identity; :: a shared app must say whom the event is for, as every capability call must; :: refuses an unregistered caller before anything is read |
 | `providers.bundled-spec-confirmed-never-overwrites` | A provider spec an app bundles (`.everyapp/providers/<id>.json`; a release's `providers`) is registered by `everyapp deploy` or `install` only after every bundled spec passed the parser and the row rules, only after one explicit confirmation (`--yes`, or a person's yes at a terminal; never under `--json` alone), under the Cloudflare login as `provider add` writes it, and never over an existing row: a row holding another spec stops the deploy before any registration, a catalog id is ignored with a warning, and a row holding the same spec is untouched. So a release can bring a provider, but it can never move where a key the operator set goes. | `packages/cli/src/commands/deploy/steps/bundledProviders.ts` (`registerBundledProviders`); `packages/cli/src/lib/app/bundledProviders.ts` (`canonicalJson`); `packages/cli/src/lib/app/release.ts` (`providers` in release.json) | `deployApp.providers.test.ts` :: lists them and stops with CONFIRMATION_REQUIRED under --json without --yes, registering nothing; :: never overwrites a row with another spec, and says what to do; `release.test.ts` :: carries the provider specs the app bundles in release.json |
 | `providers.ai-row-inference-only-and-bound` | A registered OpenAI-compatible model provider (`mode: "ai"`) passes every row rule (every setting its `auth` names, a Basic username included, carries its id, its host is public and never the Gateway's, it never takes a catalog id) and is served by the AI proxy under the catalog's rules only: POST to the routes its spec lists at its one base URL (files, batches and fine-tunes closed, never `extraRoutes`), the key placed as its `auth` says and nothing of the app's credentials, `store: false` on chat, the manifest's allowlist and the row's own `models` (any other model is `403 model_not_allowed`), the usage tap; its key is read only while the row is bound to the base URL and auth it has now (`503 ai_provider_not_configured` otherwise, and never a default-model candidate), and AI Gateway never fronts it. | `packages/sdk/src/internal/providerSpec.ts` (`parseAiSpec`); `providerRegistry.ts` (`providerBindingKey`, `registrableHosts`); `apps/every-app-gateway/src/server/ai-proxy.ts` (the bound check, the `models` check); `packages/sdk/src/internal/aiDefault.ts` (`aiDefaultCandidates`) | `providerSpec.test.ts` :: holds every field to its rule; `providerRegistry.test.ts` :: is served as an ai entry, with its key bound to its base URL and auth; `ai-row.test.ts` :: refuses anything but its inference routes, a model it doesn't serve, and an unbound row |
-| `providers.scope-set-overlay-within-client` | A scope set an operator adds to a built-in OAuth client (`provider_scope_sets`; `everyapp provider scope-set add`, Admin → Providers → Scope sets, `everyapp_provider_scope_set_add`) is checked on every read by the rules a built-in set is checked by, plus: its `routes` are required and name only hosts in the client's `api` (a set never unlocks another host, so the held token never reaches one), its `access` is said outright (a write set is never implied by its scopes), its name is never one of the client's own (an overlay adds, never replaces or widens a built-in set), and it never applies to a registered row or an API-key entry. A row that fails is left out and logged (`provider.scope_set_invalid`), never served. Adding is owners' and admins' on self-host and the operator's from the terminal; removal is refused while a deployed app lists the set. The client's binding key excludes the sets, so an overlay never moves a client's secret. | `packages/sdk/src/internal/oauthSpec.ts` (`parseScopeSetOverlay`, `withScopeSets`); `providerRegistry.ts` (`resolveScopeSetRow`, `providerRegistry`); `apps/every-app-gateway/src/server/providers/index.ts`; `oauth/service.ts` (`addScopeSet`, `removeScopeSet`) | `scopeSetOverlay.test.ts` :: refuses what a built-in set is refused, and what an overlay adds; `providers.sqlite.test.ts` :: adds an operator's set to the built-in client, and leaves out one that fails the rules; `provider-tools.sqlite.test.ts` :: refuses a built-in name, a host outside the client, a client without sets, a second add, and removal while an app lists it |
 
 **Not this boundary's job.** What the provider does with a valid call, an
 app's own secrets (its `secrets` in the manifest live on its Worker), and
-what an app does with the network API tokens it holds (the scope sets bound
-which tokens it gets, not the calls it makes with them).
+what an app does within the scopes a person approved (the Gateway doesn't
+narrow within a scope: Google's `gmail.modify` includes sending).
 
 **Gaps.**
 
@@ -783,50 +780,19 @@ which tokens it gets, not the calls it makes with them).
   self-hosted gateway with one organization this is "an app can spend
   your OpenAI key unless you cap it"; on hosted it is why the preview
   stays invite-only (`docs/design/2026-10-teams.md`).
-- *A granted OAuth client is all-or-nothing per app* (medium; the
-  OAuth-scopes slice: `docs/design/2026-10-oauth-scopes.md` for the
-  design, #398 merged for the registry's `scopePolicy` on
-  `google-workspace` and `microsoft-365`, #414 merged for the manifest
-  field, #411 merged for the gateway, both 2026-10-24). Before them the
-  gateway completed a network's token endpoints without reading scopes:
-  the app chose the consent's scopes and kept the tokens, so nothing
-  stopped an app granted `google-workspace` for Search Console from
-  reading Gmail. With #411 on main the invariants in the table below
-  hold. Their honest limits,
-  which stay in this model for the app-driven flow: there the network's
-  API calls still don't pass through the gateway (the app holds the
-  tokens, so the per-set host and path allowlist in
-  `packages/sdk/src/internal/oauthScopes.ts` enforces nothing on them; the
-  boundary is which tokens an app can obtain). Since 2026-10-25 the
-  Gateway-owned flow (`docs/design/2026-10-oauth-providers.md`) holds the
-  tokens itself and runs that allowlist on every call
-  (`oauth.held-token-scope-routes-live`), so an app that uses it is
-  narrowed to its sets by the gateway; the app-driven flow keeps the
-  limits that follow: Google and Slack narrow per
-  app only when the app asks for the status's scopes without
-  `include_granted_scopes` (a wider token is refused, not narrowed);
-  Microsoft, and Slack installations, may return every scope the person
-  consented to any app on the shared client, which the gateway refuses
-  (availability lost, not narrowing: the fix is one registered client per
-  app); refresh tokens are app-held bearer credentials not bound to an
-  app; and the boundary exists only because the client is confidential
-  (the registry requires a client secret for a scope policy).
-
-  | Id | Invariant (#411, merged 2026-10-24; lines at its commit 40159f82) | Enforced by | Pinned by |
-  |---|---|---|---|
-  | `oauth.scopes-declared-or-no-token` | An app that lists `google-workspace` or `microsoft-365` without a valid `scopes` list (missing, empty, duplicated, or a name the registry doesn't define) gets no token at all: `403 integration_scopes_undeclared` before attribution and before any upstream call. | `apps/every-app-gateway/src/server/capabilities/oauthClient.ts:185` | `oauthClient.test.ts` :: refuses an app that lists the client without scope sets (the "scope sets: Google and Microsoft" cases); `oauth-client.sqlite.test.ts` |
-  | `oauth.granted-scopes-within-sets` | The gateway never forwards a token whose granted scopes exceed the app's declared sets, on exchange and on refresh, for a person's call and for background calls: the provider's 2xx answer is buffered (64 KiB), its `scope` parsed per provider, and an excess answers `403 integration_scope_exceeded` with the body dropped, never stored, logged or revoked. | `oauthClient.ts:384-437` | `oauthClient.test.ts` :: refuses a token outside the app's sets, dropping it; :: refuses the union include_granted_scopes yields; :: refuses a refresh echoing a scope set the manifest dropped, in the background too; the Microsoft case |
-  | `oauth.unverifiable-answer-refused` | A token-bearing answer that names no scopes is `502 integration_scope_unverified`, not forwarded; a non-JSON or oversized 2xx is `502 integration_response_invalid`; a read that breaks off is `502 integration_upstream_failed` with nothing forwarded. | `oauthClient.ts:384, 408, 429` | `oauthClient.test.ts` :: the unverified and broken-read cases |
-  | `oauth.request-decided-on-body` | The token request is decided on its body alone: `grant_type`, `scope` or `user_scope` in the query string, or `grant_type` twice in the body, is `400 integration_body_invalid`; the grant must be one the client's policy completes (`authorization_code`, `refresh_token`) on top of #387's user-grant floor (`403 integration_grant_not_allowed`); a request asking for a scope outside the sets is `403 integration_scope_not_allowed`; Microsoft's request `scope` is replaced by the app's allowed list, Google's dropped. | `oauthClient.ts:227-239, 252, 309, 324, 331` | `oauthClient.test.ts` :: the query-string cases; :: the scope-outside-the-sets case |
-  | `oauth.scope-logs-names-only` | Logs carry the declared set names and, on a refusal, the scope names in excess (capped), never a token, code, id_token, body or client value, across log, warn and error lines. | `oauthClient.ts` (the logged object) | `oauthClient.test.ts` :: logs no client, code or token across a Google exchange, a Microsoft exchange and a refused answer |
-
-- *The token endpoint signed any grant type* (high before #387; fixed
-  there, merged 2026-10-24). Facebook's client-credentials grant returns the
-  app access token `<app id>|<app secret>`: the operator's secret itself;
-  Discord's, Twitch's and Kick's mint application-level tokens. The proxy
-  now completes only a user's grants (`authorization_code`,
-  `refresh_token`, the networks' exchanges, RFC 8693) and refuses the rest
-  with `integration_grant_not_allowed`.
+- *An app may use every connection made in it, at any time* (medium,
+  accepted 2026-11-02, `docs/design/2026-11-oauth-simplify.md`). There is
+  no separate consent for work while the person is away, and the Gateway
+  doesn't narrow within a scope: a compromised app Worker can act as every
+  member who connected in it, within the scopes they approved, until they
+  disconnect, lose the app or leave. The boundary is the provider's consent
+  screen, which shows exactly the app's scopes. Microsoft and Slack may
+  hand back every scope a person ever approved on a shared client; the
+  mint check refuses the wider token (availability lost, not a leak), and
+  the fix is a client per app.
+- *The token endpoint signed any grant type* (high before #387; the
+  app-driven token flow was removed on 2026-11-02): apps no longer reach a
+  provider's token endpoint through the Gateway at all.
 - *App-mail budgets are per address and gateway-wide only* (medium, known).
   One organization's app can exhaust the gateway's 5,000 a day; on hosted,
   mail from any app goes out as the platform's sender.
@@ -843,7 +809,7 @@ which tokens it gets, not the calls it makes with them).
 - *Email budget check is read-then-increment* (low): concurrent sends can
   overrun a budget by the concurrency factor.
 - *AI request bodies are fully buffered with no size cap* (low): email caps
-  at 5 MiB and OAuth at 64 KiB.
+  at 5 MiB.
 - *`Reply-To` on app mail is unrestricted* while `From` is allowlisted
   (low).
 - *A registered provider's `hostSetting` value is checked for shape only*
@@ -1563,6 +1529,7 @@ register under the boundary named.
 | Public marker / system token | 120 s (reused 60 s) / 60 s, catalog only | By the SDK | Expiry | |
 | Personal access token (`epat_…`) | 90 days by default, 30 for a deploy key, 1 day to 1 year | Live on every request: owner's membership, ban, organization status, scopes | The holder's revoke, member removal (that organization's tokens), deactivation (all), app deletion (tokens bound to it) | An admin acting on another member's token (none can; B5) |
 | OAuth access / refresh token (connected AI apps) | 1 hour / 30 days idle and absolute | Every `/mcp` request and every refresh re-reads the connection row, role, ban, organization status, app access | The holder (Connected AI apps), member removal, deactivation, re-consent (replaces), the hourly cron after 31 idle days | A replayed refresh token (no reuse detection; B5); a held app-host `subscriptions/listen` stream for up to 10 minutes (B5; the gateway's own ends at the token's expiry and rechecks the connection every poll) |
+| OAuth provider connection (a person's Google, GitHub, … account in one app) | Until disconnected; the access token as the provider sets it, refreshed by the Gateway under a lease | Every call: the app lists the provider, the connection is this person's (or the named member's) in this app and holds the declared scopes; a named member's membership, ban and app access read live; every refresh re-runs the mint check | The person's or an admin's Disconnect (revoked at the provider where the spec names a revoke URL), member removal, losing the app, deleting the app, a refresh the provider refuses or whose scopes exceed the connection's (marked expired) | Time: no idle lapse; a token already sent upstream lives until the provider expires it |
 | Native app grant (`docs/design/native-sign-in.md`, built on `feature/native-sign-in`) | 1 hour / 30 days sliding, as the MCP grant | Every app-host request and every refresh re-reads the connection row, role, ban, organization status, app access; the audience is checked against the host | The holder (Settings → Connections), the app's sign-out (RFC 7009), member removal, deactivation, the app's deletion or disabling, re-consent, 30 idle days | A replayed refresh token (B5's gap); an admin acting on another member's connection |
 | Consent transaction | 10 minutes, single use, bound to the browser | At the decision | Use, expiry | |
 | Setup link (`est_…`) | 24 hours, single use | At the claim (constant-time hash compare) | Use, expiry, a newer link minted by `setup` | The CLI giving up waiting after 15 minutes: the link stays valid (B2, listed) |
@@ -1703,7 +1670,9 @@ means it is on main (every boundary fix from this pass merged on
    merged). Facebook's client-credentials grant returns the app access
    token, which is `<app id>|<app secret>`: the operator's secret handed
    to the app. Discord, Twitch and Kick mint application-level tokens.
-   The proxy now completes only a user's grants.
+   The proxy then completed only a user's grants; since 2026-11-02 apps
+   no longer reach a token endpoint through the Gateway at all (the
+   app-driven flow was removed).
 3. **A release tarball could carry symbolic links, hard links and module
    paths outside its bundle** (B7, high; fixed in #386, merged). The
    system `tar` extracted them and cf would have uploaded the operator's
@@ -2012,8 +1981,9 @@ means it is on main (every boundary fix from this pass merged on
 **Roadmap, not gaps** (cited, not restated): per-member token scopes,
 approvals for destructive tools, per-app roles in the identity, read-only
 members, SSO-only guarantees, audit export and IdP group mapping are the
-teams design's roadmap (`docs/design/2026-10-teams.md`); per-app provider
-scope narrowing is the OAuth-scopes design (`docs/design/2026-10-oauth-scopes.md`).
+teams design's roadmap (`docs/design/2026-10-teams.md`). Per-app provider
+scopes are the OAuth-simplify design (`docs/design/2026-11-oauth-simplify.md`):
+each connection is one person's in one app, for that app's scopes.
 
 ## Verification
 

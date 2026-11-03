@@ -13,6 +13,7 @@ import {
   evaluateAppSettings,
   isCapabilityId,
   providerRegistry,
+  providerSettingPrefix,
   type AppSetting,
   type CapabilityLookup,
   type SettingsManifestLike,
@@ -181,8 +182,8 @@ const DEV_VARS = ".dev.vars";
  * each with the need its entry marks) that the app can't run without
  * locally, less what the file sets to something. A required setting is
  * named when a name of it is unset (OPENROUTER_API_KEY for openrouter,
- * DATAFORSEO_API_KEY for dataforseo, an OAuth client's id and secret, the
- * app's own MAIN_SECRET, ...); an any-of group is met once any member is
+ * DATAFORSEO_API_KEY for dataforseo, GOOGLE_WORKSPACE_ACCESS_TOKEN for an
+ * OAuth provider, the app's own MAIN_SECRET, ...); an any-of group is met once any member is
  * set, and until then reads "one of OPENROUTER_API_KEY, OPENAI_API_KEY";
  * an optional setting is never named. Nothing when the app needs none or
  * the file has them all. Names only, never values; a hint, since the SDK
@@ -243,7 +244,9 @@ export function devVarsHint(
  * not needed, since the SDK's stand-ins work without them (sendEmail()
  * prints until EMAIL_FROM and a transport are set; listMembers() answers
  * from the dev identity); nor are the AI proxy's extra routes, which the
- * direct calls don't go through.
+ * direct calls don't go through. An OAuth provider needs no client in dev:
+ * a token the developer got themselves, `<PREFIX>_ACCESS_TOKEN`, stands in
+ * for the connection the Gateway would hold, and only the hosts are checked.
  */
 function devSettings(manifest: SettingsManifestLike, lookup: CapabilityLookup): AppSetting[] {
   return appSettings(manifest, lookup).flatMap((setting): AppSetting[] => {
@@ -253,9 +256,9 @@ function devSettings(manifest: SettingsManifestLike, lookup: CapabilityLookup): 
         return [spec ? { ...setting, names: aiProviderSettings(spec) } : setting];
       }
       case "capability":
-        return isCapabilityId(setting.id) &&
-          CAPABILITIES[setting.id].mode === "service"
-          ? []
+        if (isCapabilityId(setting.id) && CAPABILITIES[setting.id].mode === "service") return [];
+        return lookup.get(setting.id)?.mode === "oauth_client"
+          ? [{ ...setting, names: [`${providerSettingPrefix(setting.id)}ACCESS_TOKEN`], alsoReads: [] }]
           : [setting];
       case "ai-routes":
         return [];

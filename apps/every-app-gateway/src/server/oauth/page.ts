@@ -4,7 +4,7 @@
  * the MCP authorization server's error page (mcp-auth/authorize.ts),
  * kept apart so the flow doesn't load that server.
  */
-export const escapeHtml = (value: string) =>
+const escapeHtml = (value: string) =>
   value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

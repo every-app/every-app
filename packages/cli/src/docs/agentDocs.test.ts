@@ -258,8 +258,6 @@ describe("providers.md", () => {
       "integration_upstream_redirected",
       "integration_not_available_hosted",
       "integration_not_configured",
-      "integration_scopes_undeclared",
-      "integration_scope_not_allowed",
       "provider.row_invalid",
       "EVERYAPP_DEV_PROVIDERS",
     ]);

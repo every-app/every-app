@@ -19,6 +19,7 @@ import {
   CAPABILITY_IDS,
   capabilitySettings,
 } from "../internal/capabilities";
+import { devAccessTokenName } from "../server/integrationFetch";
 
 const FILE = fileURLToPath(
   new URL("./catalogSettings.generated.ts", import.meta.url),
@@ -40,13 +41,17 @@ function source(): string {
       aiProviderSettings(spec),
     ]),
   );
-  // The AI providers are listed under `providers`, so never here.
+  // The AI providers are listed under `providers`, so never here. An
+  // OAuth provider's client is the Gateway's alone: in dev a token the
+  // developer got themselves stands in for the connection.
   const capabilities = Object.fromEntries(
     CAPABILITY_IDS.flatMap((id) => {
       const capability = CAPABILITIES[id];
-      return capability.mode === "ai"
-        ? []
-        : [[id, [...capabilitySettings(capability)]]];
+      if (capability.mode === "ai") return [];
+      if (capability.mode === "oauth_client") {
+        return [[id, [devAccessTokenName(id)]]];
+      }
+      return [[id, [...capabilitySettings(capability)]]];
     }),
   );
   const all = [
@@ -62,6 +67,8 @@ function source(): string {
  * setting, a host setting), by manifest id. With no Gateway in
  * development, the SDK reaches them with the developer's own values under
  * the same names, and \`everyAppWorker()\` declares the ones set locally.
+ * An OAuth provider's is the token that stands in for a connection in dev
+ * (\`<PREFIX>_ACCESS_TOKEN\`), never its client.
  */
 export const DEV_GATEWAY_KEYS = ${JSON.stringify({ providers, capabilities })} as const;
 

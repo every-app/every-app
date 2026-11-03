@@ -547,20 +547,42 @@ describe("capabilities manifest field", () => {
     ).toEqual(capabilities);
   });
 
-  it("accepts background sets within an OAuth provider's scopes, with why (#888)", () => {
+  it("accepts an OAuth provider with the provider's own scopes and why", () => {
     const capabilities = {
       "google-workspace": {
-        access: "read",
-        scopes: ["identity", "gmail.read"],
-        background: {
-          scopes: ["gmail.read"],
-          why: "Syncs your mail as it arrives.",
-        },
+        scopes: ["gmail.modify", "gmail.send"],
+        why: "Mirrors your Gmail and sends when you press Send.",
+      },
+      "microsoft-365": {
+        scopes: ["Mail.Read", "https://graph.microsoft.com/Calendars.Read"],
+        why: "Reads each member's own mailbox and calendar.",
+        optional: true,
+      },
+      slack: {
+        scopes: ["channels:read", "chat:write"],
+        why: "Posts to the team's channels.",
       },
     };
     expect(
       validateManifestStrict({ id: "mail", capabilities }).capabilities,
     ).toEqual(capabilities);
+    expectTypeOf<CapabilityRequest["scopes"]>().toEqualTypeOf<
+      string[] | undefined
+    >();
+  });
+
+  it("accepts an OAuth provider with no scopes, and up to forty", () => {
+    const empty = { slack: { scopes: [], why: "Names the workspace." } };
+    expect(
+      validateManifestStrict({ id: "hello", capabilities: empty }).capabilities,
+    ).toEqual(empty);
+    const forty = Array.from({ length: 40 }, (_, n) => `scope.${n}`);
+    expect(() =>
+      validateManifestStrict({
+        id: "hello",
+        capabilities: { slack: { scopes: forty, why: "Everything." } },
+      }),
+    ).not.toThrow();
   });
 
   it.each([
@@ -585,42 +607,14 @@ describe("capabilities manifest field", () => {
       /Unrecognized key: "as"/,
     ],
     [
-      "the retired `background` key",
+      "background on an API-key provider",
       { dataforseo: { access: "read", background: true } },
-      /capabilities\.dataforseo\.background: DataForSEO takes no background/,
+      /capabilities\.dataforseo: Unrecognized key: "background"/,
     ],
     [
-      "background sets outside the entry's scopes",
-      {
-        "google-workspace": {
-          access: "read",
-          scopes: ["identity", "gmail.read"],
-          background: { scopes: ["calendar.read"], why: "Syncs mail." },
-        },
-      },
-      /capabilities\.google-workspace\.background\.scopes\.0: calendar\.read isn't in this entry's scopes/,
-    ],
-    [
-      "background without why",
-      {
-        "google-workspace": {
-          access: "read",
-          scopes: ["gmail.read"],
-          background: { scopes: ["gmail.read"] },
-        },
-      },
-      /capabilities\.google-workspace\.background\.why/,
-    ],
-    [
-      "background with no sets",
-      {
-        "google-workspace": {
-          access: "read",
-          scopes: ["gmail.read"],
-          background: { scopes: [], why: "Syncs mail." },
-        },
-      },
-      /capabilities\.google-workspace\.background\.scopes: background\.scopes lists one or more/,
+      "redirect paths on an API-key provider",
+      { dataforseo: { access: "read", redirectPaths: ["/callback"] } },
+      /capabilities\.dataforseo: Unrecognized key: "redirectPaths"/,
     ],
     ["an empty why", { dataforseo: { access: "read", why: "" } }, /why/],
     [
@@ -649,169 +643,153 @@ describe("capabilities manifest field", () => {
       /capabilities\.dataforseo: Unrecognized key: "senders"/,
     ],
     [
-      "redirect paths on a capability that isn't an OAuth client",
-      { dataforseo: { access: "read", redirectPaths: ["/callback"] } },
-      /capabilities\.dataforseo\.redirectPaths: DataForSEO takes no redirectPaths; only an OAuth client has a callback/,
-    ],
-    [
-      "a redirect path that isn't an absolute path on the app's host",
-      {
-        slack: {
-          access: "write",
-          scopes: ["messages.write"],
-          redirectPaths: ["https://evil.example/cb"],
-        },
-      },
-      /capabilities\.slack\.redirectPaths\.0: a redirect path is an absolute path on the app's host/,
-    ],
-    [
-      "a protocol-relative redirect path",
-      {
-        slack: {
-          access: "write",
-          scopes: ["messages.write"],
-          redirectPaths: ["//evil.example/cb"],
-        },
-      },
-      /capabilities\.slack\.redirectPaths\.0: a redirect path is an absolute path/,
-    ],
-    [
-      "a redirect path with a query",
-      {
-        slack: {
-          access: "write",
-          scopes: ["messages.write"],
-          redirectPaths: ["/cb?next=/"],
-        },
-      },
-      /capabilities\.slack\.redirectPaths\.0: a redirect path is an absolute path/,
-    ],
-    [
-      "a redirect path listed twice",
-      {
-        slack: {
-          access: "write",
-          scopes: ["messages.write"],
-          redirectPaths: ["/cb", "/cb"],
-        },
-      },
-      /capabilities\.slack\.redirectPaths: a redirect path is listed twice/,
-    ],
-    [
-      "scope sets on an API-key provider",
+      "scopes on an API-key provider",
       { dataforseo: { access: "read", scopes: ["identity"] } },
-      /capabilities\.dataforseo\.scopes: DataForSEO takes no scopes/,
+      "capabilities.dataforseo.scopes: DataForSEO takes no scopes; list it as { access, why }",
     ],
     [
-      "scope sets on a gateway service",
+      "scopes on a gateway service",
       { email: { access: "write", scopes: ["identity"] } },
       /capabilities\.email\.scopes: Email takes no scopes/,
     ],
     [
-      "a client with scope sets listed without them",
-      { "google-workspace": { access: "write", why: "Reads mail." } },
-      /capabilities\.google-workspace\.scopes: Google \(Gmail, Calendar, Search Console and Analytics\) needs scopes: one or more of identity, gmail\.read, calendar\.read, search-console\.read, analytics\.read/,
-    ],
-    [
-      "a client with scope sets listed with none",
-      { "google-workspace": { access: "write", scopes: [] } },
-      /capabilities\.google-workspace\.scopes: Google \(Gmail, Calendar, Search Console and Analytics\) needs scopes: one or more of identity, gmail\.read, calendar\.read, search-console\.read, analytics\.read/,
-    ],
-    [
-      "scope sets that aren't a list",
-      { "microsoft-365": { access: "write", scopes: "mail.read" } },
-      /capabilities\.microsoft-365\.scopes: Microsoft 365 \(Outlook mail and calendar\) needs scopes: one or more of identity, mail\.read, calendar\.read/,
-    ],
-    [
-      "a scope set the client doesn't offer, at its index",
+      "access on an OAuth provider",
       {
         "google-workspace": {
-          access: "write",
-          scopes: ["gmail.read", "gmail.send"],
+          access: "read",
+          scopes: ["gmail.modify"],
+          why: "Reads mail.",
         },
       },
-      /capabilities\.google-workspace\.scopes\.1: unknown scope set \(Google \(Gmail, Calendar, Search Console and Analytics\) offers: identity, gmail\.read, calendar\.read, search-console\.read, analytics\.read\)/,
+      "capabilities.google-workspace.access: OAuth providers take no access: the scopes are the grant. Remove access.",
     ],
     [
-      "a provider scope where a set name goes",
-      {
-        "microsoft-365": {
-          access: "write",
-          scopes: ["https://graph.microsoft.com/Mail.Read"],
-        },
-      },
-      /capabilities\.microsoft-365\.scopes\.0: unknown scope set \(Microsoft 365 \(Outlook mail and calendar\) offers: identity, mail\.read, calendar\.read\)/,
-    ],
-    [
-      "a prototype property as a scope set",
-      { "google-workspace": { access: "write", scopes: ["constructor"] } },
-      /capabilities\.google-workspace\.scopes\.0: unknown scope set/,
-    ],
-    [
-      "a scope set listed twice",
+      "background on an OAuth provider",
       {
         "google-workspace": {
-          access: "write",
-          scopes: ["gmail.read", "calendar.read", "gmail.read"],
+          scopes: ["gmail.modify"],
+          background: { scopes: ["gmail.modify"], why: "Syncs mail." },
+          why: "Reads mail.",
         },
       },
-      /capabilities\.google-workspace\.scopes: a scope set is listed twice/,
+      "capabilities.google-workspace.background: background is gone: an app may use a connection made in it at any time. Remove it.",
+    ],
+    [
+      "optionalScopes on an OAuth provider",
+      {
+        "google-workspace": {
+          scopes: ["gmail.modify"],
+          optionalScopes: ["gmail.send"],
+          why: "Reads mail.",
+        },
+      },
+      "capabilities.google-workspace.optionalScopes: optionalScopes is gone: list every scope under scopes.",
+    ],
+    [
+      "redirect paths on an OAuth provider",
+      {
+        slack: {
+          scopes: ["chat:write"],
+          redirectPaths: ["/integrations/slack/callback"],
+          why: "Posts.",
+        },
+      },
+      "capabilities.slack.redirectPaths: redirectPaths is gone: the Gateway runs the flow; send people to connectUrl().",
+    ],
+    [
+      "an OAuth provider without scopes",
+      { "google-workspace": { why: "Reads mail." } },
+      /capabilities\.google-workspace\.scopes: Google needs scopes: the provider's own scopes this app uses/,
+    ],
+    [
+      "scopes that aren't a list",
+      { "microsoft-365": { scopes: "Mail.Read", why: "Reads mail." } },
+      /capabilities\.microsoft-365\.scopes: Microsoft 365 needs scopes/,
+    ],
+    [
+      "an OAuth provider without why",
+      { "google-workspace": { scopes: ["gmail.modify"] } },
+      /capabilities\.google-workspace\.why: Google needs why/,
+    ],
+    [
+      "an OAuth provider with an empty why",
+      { "google-workspace": { scopes: ["gmail.modify"], why: "" } },
+      /capabilities\.google-workspace\.why: Google needs why/,
+    ],
+    [
+      "a scope listed twice",
+      {
+        "google-workspace": {
+          scopes: ["gmail.modify", "gmail.send", "gmail.modify"],
+          why: "Reads mail.",
+        },
+      },
+      /capabilities\.google-workspace\.scopes: a scope is listed twice/,
+    ],
+    [
+      "a scope listed twice in two spellings",
+      {
+        "google-workspace": {
+          scopes: [
+            "gmail.modify",
+            "https://www.googleapis.com/auth/gmail.modify",
+          ],
+          why: "Reads mail.",
+        },
+      },
+      /capabilities\.google-workspace\.scopes: a scope is listed twice/,
+    ],
+    [
+      "a scope listed twice in two cases",
+      {
+        "microsoft-365": { scopes: ["Mail.Read", "mail.read"], why: "Mail." },
+      },
+      /capabilities\.microsoft-365\.scopes: a scope is listed twice/,
+    ],
+    [
+      "two scopes in one string, space-separated",
+      {
+        "google-workspace": {
+          scopes: ["gmail.modify gmail.send"],
+          why: "Reads mail.",
+        },
+      },
+      /capabilities\.google-workspace\.scopes\.0: one scope, with no space or comma/,
+    ],
+    [
+      "two scopes in one string, comma-separated",
+      { slack: { scopes: ["chat:write,channels:read"], why: "Posts." } },
+      /capabilities\.slack\.scopes\.0: one scope, with no space or comma/,
+    ],
+    [
+      "an empty scope",
+      { slack: { scopes: [""], why: "Posts." } },
+      /capabilities\.slack\.scopes\.0: a scope is 1 to 200 characters/,
+    ],
+    [
+      "a scope over 200 characters",
+      { slack: { scopes: ["x".repeat(201)], why: "Posts." } },
+      /capabilities\.slack\.scopes\.0: a scope is 1 to 200 characters/,
+    ],
+    [
+      "a scope with a control character",
+      { slack: { scopes: ["chat:write\u0000"], why: "Posts." } },
+      /capabilities\.slack\.scopes\.0: a scope holds no control characters/,
+    ],
+    [
+      "more than forty scopes",
+      {
+        slack: {
+          scopes: Array.from({ length: 41 }, (_, n) => `scope.${n}`),
+          why: "Everything.",
+        },
+      },
+      /capabilities\.slack\.scopes: scopes lists at most 40 scopes/,
     ],
   ])("refuses %s", (_case, capabilities, problem) => {
     expect(() => validateManifestStrict({ id: "seo", capabilities })).toThrow(
       problem,
     );
-  });
-
-  it("accepts the OAuth clients with scope policies, with their scope sets", () => {
-    const capabilities = {
-      "google-workspace": {
-        access: "write",
-        scopes: ["gmail.read", "calendar.read"],
-        why: "Reads each member's own mailbox and calendar.",
-      },
-      "microsoft-365": { access: "write", scopes: ["identity", "mail.read"] },
-    };
-    expect(
-      validateManifestStrict({ id: "crm", capabilities }).capabilities,
-    ).toEqual(capabilities);
-    expectTypeOf<CapabilityRequest["scopes"]>().toEqualTypeOf<
-      string[] | undefined
-    >();
-  });
-
-  it("accepts a client the Gateway runs the flow for with access: read and its sets", () => {
-    const capabilities = {
-      "google-workspace": {
-        access: "read",
-        optional: true,
-        scopes: ["identity", "search-console.read", "analytics.read"],
-        why: "Search Console and GA4 reads through the Gateway's connection.",
-      },
-      slack: { access: "read", scopes: ["channels.read", "users.read"] },
-    };
-    expect(
-      validateManifestStrict({ id: "seo", capabilities }).capabilities,
-    ).toEqual(capabilities);
-  });
-
-  it("accepts an OAuth client with the app's own callbacks", () => {
-    const capabilities = {
-      slack: {
-        access: "write",
-        scopes: ["messages.write"],
-        why: "Posts to the team's channels.",
-        redirectPaths: ["/integrations/slack/callback"],
-      },
-      "google-workspace": {
-        access: "read",
-        scopes: ["identity", "gmail.read"],
-        redirectPaths: ["/integrations/google/callback"],
-      },
-    };
-    expect(
-      validateManifestStrict({ id: "crm", capabilities }).capabilities,
-    ).toEqual(capabilities);
   });
 
   it("accepts email as a declaration only", () => {
@@ -858,19 +836,40 @@ describe("capabilities manifest field", () => {
         capabilities: { "new-provider": { access: "read", scopes: ["x"] } },
       }).capabilities,
     ).toEqual({ "new-provider": { access: "read", scopes: ["x"] } });
-    // A set name this gateway doesn't know is kept for the token endpoint
-    // to refuse; a value that isn't a list of names reads as undeclared.
+    // An OAuth entry has no access; scopes that aren't a list of strings
+    // read as undeclared, so the app's calls are refused instead.
     expect(
       validateManifest({
         id: "crm",
         capabilities: {
-          "google-workspace": { access: "write", scopes: ["not-a-set"] },
-          "microsoft-365": { access: "write", scopes: "mail.read" },
+          "google-workspace": { scopes: ["gmail.readonly"], why: "Mail." },
+          "microsoft-365": { scopes: "Mail.Read", why: "Mail." },
+          slack: { scopes: [1, 2] },
         },
       }).capabilities,
     ).toEqual({
-      "google-workspace": { access: "write", scopes: ["not-a-set"] },
-      "microsoft-365": { access: "write", scopes: undefined },
+      "google-workspace": { scopes: ["gmail.readonly"], why: "Mail." },
+      "microsoft-365": { scopes: undefined, why: "Mail." },
+      slack: { scopes: undefined },
+    });
+    // A row written before the change keeps its old keys as sent.
+    expect(
+      validateManifest({
+        id: "mail",
+        capabilities: {
+          "google-workspace": {
+            access: "read",
+            scopes: ["gmail.read"],
+            background: { scopes: ["gmail.read"], why: "Syncs." },
+          },
+        },
+      }).capabilities,
+    ).toEqual({
+      "google-workspace": {
+        access: "read",
+        scopes: ["gmail.read"],
+        background: { scopes: ["gmail.read"], why: "Syncs." },
+      },
     });
     // And the gateway keeps an entry's fields as sent, senders included.
     expect(
@@ -2181,7 +2180,7 @@ describe("what a problem reads as", () => {
       "Invalid everyapp.config: " +
         [
           "capabilities.OpenAI: provider must start with a lowercase letter and contain only lowercase letters, digits, and hyphens",
-          "capabilities.members.scopes: Members takes no scopes; list it as { access: ..., why }",
+          "capabilities.members.scopes: Members takes no scopes; list it as { access, why }",
           'capabilities.email: Unrecognized key: "retired"',
         ].join("; "),
     );
@@ -2658,48 +2657,6 @@ describe("Artifacts (resources.artifacts)", () => {
     expect(
       manifestTierProblems({ resources: { artifacts: [] } }, "dispatch"),
     ).toEqual([]);
-  });
-});
-
-describe("scope sets an operator may have added on the gateway", () => {
-  const base = { id: "mailer", name: "Mailer" };
-  it("accepts a well-formed set name the catalog lacks when unknown capabilities are accepted, and refuses it otherwise", () => {
-    const manifest = {
-      ...base,
-      capabilities: {
-        "google-workspace": {
-          access: "write",
-          scopes: ["gmail.read", "gmail.send"],
-          why: "Sends mail.",
-        },
-      },
-    };
-    expect(() =>
-      validateManifestStrict(manifest, { unknownCapabilities: "accept" }),
-    ).not.toThrow();
-    expect(() => validateManifestStrict(manifest)).toThrow(
-      /capabilities\.google-workspace\.scopes\.1: unknown scope set/,
-    );
-  });
-
-  it("still refuses a malformed name and a prototype property with unknown capabilities accepted", () => {
-    for (const name of [
-      "https://www.googleapis.com/auth/gmail.send",
-      "Gmail Send",
-      "constructor",
-    ]) {
-      expect(() =>
-        validateManifestStrict(
-          {
-            ...base,
-            capabilities: {
-              "google-workspace": { access: "write", scopes: [name], why: "x" },
-            },
-          },
-          { unknownCapabilities: "accept" },
-        ),
-      ).toThrow(/capabilities\.google-workspace\.scopes\.0: unknown scope set/);
-    }
   });
 });
 

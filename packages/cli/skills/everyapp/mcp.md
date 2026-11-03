@@ -191,21 +191,18 @@ Provider tools (Gateway connector only; one audit row per call like the
          `everyapp_provider_add` (`{ spec }`: the spec object, never a URL,
          never a replace of a row that is there) and
          `everyapp_provider_remove` (`{ id }`: refuses a built-in, a row
-         whose key is set, and a row an app lists), and the scope-set
-         pair `everyapp_provider_scope_set_add` (`{ provider, name, label,
-         access, scopes, routes }`: a set added to google-workspace,
-         microsoft-365 or slack, routes on the client's hosts alone) and
-         `everyapp_provider_scope_set_remove` (`{ provider, name }`;
-         refuses a built-in set and one a deployed app lists). A hosted
-         Gateway hides the four writers. `everyapp_provider_add` also takes `{ preset }`, an
+         whose key is set, and a row an app lists). A hosted Gateway
+         hides the two writers. `everyapp_provider_add` also takes `{ preset }`, an
          OAuth preset (github-oauth, notion-oauth, …; the list tool's
          `presets`) or a built-in client (google-workspace), and answers
          the redirect URI to register at the provider's console. Every
-         member gets `everyapp_provider_connections` (their own connected
-         accounts; `all: true` the organization's, owners and admins) and
+         member gets `everyapp_provider_connections` (their own
+         connections, one per app they connected in, with the scopes each
+         holds; `all: true` the organization's, owners and admins) and
          `everyapp_provider_disconnect` (their own; owners and admins
-         anyone's or the organization's). Connecting is a browser flow at
-         `<gateway>/connect/<provider>`, never a tool. No key, client or
+         anyone's; by `connection` id, or `provider` with `app`).
+         Connecting is a browser flow inside each app (`connectUrl()`,
+         `<gateway>/connect/<provider>?app=<app>`), never a tool. No key, client or
          token ever passes through a tool: `everyapp secret set NAME` from
          the terminal, or Admin → Providers. Full reference:
          /docs/agent/mcp#provider-tools.

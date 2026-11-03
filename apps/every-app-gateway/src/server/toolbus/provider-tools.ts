@@ -44,9 +44,7 @@ import { actorFor } from "@/server/events/subjects";
 import { PublicError } from "@/server/errors";
 import {
   addOAuthProvider,
-  addScopeSet,
   listOAuthProviders,
-  removeScopeSet,
   type OAuthProviderSummary,
 } from "@/server/oauth/service";
 import type { OrgContext } from "@/server/organization/orgContext";
@@ -223,19 +221,9 @@ function listed(
         hosts: [...capability.api],
         ...(oauth
           ? {
-              flow: oauth.flow,
               redirectUri: oauth.redirectUri,
               console: oauth.console,
-              scopeSets: oauth.scopeSets.map((set) => ({
-                name: set.name,
-                label: set.label,
-                access: set.access,
-                scopes: [...set.scopes],
-                hosts: [...set.hosts],
-                source: set.source,
-              })),
               connections: oauth.connections,
-              connectPath: `/connect/${id}`,
               ...(options.admin
                 ? {
                     client: {
@@ -279,9 +267,6 @@ function presetsListed(): JsonObject[] {
     console: capability.console,
     hosts: [...capability.api],
     settings: [...capabilitySettings(capability)],
-    scopeSets: Object.entries(capability.scopePolicy?.sets ?? {}).map(
-      ([name, set]) => ({ name, label: set.label, access: set.access }),
-    ),
     ...(capability.hint ? { hint: capability.hint } : {}),
   });
   const builtIn = Object.entries(CAPABILITIES)
@@ -304,7 +289,7 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
     const admin = ctx.role === "owner" || ctx.role === "admin";
     const unbound = registry.unboundSettings();
     const rows = new Map(registry.rows().map((row) => [row.id, row]));
-    // The OAuth side: the flow, the redirect URI, the client's source and
+    // The OAuth side: the redirect URI, the client's source and
     // the connections, from the service the UI reads (never a value).
     const oauth = new Map(
       (await listOAuthProviders(ctx)).map((summary) => [summary.id, summary]),
@@ -332,7 +317,7 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
       providers,
       registered: rows.size,
       presets: presetsListed(),
-      next: "An app lists a provider's id under `capabilities` in its manifest; a setting that isn't set is set from the terminal with `everyapp secret set NAME` (never through a tool). An OAuth provider is added from a preset with everyapp_provider_add { preset }; people then connect in the browser at its connectPath.",
+      next: "An app lists a provider's id under `capabilities` in its manifest (an OAuth provider with the provider's own `scopes` the app needs); a setting that isn't set is set from the terminal with `everyapp secret set NAME` (never through a tool). An OAuth provider is added from a preset with everyapp_provider_add { preset }; people then connect inside each app that lists it.",
     };
   },
 
@@ -363,19 +348,16 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
           name: summary.name,
           source: summary.source,
           kind: "oauth",
-          flow: summary.flow,
-          hosts: [],
+          hosts: [...summary.hosts],
           auth: { kind: "oauth2-user" },
-          scopeSets: summary.scopeSets.map((set) => set.name),
           redirectUri: summary.redirectUri,
           console: summary.console,
-          connectPath: `/connect/${summary.id}`,
         },
         settings: [...summary.settings],
         bound: summary.bound,
         next: summary.bound
-          ? `Its client is set: people connect in the browser at /connect/${summary.id}. Register ${summary.redirectUri} at ${summary.console} if not done yet.`
-          : `Register ${summary.redirectUri} at ${summary.console}, then set its client from the terminal: everyapp secret set ${summary.settings.join(" ")}, or paste it under Admin → Providers. People connect at /connect/${summary.id} once it is set.`,
+          ? `Its client is set: people connect inside each app that lists ${summary.id} with the scopes it needs. Register ${summary.redirectUri} at ${summary.console} if not done yet.`
+          : `Register ${summary.redirectUri} at ${summary.console}, then set its client from the terminal: everyapp secret set ${summary.settings.join(" ")}, or paste it under Admin → Providers. People connect inside each app once it is set.`,
       };
     }
     if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
@@ -477,11 +459,9 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
             : {
                 hosts: [...capability.api],
                 auth: { kind: "oauth2-user" },
-                authorizeUrl: capability.authorize.url,
-                scopeSets: Object.keys(capability.scopePolicy?.sets ?? {}),
+                authorizeUrl: capability.flow.authorizeUrl,
                 redirectUri: `${String((env as { GATEWAY_URL?: string }).GATEWAY_URL ?? "").replace(/\/+$/, "")}/connect/${id}/callback`,
                 console: capability.console,
-                connectPath: `/connect/${id}`,
               }),
       },
       settings: [...settings],
@@ -491,55 +471,7 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
           ? `Set ${settings.length === 1 ? "its key" : "its settings"} from the terminal: everyapp secret set ${settings.join(" ")}. The Gateway sends nothing to ${capability.label} until then.`
           : capability.mode === "ai"
             ? `Set its key from the terminal: everyapp secret set ${settings.join(" ")}. Apps list it under providers and call /api/ai/${id}/<route> with an OpenAI client; everyapp ai default ${id} makes it the Gateway's default model provider.`
-            : `Set its client from the terminal: everyapp secret set ${settings.join(" ")}, or paste it under Admin → Providers. People connect at /connect/${id} once the client is set.`,
-    };
-  },
-
-  async provider_scope_set_add(ctx, args) {
-    const provider =
-      typeof args["provider"] === "string" ? args["provider"] : "";
-    const name = typeof args["name"] === "string" ? args["name"] : "";
-    const { provider: _p, name: _n, ...set } = args;
-    let summary: OAuthProviderSummary;
-    try {
-      summary = await addScopeSet(ctx, await actorFor(ctx), {
-        providerId: provider,
-        name,
-        spec: set,
-      });
-    } catch (error) {
-      if (error instanceof PublicError)
-        return refuse(error.code, error.message);
-      throw error;
-    }
-    const added = summary.scopeSets.find((each) => each.name === name);
-    return {
-      provider: { id: summary.id, name: summary.name },
-      scopeSet: added ? { ...added } : { name },
-      scopeSets: summary.scopeSets.map((each) => ({ ...each })),
-      next: `Apps list it as capabilities: { ${JSON.stringify(summary.id)}: { access: "${added?.access ?? "read"}", scopes: [${JSON.stringify(name)}], why: "..." } }. Allow its scopes on the OAuth client at ${summary.console}; people connect again at /connect/${summary.id} to grant them.`,
-    };
-  },
-
-  async provider_scope_set_remove(ctx, args) {
-    const provider =
-      typeof args["provider"] === "string" ? args["provider"] : "";
-    const name = typeof args["name"] === "string" ? args["name"] : "";
-    let summary: OAuthProviderSummary;
-    try {
-      summary = await removeScopeSet(ctx, await actorFor(ctx), {
-        providerId: provider,
-        name,
-      });
-    } catch (error) {
-      if (error instanceof PublicError)
-        return refuse(error.code, error.message);
-      throw error;
-    }
-    return {
-      provider: { id: summary.id, name: summary.name },
-      removed: { name },
-      scopeSets: summary.scopeSets.map((each) => ({ ...each })),
+            : `Set its client from the terminal: everyapp secret set ${settings.join(" ")}, or paste it under Admin → Providers. People connect inside each app that lists ${id} once the client is set.`,
     };
   },
 

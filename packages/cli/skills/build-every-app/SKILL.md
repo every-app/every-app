@@ -115,16 +115,17 @@ becomes something else, not on the first feature.
    with `createGatewayFetch({ env })`; `ai.models` lists the
    models the app may ask for. The Gateway holds the key; a provider the
    manifest doesn't list is refused.
-7. A capability (`members`, `email`, `dataforseo`, `context`, an OAuth
-   provider) under `capabilities` with `access` and a `why`; an OAuth
-   provider (`google-workspace`, `microsoft-365`, `slack`, `github-oauth` or
-   any the Gateway's operator added) also with `scopes: [...]`, the least
-   that does the job. Called with `listMembers()`, `sendEmail()`,
-   `integrationFetch()`; for an OAuth provider the Gateway puts the
-   connected person's token on the call, so the app handles no token: on
-   `integrationStatus().connection === null` it shows a "Connect GitHub"
-   link to `connectUrl({ env, provider, returnTo })`, and on a
-   `integration_not_connected` refusal the same. A refusal is a state the
+7. A capability (`members`, `email`, `dataforseo`, `context`) under
+   `capabilities` with `access` and a `why`. An OAuth provider
+   (`google-workspace`, `microsoft-365`, `slack`, `github-oauth`, any the
+   operator added) takes `{ scopes, why }`: the provider's own scopes, the
+   least that does the job (`["gmail.modify", "gmail.send"]`). Called with
+   `listMembers()`, `sendEmail()`, `integrationFetch()`. A person connects
+   an OAuth provider in this app and the Gateway puts that token on the
+   app's calls: on `integrationStatus().connection === null` or an
+   `integration_not_connected` refusal, link to
+   `connectUrl({ env, provider, returnTo })`. Background work names the
+   member: `for: { background: true, userId }`. A refusal is a state the
    page shows, never a crash.
 8. Tools in `defineTools()` over the same `src/server/` queries, each with an
    honest `risk` (`read`, `write`, `destructive`), a description the model can

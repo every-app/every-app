@@ -109,7 +109,6 @@ describe("parseProviderSpec", () => {
       "auth.authorizeUrl: required",
       "auth.tokenUrl: required",
       "auth.clientId: must name a Gateway setting: upper case letters, digits and underscores, a letter first, 3 to 64 characters (GITHUB_CLIENT_ID)",
-      'scopeSets: required: at least one named set, { "repo.read": { "label", "access", "scopes" } }',
     ]);
     expect(problems({ ...base, auth: { kind: "oauth1" } })).toEqual([
       "auth.secret: must name a Gateway setting: upper case letters, digits and underscores, a letter first, 3 to 64 characters (STRIPE_API_KEY)",

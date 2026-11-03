@@ -10,14 +10,12 @@ the addresses it sends as and receives at (`everyapp email set`, below).
 
 This is phase 0 of the integrations design (the integrations-hub research of
 October 2026, which the repository no longer carries):
-**API-key providers whose key the gateway holds**, **OAuth clients** the
-gateway holds for Slack and for Google's and Microsoft's mail and
-calendar, whose token endpoints it completes for
-apps ([below](#oauth-clients)), and **gateway services**, things the gateway
-does itself for apps (sending email, [below](#gateway-services-email);
-listing the organization's members, [below](#gateway-services-members)).
-Organization-held OAuth accounts and admin approval come in later phases and
-keep the same manifest entry, binding route and SDK call.
+**API-key providers whose key the gateway holds**, **OAuth providers**
+whose client the gateway holds and whose flow it runs, so a person connects
+their own account in each app that needs it ([below](#oauth-providers)),
+and **gateway services**, things the gateway does itself for apps (sending
+email, [below](#gateway-services-email); listing the organization's
+members, [below](#gateway-services-members)).
 
 AI providers are entries of the same catalog (`mode: "ai"`) and stay
 separate in how an app reaches them:
@@ -26,10 +24,10 @@ separate in how an app reaches them:
 doesn't have, as rows of its own ([Provider registry](#provider-registry)).
 
 What comes next is designed, not built: the October 2026 redesign review
-folds AI providers into this model behind one route and one SDK fetch, and the
-Google design (both documents were removed from the repository in #433, on
-2026-10-24)
-adds organization-held OAuth accounts under an operator-held client. Both were
+folds AI providers into this model behind one route and one SDK fetch (it
+and the Google design were removed from the repository in #433, on
+2026-10-24; organization-held OAuth accounts, which the Google design
+proposed, were dropped on 2026-11-02). Both were
 re-aligned on 2026-10-16 with the hosted-platform research
 (`docs/research/2026-10-hosted-platform/`, PR #299; all three documents deleted from
 main on 2026-10-24, git history at 5ef30882): in hosted, first-party apps share one Worker per app and third-party
@@ -44,9 +42,10 @@ them with this document's `capabilities` and
 One catalog (`CAPABILITIES` in `packages/sdk/src/internal/capabilities.ts`)
 defines every provider the gateway holds a credential for, built in; its
 `mode` is the kind. Three kinds are capabilities: they take the same
-manifest entry, `capabilities: { <id>: { access, scopes, why, docs, optional, anyOf } }`
-(`access`, `scopes` for a client with scope sets ([OAuth clients](#oauth-clients)),
-and the need fields of [docs/manifest-settings.md](manifest-settings.md)),
+manifest entry, `capabilities: { <id>: { access, why, docs, optional, anyOf } }`
+(`access`, or for an OAuth provider `scopes`, the provider's own scope
+strings, instead ([OAuth providers](#oauth-providers)), and the need fields
+of [docs/manifest-settings.md](manifest-settings.md)),
 travel the app's private binding to the gateway under
 `/api/integrations/<id>/...`, and answer `GET /api/integrations/<id>`
 (`integrationStatus`) without calling out. The fourth, `ai`, is an AI
@@ -65,7 +64,7 @@ AI proxy's inference routes may use it.
 | -------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------- | ------------------------------- |
 | `api_key`      | `dataforseo`, `context`, and the providers a gateway registers ([Provider registry](#provider-registry)) | puts its key on calls to the provider's own hosts, with the methods its entry allows (read methods; write methods under a write grant, where the provider offers write) | `integrationFetch({ env, provider, for })` on the provider's real URLs                   | `read` (a registered provider may offer `write`) |                                 |
 | `ai`           | `openai`, `openrouter`, `workers-ai` ([AI providers](#ai-providers)) | puts its key on inference calls to the provider's origin, with the AI proxy's rules (inference routes, `store: false`, the model allowlist) | `createGatewayFetch({ env, for })` on `/api/ai/<id>/...`; listed under `providers`, not `capabilities` | | none here: `GET /api/integrations/<id>` is 400 |
-| `oauth_client` | Slack, Google and Microsoft mail and calendar ([OAuth clients](#oauth-clients)); the social networks are presets, rows once an operator adds one | completes the provider's token endpoints only, putting its client on the request   | `integrationFetch` on the token endpoint; the authorize URL from the status's `clientId` | `write` | `clientId` |
+| `oauth_client` | Google, Microsoft 365 and Slack ([OAuth providers](#oauth-providers)); GitHub and others are presets, rows once an operator adds one | runs the flow, keeps each person's tokens per app, and puts the person's token on calls to the provider's API hosts | `connectUrl({ env, provider })` to connect; `integrationFetch({ env, provider, for })` on the provider's real URLs | none: `scopes` | `scopes`, `connectPath`, `connection` |
 | `service`      | `email` ([Gateway services](#gateway-services-email)) | does the work itself: sends the mail from its sender, within its budgets          | `sendEmail({ env, for, message })`, which posts to `/api/integrations/email/send`        | `write` | `sender`, `senders`, `provider` |
 | `service`      | `members` ([Gateway services](#gateway-services-members)) | does the work itself: reads its own directory of who can open the app          | `listMembers({ env, for })`, which gets `/api/integrations/members/list`        | `read` |  |
 
@@ -126,8 +125,8 @@ Everything the gateway holds for apps, in one table:
 | `context`                   | `api_key`           | `CONTEXT_API_KEY`                                                                                                          | `CONTEXT_API_KEY`                                                                                              | OpenSEO                                              |
 | `email`                     | `service`           | `EMAIL_FROM` and `EMAIL_FROM_NAME` (or `EMAIL_FROM` alone as `Name <address>`), and one provider: Cloudflare Email Sending (the `EMAIL` binding; outside Workers `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) or Resend (`RESEND_API_KEY`); `EMAIL_PROVIDER` picks one when both are set | `EMAIL_FROM EMAIL_FROM_NAME` (or `EMAIL_FROM` alone as `Name <address>`; and `RESEND_API_KEY`, `EMAIL_PROVIDER`), after setting up the sending domain ([runbook](runbooks/email-sending-setup.md)); an app's own senders with `everyapp email set --sender` | openmail, OpenAnalytics, and the gateway's own mail |
 | `members`                   | `service`           | none: the gateway reads its own directory                                                                                   | nothing to set                                                                                                 | OpenAnalytics (whom reports go to)                   |
-| `slack`                     | `oauth_client`      | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | generated [below](#oauth-clients)                                                        | OpenCRM |
-| `google-workspace`, `microsoft-365` | `oauth_client` | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`; `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | generated [below](#oauth-clients) | OpenCRM (mail and calendar capture); OpenSEO (Search Console and Analytics) |
+| `slack`                     | `oauth_client`      | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | generated [below](#oauth-providers)                                                        | OpenCRM |
+| `google-workspace`, `microsoft-365` | `oauth_client` | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`; `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | generated [below](#oauth-providers) | OpenMail (Gmail); OpenCRM (mail and calendar capture); OpenSEO (Search Console and Analytics) |
 | a provider this gateway registered | `api_key` (a row) | its own, each starting with its id (`STRIPE_API_KEY` for `stripe`) | the names `everyapp provider add` prints; `secret set` names the hosts and binds the key to them ([Provider registry](#provider-registry)) | the apps that list it |
 
 X is not in the table: OAuth 1.0a signs every API call with the user's token
@@ -262,8 +261,8 @@ capabilities: {
 gateway's registered providers have (`CAPABILITY_UNKNOWN`, naming
 `pnpm everyapp provider add`), an AI provider listed here instead of under
 `providers`, and an access level the provider doesn't offer (`write`, for
-both catalog API-key providers today; `read`, for email and the OAuth
-clients). `everyapp dev` can't ask the gateway, so it accepts an id outside
+both catalog API-key providers today; `read`, for email). An OAuth provider
+takes `scopes` instead of `access` ([OAuth providers](#oauth-providers)). `everyapp dev` can't ask the gateway, so it accepts an id outside
 the catalog and warns `CAPABILITY_NOT_IN_CATALOG`.
 
 An entry may also say its need: `optional: true` when only one feature uses
@@ -412,161 +411,128 @@ the rules, the commands and their codes are the agent docs page
 rules' invariants are the `providers.*` rows of the threat model's register
 (B4), and the design is docs/design/2026-10-provider-registry.md.
 
-## OAuth clients
+<a id="oauth-clients"></a>
 
-Since 2026-10-25 an OAuth client can also run the Gateway-owned flow (`docs/design/2026-10-oauth-providers.md`): the catalog's `google-workspace`, `microsoft-365` and `slack` carry a `flow` block, and any OAuth provider added from a preset or a spec with `auth.kind: "oauth2-user"` (`everyapp provider add --oauth github-oauth`) is one. There the person connects at `https://<gateway>/connect/<id>` (PKCE, a one-use state), the Gateway holds the tokens sealed in D1 and refreshes them, and an app that lists the provider with `scopes` calls its API hosts through `integrationFetch()` with the token put on by the Gateway, held to the sets it declared. The client may be the Worker secrets below or one pasted in Manage workspace → Providers (sealed in `oauth_clients`; the Worker secret wins). The redirect URI for that flow is `https://<gateway>/connect/<id>/callback`. The app-driven flow below is unchanged and both run on the same client; the agent page is [providers](../landing-page/content/agent/providers.md).
+## OAuth providers
 
-An OAuth client is a capability too (`oauth_client`): the operator
-registers one client per provider on its developer console and gives it to
-the gateway, and every app that lists the provider connects people's
-accounts with it. The gateway completes the provider's **token endpoints
-only**, and only a user's own grants (`authorization_code` and
-`refresh_token`; `client_credentials`, which would mint a token for the
-operator's own application, is refused), putting its client on the request;
-the app builds the authorize URL from the client's public id, keeps the
-access and refresh tokens it gets back, and calls the provider's API with
-them itself. The client secret never reaches an app. OpenCRM uses `slack`
-(and the two clients below).
+An OAuth provider is a capability too (`oauth_client`): the Gateway holds
+the provider's client, runs the authorization-code flow, keeps the tokens
+sealed in D1, refreshes them, and puts a person's token on an app's calls to
+the provider's API. The app never sees a token or the client
+(`docs/design/2026-11-oauth-simplify.md`). Google (`google-workspace`),
+Microsoft 365 (`microsoft-365`) and Slack (`slack`, its bot token) are built
+in as JSON specs (`packages/sdk/src/internal/oauthBuiltIns.ts`); GitHub,
+Notion, Linear, GitLab, Atlassian, HubSpot, Zoom, Dropbox and Spotify are
+presets an operator adds as rows (`pnpm everyapp provider add --oauth
+github-oauth`), and any other provider is a spec with `auth.kind:
+"oauth2-user"`. What differs between providers is data in the spec: the
+endpoints, the API hosts, how scopes are separated and prefixed, extra
+authorize parameters, how the account is named, and the scopes the Gateway
+adds to every connect. The agent page is
+[providers](../landing-page/content/agent/providers.md).
 
-The social networks (LinkedIn, Facebook Pages, Instagram, Threads, YouTube,
-Reddit, Pinterest, Discord, Kick, Twitch, Tumblr) are not catalog clients:
-they are OAuth presets tagged `social` (`packages/sdk/src/internal/oauthPresets.ts`),
-which become rows only when an operator adds one (`everyapp provider add
---oauth linkedin`), with the Gateway-owned flow. Until then no gateway
-reserves their setting names. TikTok, TikTok Business, Mastodon and Dribbble
-were dropped: their token endpoints need what a preset can't say (a renamed
-client id, a JSON body, the client in the query string, an instance host).
+**For an operator.** Register one client per provider on its developer
+console, with `https://<gateway>/connect/<id>/callback` as its redirect URI
+and the scopes your apps list allowed on it, then hand it to the Gateway
+(the commands are below), or paste it in Manage workspace → Providers
+(sealed in `oauth_clients`; the Worker secret wins). A client you skip is
+simply not offered: its status answers `configured: false`. One client
+serves every app and organization on the Gateway, so a provider's limits
+are shared too. Microsoft and Slack may hand back every scope a person ever
+approved on a client: when two apps share such a client with different
+scopes, the wider token is refused, and the fix is a client per app.
 
-Two clients serve mail and calendar:
-`google-workspace` (Gmail, Google Calendar, Search Console and Google
-Analytics, read-only) and `microsoft-365` (Outlook mail and calendar through
-Microsoft Graph, read-only). OpenCRM
-reads each member's own mailbox and calendar with them. Gmail's read scope is
-one of Google's restricted scopes: an *Internal* consent screen (every
-mailbox in the operator's Workspace) needs no review, while an *External*
-one needs Google's verification and a yearly security assessment before
-other people's mailboxes can connect. Register the Microsoft client for
-accounts in any organization and personal accounts: the gateway completes
-the `common` token endpoint only.
-
-**For an operator.** For each client you want people to connect: register
-an app on its developer console, register the redirect URIs each app that
-lists it names (`redirectPaths` on its manifest entry, on the app's host
-`https://<app>.<APP_BASE_DOMAIN>`; `everyapp provider show <id>` lists
-them), allow the scopes listed further down, then hand the client to the
-gateway:
-
-```bash
-pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET
-```
-
-A client you skip is simply not offered: its status answers
-`configured: false`. One client serves every organization on the gateway,
-so a provider's limits (Google's refresh tokens per user, review tiers) are
-shared too.
-
-**For an app.** List each client for writing (obtaining and refreshing
-tokens with the operator's client writes), with `scopes`, one or more of
-its set names, each once: the validator refuses the entry without them, or
-with a name the client doesn't offer, naming the sets it does. An app that
-runs the flow itself lists the callback paths it completes on its own host
-under `redirectPaths`, so the operator knows what to register.
+**For an app.** List the provider with its own scope strings and why:
 
 ```ts
 capabilities: {
   "google-workspace": {
-    access: "write",
-    scopes: ["gmail.read", "calendar.read"],
-    redirectPaths: ["/integrations/google/callback"],
-    why: "Reads each member's own mailbox and calendar.",
+    scopes: ["gmail.modify", "gmail.send"],
+    why: "Mirrors your Gmail, writes reply drafts and sends when you press Send.",
   },
 },
 ```
 
-then build the authorize URL with `authorizeUrl()` from the status, and
-exchange the code (or refresh a token) through the gateway without any
-client:
+A short scope is joined onto the spec's prefix (Google's
+`https://www.googleapis.com/auth/`), a full one is used as written, and `[]`
+is a provider with no scopes (Notion). The Gateway adds the spec's identity
+scopes (Google's `openid email`), so an app never lists them. An OAuth entry
+takes no `access`: the scopes are the grant, for every method. The strict
+validator refuses `access`, `background`, `optionalScopes` and
+`redirectPaths` on it, each with what to write instead.
+
+A person connects in the app: `connectUrl({ env, provider, returnTo })`
+sends them to `https://<gateway>/connect/<id>?app=<app>`, where the Gateway
+checks they may open the app and that its manifest lists the provider, and
+asks the provider for exactly the app's scopes and the identity scopes
+(PKCE, a one-use state, never `include_granted_scopes`). The connection
+belongs to that person and that app; another app on the same client
+connects separately, for its own scopes. On the callback, and on every
+refresh, the Gateway compares what the provider says it granted with what
+was asked: a token with more is refused and dropped (at refresh the
+connection is marked expired). A provider that answers without a `scope`
+field is taken as granted as asked.
 
 ```ts
-import { authorizeUrl, integrationFetch, integrationStatus } from "@every-app/sdk/server";
+import { connectUrl, integrationFetch } from "@every-app/sdk/server";
 
-const status = await integrationStatus({ env, provider: "google-workspace" });
-if (!status.ready) return showNotSetUp("Google");
-const url = authorizeUrl({ provider: "google-workspace", status, redirectUri, state });
-
-// The callback: the gateway adds client_id and client_secret.
 const google = integrationFetch({ env, provider: "google-workspace" });
-const tokens = await google("https://oauth2.googleapis.com/token", {
-  method: "POST",
-  headers: { "content-type": "application/x-www-form-urlencoded" },
-  body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: redirectUri }),
-});
-// A refresh from a cron or Workflow runs under withOrganization(organizationId, fn).
+const answer = await google("https://gmail.googleapis.com/gmail/v1/users/me/profile");
+// 409 integration_not_connected: send the person to
+// connectUrl({ env, provider: "google-workspace", returnTo: request.url })
 ```
 
-In local dev (`everyapp dev`, no binding) the fetch calls the token endpoint
-directly and puts the developer's own client from `.dev.vars`, under the
-same names, on it by the same rule.
+The call uses the connection of the person behind it. Work no person
+started, or a call on another member's behalf, names the member with
+`for: { background: true, userId }` (sent as `x-everyapp-user`): an app may
+use any member's connection to it, at any time. Only an organization's own
+app may name a member, and only one who is still an active member able to
+open the app.
 
-**What the gateway checks**, in order, each a refusal with its code in
-`x-everyapp-error`:
+**What the gateway checks** on a call to a provider's API, in order, each a
+refusal with its code in `x-everyapp-error`:
 
-| Code                            | Status  | When                                                                                          |
-| ------------------------------- | ------- | --------------------------------------------------------------------------------------------- |
-| `integration_path_not_allowed`  | 403     | the call isn't one of the network's token endpoints (host, exact path, method): API calls go to the network directly |
-| `capability_not_requested`      | 403     | the deployed manifest doesn't list the network with `access: "write"`                         |
-| `integration_scopes_undeclared` | 403     | the network has scope sets and the entry's `scopes` isn't a non-empty list of names this gateway offers (missing, empty, a duplicate or an unknown name voids the whole grant); the message names the sets on offer |
-| `caller_*`                      | 401/403 | the AppGateway entrypoint's attribution (a shared app's Worker names the organization)        |
-| `integration_agent_not_allowed` | 403     | an agent's identity (`chan: "mcp"`), with or without `mcp:write`: agents can't connect accounts or mint tokens |
-| `integration_grant_not_allowed` | 403     | the `grant_type` isn't a user's grant, or isn't one this client's scope policy completes (`client_credentials` would mint a token for the operator's own application; on Google and Microsoft a request without `grant_type` too) |
-| `integration_not_configured`    | 503     | the gateway doesn't hold the client; the message names the `secret set` command               |
-| `integration_body_too_large`    | 413     | the body passes 64 KiB, counted as it streams                                                 |
-| `integration_body_invalid`      | 400     | the body isn't form-encoded; with scope sets, also a `grant_type`, `scope` or `user_scope` in the query string, or `grant_type` more than once in a form body: the gateway decides on the body, once |
-| `integration_scope_not_allowed` | 403     | with scope sets, the request's `scope` (Slack: `user_scope`) names a scope outside the app's sets |
-| `integration_upstream_failed`   | 502     | the network couldn't be reached, or (with scope sets) its 2xx answer broke off while the gateway read it; nothing was passed on |
-| `integration_response_invalid`  | 502     | with scope sets, a 2xx answer over 64 KiB or not a JSON object; nothing was passed on         |
-| `integration_scope_unverified`  | 502     | with scope sets, a 2xx answer carrying a token without saying which scopes it holds; nothing was passed on |
-| `integration_scope_exceeded`    | 403     | with scope sets, the granted scopes go beyond the app's sets (a wider earlier consent, `include_granted_scopes`, a refresh after a set was removed); the tokens are dropped, never forwarded, stored, logged or revoked, and the message says how the person reconnects |
+| Code                           | Status | When                                                                                                    |
+| ------------------------------ | ------ | ------------------------------------------------------------------------------------------------------- |
+| `capability_not_requested`     | 403    | the deployed manifest doesn't list the provider                                                         |
+| `integration_not_configured`   | 503    | the Gateway holds no client for it                                                                      |
+| `integration_body_invalid`     | 400    | `x-everyapp-user` isn't a user id                                                                       |
+| `integration_user_not_allowed` | 403    | a shared app or linked dev named a member with `x-everyapp-user`                                        |
+| `integration_not_connected`    | 409    | no connection for this person (or the named member) in this app, it expired, or it lacks a scope the app now lists; the answer carries `connectPath` (`/connect/<id>?app=<app>`), `reconnect` and `missingScopes`. A named member who left, was deactivated or lost the app gets this too, and their connection in the app is deleted |
+| `invalid_integration_route`    | 400    | the host isn't one of the provider's API hosts                                                          |
+| `integration_upstream_failed`  | 502    | the provider couldn't be reached                                                                        |
 
-It then drops the app's `Authorization`, cookies and every `x-everyapp-*`
-header, removes any `client_id` or `client_secret` the app put in the query
-string or the body (in any case), puts the gateway's client where the
-endpoint takes it (`form`: the form body; `basic`: HTTP Basic),
-re-serialises the body, refuses to follow redirects, drops the network's
-`set-cookie`, and streams the answer back. For a network with scope sets it
-also sets the request's `scope` as the network takes it (Microsoft: the
-app's list, so a token covers Graph alone; Google: dropped), reads a 2xx
-answer under the same 64 KiB cap and holds what the network says it granted
-to the app's sets before passing the buffered answer on; a non-2xx answer
-streams through as it came. Each call is logged
-(`integration.proxy.call`) with the organization, app, host, path, method,
-the request's `grant_type`, status and attribution (with scope sets, the
-declared set names); never the query, the body or the answer, which carry
-the client, codes and tokens, except the declared set names and the scope
-names in excess when it refuses one (`integration.proxy.scope_refused`).
+It then puts the token (refreshed first when due) on as `Authorization:
+Bearer`, drops the app's `Authorization`, cookies, `x-http-method-override`
+and every `x-everyapp-*` header and any `access_token` or `token` query key,
+refuses to follow redirects, drops the provider's `set-cookie`, and streams
+the answer back. There are no route, set or method rules: what the app may
+do is what the scopes it listed let it do. Each call is logged
+(`integration.proxy.call`) without the query, the body or the answer, and
+the first call of a UTC day on a connection emits `connection.used`.
 
-`GET /api/integrations/<network>` answers
-`{ capability, requested, configured, ready, clientId?, scopeSets?, scopes?, userScopes? }`;
-`clientId` only for an app that lists the network,
-once the gateway holds its client. For a network with scope sets,
-`scopeSets` (the names the app's entry lists) and `scopes` (the exact
-provider strings to put on the authorize URL, in registry order;
-Microsoft's end with `offline_access`; Slack's user scopes come under
-`userScopes`), answered for a valid grant whether or not the gateway holds
-the client (without one: `configured: false`, `ready: false`, no
-`clientId`); a void grant answers `ready: false` and `scopeSets: []` with
-no `clientId` and no `scopes`, so the app shows "not available" instead of
-starting a flow the gateway would refuse to complete. A dispatched app's
-Worker can't reach the token endpoints directly either: the outbound Worker
-refuses them (`reserved_endpoint`), though not the networks' API hosts.
+`GET /api/integrations/<id>` answers `{ capability, requested, configured,
+ready, scopes, connectPath, connection }` for the person (or the named
+member): `scopes` as the manifest lists them, `connectPath` the app's
+connect path, and `connection` `{ label, scopes, ready, missingScopes?,
+reconnect? }` or null. In local dev (`everyapp dev`, no binding) a token
+you obtained yourself in `.dev.vars` as `<PREFIX>_ACCESS_TOKEN`
+(`GOOGLE_WORKSPACE_ACCESS_TOKEN`) stands in for the connection; dev checks
+the hosts only.
+
+Removing a member deletes their connections, a member losing an app
+deletes their connection in it, and deleting an app deletes its
+connections. A person disconnects in Settings → Connected accounts, which
+lists each connection with its app; an owner or admin disconnects anyone's
+in Manage workspace → Providers.
 
 <!-- oauth-clients:begin (generated from packages/sdk/src/internal/capabilities.ts by capabilitiesDoc.test.ts) -->
 
-| Capability | Provider | Gateway secrets | Developer console | Token endpoints the gateway completes (where the client goes) |
+| Capability | Provider | Gateway secrets | Developer console | API hosts the token is sent to |
 | --- | --- | --- | --- | --- |
-| `slack` | Slack | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | https://api.slack.com/apps | POST `slack.com/api/oauth.v2.access` (form) |
-| `google-workspace` | Google (Gmail, Calendar, Search Console and Analytics) | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET` | https://console.cloud.google.com/apis/credentials | POST `oauth2.googleapis.com/token` (form) |
-| `microsoft-365` | Microsoft 365 (Outlook mail and calendar) | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade | POST `login.microsoftonline.com/common/oauth2/v2.0/token` (form) |
+| `slack` | Slack | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | https://api.slack.com/apps | `slack.com` |
+| `google-workspace` | Google | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET` | https://console.cloud.google.com/apis/credentials | `gmail.googleapis.com`, `www.googleapis.com`, `searchconsole.googleapis.com`, `analyticsdata.googleapis.com`, `analyticsadmin.googleapis.com`, `openidconnect.googleapis.com` |
+| `microsoft-365` | Microsoft 365 | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade | `graph.microsoft.com` |
 
 The commands, one per client you offer (each prompts for the values):
 
@@ -576,34 +542,13 @@ pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECR
 pnpm everyapp secret set MICROSOFT_365_CLIENT_ID MICROSOFT_365_CLIENT_SECRET
 ```
 
-The authorize page each client sends people to, and the scopes the operator allows on the client; an app lists the scope sets it uses:
+How each provider spells scopes. An app lists the provider's own scopes (`scopes` on its capability entry), short (joined onto the prefix) or in full; the Gateway adds the identity scopes to every connect:
 
-| Capability | Authorize URL | Scopes |
-| --- | --- | --- |
-| `slack` | `https://slack.com/oauth/v2/authorize` | `channels:read`, `groups:read`, `users:read`, `users:read.email`, `chat:write`, `chat:write.public`, `chat:write.customize`, `channels:join`, `channels:manage`, `groups:write`, `channels:write.invites`, `groups:write.invites`, `im:write`, `files:write`, `channels:write` |
-| `google-workspace` | `https://accounts.google.com/o/oauth2/v2/auth` | `openid`, `email`, `profile`, `https://www.googleapis.com/auth/gmail.readonly`, `https://www.googleapis.com/auth/calendar.readonly`, `https://www.googleapis.com/auth/webmasters.readonly`, `https://www.googleapis.com/auth/analytics.readonly` |
-| `microsoft-365` | `https://login.microsoftonline.com/common/oauth2/v2.0/authorize` | `offline_access`, `User.Read`, `Mail.Read`, `Calendars.Read` |
-
-Scope sets an app may list (`scopes` on its capability entry), each with the provider scopes it asks for; a client with none takes the whole client as the grant:
-
-| Capability | Scope set | Label | Access | Provider scopes |
-| --- | --- | --- | --- | --- |
-| `slack` | `channels.read` | Channels (read-only) | read | `channels:read`, `groups:read` |
-| `slack` | `users.read` | Members (read-only) | read | `users:read` |
-| `slack` | `users.email` | Members' email addresses (read-only) | read | `users:read.email` |
-| `slack` | `messages.write` | Messages (post as the app) | write | `chat:write`, `chat:write.public`, `chat:write.customize` |
-| `slack` | `channels.join` | Channels (join public ones) | write | `channels:join` |
-| `slack` | `channels.manage` | Channels (create, manage and invite to; open DMs) | write | `channels:manage`, `groups:write`, `channels:write.invites`, `groups:write.invites`, `im:write` |
-| `slack` | `files.write` | Files (upload) | write | `files:write` |
-| `slack` | `user-channels.manage` | Channels (as the installing person: read, manage, invite to) | write | `channels:read` (user token), `channels:write` (user token), `groups:read` (user token), `groups:write` (user token) |
-| `google-workspace` | `identity` | Google account (who you are) | read | `openid`, `email`, `profile` |
-| `google-workspace` | `gmail.read` | Gmail (read-only) | read | `https://www.googleapis.com/auth/gmail.readonly` |
-| `google-workspace` | `calendar.read` | Google Calendar (read-only) | read | `https://www.googleapis.com/auth/calendar.readonly` |
-| `google-workspace` | `search-console.read` | Search Console (read-only) | read | `https://www.googleapis.com/auth/webmasters.readonly` |
-| `google-workspace` | `analytics.read` | Google Analytics (read-only) | read | `https://www.googleapis.com/auth/analytics.readonly` |
-| `microsoft-365` | `identity` | Microsoft account (who you are) | read | `User.Read` |
-| `microsoft-365` | `mail.read` | Outlook mail (read-only) | read | `Mail.Read` |
-| `microsoft-365` | `calendar.read` | Outlook calendar (read-only) | read | `Calendars.Read` |
+| Capability | Separator | Scope prefix | Identity scopes |
+| --- | --- | --- | --- |
+| `slack` | comma | none | none |
+| `google-workspace` | space | `https://www.googleapis.com/auth/` | `openid`, `email` |
+| `microsoft-365` | space | `https://graph.microsoft.com/` | `User.Read`, `offline_access` |
 
 <!-- oauth-clients:end -->
 
@@ -905,11 +850,8 @@ how the launcher shows one is [docs/design/2026-10-mcp-apps-ui.md](design/2026-1
   dispatch tier declare no inbound mail (the hosted deploy API refuses it).
 - Keys and clients live in gateway Worker secrets, not encrypted in D1 with
   rotation in the UI, as the full design has it.
-- OAuth scope sets are held at the token endpoint only. API calls don't
-  pass through the gateway, so the sets' route allowlist is tested data
-  that enforces nothing yet: the boundary is which tokens an app can
-  obtain, not what it does with them. A Google token is narrow per app
-  only when the app asks for the status's scopes without
-  `include_granted_scopes`; a shared Microsoft client hands back everything
-  the person consented to, which the gateway refuses rather than narrows;
-  tokens obtained before a gateway deploy work until they need a refresh.
+- An OAuth connection's boundary is the scopes the person approved on the
+  provider's screen: the Gateway doesn't narrow within a scope (Google's
+  `gmail.modify` includes sending), and an app may use a connection made
+  in it at any time, with no separate consent for work while the person is
+  away.

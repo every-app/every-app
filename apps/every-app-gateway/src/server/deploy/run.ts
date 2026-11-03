@@ -18,7 +18,6 @@ import { catalogue } from "@/server/events/catalogue";
 import { userActor } from "@/server/events/subjects";
 import { gatewayNameOf } from "@/server/gateway-name";
 import { platformPolicy } from "@/server/platform-policy";
-import { gatewayProviders } from "@/server/providers";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import {
   DeployJobRepository,
@@ -107,7 +106,7 @@ export async function jobAnswer(
 export function parseManifest(
   raw: unknown,
   appId: string,
-  /** The gateway's registry, so an operator's scope-set overlays count; the catalog alone when absent. */
+  /** The gateway's registry, so its registered providers count; the catalog alone when absent. */
   lookup?: CapabilityLookup,
 ): Manifest {
   let manifest: Manifest;
@@ -296,13 +295,7 @@ export async function startDeploy(input: StartDeployInput): Promise<string> {
   const selfHosted = platformPolicy(env).mode === "self_hosted";
   const problems = selfHosted
     ? selfHostedBundleProblems(bundle, manifest)
-    : bundleProblems(
-        bundle.worker,
-        manifest,
-        limits,
-        bundle.assets.size > 0,
-        await gatewayProviders(),
-      );
+    : bundleProblems(bundle.worker, manifest, limits, bundle.assets.size > 0);
   if (problems.length > 0) throw bundleRefused(problems);
   const deployer = selfHosted
     ? CfRestDeployer.fromSelfHostedEnv(env)

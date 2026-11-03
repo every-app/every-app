@@ -3,6 +3,7 @@
  * take, read from the strict manifest schema, so the manifest page of the
  * agent docs can be checked for each: `resources.d1`,
  * `resources.durableObjects[].className`, `capabilities.<id>.access`,
+ * an OAuth provider's `capabilities.<id>.scopes`,
  * `migrations.engine` and its `drizzle`, `d1-sql`, `prisma`.
  *
  * The perimeter's schema is zod 4 (`_zod.def.type`), walked structurally so
@@ -97,12 +98,14 @@ export function manifestFields(): ManifestFields {
   // A capability's entry is validated per capability inside the record's
   // refinement, not as its value type: walk one to get `access` and `why`.
   walk(capabilityEntrySchema("email") as unknown as ZodNode, "capabilities.<id>", out);
-  // `background` is refused there; an OAuth provider the Gateway connects
-  // people to takes it (#888): walk Google's for its fields.
+  // An OAuth provider's entry is `{ scopes, why }`: its shape also holds the
+  // keys it refuses (access, background, ...), each with what to write
+  // instead, which are not fields to document. Take `scopes` alone.
   const oauthEntry = capabilityEntrySchema("google-workspace") as unknown as {
     shape: Record<string, ZodNode>;
   };
-  walk(oauthEntry.shape["background"]!, "capabilities.<id>.background", out);
+  out.paths.push("capabilities.<id>.scopes");
+  walk(oauthEntry.shape["scopes"]!, "capabilities.<id>.scopes", out);
   return {
     paths: [...new Set(out.paths)],
     values: [...new Set(out.values)],

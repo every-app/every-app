@@ -74,7 +74,7 @@ const addCommand = buildCommand({
       "names) or piped NAME=value lines; never on the command line.",
       "",
       "A built-in provider (provider list names them) is only its key; an OAuth client",
-      "(google-workspace, slack, microsoft-365, discord) its client. An OAuth preset (provider",
+      "(google-workspace, slack, microsoft-365) its client. An OAuth preset (provider",
       "presets: github-oauth) becomes a registered provider. Any other API is a spec: its id, name,",
       "the page the key comes from (docs), the only hosts the key is ever sent to and how (auth:",
       "bearer, header, query or basic), naming the Gateway setting that holds the key. The spec",
@@ -90,7 +90,8 @@ const addCommand = buildCommand({
       "it the Gateway's default model provider.",
       "",
       "--oauth takes an OAuth spec file (auth.kind oauth2-user), or a preset or built-in client by",
-      "name. --verbose adds an OAuth provider's scope sets and the manifest entry.",
+      "name. Apps list the provider's own scopes in everyapp.config.ts; people connect in each app.",
+      "--verbose adds the manifest entry.",
       "",
       "Examples:",
       `  ${CLI} provider add google-workspace`,
@@ -114,8 +115,8 @@ const presetsCommand = buildCommand({
   docs: {
     brief: "List the OAuth presets provider add --oauth takes: GitHub, Notion, Linear and more, and the built-in clients",
     fullDescription: [
-      "Each with its scope sets (what an app lists under scopes) and the console where its client",
-      "is made. Nothing is read from the Gateway.",
+      "Each with its API hosts and the console where its client is made. Apps list the",
+      "provider's own scopes in everyapp.config.ts. Nothing is read from the Gateway.",
       "",
       "Example:",
       `  ${CLI} provider presets`,
@@ -150,19 +151,27 @@ const connectionsCommand = buildCommand({
         brief: "One provider's connections",
         optional: true,
       },
+      app: {
+        kind: "parsed",
+        parse: String,
+        placeholder: "app",
+        brief: "One app's connections, by its id: openmail",
+        optional: true,
+      },
       ...connectFlags,
     },
   },
   docs: {
-    brief: "List the accounts people (and the organization) connected to OAuth providers on the Gateway",
+    brief: "List the accounts people connected to OAuth providers in each app on the Gateway",
     fullDescription: [
-      "Who connected what, with the scope sets granted, the status and when it was last used.",
-      "Never a token.",
+      "A connection is one person's, in one app: who connected what, in which app, with the scopes",
+      "granted, the status and when it was last used. Never a token.",
       "",
       "Examples:",
       `  ${CLI} provider connections`,
       `  ${CLI} provider connections --provider github-oauth`,
       `  ${CLI} provider connections --user ben@example.com`,
+      `  ${CLI} provider connections --app openmail`,
     ].join("\n"),
   },
 });
@@ -182,29 +191,32 @@ const disconnectCommand = buildCommand({
         brief: "This person's connection",
         optional: true,
       },
-      organization: {
-        kind: "boolean",
-        brief: "The organization's own connection (the one background work uses)",
-        optional: true,
-      },
       all: {
         kind: "boolean",
         brief: "Every connection to the provider",
+        optional: true,
+      },
+      app: {
+        kind: "parsed",
+        parse: String,
+        placeholder: "app",
+        brief: "Only the connections made in this app, by its id: openmail",
         optional: true,
       },
       ...connectFlags,
     },
   },
   docs: {
-    brief: "Remove a person's or the organization's connection to an OAuth provider from the Gateway",
+    brief: "Remove people's connections to an OAuth provider from the Gateway",
     fullDescription: [
-      "The Gateway drops the tokens it held; apps get \"not connected\" until the person connects",
-      "again at /connect/<id>. The CLI holds no token, so the grant stays at the provider until it",
-      "is revoked there (Admin → Providers → Disconnect revokes it from the Gateway).",
+      "The Gateway drops the tokens it held; the app gets \"not connected\" until the person",
+      "connects again in it. --user removes that person's connections in every app, --app narrows",
+      "it to one app. The CLI holds no token, so the grant stays at the provider until it is",
+      "revoked there (Disconnect in Connected accounts revokes it from the Gateway).",
       "",
       "Examples:",
       `  ${CLI} provider disconnect github-oauth --user ben@example.com`,
-      `  ${CLI} provider disconnect github-oauth --organization`,
+      `  ${CLI} provider disconnect google-workspace --user ben@example.com --app openmail`,
       `  ${CLI} provider disconnect github-oauth --all`,
     ].join("\n"),
   },
@@ -286,101 +298,6 @@ const removeCommand = buildCommand({
   },
 });
 
-const providerParameter = {
-  placeholder: "provider",
-  brief: "A built-in OAuth client with scope sets: google-workspace, microsoft-365 or slack",
-  parse: String,
-} as const;
-
-const scopeSetAddCommand = buildCommand({
-  loader: async () => {
-    const { scopeSetAdd } = await import("./scopeSets");
-    return scopeSetAdd;
-  },
-  parameters: {
-    positional: {
-      kind: "tuple",
-      parameters: [
-        providerParameter,
-        {
-          placeholder: "spec",
-          brief: "The set as JSON: a file, or an https URL to one (64 KiB at most)",
-          parse: String,
-        },
-      ],
-    },
-    flags: {
-      replace: {
-        kind: "boolean",
-        brief: "Replace the set of the same name added before",
-        optional: true,
-      },
-      ...connectFlags,
-    },
-  },
-  docs: {
-    brief: "Add a scope set to a built-in OAuth client, so apps can list it under scopes",
-    fullDescription: [
-      "The set says its name (identity, or <area>.<access>: gmail.send), its label, its access",
-      "(read or write, said outright), the provider's scopes it asks for, and the routes on the",
-      "client's own API hosts it unlocks: { host, paths, posts? } (posts are anchored patterns of",
-      "the POST paths a read set admits). It is checked by the rules a built-in set is checked",
-      "by; a name the client already has, or a host outside the client's, is refused. Live within",
-      "30 seconds. The client's authorize scopes grow by the set's: allow them on the OAuth client",
-      "at the provider's console, and people connect again to grant them.",
-      "",
-      "Example:",
-      `  ${CLI} provider scope-set add google-workspace gmail-send.json`,
-      '  gmail-send.json: { "name": "gmail.send", "label": "Gmail (send)", "access": "write",',
-      '    "scopes": ["https://www.googleapis.com/auth/gmail.send"],',
-      '    "routes": [{ "host": "gmail.googleapis.com", "paths": ["/gmail/v1/users/"] }] }',
-    ].join("\n"),
-  },
-});
-
-const scopeSetRemoveCommand = buildCommand({
-  loader: async () => {
-    const { scopeSetRemove } = await import("./scopeSets");
-    return scopeSetRemove;
-  },
-  parameters: {
-    positional: {
-      kind: "tuple",
-      parameters: [
-        providerParameter,
-        { placeholder: "name", brief: "The set's name, as provider show lists it (added ones marked)", parse: String },
-      ],
-    },
-    flags: {
-      force: {
-        kind: "boolean",
-        brief: "Remove it even though deployed apps list it (their calls under it stop)",
-        optional: true,
-      },
-      ...connectFlags,
-    },
-  },
-  docs: {
-    brief: "Remove a scope set added to a built-in OAuth client",
-    fullDescription: [
-      "Only a set added with scope-set add can be removed; the client's own stay. A set a deployed",
-      "app lists under scopes is refused unless --force. Connections keep their tokens; calls",
-      "under the set answer integration_scopes_undeclared within 30 seconds.",
-      "",
-      "Example:",
-      `  ${CLI} provider scope-set remove google-workspace gmail.send`,
-    ].join("\n"),
-  },
-});
-
-const scopeSetRoutes = buildRouteMap({
-  routes: { add: scopeSetAddCommand, remove: scopeSetRemoveCommand },
-  aliases: { rm: "remove" },
-  docs: {
-    brief: "Scope sets an operator adds to the built-in OAuth clients (Google, Microsoft, Slack)",
-  },
-});
-
 /** `provider on|off`: what `everyapp mcp on|off` was called until 2026-10-24, kept through launch week. */
 const mcpAlias = (verb: "on" | "off") =>
   buildCommand({
@@ -401,12 +318,10 @@ const mcpAlias = (verb: "on" | "off") =>
   });
 
 /**
- * `everyapp provider add|list|show|remove|presets|connections|disconnect`
- * and `provider scope-set add|remove`: the provider registry, the API
- * providers the Gateway brokers (docs/design/2026-10-provider-registry.md),
- * the OAuth providers people connect their accounts to
- * (docs/design/2026-10-oauth-providers.md) and the scope sets an operator
- * adds to the built-in clients.
+ * `everyapp provider add|list|show|remove|presets|connections|disconnect`:
+ * the provider registry, the API providers the Gateway brokers
+ * (docs/design/2026-10-provider-registry.md), and the OAuth providers people
+ * connect their accounts to in each app (docs/design/2026-11-oauth-simplify.md).
  * `on` and `off` are hidden: they run `mcp on|off` and say so, for
  * documents that still say `provider on`.
  */
@@ -419,7 +334,6 @@ export const providerRoutes = buildRouteMap({
     presets: presetsCommand,
     connections: connectionsCommand,
     disconnect: disconnectCommand,
-    "scope-set": scopeSetRoutes,
     on: mcpAlias("on"),
     off: mcpAlias("off"),
   },

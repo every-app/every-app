@@ -20,13 +20,14 @@ import { attributionFromContext } from "./context.js";
  *    checks is active and has a live member. An organization's own app may
  *    leave it out (the gateway knows its organization) and may only name
  *    its own.
- *  - `{ background: true, organizationId, userId }`: background work on
- *    one member's own OAuth connection (`integrationFetch` to a provider's
- *    API), which works only after that member allowed it on the Gateway's
- *    page (`connectUrl({ background: true })`), for the sets the entry
- *    marks `background`. The call is still the app's, on the member's
- *    behalf; no identity for the member reaches the app. Other gateway
- *    calls ignore `userId`.
+ *  - `{ background: true, organizationId, userId }`: a call to an OAuth
+ *    provider's API (`integrationFetch`) on the connection member `userId`
+ *    made in this app, at any time, even while serving another person's
+ *    request: the call carries that member (`x-everyapp-user`) and never
+ *    the identity of the person being served. Only an organization's own
+ *    app may name a member, and only one who may still open the app. No
+ *    identity for the member reaches the app. Other gateway calls ignore
+ *    `userId`.
  */
 export type GatewayCallFor =
   | Request

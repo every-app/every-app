@@ -33,7 +33,11 @@ import {
   type ProviderVerification,
   type SmokeRequest,
 } from "./capabilities.js";
-import { oauthSpecOf, parseOAuthUserSpec } from "./oauthSpec.js";
+import {
+  REMOVED_OAUTH_FIELDS,
+  oauthSpecOf,
+  parseOAuthUserSpec,
+} from "./oauthSpec.js";
 
 /** A provider id: lowercase, a letter first, 2 to 40 characters. */
 export const PROVIDER_ID = /^[a-z][a-z0-9-]{1,39}$/;
@@ -112,10 +116,6 @@ const KNOWN_FIELDS = new Set([
   "example",
   "verified",
   "tags",
-  // An `oauth2-user` spec's own (./oauthSpec.ts).
-  "scopeSets",
-  "alwaysRequested",
-  "tolerated",
   // An `ai` spec's own.
   "baseUrl",
   "models",
@@ -144,11 +144,7 @@ const NOT_AI_FIELDS = [
   "readMethods",
   "writeMethods",
   "accountWidePaths",
-  ...OAUTH_ONLY_FIELDS_LIST(),
 ] as const;
-function OAUTH_ONLY_FIELDS_LIST(): readonly string[] {
-  return ["scopeSets", "alwaysRequested", "tolerated"];
-}
 /** Fields an API-key spec has that an `oauth2-user` spec does not. */
 const API_KEY_ONLY_FIELDS = [
   "hostSetting",
@@ -159,11 +155,6 @@ const API_KEY_ONLY_FIELDS = [
   "cost",
   "rate",
   "verified",
-] as const;
-const OAUTH_ONLY_FIELDS = [
-  "scopeSets",
-  "alwaysRequested",
-  "tolerated",
 ] as const;
 
 export interface ProviderSpecProblem {
@@ -753,7 +744,11 @@ export function parseProviderSpec(input: unknown): ParsedProviderSpec {
       problems: [{ path: "(root)", message: "must be a JSON object" }],
     };
   }
+  const oauthSpec =
+    isRecord(input["auth"]) && input["auth"]["kind"] === "oauth2-user";
   for (const field of Object.keys(input)) {
+    // An OAuth spec's removed fields get their own message below.
+    if (oauthSpec && Object.hasOwn(REMOVED_OAUTH_FIELDS, field)) continue;
     if (!KNOWN_FIELDS.has(field)) {
       problems.push({ path: field, message: "unknown field" });
     }
@@ -816,7 +811,11 @@ export function parseProviderSpec(input: unknown): ParsedProviderSpec {
     return parseAiSpec(input, problems, { id, name, description, docs, api });
   }
   if (isOAuth) {
-    const { access, readMethods, writeMethods } = grants(input, problems);
+    // Fields an OAuth spec had before scopes moved to each app's config,
+    // each refused with what to write instead.
+    for (const [field, message] of Object.entries(REMOVED_OAUTH_FIELDS)) {
+      if (input[field] !== undefined) problems.push({ path: field, message });
+    }
     const hint = text(input["hint"], "hint", problems, { max: 500 });
     const example = text(input["example"], "example", problems, { max: 200 });
     const tags = tagList(input["tags"], problems);
@@ -850,11 +849,6 @@ export function parseProviderSpec(input: unknown): ParsedProviderSpec {
               hosts,
               ...(description === undefined ? {} : { description }),
               ...(api === undefined ? {} : { reference: api }),
-              ...(access === undefined
-                ? {}
-                : { access: access as ("read" | "write")[] }),
-              ...(readMethods === undefined ? {} : { readMethods }),
-              ...(writeMethods === undefined ? {} : { writeMethods }),
               ...(hint === undefined ? {} : { hint }),
               ...(example === undefined ? {} : { example }),
               ...(tags === undefined ? {} : { tags }),
@@ -866,14 +860,6 @@ export function parseProviderSpec(input: unknown): ParsedProviderSpec {
       return { ok: false, problems };
     }
     return { ok: true, id, capability: parsed.capability };
-  }
-  for (const field of OAUTH_ONLY_FIELDS) {
-    if (input[field] !== undefined) {
-      problems.push({
-        path: field,
-        message: "only an oauth2-user spec has it",
-      });
-    }
   }
 
   const hostSetting =
@@ -1209,15 +1195,7 @@ export function providerSpecOf(
   id: string,
   capability: RegistrableCapability,
 ): Record<string, unknown> {
-  if (capability.mode === "oauth_client") {
-    const spec = oauthSpecOf(id, capability);
-    if (!spec) {
-      throw new Error(
-        `${id} is a catalog OAuth client without a Gateway-owned flow: it has no spec`,
-      );
-    }
-    return spec;
-  }
+  if (capability.mode === "oauth_client") return oauthSpecOf(id, capability);
   if (capability.mode === "ai") {
     if (!capability.chat || !capability.models) {
       throw new Error(
@@ -1318,7 +1296,7 @@ export function writeMethodsOf(
   capability: RegistrableCapability,
 ): readonly string[] {
   return (
-    (capability.mode === "ai" ? undefined : capability.writeMethods) ??
+    (capability.mode === "api_key" ? capability.writeMethods : undefined) ??
     DEFAULT_WRITE_METHODS
   );
 }

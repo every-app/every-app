@@ -1,11 +1,12 @@
 /**
  * The Gateway-owned OAuth flow end to end against a migrated SQLite
- * database and a fake provider (docs/design/2026-10-oauth-providers.md
- * sections 5 to 7): a GitHub preset added with a client pasted in the UI,
- * a person connecting from an app, the connection stored sealed, an app's
+ * database and a fake provider (docs/design/2026-11-oauth-simplify.md): a
+ * GitHub preset added with a client pasted in the UI, a person connecting
+ * in an app, the connection stored sealed as theirs in that app, an app's
  * call through the proxy with the held token, the refresh, the expiry, the
- * disconnect with a revoke; the state rules, the return rule, the scope
- * rules; and the Google catalog entry with its client from D1.
+ * disconnect with a revoke; the state rules and the return rule; and the
+ * Google catalog entry with its client from D1. The generic spec, the mint
+ * check and background use are in spec-flow.sqlite.test.ts.
  */
 import { generateKeyPairSync } from "node:crypto";
 import {
@@ -48,7 +49,6 @@ vi.mock("@/auth", () => ({
 }));
 
 import {
-  isOAuthProvider,
   mintIdentityJwt,
   OAUTH_PRESETS,
   parseProviderSpec,
@@ -56,7 +56,7 @@ import {
   CAPABILITIES,
 } from "@every-app/sdk/internal";
 import { eq } from "drizzle-orm";
-import { events, providerConnections } from "@/db/schema";
+import { apps, events, providerConnections, userAppAccess } from "@/db/schema";
 import { DrizzleAppRegistry } from "@/perimeter/drizzleAppRegistry";
 import {
   clearAppCallerCacheForTests,
@@ -75,12 +75,7 @@ import { fakeOAuthProvider } from "@/test/fake-oauth-provider";
 import { deployLiveApp } from "@/test/registry";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 import { resolveOAuthClient } from "./client";
-import {
-  DEFAULT_RETURN,
-  grantedSets,
-  safeReturnTo,
-  serveConnectRoute,
-} from "./flow";
+import { DEFAULT_RETURN, safeReturnTo, serveConnectRoute } from "./flow";
 import { gatewayHeldTokens } from "./heldTokens";
 import {
   addOAuthProvider,
@@ -120,6 +115,7 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
   let owner: string;
   let member: string;
   const workers: Record<string, string> = {};
+  const rows: Record<string, string> = {};
   let github: ReturnType<typeof fakeOAuthProvider>;
   let now: number;
 
@@ -157,8 +153,7 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
         "crm",
         {
           "github-oauth": {
-            access: "read",
-            scopes: ["identity", "repo.read"],
+            scopes: ["repo"],
             why: "Lists the repositories a deal is about.",
           },
         },
@@ -166,15 +161,18 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
       [
         "ci",
         {
-          "github-oauth": { access: "write", scopes: ["repo.write"] },
+          "github-oauth": {
+            scopes: ["repo", "workflow"],
+            why: "Opens issues for failed builds.",
+          },
         },
       ],
       [
         "seo",
         {
           "google-workspace": {
-            access: "read",
-            scopes: ["identity", "search-console.read"],
+            scopes: ["webmasters.readonly"],
+            why: "Reads Search Console.",
           },
         },
       ],
@@ -187,6 +185,7 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
         deployerUserId: owner,
       });
       workers[appSlug] = plan.app.workerName!;
+      rows[appSlug] = plan.app.id;
     }
     github = fakeOAuthProvider({
       authorizeUrl: GITHUB.auth.authorizeUrl,
@@ -223,10 +222,10 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     });
   }
 
-  /** Connect `userId` at `provider`, through the whole flow; the final redirect. */
+  /** Connect the signed-in person at `provider`, through the whole flow; the final redirect. */
   async function connect(
     provider: string,
-    query = "",
+    query = "?app=crm",
     fetchUpstream: (request: Request) => Promise<Response> = github.fetch,
     authorize: (url: string) => URL = (url) => github.authorize(url),
   ): Promise<Response> {
@@ -318,7 +317,6 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
       name: "GitHub",
       source: "row",
       kind: "oauth",
-      flow: "both",
       bound: true,
       client: {
         source: "d1",
@@ -328,12 +326,6 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
       redirectUri: `${GATEWAY}/connect/github-oauth/callback`,
       connections: 0,
     });
-    expect(added.scopeSets.map((set) => set.name)).toEqual([
-      "identity",
-      "repo.read",
-      "repo.write",
-      "org.read",
-    ]);
     expect(JSON.stringify(added)).not.toContain("gh-client-secret");
     const listed = await listOAuthProviders(org("owner", owner));
     expect(listed.map((each) => each.id)).toContain("github-oauth");
@@ -360,23 +352,15 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
       configured: false,
       apps: [{ name: "seo", needs: true }],
     });
-    expect(providers.get("openrouter")).toMatchObject({
-      kind: "ai",
-      configured: false,
-      apps: [],
-    });
 
     const settings = fakeEnv as Record<string, string>;
     settings["DATAFORSEO_API_KEY"] = "login:dfs-secret-value";
-    settings["OPENROUTER_API_KEY"] = "or-secret-value";
     try {
       providers = await byId();
       expect(providers.get("dataforseo")).toMatchObject({
         configured: true,
         apps: [{ name: "notes", needs: false }],
       });
-      expect(providers.get("openrouter")?.configured).toBe(true);
-
       // An OAuth provider counts once a client is live from either source.
       await addGitHub();
       providers = await byId();
@@ -393,18 +377,16 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
       ).toEqual(["ci", "crm"]);
       const text = JSON.stringify([...providers.values()]);
       expect(text).not.toContain("dfs-secret-value");
-      expect(text).not.toContain("or-secret-value");
       expect(text).not.toContain("gh-client-secret");
     } finally {
       delete settings["DATAFORSEO_API_KEY"];
-      delete settings["OPENROUTER_API_KEY"];
     }
   });
 
-  it("connects a person: PKCE S256, a one-use state, the sets the apps declare, the tokens sealed, the return to the app", async () => {
+  it("connects a person in an app: PKCE S256, a one-use state, exactly the app's scopes, the tokens sealed, the return to the app", async () => {
     await addGitHub();
     const started = await browse(
-      "/connect/github-oauth?return=https://crm.apps.example.com/settings",
+      "/connect/github-oauth?app=crm&return=https://crm.apps.example.com/settings",
     );
     expect(started?.status).toBe(302);
     const authorize = new URL(started!.headers.get("location")!);
@@ -417,13 +399,13 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
       client_id: "gh-client-id",
       redirect_uri: `${GATEWAY}/connect/github-oauth/callback`,
       code_challenge_method: "S256",
+      // crm's scopes alone: not ci's `workflow`.
+      scope: "repo",
     });
     // `oauth.pkce-on-connect`: a challenge, never the verifier.
     expect(params["code_challenge"]).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(params["state"]).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    // The union of what crm (identity, repo.read) and ci (repo.write)
-    // declare, in the preset's order, comma-joined as GitHub spells scopes.
-    expect(params["scope"]).toBe("read:user,user:email,repo");
+    expect(params["include_granted_scopes"]).toBeUndefined();
 
     const back = github.authorize(authorize);
     const finished = await browse(back.pathname + back.search);
@@ -451,18 +433,13 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     const issued = { ...github.state.tokens[0]! };
     expect(row).toMatchObject({
       organizationId: acme,
-      accountKind: "user",
-      subject: owner,
       userId: owner,
+      appRowId: rows["crm"],
       label: "ben",
       externalId: "4242",
       status: "active",
     });
-    expect(JSON.parse(row!.scopeSets)).toEqual([
-      "identity",
-      "repo.read",
-      "repo.write",
-    ]);
+    expect(JSON.parse(row!.scopes)).toEqual(["repo"]);
     expect(isSealed(row!.accessTokenEnc)).toBe(true);
     expect(row!.accessTokenEnc).not.toContain(issued.accessToken);
     expect(row!.refreshTokenEnc).not.toContain(issued.refreshToken!);
@@ -484,20 +461,45 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
       {
         providerId: "github-oauth",
         providerName: "GitHub",
-        account: "user",
         userId: owner,
         userEmail: "ben@acme.test",
+        app: { rowId: rows["crm"], id: "crm", name: "crm" },
         label: "ben",
-        scopeSets: ["identity", "repo.read", "repo.write"],
+        scopes: ["repo"],
         status: "active",
       },
     ]);
     expect(JSON.stringify(mine)).not.toContain(issued.accessToken);
   });
 
+  it("starts a connect only from an app that lists the provider and that the person opens", async () => {
+    await addGitHub();
+    const none = await browse("/connect/github-oauth");
+    expect(none?.status).toBe(400);
+    expect(await none?.text()).toContain("inside the app");
+    const unknown = await browse("/connect/github-oauth?app=nope");
+    expect(unknown?.status).toBe(404);
+    const unlisted = await browse("/connect/github-oauth?app=notes");
+    expect(unlisted?.status).toBe(400);
+    expect(await unlisted?.text()).toContain("list GitHub in its");
+    // Pat doesn't open crm: no connect for it.
+    signIn(member, "pat@acme.test");
+    const closed = await browse("/connect/github-oauth?app=crm");
+    expect(closed?.status).toBe(404);
+    await db.insert(userAppAccess).values({
+      id: "grant-pat-crm",
+      organizationId: acme,
+      userId: member,
+      appRowId: rows["crm"]!,
+    });
+    const open = await browse("/connect/github-oauth?app=crm");
+    expect(open?.status).toBe(302);
+    expect(github.state.counters.token).toBe(0);
+  });
+
   it("refuses a callback for another person's state, an expired one, and a provider error, each on a page", async () => {
     await addGitHub();
-    const started = await browse("/connect/github-oauth");
+    const started = await browse("/connect/github-oauth?app=crm");
     const back = github.authorize(started!.headers.get("location")!);
     signIn(member, "pat@acme.test");
     const foreign = await browse(back.pathname + back.search);
@@ -506,14 +508,14 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     expect(github.state.counters.token).toBe(0);
 
     signIn(owner, "ben@acme.test");
-    const second = await browse("/connect/github-oauth");
+    const second = await browse("/connect/github-oauth?app=crm");
     const late = github.authorize(second!.headers.get("location")!);
     now += 11 * 60 * 1000;
     const expired = await browse(late.pathname + late.search);
     expect(expired?.status).toBe(400);
     expect(github.state.counters.token).toBe(0);
 
-    const third = await browse("/connect/github-oauth");
+    const third = await browse("/connect/github-oauth?app=crm");
     const state = new URL(third!.headers.get("location")!).searchParams.get(
       "state",
     )!;
@@ -548,45 +550,10 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     await addGitHub();
     const finished = await connect(
       "github-oauth",
-      "?return=https://evil.example/steal",
+      "?app=crm&return=https://evil.example/steal",
     );
     expect(finished.status).toBe(302);
     expect(finished.headers.get("location")).toBe(DEFAULT_RETURN);
-  });
-
-  it("refuses a token answer carrying scopes beyond the sets asked, and keeps the sets granted whole", () => {
-    const policy = githubCapability.scopePolicy!;
-    expect(
-      grantedSets(policy, { scope: "read:user,user:email,repo" }, [
-        "identity",
-        "repo.read",
-      ]),
-    ).toEqual({
-      sets: ["identity", "repo.read"],
-      scopes: ["read:user", "user:email", "repo"],
-    });
-    // A person who un-ticked `repo` keeps identity only.
-    expect(
-      grantedSets(policy, { scope: "read:user,user:email" }, [
-        "identity",
-        "repo.read",
-      ]),
-    ).toEqual({ sets: ["identity"], scopes: ["read:user", "user:email"] });
-    expect(
-      grantedSets(policy, { scope: "read:user,user:email,repo,delete_repo" }, [
-        "identity",
-        "repo.read",
-      ]),
-    ).toEqual({ refused: "excess", excess: ["delete_repo"] });
-    // No `scope` in the answer: granted as requested (RFC 6749 §5.1).
-    expect(grantedSets(policy, { access_token: "t" }, ["identity"])).toEqual({
-      sets: ["identity"],
-      scopes: ["read:user", "user:email"],
-    });
-    const google = CAPABILITIES["google-workspace"].scopePolicy!;
-    expect(grantedSets(google, { access_token: "t" }, ["identity"])).toEqual({
-      refused: "unverified",
-    });
   });
 
   it("completes an app's API call with the held token, refreshes when due, reports the connection in the status, and never hands the token to the app (`oauth.held-token-never-to-app`)", async () => {
@@ -597,28 +564,31 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     const status = await appCall("crm", "/api/integrations/github-oauth");
     expect(status.status).toBe(200);
     const statusBody = await status.text();
-    expect(JSON.parse(statusBody)).toMatchObject({
+    expect(JSON.parse(statusBody)).toEqual({
       capability: "github-oauth",
       requested: true,
       configured: true,
       ready: true,
-      flow: "both",
-      connectPath: "/connect/github-oauth",
-      scopeSets: ["identity", "repo.read"],
-      connection: {
-        account: "user",
-        label: "ben",
-        scopeSets: ["identity", "repo.read", "repo.write"],
-        ready: true,
-      },
+      scopes: ["repo"],
+      connectPath: "/connect/github-oauth?app=crm",
+      connection: { label: "ben", scopes: ["repo"], ready: true },
+      settings: [],
+      setup: null,
+      command: null,
     });
     expect(statusBody).not.toContain(issued.accessToken);
-    expect(statusBody).not.toContain("gh-client-secret");
+    expect(statusBody).not.toContain("gh-client");
 
     const repos = await appCall(
       "crm",
       "/api/integrations/github-oauth/api.github.com/user/repos?per_page=5&access_token=app-token",
-      { headers: { authorization: "Bearer app-token", cookie: "a=b" } },
+      {
+        headers: {
+          authorization: "Bearer app-token",
+          cookie: "a=b",
+          "x-http-method-override": "DELETE",
+        },
+      },
     );
     expect(repos.status).toBe(200);
     // The identity read at connect time was the first API call.
@@ -626,31 +596,32 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     expect(api.bearer).toBe(issued.accessToken);
     expect(api.url).toBe("https://api.github.com/user/repos?per_page=5");
     expect(api.headers["cookie"]).toBeUndefined();
+    expect(api.headers["x-http-method-override"]).toBeUndefined();
     expect(api.headers["x-everyapp-identity"]).toBeUndefined();
-    expect(api.headers["x-everyapp-account"]).toBeUndefined();
     const connection = (await listConnections(org("owner", owner)))[0]!;
     expect(connection.lastUsedAt).not.toBeNull();
 
-    // A write on a read grant is refused before any token is read.
+    // Any method: the scopes the person approved are the grant.
     const write = await appCall(
       "crm",
-      "/api/integrations/github-oauth/api.github.com/user/repos",
-      { method: "POST" },
-    );
-    expect(write.status).toBe(405);
-    expect(write.headers.get("x-everyapp-error")).toBe(
-      "integration_method_not_allowed",
-    );
-    // ci declares repo.write, which this connection has: its write goes through.
-    const ciWrite = await appCall(
-      "ci",
       "/api/integrations/github-oauth/api.github.com/repos/acme/site/issues",
       { method: "POST" },
     );
-    expect(ciWrite.status).toBe(200);
+    expect(write.status).toBe(200);
     expect(github.state.apiRequests.at(-1)!.method).toBe("POST");
+    // ci has no connection of this person's: crm's is crm's alone.
+    const ci = await appCall(
+      "ci",
+      "/api/integrations/github-oauth/api.github.com/user",
+    );
+    expect(ci.status).toBe(409);
+    await expect(ci.json()).resolves.toMatchObject({
+      code: "integration_not_connected",
+      connectPath: "/connect/github-oauth?app=ci",
+      reconnect: false,
+    });
 
-    // Due for a refresh: the token the provider rotates is sealed and used.
+    // Due for a refresh: the refreshed token is sealed and used.
     await ProviderConnectionRepository.storeTokens(
       connection.id,
       {
@@ -675,16 +646,16 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     );
     expect(stored?.accessToken).toBe(fresh.accessToken);
 
-    // Background work has no person: it needs the organization's account.
+    // Background work with no person and no member named has no connection.
     const background = await appCall(
       "crm",
       "/api/integrations/github-oauth/api.github.com/user",
-      { user: null, headers: { "x-everyapp-org": acme } },
+      { user: null },
     );
     expect(background.status).toBe(409);
     await expect(background.json()).resolves.toMatchObject({
       code: "integration_not_connected",
-      connectPath: "/connect/github-oauth",
+      connectPath: "/connect/github-oauth?app=crm",
       reconnect: false,
     });
     // A refusal never quotes a token.
@@ -748,10 +719,17 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     });
   });
 
-  it("refuses an app whose declared sets the connection lacks, with the missing ones", async () => {
+  it("asks for a reconnect when the connection lacks a scope the app declares, naming it", async () => {
     await addGitHub();
-    // Ask for identity only: the ci app's repo.write is not granted.
-    await connect("github-oauth", "?sets=identity");
+    await connect("github-oauth", "?app=ci");
+    const [row] = await db
+      .select({ id: providerConnections.id })
+      .from(providerConnections);
+    // The person un-ticked `workflow` on the consent screen.
+    await db
+      .update(providerConnections)
+      .set({ scopes: JSON.stringify(["repo"]) })
+      .where(eq(providerConnections.id, row!.id));
     const refused = await appCall(
       "ci",
       "/api/integrations/github-oauth/api.github.com/repos/acme/site/issues",
@@ -760,41 +738,42 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     expect(refused.status).toBe(409);
     await expect(refused.json()).resolves.toMatchObject({
       code: "integration_not_connected",
+      connectPath: "/connect/github-oauth?app=ci",
       reconnect: true,
-      missingSets: ["repo.write"],
+      missingScopes: ["workflow"],
     });
     const status = await appCall("ci", "/api/integrations/github-oauth");
     await expect(status.json()).resolves.toMatchObject({
       ready: false,
-      connection: { scopeSets: ["identity"], ready: false, reconnect: true },
+      connection: {
+        scopes: ["repo"],
+        ready: false,
+        reconnect: true,
+        missingScopes: ["workflow"],
+      },
     });
-    const bad = await browse("/connect/github-oauth?sets=nope");
-    expect(bad?.status).toBe(400);
   });
 
   it("disconnects: the row goes, GitHub's grant is revoked with the client, the event says so", async () => {
     await addGitHub();
     await connect("github-oauth");
     const issued = { ...github.state.tokens[0]! };
+    const [mine] = await listConnections(org("owner", owner));
     await expect(
       disconnect(
         org("member", member),
         null,
-        {
-          providerId: "github-oauth",
-          account: "user",
-          userId: owner,
-        },
+        { connectionId: mine!.id },
         github.fetch,
       ),
     ).rejects.toMatchObject({ code: "ADMIN_REQUIRED" });
     const result = await disconnect(
       org("owner", owner),
       null,
-      { providerId: "github-oauth", account: "user" },
+      { providerId: "github-oauth", app: "crm" },
       github.fetch,
     );
-    expect(result).toEqual({ removed: true, revoked: true });
+    expect(result).toMatchObject({ removed: true, revoked: true });
     expect(github.state.revokeRequests).toEqual([
       { token: issued.accessToken, clientVia: "basic" },
     ]);
@@ -808,47 +787,10 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     expect(after.status).toBe(409);
   });
 
-  it("connects the organization's account for an owner, which background work then uses", async () => {
-    await addGitHub();
-    signIn(member, "pat@acme.test");
-    const refused = await browse("/connect/github-oauth?account=organization");
-    expect(refused?.status).toBe(403);
-    signIn(owner, "ben@acme.test");
-    const finished = await connect("github-oauth", "?account=organization");
-    expect(finished.status).toBe(302);
-    const background = await appCall(
-      "crm",
-      "/api/integrations/github-oauth/api.github.com/user",
-      { user: null, headers: { "x-everyapp-org": acme } },
-    );
-    expect(background.status).toBe(200);
-    expect(github.state.apiRequests[0]!.bearer).toBe(
-      github.state.tokens[0]!.accessToken,
-    );
-    // A person may pick the organization's account explicitly.
-    const asOrg = await appCall(
-      "crm",
-      "/api/integrations/github-oauth/api.github.com/user",
-      { headers: { "x-everyapp-account": "organization" } },
-    );
-    expect(asOrg.status).toBe(200);
-    // Their own account is not connected.
-    const own = await appCall(
-      "crm",
-      "/api/integrations/github-oauth/api.github.com/user",
-    );
-    expect(own.status).toBe(409);
-    expect(
-      (await listConnections(org("owner", owner), { user: "all" })).map(
-        (c) => c.account,
-      ),
-    ).toEqual(["organization"]);
-  });
-
-  it("runs the Google catalog entry on a client pasted in the UI: offline access asked, the identity read, Search Console reached through the proxy", async () => {
-    const googleFlow = CAPABILITIES["google-workspace"].flow!;
+  it("runs the Google catalog entry on a client pasted in the UI: offline access asked, the identity read, Google's hosts reached through the proxy", async () => {
+    const googleFlow = CAPABILITIES["google-workspace"].flow;
     const google = fakeOAuthProvider({
-      authorizeUrl: CAPABILITIES["google-workspace"].authorize.url,
+      authorizeUrl: googleFlow.authorizeUrl,
       tokenUrl: googleFlow.tokenUrl,
       apiHost: "www.googleapis.com",
       clientId: "google-client-id",
@@ -869,6 +811,8 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     await expect(before.json()).resolves.toMatchObject({
       configured: false,
       ready: false,
+      connectPath: "/connect/google-workspace?app=seo",
+      connection: null,
     });
     const set = await setOAuthClient(
       org("admin", owner),
@@ -890,7 +834,7 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
 
     const started = await serveConnectRoute(
       new Request(
-        `${GATEWAY}/connect/google-workspace?return=/admin/providers`,
+        `${GATEWAY}/connect/google-workspace?app=seo&return=/admin/providers`,
       ),
       { fetchUpstream, now: () => now },
     );
@@ -902,13 +846,11 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
       prompt: "consent",
       code_challenge_method: "S256",
     });
-    // seo declares identity and search-console.read: those scopes, no more.
-    expect(params["scope"]!.split(" ")).toEqual(
-      expect.arrayContaining([
-        "https://www.googleapis.com/auth/webmasters.readonly",
-      ]),
+    // seo's scope, joined onto Google's prefix, then the identity scopes.
+    expect(params["scope"]).toBe(
+      "https://www.googleapis.com/auth/webmasters.readonly openid email",
     );
-    expect(params["scope"]).not.toContain("analytics");
+    expect(params["include_granted_scopes"]).toBeUndefined();
     const back = google.authorize(authorize);
     const finished = await serveConnectRoute(new Request(back), {
       fetchUpstream,
@@ -918,8 +860,9 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     expect(finished?.headers.get("location")).toBe("/admin/providers");
     expect((await listConnections(org("owner", owner)))[0]).toMatchObject({
       providerId: "google-workspace",
+      app: { id: "seo" },
       label: "ben@gmail.test",
-      scopeSets: ["identity", "search-console.read"],
+      scopes: ["webmasters.readonly", "openid", "email"],
     });
 
     const sites = await appCall(
@@ -931,34 +874,25 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     expect(google.state.apiRequests[0]!.bearer).toBe(
       google.state.tokens[0]!.accessToken,
     );
-    // Analytics is not a set seo declares: its read is outside the sets,
-    // and its read-shaped POST is a write on seo's read grant.
-    const analytics = await appCall(
+    // A host outside Google's never gets the token.
+    const outside = await appCall(
       "seo",
-      "/api/integrations/google-workspace/analyticsadmin.googleapis.com/v1beta/accountSummaries",
+      "/api/integrations/google-workspace/evil.example/steal",
       { fetchUpstream },
     );
-    expect(analytics.status).toBe(403);
-    expect(analytics.headers.get("x-everyapp-error")).toBe(
-      "integration_scope_not_allowed",
+    expect(outside.status).toBe(400);
+    expect(outside.headers.get("x-everyapp-error")).toBe(
+      "invalid_integration_route",
     );
-    const report = await appCall(
-      "seo",
-      "/api/integrations/google-workspace/analyticsdata.googleapis.com/v1beta/properties/1:runReport",
-      { method: "POST", fetchUpstream },
-    );
-    expect(report.status).toBe(405);
     expect(google.state.counters.api).toBe(1);
-    // The app-driven token endpoint still answers for an app with the write grant, on the same client.
-    expect(isOAuthProvider(CAPABILITIES["google-workspace"])).toBe(true);
-    // Google is never revoked at Google on disconnect (section 5).
+    // Google is never revoked at Google on disconnect: its spec has no revoke URL.
     const result = await disconnect(
       org("owner", owner),
       null,
-      { providerId: "google-workspace", account: "user" },
+      { providerId: "google-workspace" },
       fetchUpstream,
     );
-    expect(result).toEqual({ removed: true, revoked: false });
+    expect(result).toMatchObject({ removed: true, revoked: false });
     expect(google.state.counters.revoke).toBe(0);
   });
 
@@ -977,7 +911,7 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     const moved = {
       ...githubCapability,
       flow: {
-        ...githubCapability.flow!,
+        ...githubCapability.flow,
         tokenUrl: "https://evil.example/token",
       },
     };

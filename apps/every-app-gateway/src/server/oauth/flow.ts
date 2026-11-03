@@ -1,30 +1,30 @@
 /**
- * The Gateway-owned OAuth flow (docs/design/2026-10-oauth-providers.md
- * section 5), on the gateway host, for a signed-in member:
+ * The Gateway-owned OAuth flow (docs/design/2026-11-oauth-simplify.md), on
+ * the gateway host, for a signed-in member connecting inside an app:
  *
- *   GET /connect/<id>?account=user|organization&return=…&sets=a,b
- *     → 302 to the provider's authorize URL (PKCE S256, a one-use state)
+ *   GET /connect/<id>?app=<app id>&return=…
+ *     → 302 to the provider's authorize URL, asking for exactly the scopes
+ *       the app's everyapp.config.ts lists (plus the spec's identity
+ *       scopes), PKCE S256 when the spec says, a one-use state
  *   GET /connect/<id>/callback?code&state      ← the redirect URI registered
- *     → the code exchanged, the connection stored sealed, 302 to `return`
- *   GET|POST /connect/<id>/background?app=…     ← a member's background opt-in
- *     (./backgroundPage.ts)
+ *     → the code exchanged, the mint check (a token carrying scopes beyond
+ *       those asked is dropped), the connection stored sealed as this
+ *       person's in this app, 302 to `return`
  *
- * A provider's `error`, a bad state or a refused scope ends on a Gateway
+ * A provider's `error`, a bad state or a refused token ends on a Gateway
  * page, never a redirect. Logs name the provider, the organization, the
- * account kind and scope-set names; never a code, a token, the client, the
+ * person, the app and scope names; never a code, a token, the client, the
  * verifier or the state.
  */
 import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import {
   OAUTH_TOKEN_BODY_LIMIT,
-  allowedScopes,
-  canonicalScopes,
-  grantedScopesOrRequested,
+  grantedScopes,
+  joinScopes,
   requestedScopes,
   scopeExcess,
   type OAuthClientCapability,
-  type OAuthScopePolicy,
 } from "@every-app/sdk/internal";
 import { auth as betterAuth } from "@/auth";
 import { emit } from "@/server/events/bus";
@@ -34,15 +34,17 @@ import {
   resolveOrgContext,
   type OrgContext,
 } from "@/server/organization/orgContext";
+import { platformPolicy } from "@/server/platform-policy";
 import { gatewayProviders } from "@/server/providers";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { OAuthStateRepository } from "@/server/repositories/OAuthStateRepository";
 import { ProviderConnectionRepository } from "@/server/repositories/ProviderConnectionRepository";
 import { isUserBanned } from "@/server/user-ban";
+import { appForMember } from "./appAccess";
 import { resolveOAuthClient, type OAuthClientResolver } from "./client";
 import { errorPage } from "./page";
 import { redirectUriFor } from "./service";
-import { flowOf, tokenCall, type Fetch } from "./tokens";
+import { tokenCall, type Fetch } from "./tokens";
 
 const CONNECT_PREFIX = "/connect/";
 /** Where the browser lands after a connect with no `return`. */
@@ -50,7 +52,20 @@ export const DEFAULT_RETURN = "/settings/accounts";
 /** How long a state row lives. */
 const STATE_TTL_MS = 10 * 60 * 1000;
 const PROVIDER_ID = /^[a-z][a-z0-9-]{1,39}$/;
-const SET_NAME = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)?$/;
+const APP_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
+/** Authorize parameters the Gateway sets itself; a spec's `authorizeParams` never replaces them. */
+const OWN_PARAMS = new Set([
+  "response_type",
+  "client_id",
+  "redirect_uri",
+  "scope",
+  "state",
+  "code_challenge",
+  "code_challenge_method",
+  // Google's incremental auth would hand back every scope the person ever
+  // granted the client, in any app: never asked for.
+  "include_granted_scopes",
+]);
 
 interface ConnectRouteDeps {
   fetchUpstream?: Fetch;
@@ -62,6 +77,7 @@ type ConnectEnv = typeof env & {
   GATEWAY_URL?: string;
   APP_BASE_DOMAIN?: string;
   THIRD_PARTY_DOMAIN?: string;
+  GATEWAY_DEPLOYMENT_MODE?: string;
 };
 
 function settings(): ConnectEnv {
@@ -71,10 +87,10 @@ function settings(): ConnectEnv {
 /** Which route a path is: the start, the callback, or neither. */
 function parseConnectPath(
   pathname: string,
-): { id: string; kind: "start" | "callback" | "background" } | null {
+): { id: string; kind: "start" | "callback" } | null {
   if (!pathname.startsWith(CONNECT_PREFIX)) return null;
   const rest = pathname.slice(CONNECT_PREFIX.length);
-  const match = /^([^/]+)(\/callback|\/background)?\/?$/.exec(rest);
+  const match = /^([^/]+)(\/callback)?\/?$/.exec(rest);
   if (!match) return null;
   let id: string;
   try {
@@ -83,15 +99,7 @@ function parseConnectPath(
     return null;
   }
   if (!PROVIDER_ID.test(id)) return null;
-  return {
-    id,
-    kind:
-      match[2] === "/callback"
-        ? "callback"
-        : match[2] === "/background"
-          ? "background"
-          : "start",
-  };
+  return { id, kind: match[2] === "/callback" ? "callback" : "start" };
 }
 
 function redirect(location: string): Response {
@@ -193,122 +201,6 @@ export function safeReturnTo(raw: string | null): string {
   return DEFAULT_RETURN;
 }
 
-/** A capability's scope sets by name, `[]` when it has no policy. */
-function setNames(capability: OAuthClientCapability): string[] {
-  return Object.keys(capability.scopePolicy?.sets ?? {});
-}
-
-/**
- * The scope sets a connect asks for: the ones named, else the union of
- * what every active app that lists the provider declares, else every set;
- * `identity` always when the provider has it. Null when a named set
- * doesn't exist.
- */
-async function setsToAsk(
-  id: string,
-  capability: OAuthClientCapability,
-  named: readonly string[] | null,
-): Promise<string[] | null> {
-  const all = setNames(capability);
-  if (all.length === 0) return [];
-  const chosen = new Set<string>();
-  if (named && named.length > 0) {
-    for (const name of named) {
-      if (!all.includes(name)) return null;
-      chosen.add(name);
-    }
-  } else {
-    for (const app of await AppRepository.findAllManifests()) {
-      const manifest = parseManifest(app.manifest);
-      const entry = manifest?.["capabilities"];
-      if (!entry || typeof entry !== "object") continue;
-      const listed = (entry as Record<string, unknown>)[id];
-      if (!listed || typeof listed !== "object") continue;
-      const scopes = (listed as Record<string, unknown>)["scopes"];
-      if (!Array.isArray(scopes)) continue;
-      for (const name of scopes) {
-        if (typeof name === "string" && all.includes(name)) chosen.add(name);
-      }
-    }
-    if (chosen.size === 0) for (const name of all) chosen.add(name);
-  }
-  if (all.includes("identity")) chosen.add("identity");
-  return all.filter((name) => chosen.has(name));
-}
-
-function parseManifest(text: string | null): Record<string, unknown> | null {
-  if (!text) return null;
-  try {
-    const parsed: unknown = JSON.parse(text);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-/** The scope strings to put on the authorize URL for `sets`. */
-function scopesFor(
-  capability: OAuthClientCapability,
-  sets: readonly string[],
-): { scopes: string[]; userScopes: string[] } {
-  const policy = capability.scopePolicy;
-  if (!policy) {
-    return { scopes: [...capability.authorize.scopes], userScopes: [] };
-  }
-  const requested = requestedScopes(policy, sets);
-  return { scopes: requested.scopes, userScopes: requested.userScopes };
-}
-
-function joinScopes(
-  capability: OAuthClientCapability,
-  scopes: readonly string[],
-): string {
-  const dialect = flowOf(capability)?.scopeDialect ?? "space";
-  return scopes.join(dialect === "comma" ? "," : " ");
-}
-
-/**
- * Which of the asked sets the provider granted whole, from the token
- * answer's scopes (or, for a provider that doesn't say, all of them).
- * Null when the answer is one the dialect can't read, or carries scopes
- * beyond what the sets and the tolerated list allow.
- */
-export function grantedSets(
-  policy: OAuthScopePolicy,
-  body: Record<string, unknown>,
-  sets: readonly string[],
-):
-  | { sets: string[]; scopes: string[] }
-  | { refused: "unverified" | "excess"; excess?: string[] } {
-  const requested = requestedScopes(policy, sets);
-  const granted = grantedScopesOrRequested(policy, body, requested);
-  if (!granted) return { refused: "unverified" };
-  const excess = scopeExcess(granted, allowedScopes(policy, sets));
-  if (excess.length > 0) return { refused: "excess", excess };
-  const has = (list: readonly string[] | undefined, scope: string) =>
-    (list ?? []).includes(scope);
-  // A set is granted whole when each of its scopes, in the dialect's
-  // canonical spelling (Google answers long names), was granted.
-  const kept = sets.filter((name) => {
-    const set = policy.sets[name];
-    if (!set) return false;
-    return (
-      canonicalScopes(policy.dialect, set.scopes).every((scope) =>
-        has(granted.scopes, scope),
-      ) &&
-      canonicalScopes(policy.dialect, set.userScopes ?? []).every((scope) =>
-        has(granted.userScopes, scope),
-      )
-    );
-  });
-  return {
-    sets: kept,
-    scopes: [...(granted.scopes ?? []), ...(granted.userScopes ?? [])],
-  };
-}
-
 /** A dot path into a JSON value. */
 function dotPath(value: unknown, path: string): unknown {
   let current: unknown = value;
@@ -325,7 +217,7 @@ async function readIdentity(
   fetchUpstream: Fetch,
   log: Record<string, unknown>,
 ): Promise<{ label: string | null; externalId: string | null }> {
-  const identity = flowOf(capability)?.identity;
+  const identity = capability.flow.identity;
   if (!identity) return { label: null, externalId: null };
   try {
     const response = await fetchUpstream(
@@ -369,6 +261,21 @@ async function readIdentity(
   }
 }
 
+/** The scope strings an app's entry for the provider lists, or null when it lists no entry. */
+function declaredScopes(
+  manifest: Record<string, unknown> | null,
+  id: string,
+): string[] | null {
+  const capabilities = manifest?.["capabilities"];
+  if (!capabilities || typeof capabilities !== "object") return null;
+  const entry = (capabilities as Record<string, unknown>)[id];
+  if (!entry || typeof entry !== "object") return null;
+  const scopes = (entry as Record<string, unknown>)["scopes"];
+  return Array.isArray(scopes)
+    ? scopes.filter((scope): scope is string => typeof scope === "string")
+    : [];
+}
+
 async function serveStart(
   request: Request,
   id: string,
@@ -380,20 +287,12 @@ async function serveStart(
     const back = `${url.pathname}${url.search}`;
     return redirect(`/sign-in?redirect=${encodeURIComponent(back)}`);
   }
-  const accountRaw = url.searchParams.get("account") ?? "user";
-  if (accountRaw !== "user" && accountRaw !== "organization") {
+  const slug = url.searchParams.get("app")?.trim() ?? "";
+  if (!slug) {
     return errorPage(
       400,
       CANT_CONNECT,
-      "account must be user or organization.",
-    );
-  }
-  const account = accountRaw;
-  if (account === "organization" && person.org.role === "member") {
-    return errorPage(
-      403,
-      CANT_CONNECT,
-      "Only an owner or admin can connect the organization's account.",
+      "Connect from inside the app that needs this account: a connection belongs to one app.",
     );
   }
   const registry = await gatewayProviders();
@@ -405,12 +304,27 @@ async function serveStart(
       `No OAuth provider ${id} is on this Gateway.`,
     );
   }
-  const flow = flowOf(capability);
-  if (!flow) {
+  const app = APP_ID.test(slug)
+    ? await appForMember({
+        organizationId: person.org.orgId,
+        userId: person.id,
+        slug,
+        sharedApps: platformPolicy(settings()).sharedApps,
+      })
+    : null;
+  if (!app) {
     return errorPage(
-      409,
+      404,
       CANT_CONNECT,
-      `${capability.label} is connected from inside an app, not here.`,
+      `No app ${slug} that you can open is on this Gateway.`,
+    );
+  }
+  const declared = declaredScopes(app.manifest, id);
+  if (declared === null) {
+    return errorPage(
+      400,
+      CANT_CONNECT,
+      `${app.name} doesn't list ${capability.label} in its everyapp.config.ts, so it can't connect an account there.`,
     );
   }
   const client = await (deps.resolveClient ?? resolveOAuthClient)({
@@ -426,28 +340,8 @@ async function serveStart(
       `${capability.label} has no client on this Gateway yet. An owner or admin adds one under Manage workspace → Providers.`,
     );
   }
-  const namedRaw = url.searchParams.get("sets");
-  const named = namedRaw
-    ? namedRaw
-        .split(",")
-        .map((each) => each.trim())
-        .filter(Boolean)
-    : null;
-  if (named?.some((name) => !SET_NAME.test(name))) {
-    return errorPage(
-      400,
-      CANT_CONNECT,
-      "sets names a scope set that doesn't exist.",
-    );
-  }
-  const sets = await setsToAsk(id, capability, named);
-  if (sets === null) {
-    return errorPage(
-      400,
-      CANT_CONNECT,
-      "sets names a scope set that doesn't exist.",
-    );
-  }
+  const flow = capability.flow;
+  const scopes = requestedScopes(flow, declared);
   const returnTo = safeReturnTo(url.searchParams.get("return"));
   const state = randomToken(32);
   const verifier = randomToken(48);
@@ -457,41 +351,34 @@ async function serveStart(
     providerId: id,
     organizationId: person.org.orgId,
     userId: person.id,
-    accountKind: account,
+    appRowId: app.rowId,
     codeVerifier: verifier,
-    scopeSets: sets,
+    scopes,
     returnTo,
     now: new Date(now),
     ttlMs: STATE_TTL_MS,
   });
-  const authorize = new URL(capability.authorize.url);
-  const { scopes, userScopes } = scopesFor(capability, sets);
+  const authorize = new URL(flow.authorizeUrl);
+  for (const [name, value] of Object.entries(flow.authorizeParams ?? {})) {
+    if (!OWN_PARAMS.has(name)) authorize.searchParams.set(name, value);
+  }
   authorize.searchParams.set("response_type", "code");
   authorize.searchParams.set("client_id", client.clientId);
   authorize.searchParams.set("redirect_uri", redirectUriFor(id, settings()));
   if (scopes.length > 0) {
-    authorize.searchParams.set("scope", joinScopes(capability, scopes));
-  }
-  if (userScopes.length > 0) {
-    authorize.searchParams.set(
-      "user_scope",
-      joinScopes(capability, userScopes),
-    );
+    authorize.searchParams.set("scope", joinScopes(flow, scopes));
   }
   authorize.searchParams.set("state", state);
   if (flow.pkce) {
     authorize.searchParams.set("code_challenge", await s256(verifier));
     authorize.searchParams.set("code_challenge_method", "S256");
   }
-  for (const [name, value] of Object.entries(flow.authorizeParams ?? {})) {
-    authorize.searchParams.set(name, value);
-  }
   logEvent("oauth.connect_started", {
     provider: id,
     org: person.org.orgId,
     user_id: person.id,
-    account,
-    scopeSets: sets,
+    app_row_id: app.rowId,
+    scopes,
   });
   return redirect(authorize.toString());
 }
@@ -569,18 +456,25 @@ async function serveCallback(
   }
   const registry = await gatewayProviders();
   const capability = registry.get(id);
-  if (
-    !capability ||
-    capability.mode !== "oauth_client" ||
-    !flowOf(capability)
-  ) {
+  if (!capability || capability.mode !== "oauth_client") {
     return errorPage(
       404,
       CANT_CONNECT,
       `No OAuth provider ${id} is on this Gateway.`,
     );
   }
-  const flow = flowOf(capability)!;
+  const app = await AppRepository.findCallableById(
+    state.appRowId,
+    person.org.orgId,
+  );
+  if (!app) {
+    return errorPage(
+      404,
+      CANT_CONNECT,
+      "The app this connect was for is gone. Nothing was connected.",
+    );
+  }
+  const flow = capability.flow;
   const client = await (deps.resolveClient ?? resolveOAuthClient)({
     id,
     capability,
@@ -614,32 +508,39 @@ async function serveCallback(
       `${capability.label} didn't accept the code (${exchanged.error}). Start again.`,
     );
   }
-  const policy = capability.scopePolicy;
-  let sets = state.scopeSets;
-  let scopes: string[] = [...capability.authorize.scopes];
-  if (policy) {
-    const outcome = grantedSets(policy, exchanged.tokens.body, state.scopeSets);
-    if ("refused" in outcome) {
-      // The tokens are dropped here: never stored, forwarded or logged.
-      logEvent(
-        "oauth.callback_refused",
-        {
-          ...log,
-          reason: `scope_${outcome.refused}`,
-          scopeSets: state.scopeSets,
-        },
-        "warn",
-      );
-      return errorPage(
-        400,
-        CANT_CONNECT,
-        outcome.refused === "excess"
-          ? `${capability.label} granted more than was asked (${outcome.excess?.join(", ")}); nothing was kept. Check the client's allowed scopes at its console.`
-          : `${capability.label} didn't say which scopes it granted; nothing was kept.`,
-      );
-    }
-    sets = outcome.sets;
-    scopes = outcome.scopes;
+  // The mint check: the token may hold what was asked (the app's scopes
+  // and the spec's identity ones) and nothing more. Otherwise the tokens
+  // are dropped here: never stored, forwarded or logged.
+  const granted = grantedScopes(flow, exchanged.tokens.body, state.scopes);
+  if (!granted) {
+    logEvent(
+      "oauth.callback_refused",
+      { ...log, app_row_id: state.appRowId, reason: "scope_unreadable" },
+      "warn",
+    );
+    return errorPage(
+      400,
+      CANT_CONNECT,
+      `${capability.label} didn't say which scopes it granted in a form the Gateway reads; nothing was kept.`,
+    );
+  }
+  const excess = scopeExcess(flow, granted, state.scopes);
+  if (excess.length > 0) {
+    logEvent(
+      "oauth.callback_refused",
+      {
+        ...log,
+        app_row_id: state.appRowId,
+        reason: "scope_excess",
+        excess: excess.slice(0, 20),
+      },
+      "warn",
+    );
+    return errorPage(
+      400,
+      CANT_CONNECT,
+      `${capability.label} granted more than ${app.name} asked for (${excess.join(", ")}), so nothing was kept. This happens when the client remembers scopes approved for another app. Limit the client's scopes at the provider's console, or give ${app.name} a client of its own.`,
+    );
   }
   const identity = await readIdentity(
     capability,
@@ -647,21 +548,19 @@ async function serveCallback(
     fetchUpstream,
     log,
   );
-  const existing = await ProviderConnectionRepository.find(
-    person.org.orgId,
-    id,
-    state.accountKind === "user" ? person.id : "organization",
-  );
+  const key = {
+    organizationId: person.org.orgId,
+    providerId: id,
+    userId: person.id,
+    appRowId: state.appRowId,
+  };
+  const existing = await ProviderConnectionRepository.find(key);
   await ProviderConnectionRepository.upsert(
     {
-      organizationId: person.org.orgId,
-      providerId: id,
-      accountKind: state.accountKind,
-      userId: state.accountKind === "user" ? person.id : null,
+      ...key,
       label: identity.label,
       externalId: identity.externalId,
-      scopeSets: sets,
-      scopes,
+      scopes: granted,
       accessToken: exchanged.tokens.accessToken,
       refreshToken: exchanged.tokens.refreshToken,
       expiresAt: exchanged.tokens.expiresAt,
@@ -671,8 +570,8 @@ async function serveCallback(
   );
   logEvent("oauth.connected", {
     ...log,
-    account: state.accountKind,
-    scopeSets: sets,
+    app_row_id: state.appRowId,
+    scopes: granted,
     reconnected: existing !== null,
   });
   const member = await userSubject(person.id).catch(() => null);
@@ -682,17 +581,13 @@ async function serveCallback(
     ...catalogue.providerConnected({
       provider: { id, name: capability.label, kind: "oauth" },
       account: {
-        kind: state.accountKind,
-        ...(state.accountKind === "user"
-          ? {
-              user: member
-                ? { id: member.id, email: member.email, name: member.name }
-                : { id: person.id },
-            }
-          : {}),
+        user: member
+          ? { id: member.id, email: member.email, name: member.name }
+          : { id: person.id },
         label: identity.label,
       },
-      scopeSets: sets,
+      app: { id: app.appSlug, rowId: app.id, name: app.name },
+      scopes: granted,
       reconnected: existing !== null,
     }),
   }));
@@ -700,9 +595,8 @@ async function serveCallback(
 }
 
 /**
- * Serve `/connect/<id>`, `/connect/<id>/callback` and
- * `/connect/<id>/background`, or null for a path that is none of them
- * (the control plane's). GET only, but the background page's own POST.
+ * Serve `/connect/<id>` and `/connect/<id>/callback`, or null for a path
+ * that is neither (the control plane's). GET only.
  */
 export async function serveConnectRoute(
   request: Request,
@@ -711,21 +605,10 @@ export async function serveConnectRoute(
   const parsed = parseConnectPath(new URL(request.url).pathname);
   if (!parsed) return null;
   const method = request.method.toUpperCase();
-  const reads = method === "GET" || method === "HEAD";
-  if (!reads && !(parsed.kind === "background" && method === "POST")) {
-    return new Response(null, {
-      status: 405,
-      headers: { allow: parsed.kind === "background" ? "GET, POST" : "GET" },
-    });
+  if (method !== "GET" && method !== "HEAD") {
+    return new Response(null, { status: 405, headers: { allow: "GET" } });
   }
   try {
-    if (parsed.kind === "background") {
-      const page = await import("./backgroundPage");
-      const pageDeps = { signedIn, safeReturnTo };
-      return reads
-        ? await page.serveBackgroundStart(request, parsed.id, pageDeps)
-        : await page.serveBackgroundDecision(request, parsed.id, pageDeps);
-    }
     return parsed.kind === "start"
       ? await serveStart(request, parsed.id, deps)
       : await serveCallback(request, parsed.id, deps);

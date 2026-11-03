@@ -66,10 +66,9 @@ interface EventProvider {
   kind?: "api_key" | "oauth" | "ai";
 }
 
-/** Whose account at a provider: a person's (with who) or the organization's. */
+/** Whose account at a provider: the member's, and how the provider names it. */
 interface EventProviderAccount {
-  kind: "user" | "organization";
-  /** The member whose account it is, for a person's. */
+  /** The member whose connection it is. */
   user?:
     | { id: string; email?: string | null; name?: string | null }
     | undefined;
@@ -129,7 +128,6 @@ function provider(input: EventProvider): Data {
 
 function account(input: EventProviderAccount): Data {
   return {
-    kind: input.kind,
     ...(input.user
       ? {
           user: {
@@ -995,32 +993,35 @@ export const catalogue = {
     return built("provider.removed", { provider: provider(input.provider) });
   },
 
-  /** A provider's spec was replaced, its OAuth client uploaded again, or a scope set added to or removed from a built-in client. */
+  /** A provider's spec was replaced, or its OAuth client uploaded again. */
   providerUpdated(input: {
     provider: EventProvider;
-    /** What changed: the spec, the client (never its value), or the scope sets (`scopeSet` names which). */
-    change: "spec" | "client" | "scope_sets";
-    scopeSet?: { name: string; action: "added" | "removed" };
+    /** What changed: the spec, or the client (never its value). */
+    change: "spec" | "client";
   }): BuiltEvent {
     return built("provider.updated", {
       provider: provider(input.provider),
       change: input.change,
-      ...(input.scopeSet ? { scopeSet: { ...input.scopeSet } } : {}),
     });
   },
 
-  /** Someone connected their account, or the organization's, at an OAuth provider. */
+  /**
+   * A member connected their account at an OAuth provider in an app: the
+   * connection is theirs and that app's, for `scopes` (canonical).
+   */
   providerConnected(input: {
     provider: EventProvider;
     account: EventProviderAccount;
-    scopeSets: readonly string[];
+    app: EventApp;
+    scopes: readonly string[];
     /** True when the connection replaced an earlier one. */
     reconnected?: boolean;
   }): BuiltEvent {
     return built("provider.connected", {
       provider: provider(input.provider),
       account: account(input.account),
-      scopeSets: [...input.scopeSets],
+      app: app(input.app),
+      scopes: [...input.scopes],
       reconnected: input.reconnected ?? false,
     });
   },
@@ -1088,86 +1089,34 @@ export const catalogue = {
   providerDisconnected(input: {
     provider: EventProvider;
     account: EventProviderAccount;
+    app: EventApp;
     /** Whether the Gateway revoked the grant at the provider too. */
     revoked: boolean;
   }): BuiltEvent {
     return built("provider.disconnected", {
       provider: provider(input.provider),
       account: account(input.account),
+      app: app(input.app),
       revoked: input.revoked,
     });
   },
 
   /**
-   * A member let an app use their connection with nobody present, for
-   * the background sets named (docs/design/2026-11-birds-decisions/888-background-oauth.md).
+   * An app's first call of a UTC day on a member's OAuth connection:
+   * `connection.used` with `kind: "oauth"`, the linked dev precedent's once
+   * a day (the per-call log line has the rest).
    */
-  providerBackgroundGranted(input: {
-    provider: EventProvider;
-    app: EventApp;
-    user: EventUser;
-    grantId: string;
-    scopeSets: readonly string[];
-  }): BuiltEvent {
-    return built("provider.background_granted", {
-      provider: provider(input.provider),
-      app: app(input.app),
-      user: user(input.user),
-      grantId: input.grantId,
-      scopeSets: [...input.scopeSets],
-    });
-  },
-
-  /** The member, or an owner or admin (the event's actor), ended an app's background use. */
-  providerBackgroundRevoked(input: {
-    provider: EventProvider;
-    app: EventApp;
-    user: EventUser;
-    grantId: string;
-    by: "member" | "admin";
-  }): BuiltEvent {
-    return built("provider.background_revoked", {
-      provider: provider(input.provider),
-      app: app(input.app),
-      user: user(input.user),
-      grantId: input.grantId,
-      by: input.by,
-    });
-  },
-
-  /** An app's background use ended on its own; `reason` says why. */
-  providerBackgroundLapsed(input: {
-    provider: EventProvider;
-    app: EventApp;
-    user: EventUser;
-    grantId: string;
-    reason: string;
-  }): BuiltEvent {
-    return built("provider.background_lapsed", {
-      provider: provider(input.provider),
-      app: app(input.app),
-      user: user(input.user),
-      grantId: input.grantId,
-      reason: input.reason,
-    });
-  },
-
-  /**
-   * An app's first background call of a UTC day on a member's
-   * connection: `connection.used` with `kind: "background"`, the linked
-   * dev precedent's once a day (the per-call log line has the rest).
-   */
-  backgroundUsed(input: {
-    grantId: string;
+  providerConnectionUsed(input: {
+    connectionId: string;
     provider: EventProvider;
     app: EventApp;
     user: EventUser;
   }): BuiltEvent {
     return built("connection.used", {
       connection: {
-        id: input.grantId,
+        id: input.connectionId,
         clientName: input.provider.name,
-        kind: "background",
+        kind: "oauth",
       },
       provider: provider(input.provider),
       app: app(input.app),
@@ -1179,6 +1128,7 @@ export const catalogue = {
   providerConnectionExpired(input: {
     provider: EventProvider;
     account: EventProviderAccount;
+    app: EventApp;
     connectionId: string;
   }): BuiltEvent {
     return built(
@@ -1186,6 +1136,7 @@ export const catalogue = {
       {
         provider: provider(input.provider),
         account: account(input.account),
+        app: app(input.app),
       },
       { dedupeKey: `provider.connection_expired:${input.connectionId}` },
     );
@@ -1263,13 +1214,12 @@ function list(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v) => typeof v === "string") : [];
 }
 
-/** Whose provider account: the person named in it, "the workspace" for the organization's, else the actor. */
+/** Whose provider account: the person named in it, else the actor. */
 function accountLabel(
   value: unknown,
   actor: EventActor | Data | null | undefined,
 ): string {
   const account = obj(value);
-  if (account.kind === "organization") return "The workspace";
   const who = obj(account.user);
   return str(who.email) ?? str(who.name) ?? actorLabel(actor);
 }
@@ -1474,8 +1424,8 @@ export function summarize(
     }
     case "connection.used": {
       const connection = obj(d.connection);
-      if (connection.kind === "background") {
-        return `${appLabel(d.app)} used ${userLabel(d.user)}'s ${str(connection.clientName) ?? "provider"} connection in the background`;
+      if (connection.kind === "oauth") {
+        return `${appLabel(d.app)} used ${userLabel(d.user)}'s ${str(connection.clientName) ?? "provider"} connection`;
       }
       return `${actorLabel(actor)} used ${appLabel(d.app)}'s providers from ${str(connection.clientName) ?? "everyapp dev"} (linked dev)`;
     }
@@ -1555,15 +1505,9 @@ export function summarize(
     case "provider.updated":
       return `${str(obj(d.provider).name) ?? "A provider"}'s ${str(d.change) === "client" ? "OAuth client" : "spec"} was replaced`;
     case "provider.connected":
-      return `${accountLabel(d.account, actor)} connected ${str(obj(d.provider).name) ?? "a provider"}`;
+      return `${accountLabel(d.account, actor)} connected ${str(obj(d.provider).name) ?? "a provider"} in ${appLabel(d.app)}`;
     case "provider.disconnected":
-      return `${accountLabel(d.account, actor)}'s ${str(obj(d.provider).name) ?? "provider"} account was disconnected`;
-    case "provider.background_granted":
-      return `${userLabel(d.user)} let ${appLabel(d.app)} use their ${str(obj(d.provider).name) ?? "provider"} connection in the background`;
-    case "provider.background_revoked":
-      return `${actorLabel(actor)} revoked ${appLabel(d.app)}'s background use of ${userLabel(d.user)}'s ${str(obj(d.provider).name) ?? "provider"} connection`;
-    case "provider.background_lapsed":
-      return `${appLabel(d.app)}'s background use of ${userLabel(d.user)}'s ${str(obj(d.provider).name) ?? "provider"} connection ended (${str(d.reason) ?? "lapsed"})`;
+      return `${accountLabel(d.account, actor)}'s ${str(obj(d.provider).name) ?? "provider"} account was disconnected from ${appLabel(d.app)}`;
     case "provider.connection_expired":
       return `${accountLabel(d.account, actor)}'s ${str(obj(d.provider).name) ?? "provider"} connection expired and needs reconnecting`;
     case "ai.default_changed": {

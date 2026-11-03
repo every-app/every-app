@@ -21,20 +21,18 @@ type App = Omit<
 
 /**
  * One capability the app's manifest lists, read against the registry for
- * Admin → Apps. `scopeSets` are the sets a scoped OAuth client's entry
- * names, labelled; `scopesStatus` says whether that grant holds: `ok`,
- * `undeclared` (a scoped client listed without usable sets, so the gateway
- * refuses its tokens), `unknown` (a set this gateway doesn't offer) or
- * `none` (a capability that takes no sets).
+ * Admin → Apps. An OAuth provider's entry is its `scopes` (the provider's
+ * own scope strings, possibly none); every other capability's is its
+ * `access`.
  */
 export type AppCapabilitySummary = {
   id: string;
   label: string;
-  access: "read" | "write";
+  /** An API key's or service's access; absent for an OAuth provider. */
+  access?: "read" | "write";
   why?: string;
-  /** `access` is absent on a set this gateway doesn't offer. */
-  scopeSets: { name: string; label: string; access?: "read" | "write" }[];
-  scopesStatus: "ok" | "undeclared" | "unknown" | "none";
+  /** For an OAuth provider: the scopes the app lists, as it wrote them. */
+  scopes?: string[];
 };
 
 /**

@@ -742,31 +742,26 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
     expect((await row())?.status).toBe("pending");
   });
 
-  it("refuses a manifest listing an OAuth client without its scope sets, before anything is registered", async () => {
-    // The hosted API runs the lenient validator; the scope sets the strict
-    // one demands are checked before a row holds a grant the token
-    // endpoint would void.
-    const withoutSets = {
+  it("refuses a manifest listing an OAuth provider without its scopes, before anything is registered", async () => {
+    // The hosted API runs the lenient validator; an OAuth entry is held to
+    // the strict one's shape before a row holds it.
+    const withoutScopes = {
       ...TODO,
-      capabilities: { "google-workspace": { access: "write" } },
+      capabilities: { "google-workspace": { why: "Reads your mail." } },
     };
-    const unknownSet = {
-      ...TODO,
-      capabilities: {
-        "google-workspace": { access: "write", scopes: ["gmail.send"] },
-      },
-    };
-    // A value that isn't a list of names reads as undeclared.
+    // A value that isn't a list reads as absent.
     const notAList = {
       ...TODO,
       capabilities: {
-        "google-workspace": { access: "write", scopes: "gmail.read" },
+        "google-workspace": {
+          scopes: "gmail.readonly",
+          why: "Reads your mail.",
+        },
       },
     };
     for (const [manifest, sentence] of [
-      [withoutSets, "without the scope sets it may use (one or more of:"],
-      [notAList, "without the scope sets it may use (one or more of:"],
-      [unknownSet, "scope set this gateway doesn't offer (gmail.send)"],
+      [withoutScopes, "without scopes: { scopes: [...], why }"],
+      [notAList, "without scopes: { scopes: [...], why }"],
     ] as const) {
       const registered = await api(`/api/v1/orgs/${acme}/apps`, {
         method: "POST",
@@ -785,7 +780,7 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
     expect(await db.select().from(deployJobs)).toEqual([]);
 
     expect((await register()).status).toBe(201);
-    for (const manifest of [withoutSets, unknownSet]) {
+    for (const manifest of [withoutScopes, notAList]) {
       const upload_ = await deploy(upload(builtWorker(), manifest));
       expect(upload_.status).toBe(422);
       expect(await upload_.json()).toMatchObject({ error: "BUNDLE_REFUSED" });

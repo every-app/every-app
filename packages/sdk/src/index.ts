@@ -5,6 +5,8 @@
 export {
   defineEveryApp,
   type EveryAppCapabilityEntry,
+  type EveryAppKeyCapabilityEntry,
+  type EveryAppOAuthCapabilityEntry,
   type EveryAppClassResource,
   type EveryAppManifest,
   type EveryAppPublicRoute,

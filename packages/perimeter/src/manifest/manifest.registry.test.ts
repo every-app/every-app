@@ -1,7 +1,8 @@
 /**
  * The strict validator against a provider registry: a capability id the
  * lookup has is checked as a catalog entry is; one it doesn't is refused,
- * or accepted (access and need only) for the gateway to check; an AI
+ * or accepted (an API-key entry with access, or an OAuth entry with its
+ * scopes and why) for the gateway to check; an AI
  * provider under `capabilities` is refused with the fix.
  */
 import { providerRegistry } from "@every-app/sdk/internal";
@@ -75,6 +76,51 @@ describe("the strict validator and the provider registry", () => {
     );
   });
 
+  it("checks a registered OAuth provider's entry as a built-in one: its own scopes and why, no access", () => {
+    const withOAuth = providerRegistry([
+      northwind,
+      {
+        id: "acme",
+        spec: {
+          id: "acme",
+          name: "Acme",
+          docs: "https://developer.acme.io/apps",
+          hosts: ["api.acme.io"],
+          auth: {
+            kind: "oauth2-user",
+            authorizeUrl: "https://acme.io/oauth/authorize",
+            tokenUrl: "https://acme.io/oauth/token",
+            clientId: "ACME_CLIENT_ID",
+            clientSecret: "ACME_CLIENT_SECRET",
+          },
+        },
+      },
+    ]);
+    const options = { capabilities: withOAuth };
+    expect(
+      validateManifestStrict(
+        {
+          id: "shop",
+          capabilities: { acme: { scopes: ["read:orders"], why: "Orders." } },
+        },
+        options,
+      ).capabilities,
+    ).toEqual({ acme: { scopes: ["read:orders"], why: "Orders." } });
+    expect(() =>
+      validateManifestStrict(
+        {
+          id: "shop",
+          capabilities: {
+            acme: { access: "read", scopes: ["read:orders"], why: "Orders." },
+          },
+        },
+        options,
+      ),
+    ).toThrow(
+      "capabilities.acme.access: OAuth providers take no access: the scopes are the grant. Remove access.",
+    );
+  });
+
   it("accepts a well-formed unknown entry when told to, for the gateway to check later", () => {
     const options = { unknownCapabilities: "accept" as const };
     expect(
@@ -86,45 +132,72 @@ describe("the strict validator and the provider registry", () => {
         options,
       ).capabilities,
     ).toEqual({ square: { access: "write", why: "Orders." } });
-    // A registered OAuth provider's scope sets pass as well-formed names;
-    // the gateway's registry says whether the provider has them.
+    // A registered OAuth provider's entry: its own scopes and why; the
+    // gateway's registry says whether the provider is one.
     expect(
       validateManifestStrict(
         {
           id: "shop",
           capabilities: {
-            square: { access: "read", scopes: ["identity", "orders.read"] },
+            square: { scopes: ["ORDERS_READ"], why: "Orders." },
+            wiki: { scopes: [], why: "Pages." },
           },
         },
         options,
       ).capabilities,
     ).toEqual({
-      square: { access: "read", scopes: ["identity", "orders.read"] },
+      square: { scopes: ["ORDERS_READ"], why: "Orders." },
+      wiki: { scopes: [], why: "Pages." },
     });
     expect(() =>
       validateManifestStrict(
         {
           id: "shop",
-          capabilities: { square: { access: "read", scopes: ["Orders Read"] } },
+          capabilities: {
+            square: { access: "read", scopes: ["ORDERS_READ"], why: "x" },
+          },
         },
         options,
       ),
-    ).toThrow(/capabilities\.square\.scopes\.0: a scope set is named identity/);
+    ).toThrow(
+      "capabilities.square: an API-key provider takes access; an OAuth provider takes scopes, not both",
+    );
     expect(() =>
       validateManifestStrict(
         {
           id: "shop",
-          capabilities: { square: { access: "read", scopes: [] } },
+          capabilities: { square: { scopes: ["Orders Read"], why: "x" } },
         },
         options,
       ),
-    ).toThrow(/capabilities\.square\.scopes: scopes lists at least one set/);
+    ).toThrow(
+      /capabilities\.square\.scopes\.0: one scope, with no space or comma/,
+    );
+    expect(() =>
+      validateManifestStrict(
+        { id: "shop", capabilities: { square: { scopes: ["a", "a"] } } },
+        options,
+      ),
+    ).toThrow(
+      /capabilities\.square\.scopes: a scope is listed twice; capabilities\.square\.why: This provider needs why/,
+    );
+    expect(() =>
+      validateManifestStrict(
+        {
+          id: "shop",
+          capabilities: {
+            square: { scopes: ["a"], why: "x", background: { scopes: ["a"] } },
+          },
+        },
+        options,
+      ),
+    ).toThrow(/capabilities\.square\.background: background is gone/);
     expect(() =>
       validateManifestStrict(
         { id: "shop", capabilities: { square: { access: "admin" } } },
         options,
       ),
-    ).toThrow(/capabilities\.square\.access/);
+    ).toThrow(/capabilities\.square\.access: access is read or write/);
     // A catalog entry is still checked as itself.
     expect(() =>
       validateManifestStrict(

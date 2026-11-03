@@ -122,9 +122,9 @@ interface HandleAppGatewayRequestOptions {
   providers?: () => Promise<CapabilityLookup>;
   /**
    * The Gateway-owned OAuth flow's side of the capability proxy (the
-   * sealed clients and the held connections); the gateway's own modules by
-   * default, loaded on first use. Tests pass fakes, or nothing for the
-   * token-endpoint branch alone.
+   * sealed clients, the held connections, members' access to the app);
+   * the gateway's own modules by default, loaded on first use. Tests pass
+   * fakes.
    */
   oauth?: (
     fetchUpstream: (request: Request) => Promise<Response>,
@@ -189,21 +189,17 @@ class AppGatewayError extends Error {
 let oauthDepsUnavailableLogged = false;
 
 /**
- * The gateway's own OAuth clients and connections, loaded on first use
- * (they read D1). A gateway where they can't load (no database bound, as
- * in the unit tests of the proxy) serves the token-endpoint branch alone,
+ * The OAuth side of the proxy as loaded, before it knows the calling app
+ * and whom a status request is for.
+ */
+type OAuthProxyDepsLoaded = Omit<OAuthProxyDeps, "identify" | "app">;
+
+/**
+ * The gateway's own OAuth clients, connections and member checks, loaded
+ * on first use (they read D1). A gateway where they can't load (no
+ * database bound, as in the unit tests of the proxy) refuses OAuth calls,
  * logged once per isolate.
  */
-/**
- * The OAuth side of the proxy as loaded, before it knows the calling app:
- * `backgroundFor` binds the background grants to it.
- */
-type OAuthProxyDepsLoaded = Omit<OAuthProxyDeps, "identify" | "background"> & {
-  backgroundFor?: (
-    app: RegisteredApp,
-  ) => NonNullable<OAuthProxyDeps["background"]>;
-};
-
 async function loadOAuthProxyDeps(
   fetchUpstream: (request: Request) => Promise<Response>,
 ): Promise<OAuthProxyDepsLoaded | null> {
@@ -211,16 +207,23 @@ async function loadOAuthProxyDeps(
     const [
       { resolveOAuthClient },
       { gatewayHeldTokens },
-      { gatewayBackgroundGrants },
+      { memberMayUseApp },
+      { ProviderConnectionRepository },
     ] = await Promise.all([
       import("./oauth/client"),
       import("./oauth/heldTokens"),
-      import("./oauth/background"),
+      import("./oauth/appAccess"),
+      import("./repositories/ProviderConnectionRepository"),
     ]);
     return {
       resolveClient: resolveOAuthClient,
       connections: gatewayHeldTokens({ fetchUpstream }),
-      backgroundFor: gatewayBackgroundGrants,
+      members: {
+        mayUse: memberMayUseApp,
+        async revoke(input) {
+          await ProviderConnectionRepository.removeForMemberApp(input);
+        },
+      },
     };
   } catch (error) {
     if (!oauthDepsUnavailableLogged) {
@@ -442,9 +445,15 @@ export async function handleAppGatewayRequest({
               oauth: {
                 resolveClient: oauthDeps.resolveClient,
                 connections: oauthDeps.connections,
-                ...(oauthDeps.backgroundFor && !trusted
-                  ? { background: oauthDeps.backgroundFor(app) }
-                  : {}),
+                ...(oauthDeps.members ? { members: oauthDeps.members } : {}),
+                app: {
+                  ...(app.rowId ? { rowId: app.rowId } : {}),
+                  appId: app.appId,
+                  scope: app.scope,
+                  tier: app.tier,
+                  organizationId: app.organizationId,
+                  ...(trusted ? { linkedDev: true } : {}),
+                },
                 identify: async () => {
                   try {
                     const { organizationId, user } = await attributeCall(

@@ -620,40 +620,32 @@ credential is involved, and the perimeter never sees git traffic.
   provider whose data is a whole account (`data: "account"`) is refused on
   a hosted gateway. The register's `providers.*` rows (docs/threat-model.md
   B4) are these rules.
-- Social networks' OAuth clients (`oauth_client` capabilities,
-  `server/capabilities/oauthClient.ts`) are the operator's, one per network
-  for every organization. The gateway completes only each network's token
-  endpoints (host, exact path, method), only for a user's own grants
-  (`authorization_code`, `refresh_token` and the networks' token
-  exchanges: `client_credentials`, or any grant it doesn't know, is
-  refused with `integration_grant_not_allowed`, since it would mint a
-  token for the gateway's own application rather than a person's), for
-  an app whose manifest lists the network with `write`, refuses agents'
-  identities outright
-  (`integration_agent_not_allowed`, `mcp:write` or not: an agent can't
-  connect accounts or mint tokens), removes any client id, secret or
-  `Authorization` the app sent (query, body, header, in any case) before it
-  puts its own where the endpoint takes it, buffers the body (64 KiB, form
-  or JSON only), follows no redirect and drops the network's `set-cookie`.
-  For a client with scope sets (Google, Microsoft, Slack) it also holds each app
-  to the sets its manifest lists at every mint and refresh: a void grant, a
-  grant type the policy doesn't complete, a request `scope` outside the
-  sets and a 2xx answer whose granted scopes exceed them are refused
-  (`integration_scopes_undeclared`, `integration_grant_not_allowed`,
-  `integration_scope_not_allowed`, `integration_scope_exceeded`; an answer
-  naming no scopes is `integration_scope_unverified`), the over-scoped
-  tokens dropped rather than forwarded, stored, logged or revoked. That
-  boundary is which tokens an app can obtain, not what it does with them:
-  API calls don't pass through the gateway, a Google token is narrow per
-  app only when the app asks for the status's scopes without
-  `include_granted_scopes`, and a shared Microsoft or Slack client's wider
-  consent is refused rather than narrowed.
-  The client secret never reaches an app; the public `clientId` reaches only
-  an app that lists the network. Logs name the grant type from a known
-  list, never the query, body or answer, which carry codes and tokens (on a
-  scope refusal, the declared set names and the scope names in excess). The
-  access and refresh tokens the exchange returns are the app's, stored and
-  used by the app.
+- OAuth providers (`oauth_client` capabilities: Google, Microsoft 365 and
+  Slack built in, the presets and registered specs as rows;
+  `docs/design/2026-11-oauth-simplify.md`) have one client each, the
+  operator's, for every organization. The Gateway runs the flow and holds
+  the tokens sealed in D1; no token, refresh token or client secret ever
+  reaches an app. A connection belongs to one person and one app (keyed by
+  organization, provider, person and app), made at
+  `/connect/<id>?app=<app>` by a signed-in member who may open the app,
+  for an app whose manifest lists the provider. The Gateway asks for
+  exactly the scopes the app's manifest lists plus the spec's identity
+  scopes, never with `include_granted_scopes` (a spec may not set it).
+  At the callback and at every refresh it compares the granted scopes with
+  what was asked: a token with more is dropped, never stored or forwarded
+  (at refresh the connection is marked expired). On an app's call
+  (`server/capabilities/heldToken.ts`) it checks the manifest lists the
+  provider, picks the connection of the person behind the call or of the
+  member `x-everyapp-user` names (honored only for an organization's own
+  app, and only for a member who is active and may open the app; otherwise
+  that member's connection in the app is deleted and the call answers 409),
+  checks the connection holds every declared scope, and puts the token on
+  only for the spec's API hosts, never the token or authorize endpoints,
+  following no redirect, stripping the app's own credentials, cookies and
+  `x-http-method-override` and the provider's `set-cookie`. There are no
+  route or method rules: the boundary is the scopes the person approved.
+  Removing a member, a member losing an app, and deleting an app delete
+  the matching connections. Logs never carry the query, body or answer.
   X stays an app secret: OAuth 1.0a signs every call with the user's token
   secret, which the gateway never holds.
 

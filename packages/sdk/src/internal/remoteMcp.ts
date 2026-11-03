@@ -208,11 +208,7 @@ export function reservedUpstreamHosts(): string[] {
     if (capability.mode === "api_key") {
       for (const host of capability.hosts) hosts.add(host);
     } else if (capability.mode === "oauth_client") {
-      for (const endpoint of capability.token) {
-        if ("host" in endpoint && typeof endpoint.host === "string") {
-          hosts.add(endpoint.host);
-        }
-      }
+      hosts.add(new URL(capability.flow.tokenUrl).hostname);
     }
   }
   return [...hosts].sort();

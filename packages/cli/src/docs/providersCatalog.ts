@@ -183,7 +183,7 @@ export function providersCatalog(): string {
     "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ...rows,
     "",
-    `OAuth clients (${code("oauth_client")}: the Gateway completes their token endpoints only, and the spec parser takes none as a row): ${list(oauthClients.map(([id]) => id))}. Their settings, consoles, redirect URIs, token endpoints and scope sets are generated in [the capabilities document](/docs/agent/repo/capabilities#oauth-clients). Gateway services (${code("service")}: no host, no spec): ${list(services)}.`,
+    `OAuth clients (${code("oauth_client")}: the Gateway runs the flow; a person connects in each app, for the provider scopes that app lists): ${list(oauthClients.map(([id]) => id))}. Their settings, consoles, redirect URIs, hosts and scope spelling are generated in [the capabilities document](/docs/agent/repo/capabilities#oauth-clients). Gateway services (${code("service")}: no host, no spec): ${list(services)}.`,
   ]);
 }
 
@@ -268,19 +268,22 @@ function keySection(id: string, capability: ApiKeyCapability | AiProviderCapabil
 
 function oauthSection(id: string, capability: OAuthClientCapability): string[] {
   const guide = guideOf(capability);
-  const sets = Object.keys(capability.scopePolicy?.sets ?? {});
+  const { flow } = capability;
+  const spelled = flow.scopePrefix
+    ? `short (joined onto ${code(flow.scopePrefix)}) or in full`
+    : "as the provider names them";
   return [
     `### ${id}`,
     "",
-    `**${capability.label}** (${code("oauth_client")}): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.`,
+    `**${capability.label}** (${code("oauth_client")}): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's ${code("everyapp.config.ts")} lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.`,
     "",
     `- **Settings:** ${settingsOf(capability)}`,
     `- **Where the client comes from:** ${capability.console}`,
-    `- **Redirect URIs to register:** ${capability.flow ? `${code(`https://<gateway host>/connect/${id}/callback`)}, and ` : ""}each callback an app lists under ${code("redirectPaths")} in its manifest entry, as ${code("https://<app>.<APP_BASE_DOMAIN><path>")} (${code(`everyapp provider show ${id}`)} prints them)`,
-    `- **How it is sent:** ${capability.token.map(({ host, path, methods, inject }) => `${methods.join("/")} ${code(`${host}${path}`)} (the client in the ${inject === "basic" ? "Basic header" : "form body"})`).join("; ")}`,
-    `- **Scope sets an app lists:** ${sets.length > 0 ? list(sets) : "none: the whole client is the grant"}`,
+    `- **Redirect URI to register:** ${code(`https://<gateway host>/connect/${id}/callback`)}`,
+    `- **Hosts the token goes to:** ${list(capability.api)}, over https`,
+    `- **Scopes an app lists:** the provider's own, ${spelled}, as ${code(`${JSON.stringify(id)}: { scopes: [...], why: "..." }`)}${flow.identityScopes.length > 0 ? `; the Gateway adds ${list(flow.identityScopes)} to every connect` : ""}${capability.reference ? `; the provider's list: ${capability.reference}` : ""}`,
     `- **Set it:** ${code(oauthClientSecretSetCommand(capability))}`,
-    `- **Guide:** ${guide ? `[${guide}](${guide})` : "none beyond this section; the scopes to allow are in https://everyapp.com/docs/agent/repo/capabilities#oauth-clients"}`,
+    `- **Guide:** ${guide ? `[${guide}](${guide})` : "none beyond this section"}`,
     "",
   ];
 }

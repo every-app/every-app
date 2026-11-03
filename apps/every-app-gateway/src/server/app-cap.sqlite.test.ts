@@ -491,47 +491,6 @@ describe("monthly caps at the AppGateway entrypoint (SQLite)", () => {
     await expect(countedCalls(acme, app.rowId!)).resolves.toBe(1);
   });
 
-  it("refuses an OAuth client's token call at the cap, the one provider path outside integration-proxy.ts", async () => {
-    const app = chef();
-    await setCap(acme, app.rowId!, 1);
-    upstream.mockImplementation(async () =>
-      Response.json({
-        access_token: "user-token",
-        expires_in: 3600,
-        scope: GMAIL,
-      }),
-    );
-    const tokenRequest = async () =>
-      new Request(GOOGLE_TOKENS, {
-        method: "POST",
-        headers: {
-          "content-type": "application/x-www-form-urlencoded",
-          "x-everyapp-identity": await identity(app, acme, acmeAdmin),
-        },
-        body: "grant_type=authorization_code&code=the-code&redirect_uri=https%3A%2F%2Fchef.example.com%2Fcb",
-      });
-    const first = await call(app, await tokenRequest());
-    expect(first.status).toBe(200);
-    expect(upstream).toHaveBeenCalledTimes(1);
-    await expect(countedCalls(acme, app.rowId!)).resolves.toBe(1);
-
-    const refused = await call(app, await tokenRequest());
-    expect(refused.status).toBe(429);
-    expect(refused.headers.get("x-everyapp-error")).toBe(
-      "app_monthly_cap_exceeded",
-    );
-    expect(Number(refused.headers.get("retry-after"))).toBeGreaterThan(0);
-    expect(upstream).toHaveBeenCalledTimes(1);
-    await expect(countedCalls(acme, app.rowId!)).resolves.toBe(1);
-    expect(await db.select().from(usageDaily)).toEqual([
-      expect.objectContaining({
-        kind: "capability",
-        target: "google-workspace",
-        calls: 1,
-      }),
-    ]);
-  });
-
   it("leaves the gateway's own services alone: the members list answers at the cap", async () => {
     const app = chef();
     await setCap(acme, app.rowId!, 1);

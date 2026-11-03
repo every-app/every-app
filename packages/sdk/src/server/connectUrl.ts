@@ -1,17 +1,18 @@
 /**
  * Where an app sends a person to connect an OAuth provider the Gateway
- * runs the flow for (docs/design/2026-10-oauth-providers.md section 5):
- * `<gateway>/connect/<id>?return=<back here>&account=<user|organization>`.
- * The Gateway checks the session, asks the provider for the union of the
- * sets every active app declares, finishes on its own callback and sends
- * the browser back to `returnTo`, which must be a path on the Gateway or
- * an https URL on one of its app hosts (in local dev also localhost).
+ * runs the flow for (docs/design/2026-11-oauth-simplify.md):
+ * `<gateway>/connect/<id>?app=<this app>&return=<back here>`. A
+ * connection belongs to one person and one app: the Gateway checks the
+ * session and that the person may open the app, asks the provider for
+ * exactly the scopes the app's `everyapp.config.ts` lists (plus the ones
+ * that name the account), finishes on its own callback and sends the
+ * browser back to `returnTo`, which must be a path on the Gateway or an
+ * https URL on one of its app hosts (in local dev also localhost).
  */
 import { APP_ID_ENV, ConfigurationError } from "../internal/index.js";
-import type { ConnectionAccount } from "../internal/index.js";
 
 export interface ConnectUrlOptions {
-  /** The Worker env: `GATEWAY_URL`, which every deployed Worker and `everyapp dev` set. */
+  /** The Worker env: `GATEWAY_URL` and the app's id, which every deployed Worker and `everyapp dev` set. */
   env: object;
   /** The OAuth provider's id (`google-workspace`, `github`). */
   provider: string;
@@ -20,32 +21,18 @@ export interface ConnectUrlOptions {
    * a path on the Gateway. Absent: Settings → Connected accounts.
    */
   returnTo?: string;
-  /** Whose connection to make: the person's (default) or the organization's (owner or admin). */
-  account?: ConnectionAccount;
-  /** Scope sets to ask for; absent: the union every active app that lists the provider declares. */
-  sets?: readonly string[];
-  /**
-   * `true`: the Gateway's page where the person lets this app use their
-   * own connection in the background (`/connect/<id>/background?app=<this
-   * app>`), for the sets its entry marks `background`; it connects them
-   * first when needed. `account` and `sets` don't apply.
-   */
-  background?: boolean;
 }
 
-/** The path of the connect page for `provider` on the Gateway. */
+/** The path of the connect page for `provider` on the Gateway, without the app. */
 export function connectPath(provider: string): string {
   return `/connect/${encodeURIComponent(provider)}`;
 }
 
-/** The absolute URL that starts the Gateway-owned flow for `provider`. */
+/** The absolute URL that connects the person to `provider` in this app. */
 export function connectUrl({
   env,
   provider,
   returnTo,
-  account,
-  sets,
-  background,
 }: ConnectUrlOptions): string {
   const values = env as Record<string, unknown>;
   const gateway = values["GATEWAY_URL"];
@@ -60,21 +47,14 @@ export function connectUrl({
   } catch {
     throw new ConfigurationError(`GATEWAY_URL isn't a URL: ${gateway}`);
   }
-  if (background) {
-    const app = values[APP_ID_ENV];
-    if (typeof app !== "string" || !app.trim()) {
-      throw new ConfigurationError(
-        `connectUrl({ background: true }) needs ${APP_ID_ENV} in the Worker env: the deploy and everyapp dev set it.`,
-      );
-    }
-    const url = new URL(`${connectPath(provider)}/background`, base.origin);
-    url.searchParams.set("app", app.trim());
-    if (returnTo) url.searchParams.set("return", returnTo);
-    return url.toString();
+  const app = values[APP_ID_ENV];
+  if (typeof app !== "string" || !app.trim()) {
+    throw new ConfigurationError(
+      `connectUrl() needs ${APP_ID_ENV} in the Worker env: a connection belongs to one app, and the deploy and everyapp dev set it.`,
+    );
   }
   const url = new URL(connectPath(provider), base.origin);
+  url.searchParams.set("app", app.trim());
   if (returnTo) url.searchParams.set("return", returnTo);
-  if (account) url.searchParams.set("account", account);
-  if (sets && sets.length > 0) url.searchParams.set("sets", sets.join(","));
   return url.toString();
 }

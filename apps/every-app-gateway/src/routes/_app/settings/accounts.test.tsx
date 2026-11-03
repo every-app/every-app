@@ -1,10 +1,9 @@
 // @vitest-environment happy-dom
 /**
  * Settings → Connected accounts rendered for real with the server
- * functions mocked: one row per connectable provider with Connect (a link
- * into the Gateway's flow that returns here), Connected with Disconnect,
- * Reconnect for an expired one; the callback's `?connected=` and
- * `?error=` become one notice; no token is ever on the page.
+ * functions mocked: one row per connection with its provider, account,
+ * app and scopes, and Disconnect by connection id; no Connect button, no
+ * organization connect, no background; no token is ever on the page.
  */
 import { act, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -13,27 +12,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   listMyConnections: vi.fn(),
-  listConnectableProviders: vi.fn(),
   disconnectConnection: vi.fn(),
-  search: {} as Record<string, string>,
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute:
     () =>
-    (options: Record<string, unknown>): unknown => ({
-      options,
-      useSearch: () => mocks.search,
-    }),
+    (options: Record<string, unknown>): unknown => ({ options }),
 }));
 vi.mock("@/serverFunctions/connections", () => ({
   listMyConnections: mocks.listMyConnections,
-  listConnectableProviders: mocks.listConnectableProviders,
   disconnectConnection: mocks.disconnectConnection,
-  listMyBackgroundGrants: async () => ({ grants: [] }),
-  listAllBackgroundGrants: async () => ({ grants: [] }),
-  revokeBackgroundGrant: async () => ({ ok: true }),
 }));
 vi.mock("sonner", () => ({ toast: mocks.toast }));
 
@@ -72,25 +62,19 @@ async function render() {
 
 beforeEach(() => {
   mocks.listMyConnections.mockReset();
-  mocks.listConnectableProviders.mockReset();
-  mocks.search = {};
-  mocks.listConnectableProviders.mockResolvedValue({
-    providers: [
-      { id: "github-oauth", name: "GitHub" },
-      { id: "google-workspace", name: "Google Workspace" },
-      { id: "notion-oauth", name: "Notion" },
-    ],
-  });
+  mocks.disconnectConnection.mockReset();
+  mocks.disconnectConnection.mockResolvedValue({ ok: true, revoked: true });
   mocks.listMyConnections.mockResolvedValue({
     connections: [
       {
         id: "conn_1",
-        providerId: "github-oauth",
-        providerName: "GitHub",
-        account: "user",
+        providerId: "google-workspace",
+        providerName: "Google Workspace",
         userId: "user_1",
-        label: "ada",
-        scopeSets: ["identity", "repo.read"],
+        userEmail: "ada@acme.com",
+        app: { rowId: "app_mail", id: "openmail", name: "OpenMail" },
+        label: "ada@acme.com",
+        scopes: ["gmail.modify", "gmail.send"],
         status: "active",
         createdAt: 1,
         lastUsedAt: null,
@@ -100,10 +84,11 @@ beforeEach(() => {
         id: "conn_2",
         providerId: "google-workspace",
         providerName: "Google Workspace",
-        account: "user",
         userId: "user_1",
+        userEmail: "ada@acme.com",
+        app: { rowId: "app_seo", id: "openseo", name: "OpenSEO" },
         label: "ada@acme.com",
-        scopeSets: ["identity"],
+        scopes: ["webmasters.readonly"],
         status: "expired",
         createdAt: 1,
         lastUsedAt: null,
@@ -123,38 +108,53 @@ afterEach(() => {
 
 const body = () => document.body.textContent ?? "";
 
-function link(label: string): HTMLAnchorElement | undefined {
-  return [...container.querySelectorAll("a")].find(
-    (element) => element.textContent?.trim() === label,
+function button(label: string): HTMLButtonElement | undefined {
+  return [...document.body.querySelectorAll("button")].find(
+    (element) =>
+      element.getAttribute("aria-label") === label ||
+      element.textContent?.trim() === label,
   );
 }
 
 describe("Connected accounts", () => {
-  it("shows Connect, Connected with Disconnect, and Reconnect, each into the Gateway's flow", async () => {
+  it("lists each connection with its provider, account, app and scopes, and no way to connect here", async () => {
     await render();
-    expect(body()).toContain("ada · identity, repo.read");
-    expect(link("Connect Notion")?.getAttribute("href")).toBe(
-      "/connect/notion-oauth?account=user&return=%2Fsettings%2Faccounts",
-    );
-    expect(link("Reconnect")?.getAttribute("href")).toBe(
-      "/connect/google-workspace?account=user&return=%2Fsettings%2Faccounts",
-    );
-    expect(link("Connect GitHub")).toBeUndefined();
+    expect(body()).toContain("Connect accounts inside each app.");
+    expect(body()).toContain("In OpenMail · gmail.modify, gmail.send");
+    expect(body()).toContain("In OpenSEO · webmasters.readonly");
+    expect(body()).toContain("ada@acme.com");
+    expect(body()).toContain("Reconnect in OpenSEO");
+    expect(container.querySelectorAll("a")).toHaveLength(0);
+    expect(body()).not.toMatch(/Connect Google|background|organization/i);
     expect(
-      container.querySelector('button[aria-label="Disconnect GitHub"]'),
-    ).not.toBeNull();
-    expect(body()).toContain("Needs reconnecting");
+      button("Disconnect Google Workspace from OpenMail"),
+    ).not.toBeUndefined();
   });
 
-  it("turns the callback's return into one notice", async () => {
-    mocks.search = { connected: "GitHub" };
+  it("disconnects one connection by its id", async () => {
     await render();
-    expect(body()).toContain("GitHub connected.");
+    await act(async () =>
+      button("Disconnect Google Workspace from OpenSEO")!.click(),
+    );
+    await settle();
+    expect(body()).toContain("Disconnect Google Workspace from OpenSEO?");
+    const dialog = document.body.querySelector(
+      '[role="alertdialog"], [role="dialog"]',
+    )!;
+    const confirm = [...dialog.querySelectorAll("button")].find(
+      (element) => element.textContent?.trim() === "Disconnect",
+    )!;
+    await act(async () => confirm.click());
+    await settle();
+    expect(mocks.disconnectConnection).toHaveBeenCalledOnce();
+    expect(mocks.disconnectConnection.mock.calls[0]![0]).toEqual({
+      data: { connectionId: "conn_2" },
+    });
   });
 
-  it("says why a connect failed, in plain words", async () => {
-    mocks.search = { error: "access_denied" };
+  it("says so when there is nothing connected", async () => {
+    mocks.listMyConnections.mockResolvedValue({ connections: [] });
     await render();
-    expect(body()).toContain("You cancelled at the provider");
+    expect(body()).toContain("No connected accounts yet.");
   });
 });

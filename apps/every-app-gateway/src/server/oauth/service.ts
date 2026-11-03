@@ -1,11 +1,11 @@
 /**
- * The OAuth providers service (docs/design/2026-10-oauth-providers.md):
- * what Admin → Providers, Settings → Connected accounts, the CLI's twins
- * on the Gateway and the `everyapp_provider_*` tools call. Adding,
- * replacing a client, removing a provider, listing every connection and
- * disconnecting someone else's account are an owner's or admin's; a
- * person's own connections are theirs. Nothing here returns a token or a
- * client secret.
+ * The OAuth providers service (docs/design/2026-11-oauth-simplify.md):
+ * what Manage workspace → Providers, Settings → Connected accounts and the
+ * `everyapp_provider_*` tools call. Adding a provider, replacing its
+ * client, removing it, listing every connection and disconnecting someone
+ * else's are an owner's or admin's; a person's own connections are
+ * theirs. A connection is one person's in one app. Nothing here returns a
+ * token or a client secret.
  */
 import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
@@ -17,10 +17,8 @@ import {
   checkProviderRow,
   describeSpecProblems,
   OAUTH_PRESETS,
-  overlayableClient,
   parseProviderSpec,
   providerBindingKey,
-  resolveScopeSetRow,
   secretNames,
   type Capability,
   type OAuthClientCapability,
@@ -42,14 +40,15 @@ import {
 } from "@/server/providers";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { OAuthClientRepository } from "@/server/repositories/OAuthClientRepository";
-import { ProviderConnectionRepository } from "@/server/repositories/ProviderConnectionRepository";
+import {
+  ProviderConnectionRepository as Connections,
+  type ProviderConnection,
+} from "@/server/repositories/ProviderConnectionRepository";
 import { ProviderRepository } from "@/server/repositories/ProviderRepository";
-import { ScopeSetRepository } from "@/server/repositories/ScopeSetRepository";
 import { SealingUnavailableError } from "@/server/secrets/sealed";
 import { resolveOAuthClient } from "./client";
-import { flowOf, revokeAtProvider, type Fetch } from "./tokens";
+import { revokeAtProvider, type Fetch } from "./tokens";
 
-type FlowKind = "app" | "gateway" | "both";
 export type ProviderKind = "api_key" | "oauth" | "ai" | "service";
 
 /** One OAuth provider as Admin → Providers and `provider list` show it. */
@@ -58,7 +57,6 @@ export interface OAuthProviderSummary {
   name: string;
   source: "catalog" | "row";
   kind: "oauth";
-  flow: FlowKind;
   /** Where the live client comes from, or null when none is usable. */
   client: {
     source: "env" | "d1" | null;
@@ -71,7 +69,8 @@ export interface OAuthProviderSummary {
   /** Whether a client is live for the provider as it is now. */
   bound: boolean;
   redirectUri: string;
-  scopeSets: ScopeSetSummary[];
+  /** The only hosts the Gateway sends a held token to. */
+  hosts: string[];
   /** Where the operator registers the client. */
   console: string;
   /** How many connections the organization has at it. */
@@ -79,21 +78,6 @@ export interface OAuthProviderSummary {
   docs?: string;
   /** The Gateway setting names a terminal `secret set` uses for the client. */
   settings: string[];
-}
-
-/** One scope set as Admin → Providers and `provider show` list it. */
-export interface ScopeSetSummary {
-  name: string;
-  label: string;
-  access: "read" | "write";
-  /** The provider's scope strings the set asks for. */
-  scopes: string[];
-  /** The hosts its routes unlock (what a person checks before adding a set beside it). */
-  hosts: string[];
-  /** The client's own set, or one an operator added here (`provider_scope_sets`). */
-  source: "catalog" | "row";
-  addedBy?: string | null;
-  addedAt?: number | null;
 }
 
 /** Any registry entry, for the Admin list beside the OAuth ones. */
@@ -117,16 +101,27 @@ export interface ProviderSummary {
   oauth?: OAuthProviderSummary;
 }
 
-/** One connection as the lists show it: never a token. */
+/** The app a connection belongs to, as the lists name it. */
+export interface ConnectionApp {
+  /** apps.id. */
+  rowId: string;
+  /** The app's id (its slug), or null once the app is gone. */
+  id: string | null;
+  name: string;
+}
+
+/** One connection as the lists show it: one person's, in one app; never a token. */
 export interface ConnectionSummary {
   id: string;
   providerId: string;
   providerName: string;
-  account: "user" | "organization";
-  userId?: string;
-  userEmail?: string | null;
+  userId: string;
+  userEmail: string | null;
+  app: ConnectionApp;
+  /** How the provider names the account ("ben@example.com"). */
   label: string | null;
-  scopeSets: string[];
+  /** The scopes the token holds, as the Gateway compares them (the provider's prefix taken off). */
+  scopes: string[];
   status: "active" | "expired";
   createdAt: number;
   lastUsedAt: number | null;
@@ -146,28 +141,6 @@ export function redirectUriFor(
   settings: ServiceEnv = env,
 ): string {
   return `${gatewayUrl(settings)}/connect/${encodeURIComponent(providerId)}/callback`;
-}
-
-/** The path the UI links a Connect button to. */
-export function connectStartUrl(
-  _org: OrgContext,
-  providerId: string,
-  options: {
-    account: "user" | "organization";
-    returnTo?: string;
-    sets?: readonly string[];
-  },
-): string {
-  const params = new URLSearchParams({ account: options.account });
-  if (options.returnTo) params.set("return", options.returnTo);
-  if (options.sets && options.sets.length > 0) {
-    params.set("sets", options.sets.join(","));
-  }
-  return `/connect/${encodeURIComponent(providerId)}?${params.toString()}`;
-}
-
-function flowKind(capability: OAuthClientCapability): FlowKind {
-  return flowOf(capability) ? "both" : "app";
 }
 
 function requireAdmin(org: OrgContext): void {
@@ -202,35 +175,6 @@ function capabilityIdsOf(manifest: Record<string, unknown> | null): string[] {
   return capabilities && typeof capabilities === "object"
     ? Object.keys(capabilities)
     : [];
-}
-
-function scopeSetsOf(
-  id: string,
-  capability: OAuthClientCapability,
-  registry: ProviderRegistry,
-): ScopeSetSummary[] {
-  const overlays = new Map(
-    registry
-      .scopeSets()
-      .filter((each) => each.providerId === id)
-      .map((each) => [each.name, each]),
-  );
-  return Object.entries(capability.scopePolicy?.sets ?? {}).map(
-    ([name, set]) => {
-      const overlay = overlays.get(name);
-      return {
-        name,
-        label: set.label,
-        access: set.access,
-        scopes: [...set.scopes],
-        hosts: [...new Set(set.routes.map((route) => route.host))],
-        source: overlay ? "row" : "catalog",
-        ...(overlay
-          ? { addedBy: overlay.addedBy, addedAt: overlay.addedAt }
-          : {}),
-      };
-    },
-  );
 }
 
 async function clientSummary(
@@ -281,11 +225,10 @@ async function oauthSummary(
     name: capability.label,
     source: registry.sourceOf(id) === "row" ? "row" : "catalog",
     kind: "oauth",
-    flow: flowKind(capability),
     client,
     bound,
     redirectUri: redirectUriFor(id),
-    scopeSets: scopeSetsOf(id, capability, registry),
+    hosts: [...capability.api],
     console: capability.console,
     connections: counts[id] ?? 0,
     ...(capability.reference ? { docs: capability.reference } : {}),
@@ -322,7 +265,7 @@ export async function listOAuthProviders(
   org: OrgContext,
 ): Promise<OAuthProviderSummary[]> {
   const registry = await gatewayProviders();
-  const counts = await ProviderConnectionRepository.countByProvider(org.orgId);
+  const counts = await Connections.countByProvider(org.orgId);
   const out: OAuthProviderSummary[] = [];
   for (const [id, capability] of registry.entries()) {
     if (capability.mode !== "oauth_client") continue;
@@ -398,7 +341,7 @@ export async function listProviders(
   org: OrgContext,
 ): Promise<ProviderSummary[]> {
   const registry = await gatewayProviders();
-  const counts = await ProviderConnectionRepository.countByProvider(org.orgId);
+  const counts = await Connections.countByProvider(org.orgId);
   const apps = await appsByProvider(org);
   const out: ProviderSummary[] = [];
   for (const [id, capability] of registry.entries()) {
@@ -667,182 +610,8 @@ export async function addOAuthProvider(
     }));
   }
   const registry = await gatewayProviders();
-  const counts = await ProviderConnectionRepository.countByProvider(org.orgId);
+  const counts = await Connections.countByProvider(org.orgId);
   return oauthSummary(org, id, capability, registry, counts);
-}
-
-/** The deployed apps whose manifest lists `name` under `scopes` for `providerId`. */
-async function appsListingScopeSet(
-  providerId: string,
-  name: string,
-): Promise<string[]> {
-  const apps: string[] = [];
-  for (const app of await AppRepository.findAllManifests()) {
-    const manifest = manifestOf(app.manifest);
-    const entry = (
-      manifest?.["capabilities"] as Record<string, unknown> | undefined
-    )?.[providerId];
-    const scopes =
-      entry && typeof entry === "object"
-        ? (entry as { scopes?: unknown }).scopes
-        : undefined;
-    if (Array.isArray(scopes) && scopes.includes(name)) apps.push(app.appSlug);
-  }
-  return apps;
-}
-
-/**
- * Add a scope set to a built-in OAuth client (Admin → Providers → Scope
- * sets, `everyapp_provider_scope_set_add`): the set checked against the
- * client's catalog entry by the registry's rules (its routes on the
- * client's API hosts alone, an explicit access, never one of the client's
- * own names), written as a `provider_scope_sets` row, live within 30
- * seconds. Never replaces a row (`everyapp provider scope-set add
- * --replace` is the terminal's). Returns the provider as the list shows it.
- */
-export async function addScopeSet(
-  org: OrgContext,
-  actor: EventActor | null | undefined,
-  input: { providerId: string; name: string; spec: unknown },
-): Promise<OAuthProviderSummary> {
-  requireAdmin(org);
-  const who = await actorFor(org, actor);
-  const addedBy =
-    ((who.kind === "user" || who.kind === "agent") && who.email) || org.userId;
-  const client = overlayableClient(input.providerId);
-  if (!client) {
-    throw new PublicError(
-      "SCOPE_SET_PROVIDER_UNKNOWN",
-      `${input.providerId} isn't a built-in OAuth client with scope sets (google-workspace, microsoft-365, slack); a registered provider's sets are in its spec`,
-    );
-  }
-  const text = JSON.stringify(input.spec);
-  if (!text || text.length > 64 * 1024) {
-    throw new PublicError(
-      "INVALID_INPUT",
-      "spec must be an object under 64 KiB",
-    );
-  }
-  const resolved = resolveScopeSetRow({
-    providerId: input.providerId,
-    name: input.name,
-    spec: input.spec,
-  });
-  if (!resolved.ok) {
-    throw new PublicError(resolved.refusal.code, resolved.refusal.message);
-  }
-  let written: boolean;
-  try {
-    written = await ScopeSetRepository.insert({
-      providerId: input.providerId,
-      name: input.name,
-      spec: text,
-      addedBy,
-    });
-  } catch {
-    throw new PublicError(
-      "GATEWAY_OUTDATED",
-      "This Gateway's database has no provider_scope_sets table yet; its operator runs: everyapp update",
-    );
-  }
-  if (!written) {
-    throw new PublicError(
-      "SCOPE_SET_EXISTS",
-      `${input.providerId} has a scope set ${input.name} already; replacing it is the terminal's: everyapp provider scope-set add ${input.providerId} <spec> --replace`,
-    );
-  }
-  invalidateGatewayProviders();
-  logEvent("provider.scope_set_added", {
-    provider: input.providerId,
-    scopeSet: input.name,
-    org: org.orgId,
-    user_id: org.userId,
-  });
-  await emit(async () => ({
-    organizationId: org.orgId,
-    actor: who,
-    ...catalogue.providerUpdated({
-      provider: { id: input.providerId, name: client.label, kind: "oauth" },
-      change: "scope_sets",
-      scopeSet: { name: input.name, action: "added" },
-    }),
-  }));
-  const registry = await gatewayProviders();
-  const capability = registry.get(input.providerId);
-  if (capability?.mode !== "oauth_client") throw new Error("unreachable");
-  const counts = await ProviderConnectionRepository.countByProvider(org.orgId);
-  return oauthSummary(org, input.providerId, capability, registry, counts);
-}
-
-/**
- * Remove a scope set an operator added (never one of the client's own);
- * refused while a deployed app lists it under `scopes`, naming the apps
- * (`--force` is the terminal's). Connections that granted the set keep
- * their tokens; calls under the set stop at once.
- */
-export async function removeScopeSet(
-  org: OrgContext,
-  actor: EventActor | null | undefined,
-  input: { providerId: string; name: string },
-): Promise<OAuthProviderSummary> {
-  requireAdmin(org);
-  const who = await actorFor(org, actor);
-  const client = overlayableClient(input.providerId);
-  if (!client) {
-    throw new PublicError(
-      "SCOPE_SET_PROVIDER_UNKNOWN",
-      `${input.providerId} isn't a built-in OAuth client with scope sets`,
-    );
-  }
-  if (Object.hasOwn(client.scopePolicy!.sets, input.name)) {
-    throw new PublicError(
-      "SCOPE_SET_BUILTIN",
-      `${input.name} is one of ${input.providerId}'s own sets and can't be removed`,
-    );
-  }
-  const apps = await appsListingScopeSet(input.providerId, input.name);
-  if (apps.length > 0) {
-    throw new PublicError(
-      "SCOPE_SET_IN_USE",
-      `${apps.join(", ")} ${apps.length === 1 ? "lists" : "list"} ${input.name} under ${input.providerId}'s scopes; removing it stops ${apps.length === 1 ? "its" : "their"} calls under it at once (from the terminal: everyapp provider scope-set remove ${input.providerId} ${input.name} --force)`,
-    );
-  }
-  let removed: boolean;
-  try {
-    removed = await ScopeSetRepository.remove(input.providerId, input.name);
-  } catch {
-    throw new PublicError(
-      "GATEWAY_OUTDATED",
-      "This Gateway's database has no provider_scope_sets table yet; its operator runs: everyapp update",
-    );
-  }
-  if (!removed) {
-    throw new PublicError(
-      "SCOPE_SET_NOT_FOUND",
-      `${input.providerId} has no scope set ${input.name} added on this Gateway`,
-    );
-  }
-  invalidateGatewayProviders();
-  logEvent("provider.scope_set_removed", {
-    provider: input.providerId,
-    scopeSet: input.name,
-    org: org.orgId,
-    user_id: org.userId,
-  });
-  await emit(async () => ({
-    organizationId: org.orgId,
-    actor: who,
-    ...catalogue.providerUpdated({
-      provider: { id: input.providerId, name: client.label, kind: "oauth" },
-      change: "scope_sets",
-      scopeSet: { name: input.name, action: "removed" },
-    }),
-  }));
-  const registry = await gatewayProviders();
-  const capability = registry.get(input.providerId);
-  if (capability?.mode !== "oauth_client") throw new Error("unreachable");
-  const counts = await ProviderConnectionRepository.countByProvider(org.orgId);
-  return oauthSummary(org, input.providerId, capability, registry, counts);
 }
 
 /** Upload or replace a provider's client (sealed in D1). */
@@ -874,7 +643,7 @@ export async function setOAuthClient(
       change: "client",
     }),
   }));
-  const counts = await ProviderConnectionRepository.countByProvider(org.orgId);
+  const counts = await Connections.countByProvider(org.orgId);
   return oauthSummary(org, providerId, capability, registry, counts);
 }
 
@@ -963,7 +732,7 @@ export async function removeProvider(
     );
   }
   await OAuthClientRepository.remove(providerId);
-  await ProviderConnectionRepository.removeAllForProvider(providerId);
+  await Connections.removeAllForProvider(providerId);
   invalidateGatewayProviders();
   logEvent("provider.removed", {
     provider: providerId,
@@ -985,146 +754,204 @@ export async function removeProvider(
   }));
 }
 
-/** The person's own connections, or with `user: "all"` (owner or admin) the organization's. */
-export async function listConnections(
+/** The apps connections belong to, by row id: the organization's, and any shared app one names. */
+async function appsByRow(
   org: OrgContext,
-  options: { user?: string | "all" } = {},
+  rows: readonly ProviderConnection[],
+): Promise<Map<string, ConnectionApp>> {
+  const out = new Map<string, ConnectionApp>();
+  for (const app of await AppRepository.findAll(org.orgId)) {
+    out.set(app.id, { rowId: app.id, id: app.appSlug, name: app.name });
+  }
+  for (const rowId of new Set(rows.map((row) => row.appRowId))) {
+    if (out.has(rowId)) continue;
+    const app = await AppRepository.findCallableById(rowId, org.orgId);
+    out.set(
+      rowId,
+      app
+        ? { rowId, id: app.appSlug, name: app.name }
+        : { rowId, id: null, name: rowId },
+    );
+  }
+  return out;
+}
+
+async function summarize(
+  org: OrgContext,
+  rows: readonly ProviderConnection[],
 ): Promise<ConnectionSummary[]> {
-  const who = options.user ?? org.userId;
-  if (who !== org.userId) requireAdmin(org);
   const registry = await gatewayProviders();
-  const rows = (
-    await ProviderConnectionRepository.listByOrganization(org.orgId)
-  ).filter((row) =>
-    who === "all" ? true : row.accountKind === "user" && row.userId === who,
-  );
+  const apps = await appsByRow(org, rows);
   const out: ConnectionSummary[] = [];
   for (const row of rows) {
-    const name = registry.get(row.providerId);
-    const summary: ConnectionSummary = {
+    const capability = registry.get(row.providerId);
+    const member = await userSubject(row.userId).catch(() => null);
+    out.push({
       id: row.id,
       providerId: row.providerId,
       providerName:
-        name && name.mode !== "service" ? name.label : row.providerId,
-      account: row.accountKind,
+        capability && capability.mode !== "service"
+          ? capability.label
+          : row.providerId,
+      userId: row.userId,
+      userEmail: member?.email ?? null,
+      app: apps.get(row.appRowId) ?? {
+        rowId: row.appRowId,
+        id: null,
+        name: row.appRowId,
+      },
       label: row.label,
-      scopeSets: row.scopeSets,
+      scopes: [...row.scopes],
       status: row.status,
       createdAt: row.createdAt,
       lastUsedAt: row.lastUsedAt,
       expiresAt: row.expiresAt,
-    };
-    if (row.userId) {
-      summary.userId = row.userId;
-      try {
-        summary.userEmail = (await userSubject(row.userId)).email ?? null;
-      } catch {
-        summary.userEmail = null;
-      }
-    }
-    out.push(summary);
+    });
   }
   return out;
 }
 
 /**
- * Disconnect an account: a person's own on any role, anyone's or the
- * organization's for an owner or admin. Revokes at the provider when the
- * flow names a revoke endpoint and a client is live.
+ * The person's own connections, or with `user` another member's or
+ * `"all"` the organization's (owner or admin); `providerId` narrows to one
+ * provider.
+ */
+export async function listConnections(
+  org: OrgContext,
+  options: { user?: string | "all"; providerId?: string } = {},
+): Promise<ConnectionSummary[]> {
+  const who = options.user ?? org.userId;
+  if (who !== org.userId) requireAdmin(org);
+  const rows = (await Connections.listByOrganization(org.orgId)).filter(
+    (row) =>
+      (who === "all" || row.userId === who) &&
+      (!options.providerId || row.providerId === options.providerId),
+  );
+  return summarize(org, rows);
+}
+
+/**
+ * The connection a disconnect names: by its id, or by provider, person
+ * (default the caller) and app (its id or row id; needed only when the
+ * person connected the provider in more than one app).
+ */
+async function connectionFor(
+  org: OrgContext,
+  input:
+    | { connectionId: string }
+    | { providerId: string; userId?: string; app?: string },
+): Promise<ProviderConnection> {
+  if ("connectionId" in input) {
+    const row = await Connections.byId(input.connectionId);
+    if (!row || row.organizationId !== org.orgId) {
+      throw new PublicError("CONNECTION_NOT_FOUND", "No such connection");
+    }
+    return row;
+  }
+  const userId = input.userId ?? org.userId;
+  let rows = (await Connections.listByOrganization(org.orgId)).filter(
+    (row) => row.providerId === input.providerId && row.userId === userId,
+  );
+  if (input.app) {
+    const wanted = input.app;
+    const apps = await appsByRow(org, rows);
+    rows = rows.filter(
+      (row) => row.appRowId === wanted || apps.get(row.appRowId)?.id === wanted,
+    );
+  }
+  if (rows.length === 0) {
+    throw new PublicError("CONNECTION_NOT_FOUND", "No such connection");
+  }
+  if (rows.length > 1) {
+    const apps = await appsByRow(org, rows);
+    const names = rows.map((row) => apps.get(row.appRowId)?.id ?? row.appRowId);
+    throw new PublicError(
+      "INVALID_INPUT",
+      `${input.providerId} is connected in ${names.join(", ")}; say which app`,
+    );
+  }
+  return rows[0]!;
+}
+
+/**
+ * Disconnect a connection: a person's own on any role, anyone's for an
+ * owner or admin. Revokes at the provider when its flow names a revoke
+ * endpoint and a client is live, then drops the tokens.
  */
 export async function disconnect(
   org: OrgContext,
   actor: EventActor | null | undefined,
-  input: {
-    providerId: string;
-    account: "user" | "organization";
-    userId?: string;
-  },
+  input:
+    | { connectionId: string }
+    | { providerId: string; userId?: string; app?: string },
   fetchUpstream: Fetch = (request) => fetch(request),
-): Promise<{ removed: boolean; revoked: boolean }> {
-  const userId = input.account === "user" ? (input.userId ?? org.userId) : null;
-  if (input.account === "organization" || userId !== org.userId) {
+): Promise<{
+  removed: boolean;
+  revoked: boolean;
+  connection: ConnectionSummary;
+}> {
+  if (
+    !("connectionId" in input) &&
+    (input.userId ?? org.userId) !== org.userId
+  ) {
     requireAdmin(org);
   }
+  const connection = await connectionFor(org, input);
+  if (connection.userId !== org.userId) requireAdmin(org);
   const who = await actorFor(org, actor);
-  const subject = input.account === "user" ? userId! : "organization";
-  const connection = await ProviderConnectionRepository.find(
-    org.orgId,
-    input.providerId,
-    subject,
-  );
-  if (!connection) {
-    throw new PublicError("CONNECTION_NOT_FOUND", "No such connection");
-  }
+  const [summary] = await summarize(org, [connection]);
   const registry = await gatewayProviders();
-  const capability = registry.get(input.providerId);
+  const capability = registry.get(connection.providerId);
   let revoked = false;
-  if (capability?.mode === "oauth_client" && flowOf(capability)?.revokeUrl) {
+  if (capability?.mode === "oauth_client" && capability.flow.revokeUrl) {
     const client = await resolveOAuthClient({
-      id: input.providerId,
+      id: connection.providerId,
       capability,
       env: env as never,
       lookup: registry,
     });
-    const tokens = await ProviderConnectionRepository.readTokens(
-      connection.id,
-      env as never,
-    );
+    const tokens = await Connections.readTokens(connection.id, env as never);
     if (client && tokens) {
       revoked = await revokeAtProvider({
         capability,
         client,
         accessToken: tokens.accessToken,
         fetchUpstream,
-        log: { provider: input.providerId, org: org.orgId },
+        log: { provider: connection.providerId, org: org.orgId },
       });
     }
   }
-  const removed = await ProviderConnectionRepository.remove(connection.id);
-  // Apps' background use of the connection ends with it.
-  if (connection.userId) {
-    const { endGrantsForConnection } = await import("./background");
-    await endGrantsForConnection(connection.id, org.userId).catch(
-      (error: unknown) => {
-        logEvent(
-          "oauth.background_end_failed",
-          { error: error instanceof Error ? error.name : "unknown" },
-          "warn",
-        );
-      },
-    );
-  }
+  const removed = await Connections.remove(connection.id);
   logEvent("provider.disconnected", {
-    provider: input.providerId,
+    provider: connection.providerId,
     org: org.orgId,
     user_id: org.userId,
-    account: input.account,
+    app_row_id: connection.appRowId,
     revoked,
   });
-  const member = userId ? await userSubject(userId).catch(() => null) : null;
+  const member = await userSubject(connection.userId).catch(() => null);
   await emit(async () => ({
     organizationId: org.orgId,
     actor: who,
     ...catalogue.providerDisconnected({
       provider: {
-        id: input.providerId,
-        name:
-          capability && capability.mode !== "service"
-            ? capability.label
-            : input.providerId,
+        id: connection.providerId,
+        name: summary!.providerName,
         kind: "oauth",
       },
       account: {
-        kind: input.account,
-        ...(member
-          ? { user: { id: member.id, email: member.email, name: member.name } }
-          : userId
-            ? { user: { id: userId } }
-            : {}),
+        user: member
+          ? { id: member.id, email: member.email, name: member.name }
+          : { id: connection.userId },
         label: connection.label,
+      },
+      app: {
+        id: summary!.app.id ?? "unknown",
+        rowId: connection.appRowId,
+        name: summary!.app.name,
       },
       revoked,
     }),
   }));
-  return { removed, revoked };
+  return { removed, revoked, connection: summary! };
 }

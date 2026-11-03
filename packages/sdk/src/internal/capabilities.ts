@@ -16,18 +16,14 @@
  *    proxy's rules: inference routes only, the model allowlist, the usage
  *    tap. Never a capability: its key would reach the account's credits
  *    and keys on the same host.
- *  - `oauth_client`: a provider's OAuth client (Google's, Microsoft's,
- *    Slack's), held the same way. The gateway completes the token endpoint
- *    calls only, putting the client on them; the app builds the authorize
- *    URL from the public client id (`integrationStatus()`), sends people
- *    back to a callback its manifest entry lists (`redirectPaths`), keeps
- *    the user tokens and calls the provider's API with them itself. Other
- *    providers' clients (GitHub, the social networks) are presets
- *    (./oauthPresets.ts): rows only once an operator adds one. A client shared by apps
- *    with different needs carries a `scopePolicy`: named scope sets an app
- *    lists in its manifest entry's `scopes`, which ./oauthScopes.ts turns
- *    into what the app may ask the provider for and what a token it is
- *    handed may carry.
+ *  - `oauth_client`: an OAuth provider (Google, Microsoft, Slack built
+ *    in; GitHub and others as presets, ./oauthPresets.ts) whose client the
+ *    gateway holds and whose flow it runs. A person connects in an app,
+ *    for exactly the provider scopes the app's manifest entry lists
+ *    (`scopes`); the gateway keeps the tokens and puts the person's token
+ *    on the app's calls to the provider's `api` hosts. Each provider is a
+ *    spec (./oauthSpec.ts), its differences data; ./oauthScopes.ts holds
+ *    the one set of scope rules.
  *  - `service`: something the gateway does itself, with no upstream host
  *    an app names (sending email, listing the organization's members). An
  *    app lists it the same way and calls its routes,
@@ -308,115 +304,11 @@ export interface GatewayServiceCapability {
   setup?: string;
 }
 
-/** Where the gateway puts an OAuth client on a token request. */
+/** Where the Gateway puts its OAuth client on a token request: the form body or HTTP Basic. */
 export type OAuthClientInjection = "form" | "basic";
 
-/** A token endpoint an `oauth_client` capability completes, with its rule. */
-export interface OAuthTokenEndpoint {
-  /** The endpoint's host, always over https. */
-  host: string;
-  /** The exact pathname. */
-  path: string;
-  methods: readonly ("GET" | "POST")[];
-  /**
-   * Where the client goes: the form body or HTTP Basic
-   * (injectClientCredentials() in ./oauthClient.ts).
-   */
-  inject: OAuthClientInjection;
-}
-
-/**
- * One host's allowlist a scope set unlocks. Matched against the raw
- * pathname, case preserved, by `scopeRouteAllows()` in ./oauthScopes.ts:
- * the proxy boundary once the gateway holds tokens, tested data until then.
- */
-export interface OAuthScopeRoute {
-  /** A bare https host, one of the capability's `api` hosts. */
-  host: string;
-  /**
-   * Raw-path entries: exact, or a prefix when the entry ends in `/`. GET
-   * and HEAD go through when one matches.
-   */
-  paths: readonly string[];
-  /**
-   * The read-shaped POSTs a read set allows (queries, watches): anchored,
-   * flagless RegExps over the raw pathname. Every other POST is refused.
-   */
-  posts?: readonly RegExp[];
-}
-
-/**
- * A named bundle an app lists under `scopes`: what it asks the provider for
- * and what that unlocks.
- */
-export interface OAuthScopeSet {
-  /** What Admin → Apps and a consent page call it: "Gmail (read-only)". */
-  label: string;
-  /**
-   * A read set unlocks GET, HEAD and its `posts` only. No write set exists
-   * on the shared clients yet; adding one is a reviewed registry change.
-   */
-  access: CapabilityAccess;
-  /** The provider's scope strings, requested verbatim (Slack: bot scopes). */
-  scopes: readonly string[];
-  /** Slack's `user_scope` strings, issued to the installing person's own token; absent elsewhere. */
-  userScopes?: readonly string[];
-  routes: readonly OAuthScopeRoute[];
-}
-
-/**
- * How a provider spells granted scopes in its token response; each has a
- * parser in ./oauthScopes.ts. `space` and `comma` are the plain spellings
- * a registered provider names (`scopeDialect`): a token response without
- * a `scope` field is taken as granted-as-requested (RFC 6749 §5.1).
- */
-export type OAuthScopeDialect =
-  | "google"
-  | "microsoft"
-  | "slack"
-  | "space"
-  | "comma";
-
-/**
- * Everything the gateway needs to hold an app to its scope sets at the
- * token endpoint. Present means an app's entry must list `scopes` and the
- * gateway refuses tokens outside them. Data only: the dialect selects the
- * parser, so the registry stays a table.
- */
-export interface OAuthScopePolicy {
-  sets: Readonly<Record<string, OAuthScopeSet>>;
-  /**
-   * Scopes a token may carry beyond the declared sets without refusal:
-   * identity and refresh scopes, in every spelling the provider uses.
-   * Never a data scope.
-   */
-  tolerated: readonly string[];
-  /**
-   * Scopes every declaring app asks for whatever its sets, on the authorize
-   * URL and Microsoft's token leg (`offline_access`). Always tolerated.
-   */
-  alwaysRequested: readonly string[];
-  dialect: OAuthScopeDialect;
-  /**
-   * The `tokenGrantType()` values the gateway completes through this
-   * client. `null` is a code exchange that carries no `grant_type` (Slack's
-   * oauth.v2.access).
-   */
-  grantTypes: readonly (string | null)[];
-  /**
-   * What becomes of the token request's `scope` once it passes the check:
-   * `replace` it with the app's requested list (Microsoft's token-leg
-   * extension, which keeps a token to one resource), `drop` it (Google
-   * documents no `scope` on either token leg), or `keep` it (Slack).
-   */
-  requestScope: "replace" | "drop" | "keep";
-  /**
-   * Decoded path segments no set unlocks on any host, compared
-   * case-insensitively: batch tunnels that carry other requests inside, and
-   * resources that reveal secrets under a read scope.
-   */
-  deniedSegments: readonly string[];
-}
+/** How a provider separates scopes in its `scope` parameter and its token answer. */
+export type OAuthScopeSeparator = "space" | "comma";
 
 /** How a provider names the account a new connection is for, read once after the exchange. */
 export interface OAuthIdentity {
@@ -429,89 +321,72 @@ export interface OAuthIdentity {
 }
 
 /**
- * What the Gateway needs to run a provider's authorization-code flow
- * itself (docs/design/2026-10-oauth-providers.md section 5): present on a
- * catalog entry that supports the Gateway-owned flow, and built from a
- * registered row's `auth` (`kind: "oauth2-user"`). Absent: the entry
- * keeps the app-driven flow only (the social networks).
+ * The provider's authorization-code flow as data, from its spec
+ * (./oauthSpec.ts): everything that differs between providers. The
+ * Gateway runs it; an app never sees a token or the client.
  */
 export interface OAuthFlow {
+  /** Where the browser goes to consent (https). */
+  authorizeUrl: string;
   /** The token endpoint the Gateway posts the code and refresh token to (https). */
   tokenUrl: string;
   /** Where a disconnect revokes the token; absent means the tokens die at their expiry. */
   revokeUrl?: string;
   /** The revoke call's method (default POST). */
   revokeMethod?: "POST" | "DELETE";
-  /** Whether the authorize request carries a PKCE S256 challenge (default true). */
+  /** Where the client goes on the token request. */
+  inject: OAuthClientInjection;
+  /** Whether the authorize request carries a PKCE S256 challenge. */
   pkce: boolean;
-  /** How the token response spells what it granted. */
-  scopeDialect: OAuthScopeDialect;
+  scopeSeparator: OAuthScopeSeparator;
+  /**
+   * Joined onto an app's short scope (`gmail.modify`) for the authorize
+   * URL, and taken off a granted one for comparison: Google's
+   * `https://www.googleapis.com/auth/`. Absent: scopes as written.
+   */
+  scopePrefix?: string;
   /** Extra query on the authorize URL (Google's `access_type=offline`). */
   authorizeParams?: Readonly<Record<string, string>>;
   /** Extra headers on the token request (GitHub's `Accept: application/json`). */
   tokenHeaders?: Readonly<Record<string, string>>;
   identity?: OAuthIdentity;
+  /**
+   * Scopes the Gateway adds to every connect, whatever the app lists: what
+   * the identity URL needs, and a refresh token's (Microsoft's
+   * `offline_access`). Tolerated at mint; apps never list them.
+   */
+  identityScopes: readonly string[];
+  /** Scopes a token may carry beyond what was asked without refusal (another spelling of an identity scope). Never a data scope. */
+  tolerated: readonly string[];
 }
 
 /**
- * A provider's OAuth client the gateway holds. The gateway completes its
- * token endpoints only (`token`), putting the client on each request; the
- * app builds the authorize URL from the public client id and calls the
- * provider's API with the user tokens it keeps.
+ * An OAuth provider the Gateway holds a client for and runs the flow for
+ * (docs/design/2026-11-oauth-simplify.md). A person connects in an app;
+ * the connection is theirs and that app's, for exactly the scopes the
+ * app's `everyapp.config.ts` lists, and the app calls the provider's
+ * `api` hosts through the Gateway, which puts the token on.
  */
 export interface OAuthClientCapability {
   mode: "oauth_client";
-  /** The provider's name in errors and logs. */
+  /** The provider's name in errors, pages and logs. */
   label: string;
-  /** Gateway secret names. No `clientSecret`: a public client, the id alone. */
+  /** Gateway setting names. No `clientSecret`: a public client, the id alone. */
   secrets: { clientId: string; clientSecret?: string };
-  /** The only calls the gateway completes; anything else is refused. */
-  token: readonly OAuthTokenEndpoint[];
-  /**
-   * Obtaining and refreshing user tokens with the operator's client
-   * writes, so a catalog client is `["write"]`. A registered OAuth
-   * provider says what the proxy may do with the held token: read, write
-   * or both (docs/design/2026-10-oauth-providers.md section 7).
-   */
-  access: readonly CapabilityAccess[];
-  /** Where the operator registers the client. */
+  /** Where the operator registers the client (the spec's `docs`). */
   console: string;
   /** The everyapp skill's setup guide for the client, when one exists. */
   setup?: string;
-  /**
-   * The authorize endpoint the app sends people to and the scopes the
-   * client must be allowed: the operator's checklist and the docs. With
-   * a `scopePolicy`, the union of its sets' scopes and `alwaysRequested`.
-   */
-  authorize: { url: string; scopes: readonly string[] };
-  /**
-   * Named scope sets an app lists in its manifest entry's `scopes`, for a
-   * client several apps share with different needs. Absent: the whole
-   * client is the grant.
-   */
-  scopePolicy?: OAuthScopePolicy;
-  /**
-   * Hosts the app calls afterwards with the user's token; the Gateway's
-   * held-token branch forwards to these alone, and a scope policy's
-   * routes are on them.
-   */
+  /** The only hosts the held token is ever sent to, over https. */
   api: readonly string[];
-  /** The Gateway-owned flow, when the entry supports it. */
-  flow?: OAuthFlow;
-  /** A registered OAuth provider's spec fields (a catalog client has `setup` instead). */
+  flow: OAuthFlow;
+  /** What it is for, in one line. */
   description?: string;
   /** The API reference (a spec's `api`), optional. */
   reference?: string;
   hint?: string;
   example?: string;
   tags?: readonly string[];
-  /**
-   * A registered OAuth provider's methods: what a read grant may use
-   * (default GET and HEAD) and what a write grant adds (default the
-   * API-key default). A catalog client leaves both unset.
-   */
-  readMethods?: readonly string[];
-  writeMethods?: readonly string[];
 }
 
 export type Capability =
@@ -521,6 +396,35 @@ export type Capability =
   | GatewayServiceCapability;
 
 import { CATALOG_ENTRIES } from "./catalog/index.js";
+import { BUILT_IN_OAUTH_SPECS } from "./oauthBuiltIns.js";
+import { oauthCapabilityFromSpec, type OAuthSpecJson } from "./oauthSpec.js";
+
+/**
+ * A built-in OAuth provider's catalog entry from its spec, its setting
+ * names kept literal so `CapabilitySecret` names them.
+ */
+function builtInOAuth<
+  const S extends OAuthSpecJson & {
+    auth: { clientId: string; clientSecret: string };
+  },
+>(
+  spec: S,
+  setup: string,
+): OAuthClientCapability & {
+  secrets: {
+    clientId: S["auth"]["clientId"];
+    clientSecret: S["auth"]["clientSecret"];
+  };
+} {
+  return {
+    ...oauthCapabilityFromSpec(spec),
+    secrets: {
+      clientId: spec.auth.clientId,
+      clientSecret: spec.auth.clientSecret,
+    },
+    setup,
+  };
+}
 
 export const CAPABILITIES = {
   // The AI providers, in the order the AI proxy's table had them.
@@ -773,519 +677,17 @@ export const CAPABILITIES = {
     settings: [],
     optionalSettings: [],
   },
-  slack: {
-    mode: "oauth_client",
-    label: "Slack",
-    secrets: {
-      clientId: "SLACK_CLIENT_ID",
-      clientSecret: "SLACK_CLIENT_SECRET",
-    },
-    token: [
-      {
-        host: "slack.com",
-        path: "/api/oauth.v2.access",
-        methods: ["POST"],
-        inject: "form",
-      },
-    ],
-    access: ["write"],
-    console: "https://api.slack.com/apps",
-    setup: "setup/slack.md",
-    authorize: {
-      url: "https://slack.com/oauth/v2/authorize",
-      // The sets' union: the bot scopes in set order, then the one user
-      // scope no bot set carries. Postiz lists `channels.read`,
-      // `users.read`, `messages.write`, `channels.join` and `files.write`
-      // (it posts to channels it joins and uploads images); Open CRM adds
-      // `users.email`, `channels.manage` and `user-channels.manage` (its
-      // team agents match members to Slack users by email, create and
-      // manage the channels they post to, open DMs, and the installing
-      // person invites the bot to private channels).
-      scopes: [
-        "channels:read",
-        "groups:read",
-        "users:read",
-        "users:read.email",
-        "chat:write",
-        "chat:write.public",
-        "chat:write.customize",
-        "channels:join",
-        "channels:manage",
-        "groups:write",
-        "channels:write.invites",
-        "groups:write.invites",
-        "im:write",
-        "files:write",
-        "channels:write",
-      ],
-    },
-    scopePolicy: {
-      dialect: "slack",
-      // `oauth.v2.access` takes `code` with no `grant_type`; an app that
-      // opts into token rotation refreshes with `refresh_token`.
-      grantTypes: [null, "refresh_token"],
-      // Slack reads no `scope` on the token leg (the installation's scopes
-      // were fixed on the authorize URL), so the request goes as sent.
-      requestScope: "keep",
-      alwaysRequested: [],
-      tolerated: [],
-      deniedSegments: [],
-      // Slack authorizes by method name, not verb, and every method is one
-      // exact `/api/<method>` path on the host that also serves the token
-      // endpoint (which no set lists). A read set names its methods in
-      // `paths` (GET) and `posts` (POST) alike; a write set in `posts`
-      // only, with the one listing among them in `paths` too.
-      sets: {
-        "channels.read": {
-          label: "Channels (read-only)",
-          access: "read",
-          scopes: ["channels:read", "groups:read"],
-          routes: [
-            {
-              host: "slack.com",
-              paths: [
-                "/api/conversations.list",
-                "/api/conversations.info",
-                "/api/conversations.members",
-                "/api/users.conversations",
-              ],
-              posts: [
-                /^\/api\/conversations\.(list|info|members)$/,
-                /^\/api\/users\.conversations$/,
-              ],
-            },
-          ],
-        },
-        "users.read": {
-          label: "Members (read-only)",
-          access: "read",
-          scopes: ["users:read"],
-          routes: [
-            {
-              host: "slack.com",
-              paths: [
-                "/api/users.list",
-                "/api/users.info",
-                "/api/users.getPresence",
-                "/api/bots.info",
-              ],
-              posts: [
-                /^\/api\/users\.(list|info|getPresence)$/,
-                /^\/api\/bots\.info$/,
-              ],
-            },
-          ],
-        },
-        "users.email": {
-          // Slack grants it only beside `users:read`: declare both sets.
-          label: "Members' email addresses (read-only)",
-          access: "read",
-          scopes: ["users:read.email"],
-          routes: [
-            {
-              host: "slack.com",
-              paths: ["/api/users.lookupByEmail"],
-              posts: [/^\/api\/users\.lookupByEmail$/],
-            },
-          ],
-        },
-        "messages.write": {
-          label: "Messages (post as the app)",
-          access: "write",
-          scopes: ["chat:write", "chat:write.public", "chat:write.customize"],
-          routes: [
-            {
-              host: "slack.com",
-              // The scheduled-messages listing is the one read among them.
-              paths: ["/api/chat.scheduledMessages.list"],
-              posts: [
-                /^\/api\/chat\.(postMessage|postEphemeral|update|delete|scheduleMessage|deleteScheduledMessage|scheduledMessages\.list)$/,
-              ],
-            },
-          ],
-        },
-        "channels.join": {
-          label: "Channels (join public ones)",
-          access: "write",
-          scopes: ["channels:join"],
-          routes: [
-            {
-              host: "slack.com",
-              paths: [],
-              posts: [/^\/api\/conversations\.join$/],
-            },
-          ],
-        },
-        "channels.manage": {
-          label: "Channels (create, manage and invite to; open DMs)",
-          access: "write",
-          scopes: [
-            "channels:manage",
-            "groups:write",
-            "channels:write.invites",
-            "groups:write.invites",
-            "im:write",
-          ],
-          routes: [
-            {
-              host: "slack.com",
-              paths: [],
-              posts: [
-                /^\/api\/conversations\.(create|rename|archive|unarchive|invite|open|kick|leave|setTopic|setPurpose|mark)$/,
-              ],
-            },
-          ],
-        },
-        "files.write": {
-          label: "Files (upload)",
-          access: "write",
-          scopes: ["files:write"],
-          routes: [
-            {
-              host: "slack.com",
-              paths: [],
-              // The external upload flow; the retired `files.upload` stays off.
-              posts: [
-                /^\/api\/files\.(getUploadURLExternal|completeUploadExternal)$/,
-              ],
-            },
-          ],
-        },
-        "user-channels.manage": {
-          label: "Channels (as the installing person: read, manage, invite to)",
-          access: "write",
-          scopes: [],
-          // Slack's `user_scope`: issued to the person's own token, which
-          // Open CRM uses to invite the bot to private channels.
-          userScopes: [
-            "channels:read",
-            "channels:write",
-            "groups:read",
-            "groups:write",
-          ],
-          routes: [
-            {
-              host: "slack.com",
-              paths: [
-                "/api/conversations.list",
-                "/api/conversations.info",
-                "/api/conversations.members",
-                "/api/users.conversations",
-              ],
-              posts: [
-                /^\/api\/conversations\.(list|info|members|create|rename|archive|unarchive|invite|kick|leave|setTopic|setPurpose|mark)$/,
-                /^\/api\/users\.conversations$/,
-              ],
-            },
-          ],
-        },
-      },
-    },
-    api: ["slack.com"],
-    // Slack refuses `code_challenge`; `auth.test` names the workspace and
-    // the installing person.
-    flow: {
-      tokenUrl: "https://slack.com/api/oauth.v2.access",
-      revokeUrl: "https://slack.com/api/auth.revoke",
-      pkce: false,
-      scopeDialect: "slack",
-      identity: {
-        url: "https://slack.com/api/auth.test",
-        label: "team",
-        id: "user_id",
-      },
-    },
-  },
-  // Clients several apps share with different needs, so each app lists the
-  // scope sets it uses: Open CRM reads a member's own mailbox and calendar
-  // (`gmail.read`, `calendar.read`; `identity`, `mail.read`), OpenSEO reads
-  // a site's Search Console and Analytics (`identity`, `search-console.read`,
-  // `analytics.read`). Every set is read-only. Google's is one Cloud project
-  // apart from the YouTube preset's; Gmail's read scope is restricted and needs
-  // Google's verification, and whether Search Console and Analytics share
-  // that consent screen with it is the operator's choice when verifying.
-  "google-workspace": {
-    mode: "oauth_client",
-    label: "Google (Gmail, Calendar, Search Console and Analytics)",
-    secrets: {
-      clientId: "GOOGLE_WORKSPACE_CLIENT_ID",
-      clientSecret: "GOOGLE_WORKSPACE_CLIENT_SECRET",
-    },
-    token: [
-      {
-        host: "oauth2.googleapis.com",
-        path: "/token",
-        methods: ["POST"],
-        inject: "form",
-      },
-    ],
-    access: ["write"],
-    console: "https://console.cloud.google.com/apis/credentials",
-    setup: "setup/google.md",
-    authorize: {
-      url: "https://accounts.google.com/o/oauth2/v2/auth",
-      scopes: [
-        "openid",
-        "email",
-        "profile",
-        "https://www.googleapis.com/auth/gmail.readonly",
-        "https://www.googleapis.com/auth/calendar.readonly",
-        "https://www.googleapis.com/auth/webmasters.readonly",
-        "https://www.googleapis.com/auth/analytics.readonly",
-      ],
-    },
-    scopePolicy: {
-      dialect: "google",
-      // Google documents no scope on either token leg: the response's
-      // `scope` is where the gateway learns what a token holds.
-      grantTypes: ["authorization_code", "refresh_token"],
-      requestScope: "drop",
-      alwaysRequested: [],
-      // Both spellings: Google documents `email`/`profile` and the userinfo
-      // URLs as the same grants, and echoes the URLs.
-      tolerated: [
-        "openid",
-        "email",
-        "profile",
-        "https://www.googleapis.com/auth/userinfo.email",
-        "https://www.googleapis.com/auth/userinfo.profile",
-      ],
-      // Gmail's and Calendar's `/batch/<api>/<version>` carry whole requests
-      // inside; Analytics' measurement protocol secrets are readable under
-      // the read-only scope.
-      deniedSegments: ["batch", "measurementProtocolSecrets"],
-      sets: {
-        identity: {
-          label: "Google account (who you are)",
-          access: "read",
-          scopes: ["openid", "email", "profile"],
-          routes: [
-            { host: "openidconnect.googleapis.com", paths: ["/v1/userinfo"] },
-            {
-              host: "www.googleapis.com",
-              paths: [
-                "/oauth2/v2/userinfo",
-                "/oauth2/v3/userinfo",
-                "/userinfo/v2/me",
-              ],
-            },
-          ],
-        },
-        "gmail.read": {
-          label: "Gmail (read-only)",
-          access: "read",
-          scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
-          routes: [
-            {
-              host: "gmail.googleapis.com",
-              paths: ["/gmail/v1/users/"],
-              // Push notifications start and stop; `messages/send`, drafts
-              // and `modify` are the other POSTs under the same prefix.
-              posts: [/^\/gmail\/v1\/users\/[^/]+\/(watch|stop)$/],
-            },
-          ],
-        },
-        "calendar.read": {
-          label: "Google Calendar (read-only)",
-          access: "read",
-          scopes: ["https://www.googleapis.com/auth/calendar.readonly"],
-          routes: [
-            {
-              host: "www.googleapis.com",
-              paths: ["/calendar/v3/"],
-              posts: [
-                /^\/calendar\/v3\/freeBusy$/,
-                /^\/calendar\/v3\/calendars\/[^/]+\/events\/watch$/,
-                /^\/calendar\/v3\/users\/me\/calendarList\/watch$/,
-                /^\/calendar\/v3\/channels\/stop$/,
-              ],
-            },
-          ],
-        },
-        "search-console.read": {
-          label: "Search Console (read-only)",
-          access: "read",
-          scopes: ["https://www.googleapis.com/auth/webmasters.readonly"],
-          // The v3 paths answer on both hosts; URL inspection is v1 only.
-          // A site is one segment, `https%3A%2F%2Fexample.com%2F` or
-          // `sc-domain%3Aexample.com`, which is why routes match the raw path.
-          routes: [
-            {
-              host: "www.googleapis.com",
-              paths: ["/webmasters/v3/"],
-              posts: [
-                /^\/webmasters\/v3\/sites\/[^/]+\/searchAnalytics\/query$/,
-              ],
-            },
-            {
-              host: "searchconsole.googleapis.com",
-              paths: ["/webmasters/v3/"],
-              posts: [
-                /^\/webmasters\/v3\/sites\/[^/]+\/searchAnalytics\/query$/,
-                /^\/v1\/urlInspection\/index:inspect$/,
-              ],
-            },
-          ],
-        },
-        "analytics.read": {
-          label: "Google Analytics (read-only)",
-          access: "read",
-          scopes: ["https://www.googleapis.com/auth/analytics.readonly"],
-          routes: [
-            {
-              // Reports are POSTed queries.
-              host: "analyticsdata.googleapis.com",
-              paths: ["/v1beta/properties/"],
-              posts: [
-                /^\/v1beta\/properties\/[^/]+:(runReport|batchRunReports|runPivotReport|batchRunPivotReports|runRealtimeReport|checkCompatibility)$/,
-              ],
-            },
-            {
-              // Reads only: accounts, properties and what hangs off them
-              // (data streams, key events, enhanced measurement settings).
-              host: "analyticsadmin.googleapis.com",
-              paths: [
-                "/v1beta/accountSummaries",
-                "/v1beta/accounts",
-                "/v1beta/accounts/",
-                "/v1beta/properties",
-                "/v1beta/properties/",
-                "/v1alpha/properties/",
-              ],
-            },
-          ],
-        },
-      },
-    },
-    api: [
-      "gmail.googleapis.com",
-      "www.googleapis.com",
-      "searchconsole.googleapis.com",
-      "analyticsdata.googleapis.com",
-      "analyticsadmin.googleapis.com",
-      "openidconnect.googleapis.com",
-    ],
-    // The Gateway-owned flow: a refresh token needs `access_type=offline`,
-    // and `prompt=consent` makes Google issue one on every connect. No
-    // revoke: Google's `/revoke` is per person per client and would also
-    // kill the tokens an app-driven OpenSEO holds under the same client.
-    flow: {
-      tokenUrl: "https://oauth2.googleapis.com/token",
-      pkce: true,
-      scopeDialect: "google",
-      authorizeParams: { access_type: "offline", prompt: "consent" },
-      identity: {
-        url: "https://openidconnect.googleapis.com/v1/userinfo",
-        label: "email",
-        id: "sub",
-      },
-    },
-  },
-  "microsoft-365": {
-    mode: "oauth_client",
-    label: "Microsoft 365 (Outlook mail and calendar)",
-    secrets: {
-      clientId: "MICROSOFT_365_CLIENT_ID",
-      clientSecret: "MICROSOFT_365_CLIENT_SECRET",
-    },
-    token: [
-      {
-        // The multi-tenant endpoint: register the client for accounts in
-        // any organization and personal accounts. A single-tenant client
-        // answers only on its tenant's path, which this does not complete.
-        host: "login.microsoftonline.com",
-        path: "/common/oauth2/v2.0/token",
-        methods: ["POST"],
-        inject: "form",
-      },
-    ],
-    access: ["write"],
-    console:
-      "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
-    setup: "setup/microsoft-365.md",
-    authorize: {
-      url: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-      scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"],
-    },
-    scopePolicy: {
-      dialect: "microsoft",
-      grantTypes: ["authorization_code", "refresh_token"],
-      // The token leg's `scope` is Microsoft's extension for naming the
-      // resource; the gateway sets it to the app's list so a token covers
-      // Graph alone.
-      requestScope: "replace",
-      // Refresh tokens; Entra never echoes it in a response's `scope`.
-      alwaysRequested: ["offline_access"],
-      // Compared case-insensitively, as Microsoft spells them both ways.
-      tolerated: ["openid", "profile", "email", "offline_access", "User.Read"],
-      // `$batch` carries whole requests inside; `beta` is another API.
-      deniedSegments: ["$batch", "beta"],
-      // `/v1.0/me/…` only: `/v1.0/users/<id>/…` reaches shared mailboxes
-      // and calendars under the same permissions.
-      sets: {
-        identity: {
-          label: "Microsoft account (who you are)",
-          access: "read",
-          scopes: ["User.Read"],
-          routes: [
-            {
-              host: "graph.microsoft.com",
-              paths: ["/v1.0/me", "/oidc/userinfo"],
-            },
-          ],
-        },
-        "mail.read": {
-          label: "Outlook mail (read-only)",
-          access: "read",
-          scopes: ["Mail.Read"],
-          routes: [
-            {
-              host: "graph.microsoft.com",
-              paths: [
-                "/v1.0/me/messages",
-                "/v1.0/me/messages/",
-                "/v1.0/me/mailFolders",
-                "/v1.0/me/mailFolders/",
-              ],
-            },
-          ],
-        },
-        "calendar.read": {
-          label: "Outlook calendar (read-only)",
-          access: "read",
-          scopes: ["Calendars.Read"],
-          routes: [
-            {
-              host: "graph.microsoft.com",
-              paths: [
-                "/v1.0/me/calendar",
-                "/v1.0/me/calendar/",
-                "/v1.0/me/calendars",
-                "/v1.0/me/calendars/",
-                "/v1.0/me/events",
-                "/v1.0/me/events/",
-                "/v1.0/me/calendarView",
-                "/v1.0/me/calendarView/",
-              ],
-              // Free/busy is a POSTed query.
-              posts: [/^\/v1\.0\/me\/calendar\/getSchedule$/],
-            },
-          ],
-        },
-      },
-    },
-    api: ["graph.microsoft.com"],
-    flow: {
-      tokenUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-      pkce: true,
-      scopeDialect: "microsoft",
-      identity: {
-        url: "https://graph.microsoft.com/v1.0/me",
-        label: "userPrincipalName",
-        id: "id",
-      },
-    },
-  },
+  // The OAuth providers every Gateway has built in, from their JSON specs
+  // (./oauthBuiltIns.ts): what differs between them is data there.
+  slack: builtInOAuth(BUILT_IN_OAUTH_SPECS.slack, "setup/slack.md"),
+  "google-workspace": builtInOAuth(
+    BUILT_IN_OAUTH_SPECS["google-workspace"],
+    "setup/google.md",
+  ),
+  "microsoft-365": builtInOAuth(
+    BUILT_IN_OAUTH_SPECS["microsoft-365"],
+    "setup/microsoft-365.md",
+  ),
   // The first fifty beyond the entries above (catalog/*.ts, PR 3 of the
   // provider registry), after them so the derived lists keep their order.
   ...CATALOG_ENTRIES,
@@ -1308,20 +710,8 @@ export type AiProviderId = CapabilityIdOf<"ai">;
 /** Capabilities the gateway performs itself, each with its SDK helper. */
 export type ServiceCapabilityId = CapabilityIdOf<"service">;
 
-/** OAuth clients whose token endpoints apps reach with `integrationFetch()`. */
+/** The built-in OAuth providers whose APIs apps reach with `integrationFetch()`. */
 export type OAuthClientCapabilityId = CapabilityIdOf<"oauth_client">;
-
-/**
- * The scope set names an OAuth client offers; `never` for a client without
- * a scope policy. Distributes over a union of ids, so a generic over two
- * clients gets every name either offers rather than the names they share.
- */
-export type OAuthScopeSetName<Id extends OAuthClientCapabilityId> =
-  Id extends unknown
-    ? (typeof CAPABILITIES)[Id] extends { scopePolicy: { sets: infer S } }
-      ? keyof S & string
-      : never
-    : never;
 
 /** The Gateway settings an `auth` block names: the key, and a Basic username held as a setting. */
 type AuthSettingsOf<A> =
@@ -1333,7 +723,7 @@ type SettingsOf<C> = C extends {
   optionalSettings: readonly (infer O extends string)[];
 }
   ? S | O
-  : C extends { secrets: infer S; token: unknown }
+  : C extends { secrets: infer S; flow: unknown }
     ? S[keyof S] & string
     : C extends { auth: infer A }
       ?
@@ -1559,13 +949,12 @@ export function serviceRoutePath(
 export type IntegrationProxyRoute =
   /** A call the gateway forwards to the provider's `upstream` with its key. */
   | { kind: "api_key"; id: string; capability: ApiKeyCapability; upstream: URL }
-  /** A call to one of an OAuth client's token endpoints, with its rule. */
+  /** A call to one of an OAuth provider's API hosts, which goes with the person's held token. */
   | {
       kind: "oauth_client";
       id: string;
       capability: OAuthClientCapability;
       upstream: URL;
-      endpoint: OAuthTokenEndpoint;
     }
   /** A call to one of the routes a service capability declares. */
   | {
@@ -1581,9 +970,8 @@ export type CapabilitySettings = Readonly<Record<string, unknown>>;
 /**
  * The capability call an AppGateway path names, or null when the path names
  * an unknown capability (or an AI provider, which has its own route), a
- * host outside the provider's, a path that could leave that host, a path
- * that isn't one of an OAuth client's token endpoints, or a route a service
- * capability doesn't declare. `settings` resolves an API-key provider's
+ * host outside the provider's, a path that could leave that host, or a
+ * route a service capability doesn't declare. `settings` resolves an API-key provider's
  * `hostSetting` (a Shopify store's host); `lookup` is where the id is found,
  * the catalog alone by default.
  */
@@ -1613,12 +1001,11 @@ export function parseIntegrationProxyPath(
     };
   }
   if (capability.mode === "oauth_client") {
-    const upstream = capability.token.some((rule) => rule.host === host)
+    const upstream = capability.api.includes(host)
       ? httpsUpstream(host, path ?? "/", search)
       : null;
-    const endpoint = upstream && tokenEndpointFor(capability, upstream);
-    if (!upstream || !endpoint) return null;
-    return { kind: "oauth_client", id, capability, upstream, endpoint };
+    if (!upstream) return null;
+    return { kind: "oauth_client", id, capability, upstream };
   }
   if (capability.mode !== "api_key") return null;
   const upstream = apiKeyHosts(capability, settings).includes(host)
@@ -1635,34 +1022,6 @@ function httpsUpstream(host: string, path: string, search: string): URL | null {
   // A parser quirk must never move the key to another host.
   if (upstream.host !== host || upstream.protocol !== "https:") return null;
   return upstream;
-}
-
-/**
- * The token endpoint `upstream` is, by its exact host and path, or null.
- * Its method is the caller's to check.
- */
-export function tokenEndpointFor(
-  capability: OAuthClientCapability,
-  upstream: URL,
-): OAuthTokenEndpoint | null {
-  if (upstream.protocol !== "https:") return null;
-  return (
-    capability.token.find(
-      ({ host, path }) => host === upstream.host && path === upstream.pathname,
-    ) ?? null
-  );
-}
-
-/** An OAuth client's token endpoints, as `POST https://host/path` lines for messages. */
-export function describeTokenEndpoints(
-  capability: OAuthClientCapability,
-): string {
-  return capability.token
-    .map(
-      ({ host, path, methods }) =>
-        `${methods.join("/")} https://${host}${path}`,
-    )
-    .join(", ");
 }
 
 /**

@@ -165,7 +165,7 @@ describe("the STATUS vocabulary", () => {
   it("renders one row per setting with something to set, the names joined with +, with or without the APP column", () => {
     const { report } = appSetupFrom({
       manifest: {
-        capabilities: { slack: { access: "write", scopes: ["messages.write"] }, members: { access: "read" } },
+        capabilities: { slack: { scopes: ["chat:write"], why: "Posts updates." }, members: { access: "read" } },
         secrets: ["MAIN_SECRET"],
       },
       appId: "social",
@@ -291,7 +291,7 @@ describe("describeUnmet", () => {
       OPENROUTER_HINT,
       "Get it at https://openrouter.ai/settings/keys",
       "Guide: .claude/skills/everyapp/setup/openrouter.md",
-      "Google (Gmail, Calendar, Search Console and Analytics): GOOGLE_WORKSPACE_CLIENT_ID and GOOGLE_WORKSPACE_CLIENT_SECRET",
+      "Google: GOOGLE_WORKSPACE_CLIENT_ID and GOOGLE_WORKSPACE_CLIENT_SECRET",
       "Get it at https://console.cloud.google.com/apis/credentials",
       "Guide: .claude/skills/everyapp/setup/google.md",
       "MAIN_SECRET",
@@ -379,7 +379,9 @@ describe("the setup guides the registries name", () => {
       // Every capability; the AI providers are listed under `providers`.
       capabilities: Object.fromEntries(
         Object.entries(CAPABILITIES).flatMap(([id, capability]) =>
-          capability.mode === "ai" ? [] : [[id, { access: capability.access[0] }]],
+          capability.mode === "ai"
+            ? []
+            : [[id, capability.mode === "oauth_client" ? { scopes: [] } : { access: capability.access[0] }]],
         ),
       ),
       ai: { routes: ["/v1/files"] },

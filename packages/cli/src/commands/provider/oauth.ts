@@ -1,10 +1,10 @@
 /**
  * The OAuth side of `everyapp provider`
- * (docs/design/2026-10-oauth-providers.md): `add --oauth` registers a
+ * (docs/design/2026-11-oauth-simplify.md): `add --oauth` registers a
  * preset, a spec file or a built-in client and can set its client in the
  * same run; `presets` lists what the picker offers; `connections` and
- * `disconnect` read and delete the connections (people's and the
- * organization's tokens for a provider) the Gateway holds in D1.
+ * `disconnect` read and delete the connections the Gateway holds in D1,
+ * each one person's in one app, for the scopes that app lists.
  *
  * The CLI uploads a client as Worker secrets (`secret set`, which binds
  * the row), never as the sealed D1 row Admin → Providers writes: the key
@@ -63,30 +63,38 @@ function redirectUriFor(gatewayUrl: string, id: string): string {
 }
 
 /**
- * Which flow an OAuth entry supports, as the Gateway's service says it: an
- * entry with a `flow` block runs the Gateway's connect flow and still
- * completes an app's own token-endpoint calls (`both`); one without (the
- * social networks) is the app-driven flow alone (`app`).
+ * How a provider spells scopes, from its spec: what an app's
+ * `everyapp.config.ts` lists is the provider's own scope strings, short
+ * (joined onto `prefix`) or in full; the Gateway adds `identity` to every
+ * connect and lets a token carry `tolerated` beyond what was asked.
  */
-function flowOf(capability: OAuthClientCapability): "app" | "both" {
-  return capability.flow ? "both" : "app";
+interface ScopeRulesSummary {
+  separator: "space" | "comma";
+  prefix?: string;
+  identity: string[];
+  tolerated: string[];
+  /** The provider's list of scopes, when the spec names one. */
+  reference?: string;
 }
 
-/** A scope set as the surfaces list it. */
-interface ScopeSetSummary {
-  name: string;
-  label: string;
-  access: string;
-  scopes: string[];
+function scopeRulesOf(capability: OAuthClientCapability): ScopeRulesSummary {
+  const { flow } = capability;
+  return {
+    separator: flow.scopeSeparator,
+    ...(flow.scopePrefix ? { prefix: flow.scopePrefix } : {}),
+    identity: [...flow.identityScopes],
+    tolerated: [...flow.tolerated],
+    ...(capability.reference ? { reference: capability.reference } : {}),
+  };
 }
 
-function scopeSetsOf(capability: OAuthClientCapability): ScopeSetSummary[] {
-  return Object.entries(capability.scopePolicy?.sets ?? {}).map(([name, set]) => ({
-    name,
-    label: set.label,
-    access: set.access,
-    scopes: [...set.scopes],
-  }));
+/** The scope rules in one line: "space-separated, short ones joined onto https://…; the Gateway adds openid, email". */
+export function describeScopeRules(rules: ScopeRulesSummary): string {
+  return [
+    `${rules.separator}-separated${rules.prefix ? `, short ones joined onto ${rules.prefix}` : ""}`,
+    ...(rules.identity.length > 0 ? [`the Gateway adds ${rules.identity.join(", ")}`] : []),
+    ...(rules.tolerated.length > 0 ? [`tolerated: ${rules.tolerated.join(", ")}`] : []),
+  ].join("; ");
 }
 
 /** Where a provider's client comes from on this Gateway: a Worker secret the CLI set, a row uploaded in the UI, or nowhere yet. */
@@ -117,10 +125,10 @@ export function oauthFacts(
 ): Record<string, unknown> {
   const client = clientSourceOf(capability, context.gatewayNames, context.uploaded, id);
   return {
-    flow: flowOf(capability),
     redirectUri: redirectUriFor(context.gatewayUrl, id),
     console: capability.console,
-    scopeSets: scopeSetsOf(capability),
+    apiHosts: [...capability.api],
+    scopes: scopeRulesOf(capability),
     client: {
       source: client,
       ...(client === "uploaded" ? { clientId: context.uploaded.get(id)!.clientId } : {}),
@@ -145,7 +153,7 @@ interface ListedPreset {
   console: string;
   hosts: string[];
   settings: string[];
-  scopeSets: ScopeSetSummary[];
+  scopes: ScopeRulesSummary;
   hint?: string;
 }
 
@@ -157,7 +165,7 @@ function presetOf(id: string, capability: OAuthClientCapability, builtIn: boolea
     console: capability.console,
     hosts: [...capability.api],
     settings: [...capabilitySettings(capability)],
-    scopeSets: scopeSetsOf(capability),
+    scopes: scopeRulesOf(capability),
     ...(capability.hint ? { hint: capability.hint } : {}),
   };
 }
@@ -174,17 +182,17 @@ function allPresets(): ListedPreset[] {
 
 /**
  * `provider presets`: what `provider add --oauth <id>` takes, with each
- * preset's scope sets and console. Nothing is read from the Gateway.
+ * preset's API hosts and console. Nothing is read from the Gateway.
  */
 export async function listPresets(options: Pick<ProviderOptions, "out">): Promise<void> {
   const presets = allPresets();
   const table = formatTable(
-    ["ID", "NAME", "KIND", "SCOPE SETS", "CONSOLE"],
+    ["ID", "NAME", "KIND", "HOSTS", "CONSOLE"],
     presets.map((preset) => [
       preset.id,
       preset.name,
       preset.builtIn ? "built in" : "preset",
-      preset.scopeSets.map((set) => set.name).join(", ") || chalk.dim("-"),
+      preset.hosts.join(", ") || chalk.dim("-"),
       preset.console,
     ]),
   );
@@ -195,6 +203,7 @@ export async function listPresets(options: Pick<ProviderOptions, "out">): Promis
       ...table,
       "",
       chalk.dim(`Add one: ${CLI} provider add --oauth <id>; a built-in one takes its client only, a preset becomes a registered provider.`),
+      chalk.dim("Apps list the provider's own scopes in everyapp.config.ts: { scopes: [...], why: \"...\" }."),
     ].join("\n"),
     data: { presets, next: [{ command: `${CLI} provider add --oauth github-oauth`, note: "registers GitHub and prints the redirect URI to register at its console" }] },
   });
@@ -214,11 +223,10 @@ async function resolveOAuthSource(value: string, options: OAuthAddOptions): Prom
     return { kind: "catalog", id: value, capability: builtIn as OAuthClientCapability };
   }
   if (builtIn) {
-    throw new EveryAppError(
-      "PROVIDER_PRESET_UNKNOWN",
-      `${value} is a built-in ${builtIn.mode === "oauth_client" ? "OAuth client the Gateway completes token calls for; apps run its flow themselves" : "provider, not an OAuth one"}`,
-      { rerun: `${CLI} provider presets`, rerunNote: "names every preset and built-in client" },
-    );
+    throw new EveryAppError("PROVIDER_PRESET_UNKNOWN", `${value} is a built-in provider, not an OAuth one`, {
+      rerun: `${CLI} provider presets`,
+      rerunNote: "names every preset and built-in client",
+    });
   }
   if (/[./\\]/.test(value)) {
     const spec = await readSpecSource(value, { cwd: options.cwd ?? process.cwd(), fetcher: options.fetch });
@@ -236,7 +244,7 @@ async function resolveOAuthSource(value: string, options: OAuthAddOptions): Prom
   throw new EveryAppError(
     "PROVIDER_PRESET_UNKNOWN",
     `No OAuth preset ${value}\nPresets: ${listed(allPresets().map((preset) => preset.id))}. A custom provider is a JSON file: ${CLI} provider add --oauth ./acme.json.`,
-    { rerun: `${CLI} provider presets`, rerunNote: "lists them with their scope sets" },
+    { rerun: `${CLI} provider presets`, rerunNote: "lists them with their consoles" },
   );
 }
 
@@ -267,9 +275,7 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
   let rowSource: "catalog" | "row";
   if (source.kind === "catalog") {
     id = source.id;
-    // The client as this Gateway serves it: an operator's scope sets included.
-    const served = (await gatewayRegistry(gateway.db, gateway.install)).get(id);
-    capability = served?.mode === "oauth_client" ? served : source.capability;
+    capability = source.capability;
     rowSource = "catalog";
     out.emit({
       type: "step",
@@ -364,22 +370,19 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
     connections,
   });
   const client = (facts["client"] as { source: ClientSource }).source;
-  const connectAt = `${gateway.gatewayUrl}/connect/${id}`;
   const result = set
     ? [`Apps can now list ${id}. Live now, no deploy needed.`]
     : client === "env"
-      ? [`Its client is set: people connect at ${connectAt}. Apps can list ${id}.`]
+      ? [`Its client is set. Apps can list ${id}; people connect inside each app.`]
       : client === "uploaded"
-        ? [`Its client was uploaded under Admin → Providers: people connect at ${connectAt}. Apps can list ${id}.`]
+        ? [`Its client was uploaded under Admin → Providers. Apps can list ${id}; people connect inside each app.`]
         : [];
-  const sets = scopeSetsOf(capability);
-  // The scope sets and the manifest entry are the docs page's and provider show's; --verbose prints them here too.
+  // The manifest entry is the docs page's and provider show's; --verbose prints it here too.
+  const rules = scopeRulesOf(capability);
   const extra = [
-    ...(sets.length > 0 ? [`Scope sets: ${sets.map((each) => `${each.name}: ${each.label}`).join("; ")}.`] : []),
-    `In an app's capabilities: { ${JSON.stringify(id)}: { access: "read", scopes: [${sets
-      .slice(0, 2)
-      .map((each) => JSON.stringify(each.name))
-      .join(", ")}], why: "..." } }`,
+    `In an app's capabilities: { ${JSON.stringify(id)}: { scopes: [<${capability.label}'s own scopes>], why: "..." } }`,
+    `Scopes: ${describeScopeRules(rules)}${rules.reference ? ` (${rules.reference})` : ""}.`,
+    "People connect in each app that lists it, for the scopes that app lists.",
   ];
   const display = [...result, ...(flags.verbose ? extra.map((line) => chalk.dim(line)) : [])];
   out.emit({
@@ -405,6 +408,7 @@ export interface ConnectionsFlags {
   all?: boolean;
   user?: string;
   provider?: string;
+  app?: string;
 }
 
 function connect(options: ProviderOptions) {
@@ -421,16 +425,22 @@ function when(ms: number | null): string {
   return ms === null ? chalk.dim("-") : new Date(ms).toISOString().slice(0, 16).replace("T", " ");
 }
 
+/** Whose a connection is, for a person: their email, else their id. */
+function personOf(connection: ProviderConnection): string {
+  return connection.userEmail ?? connection.userId;
+}
+
 /** A connection as `--json` reports it, with the provider's name. */
 function reported(connection: ProviderConnection, name: string): Record<string, unknown> {
   return {
     id: connection.id,
     provider: connection.providerId,
     providerName: name,
-    account: connection.account,
-    ...(connection.userId ? { userId: connection.userId, userEmail: connection.userEmail } : {}),
+    userId: connection.userId,
+    userEmail: connection.userEmail,
+    app: connection.app,
     label: connection.label,
-    scopeSets: connection.scopeSets,
+    scopes: connection.scopes,
     status: connection.status,
     createdAt: new Date(connection.createdAt).toISOString(),
     lastUsedAt: connection.lastUsedAt === null ? null : new Date(connection.lastUsedAt).toISOString(),
@@ -441,9 +451,10 @@ function reported(connection: ProviderConnection, name: string): Record<string, 
 
 /**
  * `provider connections`: every connection the Gateway holds for its
- * organization (people's and the organization's own), newest first; with
+ * organization (each one person's, in one app), newest first; with
  * `--all` every organization's (a hosted Gateway has several), `--user`
- * one person's, `--provider` one provider's. Never a token.
+ * one person's, `--provider` one provider's, `--app` one app's. Never a
+ * token.
  */
 export async function listProviderConnections(
   options: ProviderOptions & { flags: ConnectionsFlags },
@@ -458,15 +469,17 @@ export async function listProviderConnections(
     ...(found ? { organizationId: found.organization.id } : {}),
     ...(flags.user ? { userEmail: flags.user } : {}),
     ...(flags.provider ? { providerId: flags.provider } : {}),
+    ...(flags.app ? { appSlug: flags.app } : {}),
   });
   const nameOf = (id: string) => registry.get(id)?.label ?? id;
   const table = formatTable(
-    ["PROVIDER", "ACCOUNT", "LABEL", "SCOPE SETS", "STATUS", "LAST USED", "CONNECTED"],
+    ["PROVIDER", "PERSON", "APP", "ACCOUNT", "SCOPES", "STATUS", "LAST USED", "CONNECTED"],
     connections.map((connection) => [
       `${nameOf(connection.providerId)} (${connection.providerId})`,
-      connection.account === "organization" ? "the organization" : (connection.userEmail ?? connection.userId ?? "?"),
+      personOf(connection),
+      connection.app?.id ?? chalk.dim("(app deleted)"),
       connection.label ?? chalk.dim("-"),
-      connection.scopeSets.join(", ") || chalk.dim("-"),
+      connection.scopes.join(", ") || chalk.dim("-"),
       connection.status === "active" ? chalk.green("active") : chalk.yellow(connection.status),
       when(connection.lastUsedAt),
       when(connection.createdAt),
@@ -477,7 +490,13 @@ export async function listProviderConnections(
     type: "done",
     message: `${connections.length} connection${connections.length === 1 ? "" : "s"} on ${scope}`,
     display: [
-      ...(connections.length > 0 ? table : [chalk.dim(`No connections${flags.provider ? ` to ${flags.provider}` : ""}${flags.user ? ` for ${flags.user}` : ""}. People connect at ${gateway.gatewayUrl}/connect/<provider>.`)]),
+      ...(connections.length > 0
+        ? table
+        : [
+            chalk.dim(
+              `No connections${flags.provider ? ` to ${flags.provider}` : ""}${flags.user ? ` for ${flags.user}` : ""}${flags.app ? ` in ${flags.app}` : ""}. People connect inside each app that lists the provider.`,
+            ),
+          ]),
     ].join("\n"),
     data: {
       connections: connections.map((connection) => reported(connection, nameOf(connection.providerId))),
@@ -489,12 +508,12 @@ export async function listProviderConnections(
 /** The flags of `provider disconnect`. */
 export interface DisconnectFlags {
   user?: string;
-  organization?: boolean;
   all?: boolean;
+  app?: string;
 }
 
 /**
- * `provider disconnect <provider> --user <email> | --organization | --all`:
+ * `provider disconnect <provider> --user <email> | --all [--app <app>]`:
  * the connections deleted from the Gateway's D1 and `provider.disconnected`
  * queued for each. The CLI holds no token, so the grant stays at the
  * provider until the person revokes it there; the output says where.
@@ -504,7 +523,7 @@ export async function disconnectProvider(
   id: string,
 ): Promise<void> {
   const { out, flags } = options;
-  const chosen = [flags.user ? "--user" : null, flags.organization ? "--organization" : null, flags.all ? "--all" : null].filter(Boolean);
+  const chosen = [flags.user ? "--user" : null, flags.all ? "--all" : null].filter(Boolean);
   if (chosen.length !== 1) {
     throw new EveryAppError(
       "PROVIDER_CONNECTION_WHICH",
@@ -512,7 +531,7 @@ export async function disconnectProvider(
         ? `Say whose connection to ${id} to remove\nNothing was changed.`
         : `${listed(chosen as string[])} name different connections\nNothing was changed.`,
       {
-        fix: `one of --user <email> (a person's), --organization (the organization's own) or --all (every connection to ${id})`,
+        fix: `one of --user <email> (a person's) or --all (every connection to ${id}); add --app <app> for one app's`,
       },
     );
   }
@@ -533,7 +552,7 @@ export async function disconnectProvider(
       providerId: id,
       providerName: capability.label,
       ...(flags.user ? { userEmail: flags.user } : {}),
-      ...(flags.organization ? { organization: true } : {}),
+      ...(flags.app ? { appSlug: flags.app } : {}),
     },
     gateway.deployer,
     options.now?.(),
@@ -541,7 +560,7 @@ export async function disconnectProvider(
   if (removed.length === 0) {
     throw new EveryAppError(
       "PROVIDER_CONNECTION_NOT_FOUND",
-      `No connection to ${capability.label} ${flags.user ? `for ${flags.user}` : flags.organization ? "for the organization" : "on this Gateway"}\nNothing was changed.`,
+      `No connection to ${capability.label} ${flags.user ? `for ${flags.user}` : "on this Gateway"}${flags.app ? ` in ${flags.app}` : ""}\nNothing was changed.`,
       { rerun: `${CLI} provider connections --provider ${id}`, rerunNote: "lists the ones there are" },
     );
   }
@@ -552,13 +571,11 @@ export async function disconnectProvider(
     message: `Removed ${removed.length} connection${removed.length === 1 ? "" : "s"} to ${capability.label}`,
     data: { id, removed: removed.length },
   });
-  const who = removed.map((connection) =>
-    connection.account === "organization" ? "the organization" : (connection.userEmail ?? connection.userId ?? "someone"),
-  );
+  const first = removed[0]!;
   const lines = [
-    `Removed ${removed.length === 1 ? `${who[0]}'s` : `${removed.length}`} connection${removed.length === 1 ? "" : "s"} to ${capability.label} (${id}).`,
-    "The Gateway no longer holds the tokens; apps get \"not connected\" until the person connects again.",
-    `The grant stays at ${capability.label} until it is revoked there: ${capability.console} (Admin → Providers → Disconnect revokes it from the Gateway).`,
+    `Removed ${removed.length === 1 ? `${personOf(first)}'s` : `${removed.length}`} connection${removed.length === 1 ? "" : "s"} to ${capability.label} (${id})${removed.length === 1 && first.app ? ` in ${first.app.id}` : ""}.`,
+    "The Gateway no longer holds the tokens; the app gets \"not connected\" until the person connects again in it.",
+    `The grant stays at ${capability.label} until it is revoked there: ${capability.console} (Disconnect in Connected accounts revokes it from the Gateway).`,
   ];
   out.emit({
     type: "done",

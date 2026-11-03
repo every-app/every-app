@@ -1,14 +1,14 @@
 /**
  * The handlers behind `everyapp_provider_connections` and
  * `everyapp_provider_disconnect` on the gateway's own /mcp
- * (docs/design/2026-10-oauth-providers.md, section 9), run like the
- * workspace tools (workspace-tools.ts spreads them into its handler map)
- * for a resolved caller, through the OAuth service the UI's server
- * functions use (server/oauth/service.ts), so the roles are the same: a
- * member sees and removes their own connections, an owner or admin the
- * organization's. No answer carries a token; a disconnect revokes the
- * grant at the provider where the preset knows how and says whether it
- * did.
+ * (docs/design/2026-11-oauth-simplify.md), run like the workspace tools
+ * (workspace-tools.ts spreads them into its handler map) for a resolved
+ * caller, through the OAuth service the UI's server functions use
+ * (server/oauth/service.ts), so the roles are the same: a member sees and
+ * removes their own connections, an owner or admin the organization's. A
+ * connection is one person's in one app. No answer carries a token; a
+ * disconnect revokes the grant at the provider where the spec knows how
+ * and says whether it did.
  */
 import { eq, sql } from "drizzle-orm";
 import type { JsonObject, McpPrincipal } from "@every-app/toolbus";
@@ -44,11 +44,15 @@ function listed(connection: ConnectionSummary): JsonObject {
     id: connection.id,
     provider: connection.providerId,
     providerName: connection.providerName,
-    account: connection.account,
-    ...(connection.userId ? { userId: connection.userId } : {}),
+    userId: connection.userId,
     ...(connection.userEmail ? { userEmail: connection.userEmail } : {}),
+    app: {
+      rowId: connection.app.rowId,
+      id: connection.app.id,
+      name: connection.app.name,
+    },
     label: connection.label,
-    scopeSets: [...connection.scopeSets],
+    scopes: [...connection.scopes],
     status: connection.status,
     createdAt: new Date(connection.createdAt).toISOString(),
     lastUsedAt:
@@ -123,25 +127,32 @@ export const PROVIDER_CONNECTION_HANDLERS: Record<string, Handler> = {
       scope: all ? "organization" : "own",
       next:
         connections.length === 0
-          ? "No connections. A person connects in the browser at <gateway>/connect/<provider> (Settings → Connected accounts); everyapp_provider_list says which providers have a client."
-          : "An expired connection is connected again in the browser; everyapp_provider_disconnect removes one.",
+          ? "No connections. A person connects inside each app that lists the provider; everyapp_provider_list says which providers have a client."
+          : "An expired connection is connected again inside its app; everyapp_provider_disconnect removes one.",
     };
   },
 
   async provider_disconnect(ctx, args) {
+    const connectionId =
+      typeof args["connection"] === "string" ? args["connection"] : null;
     const provider =
-      typeof args["provider"] === "string" ? args["provider"] : "";
-    const account =
-      args["account"] === "organization" ? "organization" : "user";
+      typeof args["provider"] === "string" ? args["provider"] : null;
+    const app = typeof args["app"] === "string" ? args["app"] : null;
     const user = typeof args["user"] === "string" ? args["user"] : null;
-    if (account === "organization" && user) {
+    if (!connectionId && !provider) {
       return refuse(
         "INVALID_INPUT",
-        "the organization's connection has no user; give one or the other",
+        "name the connection (its id, from everyapp_provider_connections) or the provider",
+      );
+    }
+    if (connectionId && (provider || app || user)) {
+      return refuse(
+        "INVALID_INPUT",
+        "a connection id names the connection alone; leave provider, app and user out",
       );
     }
     let userId: string | undefined;
-    if (account === "user" && user) {
+    if (user) {
       const found = await userIdOf(user);
       if (!found) {
         return refuse(
@@ -157,19 +168,19 @@ export const PROVIDER_CONNECTION_HANDLERS: Record<string, Handler> = {
       }
       userId = found;
     }
-    if (account === "organization" && !isAdmin(ctx)) {
-      return refuse(
-        "ADMIN_REQUIRED",
-        "only an owner or admin removes the organization's connection",
-      );
-    }
-    let result: { removed: boolean; revoked: boolean };
+    let result: Awaited<ReturnType<typeof disconnect>>;
     try {
-      result = await disconnect(ctx, await userActor(ctx.userId), {
-        providerId: provider,
-        account,
-        ...(userId ? { userId } : {}),
-      });
+      result = await disconnect(
+        ctx,
+        await userActor(ctx.userId),
+        connectionId
+          ? { connectionId }
+          : {
+              providerId: provider!,
+              ...(userId ? { userId } : {}),
+              ...(app ? { app } : {}),
+            },
+      );
     } catch (error) {
       const refusal = refusalOf(error);
       if (refusal) return refusal;
@@ -178,17 +189,15 @@ export const PROVIDER_CONNECTION_HANDLERS: Record<string, Handler> = {
     if (!result.removed) {
       return refuse(
         "PROVIDER_CONNECTION_NOT_FOUND",
-        `no connection to ${provider} ${account === "organization" ? "for the organization" : userId && userId !== ctx.userId ? `for ${user}` : "of your own"}`,
+        "the connection was removed while this ran",
       );
     }
     return {
-      provider,
-      account,
-      ...(userId ? { userId } : {}),
+      connection: listed(result.connection),
       removed: true,
       revoked: result.revoked,
       next: result.revoked
-        ? "The grant was revoked at the provider; connecting again asks for consent anew."
+        ? "The grant was revoked at the provider; connecting again in the app asks for consent anew."
         : "The Gateway dropped the tokens; the grant stays at the provider until revoked in its console.",
     };
   },

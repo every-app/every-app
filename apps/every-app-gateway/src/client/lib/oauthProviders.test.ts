@@ -1,34 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  callbackNotice,
-  clientSourceLabel,
-  connectErrorText,
-  connectPathFor,
-  scopeSetsText,
-} from "./oauthProviders";
-
-describe("connectPathFor", () => {
-  it("builds the Gateway's connect path with the account, return and sets", () => {
-    expect(connectPathFor("github-oauth", { account: "user" })).toBe(
-      "/connect/github-oauth?account=user",
-    );
-    expect(
-      connectPathFor("github-oauth", {
-        account: "organization",
-        returnTo: "/admin/providers",
-        sets: ["identity", "repo.read"],
-      }),
-    ).toBe(
-      "/connect/github-oauth?account=organization&return=%2Fadmin%2Fproviders&sets=identity%2Crepo.read",
-    );
-  });
-
-  it("encodes the id and drops empty sets", () => {
-    expect(connectPathFor("a b", { account: "user", sets: [] })).toBe(
-      "/connect/a%20b?account=user",
-    );
-  });
-});
+import { clientSourceLabel, scopesText, splitList } from "./oauthProviders";
 
 describe("the words", () => {
   it("say where the client comes from, never its value", () => {
@@ -46,25 +17,18 @@ describe("the words", () => {
     });
   });
 
-  it("turn the callback's query into one notice", () => {
-    expect(callbackNotice({})).toBeNull();
-    expect(callbackNotice({ connected: "GitHub" })).toEqual({
-      kind: "success",
-      text: "GitHub connected.",
-    });
-    expect(callbackNotice({ error: "access_denied" })).toEqual({
-      kind: "error",
-      text: connectErrorText("access_denied"),
-    });
-    expect(connectErrorText("something_else")).toBe(
-      "Couldn't connect (something_else).",
+  it("name a connection's scopes, or say it holds none", () => {
+    expect(scopesText([])).toBe("no scopes");
+    expect(scopesText(["gmail.modify", "gmail.send"])).toBe(
+      "gmail.modify, gmail.send",
     );
   });
 
-  it("name the scope sets or the default", () => {
-    expect(scopeSetsText([])).toBe("default");
-    expect(scopeSetsText(["identity", "repo.read"])).toBe(
-      "identity, repo.read",
-    );
+  it("split a list field on spaces and commas", () => {
+    expect(splitList(" api.acme.com, files.acme.com  x ")).toEqual([
+      "api.acme.com",
+      "files.acme.com",
+      "x",
+    ]);
   });
 });

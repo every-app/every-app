@@ -39,7 +39,7 @@ The app calls Notion's [API](https://developers.notion.com/reference/intro) with
 
 ## Connect accounts
 
-Each person connects their own Notion account in the Gateway, once, and every app that asks uses it. Apps never see the tokens. [How connecting works](/docs/connect-oauth)
+Each person connects their own Notion account in each app that uses it, for the scopes that app lists. Apps never see the tokens. [How connecting works](/docs/connect-oauth)
 
 The redirect URI to register, with your Gateway's address (like `apps.example.com`):
 
@@ -47,7 +47,7 @@ The redirect URI to register, with your Gateway's address (like `apps.example.co
 https://<your gateway>/connect/notion-oauth/callback
 ```
 
-Notion has no scopes: the person picks the pages to share on Notion's consent screen. Make the integration public to get a client id and secret. Apps send `Notion-Version` on every call.
+Notion has no scopes: an app lists scopes: [] and the person picks the pages to share on Notion's consent screen. Make the integration public to get a client id and secret. Apps send `Notion-Version` on every call.
 
 1. Open [notion.so](https://www.notion.so/my-integrations) and create an OAuth app (also called a client or an integration).
 2. Add the redirect URI above.
@@ -63,19 +63,16 @@ Or add it in **Manage workspace → Providers**.
 
 ### Use it in an app
 
+List the provider's own scopes in the app's `everyapp.config.ts`:
+
 ```ts
 capabilities: {
-  "notion-oauth": { access: "read", scopes: ["workspace.read"], why: "What the app does with it." },
+  "notion-oauth": { scopes: [], why: "What the app does with it." },
 },
 ```
 
-Apps ask for these scope sets:
+Use [Notion's scopes](https://developers.notion.com/reference). The app calls Notion's API with `integrationFetch()`, and the Gateway adds the person's token. A token with more scopes than the app lists is refused.
 
-| Set | Allows |
-| --- | --- |
-| `workspace.read` | Shared pages and databases (read) |
-| `workspace.write` | Shared pages and databases (read and write) |
-
-**Check it worked:** `everyapp provider show notion-oauth` shows the client as set. Then open the account menu → **Connected accounts** → **Connect Notion**.
+**Check it worked:** `everyapp provider show notion-oauth` shows the client as set. Then open an app that lists it and select its **Connect** button.
 
 Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Notion).

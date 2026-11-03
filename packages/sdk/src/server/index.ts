@@ -31,7 +31,6 @@ export { gatewayUrl } from "./gatewayUrl.js";
 export type { EveryAppEnv } from "./env.js";
 /** The header a Gateway refusal carries its code in; `gatewayRefusal()` reads the rest. */
 export { GATEWAY_ERROR_HEADER } from "../internal/protocol.js";
-export { authorizeUrl, type AuthorizeUrlOptions } from "./authorizeUrl.js";
 export {
   connectPath,
   connectUrl,
@@ -100,7 +99,6 @@ export type {
   ApiKeyCapabilityId,
   CapabilityId,
   OAuthClientCapabilityId,
-  ConnectionAccount,
   EmailAddressInput,
   EmailAttachmentInput,
   SendEmailMessage,

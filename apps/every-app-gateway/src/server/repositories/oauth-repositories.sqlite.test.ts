@@ -7,11 +7,9 @@ const testDb = vi.hoisted(() => ({ current: null as TestDb | null }));
 vi.mock("@/db", () => ({ db: testDbProxy(testDb) }));
 
 const { OAuthClientRepository } = await import("./OAuthClientRepository");
-const {
-  ProviderConnectionRepository,
-  connectionSubject,
-  ORGANIZATION_SUBJECT,
-} = await import("./ProviderConnectionRepository");
+const { ProviderConnectionRepository } = await import(
+  "./ProviderConnectionRepository"
+);
 const { OAuthStateRepository } = await import("./OAuthStateRepository");
 
 const env = {
@@ -104,37 +102,34 @@ describe("ProviderConnectionRepository", () => {
   const base = {
     organizationId: "org-1",
     providerId: "github",
+    userId: "user-1",
+    appRowId: "app-crm",
     label: "ben",
     externalId: "42",
-    scopeSets: ["identity", "repo.read"],
     scopes: ["read:user", "repo"],
     accessToken: "gho_access",
     refreshToken: "ghr_refresh",
     expiresAt: 5000,
   };
-
-  it("subjects: a person's is their user id, the organization's is fixed", () => {
-    expect(connectionSubject("user", "user-1")).toBe("user-1");
-    expect(connectionSubject("organization", "user-1")).toBe(
-      ORGANIZATION_SUBJECT,
-    );
-    expect(() => connectionSubject("user", null)).toThrow();
-  });
+  const key = {
+    organizationId: "org-1",
+    providerId: "github",
+    userId: "user-1",
+    appRowId: "app-crm",
+  };
 
   it("stores tokens sealed, lists without them, opens them, replaces on reconnect", async () => {
     const created = await ProviderConnectionRepository.upsert(
-      { ...base, accountKind: "user", userId: "user-1", now: new Date(1000) },
+      { ...base, now: new Date(1000) },
       env,
     );
     expect(created.id.startsWith("conn_")).toBe(true);
     expect(created).toMatchObject({
       organizationId: "org-1",
       providerId: "github",
-      accountKind: "user",
-      subject: "user-1",
       userId: "user-1",
+      appRowId: "app-crm",
       label: "ben",
-      scopeSets: ["identity", "repo.read"],
       scopes: ["read:user", "repo"],
       expiresAt: 5000,
       status: "active",
@@ -164,10 +159,7 @@ describe("ProviderConnectionRepository", () => {
     const again = await ProviderConnectionRepository.upsert(
       {
         ...base,
-        accountKind: "user",
-        userId: "user-1",
         label: "ben2",
-        scopeSets: ["identity"],
         scopes: ["read:user"],
         accessToken: "gho_access2",
         refreshToken: null,
@@ -179,7 +171,7 @@ describe("ProviderConnectionRepository", () => {
     expect(again.id).toBe(created.id);
     expect(again).toMatchObject({
       label: "ben2",
-      scopeSets: ["identity"],
+      scopes: ["read:user"],
       createdAt: 1000,
       updatedAt: 2000,
       expiresAt: null,
@@ -191,67 +183,84 @@ describe("ProviderConnectionRepository", () => {
       refreshToken: null,
       expiresAt: null,
     });
-    expect(
-      await ProviderConnectionRepository.find("org-1", "github", "user-1"),
-    ).toMatchObject({
+    expect(await ProviderConnectionRepository.find(key)).toMatchObject({
       id: created.id,
     });
+    expect(
+      await ProviderConnectionRepository.find({ ...key, appRowId: "app-ci" }),
+    ).toBeNull();
     expect(await ProviderConnectionRepository.byId(created.id)).toMatchObject({
       id: created.id,
     });
   });
 
-  it("keeps a person's and the organization's connections apart and lists them", async () => {
-    const mine = await ProviderConnectionRepository.upsert(
-      { ...base, accountKind: "user", userId: "user-1", now: new Date(1000) },
+  it("keeps one connection per person per app, lists them, and removes them by member, app and provider", async () => {
+    const crm = await ProviderConnectionRepository.upsert(
+      { ...base, now: new Date(1000) },
       env,
     );
-    const orgs = await ProviderConnectionRepository.upsert(
-      {
-        ...base,
-        accountKind: "organization",
-        userId: "user-1",
-        now: new Date(2000),
-      },
+    const ci = await ProviderConnectionRepository.upsert(
+      { ...base, appRowId: "app-ci", now: new Date(2000) },
+      env,
+    );
+    const pat = await ProviderConnectionRepository.upsert(
+      { ...base, userId: "user-2", now: new Date(3000) },
       env,
     );
     const elsewhere = await ProviderConnectionRepository.upsert(
-      {
-        ...base,
-        organizationId: "org-2",
-        accountKind: "user",
-        userId: "user-1",
-        now: new Date(3000),
-      },
+      { ...base, organizationId: "org-2", now: new Date(4000) },
       env,
     );
-    expect(orgs.subject).toBe(ORGANIZATION_SUBJECT);
-    expect(orgs.userId).toBeNull();
     expect(
       (await ProviderConnectionRepository.listByOrganization("org-1")).map(
         (c) => c.id,
       ),
-    ).toEqual([mine.id, orgs.id]);
+    ).toEqual([crm.id, ci.id, pat.id]);
     expect(
       (await ProviderConnectionRepository.listByUser("user-1")).map(
         (c) => c.id,
       ),
-    ).toEqual([mine.id, elsewhere.id]);
+    ).toEqual([crm.id, ci.id, elsewhere.id]);
     expect(await ProviderConnectionRepository.countByProvider("org-1")).toEqual(
-      { github: 2 },
+      { github: 3 },
     );
     expect(await ProviderConnectionRepository.countByProvider()).toEqual({
-      github: 3,
+      github: 4,
     });
     expect(
+      await ProviderConnectionRepository.removeForMemberApp({
+        organizationId: "org-1",
+        userId: "user-1",
+        appRowId: "app-ci",
+      }),
+    ).toBe(1);
+    expect(await ProviderConnectionRepository.removeForApp("app-crm")).toBe(3);
+    expect(
+      (await ProviderConnectionRepository.listByOrganization("org-1")).map(
+        (c) => c.id,
+      ),
+    ).toEqual([]);
+    const back = await ProviderConnectionRepository.upsert(
+      { ...base, now: new Date(5000) },
+      env,
+    );
+    expect(
+      await ProviderConnectionRepository.removeForMember("org-2", "user-1"),
+    ).toBe(0);
+    expect(
+      await ProviderConnectionRepository.removeForMember("org-1", "user-1"),
+    ).toBe(1);
+    expect(await ProviderConnectionRepository.byId(back.id)).toBeNull();
+    await ProviderConnectionRepository.upsert(base, env);
+    expect(
       await ProviderConnectionRepository.removeAllForProvider("github"),
-    ).toBe(3);
+    ).toBe(1);
     expect(await ProviderConnectionRepository.listByUser("user-1")).toEqual([]);
   });
 
   it("leases a refresh once, stores the refreshed tokens, marks expired, touches, removes", async () => {
     const conn = await ProviderConnectionRepository.upsert(
-      { ...base, accountKind: "user", userId: "user-1", now: new Date(1000) },
+      { ...base, now: new Date(1000) },
       env,
     );
     const now = new Date(10_000);
@@ -335,9 +344,9 @@ describe("OAuthStateRepository", () => {
     providerId: "github",
     organizationId: "org-1",
     userId: "user-1",
-    accountKind: "user" as const,
+    appRowId: "app-crm",
     codeVerifier: "verifier-1",
-    scopeSets: ["identity"],
+    scopes: ["read:user", "repo"],
     returnTo: "/settings/connections",
   };
 
@@ -353,9 +362,9 @@ describe("OAuthStateRepository", () => {
       providerId: "github",
       organizationId: "org-1",
       userId: "user-1",
-      accountKind: "user",
+      appRowId: "app-crm",
       codeVerifier: "verifier-1",
-      scopeSets: ["identity"],
+      scopes: ["read:user", "repo"],
       returnTo: "/settings/connections",
       createdAt: 1000,
     });

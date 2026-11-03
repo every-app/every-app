@@ -29,7 +29,7 @@ import {
   oauthPreset,
   oauthPresetIds,
   type Capability,
-  type OAuthTokenEndpoint,
+  type OAuthClientCapability,
 } from "@every-app/sdk/internal";
 import {
   logEvent,
@@ -116,23 +116,27 @@ function loosePath(pathname: string): string | null {
   return null;
 }
 
-/**
- * Whether `url` is a token endpoint of an OAuth client the gateway holds,
- * however its path is spelled: a dispatched app gets tokens through its
- * AppGateway binding, with the gateway's client, never directly.
- */
+/** A token endpoint's host and path, from a flow's `tokenUrl`. */
+function tokenEndpointOf(capability: OAuthClientCapability): {
+  host: string;
+  path: string;
+} {
+  const url = new URL(capability.flow.tokenUrl);
+  return { host: url.hostname, path: url.pathname };
+}
+
 /**
  * Every token endpoint the catalog's OAuth clients and the presets name:
  * a preset counts whether or not this gateway added it, so a dispatched
  * app can't reach one with a client of its own either way.
  */
-const TOKEN_ENDPOINTS: readonly OAuthTokenEndpoint[] = [
+const TOKEN_ENDPOINTS: readonly { host: string; path: string }[] = [
   ...Object.values<Capability>(CAPABILITIES).flatMap((capability) =>
-    capability.mode === "oauth_client" ? capability.token : [],
+    capability.mode === "oauth_client" ? [tokenEndpointOf(capability)] : [],
   ),
   ...oauthPresetIds().flatMap((id) => {
     const preset = oauthPreset(id);
-    return preset?.mode === "oauth_client" ? preset.token : [];
+    return preset?.mode === "oauth_client" ? [tokenEndpointOf(preset)] : [];
   }),
 ];
 
@@ -145,6 +149,11 @@ function anyVersion(path: string): string {
   return path.replace(/^\/v\d+(?:\.\d+)?(?=\/)/, "/v*");
 }
 
+/**
+ * Whether `url` is a token endpoint of an OAuth client the gateway holds,
+ * however its path is spelled: only the Gateway trades a code or a
+ * refresh token with the gateway's client; a dispatched app never does.
+ */
 function isTokenEndpoint(url: URL): boolean {
   const host = normalizeHost(url.hostname);
   const path = loosePath(url.pathname);

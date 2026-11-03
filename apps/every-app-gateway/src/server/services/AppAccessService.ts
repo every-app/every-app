@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { AppAccessRepository } from "../repositories/AppAccessRepository";
 import { AppRepository } from "../repositories/AppRepository";
 import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
+import { ProviderConnectionRepository } from "../repositories/ProviderConnectionRepository";
 import { UsageRepository } from "../repositories/UsageRepository";
 import { DrizzleAppRegistry } from "@/perimeter/drizzleAppRegistry";
 import { activateBindingApps } from "@/server/app-activation";
@@ -214,6 +215,9 @@ async function updateAccessForApp(
       toRevoke,
       ctx.orgId,
     );
+    // Their OAuth connections in the app go too, unless a group still
+    // gives them the app.
+    await ProviderConnectionRepository.pruneWithoutAccess(ctx.orgId);
   }
 
   if (toGrant.length > 0 || toRevoke.length > 0) {

@@ -126,9 +126,9 @@ describe("handleOutboundRequest", () => {
         egress: [
           "slack.com",
           "oauth2.googleapis.com",
-          "www.linkedin.com",
-          "graph.facebook.com",
-          "www.reddit.com",
+          "gitlab.com",
+          "api.notion.com",
+          "accounts.spotify.com",
           "github.com",
         ],
       },
@@ -138,13 +138,13 @@ describe("handleOutboundRequest", () => {
       "https://slack.com/api/oauth.v2.access",
       "https://oauth2.googleapis.com/token",
       // Presets, refused whether or not this gateway added them.
-      "https://www.linkedin.com/oauth/v2/accessToken",
-      "https://WWW.LinkedIn.com./oauth/v2/accesstoken/",
-      "https://www.linkedin.com/oauth//v2/%61ccessToken",
-      "https://graph.facebook.com/v25.0/oauth/access_token?code=c",
-      // Any Graph version, not only the one the preset names.
-      "https://graph.facebook.com/V19.0/OAuth/Access_Token",
-      "https://www.reddit.com/api/v1/access_token",
+      "https://gitlab.com/oauth/token",
+      "https://GitLab.com./oauth/Token/",
+      "https://gitlab.com/oauth//%74oken",
+      "https://api.notion.com/v1/oauth/token?code=c",
+      // Any API version, not only the one the preset names.
+      "https://api.notion.com/V2/OAuth/Token",
+      "https://accounts.spotify.com/api/token",
       "https://github.com/login/oauth/access_token",
       // A path that won't decode, on a token host.
       "https://slack.com/api/%E0%A4%A",
@@ -158,9 +158,9 @@ describe("handleOutboundRequest", () => {
     }
     // Their hosts serve the APIs apps call with their users' tokens.
     for (const url of [
-      "https://graph.facebook.com/v25.0/me/accounts",
+      "https://api.notion.com/v1/pages",
       "https://slack.com/api/chat.postMessage",
-      "https://www.linkedin.com/oauth/v2/authorization",
+      "https://gitlab.com/oauth/authorize",
     ]) {
       const { response, send } = await outbound(url, env);
       expect(response.status, url).toBe(200);

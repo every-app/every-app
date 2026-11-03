@@ -1,9 +1,9 @@
 ---
 title: Connect GitHub (or any OAuth provider)
-description: Let your apps use people's GitHub, Google, Notion or other accounts. You add the provider once; each person connects their own account.
+description: Let your apps use people's GitHub, Google, Notion or other accounts. You add the provider once; each person connects their own account in each app that needs it.
 ---
 
-Your apps can work with a person's GitHub repositories, Google Search Console or Notion pages. You add the provider once. Each person connects their own account once, and every app that needs it uses that connection. Apps never see the tokens.
+Your apps can work with a person's GitHub repositories, Google Search Console or Notion pages. You add the provider once. Each person connects their account inside each app that needs it, and that connection belongs to them and that app. Apps never see the tokens.
 
 ## Add a provider
 
@@ -27,15 +27,22 @@ To change the secret later, select the provider's **⋯** → **Replace client**
 
 ## Connect your account
 
-1. Open the account menu at the bottom of the sidebar, then **Connected accounts**.
-2. Select **Connect GitHub** (or the provider's name) and allow it.
+Connect from inside the app:
 
-An app's "Connect GitHub" button opens the same page and brings you back. If a connection expires, the page shows **Reconnect**.
+1. Open the app and select its **Connect GitHub** button (or the provider's name).
+2. The provider shows exactly the scopes that app asks for. Allow them.
+3. You're back in the app.
 
-For work no person started, like a nightly sync, an owner or admin can select **Connect for the organization** beside the provider in **Manage workspace** → **Providers**.
+The app can now use your account whenever it needs to, including for work that runs while you're away, like a nightly sync. Another app that needs the same provider asks you to connect again, for its own scopes.
+
+Each app lists the provider's own scopes in its `everyapp.config.ts`. If the provider hands back a token with more scopes than the app listed, the Gateway refuses it and drops it.
+
+If a connection expires, or the app now needs a scope it didn't before, the app shows **Reconnect**.
 
 ## Disconnect
 
-Under **Connected accounts**, select **Disconnect**. Apps stop using it at once. An owner or admin can disconnect anyone's connection in **Manage workspace** → **Providers**. Removing a provider disconnects everyone from it.
+Open the account menu at the bottom of the sidebar, then **Connected accounts**. It lists each connection with the app it belongs to. Select **Disconnect**, and that app stops using it at once. An owner or admin can disconnect anyone's connection in **Manage workspace** → **Providers**.
+
+Removing a person from the workspace disconnects all their accounts. Losing access to an app disconnects their account from that app. Deleting an app or removing a provider disconnects everyone from it.
 
 For the full reference, see [OAuth providers](/docs/agent/providers#oauth-providers-upload-a-client-the-gateway-runs-the-flow).

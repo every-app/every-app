@@ -71,10 +71,9 @@ const customSchema = z.object({
     .url("Enter the token URL, https:// included.")
     .startsWith("https://", "The token URL is https."),
   hosts: z.string().trim().min(1, "Name at least one API host."),
-  scopes: z.string().trim(),
+  scopeSeparator: z.enum(["space", "comma"]),
   inject: z.enum(["form", "basic"]),
   pkce: z.boolean(),
-  writes: z.boolean(),
 });
 
 const clientSchema = z.object({
@@ -94,10 +93,9 @@ const presetSchema = z
     authorizeUrl: z.string(),
     tokenUrl: z.string(),
     hosts: z.string(),
-    scopes: z.string(),
+    scopeSeparator: z.enum(["space", "comma"]),
     inject: z.enum(["form", "basic"]),
     pkce: z.boolean(),
-    writes: z.boolean(),
   })
   .merge(clientSchema);
 
@@ -114,8 +112,9 @@ interface AddOAuthProviderDialogProps {
  * 4): step one picks a preset (the catalog's clients marked built in, the
  * shipped presets, or Custom), step two shows the redirect URI to register
  * at the provider's console and takes the client id and secret, plus, for
- * Custom, the provider's URLs, hosts and scopes. The secret is sent once
- * and never shown again. Render it only while it is open.
+ * Custom, the provider's URLs and hosts. Scopes are each app's, in its
+ * everyapp.config.ts. The secret is sent once and never shown again.
+ * Render it only while it is open.
  */
 export function AddOAuthProviderDialog({
   redirectUriFor,
@@ -209,7 +208,7 @@ function PresetPicker({
         <li>
           <PresetButton
             title="Custom"
-            description="Any OAuth 2 provider: its authorize and token URLs, API hosts and scopes."
+            description="Any OAuth 2 provider: its authorize and token URLs and API hosts."
             onClick={() => onPick(CUSTOM)}
           />
         </li>
@@ -282,10 +281,9 @@ function ClientForm({
       authorizeUrl: "",
       tokenUrl: "",
       hosts: "",
-      scopes: "",
+      scopeSeparator: "space",
       inject: "form",
       pkce: true,
-      writes: false,
       clientId: "",
       clientSecret: "",
     } as FormValues,
@@ -398,13 +396,15 @@ function ClientForm({
                   />
                 )}
               </form.AppField>
-              <form.AppField name="scopes">
+              <form.AppField name="scopeSeparator">
                 {(field) => (
-                  <field.TextField
-                    label="Scopes"
-                    description="The provider's scope strings, space or comma separated; one scope set named default."
-                    placeholder="read write"
-                    spellCheck={false}
+                  <field.SelectField
+                    label="Scope separator"
+                    description="How the provider joins scopes. Each app lists the scopes it needs in its everyapp.config.ts."
+                    items={[
+                      { value: "space", label: "Space (most providers)" },
+                      { value: "comma", label: "Comma" },
+                    ]}
                   />
                 )}
               </form.AppField>
@@ -427,14 +427,6 @@ function ClientForm({
                   />
                 )}
               </form.AppField>
-              <form.AppField name="writes">
-                {(field) => (
-                  <field.CheckboxField
-                    label="Apps may write"
-                    description="The scope set unlocks POST, PUT, PATCH and DELETE too."
-                  />
-                )}
-              </form.AppField>
               <form.Subscribe selector={(state) => state.values.id}>
                 {(id) =>
                   PROVIDER_ID.test(id) ? (
@@ -454,25 +446,6 @@ function ClientForm({
               providerName={preset.name}
             />
           )}
-
-          {!custom && preset.scopeSets.length > 0 ? (
-            <section className="flex flex-col gap-1">
-              <p className="text-sm font-medium">Scope sets</p>
-              <p className="text-xs text-muted-foreground">
-                Apps declare the sets they need; a person is asked for the union
-                when they connect.
-              </p>
-              <ul className="flex flex-wrap gap-1.5">
-                {preset.scopeSets.map((set) => (
-                  <li key={set.name}>
-                    <Badge variant="secondary" size="sm" title={set.label}>
-                      <span className="font-mono">{set.name}</span>
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
 
           <form.AppField name="clientId">
             {(field) => (

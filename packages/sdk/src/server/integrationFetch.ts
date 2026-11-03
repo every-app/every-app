@@ -1,43 +1,22 @@
 import {
-  ACCOUNT_HEADER,
+  APP_ID_ENV,
   CATALOG,
   ConfigurationError,
   GATEWAY_ERROR_HEADER,
   INTEGRATION_PROXY_PREFIX,
-  OAUTH_TOKEN_BODY_LIMIT,
-  allowedScopes,
   apiKeyHosts,
   authorizationFor,
   capabilitySettings,
-  carriesToken,
-  declaredScopeSets,
-  describeTokenEndpoints,
   devProviderFile,
-  grantedScopes,
-  heldTokenCallAllowed,
-  injectClientCredentials,
   integrationProxyPath,
-  oauthClientCredentials,
-  oauthReadMethods,
-  oauthWriteMethods,
   providerSettingPrefix,
-  requestedScopes,
-  requestedTokenScopes,
   resolveDevProvider,
-  rewriteTokenRequestScope,
-  scopeExcess,
-  tokenEndpointFor,
-  tokenGrantType,
   type ApiKeyCapability,
   type ApiKeyCapabilityId,
   type CapabilityId,
-  type ConnectionAccount,
   type EmailCapabilityStatus,
   type OAuthClientCapability,
   type OAuthClientCapabilityId,
-  type OAuthClientCredentials,
-  type OAuthScopePolicy,
-  type RegistrableCapability,
   EMAIL_SENDERS_ENV,
   chooseEmailProvider,
   parseEmailList,
@@ -46,56 +25,57 @@ import {
 import {
   applyAttribution,
   attributionFor,
-  isRequest,
   type GatewayCallFor,
 } from "./attribution.js";
+import { connectPath } from "./connectUrl.js";
 import type { SetupInfo } from "./refusal.js";
 import {
   BINDING_ORIGIN,
   gatewayBinding,
   streamingRequest,
-  type GatewayServiceBinding,
 } from "./gatewayFetch.js";
 
 export interface IntegrationFetchOptions {
   /**
    * The Worker env: the EVERY_APP_GATEWAY binding when deployed, or in local
    * dev EVERYAPP_DEV and the provider's key (e.g. DATAFORSEO_API_KEY in
-   * `.dev.vars`).
+   * `.dev.vars`), or for an OAuth provider a token you obtained yourself
+   * (`GOOGLE_WORKSPACE_ACCESS_TOKEN`, {@link devAccessTokenName}).
    */
   env: object;
   /**
    * A provider the app lists in its manifest's `capabilities`: one whose
-   * key the gateway holds, or one whose OAuth client it holds (its token
-   * endpoints only). The built-in catalog's ids complete; a provider
-   * registered on the gateway (`everyapp provider add`) is any other id,
-   * reached through the binding, which checks it. The `email` capability
-   * is sent with `sendEmail()` instead.
+   * key the gateway holds, or an OAuth provider whose connections it
+   * holds. The built-in catalog's ids complete; a provider registered on
+   * the gateway (`everyapp provider add`) is any other id, reached
+   * through the binding, which checks it. The `email` capability is sent
+   * with `sendEmail()` instead.
    */
   provider: ApiKeyCapabilityId | OAuthClientCapabilityId | (string & {});
   /**
    * Whom the call is for. Left out, the request `everyApp()` is serving
-   * (its user, while the identity is good) or the organization
+   * (its person, while the identity is good) or the organization
    * `withOrganization()` named; outside both, `RequestContextError`.
    * Explicitly: the inbound request, or `{ background: true,
    * organizationId }` for work no person started (crons, Workflows,
    * queues). A shared app's Worker must end up with one or the other
    * ({@link AttributionError}).
+   *
+   * For an OAuth provider the call uses the connection the person behind
+   * it made in this app. `{ background: true, userId }` names another
+   * member's connection to this app instead, at any time, even while
+   * serving a different person: the call then carries that member and
+   * not the person being served. Only an organization's own app may.
    */
   for?: GatewayCallFor;
-  /**
-   * For an OAuth provider the gateway holds connections for: whose
-   * connection the call uses, the person's (`user`, the default when a
-   * person is behind the call) or the organization's (`organization`,
-   * the default for background work). Sent as `x-everyapp-account`.
-   */
-  account?: ConnectionAccount;
   /**
    * `true`: answer null instead of throwing `ConfigurationError` when the
    * provider is unavailable (no binding, and in local dev not its
    * settings in `.dev.vars`), so a feature that can do without it checks
    * for null. A wrong provider id, a binding that isn't one, and an
-   * attribution mistake still throw.
+   * attribution mistake still throw. An OAuth provider is never
+   * unavailable this way: without a connection its calls answer
+   * `integration_not_connected`.
    */
   optional?: boolean;
 }
@@ -108,19 +88,19 @@ export interface IntegrationFetchOptions {
  * sees the key. A refusal the gateway makes itself comes back as a response
  * {@link gatewayRefusal} recognizes; anything else is the provider's answer.
  *
- * For an OAuth client (`google-workspace`, `slack`, ...) it reaches the
- * provider's token endpoints only, and the gateway puts its client on the
- * request: send the code (or refresh token) without `client_id` or
- * `client_secret`. Build the authorize URL with {@link authorizeUrl} from
- * {@link integrationStatus}, and call the provider's API with the user's
- * token directly.
+ * For an OAuth provider (`google-workspace`, `github`, ...) the gateway
+ * puts the token of the person's connection in this app on the call, to
+ * the provider's API hosts only. Without one the answer is a 409
+ * `integration_not_connected` refusal with the `connectPath` to send the
+ * person to ({@link connectUrl}).
  *
- * In local dev only, with no binding, the developer's own key or client
- * from `.dev.vars` reaches the provider directly, under the gateway's names:
+ * In local dev only, with no binding, the developer's own key from
+ * `.dev.vars` reaches the provider directly, under the gateway's names:
  * a catalog provider's from the catalog, a provider registered on the
  * gateway from its spec in `.everyapp/providers/<id>.json` (`everyapp
  * provider show <id> --save` writes it), put on the call as the gateway's
- * spec says.
+ * spec says. An OAuth provider's calls carry a token you obtained
+ * yourself ({@link devAccessTokenName}), to its API hosts only.
  */
 export function integrationFetch(
   options: IntegrationFetchOptions & { optional: true },
@@ -132,7 +112,6 @@ export function integrationFetch({
   env,
   provider,
   for: explicitTarget,
-  account,
   optional = false,
 }: IntegrationFetchOptions): typeof fetch | null {
   const catalogEntry = fetchableCapability(provider);
@@ -153,29 +132,16 @@ export function integrationFetch({
   const integration =
     catalogEntry ??
     (binding ? undefined : devRegisteredProvider(provider, values));
+  // An API-key provider in local dev: the developer's own key. An OAuth
+  // provider decides per call (a dev token, or `integration_not_connected`).
   const local =
-    binding || !integration ? null : localCredentials(integration, values);
-  // In dev an OAuth provider with a held token in `.dev.vars` serves API
-  // calls without the client (the token stands in for a connection).
-  const devToken =
-    !binding && integration?.mode === "oauth_client" && integration.flow
-      ? stringValue(values[devAccessTokenName(provider)])
-      : undefined;
-  // An OAuth provider with a Gateway-owned flow answers an API call
-  // without the client (`integration_not_connected`, below); a token
-  // endpoint call without the client throws when it is made.
-  const decidesLater =
-    integration?.mode === "oauth_client" && integration.flow !== undefined;
-  if (!binding && !local && !devToken && integration && !decidesLater) {
+    binding || integration?.mode !== "api_key"
+      ? null
+      : localAuthorization(integration, values);
+  if (!binding && integration?.mode === "api_key" && !local) {
     if (optional) return null;
-    const names = [
-      ...capabilitySettings(integration),
-      ...(integration.mode === "oauth_client" && integration.flow
-        ? [devAccessTokenName(provider)]
-        : []),
-    ];
     throw new ConfigurationError(
-      `${integration.label} is unavailable: deploy with the EVERY_APP_GATEWAY binding, or set ${names.join(", ")} in .dev.vars for local development.`,
+      `${integration.label} is unavailable: deploy with the EVERY_APP_GATEWAY binding, or set ${capabilitySettings(integration).join(", ")} in .dev.vars for local development.`,
     );
   }
 
@@ -205,59 +171,14 @@ export function integrationFetch({
       );
     }
 
-    if (integration.mode === "oauth_client") {
-      // A call to the provider's API with the token the gateway holds
-      // (docs/design/2026-10-oauth-providers.md section 7), for an entry
-      // that supports the Gateway-owned flow; a token endpoint stays the
-      // app-driven call it always was.
-      const toApi =
-        integration.flow !== undefined &&
-        upstream.protocol === "https:" &&
-        integration.api.includes(upstream.host) &&
-        !tokenEndpointFor(integration, upstream);
-      if (toApi) {
-        if (binding) {
-          if (account) headers.set(ACCOUNT_HEADER, account);
-          applyAttribution(headers, target);
-          return binding.fetch(
-            streamingRequest(
-              `${BINDING_ORIGIN}${integrationProxyPath(provider, upstream)}`,
-              outbound,
-              headers,
-            ),
-          );
-        }
-        return devHeldTokenCall({
-          provider,
-          capability: integration,
-          outbound,
-          upstream,
-          headers,
-          values,
-          background:
-            target !== undefined &&
-            !isRequest(target) &&
-            Boolean(target.userId),
-        });
-      }
-      return oauthClientCall({
-        provider: provider as OAuthClientCapabilityId,
-        capability: integration,
-        outbound,
-        upstream,
-        headers,
-        values,
-        ...(binding
-          ? { binding, target }
-          : { client: local as OAuthClientCredentials }),
-      });
-    }
-
     // In local dev a provider's host setting (`.dev.vars`) adds its host,
     // as the gateway's setting does there.
-    const hosts = binding
-      ? [...integration.hosts]
-      : apiKeyHosts(integration, values);
+    const hosts =
+      integration.mode === "oauth_client"
+        ? [...integration.api]
+        : binding
+          ? [...integration.hosts]
+          : apiKeyHosts(integration, values);
     if (upstream.protocol !== "https:" || !hosts.includes(upstream.host)) {
       throw new TypeError(
         `integrationFetch("${provider}") only reaches ${hosts.join(", ")}, not ${upstream.host}.`,
@@ -275,6 +196,16 @@ export function integrationFetch({
     }
 
     applyAttribution(headers, undefined);
+    if (integration.mode === "oauth_client") {
+      return devHeldTokenCall({
+        provider,
+        capability: integration,
+        outbound,
+        upstream,
+        headers,
+        values,
+      });
+    }
     // The developer's own key, put where the provider's entry says, as the
     // gateway would put its own.
     const auth = local as DevAuthorization;
@@ -299,10 +230,25 @@ export function devAccessTokenName(provider: string): string {
 }
 
 /**
+ * Where a person connects `provider` in this app:
+ * `/connect/<id>?app=<EVERYAPP_APP_ID>`, as the gateway's refusal and
+ * status name it (without the app id when the env has none).
+ */
+function appConnectPath(
+  provider: string,
+  values: Record<string, unknown>,
+): string {
+  const app = stringValue(values[APP_ID_ENV]);
+  return app
+    ? `${connectPath(provider)}?app=${encodeURIComponent(app)}`
+    : connectPath(provider);
+}
+
+/**
  * An app's call to an OAuth provider's API in local dev, with no
- * gateway: the gateway's held-token checks in its order (the app's
- * declared sets, the method, the route), then the developer's own token
- * from `.dev.vars` as the bearer, straight to the provider.
+ * gateway: the developer's own token from `.dev.vars` as the bearer,
+ * straight to the provider (the host was checked already), or the
+ * gateway's `integration_not_connected` refusal without one.
  */
 async function devHeldTokenCall({
   provider,
@@ -311,7 +257,6 @@ async function devHeldTokenCall({
   upstream,
   headers,
   values,
-  background = false,
 }: {
   provider: string;
   capability: OAuthClientCapability;
@@ -319,82 +264,18 @@ async function devHeldTokenCall({
   upstream: URL;
   headers: Headers;
   values: Record<string, unknown>;
-  /** `for: { background: true, userId }`: the entry's background sets alone, as the gateway. */
-  background?: boolean;
 }): Promise<Response> {
   const token = stringValue(values[devAccessTokenName(provider)]);
   if (!token) {
+    const path = appConnectPath(provider, values);
     return devRefusal(
       409,
       "integration_not_connected",
-      `${capability.label} isn't connected here. In local dev, set ${devAccessTokenName(provider)} in .dev.vars to a token you obtained yourself; deployed, the person connects at /connect/${provider}.`,
-      { connectPath: `/connect/${provider}`, reconnect: false },
+      `${capability.label} isn't connected here. In local dev, set ${devAccessTokenName(provider)} in .dev.vars to a token you obtained yourself; deployed, the person connects in the app at ${path}.`,
+      { connectPath: path, reconnect: false },
     );
-  }
-  const policy = capability.scopePolicy;
-  const grant = policy
-    ? devScopeSets(policy, provider, capability.label, values, "any")
-    : null;
-  if (grant && "problem" in grant) {
-    return devRefusal(403, grant.code, grant.problem);
   }
   const method = outbound.method.toUpperCase();
-  const reads = oauthReadMethods(capability).includes(method);
-  const writes =
-    !reads &&
-    capability.access.includes("write") &&
-    oauthWriteMethods(capability).includes(method) &&
-    devDeclaredAccess(provider, values) === "write";
-  // In the background on a member's connection: the sets the entry marks
-  // `background` alone (the developer's token stands for the member's
-  // connection and their opt-in).
-  const sets =
-    background && grant
-      ? grant.sets.filter((name) =>
-          devBackgroundSets(provider, values).includes(name),
-        )
-      : grant?.sets;
-  if (background && (!policy || !sets || sets.length === 0)) {
-    return devRefusal(
-      403,
-      "integration_scope_not_allowed",
-      `This app's entry for ${capability.label} marks no scope sets for background use (background: { scopes: [...], why } in everyapp.config.ts).`,
-    );
-  }
-  if (policy && grant && sets) {
-    const allowed = heldTokenCallAllowed({
-      policy,
-      declaredSets: sets,
-      // The developer's token stands for a connection granted every set.
-      connectionSets: sets,
-      hosts: capability.api,
-      method,
-      upstream,
-      readMethods: oauthReadMethods(capability),
-      writes,
-    });
-    if (!allowed.ok) {
-      const status = {
-        integration_not_connected: 409,
-        integration_method_not_allowed: 405,
-        integration_scope_not_allowed: 403,
-      }[allowed.code];
-      return devRefusal(
-        status,
-        allowed.code,
-        allowed.code === "integration_not_connected"
-          ? `${capability.label} is connected without ${allowed.missingSets.join(", ")}.`
-          : allowed.message,
-      );
-    }
-  } else if (!reads && !writes) {
-    return devRefusal(
-      405,
-      "integration_method_not_allowed",
-      `${capability.label} calls may use ${oauthReadMethods(capability).join(" or ")} with access: "read"; ${method} needs access: "write" in the app's capabilities entry, on a provider that offers it.`,
-    );
-  }
-  applyAttribution(headers, undefined);
   headers.set("authorization", `Bearer ${token}`);
   for (const name of ["access_token", "token"]) {
     upstream.searchParams.delete(name);
@@ -413,168 +294,18 @@ async function devHeldTokenCall({
   );
 }
 
-/** The `access` the manifest entry for `provider` declares in dev (EVERYAPP_DEV_CAPABILITIES), or null. */
-function devDeclaredAccess(
-  provider: string,
-  values: Record<string, unknown>,
-): string | null {
-  const raw = values["EVERYAPP_DEV_CAPABILITIES"];
-  try {
-    const capabilities =
-      typeof raw === "string" ? jsonRecord(JSON.parse(raw)) : undefined;
-    const entry = jsonRecord(capabilities?.[provider]);
-    return typeof entry?.["access"] === "string" ? entry["access"] : null;
-  } catch {
-    return null;
-  }
-}
-
-/** The sets the dev manifest entry for `provider` marks `background` (EVERYAPP_DEV_CAPABILITIES). */
-function devBackgroundSets(
-  provider: string,
-  values: Record<string, unknown>,
-): string[] {
-  const raw = values["EVERYAPP_DEV_CAPABILITIES"];
-  try {
-    const capabilities =
-      typeof raw === "string" ? jsonRecord(JSON.parse(raw)) : undefined;
-    const background = jsonRecord(
-      jsonRecord(capabilities?.[provider])?.["background"],
-    );
-    const scopes = background?.["scopes"];
-    return Array.isArray(scopes)
-      ? scopes.filter((name): name is string => typeof name === "string")
-      : [];
-  } catch {
-    return [];
-  }
-}
-
 type DevAuthorization = NonNullable<ReturnType<typeof authorizationFor>>;
 
 /**
- * The developer's own key or client from `.dev.vars` (with EVERYAPP_DEV
- * set), under the gateway's names; null until every setting it needs is.
+ * The developer's own key from `.dev.vars` (with EVERYAPP_DEV set), under
+ * the gateway's names; null until every setting it needs is.
  */
-function localCredentials(
-  integration: ApiKeyCapability | OAuthClientCapability,
+function localAuthorization(
+  integration: ApiKeyCapability,
   values: Record<string, unknown>,
-): DevAuthorization | OAuthClientCredentials | null {
+): DevAuthorization | null {
   if (!values["EVERYAPP_DEV"]) return null;
-  if (integration.mode === "oauth_client") {
-    return oauthClientCredentials(integration, values);
-  }
   return authorizationFor(integration, values);
-}
-
-/**
- * A call to an OAuth client's token endpoint: over the binding, where the
- * gateway puts its client on it, or in local dev straight to the provider
- * with the developer's client put on it by the gateway's own rule.
- */
-async function oauthClientCall({
-  provider,
-  capability,
-  outbound,
-  upstream,
-  headers,
-  values,
-  binding,
-  target,
-  client,
-}: {
-  provider: OAuthClientCapabilityId;
-  capability: OAuthClientCapability;
-  outbound: Request;
-  upstream: URL;
-  headers: Headers;
-  values: Record<string, unknown>;
-  binding?: GatewayServiceBinding;
-  target?: GatewayCallFor;
-  client?: OAuthClientCredentials;
-}): Promise<Response> {
-  const endpoint = tokenEndpointFor(capability, upstream);
-  const method = outbound.method.toUpperCase();
-  if (!endpoint || !(endpoint.methods as readonly string[]).includes(method)) {
-    throw new TypeError(
-      `integrationFetch("${provider}") only reaches ${capability.label}'s token endpoints (${describeTokenEndpoints(capability)}), not ${method} ${upstream.origin}${upstream.pathname}. Call its API with the user's token directly.`,
-    );
-  }
-
-  if (binding) {
-    applyAttribution(headers, target);
-    return binding.fetch(
-      streamingRequest(
-        `${BINDING_ORIGIN}${integrationProxyPath(provider, upstream)}`,
-        outbound,
-        headers,
-      ),
-    );
-  }
-
-  applyAttribution(headers, undefined);
-  if (!client) {
-    throw new ConfigurationError(
-      `${capability.label}'s token endpoints need the client in .dev.vars for local development: set ${capabilitySettings(capability).join(", ")}.`,
-    );
-  }
-  // The gateway's scope checks, in its order, answering its refusals: an
-  // app sees in `everyapp dev` what the gateway will say.
-  const policy = capability.scopePolicy;
-  const grant = policy
-    ? devScopeSets(policy, provider, capability.label, values)
-    : null;
-  if (grant && "problem" in grant) {
-    return devRefusal(403, grant.code, grant.problem);
-  }
-  const sets = grant?.sets;
-  const body = method === "GET" ? null : await outbound.text();
-  if (
-    body !== null &&
-    new TextEncoder().encode(body).byteLength > OAUTH_TOKEN_BODY_LIMIT
-  ) {
-    throw new TypeError(
-      `A token request's body is at most ${OAUTH_TOKEN_BODY_LIMIT / 1024} KiB.`,
-    );
-  }
-  if (
-    policy &&
-    ["grant_type", "scope", "user_scope"].some((name) =>
-      upstream.searchParams.has(name),
-    )
-  ) {
-    return devRefusal(
-      400,
-      "integration_body_invalid",
-      "Put grant_type, scope and user_scope in the token request's body, not its query string; the gateway decides on the body.",
-    );
-  }
-  let injected = injectClientCredentials(
-    { url: upstream, headers, body },
-    endpoint,
-    client as OAuthClientCredentials,
-  );
-  if (!injected.ok) throw new TypeError(injected.problem);
-  if (policy && sets) {
-    const refused = refuseTokenRequest(policy, capability, sets, injected);
-    if (refused) return refused;
-    injected = {
-      ok: true,
-      ...rewriteTokenRequestScope(policy, sets, injected),
-    };
-  }
-  const response = await fetch(
-    new Request(injected.url, {
-      method,
-      headers: injected.headers,
-      body: injected.body,
-      signal: outbound.signal,
-      // As the gateway: the client never follows a redirect.
-      redirect: "manual",
-    }),
-  );
-  if (!policy || !sets || !response.ok) return response;
-  return checkTokenResponse(policy, capability, sets, response);
 }
 
 /**
@@ -588,219 +319,42 @@ function devRefusal(
   message: string,
   extra: Record<string, unknown> = {},
 ): Response {
-  const labels: Record<number, string> = {
-    400: "Bad Request",
-    403: "Forbidden",
-    405: "Method Not Allowed",
-    409: "Conflict",
-    502: "Bad Gateway",
-  };
+  const labels: Record<number, string> = { 409: "Conflict" };
   return Response.json(
     { error: labels[status] ?? "Error", code, message, ...extra },
     { status, headers: { [GATEWAY_ERROR_HEADER]: code } },
   );
 }
 
-/** The twin's refusal of a scoped client's grant: the gateway's code and sentence. */
-interface DevGrantRefusal {
-  code: "capability_not_requested" | "integration_scopes_undeclared";
-  problem: string;
-}
-
 /**
- * The scope sets the manifest declares for `id`, read from
+ * The manifest's entry for `id` in local dev, from
  * EVERYAPP_DEV_CAPABILITIES (the manifest's `capabilities` as JSON, which
- * `everyAppWorker()` writes in dev), or the gateway's refusal, in its
- * order: the client not listed for writing (`capability_not_requested`),
- * then a void grant (`integration_scopes_undeclared`: the variable
- * missing, the entry without usable `scopes`, or a set this registry
- * doesn't offer). Fails closed like the gateway: a hand-rolled dev harness
- * that passes no capabilities gets nothing.
+ * `everyAppWorker()` writes in dev): the entry, `null` when the manifest
+ * doesn't list it, `undefined` when the variable is missing or isn't JSON
+ * (a hand-rolled harness), so nothing is known.
  */
-function devScopeSets(
-  policy: OAuthScopePolicy,
+function devManifestEntry(
   id: string,
-  label: string,
   values: Record<string, unknown>,
-  /** The grant the entry needs: `write` for a token-endpoint call (the app-driven flow), `any` for a held-token call. */
-  grant: "write" | "any" = "write",
-): { sets: string[] } | DevGrantRefusal {
-  const offered = Object.keys(policy.sets).join(", ");
+): Record<string, unknown> | null | undefined {
   const raw = values["EVERYAPP_DEV_CAPABILITIES"];
+  if (typeof raw !== "string") return undefined;
   let capabilities: Record<string, unknown> | undefined;
   try {
-    capabilities =
-      typeof raw === "string" ? jsonRecord(JSON.parse(raw)) : undefined;
+    capabilities = jsonRecord(JSON.parse(raw));
   } catch {
-    capabilities = undefined;
+    return undefined;
   }
-  if (!capabilities) {
-    return {
-      code: "integration_scopes_undeclared",
-      problem: `${label}'s scope sets aren't known here: everyapp dev passes the manifest's capabilities to the Worker as EVERYAPP_DEV_CAPABILITIES when everyapp.config.ts builds it with everyAppWorker() from @every-app/sdk/cloudflare.`,
-    };
-  }
-  const entry = Object.hasOwn(capabilities, id)
-    ? jsonRecord(capabilities[id])
-    : undefined;
-  // The gateway's check 2: listing the client for writing is the grant
-  // of the app-driven flow; a held-token call takes any listing.
-  const access = entry?.["access"];
-  if (
-    !entry ||
-    (grant === "write"
-      ? access !== "write"
-      : access !== "read" && access !== "write")
-  ) {
-    return {
-      code: "capability_not_requested",
-      problem: `This app doesn't list ${label} in its capabilities. Add capabilities: { ${JSON.stringify(id)}: { access: "${grant === "write" ? "write" : "read"}" } } to everyapp.config.ts and start everyapp dev again.`,
-    };
-  }
-  const sets = declaredScopeSets(policy, entry);
-  if (sets) return { sets };
-  const listed = entry["scopes"];
-  const unknown = Array.isArray(listed)
-    ? listed.filter(
-        (name) => typeof name === "string" && !Object.hasOwn(policy.sets, name),
-      )
-    : [];
-  if (unknown.length > 0) {
-    return {
-      code: "integration_scopes_undeclared",
-      problem: `This app's ${label} entry names scope sets this SDK doesn't offer: ${unknown.join(", ")}. It offers: ${offered}. Fix everyapp.config.ts and start everyapp dev again, or update @every-app/sdk if it is older than the set.`,
-    };
-  }
-  return {
-    code: "integration_scopes_undeclared",
-    problem: `This app lists ${label} without the scope sets it uses. Add scopes: [...] (one or more of: ${offered}) to its ${JSON.stringify(id)} entry in everyapp.config.ts and start everyapp dev again.`,
-  };
+  if (!capabilities) return undefined;
+  return Object.hasOwn(capabilities, id)
+    ? (jsonRecord(capabilities[id]) ?? null)
+    : null;
 }
 
 function jsonRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
-}
-
-/**
- * The gateway's checks on a token request before it goes out: the grant
- * type must be one the policy completes, and a `scope` the body names must
- * stay within the sets. Null when the request may go.
- */
-function refuseTokenRequest(
-  policy: OAuthScopePolicy,
-  capability: OAuthClientCapability,
-  sets: readonly string[],
-  request: { url: URL; headers: Headers; body: string | null },
-): Response | null {
-  const grantType = tokenGrantType(request);
-  if (!policy.grantTypes.includes(grantType)) {
-    const completes = policy.grantTypes.map((type) =>
-      type === null ? "a code exchange without grant_type" : type,
-    );
-    const asked =
-      grantType === null
-        ? "a request without grant_type"
-        : grantType === "other"
-          ? "this request's grant_type"
-          : grantType;
-    return devRefusal(
-      403,
-      "integration_grant_not_allowed",
-      `Through the gateway, ${capability.label} completes ${completes.join(" and ")} grants only; ${asked} isn't one of them. An app never gets app-level tokens with the operator's client.`,
-    );
-  }
-  const asked = requestedTokenScopes(policy, request);
-  const excess = asked ? scopeExcess(asked, allowedScopes(policy, sets)) : [];
-  if (excess.length > 0) {
-    return devRefusal(
-      403,
-      "integration_scope_not_allowed",
-      `This app may ask ${capability.label} for ${sets.join(", ")} (${requestedScopes(policy, sets).scopes.join(", ")}); the request also asks ${excess.join(", ")}. Build the authorize URL and the token request from integrationStatus().scopes.`,
-    );
-  }
-  return null;
-}
-
-/**
- * The gateway's check on a provider's 2xx answer: a token it carries must
- * name scopes, and those must stay within the sets; on a refusal the
- * answer is dropped, never forwarded, so no app holds a token outside its
- * grant. An answer without a token (Slack's `ok: false`) is the app's to
- * read. A non-2xx answer never reaches here.
- */
-async function checkTokenResponse(
-  policy: OAuthScopePolicy,
-  capability: OAuthClientCapability,
-  sets: readonly string[],
-  response: Response,
-): Promise<Response> {
-  const invalid = () =>
-    devRefusal(
-      502,
-      "integration_response_invalid",
-      `${capability.label} answered with something that isn't a token response (over ${OAUTH_TOKEN_BODY_LIMIT / 1024} KiB or not a JSON object); nothing was passed on.`,
-    );
-  const bytes = await response.arrayBuffer();
-  if (bytes.byteLength > OAUTH_TOKEN_BODY_LIMIT) return invalid();
-  const text = new TextDecoder().decode(bytes);
-  let json: unknown;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    return invalid();
-  }
-  if (!json || typeof json !== "object" || Array.isArray(json)) {
-    return invalid();
-  }
-  // The body was decoded on read: its length and encoding headers no
-  // longer describe it.
-  const headers = new Headers(response.headers);
-  for (const name of [
-    "set-cookie",
-    "content-length",
-    "content-encoding",
-    "transfer-encoding",
-  ]) {
-    headers.delete(name);
-  }
-  const forward = () =>
-    new Response(text, {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
-  if (!carriesToken(json)) return forward();
-  const granted = grantedScopes(policy, json);
-  if (!granted) {
-    return devRefusal(
-      502,
-      "integration_scope_unverified",
-      `${capability.label} issued a token without saying which scopes it carries, so the gateway can't hold it to this app's scope sets; nothing was passed on. Ask the person to connect again.`,
-    );
-  }
-  const excess = scopeExcess(granted, allowedScopes(policy, sets));
-  if (excess.length > 0) {
-    const remedy = {
-      google:
-        "Ask for only the scopes integrationStatus() returns, without include_granted_scopes, and connect again; if the app needs more, add the scope set to everyapp.config.ts and deploy.",
-      microsoft:
-        "On a shared Microsoft client a token carries everything the person consented to this client: have them remove this app's consent at https://myapplications.microsoft.com and connect again, or add the scope set to everyapp.config.ts and deploy.",
-      slack:
-        "Slack scopes add up per workspace installation: reinstall the app in the workspace with only the status's scopes, or add the scope set to everyapp.config.ts and deploy.",
-      space:
-        "Ask for only the scopes integrationStatus() returns and connect again, or add the scope set to everyapp.config.ts and deploy.",
-      comma:
-        "Ask for only the scopes integrationStatus() returns and connect again, or add the scope set to everyapp.config.ts and deploy.",
-    }[policy.dialect];
-    return devRefusal(
-      403,
-      "integration_scope_exceeded",
-      `${capability.label} granted scopes this app doesn't declare: ${excess.join(", ")}. It declares ${sets.join(", ")} (${requestedScopes(policy, sets).scopes.join(", ")}). Nothing was passed on. ${remedy}`,
-    );
-  }
-  return forward();
 }
 
 /**
@@ -874,67 +428,40 @@ export type EmailIntegrationStatus = IntegrationStatus &
   Pick<EmailCapabilityStatus, "sender" | "senders" | "provider">;
 
 /**
- * An OAuth client's status: as {@link IntegrationStatus}, plus what the app
- * needs to send people to the provider's authorize page, present only when
- * the app lists the capability and the gateway holds the client.
+ * An OAuth provider's status: as {@link IntegrationStatus}, plus the
+ * scopes the app's manifest lists, where the person connects in this app,
+ * and their connection to this app. `configured` means the gateway holds
+ * the client; `ready` that a call for this person would go through.
  */
-export interface OAuthClientIntegrationStatus extends IntegrationStatus {
-  /** The client's public id, for the authorize URL. */
-  clientId?: string;
+export type OAuthClientIntegrationStatus = IntegrationStatus & {
+  /** The provider's scopes as the app's `everyapp.config.ts` lists them. */
+  scopes: readonly string[];
   /**
-   * For a client with scope sets (`google-workspace`, `microsoft-365`): the
-   * set names the app's manifest entry declares, `[]` when the entry voids
-   * its grant (no `scopes`, or a set this gateway doesn't offer), in which
-   * case `ready` is false and no token call can complete.
+   * Where the person connects the provider in this app:
+   * `/connect/<id>?app=<app>` on the Gateway ({@link connectUrl} builds
+   * the absolute URL); null when the app can't connect (the manifest
+   * doesn't list it, or the gateway holds no client).
    */
-  scopeSets?: readonly string[];
+  connectPath: string | null;
   /**
-   * The provider's scope strings those sets ask for, in the provider's
-   * spelling and the registry's order, for the authorize URL
-   * ({@link authorizeUrl} puts them on). The gateway refuses a token that
-   * carries more.
+   * The connection the call would use (the person's in this app, or the
+   * member's `for: { background: true, userId }` names), or null when there
+   * is none. `ready` false with `missingScopes` when it lacks a scope the
+   * app now lists, and `reconnect` when the person has to connect again
+   * (missing scopes, or it expired).
    */
-  scopes?: readonly string[];
-  /** Slack's `user_scope` strings, when the sets name any. */
-  userScopes?: readonly string[];
-  /**
-   * Which flows the client supports: `app` (the app runs authorize and
-   * callback itself and keeps the tokens, the social networks), `gateway`
-   * (the Gateway holds the connection; API calls go through
-   * `integrationFetch` with the token injected) or `both` (Google,
-   * Microsoft, Slack, Discord and every registered OAuth provider).
-   */
-  flow?: "app" | "gateway" | "both";
-  /** Where a person connects on the Gateway: `/connect/<id>`; see `connectUrl()`. */
-  connectPath?: string;
-  /**
-   * The connection the caller's account would use (the person's, or the
-   * organization's for background work), or null when there is none yet;
-   * `reconnect` when it exists but lacks a set the app declares or has
-   * expired, so the person has to connect again.
-   */
-  connection?: {
-    account: ConnectionAccount;
+  connection: {
+    /** The account's name at the provider (an email address, a login). */
     label: string | null;
-    scopeSets: readonly string[];
+    /** The scopes it holds, canonical. */
+    scopes: readonly string[];
     ready: boolean;
-    reconnect?: boolean;
-    /**
-     * For an entry that marks `background` sets, asked with a person
-     * behind the request: whether they let this app use the connection
-     * while they're away (`for: { background: true, userId }`), for which
-     * sets, and the Gateway page where they allow it (`connectUrl({
-     * background: true })`).
-     */
-    background?: {
-      allowed: boolean;
-      sets: readonly string[];
-      connectPath: string;
-    };
+    missingScopes?: readonly string[];
+    reconnect?: true;
   } | null;
-}
+};
 
-/** The status of a capability: email's carries its senders, an OAuth client's its id. */
+/** The status of a capability: email's carries its senders, an OAuth provider's the connection. */
 export type IntegrationStatusOf<P extends string> = P extends "email"
   ? EmailIntegrationStatus
   : P extends OAuthClientCapabilityId
@@ -944,8 +471,9 @@ export type IntegrationStatusOf<P extends string> = P extends "email"
 /**
  * Whether the app can use an integration right now, without calling the
  * provider: show "an admin needs to set up DataForSEO" (or "sending isn't
- * set up") up front instead of failing mid-task. An OAuth client's status
- * carries its public `clientId` for the authorize URL.
+ * set up", or "connect Google") up front instead of failing mid-task. An
+ * OAuth provider's status carries the person's connection in this app and
+ * where to connect.
  */
 export async function integrationStatus<
   P extends CapabilityId | (string & {}),
@@ -958,10 +486,10 @@ export async function integrationStatus<
   provider: P;
   /**
    * Whom the status is for: the request being served (its person), so an
-   * OAuth provider's `connection` is that person's; background work
-   * (`withOrganization()`) its organization, whose own connection is then
-   * reported. Explicitly the inbound request or `{ background: true,
-   * organizationId }`, as on every call.
+   * OAuth provider's `connection` is that person's in this app; `{
+   * background: true, userId }` that member's. Explicitly the inbound
+   * request or `{ background: true, organizationId, userId? }`, as on
+   * every call.
    */
   for?: GatewayCallFor;
 }): Promise<IntegrationStatusOf<P>> {
@@ -1001,6 +529,18 @@ function withSetup<S extends Omit<IntegrationStatus, keyof SetupInfo>>(
   }
   const integration =
     CATALOG.get(provider) ?? devRegisteredProvider(provider, values);
+  const label = integration?.label ?? provider;
+  if (integration?.mode === "oauth_client") {
+    // In dev a token stands in for the connection; the client is the
+    // deployed gateway's alone.
+    const name = devAccessTokenName(provider);
+    return {
+      ...status,
+      settings: [name],
+      setup: `${label} isn't connected for local development: set ${name} in .dev.vars to a token you obtained yourself.`,
+      command: null,
+    };
+  }
   const settings =
     provider === "email"
       ? ["EMAIL_FROM"]
@@ -1011,8 +551,8 @@ function withSetup<S extends Omit<IntegrationStatus, keyof SetupInfo>>(
     ...status,
     settings,
     setup: settings.length
-      ? `${integration?.label ?? provider} isn't set up for local development: set ${settings.join(" and ")} in .dev.vars.`
-      : `${integration?.label ?? provider} isn't set up for local development.`,
+      ? `${label} isn't set up for local development: set ${settings.join(" and ")} in .dev.vars.`
+      : `${label} isn't set up for local development.`,
     command: null,
   };
 }
@@ -1058,19 +598,29 @@ async function readIntegrationStatus<P extends CapabilityId | (string & {})>({
           senders: [],
           provider: null,
         }
-      : {
-          requested: false,
-          configured: false,
-          ready: false,
-        }) as IntegrationStatusOf<P>;
+      : integration?.mode === "oauth_client"
+        ? {
+            requested: false,
+            configured: false,
+            ready: false,
+            scopes: [],
+            connectPath: null,
+            connection: null,
+          }
+        : {
+            requested: false,
+            configured: false,
+            ready: false,
+          }) as IntegrationStatusOf<P>;
   if (binding && typeof binding.fetch === "function") {
     const statusUrl = `${BINDING_ORIGIN}${INTEGRATION_PROXY_PREFIX}/${provider}`;
     let response: Response;
     if (target === undefined) {
       response = await binding.fetch(statusUrl);
     } else {
-      // Whose status: the person's identity (their OAuth connection) or the
-      // organization's, as a call would carry it.
+      // Whose status: the person's identity (their connection in this
+      // app), the member background work names, or the organization's,
+      // as a call would carry it.
       const headers = new Headers();
       applyAttribution(headers, target);
       response = await binding.fetch(statusUrl, { headers });
@@ -1092,11 +642,7 @@ async function readIntegrationStatus<P extends CapabilityId | (string & {})>({
     } as IntegrationStatusOf<P>;
   }
   if (integration.mode === "oauth_client") {
-    return devOAuthClientStatus(
-      provider as OAuthClientCapabilityId,
-      integration,
-      values,
-    ) as IntegrationStatusOf<P>;
+    return devOAuthStatus(String(provider), values) as IntegrationStatusOf<P>;
   }
   const configured = Boolean(
     values["EVERYAPP_DEV"] && authorizationFor(integration, values),
@@ -1109,81 +655,39 @@ async function readIntegrationStatus<P extends CapabilityId | (string & {})>({
 }
 
 /**
- * An OAuth client in local dev, with no gateway: the developer's own, from
- * `.dev.vars`, and for a client with scope sets the manifest's, from
- * EVERYAPP_DEV_CAPABILITIES, shaped as the gateway's status is: an app
- * that doesn't list the client is told nothing, and a void grant is not
- * ready and hides the client id.
+ * An OAuth provider in local dev, with no gateway, shaped as the
+ * gateway's status is: the scopes from the manifest's entry
+ * (EVERYAPP_DEV_CAPABILITIES), and a token in `.dev.vars` standing in for
+ * a connection that holds them all. An app whose manifest doesn't list
+ * the provider is told nothing.
  */
-function devOAuthClientStatus(
+function devOAuthStatus(
   id: string,
-  capability: OAuthClientCapability,
   values: Record<string, unknown>,
 ): Bare<OAuthClientIntegrationStatus> {
-  const client = values["EVERYAPP_DEV"]
-    ? oauthClientCredentials(capability, values)
-    : null;
-  const policy = capability.scopePolicy;
-  // An entry with a Gateway-owned flow is listed for reading or writing;
-  // the app-driven flow alone needs the write grant.
-  const grant = policy
-    ? devScopeSets(
-        policy,
-        id,
-        capability.label,
-        values,
-        capability.flow ? "any" : "write",
-      )
-    : null;
-  // The Gateway-owned flow's fields, in dev: a token in `.dev.vars`
-  // stands for a connection granted every declared set.
-  const flow: "app" | "both" = capability.flow ? "both" : "app";
-  const devToken = capability.flow
-    ? stringValue(values[devAccessTokenName(id)])
-    : undefined;
-  const gateway = (sets: readonly string[]) =>
-    capability.flow
-      ? {
-          flow,
-          connectPath: `/connect/${id}`,
-          connection: devToken
-            ? {
-                account: "user" as const,
-                label: devAccessTokenName(id),
-                scopeSets: sets,
-                ready: true,
-              }
-            : null,
-        }
-      : { flow };
-  if (grant && "problem" in grant) {
-    if (grant.code === "capability_not_requested") {
-      return { requested: false, configured: false, ready: false };
-    }
+  const entry = devManifestEntry(id, values);
+  if (entry === null) {
     return {
-      requested: true,
-      configured: Boolean(client),
+      requested: false,
+      configured: false,
       ready: false,
-      scopeSets: [],
-      ...gateway([]),
+      scopes: [],
+      connectPath: null,
+      connection: null,
     };
   }
-  const asked = policy && grant ? requestedScopes(policy, grant.sets) : null;
+  const listed = entry?.["scopes"];
+  const scopes = Array.isArray(listed)
+    ? listed.filter((scope): scope is string => typeof scope === "string")
+    : [];
+  const token = Boolean(stringValue(values[devAccessTokenName(id)]));
   return {
     requested: true,
-    configured: Boolean(client),
-    ready: Boolean(client) || Boolean(devToken),
-    ...(client ? { clientId: client.clientId } : {}),
-    ...((client || devToken) && grant && asked
-      ? {
-          scopeSets: grant.sets,
-          scopes: asked.scopes,
-          ...(asked.userScopes.length > 0
-            ? { userScopes: asked.userScopes }
-            : {}),
-        }
-      : {}),
-    ...gateway(grant?.sets ?? []),
+    configured: token,
+    ready: token,
+    scopes,
+    connectPath: appConnectPath(id, values),
+    connection: token ? { label: null, scopes, ready: true } : null,
   };
 }
 

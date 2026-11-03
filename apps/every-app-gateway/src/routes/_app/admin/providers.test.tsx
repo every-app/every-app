@@ -7,7 +7,9 @@
  * from and never a value; Add OAuth provider lists the presets with the
  * built-in ones marked, and picking GitHub shows the redirect URI to
  * register; a registered row's menu offers Replace client and Remove; the
- * Connections table lists the organization's with Disconnect.
+ * Connections table lists the organization's, each one person's in one
+ * app, with Disconnect. No scope sets, no organization connect, no
+ * background.
  */
 import { act, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -21,8 +23,6 @@ const mocks = vi.hoisted(() => ({
   setOAuthClient: vi.fn(),
   removeOAuthClient: vi.fn(),
   removeProvider: vi.fn(),
-  addScopeSet: vi.fn(),
-  removeScopeSet: vi.fn(),
   listAllConnections: vi.fn(),
   disconnectConnection: vi.fn(),
   getAiDefault: vi.fn(),
@@ -41,15 +41,10 @@ vi.mock("@/serverFunctions/providers", () => ({
   setOAuthClient: mocks.setOAuthClient,
   removeOAuthClient: mocks.removeOAuthClient,
   removeProvider: mocks.removeProvider,
-  addScopeSet: mocks.addScopeSet,
-  removeScopeSet: mocks.removeScopeSet,
 }));
 vi.mock("@/serverFunctions/connections", () => ({
   listAllConnections: mocks.listAllConnections,
   disconnectConnection: mocks.disconnectConnection,
-  listMyBackgroundGrants: async () => ({ grants: [] }),
-  listAllBackgroundGrants: async () => ({ grants: [] }),
-  revokeBackgroundGrant: async () => ({ ok: true }),
 }));
 vi.mock("@/serverFunctions/ai", () => ({
   getAiDefault: mocks.getAiDefault,
@@ -77,11 +72,10 @@ const github = {
     name: "GitHub",
     source: "row",
     kind: "oauth",
-    flow: "both",
     client: { source: "d1", clientId: "Iv1.public", addedBy: "ada@acme.com" },
     bound: true,
     redirectUri: REDIRECT,
-    scopeSets: [{ name: "repo.read", label: "Repositories", access: "read" }],
+    hosts: ["api.github.com"],
     console: "https://github.com/settings/developers",
     connections: 2,
     settings: ["GITHUB_OAUTH_CLIENT_ID", "GITHUB_OAUTH_CLIENT_SECRET"],
@@ -168,7 +162,6 @@ const presets = [
     description: "Search Console, Analytics, Gmail.",
     hint: null,
     console: "https://console.cloud.google.com/apis/credentials",
-    scopeSets: [],
     settings: {
       clientId: "GOOGLE_WORKSPACE_CLIENT_ID",
       clientSecret: "GOOGLE_WORKSPACE_CLIENT_SECRET",
@@ -184,7 +177,6 @@ const presets = [
     description: "Repositories, issues, pull requests.",
     hint: "Register an OAuth App (not a GitHub App).",
     console: "https://github.com/settings/developers",
-    scopeSets: [{ name: "repo.read", label: "Repositories", access: "read" }],
     settings: {
       clientId: "GITHUB_OAUTH_CLIENT_ID",
       clientSecret: "GITHUB_OAUTH_CLIENT_SECRET",
@@ -200,11 +192,11 @@ const connections = [
     id: "conn_1",
     providerId: "github-oauth",
     providerName: "GitHub",
-    account: "user",
     userId: "user_1",
     userEmail: "ada@acme.com",
+    app: { rowId: "app_crm", id: "crm", name: "CRM" },
     label: "ada",
-    scopeSets: ["identity", "repo.read"],
+    scopes: ["repo", "read:user"],
     status: "active",
     createdAt: Date.now() - 86_400_000,
     lastUsedAt: Date.now() - 3_600_000,
@@ -214,9 +206,11 @@ const connections = [
     id: "conn_2",
     providerId: "github-oauth",
     providerName: "GitHub",
-    account: "organization",
-    label: "acme-bot",
-    scopeSets: ["repo.read"],
+    userId: "user_2",
+    userEmail: "bo@acme.com",
+    app: { rowId: "app_ci", id: "ci", name: "CI" },
+    label: "bo",
+    scopes: [],
     status: "expired",
     createdAt: Date.now() - 86_400_000,
     lastUsedAt: null,
@@ -425,34 +419,22 @@ describe("the providers table", () => {
     expect(body()).not.toContain("Iv1.public");
   });
 
-  it("offers Replace client, Forget pasted client, Connect for the organization and Remove on a registered row", async () => {
+  it("offers Replace client, Forget pasted client and Remove on a registered row, and no way to connect", async () => {
     await render();
     await showAll();
     await openRowMenu("GitHub");
     expect(menuItems()).toEqual([
       "Replace client",
       "Forget pasted client",
-      "Connect for the organization",
       "Remove provider",
     ]);
-    const connect = [...document.querySelectorAll('[role="menuitem"]')].find(
-      (element) =>
-        element.textContent?.includes("Connect for the organization"),
-    );
-    expect(connect?.getAttribute("href")).toBe(
-      "/connect/github-oauth?account=organization&return=%2Fadmin%2Fproviders",
-    );
   });
 
-  it("offers no Remove on a built-in client (its scope sets instead), and no menu on an API-key entry", async () => {
+  it("offers no Remove on a built-in client, and no menu on an API-key entry", async () => {
     await render();
     await showAll();
     await openRowMenu("Google Workspace");
-    expect(menuItems()).toEqual([
-      "Replace client",
-      "Scope sets",
-      "Connect for the organization",
-    ]);
+    expect(menuItems()).toEqual(["Replace client"]);
     expect(
       container.querySelector(
         'table button[aria-label="Actions for DataForSEO"]',
@@ -478,7 +460,7 @@ describe("Add OAuth provider", () => {
     );
     const step = document.body.querySelector('[role="dialog"]')!;
     expect(step.textContent).toContain(REDIRECT);
-    expect(step.textContent).toContain("repo.read");
+    expect(step.textContent).not.toMatch(/scope set/i);
     expect(step.textContent).toContain("GITHUB_OAUTH_CLIENT_SECRET");
     const secret = [...step.querySelectorAll("input")].find(
       (input) => input.type === "password",
@@ -488,15 +470,42 @@ describe("Add OAuth provider", () => {
 });
 
 describe("the connections table", () => {
-  it("lists each person's and the organization's connections with their state", async () => {
+  it("lists each connection with its person, app, scopes and state, and disconnects one by its id", async () => {
+    mocks.disconnectConnection.mockResolvedValue({ ok: true, revoked: true });
     await render();
     const tables = container.querySelectorAll("table");
     const text = tables[0]!.textContent ?? "";
     expect(text).toContain("ada@acme.com");
-    expect(text).toContain("The organization");
-    expect(text).toContain("identity, repo.read");
+    expect(text).toContain("CRM");
+    expect(text).toContain("repo, read:user");
+    expect(text).toContain("bo@acme.com");
+    expect(text).toContain("CI");
+    expect(text).toContain("no scopes");
     expect(text).toContain("Connected");
-    expect(text).toContain("Needs reconnecting");
+    expect(text).toContain("Reconnect in the app");
+    expect(body()).not.toMatch(/organization's|background/i);
+
+    await press(
+      container.querySelector<HTMLButtonElement>(
+        `table button[aria-label="Actions for bo@acme.com's GitHub connection in CI"]`,
+      )!,
+    );
+    const disconnect = [...document.querySelectorAll('[role="menuitem"]')].find(
+      (element) => element.textContent?.includes("Disconnect"),
+    ) as HTMLElement;
+    await press(disconnect);
+    expect(body()).toContain("Disconnect bo@acme.com's GitHub from CI?");
+    const dialog = document.body.querySelector(
+      '[role="alertdialog"], [role="dialog"]',
+    )!;
+    await press(
+      [...dialog.querySelectorAll("button")].find(
+        (element) => element.textContent?.trim() === "Disconnect",
+      )!,
+    );
+    expect(mocks.disconnectConnection.mock.calls[0]![0]).toEqual({
+      data: { connectionId: "conn_2" },
+    });
   });
 });
 

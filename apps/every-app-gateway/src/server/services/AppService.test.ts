@@ -57,7 +57,10 @@ describe("AppService.getAllWithAccessCounts", () => {
           JSON.stringify({
             id: "crm",
             capabilities: {
-              "google-workspace": { access: "write", scopes: ["gmail.read"] },
+              "google-workspace": {
+                scopes: ["gmail.modify"],
+                why: "Reads mail",
+              },
             },
           }),
         ),
@@ -90,8 +93,8 @@ describe("AppService.getAllWithAccessCounts", () => {
       capabilities: [
         {
           id: "google-workspace",
-          scopeSets: [{ name: "gmail.read", label: "Gmail (read-only)" }],
-          scopesStatus: "ok",
+          scopes: ["gmail.modify"],
+          why: "Reads mail",
         },
       ],
     });
@@ -99,7 +102,7 @@ describe("AppService.getAllWithAccessCounts", () => {
       appId: "seo",
       readOnly: true,
       accessCount: 0,
-      capabilities: [{ id: "dataforseo", why: "Ranks", scopesStatus: "none" }],
+      capabilities: [{ id: "dataforseo", access: "read", why: "Ranks" }],
     });
   });
 

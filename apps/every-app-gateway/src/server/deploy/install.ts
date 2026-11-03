@@ -346,7 +346,6 @@ export function serveInstall(request: Request): Promise<Response> {
           manifest,
           deployLimits(),
           release.bundle.assets.size > 0,
-          lookup,
         );
     if (problems.length > 0) throw bundleRefused(problems);
     const fields = selfHosted

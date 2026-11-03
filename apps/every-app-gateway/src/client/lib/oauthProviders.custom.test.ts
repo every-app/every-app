@@ -11,7 +11,7 @@ describe("slugOf", () => {
 });
 
 describe("customSpecOf", () => {
-  it("builds a spec the registry's parser accepts, with one scope set and the id's setting names", () => {
+  it("builds a spec the registry's parser accepts, with the id's setting names and no scopes", () => {
     const spec = customSpecOf({
       name: "Acme Cloud",
       id: "acme-cloud",
@@ -19,10 +19,9 @@ describe("customSpecOf", () => {
       authorizeUrl: "https://acme.com/oauth/authorize",
       tokenUrl: "https://acme.com/oauth/token",
       hosts: "api.acme.com, Files.acme.com",
-      scopes: "read write",
+      scopeSeparator: "comma",
       inject: "basic",
       pkce: false,
-      writes: true,
     });
     expect(spec).toMatchObject({
       id: "acme-cloud",
@@ -33,10 +32,11 @@ describe("customSpecOf", () => {
         clientSecret: "ACME_CLOUD_CLIENT_SECRET",
         inject: "basic",
         pkce: false,
+        scopeSeparator: "comma",
       },
-      scopeSets: { default: { access: "write", scopes: ["read", "write"] } },
-      access: ["read", "write"],
     });
+    expect(spec).not.toHaveProperty("scopeSets");
+    expect(spec).not.toHaveProperty("access");
     const parsed = parseProviderSpec(spec);
     expect(parsed.ok, JSON.stringify(parsed)).toBe(true);
   });

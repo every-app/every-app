@@ -161,9 +161,8 @@ COMMANDS
   show         Print a provider's spec: its hosts, how its key is sent, its settings, who registered it and which apps use it
   remove       Remove a registered provider from the Gateway; its key stays set until secret unset
   presets      List the OAuth presets provider add --oauth takes: GitHub, Notion, Linear and more, and the built-in clients
-  connections  List the accounts people (and the organization) connected to OAuth providers on the Gateway
-  disconnect   Remove a person's or the organization's connection to an OAuth provider from the Gateway
-  scope-set    Scope sets an operator adds to the built-in OAuth clients (Google, Microsoft, Slack)
+  connections  List the accounts people connected to OAuth providers in each app on the Gateway
+  disconnect   Remove people's connections to an OAuth provider from the Gateway
 
 EXAMPLES
   $ everyapp provider list
@@ -1762,7 +1761,7 @@ Scripts and agents set it in the same run with --from-env (the variables of the 
 names) or piped NAME=value lines; never on the command line.
 
 A built-in provider (provider list names them) is only its key; an OAuth client
-(google-workspace, slack, microsoft-365, discord) its client. An OAuth preset (provider
+(google-workspace, slack, microsoft-365) its client. An OAuth preset (provider
 presets: github-oauth) becomes a registered provider. Any other API is a spec: its id, name,
 the page the key comes from (docs), the only hosts the key is ever sent to and how (auth:
 bearer, header, query or basic), naming the Gateway setting that holds the key. The spec
@@ -1778,7 +1777,8 @@ under providers and call /api/ai/<id>/v1/chat/completions; everyapp ai default <
 it the Gateway's default model provider.
 
 --oauth takes an OAuth spec file (auth.kind oauth2-user), or a preset or built-in client by
-name. --verbose adds an OAuth provider's scope sets and the manifest entry.
+name. Apps list the provider's own scopes in everyapp.config.ts; people connect in each app.
+--verbose adds the manifest entry.
 
 Examples:
   everyapp provider add google-workspace
@@ -1939,8 +1939,8 @@ USAGE
   everyapp provider presets [--json] [--verbose]
   everyapp provider presets --help
 
-Each with its scope sets (what an app lists under scopes) and the console where its client
-is made. Nothing is read from the Gateway.
+Each with its API hosts and the console where its client is made. Apps list the
+provider's own scopes in everyapp.config.ts. Nothing is read from the Gateway.
 
 Example:
   everyapp provider presets
@@ -1954,13 +1954,14 @@ FLAGS
 
 ### `everyapp provider connections`
 
-List the accounts people (and the organization) connected to OAuth providers on the Gateway.
+List the accounts people connected to OAuth providers in each app on the Gateway.
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
 | `--all` | switch | no |  | Every organization's connections (default: the Gateway's own organization's) |
 | `--user` | `<email>` | no |  | One person's connections |
 | `--provider` | `<id>` | no |  | One provider's connections |
+| `--app` | `<app>` | no |  | One app's connections, by its id: openmail |
 | `--gateway` | `<value>` | no |  | The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither) |
 | `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
 | `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
@@ -1968,21 +1969,23 @@ List the accounts people (and the organization) connected to OAuth providers on 
 
 ```text
 USAGE
-  everyapp provider connections [--all] [--user email] [--provider id] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp provider connections [--all] [--user email] [--provider id] [--app app] [--gateway value] [--account-id value] [--json] [--verbose]
   everyapp provider connections --help
 
-Who connected what, with the scope sets granted, the status and when it was last used.
-Never a token.
+A connection is one person's, in one app: who connected what, in which app, with the scopes
+granted, the status and when it was last used. Never a token.
 
 Examples:
   everyapp provider connections
   everyapp provider connections --provider github-oauth
   everyapp provider connections --user ben@example.com
+  everyapp provider connections --app openmail
 
 FLAGS
      [--all/--no-all]          Every organization's connections (default: the Gateway's own organization's)
      [--user]                  One person's connections
      [--provider]              One provider's connections
+     [--app]                   One app's connections, by its id: openmail
      [--gateway]               The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)
      [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
      [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
@@ -1993,7 +1996,7 @@ FLAGS
 
 ### `everyapp provider disconnect`
 
-Remove a person's or the organization's connection to an OAuth provider from the Gateway.
+Remove people's connections to an OAuth provider from the Gateway.
 
 | Argument | Required | What it is |
 | --- | --- | --- |
@@ -2002,8 +2005,8 @@ Remove a person's or the organization's connection to an OAuth provider from the
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
 | `--user` | `<email>` | no |  | This person's connection |
-| `--organization` | switch | no |  | The organization's own connection (the one background work uses) |
 | `--all` | switch | no |  | Every connection to the provider |
+| `--app` | `<app>` | no |  | Only the connections made in this app, by its id: openmail |
 | `--gateway` | `<value>` | no |  | The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither) |
 | `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
 | `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
@@ -2011,127 +2014,32 @@ Remove a person's or the organization's connection to an OAuth provider from the
 
 ```text
 USAGE
-  everyapp provider disconnect [--user email] [--organization] [--all] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp provider disconnect [--user email] [--all] [--app app] [--gateway value] [--account-id value] [--json] [--verbose] <id>
   everyapp provider disconnect --help
 
-The Gateway drops the tokens it held; apps get "not connected" until the person connects
-again at /connect/<id>. The CLI holds no token, so the grant stays at the provider until it
-is revoked there (Admin → Providers → Disconnect revokes it from the Gateway).
+The Gateway drops the tokens it held; the app gets "not connected" until the person
+connects again in it. --user removes that person's connections in every app, --app narrows
+it to one app. The CLI holds no token, so the grant stays at the provider until it is
+revoked there (Disconnect in Connected accounts revokes it from the Gateway).
 
 Examples:
   everyapp provider disconnect github-oauth --user ben@example.com
-  everyapp provider disconnect github-oauth --organization
+  everyapp provider disconnect google-workspace --user ben@example.com --app openmail
   everyapp provider disconnect github-oauth --all
 
 FLAGS
-     [--user]                            This person's connection
-     [--organization/--no-organization]  The organization's own connection (the one background work uses)
-     [--all/--no-all]                    Every connection to the provider
-     [--gateway]                         The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)
-     [--account-id]                      The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
-     [--json/--no-json]                  Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
-     [--verbose/--no-verbose]            Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
-  -h  --help                             Print help information and exit
-      --                                 All subsequent inputs should be interpreted as arguments
+     [--user]                  This person's connection
+     [--all/--no-all]          Every connection to the provider
+     [--app]                   Only the connections made in this app, by its id: openmail
+     [--gateway]               The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
 
 ARGUMENTS
   id  The OAuth provider's id: github-oauth
-```
-
-### `everyapp provider scope-set add`
-
-Add a scope set to a built-in OAuth client, so apps can list it under scopes.
-
-| Argument | Required | What it is |
-| --- | --- | --- |
-| `<provider>` | yes | A built-in OAuth client with scope sets: google-workspace, microsoft-365 or slack |
-| `<spec>` | yes | The set as JSON: a file, or an https URL to one (64 KiB at most) |
-
-| Flag | Value | Required | Default | What it does |
-| --- | --- | --- | --- | --- |
-| `--replace` | switch | no |  | Replace the set of the same name added before |
-| `--gateway` | `<value>` | no |  | The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither) |
-| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
-| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
-| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
-
-```text
-USAGE
-  everyapp provider scope-set add [--replace] [--gateway value] [--account-id value] [--json] [--verbose] <provider> <spec>
-  everyapp provider scope-set add --help
-
-The set says its name (identity, or <area>.<access>: gmail.send), its label, its access
-(read or write, said outright), the provider's scopes it asks for, and the routes on the
-client's own API hosts it unlocks: { host, paths, posts? } (posts are anchored patterns of
-the POST paths a read set admits). It is checked by the rules a built-in set is checked
-by; a name the client already has, or a host outside the client's, is refused. Live within
-30 seconds. The client's authorize scopes grow by the set's: allow them on the OAuth client
-at the provider's console, and people connect again to grant them.
-
-Example:
-  everyapp provider scope-set add google-workspace gmail-send.json
-  gmail-send.json: { "name": "gmail.send", "label": "Gmail (send)", "access": "write",
-    "scopes": ["https://www.googleapis.com/auth/gmail.send"],
-    "routes": [{ "host": "gmail.googleapis.com", "paths": ["/gmail/v1/users/"] }] }
-
-FLAGS
-     [--replace/--no-replace]  Replace the set of the same name added before
-     [--gateway]               The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)
-     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
-     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
-     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
-  -h  --help                   Print help information and exit
-      --                       All subsequent inputs should be interpreted as arguments
-
-ARGUMENTS
-  provider  A built-in OAuth client with scope sets: google-workspace, microsoft-365 or slack
-  spec      The set as JSON: a file, or an https URL to one (64 KiB at most)
-```
-
-### `everyapp provider scope-set remove`
-
-Remove a scope set added to a built-in OAuth client.
-
-| Argument | Required | What it is |
-| --- | --- | --- |
-| `<provider>` | yes | A built-in OAuth client with scope sets: google-workspace, microsoft-365 or slack |
-| `<name>` | yes | The set's name, as provider show lists it (added ones marked) |
-
-| Flag | Value | Required | Default | What it does |
-| --- | --- | --- | --- | --- |
-| `--force` | switch | no |  | Remove it even though deployed apps list it (their calls under it stop) |
-| `--gateway` | `<value>` | no |  | The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither) |
-| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
-| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
-| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
-
-```text
-USAGE
-  everyapp provider scope-set remove [--force] [--gateway value] [--account-id value] [--json] [--verbose] <provider> <name>
-  everyapp provider scope-set remove --help
-
-Only a set added with scope-set add can be removed; the client's own stay. A set a deployed
-app lists under scopes is refused unless --force. Connections keep their tokens; calls
-under the set answer integration_scopes_undeclared within 30 seconds.
-
-Example:
-  everyapp provider scope-set remove google-workspace gmail.send
-
-ALIASES
-  everyapp provider scope-set rm
-
-FLAGS
-     [--force/--no-force]      Remove it even though deployed apps list it (their calls under it stop)
-     [--gateway]               The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)
-     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
-     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
-     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
-  -h  --help                   Print help information and exit
-      --                       All subsequent inputs should be interpreted as arguments
-
-ARGUMENTS
-  provider  A built-in OAuth client with scope sets: google-workspace, microsoft-365 or slack
-  name      The set's name, as provider show lists it (added ones marked)
 ```
 
 ### `everyapp provider on` (hidden)

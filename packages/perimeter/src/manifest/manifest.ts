@@ -15,6 +15,7 @@
 import { z } from "zod";
 import {
   CATALOG,
+  canonicalScope,
   capabilityIdsOf,
   capabilitySettings,
   EMAIL_SET_COMMAND,
@@ -23,11 +24,9 @@ import {
   isReservedAppSecretName,
   isRemoteMcpSecretName,
   isSignInSettingName,
-  isOAuthProvider,
   isSettableGatewaySetting,
   providerEntries,
   RESERVED_APP_SECRET_NAMES_TEXT,
-  SCOPE_SET_NAME,
   secretEntries,
   secretNames,
   settingNames,
@@ -499,83 +498,135 @@ const SecretNameSchema = z
   .max(64);
 
 /**
- * One capability an app asks for (docs/capabilities.md). Approval is of the
- * app: every call it makes may use the capability, attributed to the
- * signed-in person whose identity it forwards, or to the app.
+ * One capability an app asks for (docs/capabilities.md), as a stored
+ * manifest holds it: what registration reads, tolerant so a newer CLI's
+ * manifest never bricks a row. An API-key provider or a gateway service
+ * is listed with `access`; an OAuth provider with `scopes`, the
+ * provider's own scope strings (docs/design/2026-11-oauth-simplify.md).
+ * Approval is of the app: every call it makes may use the capability,
+ * attributed to the signed-in person whose identity it forwards, or to
+ * the app.
  */
 const CapabilityEntryBaseSchema = z.object({
   /**
-   * The scope sets an OAuth client with a scope policy lets the app use, by
-   * name (docs/capabilities.md "OAuth clients"). The names are checked when
-   * the manifest is authored and again at the token endpoint; a malformed
-   * stored value reads as undeclared (the `email.inbound` precedent) so a
-   * newer CLI's manifest never bricks a row, and the token call is refused
-   * instead.
+   * For an OAuth provider: the provider's own scopes the app uses, short
+   * (`gmail.modify`) or in full. A person connects in the app for exactly
+   * these (the Gateway adds the scopes its identity URL and a refresh
+   * token need), and the Gateway refuses a token that carries more. A
+   * malformed stored value reads as undeclared (the `email.inbound`
+   * precedent), so the app's calls are refused instead.
    */
   scopes: z.array(z.string()).optional().catch(undefined),
   /**
-   * For an OAuth client: the paths on the app's own host the provider
-   * sends people back to when the app runs the flow itself
-   * (`/integrations/google/callback`), the redirect URIs the operator
-   * registers on the client. The catalog names none: each app says its own.
+   * For an API-key provider or a gateway service: what the app does with
+   * it, each capability saying which levels it offers. An OAuth provider
+   * takes none (its scopes are the grant); missing reads as `read`.
    */
-  redirectPaths: z.array(z.string()).optional().catch(undefined),
-  /**
-   * For an OAuth provider the Gateway runs the flow for: the scope sets
-   * (a subset of `scopes`) the app may use on a member's own connection
-   * with nobody present, once that member allows it on the Gateway's
-   * page, and why (docs/design/2026-11-birds-decisions/888-background-oauth.md).
-   * A malformed stored value reads as none, so background calls are refused.
-   */
-  background: z
-    .object({ scopes: z.array(z.string()), why: z.string() })
-    .optional()
-    .catch(undefined),
-  /** What the app does with it; each capability says which levels it offers. */
-  access: z.enum(["read", "write"]),
+  access: z.enum(["read", "write"]).optional(),
   ...SettingNeedFieldsSchema,
 });
 
 export const CapabilityRequestSchema = CapabilityEntryBaseSchema.passthrough();
 export type CapabilityRequest = z.infer<typeof CapabilityRequestSchema>;
 
-/** The most redirect paths one capability entry lists. */
-const MAX_REDIRECT_PATHS = 10;
+/** The most scopes one OAuth entry lists. */
+const MAX_OAUTH_SCOPES = 40;
 
 /**
- * An OAuth client's `redirectPaths` as an author writes them: absolute
- * paths on the app's host, no query or fragment, each once.
+ * Keys an OAuth entry had before each app listed the provider's own
+ * scopes, each with what to write instead: refused with that message
+ * rather than "unrecognized key".
  */
-const RedirectPathsSchema = z
-  .array(
-    z
-      .string()
-      .max(200, "a redirect path is at most 200 characters")
-      .regex(
-        /^\/(?!\/)[A-Za-z0-9._~\-/]*$/,
-        "a redirect path is an absolute path on the app's host (/integrations/google/callback), without a query or fragment",
-      ),
-  )
-  .min(1, "redirectPaths lists at least one path, or is left out")
-  .max(
-    MAX_REDIRECT_PATHS,
-    `redirectPaths lists at most ${MAX_REDIRECT_PATHS} paths`,
+const REMOVED_OAUTH_KEYS = {
+  access:
+    "OAuth providers take no access: the scopes are the grant. Remove access.",
+  background:
+    "background is gone: an app may use a connection made in it at any time. Remove it.",
+  optionalScopes: "optionalScopes is gone: list every scope under scopes.",
+  redirectPaths:
+    "redirectPaths is gone: the Gateway runs the flow; send people to connectUrl().",
+} as const;
+
+/** A key refused with `message` when present. `.optional()`: under zod 4 a key whose schema is `z.undefined()` is required. */
+function refusedKey(message: string) {
+  return z.undefined({ error: message }).optional();
+}
+
+/** One provider scope string, as an author writes it: one scope, printable, with no space or comma. */
+const OAuthScopeSchema = z
+  .string({ error: "a scope is a string" })
+  .min(1, "a scope is 1 to 200 characters")
+  .max(200, "a scope is 1 to 200 characters")
+  .refine(
+    (scope) => !/[\p{Cc}\p{Cf}]/u.test(scope),
+    "a scope holds no control characters",
   )
   .refine(
-    (list) => new Set(list).size === list.length,
-    "a redirect path is listed twice",
+    (scope) => !/[\s,]/.test(scope),
+    "one scope, with no space or comma: list each scope on its own",
   );
 
 /**
- * What one capability's manifest entry takes: `access`, and its need
- * (`why`, `docs`, `optional`, `anyOf`), and for an OAuth client the
- * app's own callbacks (`redirectPaths`). Strict:
- * anything else is unknown here; an installation's email senders aren't
- * the manifest's (`everyapp email set`), and the strict capabilities
- * schema names the command for a manifest that still lists them.
+ * An OAuth entry's `scopes`: 0 to 40 of the provider's own scope strings,
+ * each once. `same` gives the spelling two scopes are compared in (a
+ * known provider's canonical form, so `gmail.modify` and its full URL are
+ * the same scope); `needs` is the message when the list is missing.
+ */
+function oauthScopesSchema(needs: string, same: (scope: string) => string) {
+  return z
+    .array(OAuthScopeSchema, { error: needs })
+    .max(MAX_OAUTH_SCOPES, `scopes lists at most ${MAX_OAUTH_SCOPES} scopes`)
+    .refine(
+      (list) => new Set(list.map(same)).size === list.length,
+      "a scope is listed twice",
+    );
+}
+
+/** An OAuth entry's `why`, required: the connect page and the operator read it. */
+function oauthWhySchema(needs: string) {
+  return z.string({ error: needs }).min(1, needs).max(200);
+}
+
+/**
+ * An OAuth entry as an author writes it: `{ scopes, why }` (and the need
+ * fields `docs`, `optional`, `anyOf`), the removed keys refused with what
+ * to write instead.
+ */
+function oauthEntrySchema(
+  label: string,
+  same: (scope: string) => string = (scope) => scope,
+) {
+  return z
+    .object({
+      scopes: oauthScopesSchema(
+        `${label} needs scopes: the provider's own scopes this app uses (gmail.modify), or [] for none`,
+        same,
+      ),
+      why: oauthWhySchema(
+        `${label} needs why: what the app does with the account a person connects, in one sentence`,
+      ),
+      docs: SettingNeedFieldsSchema.docs,
+      optional: SettingNeedFieldsSchema.optional,
+      anyOf: SettingNeedFieldsSchema.anyOf,
+      access: refusedKey(REMOVED_OAUTH_KEYS.access),
+      background: refusedKey(REMOVED_OAUTH_KEYS.background),
+      optionalScopes: refusedKey(REMOVED_OAUTH_KEYS.optionalScopes),
+      redirectPaths: refusedKey(REMOVED_OAUTH_KEYS.redirectPaths),
+    })
+    .strict();
+}
+
+/**
+ * What one capability's manifest entry takes, strict (anything else is
+ * unknown here; an installation's email senders aren't the manifest's,
+ * `everyapp email set`, and the strict capabilities schema names the
+ * command for a manifest that still lists them):
  *
- * An OAuth client with a scope policy also takes `scopes`, one or more of
- * its set names, each once; every other capability refuses the field.
+ *  - an OAuth provider: `{ scopes, why }`, the provider's own scopes;
+ *  - an API-key provider or a gateway service: `{ access, why }`, at a
+ *    level it offers, and no `scopes`.
+ *
+ * Every entry also takes the need fields `docs`, `optional`, `anyOf`.
  * `lookup` is where `id` is found: the catalog, or a gateway's registry;
  * an id it doesn't have, or an AI provider's, is a programming error here
  * (the capabilities schema checks ids first).
@@ -583,143 +634,31 @@ const RedirectPathsSchema = z
 export function capabilityEntrySchema(
   id: string,
   lookup: CapabilityLookup = CATALOG,
-  /**
-   * What to do with a scope-set name the client's policy doesn't have:
-   * refuse it (the default: the lookup is the gateway's registry, overlays
-   * included), or accept a well-formed one for the gateway to check (the
-   * CLI before it has asked a gateway: an operator may have added the set
-   * with `everyapp provider scope-set add`).
-   */
-  unknown: UnknownCapabilities = "refuse",
 ) {
   const capability = lookup.get(id);
   if (!capability || capability.mode === "ai") {
     throw new Error(`capabilityEntrySchema: ${id} is not a capability`);
   }
-  // An OAuth client the Gateway runs the flow for (a `flow` block) also
-  // takes `read`: the app's calls to its API hosts carry the person's held
-  // token, and a read grant allows the read methods only (the held-token
-  // branch, docs/design/2026-10-oauth-providers.md section 7). `write`
-  // stays what the app-driven token-endpoint calls need.
-  const offered: readonly string[] =
-    isOAuthProvider(capability) && !capability.access.includes("read")
-      ? ["read", ...capability.access]
-      : capability.access;
-  const access = z
-    .enum(["read", "write"])
-    .refine(
-      (level) => offered.includes(level),
-      `${capability.label} offers ${offered.join(" or ")} access`,
+  if (capability.mode === "oauth_client") {
+    const rules = capability.flow;
+    return oauthEntrySchema(capability.label, (scope) =>
+      canonicalScope(rules, scope),
     );
-  // Only an OAuth client has a callback to register.
-  const redirectPaths =
-    capability.mode === "oauth_client"
-      ? RedirectPathsSchema.optional()
-      : z
-          .undefined({
-            error: `${capability.label} takes no redirectPaths; only an OAuth client has a callback`,
-          })
-          .optional();
-  const policy =
-    "scopePolicy" in capability ? capability.scopePolicy : undefined;
-  if (!policy) {
-    // A capability with one purpose takes no scope sets: listing it is
-    // the whole grant. `.optional()` so the key may be absent: under zod 4
-    // a key whose schema is `z.undefined()` is required.
-    const scopes = z
-      .undefined({
-        error: `${capability.label} takes no scopes; list it as { access: ..., why }`,
-      })
-      .optional();
-    return CapabilityEntryBaseSchema.extend({
-      access,
-      scopes,
-      redirectPaths,
-      background: noBackground(capability.label),
-    }).strict();
   }
-  // Own keys only: `constructor` is not a set.
-  const names = Object.keys(policy.sets) as [string, ...string[]];
-  const needsScopes = `${capability.label} needs scopes: one or more of ${names.join(", ")}`;
-  const name =
-    unknown === "accept"
-      ? // A well-formed name the catalog's policy lacks may be an
-        // operator's overlay on the gateway: the deploy checks it there.
-        z
-          .string()
-          .regex(
-            SCOPE_SET_NAME,
-            `unknown scope set (${capability.label} offers: ${names.join(", ")}; a set an operator added is named identity, or <area>.<access>)`,
-          )
-          .refine(
-            (set) => !(set in Object.prototype),
-            `unknown scope set (${capability.label} offers: ${names.join(", ")})`,
-          )
-      : z.enum(names, {
-          error: `unknown scope set (${capability.label} offers: ${names.join(", ")})`,
-        });
-  const scopes = z
-    .array(name, { error: needsScopes })
-    .min(1, needsScopes)
-    .refine(
-      (list) => new Set(list).size === list.length,
-      "a scope set is listed twice",
-    );
+  const offered: readonly string[] = capability.access;
   return CapabilityEntryBaseSchema.extend({
-    access,
-    scopes,
-    redirectPaths,
-    background:
-      capability.mode === "oauth_client" && capability.flow
-        ? backgroundSchema(name).optional()
-        : noBackground(capability.label),
-  })
-    .strict()
-    .superRefine(backgroundWithinScopes);
-}
-
-/** A capability that can't be used on a member's connection in the background. */
-function noBackground(label: string) {
-  return z
-    .undefined({
-      error: `${label} takes no background; only an OAuth provider the Gateway connects people to does`,
-    })
-    .optional();
-}
-
-/**
- * `background: { scopes, why }`: the sets (by `name`'s rule) the app may
- * use on a member's own connection with nobody present, once that member
- * allows it, and why, which the Gateway's consent page shows.
- */
-function backgroundSchema(name: z.ZodType<string>) {
-  const needs =
-    "background.scopes lists one or more of this entry's scopes, each once";
-  return z
-    .object({
-      scopes: z
-        .array(name, { error: needs })
-        .min(1, needs)
-        .refine((list) => new Set(list).size === list.length, needs),
-      why: z.string().trim().min(1).max(200),
-    })
-    .strict();
-}
-
-/** Every background set is one of the entry's own `scopes`. */
-function backgroundWithinScopes(
-  entry: { scopes?: readonly string[]; background?: { scopes: string[] } },
-  ctx: z.RefinementCtx,
-): void {
-  const declared = entry.scopes ?? [];
-  entry.background?.scopes.forEach((set, index) => {
-    if (declared.includes(set)) return;
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["background", "scopes", index],
-      message: `${set} isn't in this entry's scopes; background.scopes is a subset of them`,
-    });
-  });
+    access: z
+      .enum(["read", "write"])
+      .refine(
+        (level) => offered.includes(level),
+        `${capability.label} offers ${offered.join(" or ")} access`,
+      ),
+    // A capability with one purpose takes no scopes: listing it is the
+    // whole grant.
+    scopes: refusedKey(
+      `${capability.label} takes no scopes; list it as { access, why }`,
+    ),
+  }).strict();
 }
 
 /** One authored capability entry, whichever capability it is for. */
@@ -732,38 +671,55 @@ const CapabilitiesSchema = z
   }, everyKey);
 
 /**
- * The entry of a capability this validator can't look up (a provider
+ * The entry of an API-key provider this validator can't look up (one
  * registered on a gateway the CLI hasn't asked yet): `access` and its
- * need, and `scopes` as well-formed set names for a registered OAuth
- * provider (the gateway's registry says whether the provider has them),
- * nothing else. `everyapp deploy` checks the id and the sets against the
+ * need. `everyapp deploy` checks the id and the level against the
  * gateway's registry once it is connected.
  */
-const UnknownCapabilityEntrySchema = CapabilityEntryBaseSchema.extend({
-  scopes: z
-    .array(
-      z
-        .string()
-        .regex(
-          SCOPE_SET_NAME,
-          "a scope set is named identity, or <area>.<access> (repo.read)",
-        ),
+const UnknownApiKeyEntrySchema = CapabilityEntryBaseSchema.extend({
+  access: z.enum(["read", "write"], {
+    error:
+      "access is read or write for an API-key provider; an OAuth provider takes scopes instead",
+  }),
+  scopes: z.undefined().optional(),
+}).strict();
+
+/** The entry of an OAuth provider this validator can't look up: `{ scopes, why }`. */
+const UnknownOAuthEntrySchema = oauthEntrySchema("This provider");
+
+/**
+ * Problems with the entry of a provider the lookup doesn't have, accepted
+ * for the gateway to check: an OAuth entry (it lists `scopes`) or an
+ * API-key one, never both.
+ */
+function unknownCapabilityEntryIssues(
+  entry: unknown,
+): Array<{ path: PropertyKey[]; message: string }> {
+  const record =
+    entry !== null && typeof entry === "object" && !Array.isArray(entry)
+      ? (entry as Record<string, unknown>)
+      : undefined;
+  if (record && "scopes" in record && "access" in record) {
+    return [
       {
-        error:
-          "scopes lists the scope sets of a registered OAuth provider (the gateway's registry names them); an API-key provider takes none",
+        path: [],
+        message:
+          "an API-key provider takes access; an OAuth provider takes scopes, not both",
       },
-    )
-    .min(1, "scopes lists at least one set, or is left out")
-    .refine(
-      (list) => new Set(list).size === list.length,
-      "a scope set is listed twice",
-    )
-    .optional(),
-  redirectPaths: RedirectPathsSchema.optional(),
-  background: backgroundSchema(z.string().regex(SCOPE_SET_NAME)).optional(),
-})
-  .strict()
-  .superRefine(backgroundWithinScopes);
+    ];
+  }
+  const schema =
+    record && "scopes" in record
+      ? UnknownOAuthEntrySchema
+      : UnknownApiKeyEntrySchema;
+  const parsed = schema.safeParse(entry);
+  return parsed.success
+    ? []
+    : parsed.error.issues.map((issue) => ({
+        path: issue.path,
+        message: issue.message,
+      }));
+}
 
 /** What the strict validator does with a capability id its lookup doesn't have. */
 export type UnknownCapabilities = "refuse" | "accept";
@@ -796,10 +752,12 @@ function capabilitiesSchemaStrict(
             });
             continue;
           }
-          const parsed = UnknownCapabilityEntrySchema.safeParse(entry);
-          if (parsed.success) continue;
-          for (const issue of parsed.error.issues) {
-            ctx.addIssue({ ...issue, path: [id, ...issue.path] });
+          for (const issue of unknownCapabilityEntryIssues(entry)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: [id, ...issue.path],
+              message: issue.message,
+            });
           }
           continue;
         }
@@ -816,9 +774,7 @@ function capabilitiesSchemaStrict(
           });
           continue;
         }
-        const parsed = capabilityEntrySchema(id, lookup, unknown).safeParse(
-          entry,
-        );
+        const parsed = capabilityEntrySchema(id, lookup).safeParse(entry);
         if (parsed.success) continue;
         for (const issue of parsed.error.issues) {
           ctx.addIssue({ ...issue, path: [id, ...issue.path] });
@@ -1108,8 +1064,9 @@ export const ManifestSchema = z
     /** Provider APIs this app may call through the gateway. Default: none. */
     providers: ProvidersSchema.optional(),
     /**
-     * Third-party APIs the gateway calls for this app with keys it holds,
-     * e.g. `dataforseo: { access: "read" }`. Default: none.
+     * Third-party APIs the gateway calls for this app with keys or OAuth
+     * clients it holds, e.g. `dataforseo: { access: "read" }` or
+     * `"google-workspace": { scopes: ["gmail.modify"], why }`. Default: none.
      */
     capabilities: CapabilitiesSchema.optional(),
     /**

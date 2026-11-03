@@ -15,13 +15,11 @@ import type { EventActor } from "@/server/events/catalogue";
 import * as oauth from "@/server/oauth/service";
 import {
   addOAuthProviderSchema,
-  addScopeSetSchema,
   providerActionSchema,
-  removeScopeSetSchema,
   setOAuthClientSchema,
 } from "@/schemas/oauth-provider";
 
-// Admin → Providers (docs/design/2026-10-oauth-providers.md section 9): the
+// Manage workspace → Providers (docs/design/2026-11-oauth-simplify.md): the
 // providers this Gateway brokers, and the OAuth ones an owner or admin adds
 // from a preset or a custom spec with a client pasted in. Every function is
 // scoped to the acting organization by the middleware. A client secret
@@ -66,7 +64,7 @@ export const listProviders = createServerFn()
     providers: await oauth.listProviders(context.org),
   }));
 
-/** The OAuth providers, with each one's client source, redirect URI and connection count. */
+/** The OAuth providers, with each one's hosts, client source, redirect URI and connection count. */
 export const listOAuthProviders = createServerFn()
   .middleware([publicErrorMiddleware, organizationAdminMiddleware])
   .handler(async ({ context }) => ({
@@ -77,13 +75,12 @@ export const listOAuthProviders = createServerFn()
 export interface OAuthPresetSummary {
   id: string;
   name: string;
-  /** A catalog entry (Google, Microsoft, Slack, Discord): adding it uploads a client only. */
+  /** A catalog entry (Google, Microsoft, Slack): adding it uploads a client only. */
   builtIn: boolean;
   description: string | null;
   hint: string | null;
   /** Where the client is made. */
   console: string;
-  scopeSets: { name: string; label: string; access: "read" | "write" }[];
   /** The Gateway settings a terminal sets instead of pasting here. */
   settings: { clientId: string; clientSecret: string | null };
   pkce: boolean;
@@ -97,7 +94,6 @@ function summarize(
   capability: OAuthClientCapability,
   builtIn: boolean,
 ): OAuthPresetSummary {
-  const sets = capability.scopePolicy?.sets ?? {};
   return {
     id,
     name: capability.label,
@@ -105,24 +101,19 @@ function summarize(
     description: capability.description ?? null,
     hint: capability.hint ?? null,
     console: capability.console,
-    scopeSets: Object.entries(sets).map(([name, set]) => ({
-      name,
-      label: set.label,
-      access: set.access,
-    })),
     settings: {
       clientId: capability.secrets.clientId,
       clientSecret: capability.secrets.clientSecret ?? null,
     },
-    pkce: capability.flow?.pkce ?? true,
+    pkce: capability.flow.pkce,
     hosts: [...capability.api],
     redirectUri: oauth.redirectUriFor(id),
   };
 }
 
 /**
- * The presets the Add dialog offers: the catalog's OAuth clients with a
- * Gateway flow first (built in; adding one uploads a client, no row), then
+ * The presets the Add dialog offers: the catalog's OAuth clients first
+ * (built in; adding one uploads a client, no row), then
  * the shipped presets (`OAUTH_PRESETS`: GitHub, Notion, …; adding one
  * writes a row). Static per release, so the page reads it once.
  */
@@ -194,31 +185,4 @@ export const removeProvider = createServerFn({ method: "POST" })
       actorOf(context.user),
       data.providerId,
     );
-  });
-
-/**
- * Add a scope set to a built-in OAuth client (Google, Microsoft, Slack):
- * its name, label, access, scopes and the routes on the client's hosts it
- * unlocks. Apps then list it under `scopes` like a built-in set.
- */
-export const addScopeSet = createServerFn({ method: "POST" })
-  .middleware([publicErrorMiddleware, organizationAdminMiddleware])
-  .validator((data: unknown) => addScopeSetSchema.parse(data))
-  .handler(async ({ data, context }) => {
-    requireSelfHosted();
-    const { providerId, name, ...set } = data;
-    return oauth.addScopeSet(context.org, actorOf(context.user), {
-      providerId,
-      name,
-      spec: set,
-    });
-  });
-
-/** Remove a scope set an operator added; refused while a deployed app lists it. */
-export const removeScopeSet = createServerFn({ method: "POST" })
-  .middleware([publicErrorMiddleware, organizationAdminMiddleware])
-  .validator((data: unknown) => removeScopeSetSchema.parse(data))
-  .handler(async ({ data, context }) => {
-    requireSelfHosted();
-    return oauth.removeScopeSet(context.org, actorOf(context.user), data);
   });

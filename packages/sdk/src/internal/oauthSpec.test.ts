@@ -1,17 +1,12 @@
 /**
- * The `oauth2-user` spec kind (docs/design/2026-10-oauth-providers.md
- * section 3): a preset parses into the catalog's OAuthClientCapability
- * with a `flow`, round-trips through `providerSpecOf`, and every field
- * the design names is held to its rule.
+ * The `oauth2-user` spec kind (docs/design/2026-11-oauth-simplify.md): a
+ * preset parses into an OAuthClientCapability with a `flow`, round-trips
+ * through `providerSpecOf`, and every field is held to its rule.
  */
 import { describe, expect, it } from "vitest";
-import {
-  CAPABILITIES,
-  CAPABILITY_IDS,
-  capabilitySettings,
-  type OAuthFlow,
-} from "./capabilities";
+import { CAPABILITIES, CAPABILITY_IDS, type OAuthFlow } from "./capabilities";
 import { isSettableGatewaySetting } from "./gatewaySettings";
+import { REMOVED_OAUTH_FIELDS } from "./oauthSpec";
 import {
   OAUTH_PRESETS,
   isOAuthProvider,
@@ -38,7 +33,7 @@ function withAuth(extra: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe("parseProviderSpec with auth.kind oauth2-user", () => {
-  it("parses the GitHub preset into an OAuth client with a flow, and round-trips it", () => {
+  it("parses the GitHub preset into an OAuth provider with a flow, and round-trips it", () => {
     const parsed = parseProviderSpec(GITHUB);
     expect(parsed.ok, JSON.stringify(parsed)).toBe(true);
     if (!parsed.ok) return;
@@ -49,53 +44,36 @@ describe("parseProviderSpec with auth.kind oauth2-user", () => {
       clientId: "GITHUB_OAUTH_CLIENT_ID",
       clientSecret: "GITHUB_OAUTH_CLIENT_SECRET",
     });
-    expect(capability.token).toEqual([
-      {
-        host: "github.com",
-        path: "/login/oauth/access_token",
-        methods: ["POST"],
-        inject: "form",
-      },
-    ]);
     expect(capability.api).toEqual(["api.github.com"]);
     expect(capability.console).toBe("https://github.com/settings/developers");
-    expect(capability.authorize.url).toBe(
-      "https://github.com/login/oauth/authorize",
-    );
-    // The union of every set, in set order, each scope once.
-    expect(capability.authorize.scopes).toEqual([
-      "read:user",
-      "user:email",
-      "repo",
-      "read:org",
-    ]);
     expect(capability.flow).toEqual({
+      authorizeUrl: "https://github.com/login/oauth/authorize",
       tokenUrl: "https://github.com/login/oauth/access_token",
       revokeUrl: "https://api.github.com/applications/{client_id}/grant",
       revokeMethod: "DELETE",
+      inject: "form",
       pkce: true,
-      scopeDialect: "comma",
+      scopeSeparator: "comma",
       tokenHeaders: { Accept: "application/json" },
       identity: {
         url: "https://api.github.com/user",
         label: "login",
         id: "id",
       },
+      identityScopes: [],
+      tolerated: [],
     });
-    expect(capability.scopePolicy?.dialect).toBe("comma");
-    expect(capability.scopePolicy?.grantTypes).toEqual([
-      "authorization_code",
-      "refresh_token",
-    ]);
-    expect(capability.scopePolicy?.sets["repo.write"]?.access).toBe("write");
-    expect(capability.access).toEqual(["read", "write"]);
+    // Which scopes a connection holds is each app's config, never the spec.
+    for (const field of ["access", "token", "authorize", "scopePolicy"]) {
+      expect(capability, field).not.toHaveProperty(field);
+    }
     expect(isOAuthProvider(capability)).toBe(true);
     expect(
       parseProviderSpec(providerSpecOf("github-oauth", capability)),
     ).toEqual(parsed);
   });
 
-  it("fills the defaults: form injection, PKCE on, the space dialect, read access", () => {
+  it("fills the defaults: form injection, PKCE on, space-separated, no identity", () => {
     const parsed = parseProviderSpec({
       id: "acme",
       name: "Acme",
@@ -107,22 +85,44 @@ describe("parseProviderSpec with auth.kind oauth2-user", () => {
         tokenUrl: "https://acme.example/oauth/token",
         clientId: "ACME_CLIENT_ID",
       },
-      scopeSets: {
-        "things.read": { label: "Things", access: "read", scopes: ["things"] },
-      },
     });
     expect(parsed.ok, JSON.stringify(parsed)).toBe(true);
     if (!parsed.ok || parsed.capability.mode !== "oauth_client") return;
-    expect(parsed.capability.token[0]?.inject).toBe("form");
-    expect(parsed.capability.flow?.pkce).toBe(true);
-    expect(parsed.capability.flow?.scopeDialect).toBe("space");
-    expect(parsed.capability.access).toEqual(["read"]);
+    const { flow } = parsed.capability;
+    expect(flow.inject).toBe("form");
+    expect(flow.pkce).toBe(true);
+    expect(flow.scopeSeparator).toBe("space");
+    expect(flow.scopePrefix).toBeUndefined();
+    expect(flow.identity).toBeUndefined();
+    expect(flow.identityScopes).toEqual([]);
+    expect(flow.tolerated).toEqual([]);
     // A public client: no secret setting.
     expect(parsed.capability.secrets.clientSecret).toBeUndefined();
+  });
+
+  it("reads the scope prefix, identity scopes and tolerated scopes", () => {
+    const parsed = parseProviderSpec(
+      withAuth({
+        scopeSeparator: "space",
+        scopePrefix: "https://api.github.com/scopes/",
+        identity: {
+          url: "https://api.github.com/user",
+          label: "login",
+          scopes: ["read:user"],
+        },
+        tolerated: ["user:email"],
+      }),
+    );
+    expect(parsed.ok, JSON.stringify(parsed)).toBe(true);
+    if (!parsed.ok || parsed.capability.mode !== "oauth_client") return;
+    expect(parsed.capability.flow).toMatchObject({
+      scopePrefix: "https://api.github.com/scopes/",
+      identityScopes: ["read:user"],
+      tolerated: ["user:email"],
+    });
     expect(
-      parsed.capability.mode === "oauth_client" &&
-        parsed.capability.flow?.identity,
-    ).toBeUndefined();
+      parseProviderSpec(providerSpecOf("github-oauth", parsed.capability)),
+    ).toEqual(parsed);
   });
 
   it("refuses what the design refuses", () => {
@@ -148,8 +148,16 @@ describe("parseProviderSpec with auth.kind oauth2-user", () => {
     expect(problems(withAuth({ pkce: "yes" }))).toEqual([
       "auth.pkce: must be true or false",
     ]);
-    expect(problems(withAuth({ scopeDialect: "semicolon" }))).toEqual([
-      "auth.scopeDialect: must be one of space, comma, google, microsoft, slack",
+    expect(problems(withAuth({ scopeSeparator: "semicolon" }))).toEqual([
+      "auth.scopeSeparator: must be one of space, comma",
+    ]);
+    expect(problems(withAuth({ scopeDialect: "comma" }))).toEqual([
+      "auth.scopeDialect: renamed auth.scopeSeparator: space or comma (a provider's prefix goes in auth.scopePrefix)",
+    ]);
+    expect(
+      problems(withAuth({ scopePrefix: "https://api.github.com/scopes" })),
+    ).toEqual([
+      "auth.scopePrefix: must end in / (https://www.googleapis.com/auth/): an app's scope is joined onto it",
     ]);
     expect(problems(withAuth({ revokeMethod: "PUT" }))).toEqual([
       "auth.revokeMethod: must be POST or DELETE",
@@ -161,6 +169,13 @@ describe("parseProviderSpec with auth.kind oauth2-user", () => {
       problems(withAuth({ authorizeParams: { redirect_uri: "https://evil" } })),
     ).toEqual([
       "auth.authorizeParams.redirect_uri: redirect_uri is a parameter the Gateway sets itself",
+    ]);
+    expect(
+      problems(
+        withAuth({ authorizeParams: { include_granted_scopes: "true" } }),
+      ),
+    ).toEqual([
+      "auth.authorizeParams.include_granted_scopes: include_granted_scopes would widen the token beyond the app's scopes; the Gateway never sends it",
     ]);
     expect(
       problems(withAuth({ tokenHeaders: { Authorization: "Bearer x" } })),
@@ -176,106 +191,38 @@ describe("parseProviderSpec with auth.kind oauth2-user", () => {
     ).toEqual([
       "auth.identity.url: must be on one of hosts (the token is sent there)",
     ]);
-  });
-
-  it("holds scope sets to their shape", () => {
-    expect(problems({ ...GITHUB, scopeSets: undefined })).toEqual([
-      'scopeSets: required: at least one named set, { "repo.read": { "label", "access", "scopes" } }',
+    expect(problems(withAuth({ tolerated: ["a b", "c,d"] }))).toEqual([
+      "auth.tolerated.0: one scope, with no space or comma",
+      "auth.tolerated.1: one scope, with no space or comma",
     ]);
-    expect(problems({ ...GITHUB, scopeSets: {} })).toEqual([
-      "scopeSets: must name 1 to 20 sets",
-    ]);
-    expect(
-      problems({
-        ...GITHUB,
-        scopeSets: {
-          "Repo.Read": { label: "x", access: "read", scopes: ["repo"] },
-        },
-      }),
-    ).toEqual([
-      "scopeSets.Repo.Read: a set is named identity, or <area>.<access> in lowercase (repo.read)",
-    ]);
-    expect(
-      problems({
-        ...GITHUB,
-        scopeSets: {
-          "repo.read": { label: "x", access: "all", scopes: ["repo"] },
-        },
-      }),
-    ).toEqual(["scopeSets.repo.read.access: must be read or write"]);
-    expect(
-      problems({
-        ...GITHUB,
-        scopeSets: {
-          "repo.read": { label: "x", access: "read", scopes: ["a b"] },
-        },
-      }),
-    ).toEqual([
-      "scopeSets.repo.read.scopes.0: one scope, with no space or comma",
-    ]);
-    expect(
-      problems({
-        ...GITHUB,
-        scopeSets: {
-          "repo.read": {
-            label: "x",
-            access: "read",
-            scopes: ["repo"],
-            routes: [{ host: "api.github.com", paths: ["/user/../x"] }],
-          },
-        },
-      }),
-    ).toEqual([
-      "scopeSets.repo.read.routes.0.paths.0: must start with / and hold no //, backslash, percent-escape or dot segment",
-    ]);
-    expect(
-      problems({
-        ...GITHUB,
-        scopeSets: {
-          "repo.read": {
-            label: "x",
-            access: "read",
-            scopes: ["repo"],
-            routes: [{ host: "api.github.com", paths: [], posts: ["/repos"] }],
-          },
-        },
-      }),
-    ).toEqual([
-      "scopeSets.repo.read.routes.0.posts.0: must be anchored: start with ^ and end with $",
+    expect(problems(withAuth({ tolerated: ["x", "x"] }))).toEqual([
+      "auth.tolerated: lists a scope twice",
     ]);
   });
 
-  it("parses routes into the matcher's shape, with posts as anchored patterns", () => {
-    const parsed = parseProviderSpec({
-      ...GITHUB,
-      scopeSets: {
-        "repo.read": {
-          label: "x",
-          access: "read",
-          scopes: ["repo"],
-          routes: [
-            {
-              host: "api.github.com",
-              paths: ["/user/repos", "/repos/"],
-              posts: ["^/graphql$"],
-            },
-          ],
+  it("refuses the fields scopes used to live in, saying what to write instead", () => {
+    expect(
+      problems({
+        ...GITHUB,
+        scopeSets: {
+          "repo.read": { label: "x", access: "read", scopes: ["repo"] },
         },
-      },
-    });
-    expect(parsed.ok).toBe(true);
-    if (!parsed.ok || parsed.capability.mode !== "oauth_client") return;
-    const route = parsed.capability.scopePolicy?.sets["repo.read"]?.routes[0];
-    expect(route?.paths).toEqual(["/user/repos", "/repos/"]);
-    expect(route?.posts?.[0]?.test("/graphql")).toBe(true);
-    expect(route?.posts?.[0]?.test("/graphql/x")).toBe(false);
-    // The round trip keeps the pattern's source.
-    const spec = providerSpecOf("github-oauth", parsed.capability) as {
-      scopeSets: Record<string, { routes: { posts: string[] }[] }>;
-    };
-    expect(spec.scopeSets["repo.read"]?.routes[0]?.posts).toEqual([
-      "^/graphql$",
-    ]);
+        alwaysRequested: ["read:user"],
+        tolerated: ["user:email"],
+        access: ["read", "write"],
+        readMethods: ["GET"],
+        writeMethods: ["POST"],
+      }),
+    ).toEqual(
+      [
+        "scopeSets",
+        "alwaysRequested",
+        "tolerated",
+        "access",
+        "readMethods",
+        "writeMethods",
+      ].map((field) => `${field}: ${REMOVED_OAUTH_FIELDS[field]}`),
+    );
   });
 
   it("refuses the API-key fields on an OAuth spec, and the OAuth fields on an API-key spec", () => {
@@ -297,27 +244,13 @@ describe("parseProviderSpec with auth.kind oauth2-user", () => {
         auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
         scopeSets: {},
       }),
-    ).toEqual(["scopeSets: only an oauth2-user spec has it"]);
+    ).toEqual(["scopeSets: unknown field"]);
     expect(problems({ ...GITHUB, hosts: [] })).toEqual([
       "hosts: required: at least one API host the token is sent to",
       "auth.identity.url: must be on one of hosts (the token is sent there)",
     ]);
   });
 });
-
-const SOCIAL = [
-  "linkedin",
-  "facebook",
-  "instagram",
-  "threads",
-  "youtube",
-  "reddit",
-  "pinterest",
-  "discord",
-  "kick",
-  "twitch",
-  "tumblr",
-];
 
 describe("the presets", () => {
   it("every preset parses, is an OAuth provider, and takes no catalog id", () => {
@@ -331,8 +264,6 @@ describe("the presets", () => {
       "zoom",
       "dropbox",
       "spotify",
-      "x-oauth",
-      ...SOCIAL,
     ]);
     for (const id of oauthPresetIds()) {
       const spec = OAUTH_PRESETS[id]!;
@@ -352,24 +283,28 @@ describe("the presets", () => {
       expect(parseProviderSpec(providerSpecOf(id, parsed.capability))).toEqual(
         parsed,
       );
+      // No preset widens a token past an app's scopes.
+      if (parsed.capability.mode === "oauth_client") {
+        expect(
+          parsed.capability.flow.authorizeParams ?? {},
+          id,
+        ).not.toHaveProperty("include_granted_scopes");
+      }
     }
     expect(oauthPreset("nope")).toBeNull();
   });
 
-  it("the social networks are presets tagged social, and the catalog reserves none of their names", () => {
-    const tagged = oauthPresetIds().filter((id) =>
-      ((OAUTH_PRESETS[id]!["tags"] as string[] | undefined) ?? []).includes(
-        "social",
-      ),
-    );
-    expect(tagged).toEqual(SOCIAL);
-    for (const id of SOCIAL) {
+  it("the social networks are gone, and the catalog reserves none of their names", () => {
+    for (const id of [
+      "x-oauth",
+      "linkedin",
+      "facebook",
+      "discord",
+      "reddit",
+      "youtube",
+    ]) {
+      expect(oauthPreset(id), id).toBeNull();
       expect(CAPABILITY_IDS.includes(id as never), id).toBe(false);
-      const capability = oauthPreset(id)!;
-      expect(capability.tags, id).toEqual(["social"]);
-      for (const name of capabilitySettings(capability)) {
-        expect(isSettableGatewaySetting(name), name).toBe(false);
-      }
     }
     for (const name of [
       "LINKEDIN_CLIENT_ID",
@@ -380,18 +315,18 @@ describe("the presets", () => {
     }
   });
 
-  it("the catalog's Google, Microsoft and Slack clients carry a flow", () => {
+  it("the catalog's Google, Microsoft and Slack carry a flow", () => {
     for (const id of ["google-workspace", "microsoft-365", "slack"]) {
       expect(isOAuthProvider(CAPABILITIES[id as never]), id).toBe(true);
     }
-    expect(CAPABILITIES["google-workspace"].flow?.authorizeParams).toEqual({
+    expect(CAPABILITIES["google-workspace"].flow.authorizeParams).toEqual({
       access_type: "offline",
       prompt: "consent",
     });
     expect(
       (CAPABILITIES["google-workspace"].flow as OAuthFlow).revokeUrl,
     ).toBeUndefined();
-    expect(CAPABILITIES["slack"].flow?.pkce).toBe(false);
+    expect(CAPABILITIES["slack"].flow.pkce).toBe(false);
   });
 });
 
