@@ -224,7 +224,7 @@ function skipNonCode(source, i) {
 }
 
 /**
- * The skill's two files, in either copy (`.claude/skills/…`, `.agents/skills/…`).
+ * The skill's two files, by any path (`.claude/skills/…`, `.agents/skills/…`, `node_modules/everyapp/skills/…`).
  * Not anchored: a Bash command goes on after the path (run 2 read patterns.md
  * with `grep -B2 -A12 "orgId" .agents/skills/build-every-app/patterns.md | head -80`).
  */

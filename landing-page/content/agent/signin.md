@@ -55,7 +55,7 @@ Every provider's OAuth app is registered with one redirect URL (also called the 
 
 ## Set up a provider
 
-The same four steps for each; the everyapp skill's step-by-step guides, which an agent follows for the person, are `setup/signin-google.md`, `setup/signin-microsoft.md`, `setup/signin-github.md`, `setup/signin-apple.md`, `setup/signin-cloudflare.md` and `setup/signin-oidc.md` (the catalog's `setup` field; in the checkout under `packages/cli/skills/everyapp/`, in an app `.claude/skills/everyapp/` and `.agents/skills/everyapp/`).
+The same four steps for each; the everyapp skill's step-by-step guides, which an agent follows for the person, are `setup/signin-google.md`, `setup/signin-microsoft.md`, `setup/signin-github.md`, `setup/signin-apple.md`, `setup/signin-cloudflare.md` and `setup/signin-oidc.md` (the catalog's `setup` field; in the checkout under `packages/cli/skills/everyapp/`, in an app `node_modules/everyapp/skills/everyapp/`, linked from `.claude/skills/everyapp` and `.agents/skills/everyapp`).
 
 1. The person creates the OAuth app at the provider's console, with the redirect URL above. Only they can: it is their Google Cloud project, Entra tenant, GitHub account, Apple Developer team, Cloudflare account or identity provider.
 2. `pnpm everyapp signin add <id>` sets the settings on the Gateway Worker in one new version (at a terminal it asks for each; unattended, the flags below).

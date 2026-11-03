@@ -6,7 +6,7 @@ Puts **Continue with GitHub** on the Gateway's sign-in page, beside the
 password. At the end the person has a GitHub OAuth App, its two settings
 on the Gateway, and has signed in with GitHub once.
 `pnpm everyapp signin show github --json` names this file as `setup`, and
-the CLI prints `Guide: .claude/skills/everyapp/setup/signin-github.md`.
+the CLI prints `Guide: node_modules/everyapp/skills/everyapp/setup/signin-github.md`.
 
 Who gets in doesn't change: GitHub only says who someone is, by their
 primary address, and only when GitHub marks it verified. A member signs

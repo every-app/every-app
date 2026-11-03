@@ -9,7 +9,7 @@ Google Workspace as an issuer, and the like. At the end the person has a
 web-application client at their identity provider, its settings on the
 Gateway, and has signed in through it once.
 `pnpm everyapp signin show oidc --json` names this file as `setup`, and the
-CLI prints `Guide: .claude/skills/everyapp/setup/signin-oidc.md`.
+CLI prints `Guide: node_modules/everyapp/skills/everyapp/setup/signin-oidc.md`.
 
 Who gets in doesn't change: the issuer only says who someone is, and only
 an ID token with `email_verified: true` counts. A member signs in;

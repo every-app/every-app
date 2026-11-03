@@ -284,7 +284,7 @@ describe("configure at a terminal", () => {
         "DataForSEO: Keyword data for research.",
         "The API login and password from API Access, as login:password (or that pair base64-encoded); the Gateway sends them as HTTP Basic. login:password, or its base64; never the dashboard sign-in password.",
         "Get it at https://app.dataforseo.com/api-access",
-        "Guide: .claude/skills/everyapp/setup/dataforseo.md",
+        "Guide: node_modules/everyapp/skills/everyapp/setup/dataforseo.md",
       ],
     });
     expect(run.prompter.questions[2]).toEqual({

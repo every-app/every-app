@@ -6,7 +6,7 @@ Puts **Continue with Google** on the Gateway's sign-in page, beside the
 password. At the end the person has an OAuth client in a Google Cloud
 project, its two settings on the Gateway, and has signed in with Google
 once. `pnpm everyapp signin show google --json` names this file as
-`setup`, and the CLI prints `Guide: .claude/skills/everyapp/setup/signin-google.md`.
+`setup`, and the CLI prints `Guide: node_modules/everyapp/skills/everyapp/setup/signin-google.md`.
 
 Who gets in doesn't change: Google only says who someone is (an email it
 verified). A member signs in; someone with a pending invitation for that

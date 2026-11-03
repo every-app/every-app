@@ -144,7 +144,7 @@ describe("signin add", () => {
     expect(message).toContain(`${GATEWAY_URL}/api/auth/callback/google`);
     expect(message).toContain("Testing only signs in the test users");
     expect(message).toContain(`Sign in at ${GATEWAY_URL}/sign-in`);
-    expect(message).toContain("Guide: .claude/skills/everyapp/setup/signin-google.md");
+    expect(message).toContain("Guide: node_modules/everyapp/skills/everyapp/setup/signin-google.md");
     // The secret's value is in no event.
     expect(JSON.stringify(events)).not.toContain("GOCSPX-secret");
   });

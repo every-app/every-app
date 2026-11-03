@@ -3,11 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { checkoutRoot } from "@/lib/checkout";
-import { linkSkill, shippedSkills, skillsSource } from "./skill";
+import { linkSkills, shippedSkills, skillsSource } from "./skill";
 
 let appDir: string;
 const root = checkoutRoot();
-const agentsMd = () => fs.readFileSync(path.join(appDir, "AGENTS.md"), "utf8");
 
 beforeEach(() => {
   appDir = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-skill-"));
@@ -22,65 +21,74 @@ describe("the skills in a new app", () => {
     expect(await shippedSkills(skillsSource(root))).toEqual(["everyapp", "build-every-app"]);
   });
 
-  it("are copied where Claude Code and other agents look, and a new AGENTS.md points at each", async () => {
-    const result = await linkSkill({ skillsDir: skillsSource(root), appDir });
+  it("are links where Claude Code and other agents look, into the app's own install of the CLI", async () => {
+    const result = await linkSkills({ skillsDir: skillsSource(root), appDir });
 
     expect(result).toEqual({
       skills: ["everyapp", "build-every-app"],
+      linked: true,
       paths: [
         ".claude/skills/everyapp",
         ".agents/skills/everyapp",
         ".claude/skills/build-every-app",
         ".agents/skills/build-every-app",
       ],
-      agentsMd: "created",
     });
-    for (const name of result.skills) {
-      const shipped = fs.readFileSync(path.join(root, "packages", "cli", "skills", name, "SKILL.md"), "utf8");
-      for (const dir of result.paths.filter((relative) => relative.endsWith(`/${name}`))) {
-        // A copy, not a link: it survives a clone of the app on its own.
-        expect(fs.lstatSync(path.join(appDir, dir)).isSymbolicLink()).toBe(false);
-        expect(fs.readFileSync(path.join(appDir, dir, "SKILL.md"), "utf8")).toBe(shipped);
-      }
+    for (const relative of result.paths) {
+      const name = path.posix.basename(relative);
+      expect(fs.readlinkSync(path.join(appDir, relative))).toBe(`../../node_modules/everyapp/skills/${name}`);
     }
-    // The files beside each SKILL.md come along.
+    // Dangling until the install; then each is the CLI package's own skill.
+    expect(fs.existsSync(path.join(appDir, ".agents", "skills", "everyapp", "SKILL.md"))).toBe(false);
+    fs.mkdirSync(path.join(appDir, "node_modules"));
+    fs.symlinkSync(path.join(root, "packages", "cli"), path.join(appDir, "node_modules", "everyapp"), "dir");
+    for (const name of result.skills) {
+      const shipped = fs.readFileSync(path.join(skillsSource(root), name, "SKILL.md"), "utf8");
+      expect(fs.readFileSync(path.join(appDir, ".claude", "skills", name, "SKILL.md"), "utf8")).toBe(shipped);
+      expect(fs.readFileSync(path.join(appDir, ".agents", "skills", name, "SKILL.md"), "utf8")).toBe(shipped);
+    }
     expect(fs.existsSync(path.join(appDir, ".agents", "skills", "everyapp", "setup", "README.md"))).toBe(true);
     expect(fs.existsSync(path.join(appDir, ".claude", "skills", "build-every-app", "patterns.md"))).toBe(true);
-    expect(agentsMd()).toBe(
-      [
-        "# Agent instructions",
-        "",
-        "- Before running everyapp, read the everyapp skill: `.agents/skills/everyapp/SKILL.md` (also in `.claude/skills/`).",
-        "- To build or change this app, read the build-every-app skill: `.agents/skills/build-every-app/SKILL.md` (patterns in patterns.md beside it).",
-        "",
-      ].join("\n"),
-    );
   });
 
-  it("leaves an AGENTS.md that mentions every skill alone", async () => {
-    fs.writeFileSync(path.join(appDir, "AGENTS.md"), "- Read skills/everyapp first.\n- Then skills/build-every-app.\n");
+  it("leaves the app's own skills alone and replaces an old copy with the link", async () => {
+    fs.mkdirSync(path.join(appDir, ".agents", "skills", "mine"), { recursive: true });
+    fs.writeFileSync(path.join(appDir, ".agents", "skills", "mine", "SKILL.md"), "ours\n");
+    fs.mkdirSync(path.join(appDir, ".claude", "skills", "everyapp"), { recursive: true });
+    fs.writeFileSync(path.join(appDir, ".claude", "skills", "everyapp", "SKILL.md"), "stale copy\n");
 
-    const result = await linkSkill({ skillsDir: skillsSource(root), appDir });
+    await linkSkills({ skillsDir: skillsSource(root), appDir });
 
-    expect(result.agentsMd).toBe("mentions");
-    expect(agentsMd()).toBe("- Read skills/everyapp first.\n- Then skills/build-every-app.\n");
+    expect(fs.readFileSync(path.join(appDir, ".agents", "skills", "mine", "SKILL.md"), "utf8")).toBe("ours\n");
+    expect(fs.lstatSync(path.join(appDir, ".claude", "skills", "everyapp")).isSymbolicLink()).toBe(true);
   });
 
-  it("adds a line for each skill an AGENTS.md doesn't mention", async () => {
-    fs.writeFileSync(path.join(appDir, "AGENTS.md"), "# Ours\n\n- Use tabs.\n");
+  it("are skipped, not half-made, where the system doesn't allow links", async () => {
+    let calls = 0;
+    const result = await linkSkills({
+      skillsDir: skillsSource(root),
+      appDir,
+      symlink: async (target, linkPath, type) => {
+        calls += 1;
+        if (calls > 1) throw Object.assign(new Error("operation not permitted"), { code: "EPERM" });
+        fs.symlinkSync(target, linkPath, type);
+      },
+    });
 
-    await expect(linkSkill({ skillsDir: skillsSource(root), appDir })).resolves.toMatchObject({ agentsMd: "added" });
-    expect(agentsMd()).toMatch(
-      /^# Ours\n\n- Use tabs\.\n- Before running everyapp, read the everyapp skill[^\n]*\n- To build or change this app, read the build-every-app skill[^\n]*\n$/,
-    );
+    expect(result).toEqual({ skills: ["everyapp", "build-every-app"], paths: [], linked: false });
+    expect(fs.readdirSync(path.join(appDir, ".claude", "skills"))).toEqual([]);
+    expect(fs.readdirSync(path.join(appDir, ".agents", "skills"))).toEqual([]);
   });
 
-  it("adds only the line of the skill that is missing", async () => {
-    fs.writeFileSync(path.join(appDir, "AGENTS.md"), "- Read skills/everyapp first.\n");
-
-    await expect(linkSkill({ skillsDir: skillsSource(root), appDir })).resolves.toMatchObject({ agentsMd: "added" });
-    expect(agentsMd()).toMatch(
-      /^- Read skills\/everyapp first\.\n- To build or change this app, read the build-every-app skill[^\n]*\n$/,
-    );
+  it("still fail on any other error", async () => {
+    await expect(
+      linkSkills({
+        skillsDir: skillsSource(root),
+        appDir,
+        symlink: async () => {
+          throw Object.assign(new Error("no space left"), { code: "ENOSPC" });
+        },
+      }),
+    ).rejects.toThrow("no space left");
   });
 });

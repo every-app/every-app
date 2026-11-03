@@ -1,8 +1,8 @@
 /**
- * The starter names the skills `everyapp create` copies into a new app: its
+ * The starter names the skills `everyapp create` links into a new app: its
  * first screen (starter/src/routes/index.tsx) names the build skill, its
- * README names every skill and the directories they are copied to. They are
- * prose, not read from the CLI, so this holds them to what linkSkill() does
+ * README names every skill and the directories they are linked from. They are
+ * prose, not read from the CLI, so this holds them to what linkSkills() does
  * (skill.ts): a skill the starter names is one the CLI ships, and the README
  * names every shipped skill and every directory, no other.
  */
@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { checkoutRoot } from "@/lib/checkout";
-import { linkSkill, skillsSource } from "./skill";
+import { linkSkills, skillsSource } from "./skill";
 
 const root = checkoutRoot();
 const read = (relative: string) => fs.readFileSync(path.join(root, relative), "utf8");
@@ -19,14 +19,14 @@ const read = (relative: string) => fs.readFileSync(path.join(root, relative), "u
 /** The backticked spans of a Markdown file. */
 const spans = (markdown: string) => [...markdown.matchAll(/`([^`\n]+)`/g)].map((m) => m[1]!);
 
-/** What `everyapp create` copies: the skill names, and the directories (with their slash) it copies them to. */
+/** What `everyapp create` links: the skill names, and the directories (with their slash) it links them from. */
 let shipped: string[];
 let roots: string[];
 
 beforeAll(async () => {
   const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-starter-skills-"));
   try {
-    const { paths } = await linkSkill({ skillsDir: skillsSource(root), appDir });
+    const { paths } = await linkSkills({ skillsDir: skillsSource(root), appDir });
     shipped = [...new Set(paths.map((relative) => path.posix.basename(relative)))];
     roots = [...new Set(paths.map((relative) => `${path.posix.dirname(relative)}/`))];
   } finally {
@@ -41,13 +41,13 @@ describe("the starter names the skills a new app carries", () => {
     expect(shipped).toContain(named);
   });
 
-  it("in the README: every shipped skill and every directory they are copied to", () => {
+  it("in the README: every shipped skill and every directory they are linked from", () => {
     const named = spans(read("starter/README.md"));
     for (const name of shipped) expect(named).toContain(name);
     for (const dir of roots) expect(named).toContain(dir);
   });
 
-  it("in the README: no skills directory the CLI doesn't copy to", () => {
+  it("in the README: no skills directory the CLI doesn't link from", () => {
     const named = spans(read("starter/README.md")).filter((span) => /^\.[^/]+\/skills\/$/.test(span));
     expect([...new Set(named)].sort()).toEqual([...roots].sort());
   });

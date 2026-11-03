@@ -82,7 +82,7 @@ Source: `packages/cli/src/commands/access/index.ts` (`turnAccessOn`).
 
 From `setup` (no terminal to ask at, an account with no team and no `--team`; the Gateway and owner are done; `--yes` at a terminal asks instead): `Choose a name for the Zero Trust team, then run setup again with --team` / `Setup puts Cloudflare Access in front of the Gateway, and this Cloudflare account has no team yet. …`, with the same `data.suggested`; its fix adds `pnpm everyapp setup --no-access leaves Access off (not recommended).` Ask the person for the name; `--no-access` only when they say so.
 
-**Fix:** `fix`: `add --team <suggested>, or another name`. No rerun; not retryable. The agent-driven Access setup, step by step: `packages/cli/skills/everyapp/setup/access.md` (in an app `.claude/skills/everyapp/setup/access.md`).
+**Fix:** `fix`: `add --team <suggested>, or another name`. No rerun; not retryable. The agent-driven Access setup, step by step: `packages/cli/skills/everyapp/setup/access.md` (in an app `node_modules/everyapp/skills/everyapp/setup/access.md`).
 
 Source: `packages/cli/src/commands/access/index.ts` (`turnAccessOn`, `askTeamAtTerminal`).
 
@@ -2474,7 +2474,7 @@ The other codes these routes answer are documented where the same code is raised
 
 ## Warnings
 
-A `warning` event (`{ type: "warning", code, message, step?, data? }`) is something a run went on past. The terminal shows it as a `!` headline with the message's further lines dim and, from `data`, `rerun` (with `rerunNote`), `fix` or `url` after it; `--json` gets the event as is. `QUIET_WARNINGS` in `packages/cli/src/lib/output/events.ts` names the ones the terminal renderer skips without `--verbose`: only `CUSTOM_DOMAIN_OWNER_UNCHECKED`. The `ACCESS_*` warnings come from `access on` (`packages/cli/src/commands/access/index.ts`) and from the Access sync `deploy` and `delete` run afterwards (`syncAppsAccessAfter` in `packages/cli/src/lib/access/sync.ts`), except `ACCESS_IN_FRONT`, which the live wait and `setup` emit; the command is documented at [/docs/agent/access](/docs/agent/access), and the agent-driven Access setup step by step in `packages/cli/skills/everyapp/setup/access.md` (in an app `.claude/skills/everyapp/setup/access.md`).
+A `warning` event (`{ type: "warning", code, message, step?, data? }`) is something a run went on past. The terminal shows it as a `!` headline with the message's further lines dim and, from `data`, `rerun` (with `rerunNote`), `fix` or `url` after it; `--json` gets the event as is. `QUIET_WARNINGS` in `packages/cli/src/lib/output/events.ts` names the ones the terminal renderer skips without `--verbose`: only `CUSTOM_DOMAIN_OWNER_UNCHECKED`. The `ACCESS_*` warnings come from `access on` (`packages/cli/src/commands/access/index.ts`) and from the Access sync `deploy` and `delete` run afterwards (`syncAppsAccessAfter` in `packages/cli/src/lib/access/sync.ts`), except `ACCESS_IN_FRONT`, which the live wait and `setup` emit; the command is documented at [/docs/agent/access](/docs/agent/access), and the agent-driven Access setup step by step in `packages/cli/skills/everyapp/setup/access.md` (in an app `node_modules/everyapp/skills/everyapp/setup/access.md`).
 
 ### ACCESS_APPLICATION_MISSING
 
@@ -2903,7 +2903,7 @@ Source: `packages/cli/src/commands/status/problems.ts`
 
 ### APP_NEEDS_SETUP (status)
 
-Warning. A served app (active, or binding and bound) whose required settings aren't all set, so it doesn't open; its APP cell reads `! needs setup` and the SETTINGS table shows each setting: `<app> needs setup`, one detail line per unmet setting (`<NAME>: <why>`, then the provider's `hint`, `Get it at <docs>` and `Guide: .claude/skills/everyapp/<setup>` once per distinct guide, or `Guide: pnpm everyapp provider show <id>` for a provider registered on the Gateway). Run: `pnpm everyapp configure <id>` (the app's `setup.command`: it asks for each unmet setting, which member of an any-of group, then offers the optional ones). The same report is `data.apps[].setup` ([`/docs/agent/json`](/docs/agent/json#done)).
+Warning. A served app (active, or binding and bound) whose required settings aren't all set, so it doesn't open; its APP cell reads `! needs setup` and the SETTINGS table shows each setting: `<app> needs setup`, one detail line per unmet setting (`<NAME>: <why>`, then the provider's `hint`, `Get it at <docs>` and `Guide: node_modules/everyapp/skills/everyapp/<setup>` once per distinct guide (`Guide: <setup>`, a path in the app, for the app's own secret), or `Guide: pnpm everyapp provider show <id>` for a provider registered on the Gateway). Run: `pnpm everyapp configure <id>` (the app's `setup.command`: it asks for each unmet setting, which member of an any-of group, then offers the optional ones). The same report is `data.apps[].setup` ([`/docs/agent/json`](/docs/agent/json#done)).
 
 Source: `packages/cli/src/commands/status/problems.ts`
 

@@ -104,7 +104,7 @@ providers page) it is the only setup text there is.
 A setting may also carry `setup`: the everyapp skill's guide to setting it
 up end to end, relative to the skill (`setup/dataforseo.md`). The guides
 are the skill's own, under `packages/cli/skills/everyapp/setup/` in the
-checkout and `.claude/skills/everyapp/setup/` in every app, with an index
+checkout and `node_modules/everyapp/skills/everyapp/setup/` in every app, with an index
 in `setup/README.md`; an agent reads the guide before it asks anyone for
 a value. A provider's or a capability's guide comes from the SDK
 registries (`DEV_AI_PROVIDERS[id].setup`, a capability's `setup`: openai,
@@ -146,7 +146,7 @@ list or the id under `capabilities`):
 | `anyOf` empty, or over 40 characters                                                | `secrets.0.anyOf: Too big: expected string to have <=40 characters`                                                                                                     |
 | a field the entry doesn't take (`required: true`, say)                              | `secrets.0: Unrecognized key: "required"`                                                                                                                               |
 | `setup` on a provider or a capability entry                                         | `providers.0: Unrecognized key: "setup"`; `capabilities.email: Unrecognized key: "setup"` (their guides are the registry's)                                             |
-| a secret's `setup` that isn't a guide in the skill                                  | `secrets.0.setup: must be a guide in the everyapp skill, such as "setup/main-secret.md"` (`setup/<lowercase name>.md`)                                                  |
+| a secret's `setup` that isn't a Markdown file in the app                           | `secrets.0.setup: must be a Markdown file in the app, such as "docs/setup/main-secret.md"` (lowercase segments, no `..`, ending `.md`)                                  |
 | a secret named like a Gateway setting                                               | ``secrets.0: OPENAI_API_KEY is a Gateway setting, which `everyapp secret set OPENAI_API_KEY` sets on the Gateway for every app; list `openai` under providers instead`` |
 | a secret named like one everyapp sets itself                                        | `secrets.0: GATEWAY_URL is set by everyapp itself (GATEWAY_URL, CF_VERSION_METADATA and the EVERYAPP_*, EVERY_APP_* and APP__* names)`                                  |
 | a secret named like one of the app's bindings                                       | `secrets: DB is one of the app's bindings; pick another name for the secret`                                                                                            |
@@ -209,7 +209,7 @@ export default {
       name: "MAIN_SECRET",
       why: "Signs the tracker's collect requests; nothing is recorded without it.",
       docs: "https://docs.example.com/analytics/main-secret",
-      setup: "setup/main-secret.md",
+      setup: "docs/setup/main-secret.md",
     },
   ],
 } as const;
@@ -223,9 +223,9 @@ the registry, so it runs from anywhere, and sets it on the app's Worker
 `/collect` answers 503 with the rest of the app (it is public, but public
 routes close with the app); the author accepted that because the tracker
 records nothing without the secret anyway. `MAIN_SECRET`'s `setup` names a
-guide the app adds beside the skill's own,
-`.claude/skills/everyapp/setup/main-secret.md`; email's is the registry's
-`setup/email.md`. §5 shows this app's `setup`.
+guide in the app's own repository, `docs/setup/main-secret.md` (the CLI
+prints it as `Guide: docs/setup/main-secret.md`); email's is the registry's
+`setup/email.md` in the everyapp skill, which an app can't add to. §5 shows this app's `setup`.
 
 ### Example: one of several AI providers
 
@@ -368,7 +368,7 @@ client on the Gateway Worker, once for every app; the app's own secrets on
 its Worker; changes live at once, no deploy), the SETTING, WHERE, STATUS
 table (names only, never values), a hidden prompt per required unset
 setting with "Label: why", the provider's hint, "Get it at <docs>" and
-"Guide: .claude/skills/everyapp/setup/<file>.md" above it (a plain setting such as
+"Guide: node_modules/everyapp/skills/everyapp/setup/<file>.md" above it (a plain setting such as
 `EMAIL_FROM` gets a visible prompt with what it takes, and is checked; a
 setting with several names, an OAuth client's id and secret, reads unset
 while one is missing and is asked only for the missing one),
@@ -558,7 +558,7 @@ app's names were recorded with none set:
       "need": { "kind": "required" },
       "why": "Signs the tracker's collect requests; nothing is recorded without it.",
       "docs": "https://docs.example.com/analytics/main-secret",
-      "setup": "setup/main-secret.md",
+      "setup": "docs/setup/main-secret.md",
       "set": false,
       "blocking": true
     }
@@ -573,7 +573,7 @@ app's names were recorded with none set:
       "need": { "kind": "required" },
       "why": "Signs the tracker's collect requests; nothing is recorded without it.",
       "docs": "https://docs.example.com/analytics/main-secret",
-      "setup": "setup/main-secret.md",
+      "setup": "docs/setup/main-secret.md",
       "set": false,
       "blocking": true
     }

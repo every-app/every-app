@@ -226,8 +226,12 @@ function buildScratch(runDir, scenario) {
   });
   const binShim = `#!/bin/sh\nFAKE_EVERYAPP_RUN=${JSON.stringify(runDir)} exec node ${JSON.stringify(shim)} "$@"\n`;
   fs.writeFileSync(path.join(appDir, "node_modules", ".bin", "everyapp"), binShim, { mode: 0o755 });
-  for (const relative of [".claude/skills/everyapp", ".agents/skills/everyapp"]) {
-    fs.cpSync(skillSource, path.join(appDir, relative), { recursive: true });
+  // The skill where an install puts it (the CLI package's own copy), and the
+  // links `everyapp create` makes where coding agents look.
+  fs.cpSync(skillSource, path.join(appDir, "node_modules", "everyapp", "skills", "everyapp"), { recursive: true });
+  for (const base of [".claude/skills", ".agents/skills"]) {
+    fs.mkdirSync(path.join(appDir, base), { recursive: true });
+    fs.symlinkSync("../../node_modules/everyapp/skills/everyapp", path.join(appDir, base, "everyapp"), "dir");
   }
   fs.writeFileSync(
     path.join(appDir, "AGENTS.md"),
@@ -235,7 +239,7 @@ function buildScratch(runDir, scenario) {
       "# Agent instructions",
       "",
       "- This folder is the every-app checkout. Run every everyapp command from here as `pnpm everyapp …` (never `npx everyapp`).",
-      "- Before running everyapp, read the everyapp skill: `.agents/skills/everyapp/SKILL.md` (also in `.claude/skills/`).",
+      "- Before running everyapp, read the everyapp skill: `.agents/skills/everyapp/SKILL.md` (a link to `node_modules/everyapp/skills/everyapp`).",
       "- Apps live under `apps/<id>/`; each has its `everyapp.config.ts`.",
       "",
     ].join("\n"),

@@ -7,8 +7,8 @@
  * starter, every path into one of the four open apps a file of that app's
  * checkout when the checkout is on this machine (skipped, with the reason,
  * when it isn't, so CI passes), no sentence that asks for a value through
- * the chat, and every pattern SKILL.md's short table names indexed in
- * patterns.md. repoDocs.test.ts checks the checkout paths and the flags.
+ * the chat, and patterns.md kept a look-up table: about 55 rows, each citing a
+ * file. repoDocs.test.ts checks the checkout paths and the flags.
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -117,9 +117,10 @@ describe("the build-every-app skill", () => {
   it("has the frontmatter a harness picks it by, and stays short", () => {
     expect(skill, `${skillDir}/SKILL.md is missing`).not.toBe("");
     expect(skill).toMatch(/^---\nname: build-every-app\ndescription: .{40,}\n---\n/);
-    // 14 KB: the security review's two paths, the workspace one-liner and
-    // both create forms (main's rulings of 2026-10-25) took it past 13.
-    expect(Buffer.byteLength(skill)).toBeLessThan(14 * 1024);
+    // About 1,000 words (the simplification audit of 2026-11, B1): the six
+    // rules, where things are, the shape of an app. Detail goes to
+    // patterns.md or the agent pages, not here.
+    expect(skill.split(/\s+/).filter(Boolean).length).toBeLessThan(1100);
   });
 
   it("sends the agent to llms.txt, the agent pages for the job, the everyapp skill and the patterns index", () => {
@@ -134,11 +135,13 @@ describe("the build-every-app skill", () => {
     expect(patterns, `${skillDir}/patterns.md is missing`).not.toBe("");
   });
 
-  it("names every pattern of its short table in patterns.md", () => {
-    const names = tableRowNames(skill);
-    expect(names.length).toBeGreaterThanOrEqual(10);
-    const missing = names.filter((name) => !patterns.toLowerCase().includes(name.toLowerCase()));
-    expect(missing).toEqual([]);
+  it("leaves the patterns to patterns.md, a look-up table whose every row cites a file", () => {
+    expect(tableRowNames(skill), "SKILL.md repeats no patterns table").toEqual([]);
+    const rows = patterns.split("\n").filter((line) => /^\|/.test(line) && !/^\|\s*-/.test(line) && !/^\|\s*Pattern\s*\|/.test(line));
+    expect(rows.length).toBeGreaterThanOrEqual(40);
+    expect(rows.length).toBeLessThanOrEqual(65);
+    const uncited = rows.filter((row) => !/`[^`\s]+\/[^`\s]+`/.test(row.split("|")[2] ?? ""));
+    expect(uncited, "rows whose Copy from cell cites no file").toEqual([]);
   });
 
   it("is pointed at by the starter's AGENTS.md", () => {

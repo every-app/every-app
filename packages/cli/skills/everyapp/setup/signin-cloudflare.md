@@ -7,7 +7,7 @@ the password, for the members of the person's Cloudflare account. At the
 end the person has a private OAuth client in that account, its two
 settings on the Gateway, and has signed in with Cloudflare once.
 `pnpm everyapp signin show cloudflare --json` names this file as `setup`,
-and the CLI prints `Guide: .claude/skills/everyapp/setup/signin-cloudflare.md`.
+and the CLI prints `Guide: node_modules/everyapp/skills/everyapp/setup/signin-cloudflare.md`.
 
 Who gets in doesn't change: Cloudflare only says who someone is. A member
 of the Gateway signs in; someone with a pending invitation for that exact

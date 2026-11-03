@@ -10,8 +10,8 @@
  *    named after its last part, as long as that is outside the checkout
  *    or in its apps/ (steps/appId.ts). The copy is named after the app in
  *    package.json, everyapp.config.ts and README.md.
- * 2. Put the skills the CLI ships (everyapp, build-every-app) where coding
- *    agents look (lib/app/skill.ts).
+ * 2. Link the skills the CLI ships (everyapp, build-every-app) where coding
+ *    agents look, into the app's node_modules/everyapp (lib/app/skill.ts).
  * 3. Install its dependencies; when that fails, the app is there and only
  *    the install is left, so the error says to finish it in place.
  * 4. Generate the Worker's types and apply its migrations to the local
@@ -23,7 +23,7 @@
  */
 import path from "node:path";
 import { applyLocalMigrations } from "@/lib/app/localD1";
-import { linkSkill } from "@/lib/app/skill";
+import { installedSkillPath, linkSkills } from "@/lib/app/skill";
 import { copyStarter, newAppDir, placeOf } from "@/lib/app/starter";
 import { generateWorkerTypes } from "@/lib/app/workerTypes";
 import { isInCheckout, templateSource, type TemplateSource } from "@/lib/checkout";
@@ -148,12 +148,14 @@ export async function createApp({
       data: dependencies,
     });
   }
-  const skill = await linkSkill({ skillsDir: source.skillsDir, appDir: targetDir });
+  const skill = await linkSkills({ skillsDir: source.skillsDir, appDir: targetDir });
   out.emit({
     type: "step",
     step: "create.skill",
     status: "ok",
-    message: `Added the ${skill.skills.join(" and ")} ${skill.skills.length === 1 ? "skill" : "skills"} for coding agents`,
+    message: skill.linked
+      ? `Linked the ${skill.skills.join(" and ")} ${skill.skills.length === 1 ? "skill" : "skills"} for coding agents`
+      : `Couldn't link the skills here (this system doesn't allow links); agents read ${skill.skills.map(installedSkillPath).join(" and ")}, as AGENTS.md says`,
     data: skill,
   });
 

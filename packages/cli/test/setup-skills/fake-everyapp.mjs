@@ -52,7 +52,7 @@ const VALUE_FLAGS = new Set([
   "session", "sender", "inbound", "manifest", "worker", "binding", "file", "out", "name", "template",
 ]);
 /** Where the real CLI says a setup guide lives, in an app that has the skill (lib/app/settings.ts SKILL_DIR). */
-const SKILL_DIR = ".claude/skills/everyapp";
+const SKILL_DIR = "node_modules/everyapp/skills/everyapp";
 
 /** An expected failure, reported as an `error` event with its code and next step. */
 class FakeError extends Error {
@@ -1132,7 +1132,7 @@ function settingsRows(appId, settings) {
  * Each unmet setting for whoever sets it (describeUnmetSettings): "<label>:
  * <why>" (the names when there is no why and the label doesn't name them),
  * "Get it at <docs>", and under the first that has one, its guide
- * ("Guide: .claude/skills/everyapp/setup/dataforseo.md"), once per guide.
+ * ("Guide: node_modules/everyapp/skills/everyapp/setup/dataforseo.md"), once per guide.
  */
 function describeUnmetSettings(unmet) {
   const guides = new Set();

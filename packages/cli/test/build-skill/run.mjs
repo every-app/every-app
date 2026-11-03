@@ -265,17 +265,17 @@ function buildScratch({ runDir, rootDir, appDir, appId, scenario }) {
       "# Agent instructions",
       "",
       "- This folder is the every-app checkout. Run every everyapp command from here as `pnpm everyapp …` (never `npx everyapp`).",
-      "- Before running everyapp, read the everyapp skill: `.agents/skills/everyapp/SKILL.md` (also in `.claude/skills/`).",
+      "- Before running everyapp, read the everyapp skill: `.agents/skills/everyapp/SKILL.md` (a link to `node_modules/everyapp/skills/everyapp`).",
       "- Apps live under `apps/<id>/`; each has its `everyapp.config.ts`. To build or change one, read its `.agents/skills/build-every-app/SKILL.md`.",
       "",
     ].join("\n"),
   );
   fs.writeFileSync(path.join(rootDir, "CLAUDE.md"), "@AGENTS.md\n");
-  for (const name of skills) {
-    for (const base of [".claude/skills", ".agents/skills"]) fs.cpSync(path.join(skillsDir, name), path.join(rootDir, base, name), { recursive: true });
-  }
+  // The checkout's own install of the CLI, and the skills linked from where agents look.
+  fs.symlinkSync(path.dirname(skillsDir), path.join(rootDir, "node_modules", "everyapp"), "dir");
+  linkSkills(rootDir, skills);
 
-  // The app: what `everyapp create <id>` makes (lib/app/starter.ts, lib/app/skill.ts), without the install.
+  // The app: what `everyapp create <id>` makes (lib/app/starter.ts, lib/app/skill.ts); its node_modules below.
   fs.cpSync(starterDir, appDir, { recursive: true, filter: (source) => !LOCAL_ONLY.includes(path.basename(source)) });
   const packageJson = readJson(path.join(appDir, "package.json"));
   packageJson.name = appId;
@@ -290,9 +290,7 @@ function buildScratch({ runDir, rootDir, appDir, appId, scenario }) {
   );
   const readmeFile = path.join(appDir, "README.md");
   if (fs.existsSync(readmeFile)) fs.writeFileSync(readmeFile, fs.readFileSync(readmeFile, "utf8").replace(/^# .*$/m, `# ${appNameFor(appId)}`));
-  for (const name of skills) {
-    for (const base of [".claude/skills", ".agents/skills"]) fs.cpSync(path.join(skillsDir, name), path.join(appDir, base, name), { recursive: true });
-  }
+  linkSkills(appDir, skills);
   for (const [relative, content] of Object.entries(scenario.appFiles ?? {})) {
     const file = path.join(appDir, relative);
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -661,4 +659,12 @@ function usage() {
     `Scenarios: ${fs.existsSync(scenariosDir) ? fs.readdirSync(scenariosDir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).join(", ") : "(none)"}`,
     "",
   ].join("\n");
+}
+
+/** The links `everyapp create` makes (lib/app/skill.ts): `<root>/<name>` → `../../node_modules/everyapp/skills/<name>`. */
+function linkSkills(dir, skills) {
+  for (const base of [".claude/skills", ".agents/skills"]) {
+    fs.mkdirSync(path.join(dir, base), { recursive: true });
+    for (const name of skills) fs.symlinkSync(`../../node_modules/everyapp/skills/${name}`, path.join(dir, base, name), "dir");
+  }
 }

@@ -77,7 +77,7 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
   `names: ["EMAIL_FROM", "EMAIL_FROM_NAME"]`, `need.kind: "required"`, `setup: "setup/email.md"`:
   the path `status` (under "<app> needs setup") and `secret list <app id>`
   (under the unmet setting) print as `Guide:
-  .claude/skills/everyapp/setup/email.md`, and `secret list --json` carries
+  node_modules/everyapp/skills/everyapp/setup/email.md`, and `secret list --json` carries
   per unmet setting; how an agent lands here), and `data.app.setup.command`
   is `pnpm everyapp configure <app id>`, which asks for `EMAIL_FROM` and
   `EMAIL_FROM_NAME` among what the app still needs (visible, checked

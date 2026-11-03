@@ -45,13 +45,15 @@ verdict.
 For each scenario, under `/tmp/build-skill-runs/<scenario>-<n>/`:
 
 1. Makes a scratch checkout, `every-app/`: a root `package.json`, a
-   `node_modules/.bin/everyapp` that runs the fake, both skills under
-   `.claude/skills/` and `.agents/skills/`, an `AGENTS.md` and `CLAUDE.md`
-   like the checkout's. Under `apps/<id>/` (the scenario's `app`), the
-   starter as `everyapp create <id>` copies it (`lib/app/starter.ts`'s
-   exclusions, the id and name in `everyapp.config.ts`, `package.json`
-   and the README's title) with every skill the CLI ships copied in as
-   `lib/app/skill.ts` does, so the app's own `AGENTS.md` points at both.
+   `node_modules/.bin/everyapp` that runs the fake, both skills linked
+   from `.claude/skills/` and `.agents/skills/` into
+   `node_modules/everyapp/skills/` (the checkout's `packages/cli`), an
+   `AGENTS.md` and `CLAUDE.md` like the checkout's. Under `apps/<id>/`
+   (the scenario's `app`), the starter as `everyapp create <id>` copies it
+   (`lib/app/starter.ts`'s exclusions, the id and name in
+   `everyapp.config.ts`, `package.json` and the README's title) with every
+   skill the CLI ships linked as `lib/app/skill.ts` does, so the app's own
+   `AGENTS.md` points at both.
    The app's `node_modules/` is the starter's, linked entry by entry (so
    vitest, tsc, drizzle-kit, vite and the SDK resolve as in `starter/`),
    except `everyapp` (the fake) and `cf` (a stub that hands `cf workers

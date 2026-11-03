@@ -1050,15 +1050,22 @@ describe("each setting's need (optional, anyOf, why, docs)", () => {
     expect(
       validateManifestStrict({
         id: "analytics",
-        secrets: [{ name: "MAIN_SECRET", setup: "setup/main-secret.md" }],
+        secrets: [{ name: "MAIN_SECRET", setup: "docs/setup/main-secret.md" }],
       }).secrets,
-    ).toEqual([{ name: "MAIN_SECRET", setup: "setup/main-secret.md" }]);
-    expect(() =>
-      validateManifestStrict({
-        id: "analytics",
-        secrets: [{ name: "MAIN_SECRET", setup: "docs/secret.md" }],
-      }),
-    ).toThrow(/secrets\.0\.setup: must be a guide in the everyapp skill/);
+    ).toEqual([{ name: "MAIN_SECRET", setup: "docs/setup/main-secret.md" }]);
+    for (const setup of [
+      "../secret.md",
+      "/etc/secret.md",
+      "docs/../secret.md",
+      "docs/secret.txt",
+    ]) {
+      expect(() =>
+        validateManifestStrict({
+          id: "analytics",
+          secrets: [{ name: "MAIN_SECRET", setup }],
+        }),
+      ).toThrow(/secrets\.0\.setup: must be a Markdown file in the app/);
+    }
     expect(() =>
       validateManifestStrict({
         id: "analytics",

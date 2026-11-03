@@ -36,7 +36,6 @@ import { releaseCommand } from "./commands/release/command";
 import { secretRoutes } from "./commands/secret/command";
 import { setupCommand } from "./commands/setup/command";
 import { signinRoutes } from "./commands/signin/command";
-import { skillsRoutes } from "./commands/skills/command";
 import { statusCommand } from "./commands/status/command";
 import { teardownCommand } from "./commands/teardown/command";
 import { updateCommand } from "./commands/update/command";
@@ -51,7 +50,6 @@ const routes = buildRouteMap({
     deploy: deployCommand,
     release: releaseCommand,
     db: dbRoutes,
-    skills: skillsRoutes,
     teardown: teardownCommand,
     login: loginCommand,
     setup: setupCommand,
@@ -109,7 +107,7 @@ export function commandPaths(): string[] {
  * or managing the people and apps of its workspace.
  */
 const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
-  ["BUILD AN APP", ["create", "dev", "deploy", "release", "db", "skills"]],
+  ["BUILD AN APP", ["create", "dev", "deploy", "release", "db"]],
   [
     "RUN A GATEWAY",
     [
@@ -169,7 +167,6 @@ const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
     "mcp off treg",
   ],
   db: ["db migrate", "db query 'select count(*) from todos'"],
-  skills: ["skills update", "skills update --json"],
   workspace: [
     "workspace rename 'Acme Corp'",
     "workspace users",

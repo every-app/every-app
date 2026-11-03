@@ -9,7 +9,7 @@ The todo list is the example; the rest is the plumbing that makes it an EveryApp
 - The example: `src/routes/index.tsx` (the page), `src/serverFunctions/` (what the page calls, each behind the signed-in user: the todos, and in `home.ts` the first screen's facts), `src/server/todos.ts` and its test (the queries), `src/db/schema.ts` and `drizzle/` (the table and its migrations), `src/tools.ts` (the same todos as tools for AI clients), `src/routes/health.ts` (a JSON endpoint without a page; private, like every route not named under `public` in `everyapp.config.ts`).
 - The plumbing: `everyapp.config.ts` (what the app is and what the Gateway allows it), `cloudflare.config.ts` (builds the Worker from it), `src/entry.worker.ts` (wraps the app in `everyApp()`, which verifies what the Gateway sent and serves the tools), `src/db/index.ts`, `src/env.d.ts`, `vite.config.ts`, `drizzle.config.ts`.
 - The shell: `src/routes/__root.tsx`, `src/router.tsx`, `src/styles/app.css`. `src/routeTree.gen.ts` is generated.
-- The skills: `.agents/skills/` and `.claude/skills/`, copies `everyapp create` makes of the CLI's `everyapp` (runs the commands) and `build-every-app` (how to build one, with patterns from real apps). Your coding agent reads them, with `AGENTS.md`.
+- The skills: `.agents/skills/` and `.claude/skills/` hold links `everyapp create` makes to the CLI's own `everyapp` (runs the commands) and `build-every-app` (how to build one, with patterns from real apps), in `node_modules/everyapp/skills/`, so they always match the CLI the app pins. Your coding agent reads them, with `AGENTS.md`.
 
 ## Run it
 

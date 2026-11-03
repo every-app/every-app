@@ -1197,12 +1197,17 @@ const AiGatewayBindingNameSchema = z
  * app's bindings is refused by {@link validateManifestStrict}, which sees
  * the whole manifest.
  */
-/** An app's own secret may name its setup guide in the everyapp skill (`setup/main-secret.md`). */
+/**
+ * An app's own secret may name its setup guide, a Markdown file in the app
+ * (`docs/setup/main-secret.md`): lowercase path segments, so never absolute
+ * and never `..`. The guides in the everyapp skill are the registries', for
+ * Gateway settings; an app can't add one there.
+ */
 const SetupGuideSchema = z
   .string()
   .regex(
-    /^setup\/[a-z0-9][a-z0-9-]*\.md$/,
-    'must be a guide in the everyapp skill, such as "setup/main-secret.md"',
+    /^[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*)*\.md$/,
+    'must be a Markdown file in the app, such as "docs/setup/main-secret.md"',
   );
 
 const SecretEntrySchemaStrict = z

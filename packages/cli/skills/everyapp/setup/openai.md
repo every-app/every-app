@@ -80,7 +80,7 @@ gives no API credit.
    and `data.gateway.missing` lists what is still to set. This is how an agent
    lands here: `status` (under "<app> needs setup") and `secret list <app id>`
    (under the unmet setting) print `Guide:
-   .claude/skills/everyapp/setup/openai.md`, and `secret list --json` carries the path as the entry's `setup` (in the
+   node_modules/everyapp/skills/everyapp/setup/openai.md`, and `secret list --json` carries the path as the entry's `setup` (in the
    checkout: `packages/cli/skills/everyapp/setup/openai.md`).
 2. `pnpm everyapp status --json`: `data.installed` and `data.claimed` are
    true, `data.gatewayUrl` is `https://<gateway host>`; the app's entry in

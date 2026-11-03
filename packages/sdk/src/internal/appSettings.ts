@@ -98,9 +98,9 @@ export interface SettingNeedFields {
   /** The app works without it; the feature using it says so where it is used. */
   optional?: boolean;
   /**
-   * For an app's own secret: its setup guide, relative to the everyapp
-   * skill (`setup/main-secret.md`). Providers and capabilities take theirs
-   * from the registries and can't override it.
+   * For an app's own secret: its setup guide, a path in the app
+   * (`docs/setup/main-secret.md`). Providers and capabilities take theirs
+   * from the registries (guides in the everyapp skill) and can't override it.
    */
   setup?: string;
   /**
@@ -174,11 +174,12 @@ export interface AppSetting {
   why?: string;
   docs?: string;
   /**
-   * The everyapp skill's setup guide for it, relative to the skill
-   * (`setup/dataforseo.md`; in an app `.claude/skills/everyapp/setup/…`, in
-   * the checkout `packages/cli/skills/everyapp/setup/…`): what an agent
-   * reads to set it up end to end. From the registries for providers and
-   * capabilities; from the manifest entry for an app's own secret.
+   * What an agent reads to set it up end to end. For providers and
+   * capabilities, the registry's guide in the everyapp skill, relative to the
+   * skill (`setup/dataforseo.md`; in an app
+   * `node_modules/everyapp/skills/everyapp/setup/…`, in the checkout
+   * `packages/cli/skills/everyapp/setup/…`). For an app's own secret, the
+   * manifest entry's guide, a path in the app (`docs/setup/main-secret.md`).
    */
   setup?: string;
   /**

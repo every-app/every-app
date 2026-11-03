@@ -222,10 +222,10 @@ describe("appSettings", () => {
   it("takes an app secret's setup guide from its entry, and never a Gateway setting's", () => {
     const settings = appSettings({
       providers: [{ id: "openai", setup: "setup/mine.md" } as never],
-      secrets: [{ name: "MAIN_SECRET", setup: "setup/main-secret.md" }],
+      secrets: [{ name: "MAIN_SECRET", setup: "docs/setup/main-secret.md" }],
     });
     expect(settings[0]!.setup).toBe("setup/openai.md");
-    expect(settings[1]!.setup).toBe("setup/main-secret.md");
+    expect(settings[1]!.setup).toBe("docs/setup/main-secret.md");
   });
 
   it("contributes nothing for a provider or capability the gateway doesn't offer, or a manifest with none", () => {

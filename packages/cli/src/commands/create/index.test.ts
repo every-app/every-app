@@ -139,11 +139,12 @@ describe("everyapp create", () => {
       [["workers", "types"], app],
       [["d1", "migrations", "apply"], app],
     ]);
-    // The skills, where coding agents look for them, and the template's
-    // AGENTS.md pointing at them, as it was.
+    // The skills, where coding agents look for them: links into the app's
+    // own install of the CLI (install is faked here, so they dangle), and the
+    // template's AGENTS.md pointing at them, as it was.
     for (const dir of [".claude", ".agents"]) {
       for (const name of ["everyapp", "build-every-app"]) {
-        expect(fs.readFileSync(path.join(app, dir, "skills", name, "SKILL.md"), "utf8")).toContain(`name: ${name}`);
+        expect(fs.readlinkSync(path.join(app, dir, "skills", name))).toBe(`../../node_modules/everyapp/skills/${name}`);
       }
     }
     expect(fs.readFileSync(path.join(app, "AGENTS.md"), "utf8")).toBe(
@@ -207,7 +208,7 @@ describe("everyapp create", () => {
         "Creating my-app in ../../apps/my-app",
         "New apps go in the checkout's apps/ folder, wherever you run create.",
         "Copied the starter template ✓",
-        "Added the everyapp and build-every-app skills for coding agents ✓",
+        "Linked the everyapp and build-every-app skills for coding agents ✓",
         "Installed dependencies ✓",
         "Generated types ✓",
         "Set up the local database ✓ 1 migration",
@@ -427,8 +428,8 @@ describe("everyapp create", () => {
       message: `Pinned to everyapp ^${PUBLISHED_VERSION} and @every-app/sdk ^${PUBLISHED_VERSION} from npm`,
       data: { kind: "published", version: PUBLISHED_VERSION },
     });
-    expect(fs.existsSync(path.join(app, ".agents", "skills", "everyapp", "SKILL.md"))).toBe(true);
-    expect(fs.existsSync(path.join(app, ".claude", "skills", "build-every-app", "SKILL.md"))).toBe(true);
+    expect(fs.lstatSync(path.join(app, ".agents", "skills", "everyapp")).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(path.join(app, ".claude", "skills", "build-every-app")).isSymbolicLink()).toBe(true);
     expect(events.at(-1)).toMatchObject({
       type: "done",
       data: { appId: "my-app", dir: app, next: [{ command: "cd my-app" }, { command: "pnpm dev" }, { command: "pnpm run deploy" }] },

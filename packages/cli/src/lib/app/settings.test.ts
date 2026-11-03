@@ -267,7 +267,7 @@ describe("describeUnmet", () => {
       manifest: {
         providers: ["openrouter"],
         capabilities: { "google-workspace": { access: "write" } },
-        secrets: ["MAIN_SECRET", { name: "SIGNING_KEY", setup: "setup/signing-key.md" }],
+        secrets: ["MAIN_SECRET", { name: "SIGNING_KEY", setup: "docs/setup/signing-key.md" }],
       },
       appId: "analytics",
       gatewayNames: [],
@@ -277,13 +277,13 @@ describe("describeUnmet", () => {
       "OpenRouter: OPENROUTER_API_KEY",
       OPENROUTER_HINT,
       "Get it at https://openrouter.ai/settings/keys",
-      "Guide: .claude/skills/everyapp/setup/openrouter.md",
+      "Guide: node_modules/everyapp/skills/everyapp/setup/openrouter.md",
       "Google: GOOGLE_WORKSPACE_CLIENT_ID and GOOGLE_WORKSPACE_CLIENT_SECRET",
       "Get it at https://console.cloud.google.com/apis/credentials",
-      "Guide: .claude/skills/everyapp/setup/google.md",
+      "Guide: node_modules/everyapp/skills/everyapp/setup/google.md",
       "MAIN_SECRET",
       "SIGNING_KEY",
-      "Guide: .claude/skills/everyapp/setup/signing-key.md",
+      "Guide: docs/setup/signing-key.md",
     ]);
   });
 
@@ -308,7 +308,7 @@ describe("describeUnmet", () => {
       "DataForSEO: DATAFORSEO_API_KEY",
       expect.stringMatching(/^The API login and password/),
       "Get it at https://app.dataforseo.com/api-access",
-      "Guide: .claude/skills/everyapp/setup/dataforseo.md",
+      "Guide: node_modules/everyapp/skills/everyapp/setup/dataforseo.md",
     ]);
   });
 });

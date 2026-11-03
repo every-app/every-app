@@ -1,7 +1,7 @@
 /**
  * The agent pages generated from the build-every-app skill
  * (packages/cli/skills/build-every-app): build.md from SKILL.md and
- * patterns.md from patterns.md, so the skill every created app carries and
+ * patterns.md from patterns.md, so the skill every created app links and
  * the page at everyapp.com/docs/agent/build are one text. The test in
  * agentDocs.test.ts compares each page to what this generates; UPDATE_DOCS
  * rewrites them (`pnpm -C packages/cli docs:update`).
@@ -16,7 +16,7 @@ export const BUILD_SKILL = {
   name: "build-every-app",
   skill: "packages/cli/skills/build-every-app/SKILL.md",
   patterns: "packages/cli/skills/build-every-app/patterns.md",
-  /** Where `everyapp create` puts the skill in an app (also under `.claude/skills/`). */
+  /** Where `everyapp create` links the skill from in an app (also under `.claude/skills/`). */
   inApp: ".agents/skills/build-every-app",
 } as const;
 
@@ -64,7 +64,7 @@ export function buildPage(): string {
     "",
     generatedNote(BUILD_SKILL.skill),
     "",
-    `This page is the \`${BUILD_SKILL.name}\` skill (\`${BUILD_SKILL.skill}\` in the checkout), which \`pnpm everyapp create\` copies into every new app at \`${BUILD_SKILL.inApp}\` and \`.claude/skills/${BUILD_SKILL.name}\`; its patterns index is [Example patterns](/docs/agent/patterns). An agent working in an app reads the copy there. The everyapp skill it names is \`packages/cli/skills/everyapp/SKILL.md\` (in an app \`.agents/skills/everyapp\`); its pages here are [cli](/docs/agent/cli), [json](/docs/agent/json) and [setup](/docs/agent/setup).`,
+    `This page is the \`${BUILD_SKILL.name}\` skill (\`${BUILD_SKILL.skill}\` in the checkout), which ships in the CLI package (\`node_modules/everyapp/skills/${BUILD_SKILL.name}\` in an app) and which \`pnpm everyapp create\` links from \`${BUILD_SKILL.inApp}\` and \`.claude/skills/${BUILD_SKILL.name}\`; its patterns index is [Example patterns](/docs/agent/patterns). An agent working in an app reads it there. The everyapp skill it names is \`packages/cli/skills/everyapp/SKILL.md\` (in an app \`.agents/skills/everyapp\`); its pages here are [cli](/docs/agent/cli), [json](/docs/agent/json) and [setup](/docs/agent/setup).`,
     "",
     text,
     "",
@@ -77,12 +77,12 @@ export function patternsPage(): string {
   return [
     frontmatter(
       "Example patterns",
-      "How the apps on EveryApp do each thing and the file to copy from, in the starter or one of the four open apps: identity, public routes, every manifest field, email, AI, agents and Workflows, tools, needs setup, cookies and the bundle, tests, dev vs production, release and install.",
+      "A look-up table: each job an app does and the file to copy, in the starter or one of the four open apps: identity, public routes, the manifest, email and AI, agents and Workflows, tools, needs setup, cookies and tests, dev, release and install.",
     ),
     "",
     generatedNote(BUILD_SKILL.patterns),
     "",
-    `This page is \`patterns.md\` of the \`${BUILD_SKILL.name}\` skill (\`${BUILD_SKILL.patterns}\` in the checkout; in an app \`${BUILD_SKILL.inApp}/patterns.md\`), the index [Build an app](/docs/agent/build) reads before the first edit. Each app's repository is \`https://github.com/every-app/<name>\`; clone it beside the app to read a file.`,
+    `This page is \`patterns.md\` of the \`${BUILD_SKILL.name}\` skill (\`${BUILD_SKILL.patterns}\` in the checkout; in an app \`${BUILD_SKILL.inApp}/patterns.md\`), the table [Build an app](/docs/agent/build) looks rows up in. Each app's repository is \`https://github.com/every-app/<name>\`; clone it beside the app to read a file.`,
     "",
     body,
     "",

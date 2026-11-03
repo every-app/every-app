@@ -8,7 +8,7 @@ with Apple key in their Apple Developer account, the Gateway holds the
 Services ID and a client secret signed with that key, and they have signed
 in with Apple once. `pnpm everyapp signin show apple --json` names this
 file as `setup`, and the CLI prints
-`Guide: .claude/skills/everyapp/setup/signin-apple.md`.
+`Guide: node_modules/everyapp/skills/everyapp/setup/signin-apple.md`.
 
 Who gets in doesn't change: Apple only says who someone is. A member signs
 in; someone with a pending invitation for that exact address joins with

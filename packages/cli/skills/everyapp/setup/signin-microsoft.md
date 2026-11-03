@@ -8,7 +8,7 @@ directory (Microsoft 365), or any Microsoft account. At the end the person
 has an app registration in Entra, its settings on the Gateway, and has
 signed in with Microsoft once. `pnpm everyapp signin show microsoft --json`
 names this file as `setup`, and the CLI prints
-`Guide: .claude/skills/everyapp/setup/signin-microsoft.md`.
+`Guide: node_modules/everyapp/skills/everyapp/setup/signin-microsoft.md`.
 
 Who gets in doesn't change: Microsoft only says who someone is. A member
 signs in; someone with a pending invitation for that exact address joins

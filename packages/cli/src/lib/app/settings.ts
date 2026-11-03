@@ -259,18 +259,28 @@ export function describeUnmet(setting: AppSetupSetting): string[] {
   ];
 }
 
-/** Where the everyapp skill's setup guides live in an app that has the skill. */
-export const SKILL_DIR = ".claude/skills/everyapp";
+/**
+ * Where the everyapp skill is, relative to an app or the EveryApp checkout:
+ * the CLI package's own copy, which every app (and the checkout's root) has
+ * installed. An app's `.claude/skills/everyapp` is a link to it.
+ */
+export const SKILL_DIR = "node_modules/everyapp/skills/everyapp";
 
 /**
- * Where an agent reads how to set `setting` up: the everyapp skill's guide
- * when the registry names one ("Guide: .claude/skills/everyapp/setup/
- * dataforseo.md"), else for a provider (a registered row has no guide) the
- * command that prints its whole spec ("Guide: pnpm everyapp provider show
- * stripe"). Null for an app's own secret without a guide.
+ * Where an agent reads how to set `setting` up: for an app's own secret, the
+ * guide its manifest entry names, a path in the app ("Guide:
+ * docs/setup/main-secret.md"); for a Gateway setting, the everyapp skill's
+ * guide when the registry names one ("Guide: node_modules/everyapp/skills/
+ * everyapp/setup/dataforseo.md"), else for a provider (a registered row has
+ * no guide) the command that prints its whole spec ("Guide: pnpm everyapp
+ * provider show stripe"). Null for an app's own secret without a guide.
  */
-export function guideLine(setting: Pick<AppSetupSetting, "setup" | "kind" | "id">): string | null {
-  if (setting.setup) return `Guide: ${SKILL_DIR}/${setting.setup}`;
+export function guideLine(
+  setting: Pick<AppSetupSetting, "setup" | "kind" | "id" | "holder">,
+): string | null {
+  if (setting.setup) {
+    return `Guide: ${setting.holder === "app" ? setting.setup : `${SKILL_DIR}/${setting.setup}`}`;
+  }
   if (setting.kind === "capability" || setting.kind === "provider") {
     return `Guide: ${CLI} provider show ${setting.id}`;
   }

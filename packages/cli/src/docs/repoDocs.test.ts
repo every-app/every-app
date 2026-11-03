@@ -96,9 +96,17 @@ const TOP_FILES = new Set([
 
 /**
  * Paths a document writes as an example of what someone would make, not of
- * what the repository holds.
+ * what the repository holds (`docs/setup/main-secret.md` is a guide in an
+ * app's own repository, which a secret's `setup` names).
  */
-const EXAMPLE_PATHS = new Set(["apps/my-app", "apps/hello", "apps/todo", "apps/crm", "apps/<id>"]);
+const EXAMPLE_PATHS = new Set([
+  "apps/my-app",
+  "apps/hello",
+  "apps/todo",
+  "apps/crm",
+  "apps/<id>",
+  "docs/setup/main-secret.md",
+]);
 
 /**
  * A line that says a thing was deleted, removed or moved, or pins a commit

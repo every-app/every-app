@@ -72,7 +72,7 @@ payment comes in only at Add Funds.
    true, "set": … }` and `data.gateway.missing` names it while unset. This
    is how an agent lands here: `status` (under "openseo needs setup") and
    `secret list openseo` (under the unmet setting) print `Guide:
-   .claude/skills/everyapp/setup/dataforseo.md`, and `secret list --json`
+   node_modules/everyapp/skills/everyapp/setup/dataforseo.md`, and `secret list --json`
    carries the path as the entry's `setup` (in the checkout the file is
    `packages/cli/skills/everyapp/setup/dataforseo.md`). The error
    `APP_NOT_FOUND` ("openseo isn't deployed to this Gateway yet", exit 1):

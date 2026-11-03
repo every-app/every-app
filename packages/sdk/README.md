@@ -72,7 +72,7 @@ export default defineConfig((ctx) => ({
   (`GITHUB_TOKEN?: string` in `Cloudflare.Env`). An entry can carry its
   need: `{ name: "GITHUB_TOKEN", why, docs, optional: true }`, or
   `anyOf: "<group>"` when one of a group must be set, and
-  `setup: "setup/<name>.md"` names its guide in the everyapp skill;
+  `setup: "docs/setup/<name>.md"` names its guide, a file in the app;
   `providers` and `capabilities` entries take `why`, `docs`, `optional` and
   `anyOf` too. Until every required setting is set the app shows "Needs
   setup" and its tools stay out of `/mcp`; `pnpm everyapp secret list` says

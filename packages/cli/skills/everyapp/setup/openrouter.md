@@ -77,7 +77,7 @@ try the apps.
    true, "set": false }` and `data.gateway.missing` names it while unset.
    This is how an agent lands here: `status` (under "<app> needs setup") and
    `secret list <app id>` (under the unmet setting) print `Guide:
-   .claude/skills/everyapp/setup/openrouter.md`, and `secret list --json`
+   node_modules/everyapp/skills/everyapp/setup/openrouter.md`, and `secret list --json`
    carries the path as the entry's `setup` (in the
    checkout: `packages/cli/skills/everyapp/setup/openrouter.md`).
    openmail: its manifest requires `openrouter` and marks

@@ -165,7 +165,7 @@ export interface EveryAppSettingEntry {
 /** One of the app's own secrets, with its need. */
 export interface EveryAppSecretEntry extends EveryAppSettingNeed {
   readonly name: string;
-  /** Its guide in the everyapp skill (`"setup/main-secret.md"`). */
+  /** Its setup guide, a path in the app (`"docs/setup/main-secret.md"`). */
   readonly setup?: string;
 }
 

@@ -412,7 +412,7 @@ How the Gateway attributes (`attributeCall`): an organization's own app calls fo
 
 The provider's own errors pass through without `x-everyapp-error`.
 
-Putting a provider's key on the Gateway, step by step: `packages/cli/skills/everyapp/setup/openai.md`, `setup/openrouter.md`, `setup/workers-ai.md` (in an app `.claude/skills/everyapp/setup/<file>`).
+Putting a provider's key on the Gateway, step by step: `packages/cli/skills/everyapp/setup/openai.md`, `setup/openrouter.md`, `setup/workers-ai.md` (in an app `node_modules/everyapp/skills/everyapp/setup/<file>`).
 
 ```ts
 import {
@@ -461,7 +461,7 @@ An OAuth provider's call (`apps/every-app-gateway/src/server/capabilities/heldTo
 
 **Local dev.** With no binding and `EVERYAPP_DEV` set, `integrationFetch` calls the provider directly with the developer's own key from `.dev.vars` under the Gateway's names (`DATAFORSEO_API_KEY`, `CONTEXT_API_KEY`, …); without it, it throws `ConfigurationError`. For an OAuth provider it puts the token in `<PREFIX>_ACCESS_TOKEN` (`devAccessTokenName()`: `GOOGLE_WORKSPACE_ACCESS_TOKEN`) on calls to the spec's hosts, and enforces the hosts only; without the token a call answers the Gateway's `409 integration_not_connected` shape. `everyAppWorker()` and `everyAppAuxiliaryWorker()` also declare `EVERYAPP_DEV_CAPABILITIES` (the manifest's `capabilities` as JSON), from which `integrationStatus` reports whether the app lists an OAuth provider and its `scopes`; with the token set, `connection` is `{ label: null, scopes: <the entry's scopes>, ready: true }`.
 
-Putting a capability's key or OAuth client on the Gateway, step by step: `packages/cli/skills/everyapp/setup/dataforseo.md`, `setup/context.md`, `setup/google.md` (`google-workspace`), `setup/microsoft-365.md`, `setup/slack.md` (in an app `.claude/skills/everyapp/setup/<file>`).
+Putting a capability's key or OAuth client on the Gateway, step by step: `packages/cli/skills/everyapp/setup/dataforseo.md`, `setup/context.md`, `setup/google.md` (`google-workspace`), `setup/microsoft-365.md`, `setup/slack.md` (in an app `node_modules/everyapp/skills/everyapp/setup/<file>`).
 
 ### Email: `sendEmail()`
 
@@ -482,7 +482,7 @@ Putting a capability's key or OAuth client on the Gateway, step by step: `packag
 | `email_provider_limited`         | 429    | the provider's account reached its sending limit (`E_RATE_LIMIT_EXCEEDED`, `E_DAILY_LIMIT_EXCEEDED`, REST `10004`); try later |
 | `email_send_failed`              | 502    | anything else the provider answered, or (SDK-side) a non-refusal non-2xx from the Gateway                                     |
 
-The full rules and budgets are in [email](/docs/agent/email) and the [capabilities registry](/docs/agent/repo/capabilities); setting the Gateway's sender and provider up, step by step: `packages/cli/skills/everyapp/setup/email.md` (in an app `.claude/skills/everyapp/setup/email.md`). **Local dev:** with `EVERYAPP_DEV` and no binding the message is checked the same way (`from` against `EVERYAPP_EMAIL_SENDERS` in `.dev.vars`), then printed and answered `{ status: "logged", messageId: "dev-<uuid>" }`; with `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `EMAIL_FROM` set it really sends through Email Sending's REST API from the developer's account, and a refused send throws `GatewayRefusalError` with the same provider-mapped codes (`email_sender_not_verified`, `email_provider_limited`, `email_invalid_message`, `email_send_failed`). Without `EVERYAPP_DEV` and without the binding, `ConfigurationError`.
+The full rules and budgets are in [email](/docs/agent/email) and the [capabilities registry](/docs/agent/repo/capabilities); setting the Gateway's sender and provider up, step by step: `packages/cli/skills/everyapp/setup/email.md` (in an app `node_modules/everyapp/skills/everyapp/setup/email.md`). **Local dev:** with `EVERYAPP_DEV` and no binding the message is checked the same way (`from` against `EVERYAPP_EMAIL_SENDERS` in `.dev.vars`), then printed and answered `{ status: "logged", messageId: "dev-<uuid>" }`; with `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `EMAIL_FROM` set it really sends through Email Sending's REST API from the developer's account, and a refused send throws `GatewayRefusalError` with the same provider-mapped codes (`email_sender_not_verified`, `email_provider_limited`, `email_invalid_message`, `email_send_failed`). Without `EVERYAPP_DEV` and without the binding, `ConfigurationError`.
 
 ### Members: `listMembers()`
 

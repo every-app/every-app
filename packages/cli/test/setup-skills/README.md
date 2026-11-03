@@ -55,7 +55,8 @@ For each scenario, under `/tmp/setup-skills-runs/<scenario>-<n>/`:
    `node_modules/.bin/everyapp` that runs the fake (so `pnpm everyapp …`
    resolves to it, from the root and from each app's directory, without
    any output of pnpm's own), a copy of `packages/cli/skills/everyapp`
-   in `.claude/skills/everyapp/` and `.agents/skills/everyapp/`, an
+   in `node_modules/everyapp/skills/everyapp/` with `.claude/skills/everyapp`
+   and `.agents/skills/everyapp` linked to it, as `everyapp create` does, an
    `AGENTS.md` and `CLAUDE.md` like the starter template's, and for each
    app the scenario deploys, `apps/<id>/everyapp.config.ts` with the
    manifest the scenario gives (id, providers, capabilities), so "in the
@@ -77,7 +78,7 @@ For each scenario, under `/tmp/setup-skills-runs/<scenario>-<n>/`:
    `APP_NEEDS_SETUP` fix (severity `warning`, "<app> needs setup", `run`
    the one `secret set`) per app with unmet required settings, its
    `message` listing each unmet setting with `Guide:
-   .claude/skills/everyapp/setup/<name>.md`, which the human `status`
+   node_modules/everyapp/skills/everyapp/setup/<name>.md`, which the human `status`
    prints as the real one does. `secret set NAME --app <id>` and `secret
    unset --app <id>` reach an app's own secret from anywhere; an app with
    `deployed: false` is registered but never uploaded (`status` says

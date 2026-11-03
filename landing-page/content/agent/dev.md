@@ -293,7 +293,7 @@ Only three sets of names are declared, and only the ones that are set:
 
 3. `EVERYAPP_EMAIL_SENDERS` when the manifest lists `email`.
 
-Getting each key and setting it on the Gateway for production is step by step in `packages/cli/skills/everyapp/setup/<name>.md` (`openai.md`, `openrouter.md`, `workers-ai.md`, `dataforseo.md`, `context.md`, `email.md`, `google.md`, `microsoft-365.md`, `slack.md`; index `README.md`; in an app `.claude/skills/everyapp/setup/<name>.md`); in development the same value goes in `.dev.vars` under the name above.
+Getting each key and setting it on the Gateway for production is step by step in `packages/cli/skills/everyapp/setup/<name>.md` (`openai.md`, `openrouter.md`, `workers-ai.md`, `dataforseo.md`, `context.md`, `email.md`, `google.md`, `microsoft-365.md`, `slack.md`; index `README.md`; in an app `node_modules/everyapp/skills/everyapp/setup/<name>.md`); in development the same value goes in `.dev.vars` under the name above.
 
 A name in `.dev.vars` that is in none of these sets is not declared, so the Worker does not see it (`everyAppWorker()` adds a `{ type: "secret" }` binding only for these names, and, as the `secrets` comment in `worker.ts` puts it, "the plugin passes it through" because it is declared): an app secret must be listed under `secrets` in `everyapp.config.ts` locally for the same reason `everyapp secret set` requires it in production.
 

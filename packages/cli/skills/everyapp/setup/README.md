@@ -87,7 +87,7 @@ Worker's names were never recorded, which never blocks), `blocking`, and
 when known `why`, `hint` (what the key is and where it comes from, from
 the provider's entry), `docs` (where the key comes from) and `setup`: the file
 here that sets it up, relative to the everyapp skill (`setup/dataforseo.md`;
-in an app `.claude/skills/everyapp/setup/dataforseo.md`, in this checkout
+in an app `node_modules/everyapp/skills/everyapp/setup/dataforseo.md`, in this checkout
 `packages/cli/skills/everyapp/setup/dataforseo.md`). An unset optional
 setting is in `settings` with `set: false`, never in `unmet`. The older
 fields still hold: `data.gateway.needed` (each Gateway name with `required`
@@ -99,7 +99,7 @@ checkout root with no app named, `data.apps[]` has every app's `id` and
 `run` the command above). Under each unmet setting that has a guide,
 `status` (under "<app> needs setup"; the same lines are in
 `data.fixes[].message`) and `secret list <app id>` (under its unmet settings)
-print `Guide: .claude/skills/everyapp/setup/<name>.md`, once per guide, and
+print `Guide: node_modules/everyapp/skills/everyapp/setup/<name>.md`, once per guide, and
 `secret list --json` names it as the setting's `setup`: that is how an agent lands on
 one of these files. A provider registered on the Gateway has no file, so
 its line is `Guide: pnpm everyapp provider show <id>` instead. On the Gateway's home such an app shows

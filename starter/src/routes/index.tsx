@@ -271,7 +271,7 @@ function whoCanOpen(members: number): string {
     : `${members} people can open it.`;
 }
 
-// The build skill `everyapp create` copies into a new app, where coding agents
+// The build skill `everyapp create` links into a new app, where coding agents
 // look for it. A convention of the CLI (packages/cli/src/lib/app/skill.ts), not
 // a manifest field, so the page names it as a constant; a test in the CLI
 // (packages/cli/src/lib/app/starterSkills.test.ts) holds it to the skills the
