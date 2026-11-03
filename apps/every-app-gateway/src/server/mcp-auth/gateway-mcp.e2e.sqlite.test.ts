@@ -100,6 +100,7 @@ import {
   mcpToolCalls,
   members,
   rateLimitCounters,
+  userAccessTokens,
   users,
 } from "@/db/schema";
 import server, { clearHostnameCacheForTests } from "@/server";
@@ -198,7 +199,8 @@ function todoApp(publicKeyPem: string, extraTool = false) {
         },
         delete_todo: {
           description: "Delete a todo.",
-          risk: "destructive",
+          risk: "write",
+          destructive: true,
           input: objectInput(),
           handler: () => "deleted",
         },
@@ -907,6 +909,7 @@ describe("a DCR client (Codex-style)", () => {
       "notes_add_note",
       "notes_list_notes",
       "todo_create_todo",
+      "todo_delete_todo",
       "todo_list_todos",
     ]);
     const created = await callTool(tokens.access_token, "todo_create_todo", {
@@ -2834,14 +2837,14 @@ describe("personal access tokens on the gateway's /mcp", () => {
   });
 
   async function pat(
-    scopes?: string[],
+    access?: "read" | "full",
     appRowId: string | null = null,
   ): Promise<string> {
     const { plaintext } = await UserPatService.create({
       userId: ownerId,
       organizationId: orgId,
       name: "claude code",
-      scopes,
+      access,
       appRowId,
     });
     return plaintext;
@@ -2856,6 +2859,7 @@ describe("personal access tokens on the gateway's /mcp", () => {
       "notes_add_note",
       "notes_list_notes",
       "todo_create_todo",
+      "todo_delete_todo",
       "todo_list_todos",
     ]);
     await callTool(token, "notes_add_note");
@@ -2870,8 +2874,8 @@ describe("personal access tokens on the gateway's /mcp", () => {
     });
   });
 
-  it("reads only with mcp:read, sees only its app, and refuses non-MCP tokens", async () => {
-    expect(await toolNames(await pat(["mcp:read"]))).toEqual([
+  it("reads only with mcp:read, sees only its app, and refuses other scopes", async () => {
+    expect(await toolNames(await pat("read"))).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
       "everyapp_search_tools",
@@ -2885,12 +2889,21 @@ describe("personal access tokens on the gateway's /mcp", () => {
       "notes_add_note",
       "notes_list_notes",
     ]);
-    const refused = await mcp(await pat(["api:read"]), "tools/list");
-    expect(refused.status).toBe(403);
-    expect(await refused.json()).toEqual({
-      error: "forbidden",
-      reason: "token_scope",
-    });
+    // No token is made with other scopes now; a row that holds them (the
+    // old Read & write, a typed scope) reaches nothing.
+    for (const scopes of [["mcp:write"], ["api:read"]]) {
+      const token = await pat("read");
+      await db
+        .update(userAccessTokens)
+        .set({ scopes: JSON.stringify(scopes) })
+        .where(eq(userAccessTokens.scopes, JSON.stringify(["mcp:read"])));
+      const refused = await mcp(token, "tools/list");
+      expect(refused.status, scopes.join()).toBe(403);
+      expect(await refused.json()).toEqual({
+        error: "forbidden",
+        reason: "token_scope",
+      });
+    }
   });
 
   it("serves a member the apps a group grants them, until the group is gone", async () => {
@@ -2905,6 +2918,7 @@ describe("personal access tokens on the gateway's /mcp", () => {
       "everyapp_whoami",
       "everyapp_search_tools",
       "todo_create_todo",
+      "todo_delete_todo",
       "todo_list_todos",
     ]);
 
@@ -2921,6 +2935,7 @@ describe("personal access tokens on the gateway's /mcp", () => {
       "notes_add_note",
       "notes_list_notes",
       "todo_create_todo",
+      "todo_delete_todo",
       "todo_list_todos",
     ]);
     const called = await callTool(token, "notes_add_note");
@@ -2932,6 +2947,7 @@ describe("personal access tokens on the gateway's /mcp", () => {
       "everyapp_whoami",
       "everyapp_search_tools",
       "todo_create_todo",
+      "todo_delete_todo",
       "todo_list_todos",
     ]);
     const gone = await callTool(token, "notes_add_note");
@@ -3075,6 +3091,7 @@ describe("apps with no tool snapshot yet", () => {
       "notes_add_note",
       "notes_list_notes",
       "todo_create_todo",
+      "todo_delete_todo",
       "todo_list_todos",
     ]);
     expect(listCalls(chef.binding)).toBe(1);

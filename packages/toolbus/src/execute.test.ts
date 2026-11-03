@@ -147,7 +147,7 @@ describe("executeToolCall", () => {
       deps,
     );
     await executeToolCall(
-      appView(),
+      appView(todoApp(), { ...PRINCIPAL, access: "read" }),
       { name: "delete_todo", arguments: { id: "1" }, clientInfo },
       deps,
     );
@@ -187,7 +187,7 @@ describe("executeToolCall", () => {
       result: {
         structuredContent: {
           apps: [
-            { id: "todo", tools: 2 },
+            { id: "todo", tools: 3 },
             {
               id: "openseo",
               name: "OpenSEO",
@@ -228,7 +228,7 @@ describe("executeToolCall", () => {
       result: {
         structuredContent: {
           apps: [
-            { id: "todo", tools: 2 },
+            { id: "todo", tools: 3 },
             {
               id: "dataforseo",
               name: "DataForSEO",
@@ -295,8 +295,8 @@ describe("executeToolCall", () => {
 
     for (const [view, name, reason] of [
       [appView(), "nope", "unknown_tool"],
-      [appView(), "delete_todo", "destructive_requires_approval"],
       [readOnly, "create_todo", "read_only_connection"],
+      [readOnly, "delete_todo", "read_only_connection"],
       [gatewayView([todoApp()]), "create_todo", "unknown_tool"],
     ] as const) {
       await expect(
@@ -761,13 +761,6 @@ const notesApp = () =>
         risk: "read",
         inputSchema: { type: "object", properties: {} },
       },
-      {
-        name: "purge_notes",
-        title: "Purge notes",
-        description: "Delete every note.",
-        risk: "destructive",
-        inputSchema: { type: "object", properties: {} },
-      },
     ],
   });
 
@@ -867,10 +860,7 @@ describe("everyapp_search_tools", () => {
     expect(none.structuredContent).toEqual({ tools: [], total: 0 });
   });
 
-  it("searches the caller's policy-filtered view: destructive never, write not for read-only", async () => {
-    const all = await search({ query: "notes" });
-    expect(names(all)).not.toContain("notes_purge_notes");
-    expect(names(await search({ query: "purge delete" }))).toEqual([]);
+  it("searches the caller's policy-filtered view: write not for read-only", async () => {
     const readOnly = gatewayView([todoApp(), notesApp()], READ_ONLY);
     expect(names(await search({ query: "notes" }, readOnly))).toEqual([
       "notes_search_notes",
@@ -1317,13 +1307,8 @@ describe("the call wrappers", () => {
       [write, "everyapp_call_read", "everyapp_whoami", "unknown_tool"],
       [write, "everyapp_call_write", "everyapp_call_read", "unknown_tool"],
       [write, "everyapp_call_read", "everyapp_call_read", "unknown_tool"],
-      [
-        write,
-        "everyapp_call_write",
-        "todo_delete_todo",
-        "destructive_requires_approval",
-      ],
       [read, "everyapp_call_read", "todo_create_todo", "read_only_connection"],
+      [read, "everyapp_call_read", "todo_delete_todo", "read_only_connection"],
     ] as const) {
       const resolution = await executeToolCall(
         view,

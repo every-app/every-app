@@ -318,10 +318,10 @@ describe("remoteMcpAppUpdate", () => {
       description: first.description,
     };
     const second = remoteMcpAppUpdate(next, {
-      tool: { name: "deleteAll", override: { risk: "destructive" } },
+      tool: { name: "deleteAll", override: { risk: "write" } },
     });
     expect(second.remote.tools).toEqual({
-      deleteAll: { enabled: false, risk: "destructive" },
+      deleteAll: { enabled: false, risk: "write" },
     });
     expect(second.remote.rev).toBe(3);
     const cleared = remoteMcpAppUpdate(

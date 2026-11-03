@@ -283,17 +283,17 @@ describe("setRemoteMcpTool", () => {
       return { ...found, app: found.app! };
     };
 
-    expect(await setRemoteMcpTool(db(), await ref(), "treg_delete_everything", { risk: "destructive" })).toEqual({
+    expect(await setRemoteMcpTool(db(), await ref(), "treg_delete_everything", { risk: "read" })).toEqual({
       serverName: "delete-everything",
       listedName: "treg_delete_everything",
       inListing: true,
       before: null,
-      after: { risk: "destructive" },
+      after: { risk: "read" },
       rev: 2,
     });
     expect(await setRemoteMcpTool(db(), await ref(), "delete-everything", { enabled: false })).toMatchObject({
-      before: { risk: "destructive" },
-      after: { risk: "destructive", enabled: false },
+      before: { risk: "read" },
+      after: { risk: "read", enabled: false },
       rev: 3,
     });
     expect(await setRemoteMcpTool(db(), await ref(), "get_user", { risk: "write" })).toMatchObject({

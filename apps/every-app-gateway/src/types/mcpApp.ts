@@ -14,8 +14,11 @@ import type {
 
 type McpAppKind = "builtin" | "remote";
 
-/** What the server's annotations said about a tool's risk, alone. */
-export type RemoteToolRiskHint = ToolRisk | "unknown";
+/**
+ * What the server's annotations said about a tool's risk, alone:
+ * `destructive` is a write tool the server marks `destructiveHint`.
+ */
+export type RemoteToolRiskHint = ToolRisk | "destructive" | "unknown";
 
 /**
  * Where a remote app's credential stands:

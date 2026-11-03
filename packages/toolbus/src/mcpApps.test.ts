@@ -166,7 +166,7 @@ describe("the MCP app tool definitions", () => {
       enum: ["annotations", "read", "write"],
     });
     expect(properties("mcp_tool")["risk"]).toMatchObject({
-      enum: ["read", "write", "destructive", "annotations"],
+      enum: ["read", "write", "annotations"],
     });
     expect(properties("mcp_tool")["enabled"]).toMatchObject({
       type: "boolean",

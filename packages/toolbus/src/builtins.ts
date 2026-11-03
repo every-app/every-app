@@ -507,14 +507,15 @@ function toTool(tool: BuiltinTool): Tool {
     inputSchema: tool.inputSchema as Tool["inputSchema"],
     // Spelled out like an app tool's (server.ts): a missing hint reads as
     // true. A read wrapper runs read tools, so it is as idempotent as they
-    // are; the write wrapper never reaches a destructive tool; a workspace
-    // tool that cannot be undone (it asks confirm: true) says so.
+    // are; the write wrapper can run a destructive tool, so it says so; a
+    // workspace tool that cannot be undone (it asks confirm: true) says so.
     annotations:
       tool.risk === "read"
         ? { readOnlyHint: true, idempotentHint: true, openWorldHint: false }
         : {
             readOnlyHint: false,
-            destructiveHint: tool.kind === "host" && tool.irreversible === true,
+            destructiveHint:
+              tool.kind === "host" ? tool.irreversible === true : true,
             idempotentHint: false,
             openWorldHint: false,
           },

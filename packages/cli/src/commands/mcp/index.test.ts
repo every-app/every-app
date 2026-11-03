@@ -570,7 +570,7 @@ describe("mcp show", () => {
   it("shows a remote app's facts, its credential and pin, its snapshot, and every tool with its risk and source", async () => {
     await addTreg(settingNow("treg-secret"));
     await seedTregListing();
-    await changeTool(options<ToolFlags>({ flags: { ...flags, risk: "destructive" } }), "treg", "delete-everything");
+    await changeTool(options<ToolFlags>({ flags: { ...flags, risk: "read" } }), "treg", "delete-everything");
     events = [];
     await showApp(options(), "treg");
     expect(done()).toMatchObject({
@@ -583,7 +583,7 @@ describe("mcp show", () => {
         auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
         risk: "annotations",
         rev: 2,
-        overrides: { "delete-everything": { risk: "destructive" } },
+        overrides: { "delete-everything": { risk: "read" } },
         addedBy: ACTOR,
         key: { name: "TREG_MCP_TOKEN", set: true, bound: true, boundOrigin: "https://treg.to" },
         snapshot: { status: "ok", tools: 2, listedAt: "2026-10-25T12:05:00.000Z", lastError: null },

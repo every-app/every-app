@@ -249,7 +249,7 @@ VALUES ('app-gone', ?, 'gone', 'Gone', 'A tombstone', NULL, NULL, 'service_bindi
   exec("INSERT INTO org_app_settings (organization_id, app_row_id, monthly_cost_cap_micros, updated_at, updated_by) VALUES (?, 'app-todo', 5000000, ?, 'u-owner')", ORG, NOW);
   for (const [id, at, user, app, slug, tool, risk, decision, reason] of [
     ["call-1", NOW - 4 * HOUR, "u-mia", "app-crm", "crm", "list_contacts", "read", "allowed", null],
-    ["call-2", NOW - 3 * HOUR, "u-mia", "app-crm", "crm", "delete_contact", "destructive", "blocked", "read_only"],
+    ["call-2", NOW - 3 * HOUR, "u-mia", "app-crm", "crm", "delete_contact", "write", "blocked", "read_only"],
     ["call-3", NOW - 2 * HOUR, "u-sam", "app-todo", "todo", "add_todo", "write", "allowed", null],
     ["call-4", NOW - HOUR, "u-sam", null, null, "everyapp_whoami", "read", "allowed", null],
   ]) {
@@ -1050,7 +1050,7 @@ describe("workspace activity", () => {
       ["call-1", "mia@acme.com", "crm", "list_contacts", "allowed"],
     ]);
     expect(data()["nextBefore"]).toBeNull();
-    expect(data()["calls"][2]).toMatchObject({ reason: "read_only", tool: { risk: "destructive" }, credential: { kind: "oauth", clientName: "Claude" }, createdAt: new Date(NOW - 3 * HOUR).toISOString() });
+    expect(data()["calls"][2]).toMatchObject({ reason: "read_only", tool: { risk: "write" }, credential: { kind: "oauth", clientName: "Claude" }, createdAt: new Date(NOW - 3 * HOUR).toISOString() });
 
     events = [];
     await listActivity(opts({ app: "crm", decision: "blocked" }));

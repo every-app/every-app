@@ -479,10 +479,10 @@ From Admin → Groups, `everyapp workspace group *` and the `everyapp_workspace_
 
 ### Tool calls
 
-| Type           | v   | Summary                                                        | `data`                                                                      |
-| -------------- | --- | -------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `tool.blocked` | 1   | "Claude's call to crm_delete_contact was blocked: destructive" | `{ tool, app?, user, client?: { kind, name?, id }, risk?, reason, callId }` |
-| `tool.error`   | 1   | "crm_list_contacts failed for Claude: app_error"               | `{ tool, app?, user, client?, risk?, outcome, callId, durationMs }`         |
+| Type           | v   | Summary                                                                 | `data`                                                                      |
+| -------------- | --- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `tool.blocked` | 1   | "Claude's call to crm_delete_contact was blocked: read_only_connection" | `{ tool, app?, user, client?: { kind, name?, id }, risk?, reason, callId }` |
+| `tool.error`   | 1   | "crm_list_contacts failed for Claude: app_error"                        | `{ tool, app?, user, client?, risk?, outcome, callId, durationMs }`         |
 
 From the same audit that writes Admin → Activity (`mcp_tool_calls`): `tool.blocked` for a call the Gateway refused, `tool.error` for an allowed call whose outcome wasn't `ok`. `callId` finds the Activity row. `client.kind` is the credential: `oauth`, `pat`, `session`, `access` or `dev`; `client.id` its id. Never the tool's arguments or result.
 
@@ -517,14 +517,14 @@ From `everyapp signin add` and `signin remove` ([/docs/agent/secrets](/docs/agen
 
 ### MCP apps
 
-| Type                   | v   | Summary                                                             | `data`                                                                                                                                         |
-| ---------------------- | --- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mcp_app.added`        | 1   | "DataForSEO was added as an MCP app"                                | `{ app, kind: "builtin" \| "remote" }`                                                                                                         |
-| `mcp_app.removed`      | 1   | "DataForSEO was removed"                                            | `{ app, kind }`                                                                                                                                |
-| `mcp_app.enabled`      | 1   | "DataForSEO is being served again"                                  | `{ app, kind }`                                                                                                                                |
-| `mcp_app.disabled`     | 1   | "DataForSEO stopped being served"                                   | `{ app, kind }`                                                                                                                                |
-| `mcp_app.updated`      | 1   | "DataForSEO was changed: risk"                                      | `{ app, kind, changed: ("risk" \| "name" \| "description" \| "tools")[], risk? }`: the fields by name; the risk default after, when it changed |
-| `mcp_app.tool_changed` | 1   | "DataForSEO's tool delete_row was changed (off) (risk destructive)" | `{ app, kind, tool, risk?, enabled?, cleared? }`: one tool's override after the change; `cleared` when the override went                       |
+| Type                   | v   | Summary                                                       | `data`                                                                                                                                         |
+| ---------------------- | --- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mcp_app.added`        | 1   | "DataForSEO was added as an MCP app"                          | `{ app, kind: "builtin" \| "remote" }`                                                                                                         |
+| `mcp_app.removed`      | 1   | "DataForSEO was removed"                                      | `{ app, kind }`                                                                                                                                |
+| `mcp_app.enabled`      | 1   | "DataForSEO is being served again"                            | `{ app, kind }`                                                                                                                                |
+| `mcp_app.disabled`     | 1   | "DataForSEO stopped being served"                             | `{ app, kind }`                                                                                                                                |
+| `mcp_app.updated`      | 1   | "DataForSEO was changed: risk"                                | `{ app, kind, changed: ("risk" \| "name" \| "description" \| "tools")[], risk? }`: the fields by name; the risk default after, when it changed |
+| `mcp_app.tool_changed` | 1   | "DataForSEO's tool delete_row was changed (off) (risk write)" | `{ app, kind, tool, risk?, enabled?, cleared? }`: one tool's override after the change; `cleared` when the override went                       |
 
 `added` is a new MCP app (`everyapp mcp on` the first time, or `mcp add <url>` for a remote one); `enabled` and `disabled` are `mcp on` and `mcp off` on an existing one (access is kept while it is off); `removed` is `mcp remove` ([/docs/agent/mcp](/docs/agent/mcp)). They come from the CLI, from Admin → MCP apps and from the `everyapp_mcp_*` tools alike. `mcp_app.updated` and `mcp_app.tool_changed` are the Edit dialog and `everyapp_mcp_update` (a remote app's risk default, name, description or tool list; one tool's risk or on/off override), from the Gateway; the CLI's `everyapp mcp tool` writes the same override and queues `mcp_app.tool_changed` too.
 

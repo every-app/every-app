@@ -261,12 +261,12 @@ async function addMember(name: string, role: string): Promise<string> {
   return userId;
 }
 
-async function token(userId: string, scopes?: string[]): Promise<string> {
+async function token(userId: string, access?: "deploy"): Promise<string> {
   const { plaintext } = await UserPatService.create({
     userId,
     organizationId: acme,
     name: "ci",
-    ...(scopes ? { scopes } : {}),
+    ...(access ? { access } : {}),
   });
   return plaintext;
 }
@@ -339,9 +339,9 @@ beforeEach(async () => {
     .values({ id: acme, name: "Acme", slug: "acme", createdAt: new Date() });
   const owner = await addMember("alice", "owner");
   const member = await addMember("bob", "member");
-  ownerDeployKey = await token(owner, ["deploy"]);
+  ownerDeployKey = await token(owner, "deploy");
   ownerAccessToken = await token(owner);
-  memberDeployKey = await token(member, ["deploy"]);
+  memberDeployKey = await token(member, "deploy");
 });
 
 describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
@@ -907,7 +907,7 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
       userId: "user-alice",
       organizationId: acme,
       name: "notes ci",
-      scopes: ["deploy"],
+      access: "deploy",
       appRowId: notesRowId,
     });
     const response = await deploy(upload(), plaintext);

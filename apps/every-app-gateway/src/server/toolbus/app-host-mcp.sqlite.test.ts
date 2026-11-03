@@ -138,7 +138,8 @@ function todoTools(extraTool = false) {
     },
     delete_todo: {
       description: "Delete a todo forever.",
-      risk: "destructive",
+      risk: "write",
+      destructive: true,
       input: objectInput<{ id: string }>({ id: { type: "string" } }, ["id"]),
       handler: () => "deleted",
     },
@@ -315,14 +316,14 @@ function mcpRaw(
 }
 
 async function personalToken(
-  scopes?: string[],
+  access?: "read" | "full",
   options: { appRowId?: string } = {},
 ): Promise<string> {
   const { plaintext } = await UserPatService.create({
     userId: ownerId,
     organizationId,
     name: "claude code",
-    scopes,
+    access,
     appRowId: options.appRowId ?? null,
   });
   return plaintext;
@@ -434,7 +435,7 @@ describe("catalog sync", () => {
     const tools = await db.select().from(appTools);
     expect(tools.map((tool) => [tool.name, tool.risk]).sort()).toEqual([
       ["create_todo", "write"],
-      ["delete_todo", "destructive"],
+      ["delete_todo", "write"],
       ["list_todos", "read"],
     ]);
   });
@@ -634,6 +635,7 @@ describe("app-host /mcp with a personal access token", () => {
     };
     expect(result.tools.map((tool) => tool.name)).toEqual([
       "create_todo",
+      "delete_todo",
       "list_todos",
     ]);
     expect(result.ttlMs).toBe(60_000);
@@ -750,33 +752,42 @@ describe("app-host /mcp with a personal access token", () => {
     consoleLog.mockRestore();
   });
 
-  it("hides destructive tools and blocks calling them", async () => {
+  it("serves a destructive tool as a write tool that says destructiveHint", async () => {
     const token = await personalToken();
+    const listed = (await (await mcp(token, "tools/list")).json()) as {
+      result: {
+        tools: { name: string; annotations?: Record<string, unknown> }[];
+      };
+    };
+    expect(
+      listed.result.tools.find((tool) => tool.name === "delete_todo")
+        ?.annotations,
+    ).toMatchObject({ readOnlyHint: false, destructiveHint: true });
     const response = await mcp(token, "tools/call", {
       name: "delete_todo",
       arguments: { id: "t1" },
     });
-    expect(((await response.json()) as { error: object }).error).toEqual({
-      code: -32602,
-      message: "Unknown tool: delete_todo",
-    });
-    // Only the first-use sync reached the app.
-    expect(appRequests.map((r) => new URL(r.url).pathname)).toEqual([
-      "/__everyapp/tools/list",
-    ]);
+    expect(
+      ((await response.json()) as { result: { content: { text: string }[] } })
+        .result.content[0]!.text,
+    ).toBe("deleted");
   });
 
-  it("gives read-only tokens the read tools and refuses tokens without MCP scopes", async () => {
-    const readOnly = await mcp(await personalToken(["mcp:read"]), "tools/list");
+  it("gives read-only tokens the read tools and refuses a row with other scopes", async () => {
+    const readOnly = await mcp(await personalToken("read"), "tools/list");
     const { result } = (await readOnly.json()) as {
       result: { tools: { name: string }[] };
     };
     expect(result.tools.map((tool) => tool.name)).toEqual(["list_todos"]);
 
-    const apiOnly = await mcp(
-      await personalToken(["todos:read"]),
-      "tools/list",
-    );
+    // No token is made with other scopes now; a row written with them
+    // reaches nothing.
+    const apiToken = await personalToken("read");
+    await db
+      .update(userAccessTokens)
+      .set({ scopes: JSON.stringify(["todos:read"]) })
+      .where(sql`${userAccessTokens.scopes} = '["mcp:read"]'`);
+    const apiOnly = await mcp(apiToken, "tools/list");
     expect(apiOnly.status).toBe(403);
     expect(await apiOnly.json()).toEqual({
       error: "forbidden",
@@ -926,6 +937,7 @@ describe("syncing on first use", () => {
       };
       expect(result.tools.map((tool) => tool.name)).toEqual([
         "create_todo",
+        "delete_todo",
         "list_todos",
       ]);
     }
@@ -948,7 +960,13 @@ describe("syncing on first use", () => {
     });
     const late = await mcp(token, "tools/list");
     expect(await late.json()).toMatchObject({
-      result: { tools: [{ name: "create_todo" }, { name: "list_todos" }] },
+      result: {
+        tools: [
+          { name: "create_todo" },
+          { name: "delete_todo" },
+          { name: "list_todos" },
+        ],
+      },
     });
     expect(listCalls()).toBe(1);
   });
@@ -1002,6 +1020,7 @@ describe("syncing a new version", () => {
     expect(await toolNames(await mcp(token, "tools/list"))).toEqual([
       "archive_todos",
       "create_todo",
+      "delete_todo",
       "list_todos",
     ]);
     expect(listCalls()).toBe(2);
@@ -1089,6 +1108,7 @@ describe("syncing a new version", () => {
     expect(await toolNames(listed)).toEqual([
       "archive_todos",
       "create_todo",
+      "delete_todo",
       "list_todos",
     ]);
   });
@@ -1101,6 +1121,7 @@ describe("syncing a new version", () => {
 
     expect(await toolNames(await mcp(token, "tools/list"))).toEqual([
       "create_todo",
+      "delete_todo",
       "list_todos",
     ]);
     const [catalog] = await db.select().from(appToolCatalogs);
@@ -1115,6 +1136,7 @@ describe("syncing a new version", () => {
 
     expect(await toolNames(await mcp(token, "tools/list"))).toEqual([
       "create_todo",
+      "delete_todo",
       "list_todos",
     ]);
     expect(listCalls()).toBe(2);
@@ -1268,7 +1290,7 @@ describe("credentials on app-host /mcp", () => {
 
     // An MCP-only token opens nothing on such a host.
     appRequests.length = 0;
-    const readOnly = await mcp(await personalToken(["mcp:read"]), "tools/list");
+    const readOnly = await mcp(await personalToken("read"), "tools/list");
     expect(readOnly.status).toBe(403);
     expect(await readOnly.json()).toMatchObject({ reason: "token_scope" });
     expect(appRequests).toHaveLength(0);

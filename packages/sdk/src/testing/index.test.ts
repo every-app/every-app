@@ -19,7 +19,8 @@ const tools = defineTools({
   },
   remove: {
     description: "Remove something.",
-    risk: "destructive",
+    risk: "write",
+    destructive: true,
     input: z.object({ id: z.string() }).strict(),
     handler: ({ id }) => {
       throw new ToolError(`No thing ${id}`);
@@ -111,7 +112,7 @@ describe("listTools", () => {
   it("reads the catalog as the Gateway does", async () => {
     const catalog = await listTools(worker);
     expect(catalog.tools.map((tool) => [tool.name, tool.risk])).toEqual([
-      ["remove", "destructive"],
+      ["remove", "write"],
       ["whoami", "read"],
     ]);
   });

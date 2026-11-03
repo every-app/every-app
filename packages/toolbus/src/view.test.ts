@@ -372,10 +372,10 @@ describe("gatewaySurfaceView", () => {
           unavailable: [{ appId: "crm", name: "CRM", reason: "needs setup" }],
         },
       );
-      // Two visible tools per app (the destructive one is hidden).
+      // Three tools per app.
       expect(view.instructions).toBe(
         [
-          "Tools for Acme on EveryApp. This connection lists its 4 tools compactly: call everyapp_search_tools (words, an app id, or both) to find tools and their input schemas, then everyapp_call_read or everyapp_call_write with a tool's name and arguments. Call everyapp_list_apps to see what each app is for.",
+          "Tools for Acme on EveryApp. This connection lists its 6 tools compactly: call everyapp_search_tools (words, an app id, or both) to find tools and their input schemas, then everyapp_call_read or everyapp_call_write with a tool's name and arguments. Call everyapp_list_apps to see what each app is for.",
           "Apps: chef (Chef), todo (Todos).",
           "crm (CRM) is not available: needs setup.",
           "",

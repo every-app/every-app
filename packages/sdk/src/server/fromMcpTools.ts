@@ -85,8 +85,7 @@ export interface FromMcpToolsOptions<TExtra = ToolContext> {
   context?: (context: ToolContext) => TExtra | Promise<TExtra>;
   /**
    * A tool's risk, overriding the default for the tools it returns a risk
-   * for. Default: `readOnlyHint: true` is `read`, `destructiveHint: true`
-   * is `destructive`, anything else `write`.
+   * for. Default: `readOnlyHint: true` is `read`, anything else `write`.
    */
   risk?: (tool: McpToolLike<TExtra>) => ToolRisk | undefined;
 }
@@ -95,8 +94,8 @@ export interface FromMcpToolsOptions<TExtra = ToolContext> {
  * Adapt MCP tools into `defineTools()` entries, keyed by tool name, to spread
  * beside the app's own: `defineTools({ ...fromMcpTools(list), my_tool })`.
  *
- * - `title`, `description` (the name when absent), `idempotentHint` and
- *   `openWorldHint` carry over; risk as {@link FromMcpToolsOptions.risk}.
+ * - `title`, `description` (the name when absent), `destructiveHint`,
+ *   `idempotentHint` and `openWorldHint` carry over; risk as {@link FromMcpToolsOptions.risk}.
  * - A result's text blocks, joined by a blank line, are what the model
  *   reads; `structuredContent` is sent as structured content (checked
  *   against `outputSchema` when there is one). Other blocks are dropped.
@@ -132,12 +131,17 @@ export function fromMcpTools<TExtra = ToolContext>(
         : toToolSchema(tool.outputSchema, problem);
     const annotations = tool.annotations ?? {};
     const title = tool.title ?? annotations.title;
+    const risk = options.risk?.(tool) ?? defaultRisk(annotations);
     out[tool.name] = {
       ...(title !== undefined ? { title } : {}),
       description: tool.description?.trim() ? tool.description : tool.name,
-      risk: options.risk?.(tool) ?? defaultRisk(annotations),
+      risk,
       input: toToolSchema(tool.inputSchema ?? {}, problem),
       ...(output ? { output } : {}),
+      // Only a write tool can be destructive.
+      ...(risk === "write" && annotations.destructiveHint === true
+        ? { destructive: true }
+        : {}),
       ...(annotations.idempotentHint !== undefined
         ? { idempotent: annotations.idempotentHint }
         : {}),
@@ -157,8 +161,7 @@ export function fromMcpTools<TExtra = ToolContext>(
 }
 
 function defaultRisk(annotations: McpToolAnnotationsLike): ToolRisk {
-  if (annotations.readOnlyHint === true) return "read";
-  return annotations.destructiveHint === true ? "destructive" : "write";
+  return annotations.readOnlyHint === true ? "read" : "write";
 }
 
 function fromCallToolResult(result: McpToolResultLike): unknown {

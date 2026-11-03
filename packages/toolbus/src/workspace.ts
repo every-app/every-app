@@ -612,7 +612,7 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
       risk: {
         type: "string",
         description: "Only calls to tools of this risk.",
-        enum: ["read", "write", "destructive"],
+        enum: ["read", "write"],
       },
       since: {
         type: "string",

@@ -17,14 +17,16 @@ export const TOOLS_PATH_PREFIX = "/__everyapp/tools";
 export const TOOLS_LIST_PATH = `${TOOLS_PATH_PREFIX}/list`;
 export const TOOLS_CALL_PATH = `${TOOLS_PATH_PREFIX}/call`;
 
-export const TOOL_RISKS = ["read", "write", "destructive"] as const;
+/**
+ * A tool reads or writes. A write tool that deletes or can't be undone also
+ * says `destructiveHint` in its annotations, so clients ask before calling.
+ */
+export const TOOL_RISKS = ["read", "write"] as const;
 export type ToolRisk = (typeof TOOL_RISKS)[number];
 
 /** Scopes the gateway mints on tool-call identities (`chan: "mcp"` or `"agent"`), one per risk. */
 export const MCP_READ_SCOPE = "mcp:read";
 export const MCP_WRITE_SCOPE = "mcp:write";
-/** Never minted in v1: destructive tools are hidden until approvals exist. */
-export const MCP_DESTRUCTIVE_SCOPE = "mcp:destructive";
 
 /** Local tool names: lowercase snake_case, at most 48 characters. */
 export const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{0,47}$/;
@@ -43,12 +45,12 @@ export function requiredScopeForRisk(risk: ToolRisk): string {
       return MCP_READ_SCOPE;
     case "write":
       return MCP_WRITE_SCOPE;
-    case "destructive":
-      return MCP_DESTRUCTIVE_SCOPE;
   }
 }
 
 export interface ToolAnnotationsV1 {
+  /** A write tool deletes or can't be undone: clients ask before calling. */
+  destructiveHint?: boolean;
   idempotentHint?: boolean;
   openWorldHint?: boolean;
 }

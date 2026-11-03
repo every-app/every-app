@@ -22,8 +22,8 @@ export const createUserToken = createServerFn({ method: "POST" })
       organizationId: context.org.orgId,
       appRowId: data.appId ?? null,
       name: data.name,
-      scopes: data.scopes,
-      expiresAt: data.expiresAt ?? null,
+      access: data.access,
+      expiresInDays: data.expiresInDays,
     });
   });
 

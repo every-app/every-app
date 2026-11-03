@@ -23,7 +23,11 @@ export interface ToolBusTool {
   risk: ToolRisk;
   inputSchema: JsonObject;
   outputSchema?: JsonObject;
-  annotations?: { idempotentHint?: boolean; openWorldHint?: boolean };
+  annotations?: {
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
 }
 
 /** One app's catalog, as the ToolBus serves it. */

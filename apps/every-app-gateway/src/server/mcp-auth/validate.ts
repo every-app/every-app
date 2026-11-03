@@ -182,11 +182,9 @@ function background(task: Promise<unknown>, event: string): void {
   );
 }
 
-/** A personal token's MCP access: `*` or `mcp:write` writes, `mcp:read` reads. */
+/** A personal token's MCP access: full (`*`) writes, read-only (`mcp:read`) reads. */
 function patAccess(scopes: string[]): McpAccess | null {
-  if (scopes.some((scope) => scope === "*" || scope === MCP_WRITE_SCOPE)) {
-    return "write";
-  }
+  if (scopes.includes("*")) return "write";
   return scopes.includes(MCP_READ_SCOPE) ? "read" : null;
 }
 

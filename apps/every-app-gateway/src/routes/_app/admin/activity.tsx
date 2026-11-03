@@ -51,7 +51,7 @@ const PAGE_SIZE = 50;
 /** The "no filter" choice of a select. */
 const ANY = "any";
 type Decision = typeof ANY | "allowed" | "blocked";
-type Risk = typeof ANY | "read" | "write" | "destructive";
+type Risk = typeof ANY | "read" | "write";
 
 const DECISION_ITEMS: { value: Decision; label: string }[] = [
   { value: ANY, label: "All decisions" },
@@ -62,7 +62,6 @@ const RISK_ITEMS: { value: Risk; label: string }[] = [
   { value: ANY, label: "All risks" },
   { value: "read", label: "Read" },
   { value: "write", label: "Write" },
-  { value: "destructive", label: "Destructive" },
 ];
 const VIEW_ITEMS: { value: View; icon: null; label: string }[] = [
   { value: "agent", icon: null, label: "Agent activity" },

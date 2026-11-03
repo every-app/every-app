@@ -139,10 +139,10 @@ One step per message: give the step, wait for the words it ends with
    annotation, counted as a write; `app`: the `--risk` default;
    `override`: yours).
 3. Risks, with the person: a tool the server marks read-only is callable by
-   every connection; one without a hint is a write (hidden from read-only
-   connections); one marked destructive is hidden from every client until
-   approvals exist. Change one with
-   `pnpm everyapp mcp tool <id> <tool> --risk read|write|destructive --json`
+   every connection; any other is a write (hidden from read-only
+   connections), and one marked destructive keeps the mark so clients ask
+   before calling it. Change one with
+   `pnpm everyapp mcp tool <id> <tool> --risk read|write --json`
    (`--risk annotations` drops the override), or leave a tool out entirely
    with `--off`; the Gateway lists the tools again on first use.
 4. Logs, when a call fails: README's path (**Workers & Pages** →

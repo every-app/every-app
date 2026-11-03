@@ -7,7 +7,7 @@
  * inner tool once (`via` the wrapper) and invoking the app once?
  *
  * The loopback ToolBus here is the real HTTP layer over a fake app of a
- * few read and write tools (and one destructive tool, which policy hides)
+ * few read and write tools (one of them marked destructiveHint)
  * whose `list_todos` answers a fixed JSON board. Every request, every
  * `tools/list` answer, every `tools/call`, every audit event and every app
  * invocation is recorded, and the report at the end lists them in order.
@@ -129,8 +129,9 @@ function quayApp(): ToolBusApp {
       {
         name: "remove_todo",
         description: "Remove a todo from the board.",
-        risk: "destructive",
+        risk: "write",
         inputSchema: objectSchema({ id: { type: "string" } }, ["id"]),
+        annotations: { destructiveHint: true },
       },
     ],
   };
@@ -833,8 +834,8 @@ describe("full: the app's tools are listed under their own names", () => {
         // The wrappers are callable but listed only in compact mode.
         expect(list.names).not.toContain("everyapp_call_read");
         expect(list.names).not.toContain("everyapp_call_write");
-        // Destructive stays hidden.
-        expect(list.names).not.toContain(`${APP_ID}_remove_todo`);
+        // A destructive tool is an ordinary write tool.
+        expect(list.names).toContain(`${APP_ID}_remove_todo`);
       }
       expect(harness!.requests.some((request) => !request.authorized)).toBe(
         false,

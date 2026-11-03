@@ -268,11 +268,13 @@ export function ConsentForm({
                         Read &amp; write
                       </Choice>
                     </div>
-                    {/* Write tools create or change; destructive ones (delete,
-                        irreversible change) are never offered to an AI app. */}
+                    {/* Write tools create, change or delete. Each app marks
+                        its own deletes (destructiveHint), and whether the AI
+                        app asks first is the client's call, so promise no
+                        more than the mark. */}
                     <FieldDescription>
-                      Read &amp; write can add and change things, never delete
-                      them.
+                      Read &amp; write can add, change and delete things. Tools
+                      that delete are marked so your AI app can ask first.
                     </FieldDescription>
                   </>
                 ) : (

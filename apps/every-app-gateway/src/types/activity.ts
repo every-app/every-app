@@ -53,7 +53,7 @@ export type ToolCallRow = {
   };
   tool: {
     name: string;
-    /** "read" | "write" | "destructive", or null when the tool was unknown. */
+    /** "read" or "write", or null when the tool was unknown. */
     risk: string | null;
     /**
      * The wrapper built-in the call came through (`everyapp_call_read` or

@@ -302,12 +302,12 @@ async function listApps(
   return body.result.structuredContent.apps;
 }
 
-async function pat(userId: string, scopes?: string[]): Promise<string> {
+async function pat(userId: string, access?: "read"): Promise<string> {
   const { plaintext } = await UserPatService.create({
     userId,
     organizationId: orgId,
     name: "claude code",
-    scopes,
+    access,
   });
   return plaintext;
 }
@@ -448,7 +448,11 @@ afterEach(async () => {
 describe("a remote MCP app on the gateway's /mcp", () => {
   it("serves a remote server's tools under the app's prefix after the first use syncs them", async () => {
     const token = await pat(ownerId);
-    expect(await toolNames(token)).toEqual(["treg_get_user", "treg_send_mail"]);
+    expect(await toolNames(token)).toEqual([
+      "treg_delete_user",
+      "treg_get_user",
+      "treg_send_mail",
+    ]);
     const [catalog] = await db
       .select()
       .from(appToolCatalogs)
@@ -498,7 +502,11 @@ describe("a remote MCP app on the gateway's /mcp", () => {
   it("speaks a 2025-era server through initialize and keeps its session", async () => {
     era = "legacy";
     const token = await pat(ownerId);
-    expect(await toolNames(token)).toEqual(["treg_get_user", "treg_send_mail"]);
+    expect(await toolNames(token)).toEqual([
+      "treg_delete_user",
+      "treg_get_user",
+      "treg_send_mail",
+    ]);
     const call = await callTool(token, "treg_get_user", { id: "u1" });
     expect(call.result?.structuredContent).toEqual({
       ran: "getUser",
@@ -630,7 +638,11 @@ describe("a remote MCP app on the gateway's /mcp", () => {
   it("never pins a credential on first use: an unpinned one is sent nowhere and reads as needing setup (`remote-mcp.credential-only-to-bound-origin`)", async () => {
     const token = await pat(ownerId);
     // With the operator's pin (the fixture's): served.
-    expect(await toolNames(token)).toEqual(["treg_get_user", "treg_send_mail"]);
+    expect(await toolNames(token)).toEqual([
+      "treg_delete_user",
+      "treg_get_user",
+      "treg_send_mail",
+    ]);
 
     // The value set but no pin (the dashboard, say; or the pin undone):
     // nothing is sent, nothing is pinned by the Gateway, and the row says
@@ -665,23 +677,23 @@ describe("a remote MCP app on the gateway's /mcp", () => {
     });
   });
 
-  it("treats an unhinted tool as write, a readOnlyHint as read, a destructiveHint as destructive, and lets the overrides win", async () => {
-    const readOnly = await pat(ownerId, ["mcp:read"]);
+  it("treats an unhinted tool and a destructiveHint as write, a readOnlyHint as read, and lets the overrides win", async () => {
+    const readOnly = await pat(ownerId, "read");
     const readWrite = await pat(ownerId);
     expect(await toolNames(readOnly)).toEqual(["treg_get_user"]);
-    expect(await toolNames(readWrite)).toEqual([
-      "treg_get_user",
-      "treg_send_mail",
-    ]);
-
-    // The destructive tool is hidden until approvals exist; an override makes it a write.
-    await override({
-      tool: { name: "deleteUser", override: { risk: "write" } },
-    });
     expect(await toolNames(readWrite)).toEqual([
       "treg_delete_user",
       "treg_get_user",
       "treg_send_mail",
+    ]);
+
+    // An override makes the destructive tool read, for read-only callers too.
+    await override({
+      tool: { name: "deleteUser", override: { risk: "read" } },
+    });
+    expect(await toolNames(readOnly)).toEqual([
+      "treg_delete_user",
+      "treg_get_user",
     ]);
     const [catalog] = await db
       .select()
@@ -714,7 +726,10 @@ describe("a remote MCP app on the gateway's /mcp", () => {
     await override({
       tool: { name: "sendMail", override: { enabled: false } },
     });
-    expect(await toolNames(token)).toEqual(["treg_get_user"]);
+    expect(await toolNames(token)).toEqual([
+      "treg_delete_user",
+      "treg_get_user",
+    ]);
     const call = await callTool(token, "treg_send_mail", { to: "a@b.c" });
     expect(call.error?.message).toMatch(/Unknown tool: treg_send_mail/);
     expect(
@@ -875,7 +890,7 @@ describe("a remote MCP app on the gateway's /mcp", () => {
 
   it("stops serving when the app is off and serves again when on", async () => {
     const token = await pat(ownerId);
-    expect(await toolNames(token)).toHaveLength(2);
+    expect(await toolNames(token)).toHaveLength(3);
     const off = mcpAppStatusUpdate(await currentRow(), "disabled");
     await db.update(apps).set(off!).where(eq(apps.id, rowId));
     expect(await toolNames(token)).toEqual([]);
@@ -883,7 +898,7 @@ describe("a remote MCP app on the gateway's /mcp", () => {
     expect(call.error?.message).toMatch(/Unknown tool/);
     const on = mcpAppStatusUpdate(await currentRow(), "active");
     await db.update(apps).set(on!).where(eq(apps.id, rowId));
-    expect(await toolNames(token)).toHaveLength(2);
+    expect(await toolNames(token)).toHaveLength(3);
     // Off kept the access and the snapshot: nothing was listed again.
     expect(
       seen.filter((request) => request.body["method"] === "tools/list"),

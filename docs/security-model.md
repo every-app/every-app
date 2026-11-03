@@ -840,10 +840,10 @@ the session is the same as after a password.
   `/.well-known/openid-configuration` paths, the same three under
   `/mcp/.well-known/`, and anything under them, answer 404 and are never
   proxied, even under a public `/.well-known/*` or `/mcp/**` route).
-  Token scopes set access: `*` or `mcp:write` is read & write, `mcp:read` is
-  read only, anything else is refused with `403 token_scope`. A browser
-  session is read & write. Destructive tools are hidden and refused for
-  everyone; write tools are hidden from read-only callers.
+  Token scopes set access: `*` (Full access) is read & write, `mcp:read`
+  (Read only) is read only, anything else is refused with `403 token_scope`.
+  A browser session is read & write. Write tools, destructive ones included,
+  are hidden from read-only callers.
 - A browser session reaches `/mcp` only from the app's own pages: it is
   intended (an app may call its own tools), and the usual CSRF check guards
   it. A cookie-carrying POST needs `Sec-Fetch-Site: same-origin`, or without
@@ -864,8 +864,7 @@ the session is the same as after a password.
   scopes); every route of a host without `mcp`, and a `/mcp` a public
   route covers on a `by: "gateway"` host, take full scope alone.
 - Each call carries a fresh identity minted for that call alone:
-  `chan: "mcp"`, explicit `mcp:*` scopes (never `*`, never
-  `mcp:destructive`), and a `tc` claim naming the tool and call id. The SDK
+  `chan: "mcp"`, explicit `mcp:*` scopes (never `*`), and a `tc` claim naming the tool and call id. The SDK
   refuses a tool call without it, or whose scopes don't cover the risk the
   tool declares.
 - The internal tools endpoints (`/__everyapp/tools/list` and `/call`) answer

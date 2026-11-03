@@ -987,7 +987,7 @@ Source: `packages/cli/src/commands/mcp/index.ts` (`changeTool`)
 
 ### MCP_TOOL_CHANGE_INVALID
 
-`mcp tool <id> <tool>` was given nothing to change, or `--on` with `--off`. Messages: `Nothing to change about <tool>` then `Give --risk read|write|destructive|annotations, --on or --off.` (`rerun`: `pnpm everyapp mcp show <id>`, `rerunNote`: `lists its tools with their risks`); or `--on and --off say opposite things; give one` (`fix`: `drop one of them`). Raised before connecting.
+`mcp tool <id> <tool>` was given nothing to change, or `--on` with `--off`. Messages: `Nothing to change about <tool>` then `Give --risk read|write|annotations, --on or --off.` (`rerun`: `pnpm everyapp mcp show <id>`, `rerunNote`: `lists its tools with their risks`); or `--on and --off say opposite things; give one` (`fix`: `drop one of them`). Raised before connecting.
 
 **Fix:** as the message says. Not retryable.
 

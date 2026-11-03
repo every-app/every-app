@@ -54,11 +54,6 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
   APP_NOT_FOUND: "App not found.",
   APP_ID_ALREADY_EXISTS: "An app with this ID already exists.",
   TOKEN_NOT_FOUND: "Token not found.",
-  INVALID_TOKEN_SCOPE: "One or more scopes are invalid.",
-  TOKEN_SCOPE_REQUIRED: "At least one scope is required.",
-  TOKEN_SCOPE_LIMIT_EXCEEDED: "Too many scopes were provided.",
-  INVALID_EXPIRATION_DATE: "Invalid expiration date.",
-  EXPIRATION_IN_PAST: "Expiration date must be in the future.",
   OAUTH_DISABLED: "OAuth connections are not enabled on this gateway.",
   CONNECTION_NOT_FOUND: "That connection doesn't exist or was already revoked.",
   CANNOT_MANAGE_SELF:

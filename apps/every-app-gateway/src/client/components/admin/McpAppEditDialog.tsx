@@ -270,9 +270,6 @@ function McpAppEditForm({
   const block = { risk, tools: overrides };
   const effectiveOf = (tool: McpAppTool) =>
     remoteToolRisk(hintsOf(tool.riskHint), block, tool.upstreamName);
-  const anyDestructive = details.tools.some(
-    (tool) => effectiveOf(tool).risk === "destructive",
-  );
   const riskHelp = COPY.riskItems.find((item) => item.value === risk)?.help;
   const toolRiskItems: { value: ToolRiskChoice; label: string }[] = [
     { value: "default", label: COPY.toolRiskNone(risk) },
@@ -485,11 +482,6 @@ function McpAppEditForm({
             </Table>
           </div>
         )}
-        {anyDestructive ? (
-          <p className="text-xs text-muted-foreground">
-            {COPY.destructiveNote}
-          </p>
-        ) : null}
       </div>
 
       <Separator />

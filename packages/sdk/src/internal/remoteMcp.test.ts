@@ -326,13 +326,13 @@ describe("the stored block", () => {
 });
 
 describe("a tool's risk and name", () => {
-  it("reads hints conservatively: explicit read-only is read, explicit destructive is destructive, else write", () => {
+  it("reads hints conservatively: explicit read-only is read, anything else write", () => {
     expect(remoteToolRisk({ readOnlyHint: true }, block, "t")).toEqual({
       risk: "read",
       source: "hint",
     });
     expect(remoteToolRisk({ destructiveHint: true }, block, "t")).toEqual({
-      risk: "destructive",
+      risk: "write",
       source: "hint",
     });
     expect(
@@ -369,10 +369,10 @@ describe("a tool's risk and name", () => {
     });
     const overridden = {
       ...readAll,
-      tools: { t: { risk: "destructive" as const } },
+      tools: { t: { risk: "write" as const } },
     };
     expect(remoteToolRisk({ readOnlyHint: true }, overridden, "t")).toEqual({
-      risk: "destructive",
+      risk: "write",
       source: "override",
     });
     expect(remoteToolEnabled({ tools: { t: { enabled: false } } }, "t")).toBe(

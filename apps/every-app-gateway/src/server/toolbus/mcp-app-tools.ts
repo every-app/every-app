@@ -189,13 +189,8 @@ async function builtinTools(ctx: OrgContext, appId: string) {
 function overrideRisk(value: unknown): { risk?: ToolRisk } {
   if (value === undefined) return {};
   if (value === "annotations") return { risk: undefined };
-  if (value === "read" || value === "write" || value === "destructive") {
-    return { risk: value };
-  }
-  throw new PublicError(
-    "INVALID_INPUT",
-    "risk is read, write, destructive or annotations",
-  );
+  if (value === "read" || value === "write") return { risk: value };
+  throw new PublicError("INVALID_INPUT", "risk is read, write or annotations");
 }
 
 export const MCP_APP_HANDLERS: Record<string, McpAppHandler> = {

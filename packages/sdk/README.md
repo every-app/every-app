@@ -361,7 +361,8 @@ export const tools = defineTools(
     },
     delete_todo: {
       description: "Permanently delete one todo.",
-      risk: "destructive", // hidden from AI clients until approvals exist
+      risk: "write",
+      destructive: true, // clients ask the person before calling it
       input: z.object({ id: z.string() }).strict(),
       handler: async ({ id }, { user }) => {
         if (!(await deleteTodo(user.id, id)))
@@ -375,8 +376,9 @@ export const tools = defineTools(
 export default everyApp(handler, { tools });
 ```
 
-- `risk` is `read`, `write` or `destructive`. AI clients never see
-  destructive tools yet.
+- `risk` is `read` or `write`. Read-only connections and tokens see only
+  `read` tools. `destructive: true` marks a write tool that deletes or
+  can't be undone; clients see `destructiveHint` and ask before calling it.
 - `input` (and the optional `output`) take zod >= 4.2 or any validator that
   implements Standard Schema and Standard JSON Schema; a plain
   `{ jsonSchema, validate }` pair works too. Both describe objects: a

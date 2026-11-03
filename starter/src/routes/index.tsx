@@ -125,8 +125,8 @@ function Home() {
           </Allowed>
           <Allowed term="tools" items={allowed.tools}>
             What an AI assistant may do here, through your Gateway (
-            <code>src/tools.ts</code>). A destructive one stays hidden until the
-            Gateway has approvals.
+            <code>src/tools.ts</code>). Read-only connections get the read
+            tools; the assistant asks before one that deletes.
           </Allowed>
         </dl>
       </section>

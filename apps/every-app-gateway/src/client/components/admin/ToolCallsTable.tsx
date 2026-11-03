@@ -46,7 +46,6 @@ function credentialLabel(credential: ToolCallRow["credential"]): string {
 const RISK_VARIANTS: Record<string, BadgeVariant> = {
   read: "secondary",
   write: "info",
-  destructive: "destructive",
 };
 
 const OUTCOMES: Record<string, { label: string; className: string }> = {
@@ -64,8 +63,6 @@ const OUTCOMES: Record<string, { label: string; className: string }> = {
 
 /** Why a call was blocked, in plain words. */
 const REASON_LABELS: Record<string, string> = {
-  destructive_requires_approval:
-    "Destructive tools are never available to AI apps",
   org_blocked: "Blocked by the organization",
   read_only_connection: "This connection is read-only",
   unknown_tool: "No such tool",

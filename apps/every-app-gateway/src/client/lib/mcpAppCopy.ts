@@ -21,7 +21,7 @@ const RISK_DEFAULT_ITEMS: readonly {
   {
     value: "annotations",
     label: "Annotations (recommended)",
-    help: "The server's hints decide: a tool marked read-only is read, one marked destructive is destructive, and anything else is write.",
+    help: "The server's hints decide: a tool marked read-only is read, and anything else is write.",
   },
   {
     value: "write",
@@ -155,7 +155,6 @@ export const MCP_APP_COPY = {
     toolRiskItems: [
       { value: "read", label: "Read" },
       { value: "write", label: "Write" },
-      { value: "destructive", label: "Destructive" },
     ] as readonly { value: ToolRisk; label: string }[],
     toolRiskLabel: (name: string) => `Risk of ${name}`,
     toolSwitchLabel: (name: string) => `Serve ${name}`,
@@ -169,8 +168,6 @@ export const MCP_APP_COPY = {
         }[source]
       }`,
     notListed: "Not listed",
-    destructiveNote:
-      "Destructive tools are hidden from AI clients: the Gateway has no approval step for them yet.",
     nameLabel: "Name",
     descriptionLabel: "Description",
     save: "Save changes",

@@ -7,7 +7,6 @@
  *    credential narrowed to apps (a personal token bound to one app, a
  *    connection consented to some): such a credential reaches those apps'
  *    tools and administers nothing;
- *  - destructive tools are hidden until approvals exist;
  *  - write tools are hidden from read-only callers;
  *  - a tool without a risk is treated as write.
  *
@@ -24,7 +23,6 @@ export type ToolPolicyDecision =
       reason:
         | "role_required"
         | "app_scoped_credential"
-        | "destructive_requires_approval"
         | "read_only_connection"
         | "org_blocked";
     };
@@ -66,9 +64,6 @@ export function evaluateToolPolicy(
   }
   if (tool.minRole && principal.appScope === "selected") {
     return { action: "hide", reason: "app_scoped_credential" };
-  }
-  if (risk === "destructive") {
-    return { action: "hide", reason: "destructive_requires_approval" };
   }
   if (risk === "write" && principal.access === "read") {
     return { action: "hide", reason: "read_only_connection" };

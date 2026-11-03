@@ -1255,8 +1255,8 @@ describe("the event bus (SQLite)", () => {
         app,
         user,
         client: { kind: "oauth", name: "Claude", id: "conn-1" },
-        risk: "destructive",
-        reason: "destructive",
+        risk: "write",
+        reason: "read_only_connection",
         callId: "c1",
       }),
       "tool.error": catalogue.toolError({
@@ -1390,7 +1390,7 @@ describe("the event bus (SQLite)", () => {
         app,
         kind: "remote",
         tool: "delete_row",
-        risk: "destructive",
+        risk: "write",
         enabled: false,
       }),
       "subscription.created": catalogue.subscriptionCreated({
@@ -1537,7 +1537,7 @@ describe("the event bus (SQLite)", () => {
         ),
       ).toBe("The default cap was removed (was $10.00)");
       expect(line("tool.blocked")).toBe(
-        "Claude's call to crm_delete_contact was blocked: destructive",
+        "Claude's call to crm_delete_contact was blocked: read_only_connection",
       );
       expect(line("tool.error")).toBe(
         "crm_list_contacts failed for Claude: app_error",
@@ -1604,7 +1604,7 @@ describe("the event bus (SQLite)", () => {
       );
       expect(line("mcp_app.updated")).toBe("CRM was changed: risk");
       expect(line("mcp_app.tool_changed")).toBe(
-        "CRM's tool delete_row was changed (off) (risk destructive)",
+        "CRM's tool delete_row was changed (off) (risk write)",
       );
       expect(line("subscription.created")).toBe(
         "Ada added the subscription Slack",
@@ -1948,7 +1948,7 @@ describe("the event bus (SQLite)", () => {
         surface: "gateway" as const,
         tool: "crm_delete_contact",
         appId: "crm",
-        risk: "destructive" as const,
+        risk: "write" as const,
         durationMs: 3,
         callId: "call-1",
         argsDigest: "digest",
@@ -1961,7 +1961,7 @@ describe("the event bus (SQLite)", () => {
       await announceToolCall({
         ...base,
         decision: "blocked",
-        reason: "destructive",
+        reason: "read_only_connection",
         outcome: "not_run",
       });
       await announceToolCall({
@@ -1990,8 +1990,8 @@ describe("the event bus (SQLite)", () => {
           name: await nameOf(member),
         },
         client: { kind: "oauth", name: "Claude", id: "conn-1" },
-        risk: "destructive",
-        reason: "destructive",
+        risk: "write",
+        reason: "read_only_connection",
         callId: "call-1",
       });
       expect(emitted[1]!.data).toMatchObject({
@@ -2212,7 +2212,7 @@ describe("the event bus (SQLite)", () => {
         userId: owner,
         organizationId: acme,
         name: "ci-deploy",
-        scopes: ["mcp:read"],
+        access: "read",
       });
       await UserPatService.revoke(created.row.id, owner);
       const emitted = await typesEmitted();

@@ -32,7 +32,7 @@ describe("toolsDefined", () => {
       { name: "list_todos", risk: "read" },
       { name: "create_todo", risk: "write" },
       { name: "update_todo", risk: "write" },
-      { name: "delete_todo", risk: "destructive" },
+      { name: "delete_todo", risk: "write" },
     ]);
   });
 

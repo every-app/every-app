@@ -25,9 +25,9 @@ the app's tools to AI clients. The app gets nothing it doesn't declare in
 3. **Schema in `src/db/schema.ts`,** then `pnpm run db:generate`, then commit
    the migration it writes to `drizzle/`. Never edit a deployed migration.
 4. **Page → server function → query in `src/server`.** Tools in `src/tools.ts`
-   (`defineTools()`, each with an honest `risk`: `read`, `write` or
-   `destructive`) call the same queries, so the page, the tools and the tests
-   share one set.
+   (`defineTools()`, each with an honest `risk`: `read` or `write`, plus
+   `destructive: true` on a write tool that deletes or can't be undone) call
+   the same queries, so the page, the tools and the tests share one set.
 5. **A value the app needs is declared, never pasted.** The app's own key
    goes under `secrets`, a plain per-install value under `settings`; a key the
    Gateway holds is a provider (`providers`, for AI, called through

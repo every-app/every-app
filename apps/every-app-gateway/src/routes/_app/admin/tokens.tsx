@@ -18,6 +18,8 @@ import {
   listUserTokens,
   revokeUserToken,
 } from "@/serverFunctions/userTokens";
+import type { z } from "zod";
+import type { createUserTokenSchema } from "@/schemas/user-token";
 import type { UserAccessToken } from "@/types/user-token";
 
 export const Route = createFileRoute("/_app/admin/tokens")({
@@ -67,12 +69,9 @@ function TokensPage() {
   });
 
   // A failure rejects, so the create dialog shows the error and stays open.
-  const handleCreateUserToken = async (input: {
-    name: string;
-    appId?: string;
-    scopes?: string[];
-    expiresAt?: string;
-  }) => {
+  const handleCreateUserToken = async (
+    input: z.input<typeof createUserTokenSchema>,
+  ) => {
     await createUserTokenMutation.mutateAsync({ data: input });
     setShowCreateUserTokenModal(false);
   };

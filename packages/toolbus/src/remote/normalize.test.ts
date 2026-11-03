@@ -40,7 +40,7 @@ describe("normalizeRemoteCatalog", () => {
   it("normalizes names, refuses collisions, applies overrides and maps risks conservatively", () => {
     const out = normalizeRemoteCatalog("treg", "Treg", upstream, block);
     expect(out.tools.map((tool) => [tool.name, tool.risk])).toEqual([
-      ["delete_user", "destructive"],
+      ["delete_user", "write"],
       ["get_user", "read"],
       ["ping", "write"],
       ["send_mail", "write"],
@@ -64,6 +64,10 @@ describe("normalizeRemoteCatalog", () => {
       properties: { id: { type: "string" } },
     });
     expect(sendMail.annotations).toEqual({ openWorldHint: true });
+    // A write tool keeps the server's destructiveHint.
+    expect(
+      out.tools.find((tool) => tool.name === "delete_user")!.annotations,
+    ).toEqual({ destructiveHint: true });
     // A tool with no description gets one; one with no object schema gets a permissive one.
     const ping = out.tools.find((tool) => tool.name === "ping")!;
     expect(ping.description).toBe("The ping tool of Treg.");

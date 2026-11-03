@@ -51,6 +51,13 @@ describe("defineTools", () => {
       ["list", { ...valid, description: " " }, "needs a description"],
       ["list", { ...valid, risk: "admin" }, "needs a risk"],
       ["list", { ...valid, risk: undefined }, "needs a risk"],
+      [
+        "list",
+        { ...valid, risk: "destructive" },
+        'risk: "write" with destructive: true',
+      ],
+      ["list", { ...valid, destructive: true }, 'its risk is "write"'],
+      ["list", { ...valid, destructive: "yes" }, "destructive must be"],
       ["list", { ...valid, input: { parse: noop } }, "input must be"],
       ["list", { ...valid, output: "nope" }, "output must be"],
       ["list", { ...valid, handler: "nope" }, "needs a handler"],

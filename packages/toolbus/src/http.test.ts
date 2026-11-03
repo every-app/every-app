@@ -561,6 +561,21 @@ describe("2026-07-28 (modern) era", () => {
         },
       },
       {
+        name: "delete_todo",
+        description: "Delete a todo.",
+        inputSchema: {
+          type: "object",
+          properties: { id: { type: "string" } },
+          required: ["id"],
+          additionalProperties: false,
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: true,
+          openWorldHint: false,
+        },
+      },
+      {
         name: "list_todos",
         description: "List todos.",
         inputSchema: {
@@ -630,8 +645,10 @@ describe("2026-07-28 (modern) era", () => {
       "everyapp_whoami",
       "everyapp_search_tools",
       "chef_create_todo",
+      "chef_delete_todo",
       "chef_list_todos",
       "todo_create_todo",
+      "todo_delete_todo",
       "todo_list_todos",
     ]);
     expect(result.tools[0].annotations).toEqual({
@@ -899,13 +916,17 @@ describe("2026-07-28 (modern) era", () => {
     expect(appCalls).toEqual([]);
   });
 
-  it("answers unknown and destructive tools with -32602 Unknown tool", async () => {
+  it("answers unknown tools, and write tools for a read-only caller, with -32602 Unknown tool", async () => {
     const { serve, appCalls } = toolBus();
-    for (const name of ["nope", "delete_todo"]) {
+    const readOnly = appView(todoApp(), { ...PRINCIPAL, access: "read" });
+    for (const [name, view] of [
+      ["nope", appView()],
+      ["delete_todo", readOnly],
+    ] as const) {
       const body = await rpcBody(
         await serve(
           modernRequest("tools/call", { name, arguments: { id: "1" } }),
-          appView(),
+          view,
         ),
       );
       expect(body.error).toEqual({
@@ -971,6 +992,7 @@ describe("2025 (legacy) eras", () => {
       );
       expect(list.result.tools.map((t: { name: string }) => t.name)).toEqual([
         "create_todo",
+        "delete_todo",
         "list_todos",
       ]);
       expect(list.result).not.toHaveProperty("ttlMs");
@@ -993,7 +1015,7 @@ describe("2025 (legacy) eras", () => {
         await serve(
           legacyRequest(
             "tools/call",
-            { name: "delete_todo", arguments: { id: "1" } },
+            { name: "nope", arguments: { id: "1" } },
             { version },
           ),
           view,
@@ -1146,7 +1168,7 @@ describe("2025 (legacy) eras", () => {
     expect(listed.headers.get("content-type")).toContain("application/json");
     expect(
       (await rpcBody(listed)).result.tools.map((t: { name: string }) => t.name),
-    ).toEqual(["archive_todo", "create_todo", "list_todos"]);
+    ).toEqual(["archive_todo", "create_todo", "delete_todo", "list_todos"]);
 
     const stale = await serve(
       legacyRequest(
@@ -1323,7 +1345,7 @@ describe("2025 (legacy) eras", () => {
     await serve(
       legacyRequest(
         "tools/call",
-        { name: "delete_todo", arguments: { id: "1" } },
+        { name: "nope", arguments: { id: "1" } },
         { headers: { "mcp-session-id": sessionId } },
       ),
       appView(),

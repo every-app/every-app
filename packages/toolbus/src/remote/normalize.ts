@@ -21,8 +21,11 @@ import { isPlainObject } from "../io";
 import { MAX_TOOL_NAME_LENGTH } from "../names";
 import type { UpstreamTool } from "./client";
 
-/** What the server's annotations say alone, before any default or override. */
-export type RiskHint = ToolRisk | "unknown";
+/**
+ * What the server's annotations say alone, before any default or override:
+ * `destructive` is a write tool the server marks `destructiveHint`.
+ */
+export type RiskHint = ToolRisk | "destructive" | "unknown";
 
 /** One upstream tool, and what the gateway made of it. */
 export interface RemoteToolRecord {
@@ -194,6 +197,9 @@ export function normalizeRemoteCatalog(
         ? tool.inputSchema
         : { type: "object", properties: {}, additionalProperties: true };
     const annotations: ToolDescriptorV1["annotations"] = {};
+    // A write tool keeps the server's destructiveHint, so clients ask first.
+    if (risk === "write" && tool.annotations?.["destructiveHint"] === true)
+      annotations.destructiveHint = true;
     if (tool.annotations?.["idempotentHint"] === true)
       annotations.idempotentHint = true;
     if (tool.annotations?.["openWorldHint"] === true)

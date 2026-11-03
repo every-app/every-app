@@ -13,7 +13,7 @@ import { DEV_ISSUER, DEV_PRIVATE_KEY_PEM } from "@every-app/sdk/dev";
 import { createDevToolBus } from "@every-app/toolbus/dev";
 import type { EventSink } from "@/lib/output/events";
 
-/** `destructive_requires_approval` as words. */
+/** `read_only_connection` as words. */
 const words = (code: string) => code.replaceAll("_", " ");
 
 interface DevAppGatewayOptions {

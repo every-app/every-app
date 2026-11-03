@@ -588,7 +588,7 @@ describe("who sees which workspace tools", () => {
       userId: adminId,
       organizationId,
       name: "ci",
-      scopes: ["mcp:read", "mcp:write"],
+      access: "full",
       appRowId: crmRowId,
     });
     const token = callerOf(await resolvePatCaller(bound.plaintext));
@@ -1842,13 +1842,13 @@ describe("a member's own tokens and connections", () => {
       userId: memberId,
       organizationId,
       name: "laptop",
-      scopes: ["mcp:read"],
+      access: "read",
     });
     const theirs = await UserPatService.create({
       userId: adminId,
       organizationId,
       name: "laptop",
-      scopes: ["mcp:read"],
+      access: "read",
     });
     const listed = await data("everyapp_my_tokens", {}, member());
     expect(listed["tokens"]).toEqual([

@@ -26,7 +26,6 @@ import {
   AUDIENCE_ENV,
   IDENTITY_DEV_KEY_ID,
   IDENTITY_HEADER,
-  MCP_DESTRUCTIVE_SCOPE,
   MCP_READ_SCOPE,
   MCP_WRITE_SCOPE,
   SYSTEM_HEADER,
@@ -177,9 +176,8 @@ export interface TestWorker {
 export interface CallToolOptions {
   user?: TestUser;
   /**
-   * The caller's scopes. Default: `mcp:read`, `mcp:write` and
-   * `mcp:destructive`, so every tool may be called; pass fewer to test a
-   * refusal.
+   * The caller's scopes. Default: `mcp:read` and `mcp:write`, so every
+   * tool may be called; pass `["mcp:read"]` to test a refusal.
    */
   scopes?: string[];
   /** Default: {@link testEnv}() for the worker's app. */
@@ -207,11 +205,7 @@ export async function callTool(
     user: options.user,
     appId: audienceOf(env),
     channel: "mcp",
-    scopes: options.scopes ?? [
-      MCP_READ_SCOPE,
-      MCP_WRITE_SCOPE,
-      MCP_DESTRUCTIVE_SCOPE,
-    ],
+    scopes: options.scopes ?? [MCP_READ_SCOPE, MCP_WRITE_SCOPE],
     toolCall: { id: callId, name },
   });
   const response = await workerOf(app).fetch(

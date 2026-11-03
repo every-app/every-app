@@ -38,7 +38,8 @@ const tools = defineTools(
     },
     clear_notes: {
       description: "Delete every note.",
-      risk: "destructive",
+      risk: "write",
+      destructive: true,
       input: z.object({}).strict(),
       handler: () => {
         notes.length = 0;

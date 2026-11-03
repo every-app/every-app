@@ -33,8 +33,6 @@ describe("principalFromSession", () => {
   it("maps personal-token scopes to MCP access", () => {
     for (const [scopes, access] of [
       [["*"], "write"],
-      [["mcp:read", "mcp:write"], "write"],
-      [["mcp:write"], "write"],
       [["mcp:read"], "read"],
     ] as const) {
       const resolved = principalFromSession(pat([...scopes]), {
@@ -45,9 +43,11 @@ describe("principalFromSession", () => {
         principal: { access, credential: { kind: "pat", id: "tok_9" } },
       });
     }
-    expect(
-      principalFromSession(pat(["todos:read"]), { sessionKind: "session" }),
-    ).toEqual({ ok: false, reason: "token_scope" });
+    for (const scopes of [["todos:read"], ["mcp:write"]]) {
+      expect(
+        principalFromSession(pat(scopes), { sessionKind: "session" }),
+      ).toEqual({ ok: false, reason: "token_scope" });
+    }
   });
 
   it("refuses credentials it doesn't know", () => {

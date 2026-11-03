@@ -22,7 +22,7 @@ const listToolCallsSchema = z.object({
   appRowId: idSchema.optional(),
   userId: idSchema.optional(),
   decision: z.enum(["allowed", "blocked"]).optional(),
-  risk: z.enum(["read", "write", "destructive"]).optional(),
+  risk: z.enum(["read", "write"]).optional(),
   // Rows from this time on.
   since: msSchema.optional(),
 });

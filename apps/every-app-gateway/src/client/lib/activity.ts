@@ -45,7 +45,7 @@ export function windowStart(
 interface ToolCallFilters {
   appRowId: string | undefined;
   decision: "allowed" | "blocked" | undefined;
-  risk: "read" | "write" | "destructive" | undefined;
+  risk: "read" | "write" | undefined;
   range: ActivityRange;
   limit: number;
 }

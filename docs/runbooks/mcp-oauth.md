@@ -196,8 +196,8 @@ ban state and app access. It ends when:
 Removing a user's access to an app only drops that app from their
 connections' tools; the connections stay.
 
-Destructive tools are hidden from every connection, and write tools from
-read-only ones.
+Write tools are hidden from read-only connections. A write tool that
+deletes says `destructiveHint: true`, so clients ask before calling it.
 
 ## Test locally
 

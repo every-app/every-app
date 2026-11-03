@@ -37,7 +37,8 @@ export const tools = defineTools(
     },
     delete_todo: {
       description: "Delete one todo for good.",
-      risk: "destructive",
+      risk: "write",
+      destructive: true,
       input: todos.deleteTodoInput,
       handler: async (input, { user }) =>
         (await todos.deleteTodo(user.id, input)) ?? raise("No todo with that id"),
@@ -64,7 +65,9 @@ Fields:  `description` (required; the model reads it; over 2048 characters the
          Gateway skips the tool), `risk` (required), `input` (required: zod 4.2
          or later, any Standard Schema with JSON Schema support, or a plain
          `{ jsonSchema, validate }`; it must describe an object),
-         `handler(input, context)` (required), `idempotent` (boolean, sent as
+         `handler(input, context)` (required), `destructive` (boolean, a write
+         tool that deletes or can't be undone, sent as
+         `annotations.destructiveHint`), `idempotent` (boolean, sent as
          `annotations.idempotentHint`), `title`, `output` (an object schema,
          validated and sent as `structuredContent`), `openWorld`. Second
          argument `{ instructions }`: guidance across the tools, at most 2048;
@@ -73,10 +76,9 @@ Fields:  `description` (required; the model reads it; over 2048 characters the
          characters of the whole (Codex's docs ask that the first 512 stand
          alone), so put what matters first.
 Risk:    "read": listed and callable for every caller (`readOnlyHint: true`).
-         "write": hidden from read-only connections (`read_only_connection`).
-         "destructive": hidden from every AI client until approvals exist
-         (`destructive_requires_approval`): absent from tools/list, a call
-         answers `-32602 Unknown tool: <name>`. Keep the handler.
+         "write": hidden from read-only connections (`read_only_connection`);
+         with `destructive: true` clients see `destructiveHint: true` and ask
+         the person before calling it.
 Context: the handler's second argument: `user` (the verified caller: `id`,
          `email`, `orgId`, `orgRole`, `channel: "mcp"`, `actor.sub` of
          `pat:<token id>`, `oauth:<connection id>` or `access:<email>`,
@@ -91,7 +93,7 @@ Errors:  throw `new ToolError("No todo with that id")` for a message the model
          may read (`isError: true`). Any other error is logged in the app as
          `[everyapp] tool "<name>" failed (ref <callId>): …` and reaches the
          client only as `Internal error in <app-id> (ref <callId>)`.
-A bad definition throws at module load (`defineTools: tool "<name>" needs a risk: "read", "write" or "destructive"`),
+A bad definition throws at module load (`defineTools: tool "<name>" needs a risk: "read" or "write"`),
 so the Worker fails rather than serving a catalog without the tool; a schema with
 no object JSON Schema form only skips that tool with a warning (`TOOLS_CATALOG` in dev).
 
@@ -246,7 +248,7 @@ bearer value acts as the seeded dev user; in `--mode mirror` it takes a
 personal access token from the local Gateway. Each call prints
 `MCP  <tool>  <outcome>  <ms>ms` or `MCP  <tool>  blocked: <reason>` (two
 spaces between parts; outcome and reason codes are printed as words: `tool
-error`, `destructive requires approval`). Claude Code:
+error`, `read only connection`). Claude Code:
 
 ```bash
 claude mcp add --transport http todo-local http://<app-id>.localhost:8787/mcp --header "Authorization: Bearer dev"
@@ -277,10 +279,10 @@ snapshot yet shows no hint (its tools load on first use).
 Scripts and anything that takes a header: a personal access token. In the
 Gateway open **Admin** (the sidebar footer's **Manage workspace**; owners and
 admins only), tab **Tokens**, heading **Personal access tokens**, button
-**New token**: a name, an access level (**Read only**, the default:
-`mcp:read`; **Read & write**: `mcp:write`; **Full access**: `*`, with a
-warning), **All my apps** or one app (the one app is the default when there
-is one), an expiry (default 30 days). The token is `epat_…`, shown once.
+**New token**: a name, the access (**Read only**, the default: `mcp:read`,
+MCP tools that read; **Full access**: `*`, acts as you on every app route and
+tool, with a warning), **All my apps** or one app (the one app is the default
+when there is one), and 7, 30 (the default) or 90 days or 1 year. The token is `epat_…`, shown once.
 Send it as
 `Authorization: Bearer epat_…` to `https://<gateway>/mcp` (a token made for one
 app sees that app alone):
@@ -310,8 +312,8 @@ good for 60 s and a held stream polls every 30 s, so list tools again after a
 minute; (2) the snapshot: read `mcp.catalog.sync` in the Gateway's logs
 (`unsupported`: an SDK older than 0.3; `error`: the app's tools endpoint
 failed, retried in 5 minutes; a self-hosted redeploy is noticed from the app
-host's next request in each isolate); (3) hidden on purpose: destructive
-tools are never listed, write tools are hidden from a read-only connection
+host's next request in each isolate); (3) hidden on purpose: write tools
+are hidden from a read-only connection or token
 (`everyapp_whoami` shows `access`), and a tool whose namespaced name passes 64
 characters, whose description passes 2048 or whose schema isn't an object is
 dropped with a warning (dev prints it as `TOOLS_CATALOG`); unlisted is not
@@ -336,7 +338,7 @@ On `https://<app-host>/mcp` (where the manifest sets `mcp`), and on the Gateway 
 An app host without `mcp` in its manifest answers `/mcp` as the app does (usually 404),
 and one with `by: "gateway"` but no catalog to serve answers 503 `{"error":"mcp_unavailable"}`.
 403 `{"error":"forbidden","reason":…}` means the credential verified and was
-refused: `token_scope` (scopes without `mcp:read` or `mcp:write`, an
+refused: `token_scope` (a token that is neither read only nor full, an
 MCP-only token on a page route, or any route of a host without `mcp`), `no_app_access` (app host: the person cannot
 open this app), `not_connected`, `organization_unresolved`, `account_deactivated`, `organization_suspended`.
 OAuth off: `MCP_OAUTH_ENABLED` is `false`, or `GATEWAY_URL` is neither https

@@ -132,11 +132,15 @@ export interface ToolDefinition<TInput = unknown> {
   /** What the tool does and when to use it. The model reads this. */
   description: string;
   /**
-   * `read` changes nothing. `write` creates or changes data. `destructive`
-   * deletes or irreversibly changes data; AI clients can't see or call
-   * destructive tools until approvals exist.
+   * `read` changes nothing; read-only connections and tokens may call it.
+   * `write` creates, changes or deletes data.
    */
   risk: ToolRisk;
+  /**
+   * A write tool that deletes or can't be undone. Clients see
+   * `destructiveHint: true` and ask the person before calling it.
+   */
+  destructive?: boolean;
   /** Arguments schema; must describe an object. */
   input: ToolSchema<TInput>;
   /**
@@ -286,7 +290,11 @@ function assertToolDefinition(
     throw problem("needs a description");
   }
   if (!isToolRisk(definition.risk)) {
-    throw problem('needs a risk: "read", "write" or "destructive"');
+    throw problem(
+      definition.risk === "destructive"
+        ? 'needs a risk: "read" or "write"; a tool that deletes is risk: "write" with destructive: true'
+        : 'needs a risk: "read" or "write"',
+    );
   }
   if (!isToolSchema(definition.input)) {
     throw problem(
@@ -304,13 +312,16 @@ function assertToolDefinition(
   if (definition.title !== undefined && typeof definition.title !== "string") {
     throw problem("title must be a string");
   }
-  for (const flag of ["idempotent", "openWorld"] as const) {
+  for (const flag of ["destructive", "idempotent", "openWorld"] as const) {
     if (
       definition[flag] !== undefined &&
       typeof definition[flag] !== "boolean"
     ) {
       throw problem(`${flag} must be a boolean`);
     }
+  }
+  if (definition.destructive && definition.risk === "read") {
+    throw problem('is destructive, so its risk is "write"');
   }
 }
 
@@ -388,6 +399,7 @@ function describeTool(
     : undefined;
   if (typeof outputSchema === "string") return outputSchema;
   const annotations = {
+    ...(definition.destructive ? { destructiveHint: true } : {}),
     ...(definition.idempotent !== undefined
       ? { idempotentHint: definition.idempotent }
       : {}),

@@ -584,7 +584,7 @@ describe("listing the workspace tools", () => {
       listTools(appView(todoApp(), OWNER), { workspace: true }).map(
         (tool) => tool.name,
       ),
-    ).toEqual(["create_todo", "list_todos"]);
+    ).toEqual(["create_todo", "delete_todo", "list_todos"]);
   });
 });
 

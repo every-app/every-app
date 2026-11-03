@@ -2529,7 +2529,7 @@ Override one tool of a remote MCP app: its risk, or whether it is listed at all.
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
-| `--risk` | `read`, `write`, `destructive`, `annotations` | no |  | The tool's risk: read, write or destructive (hidden until approvals exist); annotations drops your override |
+| `--risk` | `read`, `write`, `annotations` | no |  | The tool's risk: read or write; annotations drops your override |
 | `--on` | switch | no |  | List the tool (the default) |
 | `--off` | switch | no |  | Leave the tool out: it isn't listed, and a call answers Unknown tool |
 | `--gateway` | `<value>` | no |  | The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither) |
@@ -2539,22 +2539,22 @@ Override one tool of a remote MCP app: its risk, or whether it is listed at all.
 
 ```text
 USAGE
-  everyapp mcp tool [--risk read|write|destructive|annotations] [--on] [--off] [--gateway value] [--account-id value] [--json] [--verbose] <id> <tool>
+  everyapp mcp tool [--risk read|write|annotations] [--on] [--off] [--gateway value] [--account-id value] [--json] [--verbose] <id> <tool>
   everyapp mcp tool --help
 
 A tool's risk decides who can call it: read tools every connection, write tools only
-read & write ones, destructive tools nobody until approvals exist. The server's hints
-decide it unless the app's --risk default or this override says otherwise. The Gateway
-lists the tools again on first use. A built-in MCP app's tools are its own and can't be
-changed here.
+read & write ones; --off keeps a tool from every AI client. The server's hints decide it
+unless the app's --risk default or this override says otherwise. The Gateway lists the
+tools again on first use. A built-in MCP app's tools are its own and can't be changed
+here.
 
 Examples:
-  everyapp mcp tool treg delete_everything --risk destructive
-  everyapp mcp tool treg treg_noisy_tool --off
+  everyapp mcp tool treg delete_everything --off
+  everyapp mcp tool treg get_report --risk read
   everyapp mcp tool treg search --risk annotations
 
 FLAGS
-     [--risk]                  The tool's risk: read, write or destructive (hidden until approvals exist); annotations drops your override                                                                                                                                                                      [read|write|destructive|annotations]
+     [--risk]                  The tool's risk: read or write; annotations drops your override                                                                                                                                                                                                                  [read|write|annotations]
      [--on/--no-on]            List the tool (the default)
      [--off/--no-off]          Leave the tool out: it isn't listed, and a call answers Unknown tool
      [--gateway]               The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)
@@ -4052,7 +4052,7 @@ The tool-call audit trail, newest first: who called which tool on which app, and
 | `--app` | `<app>` | no |  | Calls on this app only, by id or row id |
 | `--user` | `<email>` | no |  | Calls by this member only, by email or user id |
 | `--decision` | `allowed`, `blocked` | no |  | Allowed or blocked calls only |
-| `--risk` | `read`, `write`, `destructive` | no |  | Tools of this risk only |
+| `--risk` | `read`, `write` | no |  | Tools of this risk only |
 | `--since` | `<time>` | no |  | Calls at or after this time (ISO 8601, UTC) |
 | `--limit` | `<n>` | no |  | Rows per page, 1 to 200 (default 50) |
 | `--before` | `<cursor>` | no |  | The next page: the previous page's nextBefore, as <createdAt>:<id> |
@@ -4064,7 +4064,7 @@ The tool-call audit trail, newest first: who called which tool on which app, and
 
 ```text
 USAGE
-  everyapp workspace activity [--app app] [--user email] [--decision allowed|blocked] [--risk read|write|destructive] [--since time] [--limit n] [--before cursor] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp workspace activity [--app app] [--user email] [--decision allowed|blocked] [--risk read|write] [--since time] [--limit n] [--before cursor] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
   everyapp workspace activity --help
 
 Never the arguments or the result: the trail holds neither. One page at a time; --json
@@ -4078,7 +4078,7 @@ FLAGS
      [--app]                   Calls on this app only, by id or row id
      [--user]                  Calls by this member only, by email or user id
      [--decision]              Allowed or blocked calls only                                                                                                                                                                                                                                                    [allowed|blocked]
-     [--risk]                  Tools of this risk only                                                                                                                                                                                                                                                          [read|write|destructive]
+     [--risk]                  Tools of this risk only                                                                                                                                                                                                                                                          [read|write]
      [--since]                 Calls at or after this time (ISO 8601, UTC)
      [--limit]                 Rows per page, 1 to 200 (default 50)
      [--before]                The next page: the previous page's nextBefore, as <createdAt>:<id>

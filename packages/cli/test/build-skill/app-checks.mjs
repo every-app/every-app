@@ -161,7 +161,7 @@ export function toolsDefined(source) {
       const blockClose = matchingBrace(source, blockOpen);
       if (blockClose < 0) break;
       const body = source.slice(blockOpen, blockClose + 1);
-      const risk = /\brisk\s*:\s*["'`](read|write|destructive)["'`]/.exec(body);
+      const risk = /\brisk\s*:\s*["'`](read|write)["'`]/.exec(body);
       tools.push({ name, risk: risk ? risk[1] : null });
       i = blockClose + 1;
       continue;

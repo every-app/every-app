@@ -53,7 +53,8 @@ const tools = defineTools(
     },
     delete_todo: {
       description: "Delete a todo.",
-      risk: "destructive",
+      risk: "write",
+      destructive: true,
       input: z.object({ id: z.string() }).strict(),
       handler: () => "deleted",
     },
@@ -173,9 +174,12 @@ describe("POST /__everyapp/tools/list", () => {
       instructions: "Never guess ids.",
     });
     expect(body.hash).toMatch(/^sha256:/);
+    expect(
+      body.tools.find((tool) => tool.name === "delete_todo"),
+    ).toMatchObject({ risk: "write", annotations: { destructiveHint: true } });
     expect(body.tools.map((tool) => [tool.name, tool.risk])).toEqual([
       ["create_todo", "write"],
-      ["delete_todo", "destructive"],
+      ["delete_todo", "write"],
       ["find_todo", "read"],
       ["list_todos", "read"],
     ]);
@@ -380,9 +384,10 @@ describe("POST /__everyapp/tools/call", () => {
       expect(body.error.message).toContain("mcp:write");
     }
 
+    // A destructive tool is a write tool: mcp:write runs it.
     const destructive = await call("delete_todo", { id: "1" });
-    expect(destructive.status).toBe(403);
-    expect(destructive.body.error.message).toContain("mcp:destructive");
+    expect(destructive.status).toBe(200);
+    expect(destructive.body.result.content[0].text).toBe("deleted");
   });
 
   it("accepts an agent principal's call with explicit mcp: scopes and a tc claim", async () => {
@@ -402,7 +407,7 @@ describe("POST /__everyapp/tools/call", () => {
     expect(isAgentCall(user)).toBe(true);
 
     // The same scope rule as an MCP connection: a read-only agent can't
-    // write, `*` never counts, destructive is never minted.
+    // write and `*` never counts.
     const readOnly = await identity({
       channel: "agent",
       actor: "agent:agt_1",

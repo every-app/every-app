@@ -83,7 +83,8 @@ const tools = defineTools(
     },
     delete_todo: {
       description: "Delete a todo forever.",
-      risk: "destructive",
+      risk: "write",
+      destructive: true,
       input: z.object({ id: z.string() }).strict(),
       handler: () => "deleted",
     },
@@ -169,7 +170,7 @@ describe("ToolBus + real SDK app", () => {
     expect(snapshotApp.instructions).toBe("Never guess todo ids.");
     expect(snapshotApp.tools.map((tool) => [tool.name, tool.risk])).toEqual([
       ["create_todo", "write"],
-      ["delete_todo", "destructive"],
+      ["delete_todo", "write"],
       ["explode", "read"],
       ["find_todo", "read"],
       ["list_todos", "read"],
@@ -186,6 +187,7 @@ describe("ToolBus + real SDK app", () => {
       list.result.tools.map((tool: { name: string }) => tool.name),
     ).toEqual([
       "create_todo",
+      "delete_todo",
       "explode",
       "find_todo",
       "list_todos",
@@ -336,9 +338,17 @@ describe("ToolBus + real SDK app", () => {
     consoleError.mockRestore();
   });
 
-  it("never calls destructive tools, and the SDK refuses them anyway", async () => {
+  it("serves a destructive tool as a write tool with destructiveHint, and the SDK checks its scope", async () => {
     const { serve, deps, invocations } = harness();
-    const hidden = await rpcBody(
+    const list = await rpcBody(
+      await serve(modernRequest("tools/list"), view()),
+    );
+    expect(
+      list.result.tools.find(
+        (tool: { name: string }) => tool.name === "delete_todo",
+      ).annotations,
+    ).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+    const deleted = await rpcBody(
       await serve(
         modernRequest("tools/call", {
           name: "delete_todo",
@@ -347,21 +357,34 @@ describe("ToolBus + real SDK app", () => {
         view(),
       ),
     );
-    expect(hidden.error.code).toBe(-32602);
-    expect(invocations()).toBe(0);
+    expect(deleted.result.content[0].text).toBe("deleted");
+    expect(invocations()).toBe(1);
 
-    // Defense in depth: a snapshot that wrongly says "write" still can't
-    // run it, because the SDK checks the scope for the risk it declared.
+    // A read-only caller never sees it.
+    const readOnly = { ...PRINCIPAL, access: "read" as const };
+    const hidden = await rpcBody(
+      await serve(
+        modernRequest("tools/call", {
+          name: "delete_todo",
+          arguments: { id: "t1" },
+        }),
+        appSurfaceView(snapshotApp, readOnly),
+      ),
+    );
+    expect(hidden.error.code).toBe(-32602);
+    expect(invocations()).toBe(1);
+
+    // Defense in depth: a snapshot that wrongly says "read" still can't
+    // run it for a read-only caller, because the SDK checks the scope for
+    // the risk it declared.
     const relabeled: ToolBusApp = {
       ...snapshotApp,
       tools: snapshotApp.tools.map((tool) =>
-        tool.name === "delete_todo"
-          ? { ...tool, risk: "write" as const }
-          : tool,
+        tool.name === "delete_todo" ? { ...tool, risk: "read" as const } : tool,
       ),
     };
     const resolution = await executeToolCall(
-      appSurfaceView(relabeled, PRINCIPAL),
+      appSurfaceView(relabeled, readOnly),
       { name: "delete_todo", arguments: { id: "t1" } },
       deps,
     );
@@ -369,7 +392,7 @@ describe("ToolBus + real SDK app", () => {
       kind: "result",
       result: { isError: true },
     });
-    expect(invocations()).toBe(1);
+    expect(invocations()).toBe(2);
   });
 
   it("re-syncs when the app's catalog changed since the snapshot", async () => {

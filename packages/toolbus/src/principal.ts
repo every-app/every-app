@@ -4,11 +4,10 @@
  *
  * Access follows the credential:
  *  - a browser session acts as the user: read & write;
- *  - a personal access token (`epat_`) is write with `*` or `mcp:write`,
- *    read with `mcp:read`, and has no MCP access otherwise.
- * Destructive tools stay hidden either way.
+ *  - a personal access token (`epat_`) is full (`*`): read & write; or read
+ *    only (`mcp:read`); anything else has no MCP access.
  */
-import { MCP_READ_SCOPE, MCP_WRITE_SCOPE } from "@every-app/sdk/internal";
+import { MCP_READ_SCOPE } from "@every-app/sdk/internal";
 import type { McpPrincipal } from "./types";
 
 export interface SessionLike {
@@ -51,9 +50,7 @@ export function principalFromSession(
   }
 
   const scopes = credential.scopes ?? [];
-  const access = scopes.some(
-    (scope) => scope === "*" || scope === MCP_WRITE_SCOPE,
-  )
+  const access = scopes.includes("*")
     ? "write"
     : scopes.includes(MCP_READ_SCOPE)
       ? "read"

@@ -601,7 +601,7 @@ const activityCommand = buildCommand({
       app: { kind: "parsed", parse: String, optional: true, placeholder: "app", brief: "Calls on this app only, by id or row id" },
       user: { kind: "parsed", parse: String, optional: true, placeholder: "email", brief: "Calls by this member only, by email or user id" },
       decision: { kind: "enum", values: ["allowed", "blocked"], optional: true, brief: "Allowed or blocked calls only" },
-      risk: { kind: "enum", values: ["read", "write", "destructive"], optional: true, brief: "Tools of this risk only" },
+      risk: { kind: "enum", values: ["read", "write"], optional: true, brief: "Tools of this risk only" },
       since: { kind: "parsed", parse: parseSince, optional: true, placeholder: "time", brief: "Calls at or after this time (ISO 8601, UTC)" },
       limit: { kind: "parsed", parse: parseLimit, optional: true, placeholder: "n", brief: `Rows per page, 1 to ${ACTIVITY_PAGE_MAX} (default 50)` },
       before: { kind: "parsed", parse: parseCursor, optional: true, placeholder: "cursor", brief: "The next page: the previous page's nextBefore, as <createdAt>:<id>" },

@@ -280,9 +280,8 @@ const toolCommand = buildCommand({
     flags: {
       risk: {
         kind: "enum",
-        values: ["read", "write", "destructive", "annotations"],
-        brief:
-          "The tool's risk: read, write or destructive (hidden until approvals exist); annotations drops your override",
+        values: ["read", "write", "annotations"],
+        brief: "The tool's risk: read or write; annotations drops your override",
         optional: true,
       },
       on: { kind: "boolean", brief: "List the tool (the default)", optional: true },
@@ -294,14 +293,14 @@ const toolCommand = buildCommand({
     brief: "Override one tool of a remote MCP app: its risk, or whether it is listed at all",
     fullDescription: [
       "A tool's risk decides who can call it: read tools every connection, write tools only",
-      "read & write ones, destructive tools nobody until approvals exist. The server's hints",
-      "decide it unless the app's --risk default or this override says otherwise. The Gateway",
-      "lists the tools again on first use. A built-in MCP app's tools are its own and can't be",
-      "changed here.",
+      "read & write ones; --off keeps a tool from every AI client. The server's hints decide it",
+      "unless the app's --risk default or this override says otherwise. The Gateway lists the",
+      "tools again on first use. A built-in MCP app's tools are its own and can't be changed",
+      "here.",
       "",
       "Examples:",
-      `  ${CLI} mcp tool treg delete_everything --risk destructive`,
-      `  ${CLI} mcp tool treg treg_noisy_tool --off`,
+      `  ${CLI} mcp tool treg delete_everything --off`,
+      `  ${CLI} mcp tool treg get_report --risk read`,
       `  ${CLI} mcp tool treg search --risk annotations`,
     ].join("\n"),
   },

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  MCP_DESTRUCTIVE_SCOPE,
   MCP_READ_SCOPE,
   MCP_WRITE_SCOPE,
   TOOL_NAME_PATTERN,
@@ -55,7 +54,7 @@ describe("risk scopes", () => {
   it("maps each risk to its own explicit scope", () => {
     expect(requiredScopeForRisk("read")).toBe(MCP_READ_SCOPE);
     expect(requiredScopeForRisk("write")).toBe(MCP_WRITE_SCOPE);
-    expect(requiredScopeForRisk("destructive")).toBe(MCP_DESTRUCTIVE_SCOPE);
+    expect(isToolRisk("destructive")).toBe(false);
     expect(isToolRisk("write")).toBe(true);
     expect(isToolRisk("admin")).toBe(false);
     expect(isToolRisk(undefined)).toBe(false);

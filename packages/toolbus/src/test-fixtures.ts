@@ -61,8 +61,9 @@ function todoTools(): ToolBusTool[] {
     {
       name: "delete_todo",
       description: "Delete a todo.",
-      risk: "destructive",
+      risk: "write",
       inputSchema: objectSchema({ id: { type: "string" } }, ["id"]),
+      annotations: { destructiveHint: true },
     },
   ];
 }

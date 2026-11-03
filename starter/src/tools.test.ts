@@ -32,7 +32,7 @@ describe("tools", () => {
     const { tools: listed } = await listTools(tools);
     expect(listed.map(({ name, risk }) => [name, risk])).toEqual([
       ["create_todo", "write"],
-      ["delete_todo", "destructive"],
+      ["delete_todo", "write"],
       ["list_todos", "read"],
       ["update_todo", "write"],
     ]);

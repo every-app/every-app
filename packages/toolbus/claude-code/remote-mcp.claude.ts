@@ -1245,7 +1245,7 @@ function seenByClaude(): string {
 
 describe("fake: a credentialed remote server through the ToolBus", () => {
   it(
-    "Claude sees harbor's read and write tools, not the destructive one, calls harbor_lookup_port, and the server sees one call with its own bearer",
+    "Claude sees harbor's read and write tools, the destructive one as a write, calls harbor_lookup_port, and the server sees one call with its own bearer",
     async () => {
       fake = await startFakeUpstream();
       const sent: UpstreamRequest[] = [];
@@ -1278,17 +1278,18 @@ describe("fake: a credentialed remote server through the ToolBus", () => {
         ]),
       ).toEqual([
         ["lookupPort", "lookup_port", "read", true],
-        ["scuttle", "scuttle", "destructive", true],
+        ["scuttle", "scuttle", "write", true],
         ["setBerth", "set_berth", "write", true],
       ]);
       expect(remote.listing.era).toBe(MODERN);
 
-      // tools/list to Claude: read and write listed, destructive hidden.
+      // tools/list to Claude: every tool listed, scuttle as a write tool
+      // that says destructiveHint.
       expect(toolbus.lists.length).toBeGreaterThanOrEqual(1);
       for (const list of toolbus.lists) {
         expect(list.names).toContain("harbor_lookup_port");
         expect(list.names).toContain("harbor_set_berth");
-        expect(list.names).not.toContain("harbor_scuttle");
+        expect(list.names).toContain("harbor_scuttle");
       }
       expect(toolbus.requests.some((request) => !request.authorized)).toBe(
         false,

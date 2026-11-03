@@ -1,7 +1,7 @@
 // The app's tools for AI clients (Claude, Cursor, ...). The Gateway serves
 // them at /mcp and calls each with the signed-in user; the app never speaks
-// MCP itself. `risk` is honest: a destructive tool stays hidden from AI
-// clients until the Gateway has approvals.
+// MCP itself. `risk` is honest (`read` or `write`), and a write tool that
+// deletes sets `destructive: true` so AI clients can ask first.
 import { ToolError, defineTools } from "@every-app/sdk/server";
 import { z } from "zod";
 import { emitIfCompleted } from "@/server/events";
@@ -40,7 +40,8 @@ export const tools = defineTools(
     },
     delete_todo: {
       description: "Delete one todo for good.",
-      risk: "destructive",
+      risk: "write",
+      destructive: true,
       input: todos.deleteTodoInput,
       handler: async (input, { user }) =>
         (await todos.deleteTodo(user.id, input)) ??

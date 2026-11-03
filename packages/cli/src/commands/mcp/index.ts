@@ -861,7 +861,7 @@ export async function changeTool(options: McpOptions<ToolFlags>, id: string, too
   if (!flags.risk && !flags.on && !flags.off) {
     throw new EveryAppError(
       "MCP_TOOL_CHANGE_INVALID",
-      `Nothing to change about ${toolName}\nGive --risk read|write|destructive|annotations, --on or --off.`,
+      `Nothing to change about ${toolName}\nGive --risk read|write|annotations, --on or --off.`,
       { rerun: `${CLI} mcp show ${id}`, rerunNote: "lists its tools with their risks" },
     );
   }

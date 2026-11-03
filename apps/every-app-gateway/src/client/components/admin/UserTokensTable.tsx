@@ -6,8 +6,15 @@ import { DataTable, useDataTable } from "@/client/components/table/DataTable";
 import { DateCell, dateSortValue } from "@/client/components/table/DateCell";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
 import { DropdownMenuItem } from "@/client/components/ui/dropdown-menu";
+import { tokenAccessOf, type TokenAccess } from "@/server/user-pat-scopes";
 import type { UserAccessToken } from "@/types/user-token";
 import { TokenPrefix, TokenStatusBadge, tokenStatus } from "./tokenDisplay";
+
+const ACCESS_LABELS: Record<TokenAccess, string> = {
+  read: "Read only",
+  full: "Full",
+  deploy: "Deploy key",
+};
 
 interface UserTokensTableProps {
   tokens: UserAccessToken[];
@@ -33,12 +40,18 @@ export function UserTokensTable({
         header: ({ column }) => <SortableHeader column={column} label="Name" />,
         meta: { label: "Name", cellClassName: "max-w-[240px] truncate" },
         cell: ({ row }) => (
-          <span className="font-medium">
-            {row.original.scopes.includes("deploy")
-              ? `${row.original.name} (deploy key)`
-              : row.original.name}
-          </span>
+          <span className="font-medium">{row.original.name}</span>
         ),
+      },
+      {
+        id: "access",
+        header: "Access",
+        cell: ({ row }) => {
+          const access = tokenAccessOf(row.original.scopes);
+          return access
+            ? ACCESS_LABELS[access]
+            : row.original.scopes.join(", ");
+        },
       },
       {
         id: "prefix",
@@ -47,7 +60,7 @@ export function UserTokensTable({
       },
       {
         id: "appScope",
-        header: "App scope",
+        header: "Apps",
         meta: { cellClassName: "max-w-[240px]" },
         cell: ({ row }) =>
           row.original.appName ? (

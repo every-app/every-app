@@ -90,7 +90,7 @@ describe("listToolCalls server function", () => {
         appRowId: "app-1",
         userId: "user-1",
         decision: "blocked",
-        risk: "destructive",
+        risk: "write",
         since: 1_761_134_400_000,
       }),
     ).toEqual({
@@ -99,7 +99,7 @@ describe("listToolCalls server function", () => {
       appRowId: "app-1",
       userId: "user-1",
       decision: "blocked",
-      risk: "destructive",
+      risk: "write",
       since: 1_761_134_400_000,
     });
   });
@@ -112,6 +112,7 @@ describe("listToolCalls server function", () => {
     refuse({ limit: 2.5 });
     refuse({ decision: "maybe" });
     refuse({ risk: "catastrophic" });
+    refuse({ risk: "destructive" });
     refuse({ since: -1 });
     refuse({ before: { createdAt: "yesterday", id: "call-1" } });
     refuse({ before: { createdAt: 1, id: "" } });

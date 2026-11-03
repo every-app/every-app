@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { evaluateToolPolicy, roleReaches } from "./policy";
 
 describe("evaluateToolPolicy", () => {
-  it("hides destructive tools from everyone and write tools from read-only callers", () => {
+  it("hides write tools from read-only callers", () => {
     const write = { access: "write" as const };
     const read = { access: "read" as const };
     expect(evaluateToolPolicy({ risk: "read" }, read)).toEqual({
@@ -15,12 +15,6 @@ describe("evaluateToolPolicy", () => {
       action: "hide",
       reason: "read_only_connection",
     });
-    for (const principal of [read, write]) {
-      expect(evaluateToolPolicy({ risk: "destructive" }, principal)).toEqual({
-        action: "hide",
-        reason: "destructive_requires_approval",
-      });
-    }
   });
 
   it("hides a tool with a minRole below it, before the access rule: member < admin < owner", () => {

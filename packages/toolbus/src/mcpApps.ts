@@ -191,7 +191,7 @@ export const MCP_APP_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "mcp_tool",
     title: "Change one tool of an MCP server",
     description:
-      "Change one tool of a remote MCP app: its risk (read, write or destructive; annotations goes back to the server's hint and the app's default) and whether it is on. A destructive tool is never served to AI clients until approvals exist; a write tool is hidden from read-only connections. Give `risk`, `enabled`, or both. Owners and admins.",
+      "Change one tool of a remote MCP app: its risk (read or write; annotations goes back to the server's hint and the app's default) and whether it is on. A write tool is hidden from read-only connections; turn a tool off to keep it from every AI client. Give `risk`, `enabled`, or both. Owners and admins.",
     inputSchema: closed(
       {
         app: APP,

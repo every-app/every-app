@@ -94,7 +94,7 @@ describe("UserPatService", () => {
       organizationId: "org-id",
       appRowId: "app-id",
       name: "Claude",
-      scopes: ["mcp:read"],
+      access: "read",
     });
     const verified = await UserPatService.verify(created.plaintext);
 
@@ -160,12 +160,12 @@ describe("UserPatService", () => {
       workerEnv["THIRD_PARTY_DEPLOYS"] = "on";
     });
 
-    const createDeployKey = (scopes = ["deploy"]) =>
+    const createDeployKey = () =>
       UserPatService.create({
         userId: "user-id",
         organizationId: "org-id",
         name: "CI",
-        scopes,
+        access: "deploy",
       });
 
     it("makes a deploy key last 30 days unless told otherwise", async () => {
@@ -177,10 +177,25 @@ describe("UserPatService", () => {
       expect(ttl).toBeLessThanOrEqual(30 * DAY_MS);
     });
 
-    it("refuses a deploy key with any other scope", async () => {
-      await expect(
-        createDeployKey(["deploy", "mcp:read"]),
-      ).rejects.toMatchObject({ code: "INVALID_TOKEN_SCOPE" });
+    it("stores each access as its one scope, for the days chosen", async () => {
+      for (const [access, scopes] of [
+        ["read", ["mcp:read"]],
+        ["full", ["*"]],
+        ["deploy", ["deploy"]],
+      ] as const) {
+        await UserPatService.create({
+          userId: "user-id",
+          organizationId: "org-id",
+          name: access,
+          access,
+          expiresInDays: 7,
+        });
+        const [stored] = mockUserPatRepository.create.mock.calls.at(-1)!;
+        expect(stored.scopes, access).toEqual(scopes);
+        const ttl = stored.expiresAt.getTime() - Date.now();
+        expect(ttl).toBeGreaterThan(6 * DAY_MS);
+        expect(ttl).toBeLessThanOrEqual(7 * DAY_MS);
+      }
     });
 
     it("makes no deploy key where third-party deploys are off", async () => {

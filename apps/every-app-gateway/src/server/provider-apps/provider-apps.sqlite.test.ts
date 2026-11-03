@@ -223,12 +223,12 @@ async function callTool(
   return body;
 }
 
-async function pat(userId: string, scopes?: string[]): Promise<string> {
+async function pat(userId: string, access?: "read"): Promise<string> {
   const { plaintext } = await UserPatService.create({
     userId,
     organizationId: orgId,
     name: "claude code",
-    scopes,
+    access,
   });
   return plaintext;
 }
@@ -397,7 +397,7 @@ describe("a provider app on the gateway's /mcp", () => {
   });
 
   it("calls the provider through the capability proxy with the gateway's key, tagged with the organization, and counts and audits the call", async () => {
-    const token = await pat(ownerId, ["mcp:read"]);
+    const token = await pat(ownerId, "read");
     const call = await callTool(token, "dataforseo_keyword_overview", {
       keywords: ["seo tools"],
     });

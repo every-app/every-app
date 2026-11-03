@@ -22,7 +22,7 @@ type ListedTool = {
   localName: string | null;
   riskHint: "read" | "write" | "destructive" | "unknown";
   /** The effective risk the snapshot serves it at. */
-  risk?: "read" | "write" | "destructive";
+  risk?: "read" | "write";
   listed?: boolean;
   problem?: string | null;
   title?: string | null;
@@ -254,7 +254,7 @@ const TREG_TOOLS: ListedTool[] = [
     upstreamName: "delete_everything",
     localName: "delete_everything",
     riskHint: "destructive",
-    risk: "destructive",
+    risk: "write",
   },
   {
     upstreamName: "get-user",
@@ -573,13 +573,13 @@ describe("changing a remote MCP app", () => {
     const first = await McpAppService.update(as(admin, "admin"), {
       id: rowId,
       risk: "read",
-      tools: { delete_everything: { risk: "destructive" } },
+      tools: { delete_everything: { risk: "write" } },
       name: "Treg",
       description: "Treg's notes.",
     });
     expect(first.remote).toMatchObject({
       risk: "read",
-      tools: { delete_everything: { risk: "destructive" } },
+      tools: { delete_everything: { risk: "write" } },
       rev: 2,
     });
     const second = await McpAppService.update(as(owner, "owner"), {
@@ -598,7 +598,7 @@ describe("changing a remote MCP app", () => {
         url: TREG,
         risk: "read",
         tools: {
-          delete_everything: { risk: "destructive" },
+          delete_everything: { risk: "write" },
           create_note: { enabled: false },
         },
         rev: 3,
@@ -838,7 +838,7 @@ describe("showing an MCP app", () => {
         listedName: "treg_delete_everything",
         title: null,
         riskHint: "destructive",
-        risk: "destructive",
+        risk: "write",
         source: "hint",
         enabled: true,
         listed: true,
@@ -882,7 +882,7 @@ describe("showing an MCP app", () => {
       risk: "write",
       tools: {
         getUser: { risk: "read", enabled: false },
-        gone_tool: { risk: "destructive" },
+        gone_tool: { risk: "read" },
       },
     });
     const shown = await McpAppService.get(as(admin, "admin"), { id: rowId });
@@ -905,7 +905,7 @@ describe("showing an MCP app", () => {
       listedName: null,
       title: null,
       riskHint: "unknown",
-      risk: "destructive",
+      risk: "read",
       source: "override",
       enabled: true,
       listed: false,

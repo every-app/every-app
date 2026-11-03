@@ -86,7 +86,7 @@ describe("the built-in tools", () => {
     }
   });
 
-  it("spell out their hints: read-only but the write ones, destructive only for a workspace tool that asks confirm, never open-world", () => {
+  it("spell out their hints: read-only but the write ones, destructive for the write wrapper and a workspace tool that asks confirm, never open-world", () => {
     for (const tool of listBuiltinTools()) {
       const definition = [
         ...WORKSPACE_TOOLS,
@@ -97,7 +97,9 @@ describe("the built-in tools", () => {
         tool.name === "everyapp_call_write" || definition?.risk === "write"
           ? {
               readOnlyHint: false,
-              destructiveHint: definition?.irreversible === true,
+              destructiveHint:
+                tool.name === "everyapp_call_write" ||
+                definition?.irreversible === true,
               idempotentHint: false,
               openWorldHint: false,
             }

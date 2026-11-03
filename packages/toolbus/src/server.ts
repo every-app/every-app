@@ -80,10 +80,10 @@ function toMcpTool(
   app: ToolBusApp,
   tool: ToolBusTool,
 ): Tool {
-  // Hints derive from the declared risk; an app can't claim readOnlyHint for
+  // readOnlyHint derives from the declared risk; an app can't claim it for
   // a write tool. The spec reads a missing destructiveHint or openWorldHint
-  // as true, so both are always spelled out: a write tool isn't destructive
-  // (those are hidden until approvals exist), and a tool only reaches beyond
+  // as true, so both are always spelled out: a write tool is destructive only
+  // when its definition says `destructive`, and a tool only reaches beyond
   // its app when its definition says `openWorld`.
   return {
     name: exposedToolName(view, app, tool),
@@ -99,7 +99,7 @@ function toMcpTool(
       // Only meaningful when readOnlyHint is false.
       ...(tool.risk === "read"
         ? {}
-        : { destructiveHint: tool.risk === "destructive" }),
+        : { destructiveHint: tool.annotations?.destructiveHint === true }),
       openWorldHint: tool.annotations?.openWorldHint ?? false,
     },
   };

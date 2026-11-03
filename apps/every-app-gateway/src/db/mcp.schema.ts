@@ -59,11 +59,11 @@ export const appTools = sqliteTable(
     name: text("name").notNull(),
     title: text("title"),
     description: text("description").notNull(),
-    // "read" | "write" | "destructive"
+    // "read" | "write"
     risk: text("risk").notNull(),
     inputSchema: text("input_schema").notNull(),
     outputSchema: text("output_schema"),
-    // JSON {idempotentHint?, openWorldHint?}
+    // JSON {destructiveHint?, idempotentHint?, openWorldHint?}
     annotations: text("annotations"),
     catalogHash: text("catalog_hash").notNull(),
   },

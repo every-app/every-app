@@ -416,7 +416,7 @@ export function parseRemoteMcpBlock(
       if (!isToolRisk(override["risk"])) {
         return {
           ok: false,
-          problem: `remote.tools.${name}.risk must be read, write or destructive`,
+          problem: `remote.tools.${name}.risk must be read or write`,
         };
       }
       out.risk = override["risk"];
@@ -530,12 +530,10 @@ export type RemoteToolRiskSource = "hint" | "app" | "override" | "default";
 
 /**
  * A tool's risk for the Gateway. An override wins; then the app's `read`
- * or `write` default; then the server's hints, read conservatively: an
- * explicit `readOnlyHint: true` is `read`, an explicit `destructiveHint:
- * true` is `destructive` (hidden until approvals exist), and anything
- * else, a missing hint included, is `write`. The spec's missing-means-true
- * default for `destructiveHint` is not followed: it would hide every
- * unhinted tool.
+ * or `write` default; then the server's hints: an explicit `readOnlyHint:
+ * true` is `read`, and anything else, a missing hint included, is `write`.
+ * A write tool keeps the server's `destructiveHint`, so clients still ask
+ * before calling it.
  */
 export function remoteToolRisk(
   hints: { readOnlyHint?: unknown; destructiveHint?: unknown } | undefined,
@@ -548,9 +546,7 @@ export function remoteToolRisk(
     return { risk: block.risk, source: "app" };
   }
   if (hints?.readOnlyHint === true) return { risk: "read", source: "hint" };
-  if (hints?.destructiveHint === true) {
-    return { risk: "destructive", source: "hint" };
-  }
+  if (hints?.destructiveHint === true) return { risk: "write", source: "hint" };
   return { risk: "write", source: "default" };
 }
 

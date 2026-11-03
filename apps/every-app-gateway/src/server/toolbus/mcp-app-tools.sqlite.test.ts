@@ -416,7 +416,7 @@ describe("an admin managing MCP apps over /mcp", () => {
         name: "open_drop_index",
         serverName: "dropIndex",
         title: null,
-        risk: "destructive",
+        risk: "write",
         source: "hint",
         on: true,
         listed: true,
@@ -451,8 +451,9 @@ describe("an admin managing MCP apps over /mcp", () => {
       )["app"],
     ).toMatchObject({ id: "open" });
 
-    // Served on /mcp to the admin who added it (a destructive tool never is).
+    // Served on /mcp to the admin who added it, the destructive tool as a write.
     expect(await openTools$(admin())).toEqual([
+      "open_drop_index",
       "open_fetch_page",
       "open_search",
     ]);
@@ -667,7 +668,10 @@ describe("an admin managing MCP apps over /mcp", () => {
       on: true,
     });
     // The Gateway lists again on first use, and leaves the tool out.
-    expect(await openTools$(admin())).toEqual(["open_fetch_page"]);
+    expect(await openTools$(admin())).toEqual([
+      "open_drop_index",
+      "open_fetch_page",
+    ]);
 
     // annotations clears the risk override; enabled true serves it again.
     await data(
@@ -709,6 +713,7 @@ describe("an admin managing MCP apps over /mcp", () => {
   it("stops serving the tools when off and brings them back when on, keeping access", async () => {
     await addOpen();
     expect(await openTools$(admin())).toEqual([
+      "open_drop_index",
       "open_fetch_page",
       "open_search",
     ]);
@@ -722,6 +727,7 @@ describe("an admin managing MCP apps over /mcp", () => {
       await data("everyapp_mcp_on", { app: "open" }, admin()),
     ).toMatchObject({ id: "open", status: "on", changed: true, tools: 3 });
     expect(await openTools$(admin())).toEqual([
+      "open_drop_index",
       "open_fetch_page",
       "open_search",
     ]);

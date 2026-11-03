@@ -539,7 +539,7 @@ async function refreshTools(
 }
 
 function riskHintOf(value: string): RemoteToolRiskHint {
-  return isToolRisk(value) ? value : "unknown";
+  return isToolRisk(value) || value === "destructive" ? value : "unknown";
 }
 
 /** The hints a stored risk hint stands for, as remoteToolRisk reads them. */

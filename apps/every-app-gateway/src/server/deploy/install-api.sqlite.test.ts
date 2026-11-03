@@ -564,7 +564,7 @@ describe("install from GitHub (SQLite, fake GitHub and Cloudflare)", () => {
       userId: "user-alice",
       organizationId: acme,
       name: "ci",
-      scopes: ["deploy"],
+      access: "deploy",
     });
     const deployed = await server.fetch(
       new Request(`${GATEWAY}/api/v1/orgs/${acme}/apps/todo/deploys`, {

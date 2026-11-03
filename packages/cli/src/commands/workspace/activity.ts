@@ -28,7 +28,7 @@ interface ActivityFlags extends WorkspaceFlags {
   app?: string;
   user?: string;
   decision?: "allowed" | "blocked";
-  risk?: "read" | "write" | "destructive";
+  risk?: "read" | "write";
   since?: number;
   limit?: number;
   before?: { createdAt: number; id: string };

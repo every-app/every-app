@@ -93,13 +93,13 @@ describe("fromMcpTools", () => {
       {
         name: "delete_report",
         description: "Delete a report.",
-        risk: "destructive",
+        risk: "write",
         inputSchema: {
           type: "object",
           properties: { reportId: { type: "string" } },
           required: ["reportId"],
         },
-        annotations: { idempotentHint: true },
+        annotations: { destructiveHint: true, idempotentHint: true },
       },
       {
         name: "save_report",
@@ -203,7 +203,7 @@ describe("fromMcpTools", () => {
     await expect(run(empty!, {})).rejects.toBeInstanceOf(ToolError);
   });
 
-  it("lets the app decide risk, falling back to the annotations", () => {
+  it("lets the app decide risk, falling back to the annotations, and keeps destructiveHint on write tools", () => {
     const tools = fromMcpTools(
       [
         {
@@ -213,6 +213,7 @@ describe("fromMcpTools", () => {
         },
         {
           name: "remove_saved_keywords",
+          annotations: { destructiveHint: true },
           handler: () => ({ content: [] }),
         },
         {
@@ -225,19 +226,22 @@ describe("fromMcpTools", () => {
         risk: (tool) =>
           tool.annotations?.readOnlyHint
             ? undefined
-            : /^(delete|remove)_/.test(tool.name)
-              ? "destructive"
+            : tool.name === "save_report"
+              ? "read"
               : "write",
       },
     );
     expect(
       Object.fromEntries(
-        Object.entries(tools).map(([name, tool]) => [name, tool.risk]),
+        Object.entries(tools).map(([name, tool]) => [
+          name,
+          [tool.risk, tool.destructive ?? false],
+        ]),
       ),
     ).toEqual({
-      save_report: "write",
-      remove_saved_keywords: "destructive",
-      list_reports: "read",
+      save_report: ["read", false],
+      remove_saved_keywords: ["write", true],
+      list_reports: ["read", false],
     });
   });
 

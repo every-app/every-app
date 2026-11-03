@@ -165,6 +165,12 @@ function normalizeTool(appId: string, raw: unknown): ToolBusTool | string {
 
   // Unannotated tools are treated as write; an unknown risk is refused.
   const risk = raw["risk"] ?? "write";
+  if (risk === "destructive") {
+    // An app on an SDK from before tools were read or write.
+    return skip(
+      'risk "destructive" is gone: update @every-app/sdk and declare risk: "write" with destructive: true',
+    );
+  }
   if (!isToolRisk(risk)) return skip(`unknown risk "${String(risk)}"`);
 
   const inputSchema = objectSchema(raw["inputSchema"]);
@@ -184,6 +190,10 @@ function normalizeTool(appId: string, raw: unknown): ToolBusTool | string {
       if (typeof rawAnnotations[hint] === "boolean") {
         annotations[hint] = rawAnnotations[hint];
       }
+    }
+    // Only a write tool can be destructive; not saying so means it isn't.
+    if (risk === "write" && rawAnnotations["destructiveHint"] === true) {
+      annotations.destructiveHint = true;
     }
   }
 
