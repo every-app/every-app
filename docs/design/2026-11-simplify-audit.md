@@ -4,6 +4,72 @@ Date: 2026-11-02. Status: **research only. No product code changed.** You pick w
 
 Method, in one line: 14 area audits on `main` (`500fba5cd`), each checked by a second agent that tried to refute it, then 3 gap audits and a review pass. It skips what oauth-simplify and the L5 deletion lane already do. Details are in the [appendix](#method).
 
+## Ben's rulings (2026-11-02): read these first
+
+Where the audit below leans differently, these rulings win.
+
+**The rule.** Keep every feature a self-hoster may need. Cut what piled up inside it, duplicate mechanisms, and dead code. Whether everyapp.team uses a feature is not the test.
+
+**Keep:**
+- Cloudflare Access on by default, as defense in depth.
+- Control over who can open each app, groups included.
+- Per-app $ caps, the default cap, and `unlimited`.
+- Remote MCP apps.
+- A default AI model.
+- Read-only and single-app tokens, and the consent page.
+- Events, which get a more flexible design.
+- Hosted mode, which comes in a couple of months, so don't design it into a hole.
+- The six sign-in providers, which hosted mode needs.
+- Every manifest resource kind.
+- Browser installs.
+- UI = CLI = MCP parity.
+
+**Cut.** Built in one PR per lane:
+
+| PR | Lane |
+|---|---|
+| #945 | AI: one default-model setting; the manifest's `ai.routes` is the grant |
+| #946 | Onboarding loop and the old drizzle snapshots |
+| #947 | "Available to everyone" is one flag |
+| #948 | Caps are dollars only |
+| #950 | One install engine for CLI and browser installs |
+| #951 | One shared copy of the skills |
+| #952 | Tokens read-only or full; tools read or write |
+| #954 | CLI admin commands call the Gateway's tools |
+| #955 | One security page; TODO.md holds questions only; process rules trimmed |
+| #956 | Dead SDK exports and unused manifest fields |
+| #957 | One version check; compatibility shims removed |
+| #958 | Agent docs about a quarter the size, generated reference |
+| #959 | Access: one fixed recipe, membership asked of the Gateway |
+
+**Events.** The design is [#953](2026-11-events.md). Nothing gets built until Ben approves it.
+
+### Queued: OAuth providers in one shape
+
+These are the OAuth thread's four proposed deletions (`2026-11-oauth-simplify-rollout.md`), judged against the rule above.
+
+1. **Built-in Slack and Microsoft: fold into 2.**
+   - Their specs are already plain data in the preset shape (`sdk/src/internal/oauthBuiltIns.ts`).
+   - Moving them to presets removes nothing for users.
+   - No app uses Slack. CRM uses `microsoft-365`.
+2. **Google becomes a preset, and the built-in vs. preset distinction goes: yes.**
+   - Every OAuth provider becomes a registered row made from a preset.
+   - Deploying an app whose manifest names a preset id registers that provider. Setup stays one step: paste the client.
+   - Ids stay (`google-workspace`, `microsoft-365`, `slack`), so connections and app manifests survive.
+   - Deletes `isBuiltinId`, `PROVIDER_BUILTIN`, `builtInOAuth()` in `capabilities.ts`, and the built-in branches in the CLI, UI and docs.
+3. **Drop provider-side revoke on disconnect: skip.**
+   - It's already one optional `revokeUrl` field and one ~60-line function (`server/oauth/tokens.ts`). That's the simple design.
+   - Disconnect should really disconnect.
+   - Small add: Google's spec has no revoke URL, so add `https://oauth2.googleapis.com/revoke`.
+4. **OAuth clients only in Gateway settings: open, for Ben.**
+   - Either way there's one store and no precedence rule.
+   - The lean runs the other way: keep only the sealed D1 store, written from the browser, the CLI (through #954's admin API) or MCP, and drop the Worker-secret path.
+   - Why: setup finishes in the browser (I2), and parity holds.
+   - Cost: "a stolen admin session can't add a way in" stops holding.
+   - Item 2's design works with either store.
+
+Sequencing: one lane, after #938, #954, #957 and #958 merge. They touch `server/oauth/*`, `capabilities.ts`, `commands/secret` and `commands/provider`, and the generated provider docs.
+
 ## The short version
 
 - **What we found.** The OAuth pattern repeated in at least nine places. Each step made sense alone:
