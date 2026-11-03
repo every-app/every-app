@@ -12,7 +12,7 @@
  */
 import { BUILD_SENTINEL, everyAppWorker } from "@every-app/sdk/cloudflare";
 import { expect, it, vi } from "vitest";
-import { installWorkerConfig } from "@/lib/app/installBuildOutput";
+import { installWorkerConfig } from "@every-app/perimeter/install";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import {
   deleteWorkerQuietly,

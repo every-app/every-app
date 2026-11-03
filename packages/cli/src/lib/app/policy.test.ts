@@ -6,7 +6,8 @@ import {
   everyAppWorker,
 } from "@every-app/sdk/cloudflare";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { installWorkerConfig, type InstallTarget } from "./installBuildOutput";
+import { definedWorkflows } from "@every-app/perimeter/install";
+import { installWorkerConfig, type InstallTarget } from "@every-app/perimeter/install";
 import {
   appPolicyProblems,
   helperPolicyProblems,
@@ -596,13 +597,10 @@ describe("prepareAppBuildOutput", () => {
     writeOutput(await builtConfig());
 
     // The Workflows cf will create or update for the Worker.
-    await expect(
-      prepareAppBuildOutput({ cwd: appDir, inputs: INPUTS }),
-    ).resolves.toEqual({
-      workflows: ["every-acme-todo--rank-check"],
-      helperWorkflows: {},
-      r2Buckets: [],
-    });
+    expect(definedWorkflows(await builtConfig(), INPUTS.workerName)).toEqual([
+      "every-acme-todo--rank-check",
+    ]);
+    await prepareAppBuildOutput({ cwd: appDir, inputs: INPUTS });
 
     const written = JSON.parse(
       fs.readFileSync(
@@ -717,13 +715,9 @@ describe("helper Workers", () => {
     writeOutput(app);
     writeHelper(helper);
     // Each Worker's Workflows: cf creates a helper's as it deploys that helper.
-    await expect(
-      prepareAppBuildOutput({ cwd: appDir, inputs: WITH_HELPER }),
-    ).resolves.toEqual({
-      workflows: [],
-      helperWorkflows: { [HELPER]: ["every-acme-todo--site-audit"] },
-      r2Buckets: [],
-    });
+    expect(definedWorkflows(app, INPUTS.workerName)).toEqual([]);
+    expect(definedWorkflows(helper, HELPER)).toEqual(["every-acme-todo--site-audit"]);
+    await prepareAppBuildOutput({ cwd: appDir, inputs: WITH_HELPER });
 
     writeHelper({ ...helper, name: "every-acme-todo--crawler" }, "crawler");
     await expect(

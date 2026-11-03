@@ -19,7 +19,7 @@ import { CLI } from "@/lib/output/command";
 import { confirmAtTerminal, confirmOrCancel } from "@/lib/output/prompt";
 
 import { createEmailInstaller } from "@every-app/perimeter/install";
-const installer = createEmailInstaller<CfRunner>({
+export const emailInstaller = createEmailInstaller<CfRunner>({
   Error: EveryAppError,
   createEmailRoutingRule,
   deleteEmailRoutingRule,
@@ -45,7 +45,6 @@ export const {
   emailRouteProblems,
   emailDeclarations,
   routeRuleName,
-  describeMailRoutes,
   unsentDomains,
-} = installer;
+} = emailInstaller;
 export type EmailRouteProblem = Awaited<ReturnType<typeof emailRouteProblems>>[number];

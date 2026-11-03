@@ -43,7 +43,7 @@ How the CLI loads it (`packages/cli/src/lib/manifest.ts`): `loadEveryAppManifest
 
 ### What every Worker gets
 
-What `everyAppWorker()` puts in the app's own Worker's `env` in each mode, before the manifest's resources are added (`packages/sdk/src/cloudflare/worker.ts`; the types are `EveryAppDevEnv` and `EveryAppDeployEnv`). In production every install-specific value is a placeholder from `sentinelDeployTarget()` that the deploy rewrites when it installs the build (`packages/cli/src/lib/app/installBuildOutput.ts`).
+What `everyAppWorker()` puts in the app's own Worker's `env` in each mode, before the manifest's resources are added (`packages/sdk/src/cloudflare/worker.ts`; the types are `EveryAppDevEnv` and `EveryAppDeployEnv`). In production every install-specific value is a placeholder from `sentinelDeployTarget()` that the deploy rewrites when it installs the build (`packages/perimeter/src/install/config.ts`).
 
 | Binding                         | Type                             | Development (`cf dev`, or no mode)                                                                                                                  | Production                                                                                                                                                                                      |
 | ------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -731,7 +731,7 @@ How a setting reaches the app, by the path an app's own secret takes ([/docs/age
 
 - **Set per install.** `pnpm everyapp configure <app>` asks for each required setting at a visible prompt (a value, not a key), under `<NAME>: <why>` and `Takes <what>` (`Takes an http or https URL, default https://us.i.posthog.com`), and re-asks an answer the setting doesn't take. A script or an agent pipes `NAME=value` lines in, or exports the names and adds `--from-env`. A value the setting doesn't take is [`SETTING_VALUE_INVALID`](/docs/agent/errors#setting_value_invalid) before anything is written. `pnpm everyapp secret set NAME [--app <id>]` sets one, checked the same way. A new value is live at once, with no deploy.
 - **Held on the app's Workers.** Each value goes on the app's Worker and every helper Worker as a Worker secret, in the same Worker version as the app's secrets, and is recorded with them in `apps.secret_names`. Later deploys keep it, so production builds declare nothing for it.
-- **The default, written by the deploy.** Each deploy sends the default of every setting the app's Worker doesn't hold yet with the version it uploads, to the app's Worker and its helpers (`settingDefaultsToWrite` in `packages/cli/src/lib/app/settings.ts`). A value someone set, or a default written before, is never replaced. To go back to the default, set it again.
+- **The default, written by the deploy.** Each deploy sends the default of every setting the app's Worker doesn't hold yet with the version it uploads, to the app's Worker and its helpers (`settingDefaultsToWrite` in `packages/perimeter/src/install/app-install.ts`, the same for browser installs). A value someone set, or a default written before, is never replaced. To go back to the default, set it again.
 - **Needs.** A setting with neither a default nor `optional` is required: the app doesn't open until it is set, as for a required secret. In the settings model (`appSettings()` in `packages/sdk/src/internal/appSettings.ts`) it is a row of kind `setting`, after the secrets, with its rule in `value` (`{ type, values?, default? }`). `everyapp status`, `everyapp secret list`, the end of `deploy` and the Gateway's "Needs setup" dialog show it with the app's secrets, with `Takes <what>` under its `why`.
 - **Installs.** A release carries the manifest, so `everyapp install` knows which settings the app declares. At a terminal, when the app needs setup, it asks `Set up <app> now?` (Yes by default) and runs `configure <app>`. Otherwise the install ends with the `APP_NEEDS_SETUP` warning and `pnpm everyapp configure <app>` under Next.
 - **In development.** `everyAppWorker()` declares each setting set locally (`.dev.vars`, `.env`, read as for secrets) as a secret binding. A setting that isn't set locally but has a default gets a text binding with that default. So `pnpm dev` reads what a deployed Worker reads, and `cf workers types` types each setting that is set locally or has a default; treat the others as optional in `Env`.
@@ -1039,7 +1039,7 @@ Real manifests in the repository: `starter/everyapp.config.ts` (the starter abov
 - `packages/cli/src/lib/app/localD1.ts`
 - `packages/cli/src/lib/app/deploySecrets.ts`
 - `packages/cli/src/lib/app/resources.ts`
-- `packages/cli/src/lib/app/installBuildOutput.ts`
+- `packages/perimeter/src/install/config.ts`
 - `packages/cli/src/lib/cf/hyperdrive.ts`
 - `packages/cli/src/lib/cf/secretsStore.ts`
 - `packages/cli/src/lib/cf/queues.ts`

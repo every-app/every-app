@@ -17,7 +17,7 @@ A Gateway has a **name**: none for the one every install has today (the default)
 | Access apps/policy | `Every App gateway`, …      | `Every App gateway (demo)`, …                    |
 | Hostnames          | `<host>`, `<app>.<host>`    | the same, under the host `--domain` names        |
 
-The Gateway Worker learns its name from the text binding `EVERYAPP_GATEWAY_NAME` (empty for the default), patched in by the deploy with its Worker name, D1 name and queue name (`patchGatewayBuildOutput`); `apps/every-app-gateway/src/server/gateway-name.ts` reads it for registration and browser installs. An app's `GATEWAY` service binding is built as `every-app-gateway` and rewritten at install to the Gateway it deploys to (`installBuildOutput.ts`).
+The Gateway Worker learns its name from the text binding `EVERYAPP_GATEWAY_NAME` (empty for the default), patched in by the deploy with its Worker name, D1 name and queue name (`patchGatewayBuildOutput`); `apps/every-app-gateway/src/server/gateway-name.ts` reads it for registration and browser installs. An app's `GATEWAY` service binding is built as `every-app-gateway` and rewritten at install to the Gateway it deploys to (`installWorkerConfig` in `packages/perimeter/src/install/config.ts`).
 
 ## Why the names can't collide
 

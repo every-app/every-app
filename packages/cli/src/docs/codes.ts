@@ -110,7 +110,13 @@ export function codeInventory(): CodeInventory {
     }
   }
   const warnings = new Map<string, Set<string>>();
-  collect(files, /type: "warning",\s*code: "([A-Z][A-Z_0-9]+)"/g, warnings, SRC);
+  // The install engine (perimeter app-install.ts) says the deploy's warnings too.
+  collect(
+    [...files, ...sourceFiles(SHARED_INSTALL)],
+    /type: "warning",\s*code: "([A-Z][A-Z_0-9]+)"/g,
+    warnings,
+    SRC,
+  );
   // Codes an enum names and a command raises or says through it
   // (`TeardownCode` in lib/teardown/guards.ts): a member whose comment starts
   // with "Warning:" is a warning, the rest are raised as errors.

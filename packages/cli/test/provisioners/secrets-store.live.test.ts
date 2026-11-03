@@ -15,7 +15,7 @@
 import { randomBytes } from "node:crypto";
 import { expect, it } from "vitest";
 import { readOwnedResources } from "@/lib/app/ownership";
-import { provisionAppResources } from "@/lib/app/resources";
+import { resourceInstaller } from "@/lib/app/resources";
 import { CfError } from "@/lib/cf/errors";
 import {
   chooseSecretsStore,
@@ -46,14 +46,14 @@ describeLive("Secrets Store secrets (resources.secretsStore), live", () => {
       console.log(`${label}:\n${shown(typeof value === "string" ? value : JSON.stringify(value, null, 2))}`);
     const gatewayDb = createSqliteD1();
     const ensure = () =>
-      provisionAppResources({
+      resourceInstaller.provisionAppResources({
         cf: live.cf,
         gatewayDb,
         registration: { workerName: WORKER, resources: { d1: {}, kv: {}, r2: {} } },
         manifest: { id: "provisioners-secrets-store", resources: { secretsStore: [{ name: BINDING }] } },
         secrets: { [BINDING]: `live-${randomBytes(12).toString("hex")}` },
         accountId: live.accountId,
-      } as Parameters<typeof provisionAppResources>[0]);
+      } as Parameters<typeof resourceInstaller.provisionAppResources>[0]);
 
     const stores = await listSecretsStores(live.cf);
     report("cf secrets-store stores list", stores);

@@ -1,29 +1,22 @@
 import { EveryAppError } from "@/lib/errors";
-import type { EventSink } from "@/lib/output/events";
 import { FakeCloudflare } from "@/test/fakeCloudflare";
 import { createSqliteD1 } from "@/test/sqliteD1";
 import { beforeEach, describe, expect, it } from "vitest";
-import { ensureR2Buckets } from "./buckets";
+import { resourceInstaller } from "./resources";
 import { readOwnedResources, recordOwnedResource, recordUploadedVersion } from "./ownership";
 
 let account: FakeCloudflare;
-let events: Array<Parameters<EventSink["emit"]>[0]>;
-let out: EventSink;
+let adopted: string[];
 let gatewayDb: ReturnType<typeof createSqliteD1>;
 
 beforeEach(() => {
   account = new FakeCloudflare();
   gatewayDb = createSqliteD1();
-  events = [];
-  out = {
-    emit: (event) => void events.push(event),
-    exitCode: 0,
-    verbose: false,
-  };
+  adopted = [];
 });
 
 const ensure = (names: string[]) =>
-  ensureR2Buckets({
+  resourceInstaller.ensureAppBuckets({
     cf: account.cf,
     gatewayDb,
     registration: {
@@ -32,11 +25,11 @@ const ensure = (names: string[]) =>
     },
     names,
     appId: "crm",
-    out,
+    onAdopted: (name) => void adopted.push(name),
   });
 
-describe("ensureR2Buckets", () => {
-  it("creates the buckets the Workers bind that don't exist, once each, and says so", async () => {
+describe("ensureAppBuckets", () => {
+  it("creates the buckets the Workers bind that don't exist, once each", async () => {
     account.buckets.set("every-acme-crm--cache", { objects: 3 });
     await recordOwnedResource(gatewayDb, "every-acme-crm", {
       kind: "r2",
@@ -51,9 +44,6 @@ describe("ensureR2Buckets", () => {
     expect(account.buckets.get("every-acme-crm--cache")).toEqual({
       objects: 3,
     });
-    expect(events).toEqual([
-      expect.objectContaining({ type: "progress", step: "app.build", message: 'Created R2 bucket "every-acme-crm".' }),
-    ]);
     expect(account.cf.calls.filter((call) => call.args[0] === "r2" && call.args[2] === "create")).toHaveLength(1);
   });
 
@@ -84,7 +74,7 @@ describe("ensureR2Buckets", () => {
     };
     const r2Creates = () => account.cf.calls.filter((call) => call.args[0] === "r2" && call.args[2] === "create");
 
-    it("is adopted when it has the app's name and the app's Worker is recorded, and says so", async () => {
+    it("is adopted when it has the app's name and the app's Worker is recorded", async () => {
       await recordWorker();
       account.buckets.set("every-acme-crm", { objects: 3 });
       expect(await ensure(["every-acme-crm"])).toEqual([]);
@@ -93,17 +83,11 @@ describe("ensureR2Buckets", () => {
       expect(await readOwnedResources(gatewayDb, "every-acme-crm")).toContainEqual(
         expect.objectContaining({ kind: "r2", binding: "every-acme-crm", name: "every-acme-crm", resourceId: "every-acme-crm" }),
       );
-      expect(events).toEqual([
-        expect.objectContaining({
-          type: "progress",
-          step: "app.build",
-          message: expect.stringContaining('Adopted R2 bucket "every-acme-crm"'),
-        }),
-      ]);
+      expect(adopted).toEqual(["every-acme-crm"]);
       // Recorded now: the next deploy uses it without adopting again.
-      events = [];
+      adopted = [];
       await ensure(["every-acme-crm"]);
-      expect(events).toEqual([]);
+      expect(adopted).toEqual([]);
     });
 
     it("is refused when another app records it", async () => {
@@ -145,7 +129,7 @@ describe("ensureR2Buckets", () => {
     expect(await readOwnedResources(gatewayDb, "every-acme-crm")).toEqual([
       expect.objectContaining({ kind: "r2", name: "every-acme-crm", resourceId: "every-acme-crm" }),
     ]);
-    expect(events).toEqual([expect.objectContaining({ message: 'Created R2 bucket "every-acme-crm".' })]);
+    expect(adopted).toEqual([]);
   });
 
   it("does nothing with no buckets to bind", async () => {

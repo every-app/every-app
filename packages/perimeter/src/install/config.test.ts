@@ -1,6 +1,3 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import {
   BUILD_SENTINEL,
   everyAppAuxiliaryWorker,
@@ -8,11 +5,7 @@ import {
   resourceSentinel,
 } from "@every-app/sdk/cloudflare";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  installAppBuildOutput,
-  installWorkerConfig,
-  type InstallTarget,
-} from "./installBuildOutput";
+import { installWorkerConfig, type InstallTarget } from "./config";
 
 const PUBLIC_KEYS = [
   "-----BEGIN PUBLIC KEY-----\nMIIBcurrent\n-----END PUBLIC KEY-----\n",
@@ -202,7 +195,10 @@ describe("installWorkerConfig", () => {
       "OldSyncDO",
     );
     expect(() =>
-      installWorkerConfig(app, { ...TARGET, deletedDurableObjects: ["ChatAgent"] }),
+      installWorkerConfig(app, {
+        ...TARGET,
+        deletedDurableObjects: ["ChatAgent"],
+      }),
     ).toThrow(expect.objectContaining({ code: "APP_POLICY" }));
   });
 
@@ -307,19 +303,27 @@ describe("installWorkerConfig and AI Gateways", () => {
   };
   const notes = () => {
     const options = { manifest: NOTES, ctx: { mode: "production" } } as const;
-    const { entrypoint: _app, ...app } = everyAppWorker({ ...options, entrypoint: "./src/entry.worker.ts" });
+    const { entrypoint: _app, ...app } = everyAppWorker({
+      ...options,
+      entrypoint: "./src/entry.worker.ts",
+    });
     const { entrypoint: _digest, ...digest } = everyAppAuxiliaryWorker({
       ...options,
       worker: "digest",
       entrypoint: "./src/digest.ts",
     });
-    return { app: structuredClone(app) as Record<string, any>, digest: structuredClone(digest) as Record<string, any> };
+    return {
+      app: structuredClone(app) as Record<string, any>,
+      digest: structuredClone(digest) as Record<string, any>,
+    };
   };
 
   it("gives each Worker's gateway binding the provisioned id, account and URL", () => {
     const { app, digest } = notes();
     for (const config of [app, digest]) {
-      expect(installWorkerConfig(config, NOTES_TARGET)["env"].AI_GATEWAY).toEqual({
+      expect(
+        installWorkerConfig(config, NOTES_TARGET)["env"].AI_GATEWAY,
+      ).toEqual({
         type: "json",
         value: GATEWAY,
       });
@@ -331,17 +335,31 @@ describe("installWorkerConfig and AI Gateways", () => {
     app["env"].FEATURES = { type: "json", value: { id: "plan", tier: "pro" } };
     app["env"].LIST = { type: "json", value: [resourceSentinel("LIST")] };
     // Another binding's placeholder: never handed the gateway.
-    app["env"].COPY = { type: "json", value: { id: resourceSentinel("AI_GATEWAY") } };
+    app["env"].COPY = {
+      type: "json",
+      value: { id: resourceSentinel("AI_GATEWAY") },
+    };
 
     const env = installWorkerConfig(app, NOTES_TARGET)["env"];
-    expect(env.FEATURES).toEqual({ type: "json", value: { id: "plan", tier: "pro" } });
-    expect(env.LIST).toEqual({ type: "json", value: ["every-acme-notes--LIST"] });
-    expect(env.COPY).toEqual({ type: "json", value: { id: "every-acme-notes--AI_GATEWAY" } });
+    expect(env.FEATURES).toEqual({
+      type: "json",
+      value: { id: "plan", tier: "pro" },
+    });
+    expect(env.LIST).toEqual({
+      type: "json",
+      value: ["every-acme-notes--LIST"],
+    });
+    expect(env.COPY).toEqual({
+      type: "json",
+      value: { id: "every-acme-notes--AI_GATEWAY" },
+    });
   });
 
   it("refuses a gateway the build binds but the deploy didn't provision", () => {
     const { app } = notes();
-    expect(() => installWorkerConfig(app, { ...NOTES_TARGET, resources: {} })).toThrow(
+    expect(() =>
+      installWorkerConfig(app, { ...NOTES_TARGET, resources: {} }),
+    ).toThrow(
       expect.objectContaining({
         code: "INSTALL_INPUTS_MISSING",
         message: expect.stringContaining("AI Gateway AI_GATEWAY"),
@@ -351,41 +369,14 @@ describe("installWorkerConfig and AI Gateways", () => {
 
   it("writes the account wherever its placeholder is, before the Worker name it starts with", () => {
     const { app } = notes();
-    app["env"].ACCOUNT_NOTE = { type: "text", value: `account ${BUILD_SENTINEL.accountId}` };
-    const env = installWorkerConfig(app, NOTES_TARGET)["env"];
-    expect(env.ACCOUNT_NOTE).toEqual({ type: "text", value: `account ${ACCOUNT}` });
-  });
-});
-
-describe("installAppBuildOutput", () => {
-  let cwd: string;
-  beforeEach(() => {
-    cwd = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-install-"));
-  });
-  afterEach(() => fs.rmSync(cwd, { recursive: true, force: true }));
-
-  it("installs every Worker of the Build Output in place", async () => {
-    const { app, audit } = build();
-    const workers = path.join(cwd, ".cloudflare/output/v0/workers");
-    const write = (dir: string, config: object) => {
-      fs.mkdirSync(path.join(workers, dir), { recursive: true });
-      fs.writeFileSync(
-        path.join(workers, dir, "worker.config.json"),
-        JSON.stringify(config),
-      );
+    app["env"].ACCOUNT_NOTE = {
+      type: "text",
+      value: `account ${BUILD_SENTINEL.accountId}`,
     };
-    write("default", app);
-    write(String(audit["name"]), audit);
-
-    await installAppBuildOutput({ cwd, target: TARGET });
-
-    const read = (dir: string) =>
-      JSON.parse(
-        fs.readFileSync(path.join(workers, dir, "worker.config.json"), "utf8"),
-      ) as Record<string, unknown>;
-    expect(read("default")).toEqual(installWorkerConfig(app, TARGET));
-    expect(read(String(audit["name"]))).toEqual(
-      installWorkerConfig(audit, TARGET),
-    );
+    const env = installWorkerConfig(app, NOTES_TARGET)["env"];
+    expect(env.ACCOUNT_NOTE).toEqual({
+      type: "text",
+      value: `account ${ACCOUNT}`,
+    });
   });
 });

@@ -279,8 +279,8 @@ Every entry of the user docs' [Troubleshooting](/docs/troubleshooting) page, in 
 
 - Symptom: [`APP_POLICY`](/docs/agent/errors#app_policy): `The built Worker can't be deployed as an EveryApp app:` then one line per problem, then `Build it from everyAppWorker() in cloudflare.config.ts.` Also `The app's Build Output isn't a production build. The manifest's build command must run cf build (production by default).` and `The app's Build Output has no default Worker.` Related: [`TIER_POLICY`](/docs/agent/errors#tier_policy) (`<app> can't be deployed as configured`, fix `change everyapp.config.ts, then deploy again`), [`INSTALL_INPUTS_MISSING`](/docs/agent/errors#install_inputs_missing) (`The build binds <kind> <name>, which the deploy didn't provision`, fix `declare it in everyapp.config.ts's resources`), [`INSTALL_PLACEHOLDER_LEFT`](/docs/agent/errors#install_placeholder_left).
 - What the list means (`packages/cli/src/lib/app/policy.ts`): `its name is "X", not "Y"` (the Worker must be named as registered); `workersDev isn't false`, `previewUrls isn't false`, `it declares domains …`, `it declares routes …`, `it declares a trigger of type "…" (apps may only declare cron schedules)` (apps are reached through the Gateway only); `EVERYAPP_DEV is set, which only everyapp dev may do`; `EVERYAPP_IDENTITY_PUBLIC_KEYS isn't built in`, `EVERYAPP_IDENTITY_ISSUER isn't built in`, `EVERYAPP_AUDIENCE isn't the Worker's name`; `<binding> is a <type> binding, which EveryApp apps can't use` (allowed: `text`, `json`, `secret`, `version-metadata`, `assets`, `d1`, `kv`, `r2`, `durable-object`, `workflow`, `worker`, `hyperdrive`); `<binding> binds Worker "…"` (only the Gateway's `AppGateway` as `EVERY_APP_GATEWAY`, and the app's own helper Workers); `binds another Worker's Durable Object`; `isn't a D1 database|KV namespace|Hyperdrive config the deploy provisioned` (declare it under `resources`); bucket and Workflow names must be the Worker's name or `<worker>--<name>`; `Durable Object class X is marked deleted, which deletes its data; remove it from everyapp.config.ts and deploy with --allow-delete-durable-object-data instead`; `would move its data to Worker` / `would take the data of Worker`; `backed by a container`; `the build has a Worker "X" that everyapp.config.ts doesn't declare in workers`; `the build has no Worker <helper>, which everyapp.config.ts declares`.
-- Confirm: the check runs inside the `app.build` step (`prepareAppBuildOutput`, after the build and before `app.schema`), so with `--verbose` the run stops there; the lines under the headline are the whole list, one problem each. In the app's directory, `cat cloudflare.config.ts` shows whether the Worker comes from `everyAppWorker()`, and the Build Output under `.cloudflare/output/v0/` holds the `worker.config.json` the list was read from.
-- Fix: build from `everyAppWorker()`; declare every resource in `everyapp.config.ts`; drop the binding, route or trigger named. Source: `packages/cli/src/lib/app/policy.ts`, `packages/cli/src/lib/app/installBuildOutput.ts`, `packages/cli/src/commands/deploy/deployApp.ts`.
+- Confirm: the check runs inside the `app.build` step (`checkBuildOutput`, after the build and before `app.schema`), so with `--verbose` the run stops there; the lines under the headline are the whole list, one problem each. In the app's directory, `cat cloudflare.config.ts` shows whether the Worker comes from `everyAppWorker()`, and the Build Output under `.cloudflare/output/v0/` holds the `worker.config.json` the list was read from.
+- Fix: build from `everyAppWorker()`; declare every resource in `everyapp.config.ts`; drop the binding, route or trigger named. Source: `packages/cli/src/lib/app/policy.ts`, `packages/perimeter/src/install/config.ts`, `packages/cli/src/commands/deploy/deployApp.ts`.
 
 ### Resource name taken, owned or replaced
 
@@ -315,15 +315,15 @@ Every entry of the user docs' [Troubleshooting](/docs/troubleshooting) page, in 
 - Symptom: [`DURABLE_OBJECT_REMOVED`](/docs/agent/errors#durable_object_removed): `Deploying would delete <Class>'s data for good`, `everyapp.config.ts no longer declares the Durable Object class <Class>.`; rerun with `--allow-delete-durable-object-data`, `data.authorize: true`. [`DURABLE_OBJECT_MOVED`](/docs/agent/errors#durable_object_moved): `<Class> can't move to another Worker`, `A Durable Object's data can't follow it.`, fix `give the class a new name in everyapp.config.ts`. [`HELPER_DURABLE_OBJECT_REMOVED`](/docs/agent/errors#helper_durable_object_removed): `The helper Worker <w> still defines <Class>`, fix `keep declaring <Class> in everyapp.config.ts`.
 - Cause: the previous manifest on the registry row declared a class this one drops (deleting it deletes its data) or moves to another Worker (Cloudflare moves data only by a transfer, which the deploy never makes).
 - Confirm: `git diff -- everyapp.config.ts` (or `git log -p -- everyapp.config.ts`) in the app's directory shows the `durableObjects` entry removed, renamed or given another `worker` since the last deploy.
-- Fix: put the class back, or let a person authorize `--allow-delete-durable-object-data`. Source: `packages/cli/src/commands/deploy/deployApp.ts` (`checkDurableObjects`).
+- Fix: put the class back, or let a person authorize `--allow-delete-durable-object-data`. Source: `packages/perimeter/src/install/durable-objects.ts` (`checkDurableObjects`, run by `installApp`).
 
 ### Workflow removed
 
 - Symptom: [`WORKFLOW_REMOVED`](/docs/agent/errors#workflow_removed): `Deploying would delete the Workflow <binding> and its instances`, `everyapp.config.ts no longer declares it. Renaming a binding renames its Workflow.`; rerun with `--allow-delete-workflows`, `data.authorize: true`.
 - Cause: a Workflow the last deploy defined (named `<worker>--<binding>`) is gone from the manifest; deleting it deletes its instances. A renamed binding counts as a new Workflow and a removed one.
 - Confirm: `git diff -- everyapp.config.ts` in the app's directory shows the `resources.workflows` binding removed or renamed; `cf workflows list` (if the app is deployed) for what runs now.
-- Fix: keep the binding name, or a person authorizes the flag; the Workflow is deleted once the upload is live. Source: `packages/cli/src/commands/deploy/deployApp.ts` (`checkWorkflows`), `packages/cli/src/lib/app/workflows.ts`.
-- Workflow names, before anything is created: [`WORKFLOW_NAME_TAKEN`](/docs/agent/errors#workflow_name_taken): `A Workflow named "<name>" already exists in this Cloudflare account`, `It runs on Worker <x>, not <worker>; deploying would take it over.`, fix `delete or rename it`, rerun the same command (`assertOwnWorkflows`, `packages/cli/src/lib/app/workflows.ts`). [`WORKFLOW_NAME_TOO_LONG`](/docs/agent/errors#workflow_name_too_long): `<binding> would be the Workflow "<name>", longer than Cloudflare's 64 characters`, fix `shorten its binding name in everyapp.config.ts` (`packages/cli/src/lib/app/installBuildOutput.ts`; the name is `<worker>--<binding>`, so a long app id leaves fewer characters for the binding).
+- Fix: keep the binding name, or a person authorizes the flag; the Workflow is deleted once the upload is live. Source: `packages/perimeter/src/install/app-install.ts` (`droppedWorkflows`).
+- Workflow names, before anything is created: [`WORKFLOW_NAME_TAKEN`](/docs/agent/errors#workflow_name_taken): `A Workflow named "<name>" already exists in this Cloudflare account`, `It runs on Worker <x>, not <worker>; deploying would take it over.`, fix `delete or rename it`, rerun the same command (`installApp`, `packages/perimeter/src/install/app-install.ts`). [`WORKFLOW_NAME_TOO_LONG`](/docs/agent/errors#workflow_name_too_long): `<binding> would be the Workflow "<name>", longer than Cloudflare's 64 characters`, fix `shorten its binding name in everyapp.config.ts` (`packages/perimeter/src/install/config.ts`; the name is `<worker>--<binding>`, so a long app id leaves fewer characters for the binding).
 
 ### App not live after deploy
 
@@ -656,7 +656,7 @@ From `docs/TESTING.md`, section C ([mirrored](/docs/agent/repo/testing)):
 - `packages/cli/src/commands/dev/appServer.ts`
 - `package.json`
 - `packages/cli/src/lib/app/cloudflareConfig.ts`
-- `packages/cli/src/lib/app/workflows.ts`
+- `packages/perimeter/src/install/app-install.ts`
 - `packages/cli/src/lib/app/buildOutput.ts`
 - `packages/cli/src/lib/gateway/checkoutRelease.ts`
 - `packages/cli/src/lib/package-manager.ts`
@@ -680,7 +680,7 @@ From `docs/TESTING.md`, section C ([mirrored](/docs/agent/repo/testing)):
 - `apps/every-app-gateway/src/server/capabilities/heldToken.ts`
 - `apps/every-app-gateway/src/server/toolbus/gateway-mcp.ts`
 - `packages/cli/src/lib/app/policy.ts`
-- `packages/cli/src/lib/app/installBuildOutput.ts`
+- `packages/perimeter/src/install/config.ts`
 - `packages/cli/src/lib/app/resources.ts`
 - `packages/cli/src/lib/app/ownership.ts`
 - `packages/cli/src/lib/app/deploySecrets.ts`

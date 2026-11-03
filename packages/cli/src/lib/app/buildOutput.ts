@@ -6,13 +6,15 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { DEFAULT_WORKER } from "@every-app/perimeter/install";
+
+/** The main Worker's directory under {@link WORKERS_DIR}: the install engine's. */
+export { DEFAULT_WORKER };
 
 /** The Build Output, relative to the root it was built in. */
 export const BUILD_OUTPUT_DIR = path.join(".cloudflare", "output", "v0");
 /** The Build Output's Workers, relative to the root it was built in. */
 export const WORKERS_DIR = path.join(BUILD_OUTPUT_DIR, "workers");
-/** The main Worker's directory under {@link WORKERS_DIR}. */
-export const DEFAULT_WORKER = "default";
 
 /**
  * Each Worker in the Build Output under `cwd`, read as it is reached: its

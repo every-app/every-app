@@ -210,5 +210,4 @@ const operations: ResourceOperations<CloudflareTransport> = {
     )[0]!.id,
 };
 
-export const { claimAppWorker, provisionAppResources, ensureAppBuckets } =
-  createResourceProvisioner(operations);
+export const resourceInstaller = createResourceProvisioner(operations);

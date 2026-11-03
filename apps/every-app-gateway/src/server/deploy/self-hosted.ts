@@ -1,21 +1,21 @@
-/** Self-hosted release installation, using the CLI's shared policy and provisioner. */
+/** Self-hosted release installation: the CLI's install engine, with Cloudflare's REST API as its port. */
 import { db } from "@/db";
 import { apps } from "@/db/schema";
 import { gatewayNamesOf } from "@/server/gateway-name";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import {
-  appPolicyProblems,
-  checkDurableObjects,
+  buildOutputProblems,
   compareVersions,
-  helperPolicyProblems,
+  DEFAULT_WORKER,
+  installApp,
   InstallationError,
-  installWorkerConfig,
   readOwnedResources,
   recordRestorePoint,
   recordUploadedVersion,
   validateWorkerBuildOutput,
   type BuiltWorkerConfig,
   type InstallationDatabase,
+  type InstalledWorker,
   type InstallTarget,
 } from "@every-app/perimeter/install";
 import { type Manifest } from "@every-app/perimeter/manifest";
@@ -23,10 +23,8 @@ import { appResources, type AppRow } from "@every-app/perimeter/registry";
 import {
   helperWorkerName,
   sentinelDeployTarget,
-  workflowNameFor,
 } from "@every-app/sdk/cloudflare/sentinel";
 import {
-  isReservedAppSecretName,
   parseEmailList,
   secretEntries,
   settingEntries,
@@ -44,18 +42,12 @@ import { bundleRefused, DeployError } from "./errors";
 import { migrateAppDatabase } from "./pipeline";
 import { recordDispatchDeployed } from "./registry";
 import { syncBrowserAccess } from "./self-hosted-access";
-import {
-  applyEmailRoutes,
-  emailDeclarations,
-  planEmailRoutes,
-} from "./self-hosted-email";
+import { emailInstaller } from "./self-hosted-email";
 import { selfHostedMetadata, selfHostedModules } from "./self-hosted-metadata";
 import {
   accountList,
   accountRequest,
-  claimAppWorker,
-  ensureAppBuckets,
-  provisionAppResources,
+  resourceInstaller,
 } from "./self-hosted-resources";
 
 export interface AppInstallConfiguration {
@@ -204,7 +196,7 @@ export function parseInstallConfiguration(
 
 function workersOf(bundle: DeployBundle) {
   return [
-    { directory: "default", bundle },
+    { directory: DEFAULT_WORKER, bundle },
     ...[...(bundle.helpers ?? [])].map(([directory, bundle]) => ({
       directory,
       bundle,
@@ -212,7 +204,7 @@ function workersOf(bundle: DeployBundle) {
   ];
 }
 
-/** The same per-Worker policy as prepareAppBuildOutput, before account writes. */
+/** The same per-Worker policy release packing applies, before account writes. */
 export function selfHostedBundleProblems(
   bundle: DeployBundle,
   manifest: Manifest,
@@ -225,7 +217,7 @@ export function selfHostedBundleProblems(
       helperWorkerName(target.workerName, helper.name),
     ),
   };
-  const problems = appPolicyProblems(bundle.worker, inputs);
+  const problems: string[] = [];
   const releaseBytes = bundle.releaseFiles?.get("release.json");
   const release = releaseBytes
     ? (JSON.parse(new TextDecoder().decode(releaseBytes)) as {
@@ -257,26 +249,21 @@ export function selfHostedBundleProblems(
   }
   if (build.buildContext?.mode !== "production" || build.buildContext.isPreview)
     problems.push("the release is not a production build");
-  const builtNames: string[] = [];
-  for (const { directory, bundle: helper } of workersOf(bundle)) {
-    validateWorkerBuildOutput(helper.worker);
-    selfHostedModules(helper, helper.worker);
-    if (directory === "default") continue;
-    const name = String(helper.worker.name);
-    builtNames.push(name);
-    if (!inputs.helperWorkers.includes(name))
-      problems.push(`undeclared helper Worker ${name}`);
-    else
-      problems.push(
-        ...helperPolicyProblems(helper.worker, name, inputs).map(
-          (problem) => `${name}: ${problem}`,
-        ),
-      );
+  for (const { bundle: worker } of workersOf(bundle)) {
+    validateWorkerBuildOutput(worker.worker);
+    selfHostedModules(worker, worker.worker);
   }
-  for (const name of inputs.helperWorkers)
-    if (!builtNames.includes(name))
-      problems.push(`the release has no declared helper Worker ${name}`);
-  return problems;
+  return [...problems, ...buildOutputProblems(builtWorkers(bundle), inputs)];
+}
+
+/** The release's Workers, as its Build Output has them, by directory. */
+function builtWorkers(bundle: DeployBundle): Map<string, BuiltWorkerConfig> {
+  return new Map(
+    workersOf(bundle).map(({ directory, bundle }) => [
+      directory,
+      bundle.worker as BuiltWorkerConfig,
+    ]),
+  );
 }
 
 function gatewayDatabase(): InstallationDatabase {
@@ -313,6 +300,18 @@ export async function runSelfHostedInstall(
   }
 }
 
+/** Nothing a browser install says as it goes is shown: the job records how it ended. */
+const QUIET = { emit: () => undefined };
+
+/**
+ * One browser install of a release, on the install engine `everyapp
+ * deploy` runs (@every-app/perimeter/install app-install.ts), with
+ * Cloudflare's REST API as its port. What `cf deploy --prebuilt` does for
+ * the CLI is the upload port's here: each Worker's metadata from its
+ * installed Build Output (./self-hosted-metadata.ts) with its Durable
+ * Object migration, its assets, then its Workflows, crons and queue
+ * consumers. Then the registry records the version and the Gateway binds it.
+ */
 async function installSelfHosted(input: {
   app: AppRow;
   manifest: Manifest;
@@ -330,367 +329,156 @@ async function installSelfHosted(input: {
   const problems = selfHostedBundleProblems(bundle, manifest);
   if (problems.length) throw bundleRefused(problems);
   const gatewayDb = gatewayDatabase();
-  const cf = new CloudflareTransport({
+  const accountId = env.CLOUDFLARE_ACCOUNT_ID!;
+  const transport = {
     apiToken: env.CF_DEPLOY_TOKEN!,
-    accountId: env.CLOUDFLARE_ACCOUNT_ID!,
-    fetch: async (request, init) => {
+    accountId,
+    fetch: async (request: RequestInfo | URL, init?: RequestInit) => {
       await renew();
       return fetch(request, { ...init, signal: AbortSignal.timeout(15_000) });
-    },
-  });
-  const api = createCloudflareRest({
-    apiToken: env.CF_DEPLOY_TOKEN!,
-    accountId: env.CLOUDFLARE_ACCOUNT_ID!,
-    fetch: async (request, init) => {
-      await renew();
-      return fetch(request, { ...init, signal: AbortSignal.timeout(15_000) });
-    },
-  });
-  const ownership = {
-    cf,
-    gatewayDb,
-    registration: {
-      workerName,
-      resources: appResources({
-        workerName,
-        manifest: JSON.stringify(manifest),
-      }),
     },
   };
-  const helpers = (manifest.workers ?? []).map((helper) => ({
-    name: helper.name,
-    workerName: helperWorkerName(workerName, helper.name),
-  }));
-  await claimAppWorker(ownership);
-  for (const helper of helpers) await claimAppWorker(ownership, helper);
-  const owned = await readOwnedResources(gatewayDb, workerName);
-  const configs = workersOf(bundle).map((worker) => ({
-    ...worker,
-    name:
-      worker.directory === "default"
-        ? workerName
-        : String(worker.bundle.worker.name).replace(
-            sentinelDeployTarget(manifest).workerName,
-            workerName,
-          ),
-  }));
-  for (const worker of configs) {
-    const live = await servingVersion(api, worker.name);
-    const recorded = owned.find(
-      (resource) => resource.kind === "worker" && resource.name === worker.name,
-    )?.versionId;
-    if (live && live !== recorded && !configuration.replaceChangedWorkers)
-      throw new InstallationError(
-        "WORKER_CHANGED",
-        `${worker.name} was changed outside EveryApp. Confirm replacement before installing.`,
-        { data: { worker: worker.name } },
-      );
-  }
+  const cf = new CloudflareTransport(transport);
+  const api = createCloudflareRest(transport);
   const previous = input.previousManifest ?? null;
-  const [storedRows = []] = await gatewayDb.run([
-    { sql: "SELECT email_inbound FROM apps WHERE id = ?", params: [app.id] },
-  ]);
-  const inbound = parseEmailList(storedRows[0]?.email_inbound);
-  const emailPlan = await planEmailRoutes({
-    ...ownership,
-    accountId: env.CLOUDFLARE_ACCOUNT_ID!,
-    workerName,
-    addresses: emailDeclarations(manifest).receives ? inbound : [],
-    interactive: false,
-    enableRouting: configuration.enableEmailRouting,
-  });
-  const deletedDurableObjects = checkDurableObjects(
-    { previousManifest: previous },
-    manifest,
-    configuration.allowDeleteDurableObjectData === true,
-  );
-  const workflows = configs.flatMap((worker) =>
-    Object.entries(
-      (worker.bundle.worker.exports ?? {}) as NonNullable<
-        BuiltWorkerConfig["exports"]
-      >,
-    )
-      .filter(([, entry]) => entry.type === "workflow")
-      .map(([class_name, options]) => ({
-        name: String(options.name).replace(
-          sentinelDeployTarget(manifest).workerName,
-          workerName,
-        ),
-        class_name,
-        script_name: worker.name,
-        options,
-      })),
-  );
-  for (const workflow of workflows) {
-    const existing = await optionalAccount<{ script_name?: string }>(cf, [
-      "workflows",
-      workflow.name,
-    ]);
-    if (existing && existing.script_name !== workflow.script_name)
-      throw new InstallationError(
-        "WORKFLOW_NAME_TAKEN",
-        `Workflow ${workflow.name} belongs to another Worker.`,
-      );
-  }
-  const droppedWorkflows = (previous?.resources?.workflows ?? []).filter(
-    (workflow) =>
-      !workflows.some(
-        (current) =>
-          current.name === workflowNameFor(workerName, workflow.name),
-      ),
-  );
-  if (droppedWorkflows.length && !configuration.allowDeleteWorkflows)
-    throw new InstallationError(
-      "WORKFLOW_REMOVED",
-      "This update removes Workflows and their instances. Confirm their deletion before installing.",
-    );
-  const resources = await provisionAppResources({
-    ...ownership,
-    manifest,
-    secrets: configuration.values,
-    accountId: env.CLOUDFLARE_ACCOUNT_ID!,
-  });
-  const target: InstallTarget = {
-    workerName,
-    organizationId: app.organizationId,
-    accountId: env.CLOUDFLARE_ACCOUNT_ID!,
-    gatewayUrl: input.gatewayUrl,
-    gatewayWorker: gatewayNamesOf(env).worker,
-    identityPublicKeys: [input.identityPublicKey],
-    resources,
-    deletedDurableObjects,
-    helperWorkers: helpers.map((helper) => helper.workerName),
-    declared: manifest.resources,
-  };
-  const installed = configs.map((worker) => ({
-    ...worker,
-    config: installWorkerConfig(
-      worker.bundle.worker,
-      target,
-    ) as BuiltWorkerConfig,
-  }));
-  for (const worker of installed) {
-    validateWorkerBuildOutput(worker.config);
-    const problems =
-      worker.directory === "default"
-        ? appPolicyProblems(worker.config, target)
-        : helperPolicyProblems(worker.config, worker.name, target);
-    if (problems.length) throw bundleRefused(problems);
-  }
-  const buckets = new Set(
-    installed.flatMap((worker) =>
-      Object.values(worker.config.env ?? {})
-        .filter((binding) => binding.type === "r2")
-        .map((binding) => String(binding.name)),
-    ),
-  );
-  await ensureAppBuckets({
-    ...ownership,
-    names: [...buckets],
-    appId: manifest.id,
-  });
-  const values: Record<string, string> = {
-    GATEWAY_URL: input.gatewayUrl,
-    EVERY_APP_ORG_ID: app.organizationId,
-  };
+  // Only the app's own secrets and settings ride along with its version.
   const appValues = new Set(
     [...secretEntries(manifest), ...settingEntries(manifest)].map(
       (entry) => entry.name,
     ),
   );
-  for (const [name, value] of Object.entries(configuration.values ?? {}))
-    if (appValues.has(name)) values[name] = value;
-  for (const entry of settingEntries(manifest))
-    if (entry.default !== undefined && values[entry.name] === undefined) {
-      const current = await optionalAccount<{
-        bindings?: Array<{ name: string }>;
-      }>(cf, ["workers", "scripts", workerName, "settings"]);
-      if (!current?.bindings?.some((binding) => binding.name === entry.name))
-        values[entry.name] = entry.default;
-    }
-  // Resource/config validation has completed before migrations touch data,
-  // and, as in CLI deploys, before any Worker that reads the schema uploads.
-  const d1Binding = manifest.migrations?.binding ?? manifest.resources?.d1?.[0];
-  if (d1Binding && resources.d1?.[d1Binding])
-    await migrate(
-      cf,
-      gatewayDb,
-      workerName,
-      input.actor,
-      resources.d1[d1Binding].id,
-      bundle.migrations,
-      input.deployer,
-    );
-  // Helpers first: the main Worker can bind them as soon as it is uploaded.
-  for (const worker of [
-    ...installed.filter((worker) => worker.directory !== "default"),
-    ...installed.filter((worker) => worker.directory === "default"),
-  ]) {
-    const existing = await optionalAccount<{
+  const values = Object.fromEntries(
+    Object.entries(configuration.values ?? {}).filter(([name]) =>
+      appValues.has(name),
+    ),
+  );
+  const workerSettings = (name: string) =>
+    optionalAccount<{
       bindings?: Array<{
         type: string;
+        name: string;
         class_name?: string;
         script_name?: string;
       }>;
-    }>(cf, ["workers", "scripts", worker.name, "settings"]);
-    const previousClasses =
-      existing?.bindings
-        ?.filter(
-          (binding) =>
-            binding.type === "durable_object_namespace" &&
-            (!binding.script_name || binding.script_name === worker.name),
-        )
-        .map((binding) => binding.class_name) ?? [];
-    const migrationTag = (await api.scripts.list()).find(
-      (script) => script.id === worker.name,
-    )?.migration_tag;
-    const exports = worker.config.exports ?? {};
-    const created = Object.entries(exports).filter(
-      ([name, entry]) =>
-        entry.type === "durable-object" &&
-        (entry.state === undefined || entry.state === "created") &&
-        !previousClasses.includes(name),
-    );
-    const added = created
-      .filter(([, entry]) => entry.storage !== "legacy-kv")
-      .map(([name]) => name);
-    const legacy = created
-      .filter(([, entry]) => entry.storage === "legacy-kv")
-      .map(([name]) => name);
-    const renamed = Object.entries(exports)
-      .filter(
-        ([name, entry]) =>
-          entry.type === "durable-object" &&
-          entry.state === "renamed" &&
-          previousClasses.includes(name),
-      )
-      .map(([from, entry]) => ({ from, to: String(entry.renamedTo) }));
-    const metadata = selfHostedMetadata(
-      worker.config,
-      target,
+    }>(cf, ["workers", "scripts", name, "settings"]);
+
+  const { versionId, secretNames } = await installApp(
+    {
       manifest,
-      values,
-    );
-    const deleted =
-      worker.directory === "default"
-        ? deletedDurableObjects.filter((name) => previousClasses.includes(name))
-        : [];
-    if (added.length || legacy.length || deleted.length || renamed.length)
-      metadata.migrations = {
-        ...(migrationTag ? { old_tag: migrationTag } : {}),
-        new_tag: `everyapp-${crypto.randomUUID()}`,
-        ...(added.length ? { new_sqlite_classes: added } : {}),
-        ...(legacy.length ? { new_classes: legacy } : {}),
-        ...(deleted.length ? { deleted_classes: deleted } : {}),
-        ...(renamed.length ? { renamed_classes: renamed } : {}),
-      };
-    if (worker.bundle.assets.size) {
-      const jwt = await api.workerAssets.upload(
-        worker.name,
-        Object.fromEntries(
-          [...worker.bundle.assets].map(([path, bytes]) => [path, { bytes }]),
-        ),
-      );
-      metadata.assets = {
-        jwt,
-        config: selfHostedMetadata(worker.config, target, manifest, values, jwt)
-          .assets?.config,
-      };
-    }
-    await api.scripts.upload(worker.name, {
-      metadata,
-      modules: selfHostedModules(worker.bundle, worker.config),
-    });
-    const version = await servingVersion(api, worker.name);
-    if (!version)
-      throw new InstallationError(
-        "DEPLOYMENT_VERSION_MISSING",
-        "Cloudflare did not report a serving Worker version.",
-      );
-    await recordUploadedVersion(
-      gatewayDb,
+      previousManifest: previous,
       workerName,
-      version,
-      helpers.find((helper) => helper.workerName === worker.name)?.name ?? "",
-    );
-    await api.scripts.disableSubdomain(worker.name);
-    for (const workflow of workflows.filter(
-      (workflow) => workflow.script_name === worker.name,
-    )) {
-      const retention = workflow.options.defaultRetention as
-        | {
-            successRetention?: string | number;
-            errorRetention?: string | number;
-          }
-        | undefined;
-      const schedules = workflow.options.schedules;
-      await accountRequest(cf, ["workflows", workflow.name], "PUT", {
-        class_name: workflow.class_name,
-        script_name: workflow.script_name,
-        limits: workflow.options.limits,
-        concurrency: workflow.options.concurrency,
-        jurisdiction: workflow.options.jurisdiction,
-        ...(schedules
-          ? {
-              schedules: (Array.isArray(schedules)
-                ? schedules
-                : [schedules]
-              ).map((cron) => ({ cron })),
-            }
-          : {}),
-        ...(retention
-          ? {
-              default_retention: {
-                success_retention: retention.successRetention,
-                error_retention: retention.errorRetention,
-              },
-            }
-          : {}),
-      });
-    }
-    await accountRequest(
+      resources: appResources({
+        workerName,
+        manifest: JSON.stringify(manifest),
+      }),
+      recordedVersionId: app.versionId,
+      organizationId: app.organizationId,
+      accountId,
+      gatewayUrl: input.gatewayUrl,
+      gatewayWorker: gatewayNamesOf(env).worker,
+      identityPublicKeys: [input.identityPublicKey],
+      secrets: configuration.values,
+      values,
+      readEmail: async () => {
+        const [rows = []] = await gatewayDb.run([
+          {
+            sql: "SELECT email_senders, email_inbound FROM apps WHERE id = ?",
+            params: [app.id],
+          },
+        ]);
+        return {
+          inbound: parseEmailList(rows[0]?.email_inbound),
+          senders: parseEmailList(rows[0]?.email_senders),
+        };
+      },
+      sendersSettable: false,
+      interactive: false,
+      enableEmailRouting: configuration.enableEmailRouting,
+      allowDeleteDurableObjectData: configuration.allowDeleteDurableObjectData,
+      allowDeleteWorkflows: configuration.allowDeleteWorkflows,
+    },
+    {
       cf,
-      ["workers", "scripts", worker.name, "schedules"],
-      "PUT",
-      (worker.config.triggers ?? [])
-        .filter((trigger) => trigger.type === "scheduled")
-        .map((trigger) => ({ cron: trigger.schedule })),
-    );
-    await reconcileQueueConsumers(cf, worker.name, worker.config, [
-      ...Object.values(resources.queues ?? {}).map((queue) => queue.name),
-      ...owned
-        .filter((resource) => resource.kind === "queue")
-        .map((resource) => resource.name),
-    ]);
-  }
-  for (const workflow of droppedWorkflows) {
-    const name = workflowNameFor(workerName, workflow.name);
-    const current = await optionalAccount<{ script_name?: string }>(cf, [
-      "workflows",
-      name,
-    ]);
-    const owner = workflow.worker
-      ? helperWorkerName(workerName, workflow.worker)
-      : workerName;
-    if (current?.script_name === owner)
-      await accountRequest(cf, ["workflows", name], "DELETE");
-  }
-  if (emailPlan) await applyEmailRoutes({ cf, gatewayDb, plan: emailPlan });
-  const bindings = (await api.scripts.settings(workerName)).bindings ?? [];
-  const secretNames = bindings
-    .filter(
-      (binding) =>
-        binding.type === "secret_text" &&
-        !isReservedAppSecretName(binding.name),
-    )
-    .map((binding) => binding.name);
-  await db
-    .update(apps)
-    .set({ secretNames: JSON.stringify(secretNames) })
-    .where(eq(apps.id, app.id));
-  const versionId = await servingVersion(api, workerName);
+      db: gatewayDb,
+      out: QUIET,
+      CLI: "everyapp",
+      thisCommand: () => "",
+      resources: resourceInstaller,
+      email: emailInstaller,
+      getWorkflow: (cf, name) =>
+        optionalAccount<{ script_name?: string }>(cf, ["workflows", name]),
+      deleteWorkflow: async (cf, name) => {
+        try {
+          await accountRequest(cf, ["workflows", name], "DELETE");
+        } catch (error) {
+          if (!isCloudflareNotFound(error)) throw error;
+        }
+      },
+      workerSecretNames: async (_cf, name) =>
+        ((await workerSettings(name))?.bindings ?? [])
+          .filter((binding) => binding.type === "secret_text")
+          .map((binding) => binding.name),
+      readBuildOutput: async () => builtWorkers(bundle),
+      writeBuildOutput: async (workers) => {
+        for (const worker of workers) validateWorkerBuildOutput(worker.config);
+      },
+      // The person confirmed replacing a changed Worker when they started
+      // the install, or it is refused.
+      replaceable: async ({ workerName: name, recordedVersionIds }) => {
+        const live = await servingVersion(api, name);
+        if (
+          live &&
+          !recordedVersionIds.includes(live) &&
+          !configuration.replaceChangedWorkers
+        )
+          throw new InstallationError(
+            "WORKER_CHANGED",
+            `${name} was changed outside EveryApp. Confirm replacement before installing.`,
+            { data: { worker: name } },
+          );
+      },
+      migrate: async (resources) => {
+        const d1Binding =
+          manifest.migrations?.binding ?? manifest.resources?.d1?.[0];
+        if (d1Binding && resources.d1?.[d1Binding])
+          await migrate(
+            cf,
+            gatewayDb,
+            workerName,
+            input.actor,
+            resources.d1[d1Binding].id,
+            bundle.migrations,
+            input.deployer,
+          );
+      },
+      upload: async (worker, values, target) =>
+        uploadWorker({
+          cf,
+          api,
+          gatewayDb,
+          manifest,
+          bundle:
+            worker.directory === DEFAULT_WORKER
+              ? bundle
+              : bundle.helpers!.get(worker.directory)!,
+          worker,
+          values,
+          target,
+          appWorker: workerName,
+          settings: await workerSettings(worker.workerName),
+        }),
+      checkpoint: renew,
+    },
+  );
+
+  // Unlisted, the names recorded before stand (the CLI's `status` records them).
+  if (secretNames)
+    await db
+      .update(apps)
+      .set({ secretNames: JSON.stringify(secretNames) })
+      .where(eq(apps.id, app.id));
   const deployed = await recordDispatchDeployed(app.id, {
-    versionId: versionId!,
+    versionId,
     manifest,
     actor: input.actor,
   });
@@ -707,6 +495,166 @@ async function installSelfHosted(input: {
   )
     await syncBrowserAccess(cf, app.appSlug);
   return deployed;
+}
+
+/**
+ * What `cf deploy --prebuilt` does for one Worker, through the REST API:
+ * its Durable Object migration against the classes it had, its static
+ * assets, its script with every binding, its version recorded as
+ * EveryApp's, no workers.dev route, then its Workflows, crons and queue
+ * consumers.
+ */
+async function uploadWorker({
+  cf,
+  api,
+  gatewayDb,
+  manifest,
+  bundle,
+  worker,
+  values,
+  target,
+  appWorker,
+  settings,
+}: {
+  cf: CloudflareTransport;
+  api: ReturnType<typeof createCloudflareRest>;
+  gatewayDb: InstallationDatabase;
+  manifest: Manifest;
+  bundle: DeployBundle;
+  worker: InstalledWorker;
+  values: Readonly<Record<string, string>>;
+  target: InstallTarget;
+  appWorker: string;
+  /** The Worker's settings before this upload; null when it is new. */
+  settings: {
+    bindings?: Array<{
+      type: string;
+      class_name?: string;
+      script_name?: string;
+    }>;
+  } | null;
+}): Promise<string> {
+  const { workerName: name, config } = worker;
+  const previousClasses =
+    settings?.bindings
+      ?.filter(
+        (binding) =>
+          binding.type === "durable_object_namespace" &&
+          (!binding.script_name || binding.script_name === name),
+      )
+      .map((binding) => binding.class_name) ?? [];
+  const migrationTag = (await api.scripts.list()).find(
+    (script) => script.id === name,
+  )?.migration_tag;
+  const exports = config.exports ?? {};
+  const created = Object.entries(exports).filter(
+    ([className, entry]) =>
+      entry.type === "durable-object" &&
+      (entry.state === undefined || entry.state === "created") &&
+      !previousClasses.includes(className),
+  );
+  const added = created
+    .filter(([, entry]) => entry.storage !== "legacy-kv")
+    .map(([className]) => className);
+  const legacy = created
+    .filter(([, entry]) => entry.storage === "legacy-kv")
+    .map(([className]) => className);
+  const renamed = Object.entries(exports)
+    .filter(
+      ([className, entry]) =>
+        entry.type === "durable-object" &&
+        entry.state === "renamed" &&
+        previousClasses.includes(className),
+    )
+    .map(([from, entry]) => ({ from, to: String(entry.renamedTo) }));
+  const deleted =
+    worker.helper === ""
+      ? (target.deletedDurableObjects ?? []).filter((className) =>
+          previousClasses.includes(className),
+        )
+      : [];
+  const metadata = selfHostedMetadata(config, target, manifest, values);
+  if (added.length || legacy.length || deleted.length || renamed.length)
+    metadata.migrations = {
+      ...(migrationTag ? { old_tag: migrationTag } : {}),
+      new_tag: `everyapp-${crypto.randomUUID()}`,
+      ...(added.length ? { new_sqlite_classes: added } : {}),
+      ...(legacy.length ? { new_classes: legacy } : {}),
+      ...(deleted.length ? { deleted_classes: [...deleted] } : {}),
+      ...(renamed.length ? { renamed_classes: renamed } : {}),
+    };
+  if (bundle.assets.size) {
+    const jwt = await api.workerAssets.upload(
+      name,
+      Object.fromEntries(
+        [...bundle.assets].map(([path, bytes]) => [path, { bytes }]),
+      ),
+    );
+    metadata.assets = {
+      jwt,
+      config: selfHostedMetadata(config, target, manifest, values, jwt).assets
+        ?.config,
+    };
+  }
+  await api.scripts.upload(name, {
+    metadata,
+    modules: selfHostedModules(bundle, config),
+  });
+  const version = await servingVersion(api, name);
+  if (!version)
+    throw new InstallationError(
+      "DEPLOYMENT_VERSION_MISSING",
+      "Cloudflare did not report a serving Worker version.",
+    );
+  await recordUploadedVersion(gatewayDb, appWorker, version, worker.helper);
+  await api.scripts.disableSubdomain(name);
+  for (const [class_name, options] of Object.entries(exports)) {
+    if (options.type !== "workflow") continue;
+    const retention = options.defaultRetention as
+      | {
+          successRetention?: string | number;
+          errorRetention?: string | number;
+        }
+      | undefined;
+    const schedules = options.schedules;
+    await accountRequest(cf, ["workflows", String(options.name)], "PUT", {
+      class_name,
+      script_name: name,
+      limits: options.limits,
+      concurrency: options.concurrency,
+      jurisdiction: options.jurisdiction,
+      ...(schedules
+        ? {
+            schedules: (Array.isArray(schedules) ? schedules : [schedules]).map(
+              (cron) => ({ cron }),
+            ),
+          }
+        : {}),
+      ...(retention
+        ? {
+            default_retention: {
+              success_retention: retention.successRetention,
+              error_retention: retention.errorRetention,
+            },
+          }
+        : {}),
+    });
+  }
+  await accountRequest(
+    cf,
+    ["workers", "scripts", name, "schedules"],
+    "PUT",
+    (config.triggers ?? [])
+      .filter((trigger) => trigger.type === "scheduled")
+      .map((trigger) => ({ cron: trigger.schedule })),
+  );
+  await reconcileQueueConsumers(cf, name, config, [
+    ...Object.values(target.resources.queues ?? {}).map((queue) => queue.name),
+    ...(await readOwnedResources(gatewayDb, appWorker))
+      .filter((resource) => resource.kind === "queue")
+      .map((resource) => resource.name),
+  ]);
+  return version;
 }
 
 async function servingVersion(

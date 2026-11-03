@@ -16,8 +16,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildApp } from "@/lib/app/buildApp";
-import { installAppBuildOutput } from "@/lib/app/installBuildOutput";
-import { prepareAppBuildOutput } from "@/lib/app/policy";
+import { installBuiltWorkers } from "@every-app/perimeter/install";
+import { readBuildOutput, writeBuildOutput } from "@/lib/app/policy";
 import { cfDeploy } from "@/lib/cf/deploy";
 import { makeCfTempDir } from "@/lib/cf/privateDir";
 import { createCfRunner } from "@/lib/cf/runner";
@@ -109,8 +109,12 @@ describe.runIf(process.env["EVERYAPP_CF_DRY_RUN"] === "1")(
       };
 
       await buildApp({ cwd: TEMPLATE, cf, verbose: false });
-      await installAppBuildOutput({ cwd: TEMPLATE, target: inputs });
-      await prepareAppBuildOutput({ cwd: TEMPLATE, inputs });
+      // As the install engine does it: install and check, then write back.
+      const installed = installBuiltWorkers(await readBuildOutput(TEMPLATE), inputs);
+      await writeBuildOutput(
+        TEMPLATE,
+        [...installed].map(([directory, config]) => ({ directory, config })),
+      );
       const { output } = await cfDeploy({
         cf,
         cwd: TEMPLATE,

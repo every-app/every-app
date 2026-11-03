@@ -1,4 +1,5 @@
 export * from "./access-plan";
+export * from "./app-install";
 export { applicationUpdateBody, type AccessApplication } from "./access-types";
 export {
   BUILD_OUTPUT_PATCH_PLACEHOLDER,
@@ -13,6 +14,11 @@ export { InstallationError, type InstallationDatabase } from "./error";
 export * from "./ownership";
 export {
   appPolicyProblems,
+  boundR2Buckets,
+  buildOutputProblems,
+  checkBuildOutput,
+  DEFAULT_WORKER,
+  definedWorkflows,
   helperPolicyProblems,
   type BuiltWorkerConfig,
   type PolicyInputs,

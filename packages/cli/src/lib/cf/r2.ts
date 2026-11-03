@@ -1,6 +1,7 @@
 /**
  * R2 buckets through cf: listing by name and creating one for an app's
- * deploy (lib/app/buckets.ts), deleting an empty one for the teardown.
+ * deploy (ensureAppBuckets, @every-app/perimeter/install resources.ts),
+ * deleting an empty one for the teardown.
  * Checked against cf@1.0.0-beta.14 on 2026-10-24.
  */
 import { runCfJson, type CfRunner } from "./runner";

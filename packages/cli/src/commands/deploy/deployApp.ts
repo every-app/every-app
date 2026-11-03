@@ -8,37 +8,30 @@
  *      the rules in @every-app/perimeter/registry): its Worker, resource
  *      and host names, and for a new app (`pending`, unbound) who can open
  *      it;
- *   3. under the app's deploy lease: find or create its D1, KV and
- *      Hyperdrive configs (only ever the app's own; a config from the
- *      origin in the app's secrets file, lib/app/deploySecrets.ts, with
- *      query caching off unless the manifest says otherwise), name its R2
- *      buckets (left to `cf deploy` to create), `cf build` the app
- *      (tenant-neutral: placeholders for everything install-specific),
- *      install the Build Output for this deploy (lib/app/
- *      installBuildOutput.ts: the Worker name, organization, gateway, the
- *      gateway's identity key from the install row, the resources' names
- *      and ids, deleted Durable Object classes) and
- *      check the installed Workers against the app policy and their
- *      Workflows' names (each new or already the app's), check that its drizzle
- *      migrations still describe its schema (steps/checkSchemaDrift.ts),
- *      make sure an unattended run may replace the Worker, and only then
- *      (the lease checked again before each) migrate D1 (bookmark, then
- *      `cf d1 migrations apply`),
+ *   3. under the app's deploy lease, the install engine the Gateway's
+ *      browser installs run too (installApp, @every-app/perimeter/install
+ *      app-install.ts), with `cf` as its port: claim the app's Workers,
+ *      plan its Email Routing routes (the installation's inbound addresses,
+ *      `everyapp email set --inbound`: checked before anything is created,
+ *      Email Routing turned on for a domain only at a terminal or with
+ *      --enable-email-routing), find or create its resources (only ever the
+ *      app's own; a Hyperdrive config from the origin in the app's secrets
+ *      file, lib/app/deploySecrets.ts), `cf build` the app (tenant-neutral:
+ *      placeholders for everything install-specific), install the Build
+ *      Output for this deploy and check it against the app policy and its
+ *      Workflows' names, check that its drizzle migrations still describe
+ *      its schema (steps/checkSchemaDrift.ts), make sure an unattended run
+ *      may replace the Worker, and only then (the lease checked again
+ *      before each) migrate D1 (bookmark, then `cf d1 migrations apply`),
  *      or Postgres (`drizzle-kit migrate`, lib/migrations/postgres.ts, or
- *      `prisma migrate deploy`, lib/migrations/prisma.ts), and upload it
+ *      `prisma migrate deploy`, lib/migrations/prisma.ts), and upload the
+ *      helper Workers (`workers`, `<worker>--<name>`), then the app's
  *      (`cf deploy --prebuilt`, with GATEWAY_URL and EVERY_APP_ORG_ID in
- *      the secrets file; cf creates or updates its Workflows), so a
- *      deploy that can't upload leaves the database alone.
- *      Workflows the app dropped (with --allow-delete-workflows) go once
- *      the upload is live, and its Email Routing routes (the installation's
- *      inbound addresses, `everyapp email set --inbound`,
- *      lib/app/emailRoutes.ts: checked before anything is created, Email
- *      Routing turned on for a domain only at a terminal or with
- *      --enable-email-routing) are made; then the registry records the
- *      version, its manifest and who deployed it (`pending` → `binding`). The app's
- *      helper Workers (`workers`, `<worker>--<name>`) are claimed, checked
- *      and recorded like its Worker, and uploaded before it, since it binds
- *      them;
+ *      the secrets file; cf creates or updates its Workflows), so a deploy
+ *      that can't upload leaves the database alone. Workflows the app
+ *      dropped (with --allow-delete-workflows) go once the upload is live,
+ *      and its mail routes are made; then the registry records the
+ *      version, its manifest and who deployed it (`pending` → `binding`);
  *   4. bind the Worker on the gateway and publish the app's hostname as a
  *      Workers Custom Domain if the install row says it doesn't yet (a
  *      reconcile: the live Gateway's own release, had again from where
@@ -61,12 +54,10 @@
  * the gateway. The gateway takes the app's agent tools itself, on first use
  * and whenever the app's version changes.
  */
-import { checkDurableObjects as sharedCheckDurableObjects } from "@every-app/perimeter/install";
+import { installApp } from "@every-app/perimeter/install";
 import path from "node:path";
 import { cliVersion } from "@/lib/version";
 import { manifestTierProblems, validateManifestStrict, type GatewayNames } from "@every-app/perimeter/manifest";
-import type { RegistrationPlan } from "@every-app/perimeter/registry";
-import { helperWorkerName } from "@every-app/sdk/cloudflare";
 import { capabilityIdsOf, providerIds, type AppSetup, type ProviderRegistry } from "@every-app/sdk/internal";
 import {
   awaitLive,
@@ -86,54 +77,34 @@ import {
   MISSING_CLOUDFLARE_CONFIG,
   readCloudflareConfig,
 } from "@/lib/app/cloudflareConfig";
-import {
-  installAppBuildOutput,
-  type InstallTarget,
-} from "@/lib/app/installBuildOutput";
+import type { InstallTarget } from "@every-app/perimeter/install";
 import {
   APP_SECRETS_FILE,
   POSTGRES_URL_VARIABLE,
   readAppSecrets,
   type AppSecrets,
 } from "@/lib/app/deploySecrets";
-import { ensureR2Buckets } from "@/lib/app/buckets";
-import { prepareAppBuildOutput } from "@/lib/app/policy";
+import { readBuildOutput, writeBuildOutput } from "@/lib/app/policy";
 import { mcpOf, publicRoutesOf, type McpSummary, type PublicRouteSummary } from "@/lib/app/publicRoutes";
 import { describeAppOrigin, type AppRelease } from "@/lib/app/release";
-import {
-  readOwnedResources,
-  recordUploadedVersion,
-  RESOURCE_LABELS,
-} from "@/lib/app/ownership";
-import { claimAppWorker, provisionAppResources } from "@/lib/app/resources";
+import { recordUploadedVersion } from "@/lib/app/ownership";
+import { resourceInstaller } from "@/lib/app/resources";
 import {
   appSetupFrom,
   declaresSettings,
   describeUnmet,
-  listAppSecretNames,
   listGatewaySecretNames,
   namesToSet,
-  settingDefaultsToWrite,
 } from "@/lib/app/settings";
-import {
-  applyEmailRoutes,
-  describeMailRoutes,
-  emailDeclarations,
-  planEmailRoutes,
-  unsentDomains,
-} from "@/lib/app/emailRoutes";
-import {
-  appWorkflows,
-  assertOwnWorkflows,
-  droppedWorkflows,
-  type AppWorkflow,
-} from "@/lib/app/workflows";
+import { emailInstaller } from "@/lib/app/emailRoutes";
 import type { D1Database } from "@/lib/cf/d1";
 import { assertReplaceable, cfDeploy } from "@/lib/cf/deploy";
+import { isCfError } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
-import { deleteWorkflowIfExists } from "@/lib/cf/workflows";
+import { listWorkerSecrets } from "@/lib/cf/secrets";
+import { deleteWorkflowIfExists, getWorkflow } from "@/lib/cf/workflows";
 import { preflightAppHost } from "@/lib/domains/preflight";
-import { afterMigration, errorMessage, EveryAppError, type Rollback } from "@/lib/errors";
+import { afterMigration, EveryAppError, type Rollback } from "@/lib/errors";
 import { directoryExists } from "@/lib/file-operations";
 import { connectToGateway } from "@/lib/gateway/connect";
 import { acquireAppLease, LeasePurpose } from "@/lib/gateway/lease";
@@ -161,7 +132,7 @@ import {
   restorePointNote,
 } from "@/lib/migrations/remote";
 import { appRestoreTarget } from "@/lib/gateway/restorePoints";
-import { CLI } from "@/lib/output/command";
+import { CLI, thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal, type Confirm } from "@/lib/output/prompt";
 import { listed } from "@/lib/output/text";
@@ -483,405 +454,144 @@ async function deploySteps(
   );
   let versionId: string;
   let status: string;
-  const next: DeployAppResult["next"] = [];
+  let next: DeployAppResult["next"];
   try {
-    const deletedDurableObjects = checkDurableObjects(
-      plan,
-      manifest,
-      options.allowDeleteDurableObjectData ?? false,
-    );
-    const deletedWorkflows = await checkWorkflows({
-      cf,
-      plan,
-      workerName,
-      manifest,
-      allowDelete: options.allowDeleteWorkflows ?? false,
-    });
-    // Only what this app created (and recorded as its own) is used; a
-    // name that's taken by anything else is refused, on every attempt.
-    let createdHyperdrive = false;
-    const ownership = {
-      cf,
-      gatewayDb: registry,
-      registration: { workerName, resources: plan.resources },
-      onCreated: (description: string, kind: keyof typeof RESOURCE_LABELS) => {
-        out.emit({ type: "progress", step: "app.resources", message: `Created ${description}.` });
-        if (kind === "hyperdrive") createdHyperdrive = true;
-      },
-      onRecreated: (description: string, kind: keyof typeof RESOURCE_LABELS) =>
-        out.emit({
-          type: "warning",
-          code: "RESOURCE_RECREATED",
-          step: "app.resources",
-          message: `The ${kind === "d1" ? "database" : RESOURCE_LABELS[kind]} ${manifest.id} used before is gone; creating a new, empty one\n${description} no longer exists in this Cloudflare account.`,
-        }),
-      onChanged: (message: string) =>
-        out.emit({ type: "progress", step: "app.resources", message }),
-    };
-    // The app's helper Workers (`workers`), named after its own.
-    const helpers = (manifest.workers ?? []).map((helper) => ({
-      name: helper.name,
-      workerName: helperWorkerName(workerName, helper.name),
-    }));
-    out.emit({
-      type: "step",
-      step: "app.resources",
-      status: "start",
-      message: "Preparing the app's resources...",
-    });
-    await claimAppWorker(ownership);
-    for (const helper of helpers) await claimAppWorker(ownership, helper);
-    // The installation's email lists live on its registry row, read under
-    // the lease so `everyapp email set` can't change them between this check
-    // and the routes made after the upload. Without the manifest's
-    // declaration no Worker of the app receives mail: its routes go, its
-    // addresses stay stored.
-    const storedEmail = await readAppEmail(registry, plan.app.id);
-    const declaresInbound = emailDeclarations(manifest).receives;
-    if (!declaresInbound && storedEmail.inbound.length > 0) {
-      out.emit({
-        type: "warning",
-        code: "EMAIL_INBOUND_UNDECLARED",
-        step: "app.email",
-        message: `everyapp.config.ts no longer declares inbound email; removing the app's mail routes\nIts addresses (${storedEmail.inbound.join(", ")}) stay on the Gateway until you clear them.`,
-        data: { rerun: `${CLI} email unset inbound` },
-      });
-    }
-    // Mail routes are checked before anything is created: an address
-    // another app or rule has, or a domain whose routing stays off, stops
-    // the deploy here.
-    const emailRoutes = await planEmailRoutes({
-      cf,
-      gatewayDb: registry,
-      accountId,
-      workerName,
-      addresses: declaresInbound ? storedEmail.inbound : [],
-      interactive,
-      enableRouting: options.enableEmailRouting,
-      confirm: options.confirm,
-    });
-    const resources = await provisionAppResources({
-      ...ownership,
-      manifest,
-      secrets: appSecrets,
-      accountId,
-    });
-    out.emit({ type: "step", step: "app.resources", status: "ok", message: "The app's resources are ready." });
-    if (createdHyperdrive) {
-      const caching = manifest.resources?.hyperdrive?.some((config) => config.caching === "default")
-        ? "default"
-        : "off";
-      out.emit({
-        type: "step",
-        step: "app.hyperdrive",
-        status: "ok",
-        message: "Created the app's Hyperdrive config.",
-        data: { caching },
-      });
-    }
-
-    if (!release && manifest.install !== false) {
-      out.emit({ type: "step", step: "app.install", status: "start", message: "Installing dependencies..." });
-      await (options.installDeps ?? installDependencies)({
-        cwd,
-        description: "Installing dependencies...",
-        install: manifest.install,
-        verbose: options.verbose ?? false,
-      });
-      out.emit({ type: "step", step: "app.install", status: "ok" });
-    }
-
-    const target: InstallTarget = {
-      workerName,
-      organizationId: organization.id,
-      accountId,
-      gatewayUrl,
-      gatewayWorker: names.worker,
-      identityPublicKeys: [identityKey],
-      resources,
-      deletedDurableObjects,
-      helperWorkers: helpers.map((helper) => helper.workerName),
-      declared: manifest.resources,
-    };
-    if (!release) {
-      out.emit({ type: "step", step: "app.build", status: "start", message: "Building..." });
-      await buildApp({
-        cwd,
-        cf,
-        buildCommand: manifest.build,
-        verbose: options.verbose ?? false,
-      });
-    }
-    await installAppBuildOutput({ cwd: root, target });
-    const { workflows, helperWorkflows, r2Buckets } = await prepareAppBuildOutput({
-      cwd: root,
-      inputs: target,
-    });
-    await ensureR2Buckets({ ...ownership, cf, names: r2Buckets, appId: manifest.id, out });
-    for (const worker of [
-      { workerName, names: workflows },
-      ...helpers.map((helper) => ({
-        workerName: helper.workerName,
-        names: helperWorkflows[helper.workerName] ?? [],
-      })),
-    ]) {
-      await assertOwnWorkflows({ cf, ...worker });
-    }
-    out.emit({
-      type: "step",
-      step: "app.build",
-      status: "ok",
-      message: `${release ? "Installed the release" : "Built the app"} and checked its Worker${helpers.length ? "s" : ""}.`,
-      data: {
-        release: release !== undefined,
-        workflows: [...workflows, ...Object.values(helperWorkflows).flat()],
-      },
-    });
-    // Migrations that lag the schema would go live with code that needs more.
-    if (release) {
-      out.emit({
-        type: "progress",
-        step: "app.schema",
-        message: `The release's publisher checked its migrations against its schema when it packed ${manifest.id} ${release.release.version}.`,
-      });
-    } else {
-      await checkSchemaDrift({ cwd, manifest, out });
-    }
-
-    // The database changes only once nothing else can stop the upload.
-    const workerRecords = (await readOwnedResources(registry, workerName)).filter(
-      (resource) => resource.kind === "worker",
-    );
-    const recordedVersion = (binding: string) =>
-      workerRecords.find((record) => record.binding === binding)?.versionId;
     const replace = {
       question: "Replace the version that's serving?",
       effect: "Migrations run first.",
     };
-    for (const worker of [
+    const installed = await installApp(
       {
+        manifest,
+        previousManifest: plan.previousManifest,
         workerName,
-        shownAs: manifest.id,
-        recordedVersionIds: [plan.versionId, recordedVersion("")],
-      },
-      ...helpers.map((helper) => ({
-        workerName: helper.workerName,
-        shownAs: `${manifest.id}'s ${helper.name} Worker`,
-        recordedVersionIds: [recordedVersion(helper.name)],
-      })),
-    ]) {
-      await assertReplaceable({
-        cf,
-        ...worker,
+        resources: plan.resources,
+        recordedVersionId: plan.versionId,
+        organizationId: organization.id,
+        accountId,
+        gatewayUrl,
+        gatewayWorker: names.worker,
+        identityPublicKeys: [identityKey],
+        secrets: appSecrets,
+        readEmail: () => readAppEmail(registry, plan.app.id),
+        // The installation's senders are its own to set, on a Gateway that takes them.
+        sendersSettable:
+          emailInstaller.emailDeclarations(manifest).sends && install.deploymentMode !== "hosted",
         interactive,
         confirm: options.confirm,
-        change: replace,
-      });
-    }
-    await lease.check();
-    migrated.rollback = await migrate({
-      cf,
-      out,
-      cwd: root,
-      manifest,
-      resources,
-      accountId,
-      registry,
-      workerName,
-      // A release isn't deployed from the app's directory.
-      restoreCommand: `${CLI} db restore${release ? ` ${manifest.id}` : ""}`,
-      appSecrets,
-      drizzleKit: options.drizzleKit,
-      prisma: options.prisma,
-    });
-
-    // What every Worker of the app gets with its version: what names the
-    // gateway and the organization to the SDK. A helper calls the gateway
-    // too (a crawl's rendering, say), and without EVERY_APP_ORG_ID it would
-    // name the app's own organization id, which the gateway refuses.
-    // With them, the default of each plain setting (`settings`) the Worker
-    // doesn't hold yet: an app reads one nobody has set as its default.
-    const versionSecrets = {
-      ...(await settingDefaultsToWrite(cf, workerName, manifest)),
-      GATEWAY_URL: gatewayUrl,
-      EVERY_APP_ORG_ID: organization.id,
-    };
-
-    // Helper Workers first: the app's Worker binds them, so each must be
-    // there (with any new class) before the version that uses it.
-    for (const helper of helpers) {
-      await lease.check();
-      out.emit({
-        type: "step",
-        step: "app.helper",
-        status: "start",
-        message: `Uploading ${helper.workerName}...`,
-        data: { name: helper.name, workerName: helper.workerName },
-      });
-      await cfDeploy({
+        enableEmailRouting: options.enableEmailRouting,
+        allowDeleteDurableObjectData: options.allowDeleteDurableObjectData,
+        allowDeleteWorkflows: options.allowDeleteWorkflows,
+      },
+      {
         cf,
-        cwd: root,
-        workerName: helper.workerName,
-        buildOutputWorker: helper.workerName,
-        accountId,
-        message: `everyapp ${cliVersion} ${manifest.id} ${helper.name}`,
-        secrets: versionSecrets,
-        interactive,
-        attach: out.verbose,
+        db: registry,
         out,
-        step: "app.helper",
-        onUploaded: (uploadedVersion) =>
-          recordUploadedVersion(registry, workerName, uploadedVersion, helper.name),
-      });
-      out.emit({
-        type: "step",
-        step: "app.helper",
-        status: "ok",
-        message: `Uploaded ${helper.workerName}.`,
-        data: { name: helper.name, workerName: helper.workerName },
-      });
-    }
-
-    await lease.check();
-    out.emit({
-      type: "step",
-      step: "app.upload",
-      status: "start",
-      message: `Uploading ${workerName}...`,
-    });
-    const uploaded = await cfDeploy({
-      cf,
-      cwd: root,
-      workerName,
-      accountId,
-      message: `everyapp ${cliVersion} ${manifest.id}`,
-      secrets: versionSecrets,
-      interactive,
-      attach: out.verbose,
-      out,
-      step: "app.upload",
-      // Recorded at once, before the registry hears of it: a retry must
-      // find this upload was everyapp's, however this run ends.
-      onUploaded: (uploadedVersion) =>
-        recordUploadedVersion(registry, workerName, uploadedVersion),
-    });
-    if (!uploaded.versionId) {
-      throw new EveryAppError(
-        "VERSION_UNKNOWN",
-        `Cloudflare reports no version for ${manifest.id} after the upload`,
-        { data: { workerName } },
-      );
-    }
-    versionId = uploaded.versionId;
-    out.emit({
-      type: "step",
-      step: "app.upload",
-      status: "ok",
-      message: `Uploaded version ${versionId}.`,
-      data: { versionId },
-    });
-    // The live version no longer defines them. Before the registry records
-    // the new manifest, so a retry after a failed delete deletes them still.
-    for (const workflow of deletedWorkflows) {
-      await deleteWorkflowIfExists(cf, workflow.name);
-      out.emit({
-        type: "step",
-        step: "app.workflows",
-        status: "ok",
-        message: `Deleted the Workflow ${workflow.binding} (${workflow.name}) with its instances.`,
-        data: { binding: workflow.binding, name: workflow.name },
-      });
-    }
-    // The installation's senders are its own to set, on a Gateway that takes them.
-    const sendersSettable =
-      emailDeclarations(manifest).sends && install.deploymentMode !== "hosted";
-    // The rules name the Worker, so they come once it is there.
-    if (emailRoutes) {
-      await lease.check();
-      out.emit({
-        type: "step",
-        step: "app.email",
-        status: "start",
-        message: `Routing ${manifest.id}'s mail...`,
-        data: { removing: emailRoutes.routes.length === 0 },
-      });
-      const { routed, removed } = await applyEmailRoutes({
-        cf,
-        gatewayDb: registry,
-        plan: emailRoutes,
-        onProgress: (message) =>
-          out.emit({ type: "progress", step: "app.email", message }),
-      });
-      const mail = {
-        appId: manifest.id,
-        workerName,
-        senders: storedEmail.senders,
-        routed,
-        removed,
-        sendersSettable,
-      };
-      const unsent = mail.sendersSettable ? unsentDomains(mail.routed, mail.senders) : [];
-      out.emit({
-        type: "step",
-        step: "app.email",
-        status: "ok",
-        message: describeMailRoutes(mail),
-        data: {
-          addresses: routed,
-          removed,
-          enabled: emailRoutes.enable.map(({ domain }) => domain),
-          ...(unsent.length > 0
-            ? {
-                replyHint: `To reply from ${unsent.join(", ")}, set up Email Sending, then: ${CLI} email set --sender`,
-              }
-            : {}),
+        CLI,
+        thisCommand: () => thisCommand(),
+        resources: resourceInstaller,
+        email: emailInstaller,
+        getWorkflow,
+        deleteWorkflow: async (cf, name) => {
+          await deleteWorkflowIfExists(cf, name);
         },
-      });
-    }
-    if (!emailRoutes && declaresInbound && storedEmail.inbound.length === 0) {
-      out.emit({
-        type: "step",
-        step: "app.email",
-        status: "skip",
-        message: `${manifest.id} receives no mail yet.`,
-      });
-      next.push({
-        command: `${CLI} email set --inbound <address>`,
-        note: `routes mail to ${manifest.id}`,
-      });
-    }
-    // Until a sender is set, the app sends as the Gateway's sender.
-    if (sendersSettable && storedEmail.senders.length === 0) {
-      next.push({
-        command: `${CLI} email set --sender '*@<domain>'`,
-        note: `lets ${manifest.id} send as your domain`,
-      });
-    }
-    // A helper Worker the manifest dropped keeps running (with its crons)
-    // until the app is purged: the deploy never deletes a Worker.
-    const droppedHelpers = (plan.previousManifest?.workers ?? [])
-      .map((helper) => String(helper.name))
-      .filter((name) => !helpers.some((helper) => helper.name === name));
-    for (const name of droppedHelpers) {
-      out.emit({
-        type: "warning",
-        code: "HELPER_WORKER_KEPT",
-        step: "app.upload",
-        message: `Helper Worker ${name} is no longer in everyapp.config.ts, but it still runs\nIts Worker is ${helperWorkerName(workerName, name)}.`,
-        data: { fix: "delete that Worker in the Cloudflare dashboard" },
-      });
-    }
-    // The Worker's own secret names, recorded with the version so the
-    // gateway knows what is set. The upload stands when cf can't list them:
-    // the next `status` records them.
-    const secretNames = await listAppSecretNames(cf, workerName).catch((error: unknown) => {
-      out.emit({
-        type: "progress",
-        step: "app.secrets",
-        message: `Couldn't list ${workerName}'s secrets: ${errorMessage(error).split("\n")[0]}`,
-      });
-      return null;
+        workerSecretNames: async (cf, name) => {
+          try {
+            return await listWorkerSecrets(cf, name);
+          } catch (error) {
+            if (isCfError(error, "not_found")) return [];
+            throw error;
+          }
+        },
+        build: release
+          ? undefined
+          : async () => {
+              if (manifest.install !== false) {
+                out.emit({ type: "step", step: "app.install", status: "start", message: "Installing dependencies..." });
+                await (options.installDeps ?? installDependencies)({
+                  cwd,
+                  description: "Installing dependencies...",
+                  install: manifest.install,
+                  verbose: options.verbose ?? false,
+                });
+                out.emit({ type: "step", step: "app.install", status: "ok" });
+              }
+              out.emit({ type: "step", step: "app.build", status: "start", message: "Building..." });
+              await buildApp({
+                cwd,
+                cf,
+                buildCommand: manifest.build,
+                verbose: options.verbose ?? false,
+              });
+            },
+        readBuildOutput: () => readBuildOutput(root),
+        writeBuildOutput: (workers) => writeBuildOutput(root, workers),
+        built: async (workflows) => {
+          out.emit({
+            type: "step",
+            step: "app.build",
+            status: "ok",
+            message: `${release ? "Installed the release" : "Built the app"} and checked its Worker${manifest.workers?.length ? "s" : ""}.`,
+            data: { release: release !== undefined, workflows },
+          });
+          // Migrations that lag the schema would go live with code that needs more.
+          if (release) {
+            out.emit({
+              type: "progress",
+              step: "app.schema",
+              message: `The release's publisher checked its migrations against its schema when it packed ${manifest.id} ${release.release.version}.`,
+            });
+          } else {
+            await checkSchemaDrift({ cwd, manifest, out });
+          }
+        },
+        replaceable: (worker) =>
+          assertReplaceable({ cf, ...worker, interactive, confirm: options.confirm, change: replace }),
+        migrate: async (resources) => {
+          migrated.rollback = await migrate({
+            cf,
+            out,
+            cwd: root,
+            manifest,
+            resources,
+            accountId,
+            registry,
+            workerName,
+            // A release isn't deployed from the app's directory.
+            restoreCommand: `${CLI} db restore${release ? ` ${manifest.id}` : ""}`,
+            appSecrets,
+            drizzleKit: options.drizzleKit,
+            prisma: options.prisma,
+          });
+        },
+        upload: async (worker, values) => {
+          const uploaded = await cfDeploy({
+            cf,
+            cwd: root,
+            workerName: worker.workerName,
+            ...(worker.helper ? { buildOutputWorker: worker.workerName } : {}),
+            accountId,
+            message: `everyapp ${cliVersion} ${manifest.id}${worker.helper ? ` ${worker.helper}` : ""}`,
+            secrets: { ...values },
+            interactive,
+            attach: out.verbose,
+            out,
+            step: worker.helper ? "app.helper" : "app.upload",
+            // Recorded at once, before the registry hears of it: a retry
+            // must find this upload was everyapp's, however this run ends.
+            onUploaded: (uploadedVersion) =>
+              recordUploadedVersion(registry, workerName, uploadedVersion, worker.helper),
+          });
+          return uploaded.versionId;
+        },
+        checkpoint: () => lease.check(),
+      },
+    ).catch((error: unknown) => {
+      throw EveryAppError.fromInstallation(error);
     });
+    versionId = installed.versionId;
+    next = installed.next;
+    const { secretNames } = installed;
     status = await markDeployed(registry, plan.app.id, {
       versionId,
       manifest,
@@ -1109,50 +819,6 @@ function refuseReleaseMigrations(manifest: EveryAppCliManifest): void {
     `${manifest.id} can't deploy from a release: its Postgres migrations need the source`,
     { fix: `clone it, run pnpm install in it, then ${CLI} deploy from its directory` },
   );
-}
-
-/** Durable Object classes the last deploy had and this one drops. */
-function checkDurableObjects(...args: Parameters<typeof sharedCheckDurableObjects>): string[] {
-  try {
-    return sharedCheckDurableObjects(...args);
-  } catch (error) {
-    throw EveryAppError.fromInstallation(error);
-  }
-}
-
-/**
- * Workflows the last deploy had that this one drops, among those that run
- * on the Worker that defined them (the app's or a helper's): like a
- * Durable Object class, deleting one deletes its instances, so only with
- * --allow-delete-workflows.
- */
-async function checkWorkflows({
-  cf,
-  plan,
-  workerName,
-  manifest,
-  allowDelete,
-}: {
-  cf: CfRunner;
-  plan: RegistrationPlan;
-  workerName: string;
-  manifest: EveryAppCliManifest;
-  allowDelete: boolean;
-}): Promise<AppWorkflow[]> {
-  const removed = await droppedWorkflows({
-    cf,
-    workerName,
-    previousManifest: plan.previousManifest,
-    names: appWorkflows(workerName, manifest).map((workflow) => workflow.name),
-  });
-  if (removed.length > 0 && !allowDelete) {
-    const one = removed.length === 1;
-    throw new EveryAppError(
-      "WORKFLOW_REMOVED",
-      `Deploying would delete the Workflow${one ? "" : "s"} ${removed.map((workflow) => workflow.binding).join(", ")} and ${one ? "its" : "their"} instances\neveryapp.config.ts no longer declares ${one ? "it" : "them"}. Renaming a binding renames its Workflow.`,
-    );
-  }
-  return removed;
 }
 
 /** Returns the restore point saved before the database changed, if one was. */

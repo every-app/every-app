@@ -154,5 +154,4 @@ const operations: EmailOperations<CloudflareTransport> = {
     await zoneRequest(cf, zone, "email/routing/rules/catch_all", "PUT", body);
   },
 };
-export const { planEmailRoutes, applyEmailRoutes, emailDeclarations } =
-  createEmailInstaller(operations);
+export const emailInstaller = createEmailInstaller(operations);

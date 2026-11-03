@@ -219,7 +219,7 @@ The install step raises the same code when a Durable Object class the deploy wou
 
 **Fix:** none offered by the error: build the Worker from `everyAppWorker()` in `cloudflare.config.ts` and correct what the list names. No rerun; not retryable.
 
-Source: `packages/cli/src/lib/app/policy.ts` (`prepareAppBuildOutput`, `appPolicyProblems`, `helperPolicyProblems`), `packages/cli/src/lib/app/installBuildOutput.ts` (`installWorkerConfig`).
+Source: `packages/perimeter/src/install/policy.ts` (`checkBuildOutput`, `appPolicyProblems`, `helperPolicyProblems`), `packages/cli/src/lib/app/policy.ts` (`readBuildOutput`: the production check), `packages/perimeter/src/install/config.ts` (`installWorkerConfig`).
 
 ### BUILD_FAILED
 
@@ -412,7 +412,7 @@ Source: `packages/cli/src/lib/migrations/postgres.ts` (`localDrizzleKit`), `pack
 
 **Fix:** `fix`: `give the class a new name in everyapp.config.ts`. No rerun; not retryable.
 
-Source: `packages/cli/src/commands/deploy/deployApp.ts` (`checkDurableObjects`).
+Source: `packages/perimeter/src/install/durable-objects.ts` (`checkDurableObjects`, run by `installApp`).
 
 ### DURABLE_OBJECT_REMOVED
 
@@ -420,7 +420,7 @@ Source: `packages/cli/src/commands/deploy/deployApp.ts` (`checkDurableObjects`).
 
 **Fix:** takeover: `rerun` is this same command with `--allow-delete-durable-object-data`, `data.authorize: true`; show it and ask, the data is gone once it runs. Otherwise declare the class again. Not retryable.
 
-Source: `packages/cli/src/commands/deploy/deployApp.ts` (`checkDurableObjects`), `packages/cli/src/lib/app/installBuildOutput.ts`.
+Source: `packages/perimeter/src/install/durable-objects.ts` (`checkDurableObjects`, run by `installApp`), `packages/perimeter/src/install/config.ts`.
 
 ### EMAIL_ADDRESS_TAKEN
 
@@ -783,7 +783,7 @@ Installing the Build Output for a self-host deploy (`installWorkerConfig()`, ste
 
 **Fix:** `data.fix`: `declare it in everyapp.config.ts's resources`. No rerun, not retryable.
 
-Source: `packages/cli/src/lib/app/installBuildOutput.ts`
+Source: `packages/perimeter/src/install/config.ts`
 
 ### INSTALL_PLACEHOLDER_LEFT
 
@@ -791,7 +791,7 @@ After installing a Worker's config for a self-host `deploy` (step `app.build`), 
 
 **Fix:** build the Worker from `everyAppWorker()` and leave names, keys and ids out of `cloudflare.config.ts`. No `data.fix`, no rerun, not retryable.
 
-Source: `packages/cli/src/lib/app/installBuildOutput.ts`
+Source: `packages/perimeter/src/install/config.ts`
 
 ### INVALID_APP_BASE_DOMAIN
 
@@ -819,7 +819,7 @@ Source: `packages/cli/src/commands/create/steps/appId.ts`, `packages/perimeter/s
 
 ### INVALID_BUILD_OUTPUT
 
-`validateWorkerConfig()` refused a `worker.config.json`. It runs on the Gateway's patched config before `cf` sees it, and on every app Worker's config in the app policy (`prepareAppBuildOutput()`: `deploy`, `release`, release deploys). Three messages: `The patched Worker config isn't valid Build Output: <path>: <issue>; …` (`@cloudflare/config`'s `OutputWorkerSchema`, every issue listed); `The Worker config still has a deploy-time placeholder.` (the string `__EVERYAPP_PATCH__` is still in it); and, for the Gateway only, `The gateway has no domain to deploy to.`
+`validateWorkerConfig()` refused a `worker.config.json`. It runs on the Gateway's patched config before `cf` sees it, and on every app Worker's config once the app policy passed (`writeBuildOutput()`: `deploy`, `release`, release deploys). Three messages: `The patched Worker config isn't valid Build Output: <path>: <issue>; …` (`@cloudflare/config`'s `OutputWorkerSchema`, every issue listed); `The Worker config still has a deploy-time placeholder.` (the string `__EVERYAPP_PATCH__` is still in it); and, for the Gateway only, `The gateway has no domain to deploy to.`
 
 **Fix:** none offered; not retryable.
 
@@ -1367,7 +1367,7 @@ Self-host `deploy` and `install` (step `app.build`, after the policy check) make
 
 **Fix:** enable R2 in the dashboard once (the account's R2 Object Storage page; no bucket needs making by hand), then run the command again. Not retryable until then.
 
-Source: `packages/cli/src/lib/app/buckets.ts`
+Source: `packages/perimeter/src/install/resources.ts`
 
 ### RESOURCE_OWNED
 
@@ -1763,7 +1763,7 @@ Source: `packages/cli/src/lib/app/resources.ts`, `packages/perimeter/src/manifes
 
 **Fix:** as above. Not retryable.
 
-Source: `packages/cli/src/commands/deploy/deployApp.ts`
+Source: `packages/perimeter/src/install/app-install.ts`
 
 ### WORKER_NAME_MISMATCH
 
@@ -1779,15 +1779,15 @@ Source: `packages/cli/src/lib/gateway/registry.ts`
 
 **Fix:** as above. The registry variant is not retryable (status 409 is below 500).
 
-Source: `packages/cli/src/lib/app/resources.ts`, `packages/perimeter/src/registry/registration.ts`
+Source: `packages/perimeter/src/install/resources.ts`, `packages/perimeter/src/registry/registration.ts`
 
 ### WORKFLOW_NAME_TAKEN
 
-`deploy`, step `app.build` (`assertOwnWorkflows`, for the app's Worker and each helper): a Workflow named `<worker>--<binding>` exists in the account and runs on another Worker, and cf's update would reassign it: `A Workflow named "<name>" already exists in this Cloudflare account` / `It runs on Worker <script name>, not <worker>; deploying would take it over.`
+`deploy`, step `app.build` (`installApp`, for the app's Worker and each helper; a Gateway's browser install the same): a Workflow named `<worker>--<binding>` exists in the account and runs on another Worker, and cf's update would reassign it: `A Workflow named "<name>" already exists in this Cloudflare account` / `It runs on Worker <script name>, not <worker>; deploying would take it over.`
 
 **Fix:** `fix`: `delete or rename it`, `rerun`: this command.
 
-Source: `packages/cli/src/lib/app/workflows.ts`
+Source: `packages/perimeter/src/install/app-install.ts`
 
 ### WORKFLOW_NAME_TOO_LONG
 
@@ -1795,7 +1795,7 @@ Source: `packages/cli/src/lib/app/workflows.ts`
 
 **Fix:** `fix`: `shorten its binding name in everyapp.config.ts`.
 
-Source: `packages/cli/src/lib/app/installBuildOutput.ts`
+Source: `packages/perimeter/src/install/config.ts`
 
 ### WORKFLOW_REMOVED
 
@@ -1803,7 +1803,7 @@ Source: `packages/cli/src/lib/app/installBuildOutput.ts`
 
 **Fix:** a takeover: `rerun` is this command with `--allow-delete-workflows`, with `data.authorize: true` (show it and ask before running it). Not retryable.
 
-Source: `packages/cli/src/commands/deploy/deployApp.ts` (`TAKEOVER_FLAGS` in `packages/cli/src/lib/errors.ts`)
+Source: `packages/perimeter/src/install/app-install.ts` (`droppedWorkflows`; `TAKEOVER_FLAGS` in `packages/cli/src/lib/errors.ts`)
 
 ### WORKSPACE_NAME_INVALID
 
@@ -2318,7 +2318,7 @@ Source: `apps/every-app-gateway/src/server/deploy/run.ts`
 
 ### WORKER_CHANGED
 
-Self-hosted Gateway app install job: the serving Worker version differs from the version in the shared ownership ledger, or the Worker has a gradual deployment. The installer refuses replacement before uploading.
+Self-hosted Gateway app install job: the serving version of the app's Worker (or one of its helper Workers) isn't one EveryApp recorded (the registry's `version_id` for the app, or the version in the shared ownership ledger), or the Worker has a gradual deployment. The check runs once the app's resources are prepared, before any migration or upload: the resources it claimed or created stay recorded, and the next attempt reuses them.
 
 **Fix:** inspect the existing deployment. Confirm replacement on the approval page only when intended; reconcile a gradual deployment with the CLI first.
 
@@ -2700,7 +2700,7 @@ Source: `packages/cli/src/commands/setup/runSetup.ts`, `packages/cli/src/lib/dom
 
 `deploy`, step `app.upload`: a helper Worker (`workers`) the previous manifest declared and this one doesn't keeps running, with its crons, because a deploy never deletes a Worker: `Helper Worker <name> is no longer in everyapp.config.ts, but it still runs` / `Its Worker is <worker>--<name>.` `data.fix`: `delete that Worker in the Cloudflare dashboard`.
 
-Source: `packages/cli/src/commands/deploy/deployApp.ts`
+Source: `packages/perimeter/src/install/app-install.ts`
 
 ### LEASE_HEARTBEAT
 
@@ -2802,7 +2802,7 @@ Source: `packages/cli/src/commands/delete/index.ts`
 
 `deploy`, step `app.resources`: a recorded database, namespace, bucket, Hyperdrive config, Vectorize index or AI Gateway no longer exists in the account; a new, empty one is created.
 
-Source: `packages/cli/src/commands/deploy/deployApp.ts`
+Source: `packages/perimeter/src/install/app-install.ts`
 
 ### SCHEMA_CHECK_SKIPPED
 
@@ -3104,7 +3104,7 @@ Source: `packages/cli/src/lib/git.ts`, `packages/cli/src/lib/childLog.ts`, `pack
 `packages/cli/src/lib/childLog.ts`
 `packages/cli/src/lib/app/buildApp.ts`
 `packages/cli/src/lib/app/policy.ts`
-`packages/cli/src/lib/app/installBuildOutput.ts`
+`packages/perimeter/src/install/config.ts`
 `packages/cli/src/lib/app/deploySecrets.ts`
 `packages/cli/src/lib/app/resources.ts`
 `packages/cli/src/lib/app/emailRoutes.ts`
@@ -3156,7 +3156,7 @@ Source: `packages/cli/src/lib/git.ts`, `packages/cli/src/lib/childLog.ts`, `pack
 `packages/cli/src/argumentErrors.ts`
 `packages/cli/src/lib/secretValue.ts`
 `packages/cli/src/lib/app/secrets.ts`
-`packages/cli/src/lib/app/workflows.ts`
+`packages/perimeter/src/install/app-install.ts`
 `packages/cli/src/lib/app/localD1.ts`
 `packages/cli/src/lib/git.ts`
 `packages/cli/src/lib/package-manager.ts`

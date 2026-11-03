@@ -7,6 +7,7 @@ import {
   type Resources,
 } from "@every-app/perimeter/manifest";
 import type { InstallTarget } from "./config";
+import { InstallationError } from "./error";
 type Binding = Record<string, unknown> & { type?: string };
 type Export = Record<string, unknown> & { type?: string; state?: string };
 
@@ -595,4 +596,97 @@ function exportProblems(
     }
   }
   return problems;
+}
+
+/** The Build Output's directory for the app's own Worker. */
+export const DEFAULT_WORKER = "default";
+
+const NO_DEFAULT_WORKER =
+  "The app's Build Output has no default Worker. Build it from everyAppWorker() in cloudflare.config.ts.";
+
+/**
+ * Every problem with a Build Output's Workers (by directory, `default` the
+ * app's own) against the policy: the app's Worker, each helper Worker the
+ * manifest declares (`inputs.helperWorkers`), a Worker it doesn't declare,
+ * and a declared one the build lacks. Release packing (the tenant-neutral
+ * output), the Gateway's release review and every install check the same.
+ */
+export function buildOutputProblems(
+  workers: ReadonlyMap<string, BuiltWorkerConfig>,
+  inputs: PolicyInputs,
+): string[] {
+  const app = workers.get(DEFAULT_WORKER);
+  if (!app) return [NO_DEFAULT_WORKER];
+  const helperWorkers = inputs.helperWorkers ?? [];
+  const problems = appPolicyProblems(app, inputs);
+  for (const [directory, config] of workers) {
+    if (directory === DEFAULT_WORKER) continue;
+    const name = String(config.name);
+    if (!helperWorkers.includes(name)) {
+      problems.push(
+        `the build has a Worker "${name}" that everyapp.config.ts doesn't declare in workers`,
+      );
+      continue;
+    }
+    problems.push(
+      ...helperPolicyProblems(config, name, inputs).map(
+        (problem) => `${name}: ${problem}`,
+      ),
+    );
+  }
+  for (const helper of helperWorkers) {
+    if (![...workers.values()].some((config) => config.name === helper)) {
+      problems.push(
+        `the build has no Worker ${helper}, which everyapp.config.ts declares; add it to the Vite plugin's auxiliaryWorkers with everyAppAuxiliaryWorker()`,
+      );
+    }
+  }
+  return problems;
+}
+
+/** {@link buildOutputProblems}, refused as APP_POLICY with every problem. */
+export function checkBuildOutput(
+  workers: ReadonlyMap<string, BuiltWorkerConfig>,
+  inputs: PolicyInputs,
+): void {
+  const problems = buildOutputProblems(workers, inputs);
+  if (problems[0] === NO_DEFAULT_WORKER)
+    throw new InstallationError("APP_POLICY", NO_DEFAULT_WORKER);
+  if (problems.length > 0)
+    throw new InstallationError(
+      "APP_POLICY",
+      `The built Worker can't be deployed as an EveryApp app:\n  - ${problems.join("\n  - ")}\nBuild it from everyAppWorker() in cloudflare.config.ts.`,
+    );
+}
+
+/** The names of the R2 buckets a built Worker's bindings name. */
+export function boundR2Buckets(config: BuiltWorkerConfig): string[] {
+  return Object.values(config.env ?? {})
+    .filter(
+      (binding) =>
+        binding?.type === "r2" && typeof binding["name"] === "string",
+    )
+    .map((binding) => binding["name"] as string);
+}
+
+/**
+ * The Workflows a Worker defines, which its deploy creates or updates: its
+ * workflow exports, and any workflow binding to itself.
+ */
+export function definedWorkflows(
+  config: BuiltWorkerConfig,
+  workerName: string,
+): string[] {
+  const names = [
+    ...Object.values(config.exports ?? {})
+      .filter((entry) => entry.type === "workflow")
+      .map((entry) => String(entry["name"])),
+    ...Object.values(config.env ?? {})
+      .filter(
+        (binding) =>
+          binding.type === "workflow" && binding["worker"] === workerName,
+      )
+      .map((binding) => String(binding["name"])),
+  ];
+  return [...new Set(names)];
 }

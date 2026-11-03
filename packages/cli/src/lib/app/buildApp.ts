@@ -1,7 +1,7 @@
 /**
  * The production build of an app: the tenant-neutral Build Output in
  * `.cloudflare/output/v0`, the same whoever builds it, which the deploy
- * then installs (./installBuildOutput.ts) and `cf deploy --prebuilt --mode
+ * then installs (@every-app/perimeter/install config.ts) and `cf deploy --prebuilt --mode
  * production` uploads. It runs with EVERYAPP_BUILD=1, without which
  * `everyAppWorker()` refuses to build for production.
  *

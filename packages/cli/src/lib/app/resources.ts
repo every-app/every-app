@@ -1,3 +1,5 @@
+/** The shared resource provisioner (@every-app/perimeter/install resources.ts), through `cf`. */
+import { createResourceProvisioner } from "@every-app/perimeter/install";
 import { createAiGateway, findAiGateway, updateAiGateway } from "@/lib/cf/aiGateway";
 import { isCfError } from "@/lib/cf/errors";
 import { createHyperdrive, findHyperdrive, updateHyperdrive } from "@/lib/cf/hyperdrive";
@@ -16,10 +18,8 @@ import { createVectorizeIndex, getVectorizeIndex } from "@/lib/cf/vectorize";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { EveryAppError } from "@/lib/errors";
 import { CLI, thisCommand } from "@/lib/output/command";
-import type { InstallTarget } from "./installBuildOutput";
 
-import { createResourceProvisioner } from "@every-app/perimeter/install";
-const installer = createResourceProvisioner<CfRunner>({
+export const resourceInstaller = createResourceProvisioner<CfRunner>({
   Error: EveryAppError,
   findD1,
   createD1,
@@ -47,27 +47,3 @@ const installer = createResourceProvisioner<CfRunner>({
   CLI,
   thisCommand,
 });
-export async function claimAppWorker(...args: Parameters<typeof installer.claimAppWorker>): Promise<void> {
-  try {
-    await installer.claimAppWorker(...args);
-  } catch (error) {
-    throw EveryAppError.fromInstallation(error);
-  }
-}
-
-export async function ensureAppBuckets(...args: Parameters<typeof installer.ensureAppBuckets>): Promise<string[]> {
-  try {
-    return await installer.ensureAppBuckets(...args);
-  } catch (error) {
-    throw EveryAppError.fromInstallation(error);
-  }
-}
-export async function provisionAppResources(
-  ...args: Parameters<typeof installer.provisionAppResources>
-): Promise<InstallTarget["resources"]> {
-  try {
-    return await installer.provisionAppResources(...args);
-  } catch (error) {
-    throw EveryAppError.fromInstallation(error);
-  }
-}

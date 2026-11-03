@@ -148,7 +148,7 @@ the pushed branch is the repository's default.
 
 Three of the four launch apps bind an R2 bucket named after the app's Worker
 (`bindings.r2({ name: worker.name })` in their `cloudflare.config.ts`). The
-deploy makes the bucket when it doesn't exist (`packages/cli/src/lib/app/buckets.ts`,
+deploy makes the bucket when it doesn't exist (`ensureAppBuckets` in `packages/perimeter/src/install/resources.ts`,
 since 2026-10-24; before that the upload failed with
 `[10085] R2 bucket '<name>' not found`), but an account that never enabled
 R2 can't have one made by the API: the deploy stops with `R2_NOT_ENABLED`,
