@@ -6,13 +6,9 @@
  *    (a native grant's token, whose audience is an app host, never
  *    validates here: wrong audience, and its props are refused besides);
  *  - a personal access token (`epat_`), recognized by its shape and checked
- *    before the authorization server ever sees it;
- *  - a Cloudflare Access assertion for the gateway's own Access application,
- *    where Access's Managed OAuth stands in front of `/mcp` (routes.ts, then
- *    access-caller.ts).
+ *    before the authorization server ever sees it.
  *
- * Nothing is cached. Every request re-reads the connection (or token, or
- * linked account), the user's live membership and ban state and the
+ * Nothing is cached. Every request re-reads the connection (or token), the user's live membership and ban state and the
  * organization's status, so revoking a connection, removing or deactivating
  * a member, suspending an organization, or taking an app away takes effect
  * on the next request.
@@ -110,19 +106,12 @@ export type McpCaller =
       apps: { connectionId?: string; appRowId?: string };
     }
   /**
-   * A personal token without MCP scopes: valid, but not for this; a
-   * credential of a suspended organization; or an Access identity with no
-   * account linked here, a deactivated one, or one in several organizations
-   * with no sign of which (access-caller.ts).
+   * A personal token without MCP scopes: valid, but not for this; or a
+   * credential of a suspended organization.
    */
   | {
       kind: "refused";
-      reason:
-        | "token_scope"
-        | "organization_suspended"
-        | "not_connected"
-        | "account_deactivated"
-        | "organization_unresolved";
+      reason: "token_scope" | "organization_suspended";
     };
 
 function isGrantProps(value: unknown): value is McpGrantProps {

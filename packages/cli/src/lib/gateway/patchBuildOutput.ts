@@ -29,9 +29,9 @@ const BUNDLE_DIR = path.join(GATEWAY_WORKER_DIR, "bundle");
 
 interface GatewayPatch {
   /**
-   * The Gateway's names (manifest/gatewayNames.ts): its Worker, its D1
-   * and its activation queue replace the release's, which are built as
-   * the default's; EVERYAPP_GATEWAY_NAME tells the Worker which it is.
+   * The Gateway's names (manifest/gatewayNames.ts): its Worker and its D1
+   * replace the release's, which are built as the default's;
+   * EVERYAPP_GATEWAY_NAME tells the Worker which it is.
    */
   names?: GatewayNames;
   d1Id: string;
@@ -86,13 +86,8 @@ export async function patchGatewayBuildOutput(releaseDir: string, patch: Gateway
   const names = patch.names ?? DEFAULT_GATEWAY_NAMES;
 
   // The release is built as the default Gateway; a named one takes its own
-  // Worker and queue names, and tells the Worker which it is.
+  // Worker name, and tells the Worker which it is.
   config["name"] = names.worker;
-  for (const trigger of config.triggers ?? []) {
-    if (trigger["type"] === "queue" && trigger["name"] === DEFAULT_GATEWAY_NAMES.activationQueue) {
-      trigger["name"] = names.activationQueue;
-    }
-  }
   env["EVERYAPP_GATEWAY_NAME"] = { type: "text", value: names.name ?? "" };
 
   for (const name of Object.keys(env)) {

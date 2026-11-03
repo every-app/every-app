@@ -129,9 +129,6 @@ describe("readSecretValue", () => {
       await readSecretValue(name, {});
       return values.map((value) => asked().validate!(value));
     };
-    expect(
-      await problems("CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS", ["example.com, @Acme.co", "example.com foo", ","]),
-    ).toEqual([null, '"foo" isn\'t a domain like example.com.', "Name a domain like example.com."]);
     expect(await problems("MCP_ALLOWED_ORIGINS", ["http://localhost:6274", "localhost:6274"])).toEqual([
       null,
       '"localhost:6274" isn\'t an http or https URL.',
@@ -151,10 +148,6 @@ describe("readSecretValue", () => {
       null,
       "Not true or false.",
       "Not true or false.",
-    ]);
-    expect(await problems("CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN", ["everyone", "all"])).toEqual([
-      null,
-      "Not everyone.",
     ]);
     // Team domain and issuer: what the Gateway's `accessUrl` refuses (user info, a query, a fragment) is refused here.
     expect(
@@ -183,7 +176,7 @@ describe("readSecretValue", () => {
       '"https://acme.cloudflareaccess.com/cdn-cgi/access/sso/oidc/abc?x=1" isn\'t an Access for SaaS issuer URL.',
       '"https://acme.cloudflareaccess.com/cdn-cgi/access/sso/oidc/abc#x" isn\'t an Access for SaaS issuer URL.',
     ]);
-    // THIRD_PARTY_DOMAIN is read by `thirdPartyDomain`, not the auto-join rule: a trailing `.` is dropped, an `@` is not.
+    // THIRD_PARTY_DOMAIN is read by `thirdPartyDomain`: a trailing `.` is dropped, an `@` is not.
     expect(await problems("THIRD_PARTY_DOMAIN", ["apps.example.com", "example.com.", "@example.com"])).toEqual([
       null,
       null,

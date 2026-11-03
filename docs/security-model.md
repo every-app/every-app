@@ -707,20 +707,22 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   a link (Better Auth's Expo plugin did, through its authorization proxy;
   it went with the mobile app), and its only trusted origin is its own
   URL, so no custom-scheme client is exempt from the origin checks.
-- Both identify people by the verified email. Linking to an existing account
-  follows Better Auth 1.7's rules: the provider is trusted and its email
-  verified, and the existing account's own email must be verified (or the
-  link is made while signed in to it), so an account registered with
-  someone else's address is never handed over.
-- Membership stays the gateway's: members (never deactivated ones), pending
-  invitations for the verified email (accepted), operator-listed auto-join
-  domains (members, who open the apps available to everyone, as an
-  invitation gives), and through the outer ring only, anyone Access admits if the
-  operator opts in. Nothing happens before the gateway is claimed. Removing
-  someone from the Access policy is not offboarding (tokens and AI
-  connections don't pass through Access): deactivation is, and for people
-  auto-join covers, "Delete" deactivates instead, since a deleted account
-  would just join again.
+- Both identify people by the verified email. Behind the outer ring an
+  Access identity is linked to the account with that email on its first
+  Access sign-in: no session there counts without Access's word for that
+  same email on the request, so an account registered under someone else's
+  address is of no use to whoever registered it. With OIDC, linking follows
+  Better Auth 1.7's rules: the existing account's own email must be
+  verified, or the link is made while signed in to it.
+- Membership stays the gateway's: members (never deactivated ones) and
+  pending invitations for the verified email (accepted). Access's policy
+  asks the gateway the same question (an External Evaluation rule answered
+  by `/access-evaluation/evaluate`, from a token the team's Access key
+  signed, with an answer signed by the gateway's own key), so the gateway's
+  list is the one list both enforce and an invitation needs no change in
+  Access. Nothing happens before the gateway is claimed. Offboarding is
+  deactivation (tokens and AI connections don't pass through Access); Access
+  then refuses the person at their next Access sign-in.
 - The perimeter strips every inbound `cf-access-*` header (and, as always,
   the cookie header), so apps only ever see the identity JWT.
 - `EMAIL_PASSWORD_SIGN_IN=false` closes password sign-in, sign-up and resets
@@ -816,18 +818,13 @@ the session is the same as after a password.
   counted and audited against the provider row (`docs/capabilities.md`,
   "MCP apps").
 - The gateway's `/mcp` takes an OAuth access token issued by the gateway
-  (see below) or a personal access token, never a cookie; a self-hosted
-  gateway behind Cloudflare Access's Managed OAuth also takes a verified
-  Access assertion for the person (`docs/runbooks/cloudflare-access.md`;
-  checked in tests, not yet against a live Managed OAuth application, and
-  the service-token path that keeps personal tokens working there is
-  unverified live: TODO.md, "MCP through Cloudflare Access").
+  (see below) or a personal access token, never a cookie and never an
+  Access assertion (behind Cloudflare Access, `/mcp` is bypassed and takes
+  the client's own token).
   It serves the active apps of the caller's organization they have access
   to, narrowed to the apps an OAuth connection chose or the one app a token
   is bound to. A browser may call it only from the gateway's own origin or
-  an origin listed in `MCP_ALLOWED_ORIGINS` (empty by default); behind
-  Managed OAuth, where Access vouches for a browser's cookie too, that rule
-  is checked before anything is read for the person.
+  an origin listed in `MCP_ALLOWED_ORIGINS` (empty by default).
 - An app host's `/mcp`, where the manifest serves it, needs a personal
   access token or the user's browser session; it takes no OAuth token and
   advertises no authorization server
@@ -977,8 +974,8 @@ of the same server whose `resource` is one app host's origin.
   the app host and the organization; a person who can't open the app
   can't grant it. Loopback http and https redirects only; private-use
   schemes stay refused.
-- `bearerRoutes` in the manifest are paths that take a bearer and refuse a
-  cookie on every gateway. Behind Cloudflare Access they, and the
+- Bearer routes (`public` entries with `bearer: true` in the manifest) are
+  paths that take a bearer and refuse a cookie on every gateway. Behind Cloudflare Access they, and the
   Gateway-written `/.well-known/oauth-protected-resource`, are the only
   app paths let through for native apps, so the bypass carries no browser
   session. That metadata document is never proxied to the app.

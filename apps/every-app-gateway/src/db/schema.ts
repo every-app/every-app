@@ -17,3 +17,4 @@ export * from "./events.schema";
 export * from "./remote-mcp.schema";
 export * from "./org-settings.schema";
 export * from "./oauth.schema";
+export * from "./access-evaluation.schema";

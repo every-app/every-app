@@ -9,28 +9,17 @@
  *
  *  - an existing member who isn't deactivated;
  *  - someone with a pending invitation for that email, which this accepts
- *    (the email is verified, which is what the invite link stands in for);
- *  - someone whose email domain the operator listed in
- *    CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS, who joins the owner's organization
- *    as a member with the apps marked "Available to everyone", as if they
- *    had accepted an invitation;
- *  - through the outer ring only, when the operator set
- *    CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN=everyone: anyone the Access
- *    policy lets in joins the same way (the Access policy becomes the
- *    membership list).
+ *    (the email is verified, which is what the invite link stands in for).
  *
  * Nobody signs in with Access, and no account is created, until the gateway
- * has been claimed with its setup link. Linking an Access identity to an
- * existing account follows Better Auth's own rules, not these (see plugin.ts).
+ * has been claimed with its setup link. Behind the outer ring Access asks
+ * the gateway the same question first (access-evaluation.ts), so the
+ * invitation list is the one membership list for both.
  */
 import { APIError } from "better-auth/api";
 import { and, eq, inArray } from "drizzle-orm";
-import { logEvent } from "@every-app/perimeter";
 import { db } from "@/db";
 import { accounts, members, users } from "@/db/schema";
-import { emit } from "@/server/events/bus";
-import { catalogue } from "@/server/events/catalogue";
-import { actorOf } from "@/server/events/subjects";
 import { forgetOrgContext } from "@/server/organization/orgContext";
 import { isUserBanned } from "@/server/user-ban";
 import {
@@ -84,38 +73,6 @@ export function accessSignInMode(
   return null;
 }
 
-function emailDomain(email: string): string {
-  return email.slice(email.lastIndexOf("@") + 1);
-}
-
-/** How someone who isn't a member yet may join without an invitation. */
-function autoJoinRoute(
-  email: string,
-  mode: AccessSignInMode,
-  config: AccessConfig,
-): "domain" | "everyone" | null {
-  if (config.autoJoinDomains.includes(emailDomain(email))) return "domain";
-  if (mode === "outer-ring" && config.outerRing?.autoJoinEveryone) {
-    return "everyone";
-  }
-  return null;
-}
-
-/**
- * Whether Access would let someone with this email join again by signing in,
- * without an invitation: an auto-join domain, or (with the outer ring)
- * everyone it admits. Deleting such a person's account doesn't keep them
- * out; deactivating does.
- */
-export function joinsWithoutInvitation(
-  email: string,
-  config: AccessConfig,
-): boolean {
-  return (
-    autoJoinRoute(email.trim().toLowerCase(), "outer-ring", config) !== null
-  );
-}
-
 /**
  * Before Better Auth creates an account for an Access identity: refuse unless
  * the person may join (see the file comment), so a refused sign-in leaves
@@ -123,26 +80,19 @@ export function joinsWithoutInvitation(
  */
 export async function assertAccessUserMayBeCreated(
   email: string,
-  mode: AccessSignInMode,
-  config: AccessConfig,
 ): Promise<void> {
   if (!(await findOwnerOrganizationId())) refuse("NOT_SET_UP");
   const normalized = email.trim().toLowerCase();
   if ((await pendingInvitationsFor(normalized)).length > 0) return;
-  if (autoJoinRoute(normalized, mode, config)) return;
   refuse("NOT_INVITED");
 }
 
 /**
  * Before Better Auth creates a session for an Access identity: let members
- * in, make an invited or auto-joining person a member first, and refuse
- * everyone else, and anyone deactivated.
+ * in, make an invited person a member first, and refuse everyone else, and
+ * anyone deactivated.
  */
-export async function ensureAccessMembership(
-  userId: string,
-  mode: AccessSignInMode,
-  config: AccessConfig,
-): Promise<void> {
+export async function ensureAccessMembership(userId: string): Promise<void> {
   const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
   if (!user) refuse("NOT_INVITED");
   if (isUserBanned(user)) refuse("ACCOUNT_DEACTIVATED");
@@ -169,31 +119,7 @@ export async function ensureAccessMembership(
     return;
   }
 
-  const route = autoJoinRoute(email, mode, config);
-  if (!route) refuse("NOT_INVITED");
-  // A plain member, like someone who accepted an invitation: they open the
-  // apps available to everyone; others stay private until an admin grants
-  // them.
-  await db.insert(members).values({
-    id: crypto.randomUUID(),
-    organizationId: ownerOrganizationId,
-    userId: user.id,
-    role: "member",
-    createdAt: new Date(),
-  });
-  forgetOrgContext(user.id);
-  logEvent("access.member_joined", {
-    organizationId: ownerOrganizationId,
-    userId: user.id,
-    via: route === "domain" ? "auto_join_domain" : "outer_ring_everyone",
-    mode,
-  });
-  const joined = { id: user.id, email, name: user.name || null };
-  await emit({
-    organizationId: ownerOrganizationId,
-    actor: actorOf(joined),
-    ...catalogue.memberJoined({ user: joined, role: "member", via: "access" }),
-  });
+  refuse("NOT_INVITED");
 }
 
 /**

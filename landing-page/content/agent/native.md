@@ -1,8 +1,8 @@
 ---
 title: "Native apps: Sign in with Every App"
-description: "How a Mac or phone app signs a person in to one EveryApp app through the Gateway's OAuth server: how an app opts in with bearerRoutes, the client contract step by step (discovery, registration or a metadata document, the loopback redirect, PKCE, the resource, refresh, sign-out), what the app receives, revocation, and Cloudflare Access."
+description: "How a Mac or phone app signs a person in to one EveryApp app through the Gateway's OAuth server: how an app opts in with bearer routes (`public` entries with `bearer: true`), the client contract step by step (discovery, registration or a metadata document, the loopback redirect, PKCE, the resource, refresh, sign-out), what the app receives, revocation, and Cloudflare Access."
 metaTitle: "Native apps: Sign in with Every App"
-metaDescription: "How a native app signs in to one EveryApp app through the Gateway: bearerRoutes, discovery, PKCE, the resource indicator, refresh and sign-out."
+metaDescription: "How a native app signs in to one EveryApp app through the Gateway: bearer routes, discovery, PKCE, the resource indicator, refresh and sign-out."
 ---
 
 A native app (a Mac recorder, a phone client) signs the person in through the Gateway's own sign-in page in the system browser and gets a token that opens **one app, as that member, and nothing else**. It is an OAuth client of the Gateway like an AI app is, except its `resource` is the app host's origin (`https://openzen.<base>`) instead of the Gateway's `/mcp`. No password or session cookie ever reaches the native app.
@@ -11,17 +11,17 @@ Nothing new is minted: the same OAuth server, token format and connection rows a
 
 ## What the app's author does
 
-Add the paths the native app calls to the manifest:
+Add the paths the native app calls to the manifest's `public` list, as bearer routes (`bearer: true`):
 
 ```ts
 // everyapp.config.ts
-bearerRoutes: { paths: ["/api/**"], why: "The Mac app calls the API with its token." },
+public: [{ path: "/api/**", bearer: true }],
 ```
 
 - A bearer route takes a token and refuses a session cookie (401, `reason: "cookie_on_bearer_route"`); with no bearer it answers the 401 challenge, never a login page. So keep the web UI's calls elsewhere (its server functions, or `/app/api/**`).
-- Behind Cloudflare Access, `deploy` and `access on` let these paths and `/.well-known/oauth-protected-resource` through on the app's host. Without the field the native app's calls get Access's HTML login there. Without Access the field changes nothing but the cookie refusal.
-- `why` is shown to the operator.
-- The token works on every route the member can reach; `bearerRoutes` only decides what Access lets through. Full field rules: [Manifest](/docs/agent/manifest#bearerroutes).
+- Behind Cloudflare Access, `access on` lets these paths and `/.well-known/oauth-protected-resource` through on the app's host (run it again after deploying a new bearer route: `deploy` says so). Without a bearer route the native app's calls get Access's HTML login there. Without Access it changes nothing but the cookie refusal.
+- A bearer route answers every method, so it takes no `methods`.
+- The token works on every route the member can reach; a bearer route only decides what Access lets through. Full rules: [Manifest](/docs/agent/manifest#bearer-routes).
 
 In the handler, a native caller is an ordinary member: `getEveryAppUser()` returns them with `channel: "api"`, `actor.sub` `oauth:<connection id>` and `scopes: ["*"]` ([Identity](/docs/agent/identity)). Treat uploads from a device with whatever care the app needs; nothing else changes.
 
@@ -85,7 +85,7 @@ The discovery document is served (GET and HEAD) only while `MCP_OAUTH_ENABLED` i
 
 ## Behind Cloudflare Access
 
-The person passes Access's login in the browser at step 5; `/oauth/token` and `/oauth/register` are bypassed already. The app host lets through only the manifest's `bearerRoutes` and the discovery document; anything else answers with an HTML login page, so a native app that gets HTML should tell the person to ask the operator to add the path to `bearerRoutes`. With Managed OAuth on, `/oauth/token` is behind Access and native sign-in doesn't work. Details: [Cloudflare Access](/docs/agent/access#native-apps).
+The person passes Access's login in the browser at step 5; `/oauth/token` and `/oauth/register` are bypassed already. The app host lets through only the manifest's bearer routes, its other public routes and the discovery document; anything else answers with an HTML login page, so a native app that gets HTML should tell the person to ask the operator to add the path as a bearer route (and run `access on`). Details: [Cloudflare Access](/docs/agent/access#mcp-and-api-clients-behind-access).
 
 ## Threats, briefly
 

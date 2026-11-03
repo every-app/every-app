@@ -20,7 +20,6 @@ const accessSettings = vi.hoisted(() => ({
   current: {
     oidc: null as { label: string } | null,
     outerRing: null as object | null,
-    autoJoinDomains: [] as string[],
     passwordSignIn: true,
     problems: [] as string[],
   },

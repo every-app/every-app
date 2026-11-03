@@ -37,7 +37,7 @@ const OrganizationOutput = z.looseObject({
   warp_auth_non_browser_401: z.boolean().nullish(),
   mfa_config: z.unknown().nullish(),
 });
-export type AccessOrganization = z.infer<typeof OrganizationOutput>;
+type AccessOrganization = z.infer<typeof OrganizationOutput>;
 
 /**
  * The account's Zero Trust organization, or null when it has none (the API
@@ -92,43 +92,6 @@ export function createAccessOrganization(
         plane: "account",
         files: { "body.json": body },
         args: (files) => ["zero-trust", "organization", "create", "--body", `@${files["body.json"]!}`],
-      },
-      OrganizationOutput,
-    ),
-  );
-}
-
-/**
- * Set the organization's global session duration. The API replaces the
- * organization on PUT, and refuses a body that carries some of what GET
- * returns (`is_ui_read_only`, `login_design`, `strict_service_token_auth`,
- * `service_token_inactivity`, `disable_end_user_app_creation`:
- * `access.api.error.invalid_org_config`, seen live), so the body is the
- * fields known to pass, as read, plus the change.
- */
-export function setAccessOrganizationSession(
-  cf: CfRunner,
-  organization: AccessOrganization,
-  sessionDuration: string,
-): Promise<AccessOrganization> {
-  const body = {
-    name: organization.name ?? organization.auth_domain,
-    auth_domain: organization.auth_domain,
-    allow_authenticate_via_warp: organization.allow_authenticate_via_warp ?? false,
-    deny_unmatched_requests: organization.deny_unmatched_requests ?? false,
-    deny_unmatched_requests_exempted_zone_names:
-      organization.deny_unmatched_requests_exempted_zone_names ?? [],
-    warp_auth_non_browser_401: organization.warp_auth_non_browser_401 ?? false,
-    ...(organization.mfa_config ? { mfa_config: organization.mfa_config } : {}),
-    session_duration: sessionDuration,
-  };
-  return access(
-    runCfJson(
-      cf,
-      {
-        plane: "account",
-        files: { "body.json": body },
-        args: (files) => ["zero-trust", "organization", "update", "--body", `@${files["body.json"]!}`],
       },
       OrganizationOutput,
     ),
@@ -206,7 +169,7 @@ export function createCloudflareIdentityProvider(cf: CfRunner): Promise<AccessId
 // --- Reusable policies ------------------------------------------------------
 
 /** One include/exclude/require rule, as the API keeps it (`{ email: { email } }`, …). */
-export type AccessRule = Record<string, unknown>;
+type AccessRule = Record<string, unknown>;
 
 const PolicyOutput = z.looseObject({
   id: z.string(),
@@ -329,8 +292,6 @@ const ApplicationOutput = z.looseObject({
   allowed_idps: z.array(z.string()).nullish(),
   auto_redirect_to_identity: z.boolean().nullish(),
   app_launcher_visible: z.boolean().nullish(),
-  /** Managed OAuth (a beta): Access as the OAuth server AI apps talk to. */
-  oauth_configuration: z.looseObject({ enabled: z.boolean().nullish() }).nullish(),
 });
 export type AccessApplication = z.infer<typeof ApplicationOutput>;
 

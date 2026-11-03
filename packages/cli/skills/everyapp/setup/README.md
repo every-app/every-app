@@ -13,7 +13,7 @@ click when they have to do something themselves.
 | Integration                                   | File                                   | Gateway settings                                                                | Used by                                                                 |
 | --------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Cloudflare account, the Gateway and its owner | [gateway.md](gateway.md)               | set by `everyapp setup`    | everything                                                              |
-| Cloudflare Access in front of the Gateway     | [access.md](access.md)                 | `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD`, `CLOUDFLARE_ACCESS_APPS_AUD` (set by `everyapp access on`; optional: `EMAIL_PASSWORD_SIGN_IN`, `CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`, `CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN`) | sign-in, every app                                          |
+| Cloudflare Access in front of the Gateway     | [access.md](access.md)                 | `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD`, `CLOUDFLARE_ACCESS_APPS_AUD` (set by `everyapp access on`; optional: `EMAIL_PASSWORD_SIGN_IN`) | sign-in, every app                                          |
 | Email sending (Cloudflare Email Sending or Resend) | [email.md](email.md)               | `EMAIL_FROM`, `EMAIL_FROM_NAME`; `RESEND_API_KEY`, `EMAIL_PROVIDER`, `EMAIL_REST_API_TOKEN` | invitations, password resets, openmail, Open Analytics (optional), any app that sends |
 | DataForSEO                                    | [dataforseo.md](dataforseo.md)         | `DATAFORSEO_API_KEY`                                                            | OpenSEO; the DataForSEO MCP app (`pnpm everyapp mcp on dataforseo`) |
 | Any remote MCP server, as an MCP app          | [remote-mcp.md](remote-mcp.md)         | `<ID>_MCP_TOKEN` (one per server; none for a public one)                        | the MCP app added with `pnpm everyapp mcp add <url>`                     |
@@ -172,8 +172,8 @@ the file applies):
    stops with `install_gateway` (exit 2; its `data.rerun` is the setup
    command), while `secret list` and `email show` end with the error
    `GATEWAY_NOT_FOUND` (exit 1); the fix for both is
-   [gateway.md](gateway.md). In the report, `data.access` is `{ on,
-   teamDomain }` when Cloudflare Access can be checked, else null (a hosted
+   [gateway.md](gateway.md). In the report, `data.access` is `{ on }`
+   when Cloudflare Access can be checked, else null (a hosted
    Gateway, no Worker yet, or cf couldn't list the Worker's settings: then
    `data.fixes` has `ACCESS_UNKNOWN`). Each `data.fixes` entry carries
    `code`, `severity` (`error`, `warning`, `info` or `settling`), `message`,

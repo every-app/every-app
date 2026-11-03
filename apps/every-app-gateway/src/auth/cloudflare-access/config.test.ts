@@ -26,7 +26,6 @@ describe("readAccessConfig", () => {
     expect(readAccessConfig({}, production)).toEqual({
       oidc: null,
       outerRing: null,
-      autoJoinDomains: [],
       passwordSignIn: true,
       idpIds: [],
       problems: [],
@@ -136,7 +135,6 @@ describe("readAccessConfig", () => {
           signInAudiences: [AUD, "other-aud"],
           audiences: [AUD, "other-aud"],
           certsUrl: "https://acme.cloudflareaccess.com/cdn-cgi/access/certs",
-          autoJoinEveryone: false,
           idpIds: [],
         });
       }
@@ -200,21 +198,6 @@ describe("readAccessConfig", () => {
         ).toBeNull();
       }
     });
-
-    it("lets everyone it admits join only when set to exactly 'everyone'", () => {
-      expect(
-        readAccessConfig(
-          { ...OUTER_RING, CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN: "Everyone" },
-          production,
-        ).outerRing?.autoJoinEveryone,
-      ).toBe(true);
-      const typo = readAccessConfig(
-        { ...OUTER_RING, CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN: "true" },
-        production,
-      );
-      expect(typo.outerRing?.autoJoinEveryone).toBe(false);
-      expect(typo.problems).toHaveLength(1);
-    });
   });
 
   it("reads the identity-provider allowlist onto both sign-ins, skipping anything that isn't an id", () => {
@@ -236,18 +219,6 @@ describe("readAccessConfig", () => {
       expect.stringContaining('"not/an/id!" isn\'t an identity provider id'),
     ]);
     expect(readAccessConfig({}, production).idpIds).toEqual([]);
-  });
-
-  it("reads auto-join email domains, skipping anything else", () => {
-    const config = readAccessConfig(
-      {
-        CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS:
-          "Acme.com, @acme.io acme.com *  bad_domain",
-      },
-      production,
-    );
-    expect(config.autoJoinDomains).toEqual(["acme.com", "acme.io"]);
-    expect(config.problems).toHaveLength(2);
   });
 
   describe("EMAIL_PASSWORD_SIGN_IN", () => {

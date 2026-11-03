@@ -1,34 +1,25 @@
 /**
  * The pure rules of the outer ring: manifest globs as Access path patterns,
  * the destinations the registry calls for, how a found application is read,
- * and how the policy's rules merge.
+ * and the policy's one rule.
  */
 import { describe, expect, it } from "vitest";
 import type { AccessApplication } from "@/lib/cf/access";
 import {
-  accessDrift,
   accessPathPattern,
-  allowedIdpsFor,
   allowedSignInProviders,
   appDestination,
   appsDestinations,
   describeSignInMethods,
-  desiredSignIn,
-  durationSeconds,
-  emailDomainRule,
-  emailRule,
+  externalEvaluationRule,
   findAccessApplications,
   gatewayDestination,
   isOwnedUri,
   PROTECTED_RESOURCE_METADATA_PATH,
-  mergeRules,
   missingSignInProviders,
-  ruleDomains,
-  ruleEmails,
   sameDestinations,
-  signInInSync,
+  sameRules,
   splitDestinations,
-  unrestrictedCloudflareProviders,
 } from "./plan";
 
 const SCOPE = { gatewayHost: "apps.acme.com", appBaseDomain: "apps.acme.com" };
@@ -110,11 +101,8 @@ describe("bearer routes", () => {
     ]);
   });
 
-  it("stay bypassed under Managed OAuth, and give an app with nothing else a destination of its own", () => {
-    const plan = appsDestinations(
-      "apps.acme.com",
-      [{ ...zen, publicPaths: [] }]
-    );
+  it("give an app with nothing else a destination of its own", () => {
+    const plan = appsDestinations("apps.acme.com", [{ ...zen, publicPaths: [] }]);
     expect(plan.destinations.map((d) => [d.uri, d.overrides.map((o) => o.path_pattern)])).toEqual([
       ["*.apps.acme.com", []],
       ["openzen.apps.acme.com", [PROTECTED_RESOURCE_METADATA_PATH, "/api/*", "/v1/*"]],
@@ -126,28 +114,6 @@ describe("bearer routes", () => {
       { ...zen, bearerPaths: ["/a*b*"], publicPaths: [] }
     );
     expect(dropped).toEqual([{ appId: "openzen", path: "/a*b*", reason: "not_expressible", bearer: true }]);
-  });
-
-  it("show as path drift on the apps' application until it lets them through", () => {
-    const scope = { gatewayHost: "team.acme.com", appBaseDomain: "apps.acme.com" };
-    const signIn = { allowed_idps: ["pin"], auto_redirect_to_identity: true };
-    const gateway = application(
-      "g",
-      [{ uri: "team.acme.com", overrides: gatewayDestination("team.acme.com", false).overrides.map((o) => o.path_pattern) }],
-      signIn,
-    );
-    const surfaces = [{ ...zen, publicPaths: [] }];
-    const appsWith = (overrides: string[]) =>
-      application("a", [{ uri: "*.apps.acme.com" }, { uri: "openzen.apps.acme.com", overrides }], signIn);
-    const drift = (apps: AccessApplication) =>
-      accessDrift({ scope, found: { gateway, apps }, surfaces, providerIds: ["pin"] });
-    expect(drift(appsWith([])).paths).toEqual(["*.apps.acme.com"]);
-    expect(drift(appsWith([PROTECTED_RESOURCE_METADATA_PATH, "/api/*"])).paths).toEqual(["*.apps.acme.com"]);
-    expect(drift(appsWith([PROTECTED_RESOURCE_METADATA_PATH, "/api/*", "/v1/*"]))).toEqual({
-      paths: [],
-      signIn: [],
-      missing: [],
-    });
   });
 });
 
@@ -168,12 +134,11 @@ describe("appsDestinations", () => {
     expect(plan.outsideBase).toEqual(["deep", "far"]);
     expect(plan.dropped).toEqual([]);
   });
-
 });
 
 describe("gatewayDestination", () => {
-  it("lets the machine endpoints, /health and Apple's sign-in POST through, or the last two alone under Managed OAuth", () => {
-    expect(gatewayDestination("Apps.Acme.com", false).overrides.map((o) => o.path_pattern)).toEqual([
+  it("lets the machine endpoints, /health, Apple's sign-in POST and Access's membership question through", () => {
+    expect(gatewayDestination("Apps.Acme.com").overrides.map((o) => o.path_pattern)).toEqual([
       "/mcp",
       "/mcp/*",
       "/oauth/token",
@@ -182,19 +147,13 @@ describe("gatewayDestination", () => {
       "/.well-known/*",
       "/health",
       "/api/auth/callback/apple",
+      "/access-evaluation/*",
     ]);
-    expect(gatewayDestination("apps.acme.com", true)).toEqual({
-      type: "public",
-      uri: "apps.acme.com",
-      overrides: [
-        { path_pattern: "/health", behavior: "public" },
-        { path_pattern: "/api/auth/callback/apple", behavior: "public" },
-      ],
-    });
+    expect(gatewayDestination("Apps.Acme.com").uri).toBe("apps.acme.com");
   });
 
   it("bypasses only Apple's callback among the sign-in providers: the others return with a GET Access checks", () => {
-    const patterns = gatewayDestination("apps.acme.com", false).overrides.map((o) => o.path_pattern);
+    const patterns = gatewayDestination("apps.acme.com").overrides.map((o) => o.path_pattern);
     expect(patterns.filter((pattern) => pattern.startsWith("/api/"))).toEqual(["/api/auth/callback/apple"]);
     expect(patterns.some((pattern) => pattern.includes("*") && pattern.startsWith("/api"))).toBe(false);
   });
@@ -276,19 +235,21 @@ describe("finding the applications", () => {
   });
 });
 
-describe("policy rules", () => {
-  it("adds what is missing, once, whatever the case, and never removes", () => {
-    const existing = [emailRule("Ben@Acme.com"), { group: { id: "g1" } }];
-    const { include, added } = mergeRules(existing, [
-      emailRule("ben@acme.com"),
-      emailRule("jo@acme.com"),
-      emailRule("JO@acme.com"),
-      emailDomainRule("acme.com"),
-    ]);
-    expect(added).toEqual([emailRule("jo@acme.com"), emailDomainRule("acme.com")]);
-    expect(include).toEqual([...existing, ...added]);
-    expect(ruleEmails(include)).toEqual(["ben@acme.com", "jo@acme.com"]);
-    expect(ruleDomains(include)).toEqual(["acme.com"]);
+describe("the policy", () => {
+  it("is one External Evaluation rule asking the Gateway, on its own host", () => {
+    expect(externalEvaluationRule("Team.Acme.com")).toEqual({
+      external_evaluation: {
+        evaluate_url: "https://team.acme.com/access-evaluation/evaluate",
+        keys_url: "https://team.acme.com/access-evaluation/keys",
+      },
+    });
+  });
+
+  it("compares include lists whatever the order and case, and sees an email rule left over", () => {
+    const rule = externalEvaluationRule("team.acme.com");
+    expect(sameRules([rule], [externalEvaluationRule("TEAM.acme.com")])).toBe(true);
+    expect(sameRules([rule, { email: { email: "ben@acme.com" } }], [rule])).toBe(false);
+    expect(sameRules([], [rule])).toBe(false);
   });
 });
 
@@ -303,16 +264,6 @@ describe("identity providers", () => {
         { id: "g", type: "google-apps" },
       ]),
     ).toEqual({ cloudflare: false, pin: false });
-  });
-
-  it("names a Cloudflare provider open to any Cloudflare user", () => {
-    const restricted = { id: "c", type: "cloudflare", config: { restrict_to_account_members: true } };
-    const open = { id: "o", type: "cloudflare", name: "Any Cloudflare user", config: {} };
-    const unset = { id: "u", type: "cloudflare" };
-    expect(unrestrictedCloudflareProviders([restricted, open, unset, { id: "p", type: "onetimepin" }])).toEqual([
-      open,
-      unset,
-    ]);
   });
 
   it("describes the methods as a person reads them: Cloudflare first, the PIN last, others by name", () => {
@@ -341,32 +292,5 @@ describe("identity providers", () => {
     const oidc = { id: "g", type: "oidc", name: "Generic" };
     expect(allowedSignInProviders([okta, open, pin, oidc, restricted])).toEqual([pin, restricted]);
     expect(allowedSignInProviders([open, okta])).toEqual([]);
-  });
-
-  it("adds the providers `on` vouches for to an application's allowed list and keeps what was there", () => {
-    expect(allowedIdpsFor(null, ["c", "p"])).toEqual(["c", "p"]);
-    expect(allowedIdpsFor(["p"], ["c", "p"])).toEqual(["p", "c"]);
-    expect(allowedIdpsFor(["x", "p", "c"], ["c", "p"])).toEqual(["x", "p", "c"]);
-  });
-
-  it("redirects past Access's chooser only with one provider, and sees an application that lacks one", () => {
-    expect(desiredSignIn(null, ["p"])).toEqual({ allowedIdps: ["p"], autoRedirect: true });
-    expect(desiredSignIn({ allowed_idps: ["p"] }, ["c", "p"])).toEqual({ allowedIdps: ["p", "c"], autoRedirect: false });
-    // As `access on` left applications before Sign in with Cloudflare: the PIN alone, redirected to.
-    expect(signInInSync({ allowed_idps: ["p"], auto_redirect_to_identity: true }, ["c", "p"])).toBe(false);
-    expect(signInInSync({ allowed_idps: ["c", "p"], auto_redirect_to_identity: false }, ["c", "p"])).toBe(true);
-    expect(signInInSync({ allowed_idps: ["p", "c"], auto_redirect_to_identity: true }, ["c", "p"])).toBe(false);
-    // Every provider allowed by an empty list, to Access; `on` still writes the list.
-    expect(signInInSync({ allowed_idps: [], auto_redirect_to_identity: false }, ["p"])).toBe(false);
-  });
-});
-
-describe("durationSeconds", () => {
-  it("reads Access durations", () => {
-    expect(durationSeconds("720h")).toBe(720 * 3600);
-    expect(durationSeconds("2h45m")).toBe(2 * 3600 + 45 * 60);
-    expect(durationSeconds("30m")).toBe(1800);
-    expect(durationSeconds("1d")).toBeNull();
-    expect(durationSeconds("")).toBeNull();
   });
 });

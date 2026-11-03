@@ -114,11 +114,11 @@ USAGE
 COMMANDS
   on    Turn Cloudflare Access on in front of the Gateway and its apps, or bring it up to date
   off   Turn Cloudflare Access off for the Gateway and its apps
-  show  Show how Cloudflare Access fronts the Gateway, and what access on would change
+  show  Show how Cloudflare Access fronts the Gateway
 
 EXAMPLES
   $ everyapp access on
-  $ everyapp access on --email-domain example.com
+  $ everyapp access show
   $ everyapp access off
 
 Run everyapp access <command> --help for its flags.
@@ -1257,12 +1257,7 @@ Turn Cloudflare Access on in front of the Gateway and its apps, or bring it up t
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
-| `--email` | `<address>` (repeatable) | no |  | Also let this email address past Access (repeat for several; an account still takes an invitation) |
-| `--email-domain` | `<domain>` (repeatable) | no |  | Also let everyone with an email address at this domain past Access (repeat for several) |
 | `--team` | `<name>` | no |  | Name for a new Zero Trust team when the account has none: its sign-in page is <name>.cloudflareaccess.com, for good (asked at a terminal; ignored once a team exists) |
-| `--session` | `<duration>` | no |  | How long an Access sign-in lasts, like 720h or 24h (default 720h, the most Access allows; an existing application keeps its own unless given) |
-| `--team-session` | `<duration>` | no |  | Set the team's global session too (how often people sign in at the identity provider): it applies to every Access application in the account |
-| `--write-settings` | switch | no |  | Write the three Gateway settings even when they are set already (after an Access application was recreated by hand: its AUD tag changed) |
 | `--gateway` | `<value>` | no |  | The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither) |
 | `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
 | `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
@@ -1270,42 +1265,34 @@ Turn Cloudflare Access on in front of the Gateway and its apps, or bring it up t
 
 ```text
 USAGE
-  everyapp access on [--email address]... [--email-domain domain]... [--team name] [--session duration] [--team-session duration] [--write-settings] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp access on [--team name] [--gateway value] [--account-id value] [--json] [--verbose]
   everyapp access on --help
 
-Everyone opens the Gateway and its apps through Cloudflare Access first (a one-time PIN to
-their email, or your identity provider), then lands signed in. With your Cloudflare login it
-finds or creates the Zero Trust team, adds the one-time PIN when people have no other way to
-sign in, keeps an allow policy with every member's and invitee's email, puts one Access
-application in front of the Gateway's host and one in front of the apps' hosts (MCP, the OAuth
-endpoints and each app's public routes stay reachable without a login), and gives the Gateway
-the team domain and both AUD tags in one change.
+Everyone opens the Gateway and its apps through Cloudflare Access first (Sign in with
+Cloudflare for members of your Cloudflare account, a one-time PIN emailed to everyone else),
+then lands signed in. With your Cloudflare login it finds or creates the Zero Trust team,
+adds those two sign-in methods, keeps one allow policy whose rule asks the Gateway whether
+the person is a member or invited, puts one Access application in front of the Gateway's
+host and one in front of the apps' hosts (MCP, the OAuth endpoints and each app's public
+routes stay reachable without a login), and gives the Gateway the team domain and both AUD
+tags in one change.
 
-Run it again any time: after inviting someone, so Access lets them in, or after anything
-changed by hand. It changes only what differs, never removes anyone from the policy, and
-leaves alone what it didn't set up. Deploys keep an app's public routes in step themselves.
-
-Afterwards each existing member signs in once with their password through Access, which
-links the two. Then passwords can go: everyapp secret set EMAIL_PASSWORD_SIGN_IN (false).
+Invitations need nothing more: an invitee gets past Access as soon as they are invited.
+Run it again after deploying an app with new public routes, or after anything changed by
+hand. It changes only what differs and leaves alone what it didn't set up.
 
 Examples:
   everyapp access on
-  everyapp access on --email-domain example.com
   everyapp access on --team acme --json
 
 FLAGS
-     [--email]...                            Also let this email address past Access (repeat for several; an account still takes an invitation)
-     [--email-domain]...                     Also let everyone with an email address at this domain past Access (repeat for several)
-     [--team]                                Name for a new Zero Trust team when the account has none: its sign-in page is <name>.cloudflareaccess.com, for good (asked at a terminal; ignored once a team exists)
-     [--session]                             How long an Access sign-in lasts, like 720h or 24h (default 720h, the most Access allows; an existing application keeps its own unless given)
-     [--team-session]                        Set the team's global session too (how often people sign in at the identity provider): it applies to every Access application in the account
-     [--write-settings/--no-write-settings]  Write the three Gateway settings even when they are set already (after an Access application was recreated by hand: its AUD tag changed)
-     [--gateway]                             The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)
-     [--account-id]                          The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
-     [--json/--no-json]                      Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
-     [--verbose/--no-verbose]                Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
-  -h  --help                                 Print help information and exit
-      --                                     All subsequent inputs should be interpreted as arguments
+     [--team]                  Name for a new Zero Trust team when the account has none: its sign-in page is <name>.cloudflareaccess.com, for good (asked at a terminal; ignored once a team exists)
+     [--gateway]               The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
 ```
 
 ### `everyapp access off`
@@ -1314,7 +1301,6 @@ Turn Cloudflare Access off for the Gateway and its apps.
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
-| `--keep-applications` | switch | no |  | Keep the two Access applications: Access still asks people to sign in there, and the Gateway no longer requires it |
 | `--yes` | switch | no |  | Turn Access off without asking |
 | `--gateway` | `<value>` | no |  | The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither) |
 | `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
@@ -1323,11 +1309,11 @@ Turn Cloudflare Access off for the Gateway and its apps.
 
 ```text
 USAGE
-  everyapp access off [--keep-applications] [--yes] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp access off [--yes] [--gateway value] [--account-id value] [--json] [--verbose]
   everyapp access off --help
 
 Removes CLOUDFLARE_ACCESS_AUD, CLOUDFLARE_ACCESS_APPS_AUD and CLOUDFLARE_ACCESS_TEAM_DOMAIN
-from the Gateway in one change, so passwords sign people in again at once, then deletes the
+from the Gateway in one change, so it stops requiring Access at once, then deletes the
 two Access applications (one that also covers something else only loses EveryApp's hosts).
 The Zero Trust team, its identity providers and the allow policy stay: other applications may
 use them. Asks first.
@@ -1336,19 +1322,18 @@ Example:
   everyapp access off
 
 FLAGS
-     [--keep-applications/--no-keep-applications]  Keep the two Access applications: Access still asks people to sign in there, and the Gateway no longer requires it
-  -y [--yes/--no-yes]                              Turn Access off without asking
-     [--gateway]                                   The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)
-     [--account-id]                                The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
-     [--json/--no-json]                            Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
-     [--verbose/--no-verbose]                      Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
-  -h  --help                                       Print help information and exit
-      --                                           All subsequent inputs should be interpreted as arguments
+  -y [--yes/--no-yes]          Turn Access off without asking
+     [--gateway]               The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
 ```
 
 ### `everyapp access show`
 
-Show how Cloudflare Access fronts the Gateway, and what access on would change.
+Show how Cloudflare Access fronts the Gateway.
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
@@ -1362,9 +1347,9 @@ USAGE
   everyapp access show [--gateway value] [--account-id value] [--json] [--verbose]
   everyapp access show --help
 
-The Zero Trust team, who the allow policy lets in, the two Access applications and whether
-their public paths match the apps' public routes, and which Access settings the Gateway has
-(their values can't be read back). Nothing is changed.
+The Zero Trust team, whether the allow policy asks the Gateway who is a member, the sign-in
+methods, the two Access applications, and which Access settings the Gateway has (their
+values can't be read back). Nothing is changed.
 
 Example:
   everyapp access show
@@ -3451,10 +3436,8 @@ USAGE
 
 Deletes the membership, their app grants and places in groups, and revokes their personal
 access tokens for the organization and AI connections to it, in one write. The account goes
-too when it belongs to no other organization (a hosted Gateway keeps accounts). Someone
-Cloudflare Access would let straight back in (the Gateway has CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS
-or CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN set) is deactivated and kept listed instead, as the
-Gateway's own Delete does. Owners are peers, and the organization always keeps one who can
+too when it belongs to no other organization (a hosted Gateway keeps accounts). Owners are
+peers, and the organization always keeps one who can
 act: the last owner who isn't deactivated can't be removed (LAST_OWNER). Asks first at a
 terminal; elsewhere it needs --yes.
 

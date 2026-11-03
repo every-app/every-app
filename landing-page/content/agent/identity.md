@@ -605,7 +605,6 @@ Three zones (`docs/security-model.md`): the **client zone** (browsers, API clien
 - `apps/every-app-gateway/src/server/user-pat-scopes.ts`
 - `apps/every-app-gateway/src/perimeter/betterAuthAuthenticator.ts`
 - `apps/every-app-gateway/src/auth/cloudflare-access/jwt.ts`
-- `apps/every-app-gateway/src/server/mcp-auth/access-caller.ts`
 - `packages/cli/src/commands/access/index.ts`
 - `packages/cli/src/test/fixtures/manifests/postiz.ts`
 - `apps/every-app-gateway/src/routes/api/dev/identity.ts`

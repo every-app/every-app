@@ -13,8 +13,8 @@
  * Behind Cloudflare Access the request never reaches the gateway: Access
  * answers first, with a redirect to its login. The gateway's per-minute
  * sweep makes the app live instead (it probes every `binding` app over
- * its service binding; the launcher does the same each time it lists
- * one), so from that answer on this step sends nothing more and only
+ * its service binding), so from that answer on this step sends nothing
+ * more and only
  * reads D1, which it can read through the Cloudflare API whatever stands
  * in front of the gateway. Running out of time with no certificate yet
  * ends the wait with a warning: it goes live on its first visit, once it

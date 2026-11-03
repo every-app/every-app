@@ -29,6 +29,7 @@ import {
   settingEntries,
   settingValueProblem,
 } from "@every-app/sdk/internal";
+import { logEvent } from "@every-app/perimeter";
 import { env } from "cloudflare:workers";
 import { eq, sql } from "drizzle-orm";
 import type { DeployBundle } from "./bundle";
@@ -39,7 +40,6 @@ import type { CfRestDeployer } from "./cfRestDeployer";
 import { bundleRefused, DeployError } from "./errors";
 import { migrateAppDatabase } from "./pipeline";
 import { recordDispatchDeployed } from "./registry";
-import { syncBrowserAccess } from "./self-hosted-access";
 import { emailInstaller } from "./self-hosted-email";
 import { selfHostedMetadata, selfHostedModules } from "./self-hosted-metadata";
 import {
@@ -469,16 +469,15 @@ async function installSelfHosted(input: {
     actor: input.actor,
   });
   await input.deployer.publishBoundApp(deployed, input.gatewayUrl, renew);
+  // A deploy never touches Cloudflare Access: `everyapp access on` lets an
+  // app's public routes through (packages/perimeter/src/install/
+  // access-plan.ts). Said in the logs when this install changed them.
   if (
-    [manifest, previous].some(
-      (manifest) =>
-        manifest &&
-        (manifest.public?.length ||
-          manifest.publicAssets?.length ||
-          manifest.bearerRoutes?.paths.length),
-    )
-  )
-    await syncBrowserAccess(cf, app.appSlug);
+    env.CLOUDFLARE_ACCESS_TEAM_DOMAIN &&
+    publicSurfaceKey(manifest) !== publicSurfaceKey(previous)
+  ) {
+    logEvent("access.rerun_needed", { app: app.appSlug }, "warn");
+  }
   return deployed;
 }
 
@@ -802,4 +801,17 @@ async function reconcileQueueConsumers(
         );
     }
   }
+}
+
+/** What Cloudflare Access lets through for an app, as one comparable string. */
+function publicSurfaceKey(
+  manifest:
+    | {
+        public?: readonly unknown[] | undefined;
+        publicAssets?: readonly unknown[] | undefined;
+      }
+    | null
+    | undefined,
+): string {
+  return JSON.stringify([manifest?.public ?? [], manifest?.publicAssets ?? []]);
 }

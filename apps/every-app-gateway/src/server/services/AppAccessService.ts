@@ -4,8 +4,6 @@ import { AppRepository } from "../repositories/AppRepository";
 import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
 import { ProviderConnectionRepository } from "../repositories/ProviderConnectionRepository";
 import { UsageRepository } from "../repositories/UsageRepository";
-import { DrizzleAppRegistry } from "@/perimeter/drizzleAppRegistry";
-import { activateBindingApps } from "@/server/app-activation";
 import { PublicError } from "@/server/errors";
 import { emit } from "@/server/events/bus";
 import { catalogue, type EventUser } from "@/server/events/catalogue";
@@ -25,9 +23,7 @@ import { listedAppSetup } from "./listedAppSetup";
  * organization has it `paused`: at its monthly cap on provider calls, in
  * one read for every listed app (a shared app's count and cap are the
  * reader's organization's, whoever owns the row). An app still `binding`
- * is probed first (app-activation.ts): one this gateway reaches is
- * listed active, so the launcher's "Deploying" is never waiting on a
- * visit the person is about to make from it.
+ * is listed as deploying until the Gateway makes it live (app-activation.ts).
  */
 async function getAppsForUser(ctx: OrgContext) {
   const [accessRecords, shared] = await Promise.all([
@@ -68,17 +64,10 @@ async function getAppsForUser(ctx: OrgContext) {
         via: null,
       })),
   ];
-  const [paused, activated] = await Promise.all([
-    UsageRepository.pausedApps(
-      ctx.orgId,
-      listed.map(({ app }) => app.id),
-    ),
-    activateBindingApps(
-      env,
-      () => new DrizzleAppRegistry(env.DB),
-      listed.map(({ app }) => app),
-    ),
-  ]);
+  const paused = await UsageRepository.pausedApps(
+    ctx.orgId,
+    listed.map(({ app }) => app.id),
+  );
   const apps = await Promise.all(
     listed.map(async ({ app, grantedAt, via }) => {
       // The registry columns the evaluation read stay server-side; the
@@ -92,9 +81,6 @@ async function getAppsForUser(ctx: OrgContext) {
       } = app;
       return {
         ...listedApp,
-        ...(activated.has(app.id)
-          ? { status: "active", updatedAt: new Date() }
-          : {}),
         grantedAt,
         via,
         setup: await listedAppSetup(app, app.organizationId === ctx.orgId),

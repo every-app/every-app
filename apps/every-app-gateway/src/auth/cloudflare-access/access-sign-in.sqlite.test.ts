@@ -3,7 +3,7 @@
  * configuration (createAuth) on a migrated SQLite database, against a mock
  * Access (src/test/mock-access.ts): the outer ring's session exchange, OIDC
  * sign-in through Better Auth's own state and PKCE, who gets in (members,
- * invitations, auto-join, strangers, deactivated users, an unclaimed
+ * invitations, strangers, deactivated users, an unclaimed
  * gateway), account linking and turning password sign-in off.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -54,7 +54,6 @@ import {
 import { peekInvitation } from "@/server/invitation-token";
 import { accessToAppInItsOrganization } from "@/server/repositories/effective-access";
 import { UserRepository } from "@/server/repositories/UserRepository";
-import { AdminService } from "@/server/services/AdminService";
 import { clearOrgContextCacheForTests } from "@/server/organization/orgContext";
 import { InvitationService } from "@/server/services/InvitationService";
 import { MembershipService } from "@/server/services/MembershipService";
@@ -368,43 +367,27 @@ describe("outer ring: Access in front of the gateway (SQLite)", () => {
     ).toHaveLength(1);
   });
 
-  it("asks an account whose email isn't verified to sign in once with its password, then links it", async () => {
+  it("signs in an account whose email isn't verified on its first Access sign-in, and links it", async () => {
     const owner = await claimGateway();
     // The owner's account came from the setup link: a password, an email
-    // nobody verified. Access saying "owner@acme.com" isn't enough to hand
-    // the account over.
+    // nobody verified. Behind the outer ring no session counts without
+    // Access's word for that same email, so Access's word signs them in.
     const first = new Browser();
-    const refused = await getSession(first, { email: OWNER.email });
-    await expect(refused.json()).resolves.toBeNull();
-    expect(first.has("better-auth.session_token")).toBe(false);
-    expect(await accessAccountsOf(OWNER.email)).toEqual([]);
-
-    // Signed in with the password, through the outer ring as the same email:
-    // they hold both, so the identity is linked and the email verified.
-    expect(
-      (
-        await passwordSignIn(
-          first,
-          OWNER.email,
-          OWNER.password,
-          await throughAccess(OWNER.email),
-        )
-      ).status,
-    ).toBe(200);
-    const linked = await getSession(first, { email: OWNER.email });
-    await expect(linked.json()).resolves.toMatchObject({
+    const signedIn = await getSession(first, { email: OWNER.email });
+    await expect(signedIn.json()).resolves.toMatchObject({
       user: { id: owner.userId },
     });
+    expect(first.has("better-auth.session_token")).toBe(true);
     expect(await accessAccountsOf(OWNER.email)).toHaveLength(1);
     expect((await userByEmail(OWNER.email))?.emailVerified).toBe(true);
 
-    // From then on the outer ring signs them in by itself.
+    // A fresh browser: the same account, and still one identity.
     const fresh = new Browser();
-    const auto = await getSession(fresh, { email: OWNER.email });
-    await expect(auto.json()).resolves.toMatchObject({
+    const again = await getSession(fresh, { email: OWNER.email });
+    await expect(again.json()).resolves.toMatchObject({
       user: { id: owner.userId },
     });
-    expect(fresh.has("better-auth.session_token")).toBe(true);
+    expect(await accessAccountsOf(OWNER.email)).toHaveLength(1);
   });
 
   it("makes an invited person a member, with the invited role and the apps available to everyone", async () => {
@@ -462,110 +445,9 @@ describe("outer ring: Access in front of the gateway (SQLite)", () => {
     ).rejects.toMatchObject({ code: "INVITATION_TOKEN_INVALID" });
   });
 
-  it("lets people from an auto-join domain in as members, with the apps available to everyone", async () => {
-    useAccessEnv({
-      ...MOCK_ACCESS_ENV.outerRing,
-      CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS: "acme.com",
-    });
-    const owner = await claimGateway();
-    const appId = await seedDefaultApp(owner.organizationId);
-
-    const response = await getSession(new Browser(), {
-      email: "carol@acme.com",
-    });
-    const body = (await response.json()) as { user: { id: string } };
-    expect(body).toMatchObject({ user: { email: "carol@acme.com" } });
-    expect(await membershipOf("carol@acme.com")).toMatchObject({
-      organizationId: owner.organizationId,
-      role: "member",
-    });
-    // The same default apps an accepted invitation gives, and only those.
-    expect(await grantedAppsOf(body.user.id)).toEqual([appId]);
-
-    // Another domain (even one ending in it) is a stranger.
-    for (const email of ["dave@other.example", "eve@notacme.com"]) {
-      const refused = await getSession(new Browser(), { email });
-      await expect(refused.json()).resolves.toBeNull();
-      expect(await userByEmail(email)).toBeUndefined();
-    }
-  });
-
-  it("deactivates instead of deleting someone Access would let straight back in", async () => {
-    useAccessEnv({
-      ...MOCK_ACCESS_ENV.outerRing,
-      CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS: "acme.com",
-    });
-    const owner = await claimGateway();
-    const ownerCtx = {
-      orgId: owner.organizationId,
-      userId: owner.userId,
-      role: "owner" as const,
-    };
-    const carolsBrowser = new Browser();
-    const joined = (await (
-      await getSession(carolsBrowser, { email: "carol@acme.com" })
-    ).json()) as { user: { id: string } };
-
-    // Admin → Users → Delete: deleting the account would only let her
-    // join again at her next Access sign-in, so she is deactivated.
-    await expect(
-      AdminService.deleteUser(ownerCtx, joined.user.id),
-    ).resolves.toEqual({ deactivatedInstead: true });
-    const carol = await userByEmail("carol@acme.com");
-    expect(carol).toMatchObject({ id: joined.user.id, banned: true });
-    expect(await membershipOf("carol@acme.com")).toBeDefined();
-    expect(
-      await db.select().from(sessions).where(eq(sessions.userId, carol!.id)),
-    ).toEqual([]);
-
-    // She stays out, through Access or not.
-    const again = await getSession(new Browser(), { email: "carol@acme.com" });
-    await expect(again.json()).resolves.toBeNull();
-    expect(
-      await db.select().from(users).where(eq(users.email, "carol@acme.com")),
-    ).toHaveLength(1);
-
-    // Someone Access wouldn't let back in by themselves is deleted as before.
-    const { inviteUrl } = await inviteAs(owner, "dave@partner.example");
-    expect(inviteUrl).toBeTruthy();
-    const dave = (await (
-      await getSession(new Browser(), { email: "dave@partner.example" })
-    ).json()) as { user: { id: string } };
-    await expect(
-      AdminService.deleteUser(ownerCtx, dave.user.id),
-    ).resolves.toEqual({ deactivatedInstead: false });
-    expect(await userByEmail("dave@partner.example")).toBeUndefined();
-    const daveAgain = await getSession(new Browser(), {
-      email: "dave@partner.example",
-    });
-    await expect(daveAgain.json()).resolves.toBeNull();
-  });
-
-  it("lets everyone the outer ring admits join when the operator says so", async () => {
-    useAccessEnv({
-      ...MOCK_ACCESS_ENV.outerRing,
-      CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN: "everyone",
-    });
-    const owner = await claimGateway();
-    const appId = await seedDefaultApp(owner.organizationId);
-    const response = await getSession(new Browser(), {
-      email: "frank@anywhere.example",
-    });
-    const body = (await response.json()) as { user: { id: string } };
-    expect(body).toMatchObject({ user: { email: "frank@anywhere.example" } });
-    expect(await membershipOf("frank@anywhere.example")).toMatchObject({
-      organizationId: owner.organizationId,
-      role: "member",
-    });
-    expect(await grantedAppsOf(body.user.id)).toEqual([appId]);
-  });
-
   it("keeps one account per Access identity when first sign-ins race", async () => {
-    useAccessEnv({
-      ...MOCK_ACCESS_ENV.outerRing,
-      CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS: "acme.com",
-    });
     const owner = await claimGateway();
+    await inviteAs(owner, "erin@acme.com");
     // Several restored tabs, all through the outer ring at once.
     const tabs = [new Browser(), new Browser(), new Browser()];
     const sessions = await Promise.all(
@@ -635,12 +517,39 @@ describe("outer ring: Access in front of the gateway (SQLite)", () => {
     ).toEqual([]);
   });
 
-  it("creates no account on a gateway nobody has claimed, whatever the settings", async () => {
-    useAccessEnv({
-      ...MOCK_ACCESS_ENV.outerRing,
-      CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS: "acme.com",
-      CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN: "everyone",
-    });
+  it("links no identity to an account it won't sign in, nor verifies its email", async () => {
+    const owner = await claimGateway();
+    // A deactivated member whose email nobody verified, and an account that
+    // belongs to no organization and holds no invitation.
+    for (const [email, member] of [
+      ["gone@acme.com", true],
+      ["drifter@acme.com", false],
+    ] as const) {
+      const id = `user-${email}`;
+      await db
+        .insert(users)
+        .values({ id, name: email, email, emailVerified: false });
+      if (member) {
+        await db.insert(members).values({
+          id: `member-${email}`,
+          organizationId: owner.organizationId,
+          userId: id,
+          role: "member",
+          createdAt: new Date(),
+        });
+        await UserRepository.deactivate(id, "test");
+      }
+
+      const browser = new Browser();
+      const response = await getSession(browser, { email });
+      await expect(response.json()).resolves.toBeNull();
+      expect(browser.has("better-auth.session_token")).toBe(false);
+      expect(await accessAccountsOf(email)).toEqual([]);
+      expect((await userByEmail(email))?.emailVerified).toBe(false);
+    }
+  });
+
+  it("creates no account on a gateway nobody has claimed", async () => {
     const response = await getSession(new Browser(), {
       email: "first@acme.com",
     });
@@ -1264,10 +1173,6 @@ describe("OIDC sign-in: Continue with Company SSO (SQLite)", () => {
   });
 
   it("refuses everyone on a gateway nobody has claimed", async () => {
-    useAccessEnv({
-      ...MOCK_ACCESS_ENV.oidc,
-      CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS: "acme.com",
-    });
     const browser = new Browser();
     const callback = await finish(browser, await start(browser), {
       email: "first@acme.com",
@@ -1291,33 +1196,6 @@ describe("OIDC sign-in: Continue with Company SSO (SQLite)", () => {
     // Access membership check refuses it too (ACCESS_ACCOUNT_DEACTIVATED).
     expect(errorOf(callback)).toBe("BANNED_USER");
     expect(browser.has("better-auth.session_token")).toBe(false);
-  });
-
-  it("auto-joins an allowed domain through OIDC, but never 'everyone'", async () => {
-    useAccessEnv({
-      ...MOCK_ACCESS_ENV.oidc,
-      CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS: "acme.com",
-      // Outer-ring only: it means nothing for OIDC sign-in.
-      CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN: "everyone",
-    });
-    const owner = await claimGateway();
-    const appId = await seedDefaultApp(owner.organizationId);
-
-    const joined = new Browser();
-    await finish(joined, await start(joined), { email: "carol@acme.com" });
-    expect(await membershipOf("carol@acme.com")).toMatchObject({
-      organizationId: owner.organizationId,
-      role: "member",
-    });
-    expect(
-      await grantedAppsOf((await userByEmail("carol@acme.com"))!.id),
-    ).toEqual([appId]);
-
-    const stranger = new Browser();
-    const refused = await finish(stranger, await start(stranger), {
-      email: "frank@anywhere.example",
-    });
-    expect(errorOf(refused)).toBe("ACCESS_NOT_INVITED");
   });
 
   it("links an existing account only when its email is verified, else after a password sign-in", async () => {
@@ -1384,15 +1262,15 @@ describe("OIDC sign-in: Continue with Company SSO (SQLite)", () => {
     useAccessEnv({
       ...MOCK_ACCESS_ENV.oidc,
       ...MOCK_ACCESS_ENV.outerRing,
-      CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS: "acme.com",
     });
     const owner = await claimGateway();
     await seedVerifiedMember(owner.organizationId, "alice@acme.com");
     await seedVerifiedMember(owner.organizationId, "bob@acme.com");
+    await inviteAs(owner, "erin@acme.com");
     const alice = await throughAccess("alice@acme.com");
 
     // Through the outer ring as Alice, "Continue with Company SSO" as Bob,
-    // or as Erin, whom auto-join would let in: refused, nothing made.
+    // or as Erin, whose invitation would let her in: refused, nothing made.
     for (const email of ["bob@acme.com", "erin@acme.com"]) {
       const browser = new Browser();
       const authorizationUrl = await start(browser, {}, alice);
@@ -1684,9 +1562,7 @@ describe("the membership policy itself (SQLite)", () => {
       "gone@acme.com",
     );
     await UserRepository.deactivate(userId, "test");
-    await expect(
-      ensureAccessMembership(userId, "outer-ring", config),
-    ).rejects.toMatchObject({
+    await expect(ensureAccessMembership(userId)).rejects.toMatchObject({
       body: { code: "ACCESS_ACCOUNT_DEACTIVATED" },
     });
   });
@@ -1700,10 +1576,7 @@ describe("the membership policy itself (SQLite)", () => {
       emailVerified: false,
     });
     await expect(
-      ensureAccessMembership("user-unverified", "outer-ring", {
-        ...config,
-        autoJoinDomains: ["acme.com"],
-      }),
+      ensureAccessMembership("user-unverified"),
     ).rejects.toMatchObject({ body: { code: "ACCESS_NOT_INVITED" } });
     expect(await membershipOf("unverified@acme.com")).toBeUndefined();
   });
@@ -1719,8 +1592,8 @@ describe("the membership policy itself (SQLite)", () => {
     });
 
     const results = await Promise.allSettled([
-      ensureAccessMembership("user-bob", "oidc", config),
-      ensureAccessMembership("user-bob", "oidc", config),
+      ensureAccessMembership("user-bob"),
+      ensureAccessMembership("user-bob"),
     ]);
     expect(results.some((result) => result.status === "fulfilled")).toBe(true);
     expect(

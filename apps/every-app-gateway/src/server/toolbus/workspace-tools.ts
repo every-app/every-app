@@ -652,17 +652,8 @@ const HANDLERS: Record<string, Handler> = {
   async workspace_remove(ctx, args) {
     requireConfirm(args);
     const user = await resolveUser(ctx, requireText(args, "user"));
-    const { deactivatedInstead } = await AdminService.deleteUser(ctx, user.id);
-    return {
-      user: { id: user.id, email: user.email },
-      removed: !deactivatedInstead,
-      deactivatedInstead,
-      ...(deactivatedInstead
-        ? {
-            note: "Cloudflare Access would let this person straight back in, so they were deactivated instead and stay listed.",
-          }
-        : {}),
-    };
+    await AdminService.deleteUser(ctx, user.id);
+    return { user: { id: user.id, email: user.email }, removed: true };
   },
 
   async workspace_reset_email(ctx, args) {

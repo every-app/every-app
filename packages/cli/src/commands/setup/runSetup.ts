@@ -33,11 +33,6 @@
  *                apps its registry lists, or serves a version the row
  *                doesn't name (lib/gateway/reconcile.ts), or --redeploy. A
  *                Gateway behind the live one is deployed with a warning
- *    access      on a live self-hosted Gateway behind Cloudflare Access
- *                (told by the live Access applications, never a flag),
- *                both applications are brought in line with what this
- *                release lets through (lib/access/applications.ts): a
- *                warning at worst, never a failed run
  *    owner       a one-time setup link, opened in the browser (never put
  *                into a CI log), and the wait for the claim, read from the
  *                link's own row in D1. In CI the run ends without one, with
@@ -63,7 +58,6 @@
 import { cliVersion as packageVersion } from "@/lib/version";
 import { gatewayNameProblem, gatewayNames, type GatewayNames } from "@every-app/perimeter/manifest";
 import { turnAccessOn } from "../access";
-import { keepAccessAfterGatewayDeploy } from "@/lib/access/applications";
 import { readAccessOffChoice, writeAccessOffChoice, type AccessOffReason } from "@/lib/access/record";
 import { ACCESS_SETTINGS } from "@/lib/access/settings";
 import { roughly } from "@/lib/output/time";
@@ -481,22 +475,7 @@ export async function installGateway({
     deps,
   });
 
-  // Behind Cloudflare Access, both applications are brought in line with
-  // what this release wants (its own public paths, the sign-in methods)
-  // as soon as it is live: a rollout never leaves the bypass list behind.
-  // Read from the live applications, so `access off` stays off; a
-  // warning at worst, never a failed run. A hosted Gateway ignores Access,
-  // and a Gateway that was just installed can't be behind it yet.
   const mode = live?.deploymentMode ?? "self_hosted";
-  if (live && mode === "self_hosted") {
-    await keepAccessAfterGatewayDeploy({
-      cf,
-      db: gateway.db,
-      scope: { gatewayHost: target.domain.toLowerCase(), appBaseDomain: target.appBaseDomain.toLowerCase() },
-      names: gatewayNamesHere,
-      out,
-    });
-  }
 
   // Its owner.
   const { owner, created } = await ensureOwner({

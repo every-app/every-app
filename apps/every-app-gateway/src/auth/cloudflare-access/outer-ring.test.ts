@@ -40,7 +40,6 @@ const outerRing: AccessOuterRingConfig = {
   signInAudiences: [AUD],
   audiences: [AUD],
   certsUrl: `${TEAM}/cdn-cgi/access/certs`,
-  autoJoinEveryone: false,
   idpIds: [],
 };
 

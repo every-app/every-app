@@ -32,8 +32,8 @@ import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { CancelledError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { readInstall } from "@/lib/gateway/install";
-import { readPublicSurfaces, syncAppsAccessAfter } from "@/lib/access/sync";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
+import { publicSurfaceKey, warnIfAccessNeedsRerun } from "@/lib/access/settings";
 import {
   deleteApp as deleteFromRegistry,
   type RegisteredAppInfo,
@@ -140,12 +140,6 @@ export async function removeApp({
     message: `Removing ${appId} from the Gateway...`,
     data: { appId },
   });
-  // Whether Access had public or bearer routes of its to take back: read before the row is tombstoned.
-  const surface = (await readPublicSurfaces(registry)).find((candidate) => candidate.appId === appId);
-  const hadSurface = {
-    publicRoutes: (surface?.publicPaths.length ?? 0) > 0,
-    bearerRoutes: (surface?.bearerPaths.length ?? 0) > 0,
-  };
   const deleted = await deleteFromRegistry(registry, appId, connection.deployer, Date.now(), { purge });
   const live = connection.install;
   const stillServed =
@@ -164,11 +158,6 @@ export async function removeApp({
       openRelease: newGateway.openRelease,
     });
   }
-  // Behind Cloudflare Access, the app's destination goes with it.
-  await syncAppsAccessAfter(
-    { cf, db: registry, install: connection.install, out },
-    { appId, surface: hadSurface, removing: true },
-  );
   out.emit({
     type: "step",
     step: "app.delete",
@@ -181,6 +170,19 @@ export async function removeApp({
       alreadyDeleted: deleted.alreadyDeleted && !stillServed,
     },
   });
+  // A delete never changes Cloudflare Access either: the app's bypass
+  // destination stays until `access on` runs again. Said when it had one.
+  if (!deleted.alreadyDeleted) {
+    await warnIfAccessNeedsRerun(
+      { cf, out, worker: connection.names.worker },
+      {
+        appId,
+        previous: deleted.manifest as Parameters<typeof publicSurfaceKey>[0],
+        next: null,
+        message: `Cloudflare Access still lets ${appId}'s public routes through on ${deleted.hostname}\nUntil ${CLI} access on runs again, an app deployed there later gets them without a sign-in.`,
+      },
+    );
+  }
 
   // Cloudflare keeps a removed Custom Domain's certificate. A hostname
   // outside the base was never the gateway's: whatever has a certificate

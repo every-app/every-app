@@ -3,9 +3,8 @@
  * caller may use, under `<appId>_<tool>` names, plus the built-in
  * `everyapp_*` tools.
  *
- * The caller is already resolved (mcp-auth/validate.ts, or for a
- * Cloudflare Access assertion mcp-auth/access-caller.ts): an OAuth
- * connection, a personal access token, or the person Access vouches for.
+ * The caller is already resolved (mcp-auth/validate.ts): an OAuth
+ * connection or a personal access token.
  * This serves, from the catalogs in D1, the apps the caller reaches: active
  * apps of their organization they have access to and, on the hosted
  * gateway, the shared apps, narrowed to the connection's chosen apps or the
@@ -71,7 +70,6 @@ import {
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { AppToolRepository } from "@/server/repositories/AppToolRepository";
 import { OrganizationRepository } from "@/server/repositories/OrganizationRepository";
-import { resolveAccessCaller } from "@/server/mcp-auth/access-caller";
 import {
   resolveOauthCaller,
   resolvePatCaller,
@@ -104,22 +102,6 @@ function allowedOrigins(): string[] {
   });
 }
 
-/**
- * Whether a browser's `Origin` may call the gateway's `/mcp`: none (a
- * server), the gateway's own, or one of MCP_ALLOWED_ORIGINS. The ToolBus
- * applies the same rule to every request (packages/toolbus/src/http.ts);
- * the Access path applies it first, before anything is verified or read
- * for the person, since Access vouches for a browser's cookie too.
- */
-export function browserOriginAllowed(request: Request): boolean {
-  const origin = request.headers.get("origin");
-  if (origin === null) return true;
-  if (origin === new URL(request.url).origin) return true;
-  return allowedOrigins().includes(origin.toLowerCase());
-}
-
-type RefusedCaller = Extract<McpCaller, { kind: "refused" }>;
-
 /** The request header that chooses how the gateway's /mcp lists tools. */
 const LISTING_HEADER = "x-everyapp-tools";
 /** The /mcp query parameter that chooses the same. */
@@ -148,29 +130,10 @@ export function listingChoice(request: Request): Listing | undefined {
   );
 }
 
-/**
- * What an AI app can show its user for a refusal it can do something about:
- * the Access path has no consent page or token to explain it, so the 403
- * body says what to do.
- */
-function refusalMessage(reason: RefusedCaller["reason"]): string | null {
-  switch (reason) {
-    case "not_connected":
-      return `No EveryApp account is connected to this Cloudflare Access identity. Open ${env.GATEWAY_URL?.trim() || "the gateway"} in your browser, sign in once, then connect again.`;
-    case "account_deactivated":
-      return "This account has been deactivated.";
-    case "organization_unresolved":
-      return "You belong to several organizations here. Open the gateway in your browser and pick one first.";
-    default:
-      return null;
-  }
-}
-
 interface ServeGatewayMcpOptions {
   /**
    * When the credential that authenticated this request expires, in
-   * seconds since the epoch (an OAuth access token's, an Access
-   * assertion's): a held `subscriptions/listen` stream ends no later than
+   * seconds since the epoch (an OAuth access token's): a held `subscriptions/listen` stream ends no later than
    * that, so it never outlives the token that opened it. A personal token
    * needs none: each poll resolves it again, expiry included.
    */
@@ -183,13 +146,8 @@ export async function serveGatewayMcp(
   options: ServeGatewayMcpOptions = {},
 ): Promise<Response> {
   if (caller.kind === "refused") {
-    const message = refusalMessage(caller.reason);
     return Response.json(
-      {
-        error: "forbidden",
-        reason: caller.reason,
-        ...(message ? { message } : {}),
-      },
+      { error: "forbidden", reason: caller.reason },
       { status: 403 },
     );
   }
@@ -267,22 +225,6 @@ function recheckFor(request: Request, caller: McpCaller): () => Promise<void> {
   const refused = () => {
     throw new ViewRefusedError("the caller no longer stands");
   };
-  if (principal.credential.kind === "access") {
-    // The same person, in the same organization: deactivated, removed, or
-    // suspended ends the stream; so does a browser that moved to another
-    // organization since (the next request acts there).
-    const email = principal.credential.id;
-    return async () => {
-      const again = await resolveAccessCaller(email);
-      if (
-        again.kind !== "caller" ||
-        again.principal.userId !== principal.userId ||
-        again.principal.organizationId !== principal.organizationId
-      ) {
-        refused();
-      }
-    };
-  }
   if (principal.credential.kind === "oauth") {
     const props = {
       v: 1,

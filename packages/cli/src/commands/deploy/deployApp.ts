@@ -70,7 +70,7 @@ import { setupDeps, type SetupDeps } from "@/commands/setup/runSetup";
 import { checkSchemaDrift } from "./steps/checkSchemaDrift";
 import { offerGateway } from "./steps/offerGateway";
 import { LiveWaitVerb, type LiveWaitSeams } from "./steps/waitForLive";
-import { syncAppsAccessAfter } from "@/lib/access/sync";
+import { warnIfAccessNeedsRerun } from "@/lib/access/settings";
 import { buildApp } from "@/lib/app/buildApp";
 import {
   MISSING_CLOUDFLARE_CONFIG,
@@ -108,7 +108,6 @@ import { directoryExists } from "@/lib/file-operations";
 import { connectToGateway } from "@/lib/gateway/connect";
 import { acquireAppLease, LeasePurpose } from "@/lib/gateway/lease";
 import { gatewayRegistry } from "@/lib/gateway/providers";
-import { nudgeActivation } from "@/lib/gateway/resources";
 import { recordSetupStateQuietly } from "@/lib/gateway/setupState";
 import {
   findRegisteredApp,
@@ -624,9 +623,6 @@ async function deploySteps(
   const url = `https://${hostname}`;
   // A hostname the gateway doesn't publish never answers.
   const wait = !outsideBase && (options.waitForLive ?? true);
-  // Behind Cloudflare Access the live wait's probe never reaches the
-  // Gateway: the activation queue makes it sweep now, not at its next cron.
-  if (wait) await nudgeActivation(cf, names);
   const live = await awaitLive({
     wait,
     db: registry,
@@ -660,16 +656,15 @@ async function deploySteps(
           },
     );
   }
-  // Behind Cloudflare Access, the app's public and bearer routes are let
-  // through as soon as it is live (nothing to do when Access isn't in front).
-  await syncAppsAccessAfter(
-    { cf, db: registry, install, out },
+  // A deploy never changes Cloudflare Access: `access on` lets public
+  // routes through. Said when this deploy changed them and Access is on.
+  await warnIfAccessNeedsRerun(
+    { cf, out, worker: names.worker },
     {
       appId: manifest.id,
-      surface: {
-        publicRoutes: publicRoutes.length > 0,
-        bearerRoutes: (manifest.bearerRoutes?.paths ?? []).length > 0,
-      },
+      previous: plan.previousManifest,
+      next: manifest,
+      message: `Cloudflare Access doesn't know ${manifest.id}'s new public routes yet\nUntil ${CLI} access on runs again, they need an Access sign-in.`,
     },
   );
   if (outsideBase) {

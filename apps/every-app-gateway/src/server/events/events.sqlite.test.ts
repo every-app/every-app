@@ -2417,26 +2417,12 @@ describe("the event bus (SQLite)", () => {
       });
     });
 
-    it("member.joined via access: a pending invitation accepted by the Access sign-in, and an auto-join domain", async () => {
-      const config = {
-        oidc: null,
-        outerRing: null,
-        autoJoinDomains: ["acme.example"],
-        passwordSignIn: true,
-        idpIds: [],
-        problems: [],
-      };
+    it("member.joined via access: a pending invitation accepted by the Access sign-in", async () => {
       await db.insert(users).values([
         {
           id: "u-invited",
           name: "Eve",
           email: "eve@elsewhere.example",
-          emailVerified: true,
-        },
-        {
-          id: "u-domain",
-          name: "Fay",
-          email: "fay@acme.example",
           emailVerified: true,
         },
       ]);
@@ -2449,8 +2435,7 @@ describe("the event bus (SQLite)", () => {
         expiresAt: new Date(clock.getTime() + 60_000),
         inviterId: owner,
       });
-      await ensureAccessMembership("u-invited", "outer-ring", config);
-      await ensureAccessMembership("u-domain", "outer-ring", config);
+      await ensureAccessMembership("u-invited");
       expect(await typesEmitted()).toEqual([
         expect.objectContaining({
           type: "member.joined",
@@ -2465,18 +2450,10 @@ describe("the event bus (SQLite)", () => {
           },
           actor: expect.objectContaining({ kind: "user", id: "u-invited" }),
         }),
-        expect.objectContaining({
-          type: "member.joined",
-          data: {
-            user: { id: "u-domain", email: "fay@acme.example", name: "Fay" },
-            role: "member",
-            via: "access",
-          },
-        }),
       ]);
       // Signing in again joins nothing twice.
-      await ensureAccessMembership("u-domain", "outer-ring", config);
-      expect(await typesEmitted()).toHaveLength(2);
+      await ensureAccessMembership("u-invited");
+      expect(await typesEmitted()).toHaveLength(1);
     });
 
     it("member.joined via member_add when a member is added server-side, by the gateway", async () => {
@@ -2498,31 +2475,6 @@ describe("the event bus (SQLite)", () => {
             via: "member_add",
           },
           actor: { kind: "gateway" },
-        }),
-      ]);
-    });
-
-    it("member.deactivated with reason deleted_with_access_auto_join when a delete would let Access straight back in", async () => {
-      workerEnv["CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS"] = "acme.example";
-      try {
-        await expect(
-          AdminService.deleteUser(asOwner(), member),
-        ).resolves.toEqual({ deactivatedInstead: true });
-      } finally {
-        delete workerEnv["CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS"];
-      }
-      expect(await typesEmitted()).toEqual([
-        expect.objectContaining({
-          type: "member.deactivated",
-          data: {
-            user: {
-              id: member,
-              email: "cy@acme.example",
-              name: await nameOf(member),
-            },
-            reason: "deleted_with_access_auto_join",
-          },
-          actor: expect.objectContaining({ kind: "user", id: owner }),
         }),
       ]);
     });

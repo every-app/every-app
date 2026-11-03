@@ -88,14 +88,13 @@ export interface McpPrincipal {
   organizationName?: string;
   orgRole: string;
   /**
-   * How the caller authenticated. `id` is a PAT id, an OAuth connection id
-   * or, for `access` (a verified Cloudflare Access assertion on the
-   * gateway's /mcp), the Access email: never a secret. `clientName` is the
+   * How the caller authenticated. `id` is a PAT id or an OAuth connection
+   * id: never a secret. `clientName` is the
    * connected AI app's own name (self-asserted unless its client id is a
    * verified domain), for display.
    */
   credential: {
-    kind: "pat" | "session" | "dev" | "oauth" | "access";
+    kind: "pat" | "session" | "dev" | "oauth";
     id: string;
     clientName?: string;
   };

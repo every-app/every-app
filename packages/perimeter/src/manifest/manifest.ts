@@ -53,6 +53,14 @@ export const PublicRouteSchema = z.object({
   path: z.string(),
   /** HTTP methods this public route answers. Defaults to `["GET"]`. */
   methods: z.array(z.string()).optional(),
+  /**
+   * A bearer route: a native app ("Sign in with Every App") or a script
+   * with a personal token reaches it with its Gateway token only, on every
+   * method (so it takes no `methods`). Cloudflare Access lets it through
+   * like any public route; the Gateway refuses a session cookie there (401)
+   * and never serves it anonymously.
+   */
+  bearer: z.literal(true).optional(),
 });
 export type PublicRoute = z.infer<typeof PublicRouteSchema>;
 
@@ -61,32 +69,6 @@ export type PublicRoute = z.infer<typeof PublicRouteSchema>;
  * override on the app's Cloudflare Access destination, which holds 25.
  */
 export const MAX_PUBLIC_ASSETS = 25;
-
-/**
- * `bearerRoutes: { paths, why }`: the routes a bearer client (a native
- * app, a script with a personal token) reaches with its token only. `paths`
- * are globs with `public[].path`'s syntax and safety rules, every method;
- * `why` the app needs them, shown to the operator. The
- * perimeter refuses a request carrying its session cookie on one (401),
- * so the Cloudflare Access bypass `everyapp access on` makes for these
- * paths opens nothing to a browser. A bearer route is never public, and
- * never `/mcp`.
- */
-export const BearerRoutesSchema = z.object({
-  paths: z
-    .array(z.string())
-    .min(1, 'bearerRoutes.paths: list at least one path, such as "/api/**"')
-    .max(
-      MAX_PUBLIC_ASSETS,
-      `bearerRoutes.paths: at most ${MAX_PUBLIC_ASSETS} patterns; use a glob such as "/api/**"`,
-    ),
-  why: z
-    .string()
-    .trim()
-    .min(1, "bearerRoutes.why: say why the app's routes take a bearer")
-    .max(200, "bearerRoutes.why: at most 200 characters"),
-});
-export type BearerRoutes = z.infer<typeof BearerRoutesSchema>;
 
 // One schema: the strict one an author's everyapp.config.ts and every
 // registration are checked against. A stored row is read with
@@ -904,12 +886,6 @@ const MANIFEST_FIELDS = {
       `publicAssets: at most ${MAX_PUBLIC_ASSETS} patterns; use a glob such as "/icons/**"`,
     )
     .optional(),
-  /**
-   * Routes a bearer client reaches with its token only ("Sign in with
-   * Every App", docs/design/native-sign-in.md §7): see
-   * {@link BearerRoutesSchema}. Default: none.
-   */
-  bearerRoutes: BearerRoutesSchema.strict().optional(),
   /** Provider APIs this app may call through the gateway. Default: none. */
   providers: ProvidersSchema.optional(),
   /** Limits on what the app may do through the gateway's AI proxy. */
@@ -1587,40 +1563,45 @@ export function validateManifest(input: unknown): Manifest {
 
 /** How a `publicAssets` pattern is named in a refusal. */
 const PUBLIC_ASSET_LABEL = "publicAssets: pattern";
-/** How a `bearerRoutes` pattern is named in a refusal. */
-const BEARER_ROUTE_LABEL = "bearerRoutes: pattern";
-
 /**
- * A `bearerRoutes` pattern obeys the public-route safety rules (absolute,
- * no catch-all, no encoding, never the internal namespace), is never
- * `/mcp` nor covers it (the host's `/mcp` stays private and behind
- * Access), and is not also a public route
- * or public asset pattern: a path is served to anyone, or to a bearer
- * only, never both. Checked at registration and at author time alike, so
- * a stored row can't widen what the perimeter lets a cookie reach.
+ * A bearer route (`public: [{ path, bearer: true }]`) obeys the public-route
+ * safety rules (checked with the others), names no `methods` (it answers
+ * every method, to a bearer only), is never `/mcp` nor covers it (the
+ * host's `/mcp` stays private and behind Access), and its path
+ * isn't also an anonymous public route or a public asset pattern: a path
+ * is served to anyone, or to a bearer only, never both. Checked at
+ * registration and at author time alike, so a stored row can't widen what
+ * the perimeter lets a cookie reach.
  */
 function assertBearerRoutesAreSafe(manifest: {
-  bearerRoutes?: BearerRoutes;
   public?: PublicRoute[];
   publicAssets?: string[];
 }): void {
-  const publicPaths = new Set([
-    ...(manifest.public ?? []).map((route) => route.path),
+  const anonymous = new Set([
+    ...(manifest.public ?? [])
+      .filter((route) => !route.bearer)
+      .map((route) => route.path),
     ...(manifest.publicAssets ?? []),
   ]);
-  for (const path of manifest.bearerRoutes?.paths ?? []) {
-    assertPublicPathIsSafe(path, BEARER_ROUTE_LABEL);
+  for (const route of manifest.public ?? []) {
+    if (!route.bearer) continue;
+    const { path } = route;
+    if (route.methods) {
+      throw new ManifestError(
+        `Invalid everyapp.config: public: ${path} is a bearer route, which answers every method; drop its methods`,
+      );
+    }
     const covers =
       isMcpPath(path) ||
       matchPublicRoute([{ path, methods: ["GET"] }], "GET", "/mcp").public;
     if (covers) {
       throw new ManifestError(
-        `Invalid everyapp.config: bearerRoutes: ${path} can't be a bearer route${isMcpPath(path) ? "" : " (it covers /mcp)"}; /mcp stays private on an app host`,
+        `Invalid everyapp.config: public: ${path} can't be a bearer route${isMcpPath(path) ? "" : " (it covers /mcp)"}; /mcp stays private on an app host`,
       );
     }
-    if (publicPaths.has(path)) {
+    if (anonymous.has(path)) {
       throw new ManifestError(
-        `Invalid everyapp.config: bearerRoutes: ${path} is also public; a path is open to anyone or to a bearer only, not both`,
+        `Invalid everyapp.config: public: ${path} is both a bearer route and open to anyone; a path is open to anyone or to a bearer only, not both`,
       );
     }
   }

@@ -273,7 +273,8 @@ export interface PublicMatch {
 
 /**
  * Decide whether a request is public. Default-deny. The method check is
- * case-insensitive; methods default to GET-only.
+ * case-insensitive; methods default to GET-only. A `bearer: true` route is
+ * never public here: it is {@link matchBearerRoute}'s.
  */
 export function matchPublicRoute(
   routes: PublicRoute[] | undefined,
@@ -293,6 +294,7 @@ export function matchPublicRoute(
   }
   const upperMethod = method.toUpperCase();
   for (const route of routes) {
+    if (route.bearer) continue;
     const allowed = (route.methods ?? ["GET"]).map((m) => m.toUpperCase());
     if (!allowed.includes(upperMethod)) continue;
     if (globToRegExp(route.path).test(canonical)) {
@@ -302,20 +304,28 @@ export function matchPublicRoute(
   return { public: false, reason: "no matching public route" };
 }
 
+/** The paths of a manifest's `bearer: true` public routes, in its order. */
+export function bearerPathsOf(
+  routes: readonly PublicRoute[] | undefined,
+): string[] {
+  return (routes ?? []).filter((route) => route.bearer).map((r) => r.path);
+}
+
 /**
- * Decide whether a request is on a bearer route (`bearerRoutes`): a path
- * a native client reaches with a bearer token only, matched on every
- * method with the same canonicalization, glob syntax and internal-namespace
- * denial as {@link matchPublicRoute}. The gateway refuses its session
- * cookie there and never serves the path anonymously, whatever `public`
- * says (the manifest refuses a path listed under both).
+ * Decide whether a request is on a bearer route (a `public` entry with
+ * `bearer: true`): a path a native client or a script reaches with a
+ * Gateway bearer token only, matched on every method with the same
+ * canonicalization, glob syntax and internal-namespace denial as
+ * {@link matchPublicRoute}. The gateway refuses its session cookie there
+ * and never serves the path anonymously.
  */
 export function matchBearerRoute(
-  globs: readonly string[] | undefined,
+  routes: readonly PublicRoute[] | undefined,
   method: string,
   rawPathname: string,
 ): PublicMatch {
-  if (!globs || globs.length === 0) {
+  const globs = bearerPathsOf(routes);
+  if (globs.length === 0) {
     return { public: false, reason: "no bearer routes declared" };
   }
   return matchPublicRoute(

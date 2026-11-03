@@ -10,22 +10,6 @@ Codes are stable strings for scripts; messages are for people. With `--json` a c
 
 Each entry says what the code means, which commands raise it, and what the error itself says to do next, as `packages/cli/src/lib/errors.ts` defines it: `fix` is a remedy in words; `rerun` is a command to run, with `rerunNote` after it. A `rerun` defaults to the same command again only when the error is `retryable`, or when the code is a takeover: then the rerun carries the takeover flag and the event has `data.authorize: true`, which means show the error and ask the person before running it, never retry with the flag on your own. Under `--json` these arrive on the `error` event as `data.fix`, `data.rerun`, `data.rerunNote`, `data.authorize` and the top-level `retryable` (`packages/cli/src/lib/output/report.ts`). Commands below are written `pnpm everyapp …`; the prefix in a real message follows how everyapp was started (`packages/cli/src/lib/output/command.ts`: `pnpm everyapp`, `npx everyapp`, `yarn everyapp`, or `everyapp`).
 
-### ACCESS_DOMAIN_INVALID
-
-`access on --email-domain <x>`: the value (trimmed, lowercased, a leading `@` stripped) isn't a hostname as `DOMAIN` in `commands/access/index.ts` defines one: one or more labels of lowercase letters, digits and dashes (1–63 characters, no dash at either end), each followed by a dot, then a last label of 2–63 of those characters, 253 characters at most. Checked with the other arguments, before anything connects. Headline: `--email-domain <x> isn't a domain` (the value as given), then `Use the part after the @, like example.com.`
-
-**Fix:** none offered; no rerun; not retryable. Pass the domain alone, as in `--email-domain example.com`.
-
-Source: `packages/cli/src/commands/access/index.ts` (`wantedRules`).
-
-### ACCESS_EMAIL_INVALID
-
-`access on --email <x>`: the value (trimmed, lowercased) doesn't match `EMAIL`, `/^[^\s@]+@[^\s@]+\.[^\s@]+$/` (no spaces, one `@`, a dot after it). Checked with the other arguments, before anything connects. Headline: `--email <x> isn't an email address` (the value as given), one line.
-
-**Fix:** none offered; no rerun; not retryable.
-
-Source: `packages/cli/src/commands/access/index.ts` (`wantedRules`).
-
 ### ACCESS_HOSTED
 
 `access on` and `access off` against a Gateway whose install row records `deploymentMode: "hosted"`: a hosted Gateway ignores the Access settings, so there is nothing to put in front of it. Checked right after connecting, before anything is read from Access. `access show` works there: it reads the Worker's settings and skips Access. Headline: `This Gateway can't be put behind Cloudflare Access`, then `Hosted Gateways ignore the Access settings.`
@@ -36,29 +20,19 @@ Source: `packages/cli/src/commands/access/index.ts` (`refuseHosted`, called from
 
 ### ACCESS_NOBODY_ALLOWED
 
-`access on` when the allow policy it would make would let nobody in: the Gateway has no active member (a `users` row not `banned`, or whose `ban_expires` has passed), no `pending` invitation that hasn't expired, no `--email` or `--email-domain` was given, and no Access policy named `Every App gateway members` (`POLICY_NAME`) exists yet. Raised after reading the Gateway's people and Access's organization, identity providers and policies, before any write. Headline: `Nobody to let in yet`, then `The Gateway has no members or invitations, and no --email was given, so the Access policy would let nobody in. Claim the Gateway first, or name who will (the setup link is then behind Access too).`
+`access on` (and `setup`'s Access step) on a Gateway nobody has claimed yet: no `members` row with role `owner`. Access lets in the Gateway's members and invitees (the policy asks the Gateway), so with nobody there it would let nobody in, the owner's setup link included. Checked right after connecting, before anything is read from or written to Access. Message: `Claim the Gateway first` / `Access lets in the Gateway's members and invitees, and it has none yet, so nobody could open the setup link.`
 
-**Fix:** `rerun`: `pnpm everyapp access on --email <your address>`. Not retryable.
+**Fix:** `rerun`: `pnpm everyapp access on`, `rerunNote`: `once the owner has claimed the Gateway`. Not retryable.
 
-Source: `packages/cli/src/commands/access/index.ts` (`turnAccessOn`, `readPeople`).
+Source: `packages/cli/src/commands/access/index.ts` (`turnAccessOn`, `hasOwner`).
 
 ### ACCESS_PERMISSION_MISSING
 
 An Access call (the Zero Trust organization, identity providers, policies or applications) that cf refused with its `auth` kind (API code `10000` or `9109`, or output saying `No authentication token found`, `Not logged in` or `cf auth login`): the login or token lacks the Access permissions. Every Access call in `lib/cf/access.ts` goes through `explainAccessError`, so `access on`, `access off` and `access show` raise it at their first Access read; a Workers or D1 refusal elsewhere in the run stays cf's own (`CF_AUTH`). Headline: `This Cloudflare login can't manage Access`, then the first line of cf's error; `data.url`: `https://dash.cloudflare.com/profile/api-tokens`.
 
-`deploy` and `delete` bring the apps application up to date afterwards (`syncAppsAccessAfter`), and there it is never an error: when the app has public routes the run warns `ACCESS_NOT_CHECKED` (`This Cloudflare login can't read Cloudflare Access, so <app> wasn't checked against it`, then `If the Gateway is behind Access, <app>'s public routes need a login there until it is updated.`, or for `delete` `… <app>'s host stays listed there until it is updated.`; `data.rerun`: `pnpm everyapp access on`, `data.rerunNote`: `with a login that can manage Access, if the Gateway is behind it`) and goes on; with no public routes it says nothing.
-
 **Fix:** `fix`: `use a login or token with Access: Apps and Policies (edit) and Access: Organizations, Identity Providers, and Groups (edit)`. No rerun; not retryable.
 
-Source: `packages/cli/src/lib/cf/access.ts` (`explainAccessError`, `access`), `packages/cli/src/lib/access/sync.ts` (`syncAppsAccessAfter`), `packages/cli/src/lib/cf/errors.ts` (the `auth` kind).
-
-### ACCESS_SESSION_INVALID
-
-`access on --session <d>` or `--team-session <d>` whose value isn't a duration Access takes. `durationSeconds` (`lib/access/plan.ts`) reads one or more `<number><unit>` parts with no spaces, the number with an optional decimal part and the unit one of `ns`, `us`, `µs`, `ms`, `s`, `m`, `h` (`720h`, `2h30m`, `1.5h`); `checkDuration` refuses anything else, and a total of zero or less. Checked first, before any network. Headline: `--session <d> isn't a duration Access takes` (or `--team-session <d> …`; the value as given), then `Use hours and minutes, like 720h or 2h30m.` Without `--session` the value is `720h` (`DEFAULT_SESSION`, the most Access allows for an application's session); without `--team-session` the team's global session is left as it is.
-
-**Fix:** none offered; no rerun; not retryable.
-
-Source: `packages/cli/src/commands/access/index.ts` (`checkDuration`), `packages/cli/src/lib/access/plan.ts` (`durationSeconds`).
+Source: `packages/cli/src/lib/cf/access.ts` (`explainAccessError`, `access`), `packages/cli/src/lib/cf/errors.ts` (the `auth` kind).
 
 ### ACCESS_TEAM_CREATE_FAILED
 
@@ -881,19 +855,19 @@ Source: `packages/cli/src/commands/workspace/index.ts` (`setRole`), `packages/cl
 
 ### LEASE_HELD
 
-A deploy lease (a row in the Gateway's D1 table `_everyapp_deploy_lease`, id `gateway`, `app:<workerName>` or `access`) was still held after 5 minutes of waiting (`WAIT_MS`, retried every 5 s; the rebind passes its own `leaseWaitMs`, and the Access sync after `deploy` and `delete` waits 60 s, `SYNC_LEASE_WAIT_MS`). A lease expires 3 minutes after its last renewal and is renewed every 30 s, so a dead holder frees it within 3 minutes; a live one holds it as long as it runs and nothing takes it over. While waiting, `progress` events on the step (`app.lease`, `gateway.lease`, `db.lease`) say who holds it. Takers: `deploy` (the app's lease, then the Gateway's for the rebind), `delete` (the Gateway's, for the rebind that unbinds the app), `secret set|unset`, `email set|unset`, `db restore`, `setup`, `update`, and `access on` plus the Access sync after `deploy` and `delete` (the `access` lease, step `gateway.lease`). Message with a holder: `<activity> is still running after 5m`, where `<activity>` is `A deploy of <app>`, `A Gateway upgrade`, `An update of Cloudflare Access`, `A restore of <app>'s database`, … (from the row's `purpose` and `app`) then `It's from <deployer on >machine. If it stopped without cleaning up, it's released within <time>.`; without one: `Couldn't take hold of <the Gateway|app id|this app> after 5m` (`this app` for the `access` lease, whose row names no app). When the Gateway's lease is held during an app's rebind (step `app.bind`), `bindIfNeeded()` rethrows with one more line, `This app's upload is kept; deploying again binds it and makes it live.`, and `data.rerunNote` `once the other deploy finishes`. The Access sync after `deploy` and `delete` catches it and emits the `ACCESS_SYNC_FAILED` warning (step `app.access`, with the message's first line) instead; from `access on` it is this error.
+A deploy lease (a row in the Gateway's D1 table `_everyapp_deploy_lease`, id `gateway` or `app:<workerName>`) was still held after 5 minutes of waiting (`WAIT_MS`, retried every 5 s; the rebind passes its own `leaseWaitMs`). A lease expires 3 minutes after its last renewal and is renewed every 30 s, so a dead holder frees it within 3 minutes; a live one holds it as long as it runs and nothing takes it over. While waiting, `progress` events on the step (`app.lease`, `gateway.lease`, `db.lease`) say who holds it. Takers: `deploy` (the app's lease, then the Gateway's for the rebind), `delete` (the Gateway's, for the rebind that unbinds the app), `secret set|unset`, `email set|unset`, `db restore`, `setup`, `update`. Message with a holder: `<activity> is still running after 5m`, where `<activity>` is `A deploy of <app>`, `A Gateway upgrade`, `A restore of <app>'s database`, … (from the row's `purpose` and `app`) then `It's from <deployer on >machine. If it stopped without cleaning up, it's released within <time>.`; without one: `Couldn't take hold of <the Gateway|app id|this app> after 5m` (`this app` when the row names no app). When the Gateway's lease is held during an app's rebind (step `app.bind`), `bindIfNeeded()` rethrows with one more line, `This app's upload is kept; deploying again binds it and makes it live.`, and `data.rerunNote` `once the other deploy finishes`.
 
-**Fix:** `retryable: true`: `data.rerun` is this same command, `data.rerunNote` `once it's done (pnpm everyapp status shows it)`. `data.holder`, when there is one, is the row: `id`, `holder`, `purpose` (`app.deploy`, `app.register`, `app.secrets`, `app.email`, `gateway.deploy`, `gateway.upgrade`, `gateway.reconcile`, `gateway.secrets`, `access.sync`, `db.restore`), `acquiredAt`, `expiresAt`, `app`, `deployer`, `machine`. No `data.fix`.
+**Fix:** `retryable: true`: `data.rerun` is this same command, `data.rerunNote` `once it's done (pnpm everyapp status shows it)`. `data.holder`, when there is one, is the row: `id`, `holder`, `purpose` (`app.deploy`, `app.register`, `app.secrets`, `app.email`, `gateway.deploy`, `gateway.upgrade`, `gateway.reconcile`, `gateway.secrets`, `db.restore`), `acquiredAt`, `expiresAt`, `app`, `deployer`, `machine`. No `data.fix`.
 
-Source: `packages/cli/src/lib/gateway/lease.ts`, `packages/cli/src/commands/appGateway.ts`, `packages/cli/src/lib/access/sync.ts`
+Source: `packages/cli/src/lib/gateway/lease.ts`, `packages/cli/src/commands/appGateway.ts`
 
 ### LEASE_LOST
 
-`lease.check()`, called right before each step that can't be undone (an app's migrate, each `cf deploy` of its Workers and its email routes; the Gateway's migrate and upload in `applyGateway()`; the D1 restore; the app's email settings row and then its routes in `email set|unset`; the Access applications in the Access sync), renewed the lease and found it no longer this run's: the renewal returned no row (the row is gone, or another run took it after it expired), or renewals had been failing for more than half the TTL (90 s). A `LEASE_HEARTBEAT` warning precedes it when renewals fail. Message `Stopped: this run lost its hold on <the Gateway|app id>` then `Its hold expired, so it stopped before its next change to avoid overlapping another run.` The Access sync after `deploy` and `delete` catches it and emits the `ACCESS_SYNC_FAILED` warning instead.
+`lease.check()`, called right before each step that can't be undone (an app's migrate, each `cf deploy` of its Workers and its email routes; the Gateway's migrate and upload in `applyGateway()`; the D1 restore; the app's email settings row and then its routes in `email set|unset`), renewed the lease and found it no longer this run's: the renewal returned no row (the row is gone, or another run took it after it expired), or renewals had been failing for more than half the TTL (90 s). A `LEASE_HEARTBEAT` warning precedes it when renewals fail. Message `Stopped: this run lost its hold on <the Gateway|app id>` then `Its hold expired, so it stopped before its next change to avoid overlapping another run.`
 
 **Fix:** `retryable: true`: `data.rerun` is this same command. No `data.fix`.
 
-Source: `packages/cli/src/lib/gateway/lease.ts`, `packages/cli/src/lib/access/sync.ts`
+Source: `packages/cli/src/lib/gateway/lease.ts`
 
 ### LINKED_DEV_GATEWAY_REQUIRED
 
@@ -1471,7 +1445,7 @@ Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/commands/config
 
 ### SETTING_VALUE_INVALID
 
-`secret set <name>` of a plain Gateway setting (a name `isPlainGatewaySetting` knows, such as `EMAIL_FROM`, `EMAIL_PASSWORD_SIGN_IN` or `CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`) with a `--from-env` or piped value the Gateway wouldn't read, checked after the value is trimmed and before anything is written. Message: `<name> can't be "<value>"` (the value as typed, on one line, at most 64 characters: a plain value is never hidden), then one line saying what is wrong, such as `Not one of true, false, 1, 0, on, off, yes or no.` or `"hello" isn't an address or Name <address>.`; `data.name` is the setting. At a terminal the same check re-asks the visible prompt with that line instead of failing; a credential (any other name) is never checked or trimmed. Each setting's rule, as the Gateway parses it, is listed in secrets.md under "Plain settings are shown and checked". The sign-in providers' plain settings are checked the same way (`lib/signinValues.ts`): `OIDC_SIGNIN_ISSUER` an https URL without a query, fragment, credentials or a loopback host; `MICROSOFT_SIGNIN_TENANT` a GUID or `common`, `organizations`, `consumers`; `OIDC_SIGNIN_LABEL` at most 40 characters. `signin add` raises this code for a `--label` over 40 characters (the issuer and the tenant have codes of their own there: [`SIGNIN_ISSUER_INVALID`](#signin_issuer_invalid), [`SIGNIN_TENANT_INVALID`](#signin_tenant_invalid)), before it connects. An app's own plain setting (`settings` in its manifest, [/docs/agent/manifest](/docs/agent/manifest#settings)) is checked the same way against what its entry says it takes, by `secret set` and by `configure` (piped `NAME=value` lines, `--from-env`): `REGION can't be "mars"` then `Not us or eu.`, fix `use us or eu`; `"eu.posthog" isn't an http or https URL.`; `"12a" isn't a number.`; `Not true or false.`.
+`secret set <name>` of a plain Gateway setting (a name `isPlainGatewaySetting` knows, such as `EMAIL_FROM` or `EMAIL_PASSWORD_SIGN_IN`) with a `--from-env` or piped value the Gateway wouldn't read, checked after the value is trimmed and before anything is written. Message: `<name> can't be "<value>"` (the value as typed, on one line, at most 64 characters: a plain value is never hidden), then one line saying what is wrong, such as `Not one of true, false, 1, 0, on, off, yes or no.` or `"hello" isn't an address or Name <address>.`; `data.name` is the setting. At a terminal the same check re-asks the visible prompt with that line instead of failing; a credential (any other name) is never checked or trimmed. Each setting's rule, as the Gateway parses it, is listed in secrets.md under "Plain settings are shown and checked". The sign-in providers' plain settings are checked the same way (`lib/signinValues.ts`): `OIDC_SIGNIN_ISSUER` an https URL without a query, fragment, credentials or a loopback host; `MICROSOFT_SIGNIN_TENANT` a GUID or `common`, `organizations`, `consumers`; `OIDC_SIGNIN_LABEL` at most 40 characters. `signin add` raises this code for a `--label` over 40 characters (the issuer and the tenant have codes of their own there: [`SIGNIN_ISSUER_INVALID`](#signin_issuer_invalid), [`SIGNIN_TENANT_INVALID`](#signin_tenant_invalid)), before it connects. An app's own plain setting (`settings` in its manifest, [/docs/agent/manifest](/docs/agent/manifest#settings)) is checked the same way against what its entry says it takes, by `secret set` and by `configure` (piped `NAME=value` lines, `--from-env`): `REGION can't be "mars"` then `Not us or eu.`, fix `use us or eu`; `"eu.posthog" isn't an http or https URL.`; `"12a" isn't a number.`; `Not true or false.`.
 
 **Fix:** `fix`: `use <what the setting takes>`, the line the prompt shows as `Takes …`: e.g. `use true or false; false turns password sign-in off (only while Cloudflare Access sign-in is on)`, `use an address, or Name <address>`, `use email domains whose people join without an invitation, comma separated, e.g. example.com`. A validation error: no rerun.
 
@@ -2334,22 +2308,6 @@ Status 422, self-hosted browser approval: a required Hyperdrive origin URL or Se
 
 Source: `apps/every-app-gateway/src/server/deploy/install.ts`
 
-### ACCESS_NOT_CONFIGURED
-
-Self-hosted Gateway app install job: Access is enabled, but its apps application could not be found.
-
-**Fix:** run `pnpm everyapp access on` to reconcile Access, then retry installation.
-
-Source: `apps/every-app-gateway/src/server/deploy/self-hosted-access.ts`
-
-### ACCESS_ROUTES_UNSUPPORTED
-
-Self-hosted Gateway app install job: Access cannot expose all public or bearer route patterns declared by this app, or the app is outside the configured app base domain.
-
-**Fix:** adjust the app's route patterns or hostname configuration and publish a corrected release.
-
-Source: `apps/every-app-gateway/src/server/deploy/self-hosted-access.ts`
-
 ### EMAIL_ROUTES_TOO_MANY
 
 Self-hosted Gateway app install job: the installer reached its Email Routing listing limit before reading every rule, so it cannot safely reconcile ownership.
@@ -2444,49 +2402,13 @@ The other codes these routes answer are documented where the same code is raised
 
 ## Warnings
 
-A `warning` event (`{ type: "warning", code, message, step?, data? }`) is something a run went on past. The terminal shows it as a `!` headline with the message's further lines dim and, from `data`, `rerun` (with `rerunNote`), `fix` or `url` after it; `--json` gets the event as is. `QUIET_WARNINGS` in `packages/cli/src/lib/output/events.ts` names the ones the terminal renderer skips without `--verbose`: only `CUSTOM_DOMAIN_OWNER_UNCHECKED`. The `ACCESS_*` warnings come from `access on` (`packages/cli/src/commands/access/index.ts`) and from the Access sync `deploy` and `delete` run afterwards (`syncAppsAccessAfter` in `packages/cli/src/lib/access/sync.ts`), except `ACCESS_IN_FRONT`, which the live wait and `setup` emit; the command is documented at [/docs/agent/access](/docs/agent/access), and the agent-driven Access setup step by step in `packages/cli/skills/everyapp/setup/access.md` (in an app `node_modules/everyapp/skills/everyapp/setup/access.md`).
-
-### ACCESS_APPLICATION_MISSING
-
-After `update` and `setup` on a live self-hosted Gateway, step `gateway.access`: one of the two Access applications is there and the other isn't (deleted in the dashboard), so the Gateway requires an Access login that nothing asks for on those hosts: `Cloudflare Access has no application in front of <host | *.<base>>` / `The Gateway requires an Access login, and nothing there asks for one: run access on to put it back.` `data.hosts`, `data.rerun`: `pnpm everyapp access on`. The reconcile never creates an application (that is `access on`'s job, and it needs people to let in).
-
-Source: `packages/cli/src/lib/access/applications.ts`
+A `warning` event (`{ type: "warning", code, message, step?, data? }`) is something a run went on past. The terminal shows it as a `!` headline with the message's further lines dim and, from `data`, `rerun` (with `rerunNote`), `fix` or `url` after it; `--json` gets the event as is. `QUIET_WARNINGS` in `packages/cli/src/lib/output/events.ts` names the ones the terminal renderer skips without `--verbose`: only `CUSTOM_DOMAIN_OWNER_UNCHECKED`. The `ACCESS_*` warnings come from `access on` (`packages/cli/src/commands/access/index.ts`), except `ACCESS_IN_FRONT`, which the live wait and `setup` emit, and `ACCESS_RERUN_NEEDED`, which `deploy` emits; the command is documented at [/docs/agent/access](/docs/agent/access), and the agent-driven Access setup step by step in `packages/cli/skills/everyapp/setup/access.md` (in an app `node_modules/everyapp/skills/everyapp/setup/access.md`).
 
 ### ACCESS_APP_OUTSIDE_BASE
 
-Step `access.routes` (`access on`; the sync after `deploy` and `delete`): an app whose hostname isn't under the apps' domain gets no Access destination: `<apps> isn't|aren't under the apps' domain, so Access isn't set up for it|them.` `data.apps` (the app ids). Nothing to do short of giving the app a host under the base domain.
+Step `access.routes` (`access on`): an app whose hostname isn't under the apps' domain gets no Access destination: `<apps> isn't|aren't under the apps' domain, so Access isn't set up for it|them.` `data.apps` (the app ids). Nothing to do short of giving the app a host under the base domain.
 
-Source: `packages/cli/src/lib/access/sync.ts` (`emitPlanWarnings`), `packages/cli/src/lib/access/plan.ts`
-
-### ACCESS_EMAIL_NOT_INVITED
-
-`access on --email …`, step `access.update`: an address that has no account on this Gateway (neither a member nor invited): `<emails> has|have no account on this Gateway` / `Access will let them through, but the Gateway refuses anyone it doesn't know. Invite them in Manage workspace → Users.` `data.emails`.
-
-Source: `packages/cli/src/commands/access/index.ts`
-
-### ACCESS_FOREIGN_DESTINATION
-
-Step `access.routes`: an Access application everyapp manages also covers destinations that aren't EveryApp's; they are kept: `The Access application "<name>" also covers <uris>` / `That destination isn't EveryApp's and stays as it is. access off won't delete this application.` (several: `Those <n> destinations aren't EveryApp's and stay as they are. …`). `data.application` (its name, else id), `data.uris`.
-
-Source: `packages/cli/src/lib/access/sync.ts`, `packages/cli/src/commands/access/index.ts`
-
-### ACCESS_IDP_ANY_CLOUDFLARE_ACCOUNT
-
-`access on` and `access show`, step `access.update`: a Sign in with Cloudflare provider (type `cloudflare`) whose "Restrict to account members" is off: `<name> (cloudflare) is open to any Cloudflare account, so left off the EveryApp applications` (or `… are open …`) / `Restrict to account members is off, so anyone with a Cloudflare account could sign in there, and Cloudflare doesn't promise the address it asserts is verified: someone who registers a Cloudflare account under a member's address could sign in as that member. Turn Restrict to account members on (Zero Trust → Settings → Authentication → the provider), then run access on again; an application that allowed it before keeps it.` `data.providers`: `[{ id, type, name }]`. The setting is read, never changed: the provider `access on` creates has it on, and only a restricted one is allowed on the applications (`allowedSignInProviders` in `packages/cli/src/lib/access/plan.ts`); until then the PIN alone signs people in.
-
-Source: `packages/cli/src/commands/access/index.ts` (`warnIfOpenToAnyCloudflareAccount`)
-
-### ACCESS_IDP_UNVERIFIED_EMAILS
-
-`access on`, step `access.update`: a provider of the team is of a type that doesn't verify the address (`UNVERIFIED_EMAIL_IDP_TYPES`); it is left off the applications: `<name> (<type>) is a generic provider, left off the EveryApp applications` (or `… are generic providers, left off the EveryApp applications`) / `The Gateway signs people in as the email Access asserts. A provider that lets people choose their own address would let them choose someone else's; allow only providers that verify addresses (runbook: "Verified emails").` `data.providers`: `[{ id, type, name }]`.
-
-Source: `packages/cli/src/commands/access/index.ts`
-
-### ACCESS_INLINE_POLICIES
-
-`access on` (step `access.update`) and the reconcile after `update` and `setup` (step `gateway.access`): the existing Access application has policies of its own (`reusable: false`), so the reusable policy `Every App gateway members` can't be attached and the application is left as it is (outcome `skipped`): `The Access application "<name>" has a policy|policies of its own: <names>` / `It is left as it is: Access takes either application policies or reusable ones, not both, so the policy "Every App gateway members" can't be attached and its paths aren't managed here. Make its policies reusable in the dashboard, or manage it there.` `data.application` (its id), `data.policies` (their ids).
-
-Source: `packages/cli/src/lib/access/applications.ts`
+Source: `packages/cli/src/lib/access/applications.ts` (`emitPlanWarnings`), `packages/cli/src/lib/access/plan.ts`
 
 ### ACCESS_IN_FRONT
 
@@ -2494,37 +2416,19 @@ The probe of `https://<hostname>/` got a 3xx redirect to Cloudflare Access's log
 
 Source: `packages/cli/src/commands/deploy/steps/waitForLive.ts`, `packages/cli/src/commands/setup/runSetup.ts`, `packages/cli/src/lib/domains/https.ts`
 
-### ACCESS_LOGIN_NOT_MEMBER
+### ACCESS_RERUN_NEEDED
 
-`access on`, step `access.update`: the Cloudflare login's email (`cf auth whoami`; nothing is said for an API token) is neither a member nor an invitee of the Gateway, nor an `--email`: `Sign in with Cloudflare signs you in as <email>, which has no account on this Gateway` / `Access asserts your Cloudflare login's address, and the Gateway refuses anyone it doesn't know. Sign in with the code Access emails to your Gateway account's address instead, or invite <email> in Manage workspace → Users.` `data.email`. Nothing changes: the PIN works for the Gateway account's address.
+`deploy`, step `app.access`, at the end of a deploy that changed the app's public surface (its `public` entries, bearer ones included, its `publicAssets` or its `mcp`, compared with the manifest it replaces) while the Gateway Worker holds all three Access settings: a deploy never changes Cloudflare Access, and only `access on` lets public routes through. `Cloudflare Access doesn't know <app>'s new public routes yet` / `Until pnpm everyapp access on runs again, they need an Access sign-in.`, `data: { appId, rerun: "pnpm everyapp access on" }`. Also `delete`, step `app.access`, after deleting an app that had a public surface: its bypass destination stays in Access until `access on` runs again, so an app deployed later at that host would get those paths without a sign-in. `Cloudflare Access still lets <app>'s public routes through on <host>` / `Until pnpm everyapp access on runs again, an app deployed there later gets them without a sign-in.`, the same `data`. Nothing is said when the Worker's settings couldn't be listed.
 
-Source: `packages/cli/src/commands/access/index.ts`
+**Fix:** run `pnpm everyapp access on`.
 
-### ACCESS_NOT_CHECKED
-
-Two steps raise it. After `update` and `setup` on a live self-hosted Gateway, step `gateway.access` (`keepAccessAfterGatewayDeploy` in `packages/cli/src/lib/access/applications.ts`): the Access applications couldn't be listed for a reason other than missing permissions (a login without them, and an account that never opened Zero Trust, are silent: Access can't be on without them): `Couldn't check Cloudflare Access after the Gateway deploy` / `<first line of the error>` / `If the Gateway is behind Access, the paths it lets through may be out of step with this release until it is updated.`; `data.rerun`: `pnpm everyapp access on`, `data.rerunNote`: `if the Gateway is behind Access`.
-
-After `deploy` and `delete`, step `app.access` (`syncAppsAccessAfter`): the Access applications couldn't be listed, so whether the Gateway is behind Access, and whether the app's public surface is let through, wasn't checked. A login without the Access permissions (`ACCESS_PERMISSION_MISSING` above) says so only when the app has public or bearer routes in its manifest: `This Cloudflare login can't read Cloudflare Access, so <app> wasn't checked against it`; any other failure: `Couldn't check Cloudflare Access for <app>` / `<first line of the error>`; then `If the Gateway is behind Access, <app>'s <public routes | bearer routes | public routes and bearer routes> need a login there until it is updated.` (on `delete`: `If the Gateway is behind Access, <app>'s host stays listed there until it is updated.`). `data.appId`, `data.rerun`: `pnpm everyapp access on`, `data.rerunNote`: `with a login that can manage Access, if the Gateway is behind it` or `if the Gateway is behind Access`.
-
-Source: `packages/cli/src/lib/access/sync.ts`, `packages/cli/src/lib/access/applications.ts`
-
-### ACCESS_ONE_APPLICATION
-
-`access on` (step `access.update`) and the reconcile after `update` and `setup` (step `gateway.access`): one Access application covers both the Gateway host and `*.<base>`: `One Access application covers <gateway host> and *.<base>` / `It is kept and updated. The runbook recommends two, so an app host's Access cookie is never a Gateway login.` No data.
-
-Source: `packages/cli/src/lib/access/applications.ts`
-
-### ACCESS_RECONCILE_FAILED
-
-After `update` and `setup` on a live self-hosted Gateway behind Cloudflare Access, step `gateway.access` (`keepAccessAfterGatewayDeploy` in `packages/cli/src/lib/access/applications.ts`): the applications were found but bringing them in line with this release failed (the lease wait, a refused update); the run doesn't fail for it: `Couldn't bring Cloudflare Access in step with this Gateway` / `<first line of the error>` / `Until it is updated, the paths Access lets through are the previous release's.` `data.rerun`: `pnpm everyapp access on`.
-
-Source: `packages/cli/src/lib/access/applications.ts`
+Source: `packages/cli/src/lib/access/settings.ts` (`warnIfAccessNeedsRerun`), called from `packages/cli/src/commands/deploy/deployApp.ts` and `packages/cli/src/commands/delete/index.ts`.
 
 ### ACCESS_ROUTE_NOT_EXPRESSIBLE
 
-Step `access.routes` (`access on`; the sync after `deploy` and `delete`): a public route with no Access path equivalent stays behind Access: `A route stays behind Access: <app> <path>` (or `<n> routes stay behind Access: …`; a bearer route is named `<app> <path> (bearer)`) / `Access path patterns take one * per segment, so these have no equivalent. People signed in to Access still reach them.` `data.routes`: `[{ appId, path, reason: "not_expressible", bearer? }]`.
+Step `access.routes` (`access on`): a public route with no Access path equivalent stays behind Access: `A route stays behind Access: <app> <path>` (or `<n> routes stay behind Access: …`; a bearer route is named `<app> <path> (bearer)`) / `Access path patterns take one * per segment, so these have no equivalent. People signed in to Access still reach them.` `data.routes`: `[{ appId, path, reason: "not_expressible", bearer? }]`.
 
-Source: `packages/cli/src/lib/access/sync.ts`, `packages/cli/src/lib/access/plan.ts`
+Source: `packages/cli/src/lib/access/applications.ts`, `packages/cli/src/lib/access/plan.ts`
 
 ### ACCESS_SETUP_SKIPPED
 
@@ -2538,17 +2442,11 @@ Source: `packages/cli/src/commands/setup/runSetup.ts` (`accessFromSetup`, `acces
 
 Source: `packages/cli/src/commands/setup/runSetup.ts` (`runAccessOn`)
 
-### ACCESS_SYNC_FAILED
-
-Step `app.access` after `deploy` and `delete`: the Access applications were listed and the apps application exists, but updating it failed; the run doesn't fail for it: `Couldn't update Cloudflare Access for <app>'s <public routes | bearer routes | public routes and bearer routes>` / `<first line of the error>` / `Until it is updated, they need an Access login.` (on `delete`: `<app>'s host stays listed there until it is updated.`). `data.appId`, `data.rerun`: `pnpm everyapp access on`.
-
-Source: `packages/cli/src/lib/access/sync.ts`
-
 ### ACCESS_TOO_MANY_PUBLIC_ROUTES
 
-Step `access.routes`: more public paths on one host than Access takes; the rest stay behind Access: `A route stays behind Access: <app> <path>` (or `<n> routes stay behind Access: …`; a bearer route is named `<app> <path> (bearer)`) / `Access lets through at most 25 paths per host (one of them for the discovery document where the manifest sets bearerRoutes). Merge routes under one prefix, or keep these behind the login.` `data.routes`: `[{ appId, path, reason: "too_many", bearer? }]`.
+Step `access.routes`: more public paths on one host than Access takes; the rest stay behind Access: `A route stays behind Access: <app> <path>` (or `<n> routes stay behind Access: …`; a bearer route is named `<app> <path> (bearer)`) / `Access lets through at most 25 paths per host (one of them for the discovery document where it has bearer routes). Merge routes under one prefix, or keep these behind the login.` `data.routes`: `[{ appId, path, reason: "too_many", bearer? }]`.
 
-Source: `packages/cli/src/lib/access/sync.ts`, `packages/cli/src/lib/access/plan.ts`
+Source: `packages/cli/src/lib/access/applications.ts`, `packages/cli/src/lib/access/plan.ts`
 
 ### APP_DISABLED
 
@@ -2973,18 +2871,6 @@ Warning. cf couldn't list the Gateway Worker's settings, so whether Cloudflare A
 
 Source: `packages/cli/src/commands/status/problems.ts`, `packages/cli/src/lib/access/settings.ts`
 
-### ACCESS_DRIFT (status)
-
-Warning. Cloudflare Access is on (all three settings on the Worker) and what Zero Trust has isn't what this Gateway release wants (`accessDrift` in `packages/cli/src/lib/access/plan.ts`, the same read `access show` and the reconcile after `update` make): `Cloudflare Access is out of step with this Gateway`, then one line per difference: `No Access application in front of <hosts>.`, `The paths let through without a login differ on <hosts>.`, `The sign-in methods differ on <hosts>.`, `The Gateway's settings name other applications than the ones found: nobody can sign in until they are written again.` (the D1 record of `access on` against the applications' AUD tags and the team domain). `run`: `pnpm everyapp access on`, `note`: `brings Access in step with this Gateway`. `data.access.drift` carries the same as `{ paths, signIn, missing, settings }`.
-
-Source: `packages/cli/src/commands/status/problems.ts`, `packages/cli/src/commands/status/index.ts`
-
-### ACCESS_DRIFT_UNKNOWN (status)
-
-Warning. Access is on, but Zero Trust refused the read that tells whether it is in step, for a reason other than a login without the Access permissions (that one is silent: `data.access.driftUnread.permission: true`, the row reads `in step? this login can't read Access`): `Couldn't check whether Cloudflare Access is in step with this Gateway` / `Cloudflare said: <error>.` Nothing to run; `data.access.drift` is `null` and `data.access.driftUnread` is `{ permission: false, error }`.
-
-Source: `packages/cli/src/commands/status/problems.ts`, `packages/cli/src/commands/status/index.ts`
-
 ### DEPLOY_RUNNING
 
 Settling. A live lease: `<Holder's activity> is running` (as `describeLeaseHolder` words it). Nothing to run; wait.
@@ -3086,7 +2972,7 @@ Source: `packages/cli/src/lib/git.ts`, `packages/cli/src/lib/childLog.ts`, `pack
 `packages/cli/src/lib/app/emailRoutes.ts`
 `packages/cli/src/lib/app/release.ts`
 `packages/cli/src/lib/access/plan.ts`
-`packages/cli/src/lib/access/sync.ts`
+`packages/cli/src/lib/access/applications.ts`
 `packages/cli/src/lib/access/settings.ts`
 `packages/cli/src/lib/cf/plan.ts`
 `packages/cli/src/lib/domains/preflight.ts`

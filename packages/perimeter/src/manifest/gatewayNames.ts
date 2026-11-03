@@ -10,7 +10,6 @@
  *
  *   Gateway Worker, D1      every-app-gateway
  *   OAuth KV                every-app-gateway-OAUTH_KV
- *   activation queue        every-app-gateway-activate
  *   app Worker              every-<orgKey>-<appId>
  *   app resource            every-<orgKey>-<appId>--<binding>
  *   app AI Gateway          every-<orgKey>-<appId>-<binding>
@@ -21,7 +20,6 @@
  *
  *   Gateway Worker, D1      every-app-gateway-demo
  *   OAuth KV                every-app-gateway-demo-OAUTH_KV
- *   activation queue        every-app-gateway-demo-activate
  *   app Worker              every-demo--<orgKey>-<appId>
  *   app resource            every-demo--<orgKey>-<appId>--<binding>
  *   app AI Gateway          every-app-gateway-demo-<orgKey>-<appId>-<binding>
@@ -64,9 +62,9 @@ export const RESOURCE_SEPARATOR = "--";
 export const GATEWAY_NAME_PATTERN = /^[a-z0-9]{1,16}$/;
 
 /**
- * Names refused: `activate` would give a Gateway the default's queue's
- * name as its Worker and D1 name (another namespace, but one name for two
- * things), and `app` reads as the root itself.
+ * Names refused: `activate` was the default Gateway's activation queue's
+ * suffix (earlier installs may still hold that queue), and `app` reads as
+ * the root itself.
  */
 const REFUSED_NAMES: ReadonlySet<string> = new Set([
   "activate",
@@ -96,8 +94,6 @@ export interface GatewayNames {
   d1: string;
   /** The MCP OAuth server's KV namespace (its title). */
   oauthKv: string;
-  /** The queue the CLI nudges once it has bound an app. */
-  activationQueue: string;
   /** What every app Worker of this Gateway starts with. */
   appPrefix: string;
   /** What every app AI Gateway id of this Gateway starts with (`--` isn't allowed in one). */
@@ -115,7 +111,6 @@ export function gatewayNames(name?: string | null): GatewayNames {
       worker: GATEWAY_ROOT,
       d1: GATEWAY_ROOT,
       oauthKv: `${GATEWAY_ROOT}-OAUTH_KV`,
-      activationQueue: `${GATEWAY_ROOT}-activate`,
       appPrefix: EVERY_PREFIX,
       aiGatewayPrefix: EVERY_PREFIX,
       label: "the Gateway",
@@ -132,7 +127,6 @@ export function gatewayNames(name?: string | null): GatewayNames {
     worker,
     d1: worker,
     oauthKv: `${worker}-OAUTH_KV`,
-    activationQueue: `${worker}-activate`,
     appPrefix: `${EVERY_PREFIX}${normalized}${RESOURCE_SEPARATOR}`,
     aiGatewayPrefix: `${worker}-`,
     label: `Gateway ${normalized}`,
@@ -147,8 +141,8 @@ export const DEFAULT_GATEWAY_NAMES: Readonly<GatewayNames> = Object.freeze(
 /**
  * The Gateway whose Worker or D1 database is called `resourceName`: the
  * default's for the root itself, a named one's for `every-app-gateway-<name>`
- * with a valid name; null for anything else (an OAuth KV title, an
- * activation queue, an app, a name that isn't a Gateway's).
+ * with a valid name; null for anything else (an OAuth KV title, an app,
+ * a name that isn't a Gateway's).
  */
 export function gatewayNameOf(resourceName: string): GatewayNames | null {
   if (resourceName === GATEWAY_ROOT) return gatewayNames(null);
@@ -157,7 +151,12 @@ export function gatewayNameOf(resourceName: string): GatewayNames | null {
   return isValidGatewayName(name) ? gatewayNames(name) : null;
 }
 
-/** The names a Worker, D1 database, KV namespace or queue of the Gateway itself takes. */
+/**
+ * The names a Worker, D1 database, KV namespace or queue of the Gateway
+ * itself takes. The queue is the activation queue earlier releases made
+ * (`<worker>-activate`): nothing makes it any more, but teardown still
+ * removes one an older install holds.
+ */
 export function isGatewayOwnName(
   names: GatewayNames,
   resourceName: string,
@@ -165,7 +164,7 @@ export function isGatewayOwnName(
   return (
     resourceName === names.worker ||
     resourceName === names.oauthKv ||
-    resourceName === names.activationQueue
+    resourceName === `${names.worker}-activate`
   );
 }
 

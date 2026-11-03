@@ -57,6 +57,7 @@ describe("openableHosts", () => {
           // The same host twice (two grants to one app) is one entry.
           app({ hostname: "crm.apps.example.com" }),
           app({ hostname: "setup.apps.example.com", setup: UNREADY }),
+          // A deploying app opens too: a visit is what makes it live.
           app({ hostname: "deploying.apps.example.com", status: "binding" }),
           app({ hostname: "off.apps.example.com", status: "disabled" }),
           app({ hostname: "pending.apps.example.com", status: "pending" }),
@@ -67,7 +68,11 @@ describe("openableHosts", () => {
         ],
         SITE,
       ),
-    ).toEqual(["seo.apps.example.com", "crm.apps.example.com"]);
+    ).toEqual([
+      "seo.apps.example.com",
+      "crm.apps.example.com",
+      "deploying.apps.example.com",
+    ]);
   });
 
   it("is empty when nothing opens", () => {

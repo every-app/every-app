@@ -120,14 +120,13 @@ it("opens the setup dialog from the card of an app that needs setup, in both lay
   }
 });
 
-it("says what a deploying app is waiting on, and links to nothing yet", () => {
+it("says what a deploying app is waiting on, and links to it: a visit makes it live", () => {
   render(app({ status: "binding", updatedAt: new Date() }));
   expect(text()).toContain("Deploying");
   expect(text()).toContain(DEPLOYING_CARD_SENTENCE);
   expect(text()).not.toContain("Keyword research.");
-  expect(openLink()).toBeNull();
+  expect(openLink()).not.toBeNull();
   expect(setupButton()).toBeNull();
-  expect(container.querySelector("a[href]")).toBeNull();
 });
 
 it("says a deploy stalled once it has been binding for ten minutes", () => {
@@ -139,7 +138,7 @@ it("says a deploy stalled once it has been binding for ten minutes", () => {
   );
   expect(text()).toContain("Deploy stalled");
   expect(text()).toContain(STALLED_CARD_SENTENCE);
-  expect(openLink()).toBeNull();
+  expect(openLink()).not.toBeNull();
 });
 
 it("keeps the pin button pinning, not opening the dialog", () => {

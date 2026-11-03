@@ -39,6 +39,13 @@ export interface EveryAppPublicRoute {
   readonly path: string;
   /** The methods it answers; `["GET"]` when left out. */
   readonly methods?: readonly string[];
+  /**
+   * A bearer route: a native app or a script reaches it with its Gateway
+   * token only, on every method (no `methods`). The Gateway answers 401 to
+   * a request carrying its session cookie there, and Cloudflare Access
+   * lets it through like any public route.
+   */
+  readonly bearer?: true;
 }
 
 /** A Durable Object or Workflow class: its binding, the class, and the helper Worker that defines it. */
@@ -200,18 +207,6 @@ export interface EveryAppManifest {
    * OG image): path patterns, GET and HEAD, never Worker code.
    */
   readonly publicAssets?: readonly string[];
-  /**
-   * Routes a bearer client (a native app, a script with a personal token)
-   * reaches with its token only: `paths` in `public`'s glob syntax, every
-   * method, and `why` the app needs them, shown to the operator. The
-   * Gateway answers 401 to a request carrying its session cookie there,
-   * and `everyapp access on` lets these paths through Cloudflare Access.
-   * Default: none.
-   */
-  readonly bearerRoutes?: {
-    readonly paths: readonly string[];
-    readonly why: string;
-  };
   /** AI providers the Gateway calls for the app, by id or with their need. */
   readonly providers?: readonly (
     | string

@@ -57,7 +57,6 @@ function namesOf(gateway: GatewayNames): Array<{ kind: string; name: string }> {
     { kind: "worker", name: gateway.worker },
     { kind: "d1", name: gateway.d1 },
     { kind: "kv", name: gateway.oauthKv },
-    { kind: "queue", name: gateway.activationQueue },
   ];
   for (const orgKey of ORG_KEYS) {
     for (const appId of APP_IDS) {
@@ -121,7 +120,6 @@ describe("gatewayNames", () => {
       worker: "every-app-gateway",
       d1: "every-app-gateway",
       oauthKv: "every-app-gateway-OAUTH_KV",
-      activationQueue: "every-app-gateway-activate",
       appPrefix: "every-",
     });
     expect(registryWorkerNameFor({ appId: "todo", orgKey: "acme" })).toBe(
@@ -138,7 +136,6 @@ describe("gatewayNames", () => {
       worker: "every-app-gateway-demo",
       d1: "every-app-gateway-demo",
       oauthKv: "every-app-gateway-demo-OAUTH_KV",
-      activationQueue: "every-app-gateway-demo-activate",
       appPrefix: "every-demo--",
       aiGatewayPrefix: "every-app-gateway-demo-",
     });
@@ -197,12 +194,7 @@ describe("gatewayNames", () => {
 
   it("keeps every Gateway's own names and every app name out of the apps' reach", () => {
     for (const gateway of GATEWAYS) {
-      for (const own of [
-        gateway.worker,
-        gateway.d1,
-        gateway.oauthKv,
-        gateway.activationQueue,
-      ]) {
+      for (const own of [gateway.worker, gateway.d1, gateway.oauthKv]) {
         expect(isReservedName(own), own).toBe(true);
         expect(isGatewayOwnName(gateway, own), own).toBe(true);
       }
@@ -276,12 +268,9 @@ describe("gatewayNames", () => {
             name.startsWith(owner.aiGatewayPrefix),
             `${owner.aiGatewayPrefix} vs ${name}`,
           ).toBe(false);
-          expect(
-            name === owner.worker ||
-              name === owner.oauthKv ||
-              name === owner.activationQueue,
-            name,
-          ).toBe(false);
+          expect(name === owner.worker || name === owner.oauthKv, name).toBe(
+            false,
+          );
         }
       }
     }

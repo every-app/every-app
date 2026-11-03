@@ -208,9 +208,6 @@ export async function resetLink(flags: WorkspaceFlags, user: string): Promise<vo
   await runCommand(flags, (out) => passwordResetLink({ flags, out }, user));
 }
 
-/** The Gateway settings that let someone past Access join without an invitation (names only). */
-const ACCESS_AUTO_JOIN_SETTINGS = ["CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS", "CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN"];
-
 /**
  * Whether the Gateway can mail, as far as its setting names say: a sender
  * and a provider key (server/email/sendEmail.ts reads the values).
@@ -426,38 +423,23 @@ export async function removeMember(
   });
   out.emit({ type: "step", step: STEP, status: "start", message: `Removing ${member.email}...` });
   const hosted = gateway.install.deploymentMode === "hosted";
-  const result = await workspace.remove(ws, member.id, {
-    deleteAccounts: !hosted,
-    // The values of these settings are Worker secrets the CLI can't read:
-    // either one set means Access may let them back in, so the Gateway's
-    // own rule (deactivate instead) is applied to the safe side.
-    accessMayLetBackIn: async () => {
-      const names = await listWorkerSecrets(gateway.cf, gateway.names.worker);
-      return ACCESS_AUTO_JOIN_SETTINGS.some((name) => names.includes(name));
-    },
-  });
+  const result = await workspace.remove(ws, member.id, { deleteAccounts: !hosted });
   out.emit({
     type: "step",
     step: STEP,
     status: "ok",
-    message: result.deactivatedInstead ? `Deactivated ${member.email} instead` : `Removed ${member.email}`,
-    data: { userId: member.id, deactivatedInstead: result.deactivatedInstead, accountDeleted: result.accountDeleted },
+    message: `Removed ${member.email}`,
+    data: { userId: member.id, accountDeleted: result.accountDeleted },
   });
-  const lines = result.deactivatedInstead
-    ? [
-        `Deactivated ${member.email} instead of removing them.`,
-        `The Gateway has ${listed(ACCESS_AUTO_JOIN_SETTINGS)} or one of them set, so Cloudflare Access may let them straight back in with a new account; a deactivation keeps them out. They stay listed.`,
-        `To delete the account anyway, unset the setting first (${CLI} secret unset <NAME>) and run this again.`,
-      ]
-    : [
-        `Removed ${member.email} from ${ws.organization.name}.`,
-        "Their grants and group places went with the membership; their tokens for it and AI connections to it are revoked.",
-        result.accountDeleted
-          ? "Their account is deleted: it belonged to no other organization."
-          : result.otherOrganizations > 0
-            ? `Their account stays: they belong to ${plural(result.otherOrganizations, "other organization")}.`
-            : "Their account stays: this Gateway keeps accounts.",
-      ];
+  const lines = [
+    `Removed ${member.email} from ${ws.organization.name}.`,
+    "Their grants and group places went with the membership; their tokens for it and AI connections to it are revoked.",
+    result.accountDeleted
+      ? "Their account is deleted: it belonged to no other organization."
+      : result.otherOrganizations > 0
+        ? `Their account stays: they belong to ${plural(result.otherOrganizations, "other organization")}.`
+        : "Their account stays: this Gateway keeps accounts.",
+  ];
   out.emit({
     type: "done",
     message: lines.join("\n"),
@@ -465,7 +447,6 @@ export async function removeMember(
     data: {
       organization: ws.organization,
       member: memberData(result.member),
-      deactivatedInstead: result.deactivatedInstead,
       accountDeleted: result.accountDeleted,
       otherOrganizations: result.otherOrganizations,
     },

@@ -1,20 +1,19 @@
 /**
  * What Cloudflare Access should look like in front of a Gateway (the outer
  * ring of docs/runbooks/cloudflare-access.md), worked out from the Gateway's
- * registry, and compared with what Access has. Pure: no cf, no D1, so the
- * rules are tested on their own and `access setup`, `access show` and the
- * sync after a deploy share them.
+ * registry. Pure: no cf, no D1, so the rules are tested on their own and
+ * `access on`, `access show` and `teardown` share them. Only `access on`
+ * writes them: a deploy never touches Access.
  *
  * Two hostname-based applications: one on the Gateway's own host (its
  * tokens sign people in), one on `*.<app base domain>` (its tokens only
  * vouch for a session on an app host). The Gateway's lets through only its
  * machine endpoints, which check their own credentials, and `/health` for
  * uptime monitors. The wildcard lets nothing through: an app host serves
- * no MCP unless its manifest says so. Access picks the most specific
- * matching destination, so an app with public routes, bearer routes, or
- * `mcp` in its manifest gets a destination of its own on its host: the MCP
- * paths where the manifest asks for them, then its bearer routes and the
- * discovery document native apps read first, then its public routes.
+ * no MCP. Access picks the most specific matching destination, so an app
+ * with public routes (bearer ones included) gets a destination of its own
+ * on its host: its bearer routes and the discovery document native apps
+ * read first, then its public routes.
  *
  * Access path overrides: `*` matches any characters, `/` included; at most
  * one `*` per segment; no implicit subpaths (`/a` is `/a` only); at most 25
@@ -40,35 +39,33 @@ export const MCP_PATHS: readonly string[] = ["/mcp", "/mcp/*"];
  * Where a native app finds the Gateway for an app host
  * (docs/design/native-sign-in.md, section 12): written by the Gateway
  * from the registry, never proxied. Let through on hosts with bearer
- * routes, the only ones a native app can use behind Access.
+ * routes (`public` entries with `bearer: true`), the only ones a native
+ * app can use behind Access.
  */
 export const PROTECTED_RESOURCE_METADATA_PATH =
   "/.well-known/oauth-protected-resource";
 
 /**
- * The Gateway's `/health`: an uptime monitor can't sign in, and the route
- * reads no session and names no version. Public whatever Managed OAuth
- * says.
+ * Where Access asks the Gateway whether someone is a member (the policy's
+ * External Evaluation rule, apps/every-app-gateway/src/server/
+ * access-evaluation.ts): Access calls both paths from its own servers.
  */
-const HEALTH_PATH = "/health";
-
-/**
- * Sign in with Apple returns to the Gateway with a cross-site POST
- * (`response_mode=form_post`), which carries no Access login. The POST
- * only redirects to the same URL as a GET, which Access then checks as
- * usual; it creates nothing (docs/runbooks/sign-in-providers.md, "Apple").
- * Public whatever Managed OAuth says: it has nothing to do with MCP.
- */
-const APPLE_CALLBACK_PATH = "/api/auth/callback/apple";
+export const ACCESS_EVALUATION_PATHS = {
+  evaluate: "/access-evaluation/evaluate",
+  keys: "/access-evaluation/keys",
+} as const;
 
 /**
  * The Gateway host's machine endpoints: MCP, the OAuth server's token,
- * revocation and registration endpoints, OAuth discovery, `/health`, and
- * Apple's sign-in POST. Everything else on the host, `/oauth/authorize`,
- * the consent page and every other sign-in callback included, is a page
- * for people and stays behind Access.
+ * revocation and registration endpoints, OAuth discovery, `/health` (an
+ * uptime monitor can't sign in; the route reads no session), Apple's
+ * sign-in POST (a cross-site POST that only redirects to the same URL as
+ * a GET, which Access checks as usual: docs/runbooks/sign-in-providers.md,
+ * "Apple"), and the membership question Access asks. Everything else on
+ * the host, `/oauth/authorize`, the consent page and every other sign-in
+ * callback included, is a page for people and stays behind Access.
  */
-const GATEWAY_BYPASS_PATHS: readonly string[] = [
+export const GATEWAY_BYPASS_PATHS: readonly string[] = [
   ...MCP_PATHS,
   "/oauth/token",
   "/oauth/register",
@@ -77,8 +74,9 @@ const GATEWAY_BYPASS_PATHS: readonly string[] = [
   // organization opts in, 404 only with the OAuth server off.
   "/linked-dev/*",
   "/.well-known/*",
-  HEALTH_PATH,
-  APPLE_CALLBACK_PATH,
+  "/health",
+  "/api/auth/callback/apple",
+  "/access-evaluation/*",
 ];
 
 interface AccessOverride {
@@ -122,7 +120,7 @@ export interface AppPublicSurface {
   appId: string;
   hostname: string;
   publicPaths: readonly string[];
-  /** The manifest's `bearerRoutes.paths`: paths native apps call with a token, which take no cookie. */
+  /** The manifest's bearer routes (`bearer: true`): paths native apps call with a token, which take no cookie. */
   bearerPaths: readonly string[];
 }
 
@@ -137,16 +135,14 @@ export interface DroppedRoute {
   path: string;
   /** No Access pattern for it, or the destination's 25 overrides are used up. */
   reason: "not_expressible" | "too_many";
-  /** Set on one of the manifest's `bearerRoutes`. */
+  /** Set on one of the manifest's bearer routes. */
   bearer?: true;
 }
 
 /**
  * The destination for an app with a public surface: when it has bearer
  * routes, the discovery document and those routes, then its public routes,
- * each in manifest order, each once, up to the limit. Bearer routes are
- * bypassed whatever Managed OAuth says: they take a Gateway token and no
- * cookie.
+ * each in manifest order, each once, up to the limit.
  */
 export function appDestination(app: AppPublicSurface): {
   destination: AccessPublicDestination;
@@ -187,17 +183,14 @@ export function appDestination(app: AppPublicSurface): {
   };
 }
 
-/** The Gateway host's destination; with Managed OAuth on, only `/health` and Apple's sign-in POST are bypassed. */
+/** The Gateway host's destination, with its machine endpoints let through. */
 export function gatewayDestination(
   gatewayHost: string,
-  managedOAuth: boolean,
 ): AccessPublicDestination {
   return {
     type: "public",
     uri: gatewayHost.toLowerCase(),
-    overrides: overridesFor(
-      managedOAuth ? [HEALTH_PATH, APPLE_CALLBACK_PATH] : GATEWAY_BYPASS_PATHS,
-    ),
+    overrides: overridesFor(GATEWAY_BYPASS_PATHS),
   };
 }
 
@@ -218,12 +211,9 @@ function underBase(hostname: string, base: string): boolean {
 
 /**
  * The apps application's destinations: the wildcard, with nothing let
- * through, then one per app with a public surface (public routes, bearer
- * routes, or `mcp` in its manifest) under the base domain, by host. Apps with neither
- * need none (the wildcard covers them). With Managed OAuth on the Gateway's
- * application, nothing bypasses `/mcp` on app hosts either: AI apps use
- * the Gateway's, through Access, so an app with `mcp` alone gets no
- * destination then (one with no override would let nothing through).
+ * through, then one per app with a public surface (public or bearer
+ * routes) under the base domain, by host. Apps with neither need none (the
+ * wildcard covers them).
  */
 export function appsDestinations(
   appBaseDomain: string,
@@ -394,140 +384,36 @@ function isAnotherGatewaysApplication(
   return primary !== gatewayHost && primary !== appsWildcard(gatewayHost);
 }
 
-/** Whether Access handles OAuth for the application (Managed OAuth). */
-export const managedOAuthOn = (
-  application: AccessApplication | null,
-): boolean => application?.oauth_configuration?.enabled === true;
-
-// --- Drift ------------------------------------------------------------------
+// --- The policy ---------------------------------------------------------
 
 /**
- * What the live applications have that differs from what `on` would make
- * of them, by host (`<gateway host>`, `*.<base>`): the bypass paths, the
- * sign-in methods, and the application being there at all. Empty lists
- * mean in step. `status`, `access show` and the reconcile after a Gateway
- * deploy all read it, so they never disagree.
+ * The one rule of the policy in front of the Gateway and its apps: Access
+ * asks the Gateway whether the person who just signed in is a member or
+ * an invitee (External Evaluation), so the Gateway's list is the one list
+ * both enforce, and an invitation needs no change in Access.
  */
-export interface AccessDrift {
-  /** Hosts whose application lets other paths through than the plan. */
-  paths: string[];
-  /** Hosts whose application doesn't allow the sign-in methods `on` vouches for, as `on` would leave it. */
-  signIn: string[];
-  /** Hosts with no application in front. */
-  missing: string[];
+export function externalEvaluationRule(gatewayHost: string): AccessRule {
+  const origin = `https://${gatewayHost.toLowerCase()}`;
+  return {
+    external_evaluation: {
+      evaluate_url: `${origin}${ACCESS_EVALUATION_PATHS.evaluate}`,
+      keys_url: `${origin}${ACCESS_EVALUATION_PATHS.keys}`,
+    },
+  };
 }
 
-/** Whether a drift names anything. */
-export const hasDrift = (drift: AccessDrift): boolean =>
-  drift.paths.length > 0 || drift.signIn.length > 0 || drift.missing.length > 0;
-
-/**
- * The drift of the applications found against the plan: the Gateway
- * host's destination against `gatewayDestination` (Managed OAuth read
- * from the application), the apps' destinations against
- * `appsDestinations`' (one application covering both hosts is read twice,
- * each half against its own plan), each application's sign-in settings
- * against `signInInSync`.
- */
-export function accessDrift({
-  scope,
-  found,
-  surfaces,
-  providerIds,
-}: {
-  scope: AccessScope;
-  found: { gateway: AccessApplication | null; apps: AccessApplication | null };
-  surfaces: readonly AppPublicSurface[];
-  providerIds: readonly string[];
-}): AccessDrift {
-  const gatewayHost = scope.gatewayHost.toLowerCase();
-  const wildcard = appsWildcard(scope.appBaseDomain);
-  const managedOAuth = managedOAuthOn(found.gateway);
-  const plan = appsDestinations(scope.appBaseDomain, surfaces);
-  const combined =
-    found.gateway !== null && found.gateway.id === found.apps?.id;
-  const ours = (application: AccessApplication) =>
-    splitDestinations(application.destinations ?? [], scope).owned;
-  const drift: AccessDrift = { paths: [], signIn: [], missing: [] };
-  if (found.gateway) {
-    const gatewayOwn = ours(found.gateway).filter(
-      (d) => normalUri(d.uri) === gatewayHost,
+/** Whether two include lists say the same (order and case aside). */
+export function sameRules(
+  a: readonly AccessRule[],
+  b: readonly AccessRule[],
+): boolean {
+  const key = (rule: AccessRule) =>
+    JSON.stringify(rule, (_key, value: unknown) =>
+      typeof value === "string" ? value.toLowerCase() : value,
     );
-    if (
-      !sameDestinations(gatewayOwn, [
-        gatewayDestination(gatewayHost, managedOAuth),
-      ])
-    )
-      drift.paths.push(gatewayHost);
-    if (!signInInSync(found.gateway, providerIds))
-      drift.signIn.push(gatewayHost);
-  } else {
-    drift.missing.push(gatewayHost);
-  }
-  if (found.apps) {
-    const appsOwn = ours(found.apps).filter(
-      (d) => !combined || normalUri(d.uri) !== gatewayHost,
-    );
-    if (!sameDestinations(appsOwn, plan.destinations))
-      drift.paths.push(wildcard);
-    if (!combined && !signInInSync(found.apps, providerIds))
-      drift.signIn.push(wildcard);
-  } else {
-    drift.missing.push(wildcard);
-  }
-  return drift;
-}
-
-// --- Policy rules -----------------------------------------------------------
-
-export const emailRule = (email: string): AccessRule => ({
-  email: { email: email.toLowerCase() },
-});
-export const emailDomainRule = (domain: string): AccessRule => ({
-  email_domain: { domain: domain.toLowerCase() },
-});
-
-/** A rule as compared: its one key and lowercased string values. */
-function ruleKey(rule: AccessRule): string {
-  return JSON.stringify(rule, (_key, value: unknown) =>
-    typeof value === "string" ? value.toLowerCase() : value,
+  return (
+    JSON.stringify(a.map(key).sort()) === JSON.stringify(b.map(key).sort())
   );
-}
-
-/**
- * The policy's include rules with `wanted` added: never fewer (taking
- * someone off is Every App's deactivation, or a change in the dashboard).
- */
-export function mergeRules(
-  existing: readonly AccessRule[],
-  wanted: readonly AccessRule[],
-): { include: AccessRule[]; added: AccessRule[] } {
-  const seen = new Set(existing.map(ruleKey));
-  const added: AccessRule[] = [];
-  for (const rule of wanted) {
-    const key = ruleKey(rule);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    added.push(rule);
-  }
-  return { include: [...existing, ...added], added };
-}
-
-/** The emails a rule list lets in by name, for showing. */
-export function ruleEmails(rules: readonly AccessRule[]): string[] {
-  return rules.flatMap((rule) => {
-    const email = (rule["email"] as { email?: unknown } | undefined)?.email;
-    return typeof email === "string" ? [email] : [];
-  });
-}
-
-/** The email domains a rule list lets in, for showing. */
-export function ruleDomains(rules: readonly AccessRule[]): string[] {
-  return rules.flatMap((rule) => {
-    const domain = (rule["email_domain"] as { domain?: unknown } | undefined)
-      ?.domain;
-    return typeof domain === "string" ? [domain] : [];
-  });
 }
 
 // --- Identity providers -----------------------------------------------------
@@ -543,12 +429,6 @@ export const CLOUDFLARE_IDP_TYPE = "cloudflare";
 
 /** The one-time PIN: a code emailed to the address the person types. */
 export const ONE_TIME_PIN_IDP_TYPE = "onetimepin";
-
-/**
- * Provider kinds that let a person pick their own email address, so Access
- * would assert an address nobody verified (the runbook's "Verified emails").
- */
-export const UNVERIFIED_EMAIL_IDP_TYPES: readonly string[] = ["oidc", "saml"];
 
 /** A provider as the sign-in rules read it. */
 interface SignInProvider {
@@ -576,17 +456,6 @@ export function missingSignInProviders(providers: readonly SignInProvider[]): {
     ),
     pin: !providers.some((provider) => provider.type === ONE_TIME_PIN_IDP_TYPE),
   };
-}
-
-/** Cloudflare-account providers open to any Cloudflare user, not only the account's members. */
-export function unrestrictedCloudflareProviders<T extends SignInProvider>(
-  providers: readonly T[],
-): T[] {
-  return providers.filter(
-    (provider) =>
-      provider.type === CLOUDFLARE_IDP_TYPE &&
-      provider.config?.restrict_to_account_members !== true,
-  );
 }
 
 /**
@@ -636,82 +505,4 @@ export function allowedSignInProviders<T extends SignInProvider>(
       (provider.type === CLOUDFLARE_IDP_TYPE &&
         provider.config?.restrict_to_account_members === true),
   );
-}
-
-/**
- * The provider ids an application should allow: the ones it allows already
- * (an operator's own stay) plus the providers `access on` vouches for
- * (`allowedSignInProviders`). An empty list means "every provider" to
- * Access, the operator's included, so a list is always sent.
- */
-export function allowedIdpsFor(
-  existing: readonly string[] | null | undefined,
-  providerIds: readonly string[],
-): string[] {
-  const ids = [...(existing ?? [])];
-  for (const id of providerIds) {
-    if (!ids.includes(id)) ids.push(id);
-  }
-  return ids;
-}
-
-/**
- * An application's sign-in settings as `access on` makes them: the
- * providers it vouches for allowed (beside what the application allowed
- * already), and Access's redirect past its chooser only when that leaves
- * one provider (with two, the person picks Sign in with Cloudflare or the
- * PIN).
- */
-export function desiredSignIn(
-  application: Pick<AccessApplication, "allowed_idps"> | null,
-  providerIds: readonly string[],
-): { allowedIdps: string[]; autoRedirect: boolean } {
-  const allowedIdps = allowedIdpsFor(application?.allowed_idps, providerIds);
-  return { allowedIdps, autoRedirect: allowedIdps.length === 1 };
-}
-
-/**
- * Whether an application's sign-in settings are what `access on` would
- * make them. An application that names no provider (Access then allows
- * every provider of the team, the operator's included) reads as out of
- * sync: `on` always writes the explicit list.
- */
-export function signInInSync(
-  application: Pick<
-    AccessApplication,
-    "allowed_idps" | "auto_redirect_to_identity"
-  >,
-  providerIds: readonly string[],
-): boolean {
-  const desired = desiredSignIn(application, providerIds);
-  const current = application.allowed_idps ?? [];
-  return (
-    current.length === desired.allowedIdps.length &&
-    desired.allowedIdps.every((id) => current.includes(id)) &&
-    (application.auto_redirect_to_identity ?? false) === desired.autoRedirect
-  );
-}
-
-// --- Session durations ------------------------------------------------------
-
-/** "720h", "30m", "2h45m" in seconds; null when it isn't a duration Access takes. */
-export function durationSeconds(value: string): number | null {
-  const trimmed = value.trim();
-  if (!/^(\d+(?:\.\d+)?(?:ns|us|µs|ms|s|m|h))+$/.test(trimmed)) return null;
-  const units: Record<string, number> = {
-    ns: 1e-9,
-    us: 1e-6,
-    µs: 1e-6,
-    ms: 1e-3,
-    s: 1,
-    m: 60,
-    h: 3600,
-  };
-  let total = 0;
-  for (const [, amount, unit] of trimmed.matchAll(
-    /(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)/g,
-  )) {
-    total += Number(amount) * units[unit!]!;
-  }
-  return total;
 }

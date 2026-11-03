@@ -511,8 +511,9 @@ describe("the command pages", () => {
     );
   });
   it("native.md and access.md document bearer routes and the discovery path Access lets through", () => {
-    expectDocumented("native", "the manifest field and the discovery path", ["bearerRoutes", PROTECTED_RESOURCE_METADATA_PATH, "resource", "client_id", "oauth:<connection id>"]);
-    expectDocumented("access", "the bearer-route bypass", ["bearerRoutes", PROTECTED_RESOURCE_METADATA_PATH, "PROTECTED_RESOURCE_METADATA_PATH"]);
+    expectDocumented("native", "the manifest field and the discovery path", ["bearer: true", PROTECTED_RESOURCE_METADATA_PATH, "resource", "client_id", "oauth:<connection id>"]);
+    expectDocumented("access", "the bearer-route bypass", ["bearer: true", PROTECTED_RESOURCE_METADATA_PATH, "PROTECTED_RESOURCE_METADATA_PATH"]);
+    expectDocumented("access", "the membership question Access asks", ["/access-evaluation/evaluate", "/access-evaluation/keys", "external_evaluation"]);
   });
   it("access.md documents every Cloudflare Access setting", () => {
     expectDocumented("access", "the Cloudflare Access settings", SETTABLE_GATEWAY_SETTINGS.filter((name) => name.startsWith("CLOUDFLARE_ACCESS_")));

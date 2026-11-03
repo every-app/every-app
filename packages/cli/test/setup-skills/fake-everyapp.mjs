@@ -40,16 +40,16 @@ const INSTALL_OWNED = [
 const ACCESS_SETTINGS = ["CLOUDFLARE_ACCESS_TEAM_DOMAIN", "CLOUDFLARE_ACCESS_APPS_AUD", "CLOUDFLARE_ACCESS_AUD"];
 /** The reusable Access policy `on` keeps, as the real command names it (declared up here: dispatch() runs before the functions below). */
 const ACCESS_POLICY_NAME = "Every App gateway members";
-/** The Gateway paths Access lets through (lib/access/plan.ts GATEWAY_BYPASS_PATHS): MCP, the OAuth token and registration endpoints, discovery. /oauth/authorize and the consent page stay behind Access. */
-const ACCESS_GATEWAY_PUBLIC = ["/mcp", "/mcp/*", "/oauth/token", "/oauth/register", "/.well-known/*"];
+/** The Gateway paths Access lets through (packages/perimeter/src/install/access-plan.ts GATEWAY_BYPASS_PATHS). /oauth/authorize and the consent page stay behind Access. */
+const ACCESS_GATEWAY_PUBLIC = ["/mcp", "/mcp/*", "/oauth/token", "/oauth/register", "/linked-dev/*", "/.well-known/*", "/health", "/api/auth/callback/apple", "/access-evaluation/*"];
 /** The cf the real setup reports in setup.toolchain. */
 const FAKE_CF_VERSION = "1.0.0-beta.14";
 /** How long a fake setup waits for the owner link to be claimed (the real one: 15 minutes). */
 const CLAIM_WAIT_MS = Number(process.env["FAKE_EVERYAPP_CLAIM_WAIT_MS"] ?? 5000);
 /** Flags that take a value (so the value isn't read as a positional). */
 const VALUE_FLAGS = new Set([
-  "from-env", "app", "gateway", "account-id", "domain", "team", "email", "email-domain",
-  "session", "sender", "inbound", "manifest", "worker", "binding", "file", "out", "name", "template",
+  "from-env", "app", "gateway", "account-id", "domain", "team", "email",
+  "sender", "inbound", "manifest", "worker", "binding", "file", "out", "name", "template",
 ]);
 /** Where the real CLI says a setup guide lives, in an app that has the skill (lib/app/settings.ts SKILL_DIR). */
 const SKILL_DIR = "node_modules/everyapp/skills/everyapp";
@@ -241,13 +241,11 @@ function status(state) {
       ...(app.setup.command?.note ? { note: app.setup.command.note } : {}),
     });
   }
-  // `data.access` (#400): `{ on, teamDomain }` from the Worker's secret
-  // names and the record `access on` keeps; null on a hosted Gateway, with
-  // no Worker yet, or when cf couldn't read them (then an ACCESS_UNKNOWN
-  // warning). This fake is always self-hosted with a Worker, and only its
-  // `access on` writes the names, so the record is `state.access.team`.
+  // `data.access`: `{ on }` from the Worker's secret names; null on a
+  // hosted Gateway, with no Worker yet, or when cf couldn't read them (then
+  // an ACCESS_UNKNOWN warning). This fake is always self-hosted with a Worker.
   const accessOn = ACCESS_SETTINGS.every((name) => (state.gatewayNames ?? []).includes(name));
-  const access = { on: accessOn, teamDomain: accessOn && state.access?.team ? `${state.access.team}.cloudflareaccess.com` : null };
+  const access = { on: accessOn };
   const toFix = fixes.filter((fix) => fix.severity === "error" || fix.severity === "warning").length;
   const live = apps.filter((app) => app.status === "active" && app.bound).length;
   const domains = [host, ...apps.map((app) => app.hostname)];
@@ -739,104 +737,66 @@ function emailUnset(state, lists) {
   return 0;
 }
 
-/** Who still signs in once with their password through Access: every member, until a scenario rule says they did (`access.linkPending`). */
-function accessLinkPending(state) {
-  const pending = state.access?.linkPending;
-  if (Array.isArray(pending)) return pending;
-  return state.claimed ? [state.owner.email, ...(state.members ?? [])] : [];
-}
-
-/** One of the two Access applications, as `on` and `show` report it (PR #379's shape: id, aud, name, outcome, destinations). */
+/** One of the two Access applications, as `on` and `show` report it (id, aud, name, outcome, destinations, allowedIdps). */
 function accessApplication(kind, state, outcome) {
   return kind === "gateway"
-    ? { id: `${"0".repeat(31)}a`, aud: "a".repeat(64), name: "Every App gateway", outcome, destinations: [{ uri: gatewayHost(state), public: ACCESS_GATEWAY_PUBLIC }] }
-    : { id: `${"0".repeat(31)}b`, aud: "b".repeat(64), name: "Every App apps", outcome, destinations: [{ uri: `*.${state.appBaseDomain}`, public: [] }] };
+    ? { id: `${"0".repeat(31)}a`, aud: "a".repeat(64), name: "Every App gateway", outcome, destinations: [{ uri: gatewayHost(state), public: ACCESS_GATEWAY_PUBLIC }], allowedIdps: ACCESS_IDPS }
+    : { id: `${"0".repeat(31)}b`, aud: "b".repeat(64), name: "Every App apps", outcome, destinations: [{ uri: `*.${state.appBaseDomain}`, public: [] }], allowedIdps: ACCESS_IDPS };
 }
 
-/** `access show`: PR #379's data (on, team, policy with notYet, applications with inSync and policyAttached, desired, settings.current, linkPending, fixes). */
+/** The team's two sign-in methods, as `on` and `show` list them. */
+const ACCESS_IDPS = [`${"0".repeat(31)}e`, `${"0".repeat(31)}d`];
+const accessSignInMethods = () => [
+  { id: ACCESS_IDPS[0], type: "cloudflare", name: "Cloudflare", allowed: true, restrictToAccountMembers: true },
+  { id: ACCESS_IDPS[1], type: "onetimepin", name: "One-time PIN", allowed: true },
+];
+
+/** `access show`: on, team, the policy (whether it asks the Gateway), sign-in methods, applications, settings, fixes. */
 function accessShow(state) {
   const access = state.access ?? { on: false, team: null };
   const host = gatewayHost(state);
-  const people = state.claimed ? [state.owner.email, ...(state.members ?? [])] : [];
-  const team = access.team ? { domain: `${access.team}.cloudflareaccess.com`, sessionDuration: access.globalSession ?? null } : null;
-  const policyEmails = access.emails ?? people;
-  const policy = access.on
-    ? { id: `${"0".repeat(31)}c`, name: ACCESS_POLICY_NAME, emails: policyEmails, domains: access.domains ?? [], notYet: people.filter((email) => !policyEmails.includes(email)) }
-    : null;
-  const desired = { apps: [{ uri: `*.${state.appBaseDomain}`, public: [] }] };
+  const team = access.team ? { domain: `${access.team}.cloudflareaccess.com` } : null;
   const data = access.on
     ? {
         on: true,
         hosted: false,
         team,
-        policy,
+        policy: { id: `${"0".repeat(31)}c`, name: ACCESS_POLICY_NAME, asksGateway: true },
+        signIn: { methods: accessSignInMethods() },
         applications: {
-          gateway: { ...accessApplication("gateway", state, "unchanged"), inSync: true, managedOAuth: false, policyAttached: true },
-          apps: { ...accessApplication("apps", state, "unchanged"), inSync: true, policyAttached: true },
+          gateway: accessApplication("gateway", state, "unchanged"),
+          apps: accessApplication("apps", state, "unchanged"),
           combined: false,
         },
-        desired,
-        settings: { names: ACCESS_SETTINGS, current: true },
-        linkPending: accessLinkPending(state),
-        ...(policy.notYet.length ? { fixes: [`${CLI} access on`] } : {}),
+        settings: { names: ACCESS_SETTINGS },
       }
     : {
         on: false,
         hosted: false,
         team,
         policy: null,
+        signIn: team ? { methods: [] } : null,
         applications: { gateway: null, apps: null, combined: false },
-        desired,
-        settings: { names: [], current: null },
-        linkPending: accessLinkPending(state),
+        settings: { names: [] },
         fixes: [`${CLI} access on`],
       };
   out.emit({ type: "done", message: `Cloudflare Access is ${access.on ? "on" : "off"} for ${host}.`, data });
   return 0;
 }
 
-/** `access on`: PR #379's order (arguments, team, PIN, policy, applications, settings) and done event. */
+/** `access on`: the real command's order (owner, team, sign-in methods, policy, applications, settings) and done event. */
 function accessOn(state) {
   const access = (state.access ??= { on: false, team: null });
   const host = gatewayHost(state);
   const base = state.appBaseDomain;
   const step = "access.update";
-  // The arguments first, as the real command does: no network.
-  const session = parsed.values.get("session") ?? "720h";
-  const teamSession = parsed.values.get("team-session") ?? null;
-  for (const [flag, value] of [["--session", session], ["--team-session", teamSession]]) {
-    if (value !== null && !/^(?:\d+h(?:\d+m)?|\d+m)$/.test(value)) {
-      throw new FakeError("ACCESS_SESSION_INVALID", `${flag} ${value} isn't a duration Access takes\nUse hours and minutes, like 720h or 2h30m.`);
-    }
-  }
-  const emails = (parsed.lists.get("email") ?? []).map((email) => email.trim().toLowerCase());
-  for (const email of emails) {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new FakeError("ACCESS_EMAIL_INVALID", `--email ${email} isn't an email address`);
-  }
-  const domains = (parsed.lists.get("email-domain") ?? []).map((domain) => domain.trim().toLowerCase().replace(/^@/, ""));
-  for (const domain of domains) {
-    if (!/^(?:[a-z0-9-]+\.)+[a-z0-9-]{2,}$/.test(domain)) {
-      throw new FakeError("ACCESS_DOMAIN_INVALID", `--email-domain ${domain} isn't a domain\nUse the part after the @, like example.com.`);
-    }
-  }
   out.emit({ type: "step", step, status: "start", message: "Checking Cloudflare Access..." });
-  const people = state.claimed ? [state.owner.email, ...(state.members ?? [])] : [];
-  if (people.length === 0 && emails.length === 0 && !access.on) {
+  if (!state.claimed) {
     throw new FakeError(
       "ACCESS_NOBODY_ALLOWED",
-      "Nobody to let in yet\nThe Gateway has no members or invitations, and no --email was given, so the Access policy would let nobody in. Claim the Gateway first, or name who will (the setup link is then behind Access too).",
-      { rerun: `${CLI} access on --email <your address>` },
+      "Claim the Gateway first\nAccess lets in the Gateway's members and invitees, and it has none yet, so nobody could open the setup link.",
+      { rerun: `${CLI} access on`, rerunNote: "once the owner has claimed the Gateway" },
     );
-  }
-  const unknown = emails.filter((email) => !people.includes(email));
-  if (unknown.length) {
-    out.emit({
-      type: "warning",
-      code: "ACCESS_EMAIL_NOT_INVITED",
-      step,
-      message: `${listed(unknown)} ${unknown.length === 1 ? "has" : "have"} no account on this Gateway\nAccess will let them through, but the Gateway refuses anyone it doesn't know. Invite them in Manage workspace → Users.`,
-      data: { emails: unknown },
-    });
   }
   // 1. The team: its sign-in domain is permanent once used.
   let team = access.team;
@@ -857,88 +817,42 @@ function accessOn(state) {
     team = flag;
     created = true;
     out.emit({ type: "progress", step, message: `Creating the Zero Trust team ${team}.cloudflareaccess.com` });
-    access.globalSession = teamSession ?? session;
-  } else if (teamSession !== null && access.globalSession !== teamSession) {
-    out.emit({ type: "progress", step, message: `Setting the team's global session to ${teamSession}` });
-    access.globalSession = teamSession;
   }
-  // 2. A way to sign in: the one-time PIN, unless the team has another provider.
-  if (created) out.emit({ type: "progress", step, message: "Adding the one-time PIN identity provider" });
-  // 3. The policy: never fewer people than before.
   const wasOn = access.on;
-  const before = { emails: wasOn ? (access.emails ?? people) : [], domains: wasOn ? (access.domains ?? []) : [] };
-  const policyEmails = [...new Set([...before.emails, ...people, ...emails])];
-  const policyDomains = [...new Set([...before.domains, ...domains])];
-  const added = [
-    ...policyEmails.filter((email) => !before.emails.includes(email)),
-    ...policyDomains.filter((domain) => !before.domains.includes(domain)).map((domain) => `@${domain}`),
-  ];
-  if (!wasOn) out.emit({ type: "progress", step, message: `Creating the Access policy "${ACCESS_POLICY_NAME}"` });
-  else if (added.length) out.emit({ type: "progress", step, message: `Adding ${added.length} rule${added.length === 1 ? "" : "s"} to the Access policy` });
-  // 4. The applications, the apps' first.
+  // 2. The two ways to sign in, 3. the policy, 4. the applications.
   if (!wasOn) {
+    out.emit({ type: "progress", step, message: "Adding Sign in with Cloudflare (members of this Cloudflare account)" });
+    out.emit({ type: "progress", step, message: "Adding the one-time PIN" });
+    out.emit({ type: "progress", step, message: `Creating the Access policy "${ACCESS_POLICY_NAME}"` });
     out.emit({ type: "progress", step, message: `Creating the Access application "Every App apps"` });
     out.emit({ type: "progress", step, message: `Creating the Access application "Every App gateway"` });
   }
-  // 5. The Gateway's settings, all three in one new version.
-  const writeSettings = !wasOn || parsed.flags.has("write-settings");
-  if (writeSettings) {
-    out.emit({ type: "step", step: "secrets.gateway", status: "start", message: "Updating the Gateway..." });
-    state.gatewayNames = [...new Set([...(state.gatewayNames ?? []), ...ACCESS_SETTINGS])];
-    state.versionId = nextVersion(state.versionId);
-    out.emit({ type: "step", step: "secrets.gateway", status: "ok", message: `Set ${listed(ACCESS_SETTINGS)} on the Gateway`, data: { workerName: GATEWAY_WORKER_NAME, versionId: state.versionId } });
-  }
+  // 5. The Gateway's settings, all three in one new version, every run.
+  out.emit({ type: "step", step: "secrets.gateway", status: "start", message: "Updating the Gateway..." });
+  state.gatewayNames = [...new Set([...(state.gatewayNames ?? []), ...ACCESS_SETTINGS])];
+  state.versionId = nextVersion(state.versionId);
+  out.emit({ type: "step", step: "secrets.gateway", status: "ok", message: `Set ${listed(ACCESS_SETTINGS)} on the Gateway`, data: { workerName: GATEWAY_WORKER_NAME, versionId: state.versionId } });
   access.team = team;
   access.on = true;
-  access.emails = policyEmails;
-  access.domains = policyDomains;
-  access.linkPending = wasOn ? accessLinkPending(state) : people;
   writeState(state);
   out.emit({ type: "step", step, status: "ok" });
 
-  const pending = access.linkPending;
   const outcome = wasOn ? "unchanged" : "created";
-  const who = [...policyEmails, ...policyDomains.map((domain) => `@${domain}`)];
   const said = [
-    created
-      ? `Zero Trust team ${team}.cloudflareaccess.com (created · sign-in through a one-time PIN).`
-      : `Zero Trust team ${team}.cloudflareaccess.com · sign-in through a one-time PIN.`,
-    ...(created ? ["One-time PIN sign-in (added: Access emails people a code)."] : []),
-    !wasOn
-      ? `Access policy "${ACCESS_POLICY_NAME}" (lets in ${listed(who)}).`
-      : added.length
-        ? `Access policy "${ACCESS_POLICY_NAME}" (now also lets in ${listed(added)}).`
-        : `Access policy "${ACCESS_POLICY_NAME}" lets in ${listed(who)}.`,
-    wasOn ? `Access in front of ${host} is as it should be.` : `Access in front of ${host} (created · MCP and the OAuth endpoints let through).`,
-    wasOn ? `Access in front of *.${base} is as it should be (no app has public routes).` : `Access in front of *.${base} (created · no app has public routes).`,
-    writeSettings
-      ? `Gateway settings (${ACCESS_SETTINGS.join(", ")} · one new version).`
-      : "Gateway settings kept: they name these applications already (--write-settings writes them again).",
-    ...(pending.length
-      ? [`Sign in at https://${host}: ${listed(pending)} sign${pending.length === 1 ? "s" : ""} in once with their${pending.length === 1 ? "" : " own"} password; Access emails them a code first. After that Access alone signs them in.`]
-      : []),
-    ...(domains.length
-      ? [`People at ${listed(policyDomains)} pass Access, but still need an invitation here, unless they may join on their first sign-in: ${CLI} secret set CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS (${policyDomains.join(", ")}).`]
-      : []),
-    "MCP clients and personal access tokens keep working: /mcp, the OAuth endpoints and each app's public routes are let through without a login.",
-    `Once everyone has signed in through Access, passwords can go: ${CLI} secret set EMAIL_PASSWORD_SIGN_IN (false).`,
-  ];
-  const next = [
-    ...(domains.length ? [{ command: `${CLI} secret set CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`, note: `${policyDomains.join(", ")}: people there join as members on their first sign-in` }] : []),
-    { command: `${CLI} secret set EMAIL_PASSWORD_SIGN_IN`, note: "false, once everyone has linked Access" },
+    `Cloudflare Access is on for ${host} and *.${base}.`,
+    "People sign in to Access with a Cloudflare account or a one-time PIN, and get in when they are a member or invited here: invite someone in Manage workspace → Users and they can sign in at once.",
+    `MCP clients and personal access tokens keep working: the Gateway's /mcp, the OAuth endpoints, /health and 0 apps's public routes are let through without a login. After deploying an app with new public routes, run ${CLI} access on again.`,
   ];
   out.emit({
     type: "done",
     message: said.join(" "),
     data: {
-      team: { domain: `${team}.cloudflareaccess.com`, created, sessionSet: created || teamSession !== null ? (teamSession ?? session) : null, globalSession: access.globalSession ?? null },
-      signInMethods: [{ id: `${"0".repeat(31)}d`, type: "onetimepin", name: null }],
-      identityProviders: { oneTimePinAdded: created },
-      policy: { id: `${"0".repeat(31)}c`, name: ACCESS_POLICY_NAME, created: !wasOn, added, emails: policyEmails, domains: policyDomains },
+      team: { domain: `${team}.cloudflareaccess.com`, created },
+      signInMethods: accessSignInMethods(),
+      policy: { id: `${"0".repeat(31)}c`, name: ACCESS_POLICY_NAME, outcome },
       applications: { gateway: accessApplication("gateway", state, outcome), apps: accessApplication("apps", state, outcome), combined: false },
-      settings: { names: ACCESS_SETTINGS, outcome: writeSettings ? "set" : "kept", reason: writeSettings ? (wasOn ? "asked" : "missing") : null },
-      signIn: { url: `https://${host}`, pending, first: "pin" },
-      next,
+      settings: { names: ACCESS_SETTINGS },
+      signIn: { url: `https://${host}` },
       durationMs: 6200,
     },
   });
@@ -1345,11 +1259,11 @@ function helpText(key) {
       "COMMANDS",
       "  on    Put the Gateway and its apps behind Cloudflare Access, or bring them up to date",
       "  off   Take the Gateway and its apps out from behind Cloudflare Access",
-      "  show  Show how Cloudflare Access fronts the Gateway, and what access on would change",
+      "  show  Show how Cloudflare Access fronts the Gateway",
       "",
       "EXAMPLES",
       "  $ everyapp access on",
-      "  $ everyapp access on --email-domain example.com",
+      "  $ everyapp access show",
       "  $ everyapp access off",
       "",
       "Run everyapp access <command> --help for its flags.",
@@ -1359,21 +1273,19 @@ function helpText(key) {
   if (key === "access on") {
     return [
       "USAGE",
-      "  everyapp access on [--team name] [--email address]... [--email-domain domain]... [--session duration] [--write-settings] [--gateway value] [--account-id value] [--json] [--verbose]",
+      "  everyapp access on [--team name] [--gateway value] [--account-id value] [--json] [--verbose]",
       "  everyapp access on --help",
       "",
       "Finds or creates the Zero Trust team (--team when the account has none; the name is permanent),",
-      "adds the one-time PIN when the team has no other identity provider, keeps the reusable policy",
-      '"Every App gateway members" (every member and pending invitee, plus --email and --email-domain),',
-      "creates or updates the two Access applications (the Gateway's host and *.<app base domain>), and",
-      "sets CLOUDFLARE_ACCESS_TEAM_DOMAIN, CLOUDFLARE_ACCESS_AUD and CLOUDFLARE_ACCESS_APPS_AUD on the",
-      "Gateway in one version. Run it again any time; it changes only what differs.",
+      "adds Sign in with Cloudflare and the one-time PIN, keeps the reusable policy \"Every App gateway",
+      "members\", whose one rule asks the Gateway whether the person is a member or invited, creates or",
+      "updates the two Access applications (the Gateway's host and *.<app base domain>), and sets",
+      "CLOUDFLARE_ACCESS_TEAM_DOMAIN, CLOUDFLARE_ACCESS_AUD and CLOUDFLARE_ACCESS_APPS_AUD on the Gateway",
+      "in one version. Invitations need nothing more. Run it again after deploying an app with new",
+      "public routes; it changes only what differs.",
       "",
       "FLAGS",
       "     [--team]                  The Zero Trust team's name (<name>.cloudflareaccess.com), when the account has none yet",
-      "     [--email]...              Also let this address in",
-      "     [--email-domain]...       Also let every address at this domain in",
-      "     [--session]               The Access session's length, e.g. 24h (default: 720h)",
       "     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)",
       "     [--verbose/--no-verbose]  Show every step and progress line",
       "  -h  --help                   Print help information and exit",
@@ -1381,10 +1293,10 @@ function helpText(key) {
     ].join("\n");
   }
   if (key === "access off") {
-    return ["USAGE", "  everyapp access off [--yes] [--keep-applications] [--json] [--verbose]", "", "Removes the three Gateway settings, then deletes the two Access applications. Asks first; --yes doesn't.", ""].join("\n");
+    return ["USAGE", "  everyapp access off [--yes] [--json] [--verbose]", "", "Removes the three Gateway settings, then deletes the two Access applications. Asks first; --yes doesn't.", ""].join("\n");
   }
   if (key === "access show") {
-    return ["USAGE", "  everyapp access show [--json] [--verbose]", "", "Reports whether Cloudflare Access fronts the Gateway, and what access on would change.", ""].join("\n");
+    return ["USAGE", "  everyapp access show [--json] [--verbose]", "", "Reports whether Cloudflare Access fronts the Gateway: the team, the policy, the sign-in methods, the two applications and the settings.", ""].join("\n");
   }
   if (sections.has(key)) return sections.get(key);
   return ["USAGE", `  everyapp ${key} [--json] [--verbose]`, `  everyapp ${key} --help`, "", `(fake everyapp: no captured help text for "${key}")`, ""].join("\n");

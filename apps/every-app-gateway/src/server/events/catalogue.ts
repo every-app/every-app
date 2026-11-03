@@ -45,9 +45,10 @@ export type EventActor =
   | { kind: "gateway" };
 
 /**
- * What made a `binding` app active: `app.live`'s `trigger`. `deploy` is the
- * CLI's nudge after it binds an app (the activation queue, server.ts
- * `queue`); `scheduled` the per-minute cron.
+ * What made a `binding` app active: `app.live`'s `trigger`. `request` is a
+ * visit to the app; `scheduled` the per-minute cron's sweep
+ * (server/app-activation.ts). `list` and `deploy` named triggers the
+ * Gateway no longer has (a launcher read, the CLI's queue nudge).
  */
 export type AppLiveTrigger = "request" | "list" | "scheduled" | "deploy";
 

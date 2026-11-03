@@ -11,10 +11,6 @@ const mockSelectWhere = vi.fn();
 const mockCancelInvitation = vi.fn();
 const mockListMembersForOrganization = vi.fn();
 
-vi.mock("@/server/access-rejoin", () => ({
-  accessWouldLetBackIn: () => false,
-}));
-
 vi.mock("cloudflare:workers", () => ({
   env: {
     GATEWAY_DEPLOYMENT_MODE: "self_hosted",

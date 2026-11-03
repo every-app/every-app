@@ -2593,73 +2593,63 @@ describe("Artifacts (resources.artifacts)", () => {
   });
 });
 
-describe("bearerRoutes manifest field", () => {
-  it("needs at least one path and a why, and nothing else", () => {
-    const why = "The Mac app calls the API with its token.";
-    expect(() =>
-      validateManifestStrict({
-        id: "open-zen",
-        bearerRoutes: { paths: [], why },
-      }),
-    ).toThrow(/at least one path/);
-    expect(() =>
-      validateManifestStrict({
-        id: "open-zen",
-        bearerRoutes: { paths: ["/api/**"], why: " " },
-      }),
-    ).toThrow(/why/);
-    expect(() =>
-      validateManifestStrict({
-        id: "open-zen",
-        bearerRoutes: { paths: ["/api/**"], why, methods: ["GET"] },
-      }),
-    ).toThrow();
-  });
-
+describe("bearer routes (public entries with bearer: true)", () => {
   it("accepts globs with the public syntax, in both validators", () => {
     const input = {
       id: "open-zen",
-      public: [{ path: "/health" }],
-      bearerRoutes: {
-        paths: ["/api/**", "/upload/:id"],
-        why: "The Mac app calls the API with its token.",
-      },
+      public: [
+        { path: "/health" },
+        { path: "/api/**", bearer: true as const },
+        { path: "/upload/:id", bearer: true as const },
+      ],
     };
-    expect(validateManifest(input).bearerRoutes).toEqual(input.bearerRoutes);
-    expect(validateManifestStrict(input).bearerRoutes).toEqual(
-      input.bearerRoutes,
-    );
+    expect(validateManifest(input).public).toEqual(input.public);
+    expect(validateManifestStrict(input).public).toEqual(input.public);
+  });
+
+  it("refuses methods on a bearer route: it answers every method", () => {
+    const input = {
+      id: "open-zen",
+      public: [{ path: "/api/**", bearer: true as const, methods: ["GET"] }],
+    };
+    expect(() => validateManifest(input)).toThrow(/answers every method/);
+    expect(() => validateManifestStrict(input)).toThrow(/answers every method/);
   });
 
   it.each([
     ["a catch-all", "/**", /exposes the entire app/],
     ["a relative path", "api/**", /must be absolute/],
     ["the internal namespace", "/__everyapp/**", /reserved/],
-    ["/mcp itself", "/mcp", /can't be a bearer route/],
+    ["/mcp itself", "/mcp", /can't be/],
     ["a pattern covering /mcp", "/:page", /covers \/mcp/],
   ])("refuses %s in both validators", (_what, path, message) => {
-    const why = "The Mac app calls the API with its token.";
-    const input = { id: "open-zen", bearerRoutes: { paths: [path], why } };
+    const input = {
+      id: "open-zen",
+      public: [{ path, bearer: true as const }],
+    };
     expect(() => validateManifest(input)).toThrow(message);
     expect(() => validateManifestStrict(input)).toThrow(message);
   });
 
-  it("refuses a path that is also public, or a public asset", () => {
-    const why = "The Mac app calls the API with its token.";
+  it("refuses a path that is also open to anyone, or a public asset", () => {
     for (const input of [
       {
         id: "open-zen",
-        public: [{ path: "/api/**" }],
-        bearerRoutes: { paths: ["/api/**"], why },
+        public: [
+          { path: "/api/**" },
+          { path: "/api/**", bearer: true as const },
+        ],
       },
       {
         id: "open-zen",
         publicAssets: ["/api/**"],
-        bearerRoutes: { paths: ["/api/**"], why },
+        public: [{ path: "/api/**", bearer: true as const }],
       },
     ]) {
-      expect(() => validateManifest(input)).toThrow(/is also public/);
-      expect(() => validateManifestStrict(input)).toThrow(/is also public/);
+      expect(() => validateManifest(input)).toThrow(/both a bearer route/);
+      expect(() => validateManifestStrict(input)).toThrow(
+        /both a bearer route/,
+      );
     }
   });
 });

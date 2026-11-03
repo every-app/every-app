@@ -16,8 +16,6 @@ import * as entrypoint from "./src/server.ts" with { type: "cf-worker" };
 // placeholder survives.
 const NAME = "every-app-gateway";
 const PATCH = "__EVERYAPP_PATCH__";
-// The queue the CLI pushes to after binding an app (packages/cli/src/lib/gateway/resources.ts creates it).
-const ACTIVATION_QUEUE = "every-app-gateway-activate";
 
 // `cf d1 … --local` only accepts a UUID or 32-hex id, so dev gives the
 // database a fixed one (scripts/cf-local.mjs computes the same).
@@ -61,8 +59,6 @@ export const OPTIONAL_SECRETS = [
   "CLOUDFLARE_ACCESS_TEAM_DOMAIN",
   "CLOUDFLARE_ACCESS_AUD",
   "CLOUDFLARE_ACCESS_APPS_AUD",
-  "CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS",
-  "CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN",
   "EMAIL_PASSWORD_SIGN_IN",
   // Sign-in providers beside passwords (src/auth/sign-in-providers/,
   // packages/sdk/src/internal/signInProviders.ts): <ID>_SIGNIN_<FIELD>.
@@ -197,20 +193,13 @@ export default defineConfig(({ mode }) => {
       // Hourly MCP housekeeping (src/server/mcp-auth/maintenance.ts): prune
       // the tool-call audit table, expire idle connections, sweep OAuth
       // storage, prune events; and every minute the event bus's delivery
-      // sweep (src/server/events/deliver.ts), which retries what is due.
-      // The deploy keeps both next to the domains it publishes.
-      // And the activation queue the CLI nudges once it has bound an app
-      // (src/server.ts `queue`): a first deploy behind Cloudflare Access goes
-      // live in seconds, not at the next cron, which a fresh Gateway doesn't
-      // run for minutes. One message per batch, so a nudge isn't held back.
+      // sweep (src/server/events/deliver.ts), which retries what is due,
+      // and the deploy sweep, which makes `binding` apps live
+      // (src/server/app-activation.ts). The deploy keeps both next to the
+      // domains it publishes.
       triggers: [
         triggers.scheduled({ schedule: "17 * * * *" }),
         triggers.scheduled({ schedule: "* * * * *" }),
-        triggers.queue({
-          name: ACTIVATION_QUEUE,
-          maxBatchSize: 1,
-          maxRetries: 6,
-        }),
       ],
       observability: {
         ...EVERYAPP_OBSERVABILITY,

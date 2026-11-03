@@ -1437,11 +1437,7 @@ describe("on the app host (the perimeter: `mcp.app-host-refuses-oauth-tokens`, `
 
   it("a bearer route takes the token and refuses the session cookie; a public route serves nobody a refused token", async () => {
     const api = await deployApp("api", {
-      public: [{ path: "/public/**" }],
-      bearerRoutes: {
-        paths: ["/api/**"],
-        why: "The Mac app calls the API with its token.",
-      },
+      public: [{ path: "/public/**" }, { path: "/api/**", bearer: true }],
     });
     const client = await registerNativeClient();
     const { tokens } = await signIn({

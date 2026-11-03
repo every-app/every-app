@@ -308,9 +308,11 @@ describe("the outer ring on app hosts (SQLite)", () => {
     expect(received).toEqual([]);
   });
 
-  it("serves the gateway's /mcp to the person Access vouches for, once the outer ring has linked them", async () => {
-    // With Access's Managed OAuth on the gateway's host, an AI app's request
-    // reaches /mcp with the person's assertion and no gateway credential.
+  it("never takes an Access assertion as a credential on the gateway's /mcp: agents bring a token", async () => {
+    // /mcp is let through Access without a login (access-plan.ts): an AI
+    // app reaches it with an OAuth token or a personal access token. A
+    // request carrying only an assertion, even a valid one for a linked
+    // member, is asked for a token.
     const assertion = await access.assertion({ email: OWNER.email });
     const gatewayHost = new URL(GATEWAY).host;
     const listTools = () =>
@@ -342,25 +344,6 @@ describe("the outer ring on app hosts (SQLite)", () => {
           }),
         }),
       );
-    const linkedAccounts = () =>
-      db
-        .select({ userId: accounts.userId })
-        .from(accounts)
-        .where(eq(accounts.providerId, "cloudflare-access"));
-
-    // The owner signed in with a password: the Access identity isn't linked
-    // to the account yet, and /mcp hands nothing to a bare email.
-    expect(await linkedAccounts()).toEqual([]);
-    const before = await listTools();
-    expect(before.status).toBe(403);
-    expect(await before.json()).toMatchObject({
-      error: "forbidden",
-      reason: "not_connected",
-      message: expect.stringContaining(GATEWAY),
-    });
-
-    // The browser's session check on the gateway, through the outer ring as
-    // the same person: that links the identity.
     const check = await createAuth().handler(
       new Request(`${GATEWAY}/api/auth/get-session`, {
         headers: {
@@ -371,18 +354,9 @@ describe("the outer ring on app hosts (SQLite)", () => {
       }),
     );
     expect(check.status).toBe(200);
-    expect(await linkedAccounts()).toEqual([{ userId: owner.userId }]);
-
-    const after = await listTools();
-    expect(after.status).toBe(200);
-    const body = (await after.json()) as {
-      result: { tools: { name: string }[] };
-    };
-    expect(body.result.tools.map((tool) => tool.name)).toContain(
-      "everyapp_whoami",
-    );
-    // The gateway's own catalog fetch, with its system token, is all the
-    // app saw: /mcp proxied nothing to it.
+    const refused = await listTools();
+    expect(refused.status).toBe(401);
+    expect(refused.headers.get("www-authenticate")).toMatch(/^Bearer/);
     expect(received).toEqual([]);
   });
 });

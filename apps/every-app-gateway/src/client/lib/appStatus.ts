@@ -10,14 +10,16 @@ import type { UserAccessApp } from "@/types/app";
 /**
  * After this long `binding`, a deploy counts as stalled: the Gateway has
  * had its binding for far longer than a rollout takes (the CLI's own live
- * wait gives up at the same point), so a visit won't finish it either.
+ * wait gives up at the same point). Behind Cloudflare Access on a fresh
+ * Gateway it can also be the per-minute sweep not running yet, which a
+ * visit to the app finishes, so a stalled card still opens the app.
  */
 export const DEPLOY_STALL_MS = 10 * 60_000;
 
 /**
  * How often the launcher reads its list again while an app is deploying:
- * each read probes the app (the server's activateBindingApps), so the
- * card turns into a link within this of the Worker answering.
+ * the card reads Active within this of the Gateway making it live (a
+ * visit, or the per-minute sweep: server/app-activation.ts).
  */
 export const DEPLOYING_POLL_MS = 5_000;
 
@@ -25,7 +27,7 @@ export const DEPLOYING_POLL_MS = 5_000;
 export enum AppStatusLabel {
   Active = "Active",
   Deploying = "Deploying",
-  /** `binding` for longer than {@link DEPLOY_STALL_MS}: the deploy needs the CLI again. */
+  /** `binding` for longer than {@link DEPLOY_STALL_MS}: a visit may finish it, else the deploy needs the CLI again. */
   Stalled = "Deploy stalled",
   Disabled = "Disabled",
   NeedsDeploy = "Needs deploy",
@@ -71,9 +73,12 @@ type AppStatusInput = Pick<
  * provider calls are refused. The deploy and setup states come first,
  * since the person must act on them before a cap matters. An app
  * `binding` for longer than {@link DEPLOY_STALL_MS} (by `updatedAt`, at
- * `now`) reads "Deploy stalled" rather than "Deploying": waiting won't
- * finish it. A status this gateway doesn't know (a newer CLI's) shows as
- * it is, and doesn't open.
+ * `now`) reads "Deploy stalled" rather than "Deploying". Both open the
+ * app: a visit is what makes a `binding` app live (behind Cloudflare
+ * Access the CLI's own request never reaches the Gateway, and the
+ * per-minute sweep can take a while to start on a fresh Gateway). A
+ * status this gateway doesn't know (a newer CLI's) shows as it is, and
+ * doesn't open.
  */
 export function appStatus(
   app: AppStatusInput,
@@ -130,8 +135,8 @@ export function appStatus(
       return { label: AppStatusLabel.Active, variant: "success", opens: true };
     case "binding":
       return deployStalled(app, now)
-        ? { label: AppStatusLabel.Stalled, variant: "warning", opens: false }
-        : { label: AppStatusLabel.Deploying, variant: "info", opens: false };
+        ? { label: AppStatusLabel.Stalled, variant: "warning", opens: true }
+        : { label: AppStatusLabel.Deploying, variant: "info", opens: true };
     case "disabled":
       return {
         label: AppStatusLabel.Disabled,

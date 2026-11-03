@@ -148,7 +148,7 @@ const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
     "events test sub_…",
     "events deliveries --dead",
   ],
-  access: ["access on", "access on --email-domain example.com", "access off"],
+  access: ["access on", "access show", "access off"],
   "deploy-token": ["deploy-token add", "deploy-token add --gateway https://apps.example.com", "deploy-token remove"],
   signin: [
     "signin list",

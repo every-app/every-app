@@ -109,8 +109,6 @@ function listOf(
 const SWITCH_VALUES = ["true", "false", "1", "0", "on", "off", "yes", "no"] as const;
 /** An address the provider will take: one `@`, a dotted domain, no spaces or brackets. */
 const ADDRESS = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
-/** An email domain, as the Gateway's `readAutoJoinDomains` accepts it (lowercased, a leading `@` dropped). */
-const DOMAIN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$/;
 /**
  * A DNS name, as the Gateway's `thirdPartyDomain` reads THIRD_PARTY_DOMAIN
  * (`DNS_NAME_PATTERN` in server/app-hosts.ts: lowercased, one trailing `.`
@@ -123,7 +121,6 @@ const TEAM_DOMAIN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.co
 const AUD_TAG = /^[A-Za-z0-9._:-]{1,256}$/;
 const MAX_AUDIT_RETENTION_DAYS = 3650;
 
-const isDomain = (value: string): boolean => DOMAIN.test(value.toLowerCase().replace(/^@/, ""));
 const isDnsName = (value: string): boolean => DNS_NAME.test(value.toLowerCase().replace(/\.$/, ""));
 
 function httpUrl(value: string): URL | null {
@@ -230,14 +227,6 @@ const PLAIN_SETTINGS: Partial<Record<(typeof PLAIN_GATEWAY_SETTINGS)[number], Pl
   CLOUDFLARE_ACCESS_APPS_AUD: {
     takes: "the AUD tag of the Access application on the apps' hosts (several: comma separated)",
     check: listOf((tag) => AUD_TAG.test(tag), "an AUD tag"),
-  },
-  CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS: {
-    takes: "email domains whose people join without an invitation, comma separated, e.g. example.com",
-    check: listOf(isDomain, "a domain like example.com"),
-  },
-  CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN: {
-    takes: `everyone (anyone the outer ring admits joins); to turn it off: ${CLI} secret unset CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN`,
-    check: oneOf(["everyone"]),
   },
   HOSTED_OPEN_SIGNUP: {
     takes: "true or false; false keeps a hosted Gateway's sign-up invite-only",

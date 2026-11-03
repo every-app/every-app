@@ -1,10 +1,10 @@
 /**
  * `everyapp access on|off|show` end to end, in a fake Cloudflare account
  * with a deployed gateway (as secret/index.test.ts): from nothing to a team,
- * both sign-in methods (a Cloudflare account, a PIN), a policy, two
- * applications and the Gateway's settings; a rerun that changes nothing;
- * a deploy and a delete keeping the apps application in step; what the
- * command leaves alone; and the way back.
+ * both sign-in methods (a Cloudflare account, a PIN), the policy that asks
+ * the Gateway who is a member, two applications and the Gateway's
+ * settings; a rerun that changes nothing; the apps' public routes, which
+ * only `on` writes; what the command leaves alone; and the way back.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -12,9 +12,9 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readAccessOffChoice } from "@/lib/access/record";
 import { cfD1Database } from "@/lib/cf/d1";
-import type { RecordedCfCall } from "@/lib/cf/fakeCf";
 import { applyGateway } from "@/lib/gateway/apply";
 import { readApp } from "@/lib/gateway/registry";
+import { GATEWAY_SCHEMA } from "@/lib/gateway/schema";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { EveryAppCliManifest } from "@/lib/manifest";
@@ -23,16 +23,17 @@ import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
-import { removeApp } from "../delete";
 import { deployApp } from "../deploy/deployApp";
+import { removeApp } from "../delete";
 import { ACCESS_SETTINGS } from "@/lib/access/settings";
+import { PROTECTED_RESOURCE_METADATA_PATH } from "@/lib/access/plan";
 import { POLICY_NAME, showAccess, turnAccessOff, turnAccessOn } from "./index";
 
 const GATEWAY = "every-app-gateway";
 const HOST = "example.com";
-const NOW = Date.parse("2026-10-23T12:00:00Z");
+const NOW = Date.now();
 
-/** An app with public routes, like the CRM: a tracking pixel, an event endpoint, a health check. */
+/** An app with public routes, like the CRM: a tracking pixel, an event endpoint, a health check, and a bearer API. */
 const CRM: EveryAppCliManifest = {
   id: "crm",
   resources: { d1: ["DB"] },
@@ -40,6 +41,7 @@ const CRM: EveryAppCliManifest = {
     { path: "/t/*", methods: ["GET"] },
     { path: "/t/e", methods: ["POST"] },
     { path: "/health", methods: ["GET"] },
+    { path: "/api/**", bearer: true },
   ],
 };
 
@@ -65,7 +67,6 @@ const gatewayWorker = () => account.workers.get(GATEWAY)!;
 const done = () => events.find((event) => event["type"] === "done");
 const error = () => events.find((event) => event["type"] === "error");
 const warnings = (code: string) => events.filter((event) => event["type"] === "warning" && event["code"] === code);
-const steps = (step: string) => events.filter((event) => event["type"] === "step" && event["step"] === step);
 const zt = () => account.zeroTrust;
 const applications = () => [...zt().applications.values()];
 const application = (uri: string) =>
@@ -77,8 +78,6 @@ const overrides = (app: Record<string, any>, uri: string) =>
     .overrides.map((o) => o.path_pattern);
 const policy = () => [...zt().policies.values()].find((p) => p["name"] === POLICY_NAME);
 const provider = (type: string) => [...zt().identityProviders.values()].find((p) => p["type"] === type);
-const policyEmails = () =>
-  ((policy()?.["include"] ?? []) as Array<{ email?: { email: string } }>).flatMap((r) => (r.email ? [r.email.email] : []));
 /** Zero Trust writes this run made. */
 const writes = () =>
   account.cf.calls.filter(
@@ -206,13 +205,28 @@ async function deploy(dir: string, manifest: EveryAppCliManifest): Promise<strin
   return (await readApp(db(), manifest.id)).workerName;
 }
 
+function remove(appId: string) {
+  return removeApp({
+    appId,
+    out: out(),
+    interactive: false,
+    purge: false,
+    createCf: () => account.cf,
+    reconcile: {
+      ...seams,
+      openRelease: () => openRelease(tarball),
+      source: () => releaseSource(tarball),
+    },
+  });
+}
+
 const createCf = () => account.cf;
 const flags = { json: true };
 
 function on(options: Partial<Parameters<typeof turnAccessOn>[0]> = {}) {
   events = [];
   account.cf.calls.length = 0;
-  return turnAccessOn({ flags, out: out(), createCf, now: () => NOW, ...options });
+  return turnAccessOn({ flags, out: out(), createCf, ...options });
 }
 function off(options: Partial<Parameters<typeof turnAccessOff>[0]> = {}) {
   events = [];
@@ -221,10 +235,36 @@ function off(options: Partial<Parameters<typeof turnAccessOff>[0]> = {}) {
 }
 function show() {
   events = [];
-  return showAccess({ flags, out: out(), createCf, now: () => NOW });
+  return showAccess({ flags, out: out(), createCf });
 }
 
+/** The policy's one rule: Access asks the Gateway who is a member. */
+const EVALUATION = {
+  external_evaluation: {
+    evaluate_url: `https://${HOST}/access-evaluation/evaluate`,
+    keys_url: `https://${HOST}/access-evaluation/keys`,
+  },
+};
+
 describe("access on, from nothing", () => {
+  it("refuses until the Gateway has an owner, before anything is made", async () => {
+    await expect(on({ team: "acme" })).rejects.toMatchObject({ code: "ACCESS_NOBODY_ALLOWED" });
+    expect(zt().organization).toBeNull();
+    expect(writes()).toEqual([]);
+  });
+
+  it("refuses on a Gateway that can't answer Access's membership question yet, before anything is made", async () => {
+    await seedPeople();
+    // The membership check needs the Gateway's newest migration: the one version check refuses it first.
+    await db().run([{ sql: "DELETE FROM d1_migrations WHERE name = ?", params: [`${GATEWAY_SCHEMA}.sql`] }]);
+    await expect(on({ team: "acme" })).rejects.toMatchObject({
+      code: "GATEWAY_OUTDATED",
+      rerun: "pnpm everyapp update",
+    });
+    expect(zt().organization).toBeNull();
+    expect(writes()).toEqual([]);
+  });
+
   it("refuses without --team when the account has no Zero Trust team, before anything is made", async () => {
     await seedPeople();
     await expect(on()).rejects.toMatchObject({
@@ -236,35 +276,35 @@ describe("access on, from nothing", () => {
     expect(writes()).toEqual([]);
   });
 
-  it("refuses when nobody would be let in, before anything is made", async () => {
-    await expect(on({ team: "acme" })).rejects.toMatchObject({ code: "ACCESS_NOBODY_ALLOWED" });
-    expect(zt().organization).toBeNull();
-    expect(writes()).toEqual([]);
-  });
-
-  it("creates the team, both sign-in methods, the policy, both applications and the settings, in one Worker version", async () => {
+  it("creates the team, both sign-in methods, the policy that asks the Gateway, both applications and the settings, in one Worker version", async () => {
     await seedPeople();
     const versions = gatewayWorker().versions.length;
 
     await on({ team: "acme" });
 
     expect(error()).toBeUndefined();
-    // The team, with the session the applications get.
     expect(zt().organization).toMatchObject({ auth_domain: "acme.cloudflareaccess.com", session_duration: "720h" });
     // The two ways to sign in: a Cloudflare account (this account's members only), and a code by email.
     expect([...zt().identityProviders.values()]).toHaveLength(2);
     const cloudflare = provider("cloudflare")!;
     const pin = provider("onetimepin")!;
     expect(cloudflare).toMatchObject({ name: "Cloudflare", config: { restrict_to_account_members: true } });
-    expect(pin).toMatchObject({ name: "One-time PIN" });
-    // Members who aren't deactivated, and the pending unexpired invitee.
-    expect(policyEmails()).toEqual(["ben@acme.com", "jo@acme.com", "linked@acme.com", "sam@acme.com"]);
-    expect(policy()).toMatchObject({ decision: "allow" });
-    // The two applications: /health joins the Gateway's bypasses; the wildcard lets nothing through.
+    // Who gets in is the Gateway's answer: one External Evaluation rule, no email list.
+    expect(policy()).toMatchObject({ decision: "allow", include: [EVALUATION] });
     const gateway = application(HOST)!;
     const apps = application(`*.${HOST}`)!;
     expect(gateway["id"]).not.toBe(apps["id"]);
-    expect(overrides(gateway, HOST)).toEqual(["/mcp", "/mcp/*", "/oauth/token", "/oauth/register", "/linked-dev/*", "/.well-known/*", "/health", "/api/auth/callback/apple"]);
+    expect(overrides(gateway, HOST)).toEqual([
+      "/mcp",
+      "/mcp/*",
+      "/oauth/token",
+      "/oauth/register",
+      "/linked-dev/*",
+      "/.well-known/*",
+      "/health",
+      "/api/auth/callback/apple",
+      "/access-evaluation/*",
+    ]);
     expect(uris(apps)).toEqual([`*.${HOST}`]);
     expect(overrides(apps, `*.${HOST}`)).toEqual([]);
     for (const app of [gateway, apps]) {
@@ -274,14 +314,12 @@ describe("access on, from nothing", () => {
         session_duration: "720h",
         http_only_cookie_attribute: true,
         enable_binding_cookie: true,
-        // Both allowed, so Access shows its chooser rather than redirecting to one.
         allowed_idps: [cloudflare["id"], pin["id"]],
         auto_redirect_to_identity: false,
       });
     }
     expect(gateway["app_launcher_visible"]).toBe(true);
     expect(apps["app_launcher_visible"]).toBe(false);
-    // The Gateway's settings, one new version.
     expect(gatewayWorker().secrets).toMatchObject({
       CLOUDFLARE_ACCESS_TEAM_DOMAIN: "acme.cloudflareaccess.com",
       CLOUDFLARE_ACCESS_AUD: gateway["aud"],
@@ -295,27 +333,17 @@ describe("access on, from nothing", () => {
           { type: "cloudflare", restrictToAccountMembers: true, allowed: true },
           { type: "onetimepin", allowed: true },
         ],
-        identityProviders: { oneTimePinAdded: true, cloudflareAdded: true },
-        policy: { name: POLICY_NAME, created: true },
+        policy: { name: POLICY_NAME, outcome: "created" },
         applications: {
-          gateway: { aud: gateway["aud"], outcome: "created", allowedIdps: [cloudflare["id"], pin["id"]] },
+          gateway: { aud: gateway["aud"], outcome: "created" },
           apps: { aud: apps["aud"], outcome: "created" },
           combined: false,
         },
-        settings: { names: [...ACCESS_SETTINGS], outcome: "set", reason: "missing" },
-        // Who signs in with a password once: not the one who linked already, not the deactivated.
-        signIn: { url: `https://${HOST}`, pending: ["ben@acme.com", "jo@acme.com"], first: "both" },
-        next: [{ command: expect.stringContaining("secret set EMAIL_PASSWORD_SIGN_IN") }],
+        settings: { names: [...ACCESS_SETTINGS] },
+        signIn: { url: `https://${HOST}` },
       },
     });
-    expect(done()!["message"]).toContain("sign-in with a Cloudflare account or a one-time PIN");
-    expect(done()!["message"]).toContain("ben@acme.com and jo@acme.com sign in once");
-    expect(done()!["message"]).toContain("with their Cloudflare account if they are a member of this Cloudflare account");
-    expect(done()!["message"]).toContain("MCP, the OAuth endpoints and /health let through");
-    // The Cloudflare login (the fake's) is nobody on this Gateway: said, since Sign in with Cloudflare asserts it.
-    expect(warnings("ACCESS_LOGIN_NOT_MEMBER")).toEqual([
-      expect.objectContaining({ data: { email: expect.any(String) } }),
-    ]);
+    expect(done()!["message"]).toContain("invite someone in Manage workspace → Users and they can sign in at once");
   });
 
   it("creates the team on an account that never opened Zero Trust, then everything else", async () => {
@@ -329,12 +357,10 @@ describe("access on, from nothing", () => {
     expect(provider("cloudflare")).toBeDefined();
     expect(provider("onetimepin")).toBeDefined();
     expect(application(HOST)).toBeDefined();
-    expect(done()).toMatchObject({ data: { team: { created: true }, identityProviders: { oneTimePinAdded: true, cloudflareAdded: true } } });
   });
 
   it("keeps a team's Cloudflare provider, adds the PIN beside it, and allows both on the applications", async () => {
     await seedPeople();
-    // As Cloudflare's dashboard onboarding leaves a new team: its own provider, restricted to the account's members.
     zt().organization = { name: "acme", auth_domain: "acme.cloudflareaccess.com", session_duration: "24h", created_at: 0 };
     zt().identityProviders.set("idp-cf", { id: "idp-cf", type: "cloudflare", name: "Cloudflare account members", config: { restrict_to_account_members: true } });
 
@@ -343,419 +369,155 @@ describe("access on, from nothing", () => {
     expect(error()).toBeUndefined();
     expect([...zt().identityProviders.values()].map((p) => p["type"])).toEqual(["cloudflare", "onetimepin"]);
     expect(application(HOST)!["allowed_idps"]).toEqual(["idp-cf", provider("onetimepin")!["id"]]);
-    expect(done()).toMatchObject({ data: { identityProviders: { oneTimePinAdded: true, cloudflareAdded: false }, signIn: { first: "both" } } });
-    expect(warnings("ACCESS_IDP_ANY_CLOUDFLARE_ACCOUNT")).toEqual([]);
+    // The team's own session is left as it was.
+    expect(zt().organization).toMatchObject({ session_duration: "24h" });
   });
 
-  it("warns about a Cloudflare provider open to any Cloudflare account, on and show alike", async () => {
-    await seedPeople();
-    zt().organization = { name: "acme", auth_domain: "acme.cloudflareaccess.com", created_at: 0 };
-    zt().identityProviders.set("idp-cf", { id: "idp-cf", type: "cloudflare", name: "Any Cloudflare user", config: { restrict_to_account_members: false } });
-
-    await on();
-    expect(warnings("ACCESS_IDP_ANY_CLOUDFLARE_ACCOUNT")).toEqual([
-      expect.objectContaining({
-        message: expect.stringContaining("Any Cloudflare user (cloudflare) is open to any Cloudflare account, so left off the EveryApp applications"),
-        data: { providers: [{ id: "idp-cf", type: "cloudflare", name: "Any Cloudflare user" }] },
-      }),
-    ]);
-    // Left off: the PIN alone signs people in, redirected to, until the operator restricts the provider.
-    expect(done()).toMatchObject({
-      data: {
-        signInMethods: [{ id: "idp-cf", restrictToAccountMembers: false, allowed: false }, { type: "onetimepin", allowed: true }],
-        signIn: { first: "pin" },
-      },
-    });
-    expect(application(HOST)).toMatchObject({ allowed_idps: [provider("onetimepin")!["id"]], auto_redirect_to_identity: true });
-
-    await show();
-    expect(warnings("ACCESS_IDP_ANY_CLOUDFLARE_ACCOUNT")).toHaveLength(1);
-    expect(done()).toMatchObject({ data: { signIn: { cloudflare: true, pin: true, openToAnyCloudflareAccount: ["idp-cf"] } } });
-  });
-
-  it("adds Sign in with Cloudflare to applications made before it, taking nothing off them", async () => {
+  it("changes nothing in Access on a second run, and queues no event for it", async () => {
     await seedPeople();
     await on({ team: "acme" });
-    // As `access on` left them before 2026-10-25: the PIN alone, redirected to; plus one the operator allowed by hand.
-    const cloudflare = provider("cloudflare")!;
-    zt().identityProviders.delete(cloudflare["id"] as string);
-    zt().identityProviders.set("idp-okta", { id: "idp-okta", type: "okta", name: "Okta", config: {} });
-    for (const app of applications()) {
-      app["allowed_idps"] = app["id"] === application(HOST)!["id"] ? [provider("onetimepin")!["id"], "idp-okta"] : [provider("onetimepin")!["id"]];
-      app["auto_redirect_to_identity"] = true;
-    }
-
-    await show();
-    // The Gateway's names Okta beside the PIN and still redirects (two providers: it shouldn't); the apps'
-    // names the PIN alone, redirected to, which is what `on` makes of a team without Sign in with Cloudflare.
-    expect(done()).toMatchObject({
-      data: {
-        signIn: { cloudflare: false, pin: true },
-        applications: { gateway: { signInInSync: false }, apps: { signInInSync: true } },
-        fixes: [expect.stringContaining("access on")],
-      },
-    });
-
-    await on();
-
-    expect(error()).toBeUndefined();
-    // Sign in with Cloudflare joins both applications; the operator's Okta
-    // stays where they allowed it (the Gateway's) and is added nowhere: the
-    // team is account-wide, and `on` allows only the two methods it vouches for.
-    const added = provider("cloudflare")!;
-    expect(application(HOST)).toMatchObject({
-      allowed_idps: [provider("onetimepin")!["id"], "idp-okta", added["id"]],
-      auto_redirect_to_identity: false,
-    });
-    expect(application(`*.${HOST}`)).toMatchObject({
-      allowed_idps: [provider("onetimepin")!["id"], added["id"]],
-      auto_redirect_to_identity: false,
-    });
-    expect(done()).toMatchObject({
-      data: {
-        identityProviders: { cloudflareAdded: true, oneTimePinAdded: false },
-        signInMethods: [
-          { type: "onetimepin", allowed: true },
-          { id: "idp-okta", type: "okta", allowed: false },
-          { id: added["id"], type: "cloudflare", allowed: true },
-        ],
-        applications: {
-          gateway: { outcome: "updated", signInAdded: [added["id"]] },
-          apps: { outcome: "updated", signInAdded: [added["id"]] },
-        },
-      },
-    });
-    expect(done()!["message"]).toContain("sign-in methods added");
-    expect(done()!["message"]).toContain("sign-in with a Cloudflare account or a one-time PIN");
-    expect(done()!["message"]).toContain("Okta (okta) is on the team but not allowed on the EveryApp applications");
-
-    // `show` agrees: in sync now, Okta listed as the team's, not compared.
-    await show();
-    expect(done()).toMatchObject({
-      data: {
-        signIn: { methods: expect.arrayContaining([expect.objectContaining({ id: "idp-okta", allowed: false })]) },
-        applications: { gateway: { signInInSync: true }, apps: { signInInSync: true } },
-      },
-    });
-    expect(done()!["data"]).not.toHaveProperty("fixes");
-
-    // Then nothing more to do, and show agrees.
-    await on();
-    expect(writes()).toEqual([]);
-    await show();
-    expect(done()).toMatchObject({ data: { applications: { gateway: { signInInSync: true }, apps: { signInInSync: true } } } });
-    expect(done()!["data"]["fixes"]).toBeUndefined();
-  });
-
-  it("does nothing on a second run", async () => {
-    await seedPeople();
-    await on({ team: "acme" });
-    const versions = gatewayWorker().versions.length;
 
     await on();
 
     expect(error()).toBeUndefined();
     expect(writes()).toEqual([]);
-    expect(gatewayWorker().versions).toHaveLength(versions);
     expect(done()).toMatchObject({
-      data: {
-        team: { created: false, sessionSet: null },
-        policy: { created: false, added: [] },
-        applications: { gateway: { outcome: "unchanged" }, apps: { outcome: "unchanged" } },
-        settings: { outcome: "kept" },
-      },
+      data: { team: { created: false }, policy: { outcome: "unchanged" }, applications: { gateway: { outcome: "unchanged" }, apps: { outcome: "unchanged" } } },
     });
-    expect(done()!["message"]).toContain("Gateway settings kept");
   });
 
-  it("adds a new invitee or --email to the policy, warns about an address with no account, and never removes anyone", async () => {
+  it("replaces a policy's email list with the Gateway's answer, so invitations need no rerun", async () => {
     await seedPeople();
     await on({ team: "acme" });
-    // A rule added by hand in the dashboard, and a new invitation.
     const found = policy()!;
-    (found["include"] as unknown[]).push({ group: { id: "g-1" } });
-    // Settings made in the dashboard, which a PUT without them would reset.
-    found["approval_required"] = true;
-    found["session_duration"] = "2h";
-    await db().run([
-      {
-        sql: "INSERT INTO invitations (id, organization_id, email, status, expires_at, inviter_id) VALUES ('inv-new', 'org-1', 'New@Acme.com', 'pending', ?, 'u-ben')",
-        params: [NOW + 1000],
-      },
-    ]);
-
-    await on({ emails: ["Ana@Example.org"], emailDomains: ["partners.example"] });
-
-    expect(policyEmails()).toEqual(["ben@acme.com", "jo@acme.com", "linked@acme.com", "sam@acme.com", "new@acme.com", "ana@example.org"]);
-    expect(policy()!["include"]).toContainEqual({ group: { id: "g-1" } });
-    expect(policy()!["include"]).toContainEqual({ email_domain: { domain: "partners.example" } });
-    expect(policy()).toMatchObject({ approval_required: true, session_duration: "2h" });
-    expect(warnings("ACCESS_EMAIL_NOT_INVITED")[0]).toMatchObject({ data: { emails: ["ana@example.org"] } });
-    expect(done()).toMatchObject({
-      data: {
-        policy: { added: ["new@acme.com", "ana@example.org", "@partners.example"] },
-        next: [
-          { command: expect.stringContaining("CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS") },
-          { command: expect.stringContaining("EMAIL_PASSWORD_SIGN_IN") },
-        ],
-      },
-    });
-  });
-
-  it("writes the settings again when an application was recreated by hand, whatever the Gateway deployed since", async () => {
-    await seedPeople();
-    await on({ team: "acme" });
-    // The gateway application recreated by hand: same destination, new AUD.
-    const old = application(HOST)!;
-    zt().applications.delete(old["id"] as string);
-    zt().applications.set("app-new", { ...old, id: "app-new", aud: "f".repeat(64), created_at: account.clock() });
-    // Then a Gateway version newer than it (a deploy): no timestamp tells the two apart.
-    await deploy(appDir(TODO), TODO);
-    const versions = gatewayWorker().versions.length;
-
-    await show();
-    expect(done()).toMatchObject({ data: { on: true, settings: { current: false }, fixes: [expect.stringContaining("access on")] } });
+    found["include"] = [{ email: { email: "ben@acme.com" } }, { email_domain: { domain: "acme.com" } }];
 
     await on();
 
-    expect(gatewayWorker().secrets["CLOUDFLARE_ACCESS_AUD"]).toBe("f".repeat(64));
-    expect(gatewayWorker().versions).toHaveLength(versions + 1);
-    expect(done()).toMatchObject({ data: { settings: { outcome: "set", reason: "changed" } } });
-    expect(done()!["message"]).toContain("AUD tag had changed");
-
-    await show();
-    expect(done()).toMatchObject({ data: { settings: { current: true } } });
-    expect(done()!["data"]["fixes"]).toBeUndefined();
+    expect(policy()).toMatchObject({ id: found["id"], include: [EVALUATION] });
+    expect(done()).toMatchObject({ data: { policy: { outcome: "updated" } } });
   });
 
-  it("ignores --team once a team exists, and checks it only when one is made", async () => {
+  it("writes the settings again when an application was recreated by hand", async () => {
     await seedPeople();
-    await expect(on({ team: "Not A Name" })).rejects.toMatchObject({ code: "ACCESS_TEAM_INVALID" });
-    expect(zt().organization).toBeNull();
-
     await on({ team: "acme" });
-    await on({ team: "Not A Name" });
+    const old = application(`*.${HOST}`)!;
+    zt().applications.delete(old["id"] as string);
 
+    await on();
+
+    const recreated = application(`*.${HOST}`)!;
+    expect(recreated["aud"]).not.toBe(old["aud"]);
+    expect(gatewayWorker().secrets["CLOUDFLARE_ACCESS_APPS_AUD"]).toBe(recreated["aud"]);
+  });
+
+  it("ignores --team once a team exists", async () => {
+    await seedPeople();
+    await on({ team: "acme" });
+    await on({ team: "NOT A NAME" });
     expect(error()).toBeUndefined();
     expect(zt().organization).toMatchObject({ auth_domain: "acme.cloudflareaccess.com" });
   });
 
-  it("reads the apps' public routes under the Access lease, so a deploy finishing meanwhile isn't undone", async () => {
-    await seedPeople();
-    await on({ team: "acme" });
-
-    await on();
-
-    const sql = (call: RecordedCfCall) => Object.values(call.files).join(" ");
-    const lease = account.cf.calls.findIndex((call) => sql(call).includes("INSERT INTO _everyapp_deploy_lease"));
-    const routes = account.cf.calls.findIndex((call) => sql(call).includes("FROM apps"));
-    expect(lease).toBeGreaterThan(-1);
-    expect(routes).toBeGreaterThan(lease);
-  });
-
-  it("says a refusal from Workers as cf's, not as missing Access permissions", async () => {
-    await seedPeople();
-    account.cf.override(["workers", "secrets", "bulk"], {
-      exitCode: 1,
-      stderr: "┌ APIError\n│ [10000] Authentication error\n└\n",
-    });
-
-    const failure: unknown = await on({ team: "acme" }).catch((error: unknown) => error);
-
-    expect(failure).toMatchObject({ kind: "auth" });
-    expect(failure).not.toMatchObject({ code: "ACCESS_PERMISSION_MISSING" });
-
-    // A refusal from Access is.
-    account.cf.override(["zero-trust", "access", "applications", "list"], {
-      exitCode: 1,
-      stderr: "┌ APIError\n│ [10000] Authentication error\n└\n",
-    });
-    await expect(on()).rejects.toMatchObject({ code: "ACCESS_PERMISSION_MISSING" });
-  });
-
-  it("keeps what it didn't make: a destination for something else, and an application's own policies", async () => {
+  it("keeps what it didn't make: a destination for something else, another policy, and a sign-in method the operator allowed", async () => {
     await seedPeople();
     await on({ team: "acme" });
     const apps = application(`*.${HOST}`)!;
     (apps["destinations"] as unknown[]).unshift({ type: "public", uri: "wiki.example.org", overrides: [] });
-    const gateway = application(HOST)!;
-    zt().policies.set("inline-1", { id: "inline-1", name: "Hand-made", decision: "allow", include: [], exclude: [], require: [], reusable: false });
-    gateway["policies"] = ["inline-1"];
-    // Something ours to put right, so each application is PUT once.
-    (gateway["destinations"] as Array<{ overrides: unknown[] }>)[0]!.overrides = [];
+    zt().identityProviders.set("idp-okta", { id: "idp-okta", type: "okta", name: "Okta", config: {} });
+    apps["allowed_idps"] = [...(apps["allowed_idps"] as string[]), "idp-okta"];
+    zt().policies.set("monitor", { id: "monitor", name: "Uptime monitor", decision: "non_identity", include: [], exclude: [], require: [], reusable: true });
+    apps["policies"] = ["monitor", policy()!["id"]];
     apps["enable_binding_cookie"] = false;
 
     await on();
 
     expect(error()).toBeUndefined();
-    expect(uris(application(`*.${HOST}`)!)).toEqual(["wiki.example.org", `*.${HOST}`]);
-    expect(overrides(application(`*.${HOST}`)!, `*.${HOST}`)).toEqual([]);
-    expect(warnings("ACCESS_FOREIGN_DESTINATION")[0]).toMatchObject({ data: { uris: ["wiki.example.org"] } });
-    // The application with policies of its own is left alone, paths and all.
-    expect(application(HOST)!["policies"]).toEqual(["inline-1"]);
-    expect(overrides(application(HOST)!, HOST)).toEqual([]);
-    expect(warnings("ACCESS_INLINE_POLICIES")).toHaveLength(1);
-    expect(done()).toMatchObject({ data: { applications: { gateway: { outcome: "skipped" }, apps: { outcome: "updated" } } } });
-    // The destination for something else isn't an app with public routes.
-    expect(done()!["message"]).toContain("no app has public routes");
-  });
-
-  it("drops the Gateway's MCP bypass once its application has Managed OAuth, keeping /health and Apple's sign-in POST", async () => {
-    await seedPeople();
-    await on({ team: "acme" });
-    const gateway = application(HOST)!;
-    gateway["oauth_configuration"] = { enabled: true };
-
-    await on();
-
-    expect(overrides(application(HOST)!, HOST)).toEqual(["/health", "/api/auth/callback/apple"]);
-    expect(overrides(application(`*.${HOST}`)!, `*.${HOST}`)).toEqual([]);
-    expect(done()!["message"]).toContain("no app has public routes");
-    // Then nothing more to do.
-    await on();
-    expect(writes()).toEqual([]);
-  });
-
-  it("sets the team's global session only when asked", async () => {
-    await seedPeople();
-    await on({ team: "acme" });
-    zt().organization!["session_duration"] = "24h";
-
-    await on();
-    expect(zt().organization!["session_duration"]).toBe("24h");
-
-    await on({ teamSession: "168h" });
-    expect(zt().organization!["session_duration"]).toBe("168h");
-    expect(done()).toMatchObject({ data: { team: { sessionSet: "168h" } } });
+    const after = application(`*.${HOST}`)!;
+    expect(uris(after)).toEqual(["wiki.example.org", `*.${HOST}`]);
+    expect(after["policies"]).toEqual(["monitor", policy()!["id"]]);
+    expect(after["allowed_idps"]).toEqual(expect.arrayContaining(["idp-okta"]));
+    expect(after["enable_binding_cookie"]).toBe(true);
+    expect(done()).toMatchObject({ data: { applications: { apps: { outcome: "updated" } } } });
   });
 });
 
-// Each of these deploys (and deletes) through the fake Gateway more than once: room beyond the default 5 s.
-describe("access keeps the apps application in step with deploys", { timeout: 30_000 }, () => {
-  it("lets an app's public routes through when it deploys, and takes them back when it is deleted", async () => {
+describe("access on and the apps' public routes", { timeout: 30_000 }, () => {
+  it("lets every served app's public and bearer routes through, and a deploy never touches Access", async () => {
     await seedPeople();
+    await deploy(appDir(CRM), CRM);
+
     await on({ team: "acme" });
-    events = [];
 
-    await deploy(appDir(TODO), TODO);
-    expect(steps("app.access")).toEqual([expect.objectContaining({ status: "skip" })]);
-    expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`]);
-
-    events = [];
-    const dir = appDir(CRM);
-    await deploy(dir, CRM);
-    expect(steps("app.access")).toEqual([
-      expect.objectContaining({ status: "ok", message: "Cloudflare Access lets crm's public routes through.", data: expect.objectContaining({ appId: "crm", changed: true }) }),
-    ]);
+    expect(error()).toBeUndefined();
     expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`, `crm.${HOST}`]);
-    // Its routes alone.
-    expect(overrides(application(`*.${HOST}`)!, `crm.${HOST}`)).toEqual(["/t/*", "/t/e", "/health"]);
+    expect(overrides(application(`*.${HOST}`)!, `crm.${HOST}`)).toEqual([
+      PROTECTED_RESOURCE_METADATA_PATH,
+      "/api/*",
+      "/t/*",
+      "/t/e",
+      "/health",
+    ]);
 
-    // A redeploy with the same routes changes nothing at Access; neither does `access on`.
+    // A redeploy with the same routes says nothing and calls nothing in Zero Trust.
     events = [];
     account.cf.calls.length = 0;
-    await deploy(dir, CRM);
-    expect(steps("app.access")).toEqual([expect.objectContaining({ status: "skip" })]);
-    expect(writes()).toEqual([]);
+    await deploy(appDir(TODO), TODO);
+    expect(warnings("ACCESS_RERUN_NEEDED")).toEqual([]);
+    expect(account.cf.calls.filter((call) => call.args[0] === "zero-trust")).toEqual([]);
+  });
+
+  it("says to run access on again when a deploy changed an app's public routes, and on lets them through", async () => {
+    await seedPeople();
+    await on({ team: "acme" });
+    events = [];
+    account.cf.calls.length = 0;
+
+    await deploy(appDir(CRM), CRM);
+
+    expect(warnings("ACCESS_RERUN_NEEDED")).toEqual([
+      expect.objectContaining({ step: "app.access", data: { appId: "crm", rerun: expect.stringContaining("access on") } }),
+    ]);
+    expect(account.cf.calls.filter((call) => call.args[0] === "zero-trust")).toEqual([]);
+    expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`]);
+
     await on();
-    expect(writes()).toEqual([]);
+    expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`, `crm.${HOST}`]);
+  });
+
+  it("says to run access on again when a deleted app had public routes, and on takes them back", async () => {
+    await seedPeople();
+    await deploy(appDir(CRM), CRM);
+    await deploy(appDir(TODO), TODO);
+    await on({ team: "acme" });
+    expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`, `crm.${HOST}`]);
+
+    // An app without public routes goes quietly.
+    events = [];
+    await remove("todo");
+    expect(warnings("ACCESS_RERUN_NEEDED")).toEqual([]);
 
     events = [];
-    await removeApp({
-      appId: "crm",
-      out: out(),
-      interactive: false,
-      purge: false,
-      createCf,
-      reconcile: { ...seams, openRelease: () => openRelease(tarball), source: () => releaseSource(tarball) },
-    });
-    expect(error()).toBeUndefined();
-    expect(steps("app.access")).toEqual([
-      expect.objectContaining({ status: "ok", message: expect.stringContaining("no longer lets crm's"), data: expect.objectContaining({ removed: true }) }),
+    account.cf.calls.length = 0;
+    await remove("crm");
+    expect(warnings("ACCESS_RERUN_NEEDED")).toEqual([
+      expect.objectContaining({ step: "app.access", data: { appId: "crm", rerun: expect.stringContaining("access on") } }),
     ]);
+    expect(account.cf.calls.filter((call) => call.args[0] === "zero-trust")).toEqual([]);
+
+    await on();
     expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`]);
   });
 
-  it("says, under a login that can't read Access, that an app's public routes weren't checked", async () => {
+  it("says nothing about Access on a deploy while Access is off", async () => {
     await seedPeople();
-    account.cf.override(["zero-trust", "access", "applications", "list"], {
-      exitCode: 1,
-      stderr: "┌ APIError\n│ [10000] Authentication error\n└\n",
-    });
-
     await deploy(appDir(CRM), CRM);
-
-    expect(error()).toBeUndefined();
-    const warning = warnings("ACCESS_NOT_CHECKED")[0]!;
-    expect(warning["message"]).toContain("crm's public routes need a login there");
-  });
-
-  it("warns, and the deploy succeeds, when Access can't be updated", async () => {
-    await seedPeople();
-    await on({ team: "acme" });
-    account.cf.override(["zero-trust", "access", "applications", "update"], {
-      exitCode: 1,
-      stderr: "\n┌ APIError\n│ [12060] access.api.error.invalid_request\n│ 400 Bad Request · HTTP /accounts/x/access/apps/y\n└\n",
-    });
-    events = [];
-
-    await deploy(appDir(CRM), CRM);
-
-    expect(error()).toBeUndefined();
-    expect(warnings("ACCESS_SYNC_FAILED")[0]).toMatchObject({
-      message: expect.stringContaining("need an Access login"),
-      data: { appId: "crm", rerun: expect.stringContaining("access on") },
-    });
-    expect(warnings("ACCESS_SYNC_FAILED")[0]!["message"]).not.toContain("Run:");
-    expect(steps("app.live").at(-1)).toMatchObject({ status: "ok" });
-  });
-
-  it("says, under a login that can't read Access, only that an app's public routes weren't checked, and only when it has some", async () => {
-    await seedPeople();
-    // No Access in front; a CI token without the Access permissions.
-    account.cf.override(["zero-trust", "access", "applications", "list"], {
-      exitCode: 1,
-      stderr: "┌ APIError\n│ [10000] Authentication error\n└\n",
-    });
-    const remove = (appId: string) =>
-      removeApp({
-        appId,
-        out: out(),
-        interactive: false,
-        purge: false,
-        createCf,
-        reconcile: { ...seams, openRelease: () => openRelease(tarball), source: () => releaseSource(tarball) },
-      });
-
-    await deploy(appDir(TODO), TODO);
-    expect(error()).toBeUndefined();
-    expect(warnings("ACCESS_NOT_CHECKED")).toEqual([]);
-    expect(warnings("ACCESS_SYNC_FAILED")).toEqual([]);
-
-    events = [];
-    await deploy(appDir(CRM), CRM);
-    expect(error()).toBeUndefined();
-    expect(warnings("ACCESS_SYNC_FAILED")).toEqual([]);
-    const warning = warnings("ACCESS_NOT_CHECKED")[0]!;
-    expect(warning["message"]).toContain("can't read Cloudflare Access");
-    expect(warning["message"]).toContain("If the Gateway is behind Access");
-    expect(warning["message"]).not.toContain("need an Access login");
-    expect(warning["data"]).toMatchObject({ appId: "crm", rerun: expect.stringContaining("access on") });
-
-    // A delete knows the app's routes before its row goes: todo had none.
-    events = [];
-    await remove("todo");
-    expect(error()).toBeUndefined();
-    expect(warnings("ACCESS_NOT_CHECKED")).toEqual([]);
-    events = [];
-    await remove("crm");
-    expect(error()).toBeUndefined();
-    expect(warnings("ACCESS_NOT_CHECKED")[0]!["message"]).toContain("crm's host stays listed there");
+    expect(warnings("ACCESS_RERUN_NEEDED")).toEqual([]);
   });
 });
 
 describe("access show", () => {
-  it("says off, then on, and what is out of step", async () => {
+  it("says off, then on, and that the policy asks the Gateway", async () => {
     await seedPeople();
     await show();
     expect(done()).toMatchObject({ data: { on: false, team: null, fixes: [expect.stringContaining("access on")] } });
@@ -763,23 +525,20 @@ describe("access show", () => {
     await on({ team: "acme" });
     await show();
     expect(done()).toMatchObject({
-      data: { on: true, applications: { gateway: { inSync: true }, apps: { inSync: true } }, linkPending: ["ben@acme.com", "jo@acme.com"] },
+      data: {
+        on: true,
+        team: { domain: "acme.cloudflareaccess.com" },
+        policy: { name: POLICY_NAME, asksGateway: true },
+        applications: { gateway: { aud: application(HOST)!["aud"] }, apps: { aud: application(`*.${HOST}`)!["aud"] }, combined: false },
+        settings: { names: [...ACCESS_SETTINGS] },
+      },
     });
     expect(done()!["data"]["fixes"]).toBeUndefined();
 
-    // An app's public routes the apps application no longer lets through (changed by hand).
-    await deploy(appDir(CRM), CRM);
-    const apps = application(`*.${HOST}`)!;
-    apps["destinations"] = (apps["destinations"] as Array<{ uri: string }>).filter((d) => d.uri === `*.${HOST}`);
+    // A policy changed by hand back to an email list no longer asks the Gateway.
+    policy()!["include"] = [{ email: { email: "ben@acme.com" } }];
     await show();
-    expect(done()).toMatchObject({
-      data: {
-        signIn: { cloudflare: true, pin: true, openToAnyCloudflareAccount: [] },
-        applications: { apps: { inSync: false, signInInSync: true } },
-        desired: { apps: [{ uri: `*.${HOST}`, public: [] }, { uri: `crm.${HOST}`, public: ["/t/*", "/t/e", "/health"] }] },
-        fixes: [expect.stringContaining("access on")],
-      },
-    });
+    expect(done()).toMatchObject({ data: { policy: { asksGateway: false }, fixes: [expect.stringContaining("access on")] } });
   });
 });
 
@@ -806,15 +565,11 @@ describe("access off", () => {
     expect(gatewayWorker().versions).toHaveLength(versions + 1);
   });
 
-  it("only takes our hosts out of an application that also covers something else, and keeps them all with --keep-applications", async () => {
+  it("only takes our hosts out of an application that also covers something else", async () => {
     await seedPeople();
     await on({ team: "acme" });
     const apps = application(`*.${HOST}`)!;
     (apps["destinations"] as unknown[]).push({ type: "public", uri: "wiki.example.org", overrides: [] });
-
-    await off({ keepApplications: true });
-    expect(applications()).toHaveLength(2);
-    expect(gatewayWorker().secrets["CLOUDFLARE_ACCESS_AUD"]).toBeUndefined();
 
     await off();
     expect(applications()).toHaveLength(1);
@@ -856,14 +611,14 @@ describe("the access.changed events", () => {
       data: JSON.parse(String(row["data"])),
     }));
 
-  it("queues one when on writes the Gateway's settings and one when off removes them, never on a run that changes nothing", async () => {
+  it("queues one when on changes Access and one when off removes it, never on a run that changes nothing", async () => {
     await seedPeople();
     await db().run([
       {
         sql: "INSERT INTO event_subscriptions (id, organization_id, name, sink, url, secret, events, created_at, updated_at) VALUES ('sub_1', 'org-1', 'Slack', 'webhook', 'https://hooks.example.org/x', 'whsec_x', '[\"access.*\"]', 0, 0)",
       },
     ]);
-    await on({ team: "acme", emailDomains: ["acme.com"] });
+    await on({ team: "acme" });
     await on();
     expect(await readAccessOffChoice(db())).toBeNull();
     await off();
@@ -876,7 +631,7 @@ describe("the access.changed events", () => {
         organization: "org-1",
         type: "access.changed",
         actor: { kind: "operator", id: "dev@example.com", email: "dev@example.com" },
-        data: { access: "on", teamDomain: "acme.cloudflareaccess.com", emailDomains: ["acme.com"] },
+        data: { access: "on", teamDomain: "acme.cloudflareaccess.com" },
       },
       expect.objectContaining({ type: "access.changed", data: { access: "off" } }),
     ]);

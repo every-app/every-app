@@ -138,9 +138,6 @@ describe("deploy to a named Gateway", () => {
     expect(gatewayUpload.config["env"]["EVERYAPP_GATEWAY_NAME"]).toEqual({ type: "text", value: "demo" });
     expect(account.gatewayBindings(DEMO.worker)).toEqual([workerName]);
 
-    // Its activation queue was nudged, not the default's.
-    expect(account.pushedMessages.map((message) => message.queue)).toEqual(["every-app-gateway-demo-activate"]);
-
     // The default Gateway: no new version, nothing bound, no row.
     expect(account.workers.get("every-app-gateway")!.versions).toHaveLength(defaultVersions);
     expect(account.gatewayBindings()).toEqual([]);

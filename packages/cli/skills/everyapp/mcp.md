@@ -335,7 +335,7 @@ An app host answers `/mcp` as the app does (usually 404).
 403 `{"error":"forbidden","reason":…}` means the credential verified and was
 refused: `token_scope` (a token that is neither read only nor full, an
 MCP-only token on any route of an app host), `no_app_access` (app host: the person cannot
-open this app), `not_connected`, `organization_unresolved`, `account_deactivated`, `organization_suspended`.
+open this app), `organization_suspended`.
 OAuth off: `MCP_OAUTH_ENABLED` is `false`, or `GATEWAY_URL` is neither https
 nor http on exactly localhost or 127.x: `/oauth/*` and the discovery documents
 answer 404 `oauth_disabled`, `/mcp` takes `epat_` tokens only and its 401 says
@@ -349,9 +349,8 @@ self-hosted Gateway, then `429 rate_limited` (wait, or use a CIMD client); past
 Behind Cloudflare Access: `pnpm everyapp access on` lets `/mcp`, `/mcp/*`,
 `/oauth/token`, `/oauth/register`, `/.well-known/*` and `/health` through on the Gateway
 host, so OAuth and tokens keep working; the consent
-page stays behind Access. With Managed OAuth on the Gateway's Access application
-instead, Access is the OAuth server: the person must have signed in to the Gateway
-in a browser once (else `403 not_connected`), gets read & write to every app, no connection row.
+page stays behind Access. An Access assertion is never a credential on `/mcp`:
+clients bring an OAuth or personal token.
 
 ## Sources
 

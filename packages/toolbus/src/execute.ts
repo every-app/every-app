@@ -94,19 +94,13 @@ export function scopesForAccess(access: McpPrincipal["access"]): string[] {
     : [MCP_READ_SCOPE];
 }
 
-/**
- * `act.sub` on the minted identity: the credential acting for the user. An
- * AI client that Cloudflare Access authenticated acts for them like a
- * connection or a token does: `access:<email>`.
- */
+/** `act.sub` on the minted identity: the credential acting for the user. */
 function actorFor(principal: McpPrincipal): string {
   switch (principal.credential.kind) {
     case "pat":
       return `pat:${principal.credential.id}`;
     case "oauth":
       return `oauth:${principal.credential.id}`;
-    case "access":
-      return `access:${principal.credential.id}`;
     default:
       return principal.userId;
   }

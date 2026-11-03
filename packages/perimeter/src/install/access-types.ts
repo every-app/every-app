@@ -36,10 +36,6 @@ const ApplicationOutput = z.looseObject({
   allowed_idps: z.array(z.string()).nullish(),
   auto_redirect_to_identity: z.boolean().nullish(),
   app_launcher_visible: z.boolean().nullish(),
-  /** Managed OAuth (a beta): Access as the OAuth server AI apps talk to. */
-  oauth_configuration: z
-    .looseObject({ enabled: z.boolean().nullish() })
-    .nullish(),
 });
 export type AccessApplication = z.infer<typeof ApplicationOutput>;
 

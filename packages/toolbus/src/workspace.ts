@@ -321,7 +321,7 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "workspace_remove",
     title: "Remove a member",
     description:
-      "Remove a member from the organization: their membership, app access, group places, tokens and AI connections go, and their account when it belongs to no other organization. Where Cloudflare Access would let them straight back in they are deactivated instead, and the answer says so. Cannot be undone: needs confirm: true. Owners and admins; an owner is removed only by another owner, never the last one.",
+      "Remove a member from the organization: their membership, app access, group places, tokens and AI connections go, and their account when it belongs to no other organization. Cannot be undone: needs confirm: true. Owners and admins; an owner is removed only by another owner, never the last one.",
     inputSchema: objectWith({ user: USER, confirm: CONFIRM }, [
       "user",
       "confirm",

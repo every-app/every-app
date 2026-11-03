@@ -223,8 +223,8 @@ const BINDING_SWEEP_MAX = 50;
 
 /**
  * The install's `binding` rows, every organization's, oldest change first:
- * what the per-minute cron probes so a deploy finishes without a visit.
- * The shape `activateBindingApps` takes.
+ * what the per-minute cron probes so a deploy finishes without a visit
+ * (app-activation.ts activateDeployingApps).
  */
 async function findBinding(limit = BINDING_SWEEP_MAX) {
   const rows = await db

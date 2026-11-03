@@ -194,15 +194,11 @@ function checkBuildOutput(outputDir: string): void {
   }
   if (workerConfig.domains?.length) problems.push("it declares domains");
   // Routes are an install's, patched in by the deploy; the scheduled
-  // triggers (the hourly MCP housekeeping, the event sweep) and the
-  // activation queue's consumer belong to the release itself. The same
-  // rule as packages/cli/src/lib/gateway/patchBuildOutput.ts, which keeps
-  // every trigger but fetch.
-  if (
-    workerConfig.triggers?.some(
-      (trigger) => trigger.type !== "scheduled" && trigger.type !== "queue",
-    )
-  ) {
+  // triggers (the hourly MCP housekeeping, the event and deploy sweeps)
+  // belong to the release itself. The same rule as
+  // packages/cli/src/lib/gateway/patchBuildOutput.ts, which keeps every
+  // trigger but fetch.
+  if (workerConfig.triggers?.some((trigger) => trigger.type !== "scheduled")) {
     problems.push("it declares routes");
   }
   for (const [name, binding] of Object.entries(workerConfig.env ?? {})) {

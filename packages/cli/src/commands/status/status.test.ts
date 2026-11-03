@@ -7,8 +7,6 @@
 import fs from "node:fs";
 import { stripVTControlCharacters } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { writeAccessSettingsRecord } from "@/lib/access/record";
-import { ACCESS_SETTINGS } from "@/lib/access/settings";
 import { applyEmailRoutes, planEmailRoutes } from "@/lib/app/emailRoutes";
 import { recordOwnedResource } from "@/lib/app/ownership";
 import { cfD1Database } from "@/lib/cf/d1";
@@ -30,6 +28,7 @@ import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
 import { existingGateway } from "@/lib/gateway/connect";
 import { turnAccessOn } from "../access";
+import { ACCESS_SETTINGS } from "@/lib/access/settings";
 import { reportStatus } from "./index";
 
 let account: FakeCloudflare;
@@ -911,56 +910,22 @@ describe("everyapp status", () => {
     ]);
   });
 
-  it("says whether Cloudflare Access is in front, and whether it is in step with this Gateway", async () => {
+  it("says whether Cloudflare Access is in front, from the Gateway's settings alone", async () => {
     const gatewayWorker = () => account.workers.get("every-app-gateway")!;
-    const nothing = { drift: null, driftUnread: null };
-    let refuseList: string | null = null;
-    account.cf.override(
-      (args) => refuseList !== null && args[0] === "zero-trust" && args[2] === "applications" && args[3] === "list",
-      () => ({ exitCode: 1, stderr: refuseList! }),
-    );
 
     // Off: none of the settings on the Worker, and nothing asked of Zero Trust.
     const off = await status();
-    expect(off["data"]["access"]).toEqual({ on: false, teamDomain: null, ...nothing });
+    expect(off["data"]["access"]).toEqual({ on: false });
     expect(await shown()).toMatch(
       /\nOwner +none yet\nAccess +off\nRelease /,
     );
-    expect(account.cf.calls.some((call) => call.args[0] === "zero-trust")).toBe(false);
 
     // Two of three: still off (the Gateway needs all three).
     gatewayWorker().secrets["CLOUDFLARE_ACCESS_TEAM_DOMAIN"] = "acme.cloudflareaccess.com";
     gatewayWorker().secrets["CLOUDFLARE_ACCESS_AUD"] = "a".repeat(64);
-    expect((await status())["data"]["access"]).toEqual({ on: false, teamDomain: null, ...nothing });
+    expect((await status())["data"]["access"]).toEqual({ on: false });
 
-    // All three, with a record of the team, but nothing at Zero Trust: on,
-    // and out of step (the Gateway requires a login nothing asks for).
-    for (const name of ACCESS_SETTINGS) gatewayWorker().secrets[name] = gatewayWorker().secrets[name] ?? "b".repeat(64);
-    await writeAccessSettingsRecord(db(), {
-      teamDomain: "acme.cloudflareaccess.com",
-      gatewayAud: "a".repeat(64),
-      appsAud: "b".repeat(64),
-      writtenAt: Date.parse("2026-10-23T12:00:00Z"),
-    });
-    const bare = await status();
-    expect(bare["data"]["access"]).toEqual({
-      on: true,
-      teamDomain: "acme.cloudflareaccess.com",
-      drift: { paths: [], signIn: [], missing: ["example.com", "*.example.com"], settings: false },
-      driftUnread: null,
-    });
-    expect(bare["data"]["fixes"]).toContainEqual(
-      expect.objectContaining({
-        code: "ACCESS_DRIFT",
-        severity: "warning",
-        message: expect.stringContaining("No Access application in front of example.com and *.example.com."),
-        run: "pnpm everyapp access on",
-        note: "brings Access in step with this Gateway",
-      }),
-    );
-    expect(await shown()).toMatch(/\nAccess +on · drift: no application in front of example\.com and \*\.example\.com\n/);
-
-    // `access on` makes the ring (once the owner exists): in step, nothing to fix.
+    // `access on` (once the owner exists): on.
     new GatewayWorker(account).claim((await mintSetupLink({ db: db(), gatewayUrl: "https://example.com" })).url);
     await turnAccessOn({
       flags: { json: true, gateway: "https://example.com" },
@@ -969,77 +934,12 @@ describe("everyapp status", () => {
       team: "acme",
       interactive: false,
     });
+    account.cf.calls.length = 0;
     const on = await status();
-    expect(on["data"]["access"]).toEqual({
-      on: true,
-      teamDomain: "acme.cloudflareaccess.com",
-      drift: { paths: [], signIn: [], missing: [], settings: false },
-      driftUnread: null,
-    });
-    expect(fixCodes(on)).not.toContain("ACCESS_DRIFT");
-    expect(await shown()).toMatch(/\nAccess +on · in step with this Gateway · everyone signs in through Cloudflare Access first\n/);
-
-    // Drift by hand: the Gateway host's paths, the apps application's
-    // sign-in methods. Named, with the command that brings them back.
-    type Destination = { uri: string; overrides: Array<{ path_pattern: string }> };
-    const application = (uri: string) =>
-      [...account.zeroTrust.applications.values()].find((app) =>
-        (app["destinations"] as Destination[]).some((d) => d.uri === uri),
-      )!;
-    const gatewayDestination = (application("example.com")["destinations"] as Destination[]).find((d) => d.uri === "example.com")!;
-    gatewayDestination.overrides = gatewayDestination.overrides.filter((o) => o.path_pattern !== "/health");
-    application("*.example.com")["allowed_idps"] = [];
-    const drifted = await status();
-    expect(drifted["data"]["access"]["drift"]).toEqual({ paths: ["example.com"], signIn: ["*.example.com"], missing: [], settings: false });
-    expect(drifted["data"]["fixes"]).toContainEqual(
-      expect.objectContaining({
-        code: "ACCESS_DRIFT",
-        message: [
-          "Cloudflare Access is out of step with this Gateway",
-          "The paths let through without a login differ on example.com.",
-          "The sign-in methods differ on *.example.com.",
-        ].join("\n"),
-      }),
-    );
-    expect(drifted["message"]).toContain("1 problem to fix");
-    expect(await shown()).toMatch(/\nAccess +on · drift: paths differ on example\.com; sign-in methods differ on \*\.example\.com\n/);
-
-    // The Gateway's application recreated by hand: the recorded settings name another one.
-    const old = application("example.com");
-    account.zeroTrust.applications.delete(old["id"] as string);
-    account.zeroTrust.applications.set("app-new", { ...old, id: "app-new", aud: "f".repeat(64) });
-    const recreated = await status();
-    expect(recreated["data"]["access"]["drift"]["settings"]).toBe(true);
-    expect(recreated["data"]["fixes"]).toContainEqual(
-      expect.objectContaining({
-        code: "ACCESS_DRIFT",
-        message: expect.stringContaining("name other applications than the ones found"),
-      }),
-    );
-    expect(await shown()).toContain("the settings name other applications");
-
-    // A login that can't read Access: on, in step unknown, and no problem for it.
-    refuseList = "┌ APIError\n│ [10000] Authentication error\n└\n";
-    const unreadable = await status();
-    expect(unreadable["data"]["access"]).toMatchObject({ on: true, drift: null, driftUnread: { permission: true } });
-    expect(fixCodes(unreadable)).not.toContain("ACCESS_DRIFT");
-    expect(fixCodes(unreadable)).not.toContain("ACCESS_DRIFT_UNKNOWN");
-    expect(await shown()).toMatch(/\nAccess +on · in step\? this login can't read Access\n/);
-
-    // Any other refusal: a problem that says what Cloudflare said.
-    refuseList = "┌ APIError\n│ [12060] access.api.error.invalid_request\n│ 400 Bad Request\n└\n";
-    const failed = await status();
-    expect(failed["data"]["access"]).toMatchObject({ on: true, drift: null, driftUnread: { permission: false } });
-    expect(failed["data"]["fixes"]).toContainEqual(
-      expect.objectContaining({
-        code: "ACCESS_DRIFT_UNKNOWN",
-        severity: "warning",
-        message: expect.stringContaining("Couldn't check whether Cloudflare Access is in step with this Gateway\nCloudflare said: "),
-        run: null,
-      }),
-    );
-    expect(await shown()).toMatch(/\nAccess +on · in step\? couldn't check\n/);
-    refuseList = null;
+    expect(on["data"]["access"]).toEqual({ on: true });
+    expect(await shown()).toMatch(/\nAccess +on · everyone signs in through Cloudflare Access first\n/);
+    // Status asks nothing of Zero Trust: `access show` does that.
+    expect(account.cf.calls.some((call) => call.args[0] === "zero-trust")).toBe(false);
 
     // cf can't list the Worker's settings: the row says so, and a problem says why.
     account.cf.override(["workers", "secrets", "list"], {

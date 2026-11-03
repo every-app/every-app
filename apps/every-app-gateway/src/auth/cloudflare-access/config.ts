@@ -15,9 +15,6 @@
  *    Access application on the gateway's own host: only its assertions sign
  *    people in), and CLOUDFLARE_ACCESS_APPS_AUD for a separate application
  *    on the apps' hosts (its assertions only vouch for a session there).
- *  - Membership: CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS lets people with those
- *    email domains join without an invitation; CLOUDFLARE_ACCESS_OUTER_RING_
- *    AUTO_JOIN=everyone lets in everyone the outer ring admits.
  *  - EMAIL_PASSWORD_SIGN_IN=false turns password sign-in off, but only while
  *    an Access sign-in method or a sign-in provider (../sign-in-providers/)
  *    is configured, so it can't lock everyone out.
@@ -40,8 +37,6 @@ export interface AccessEnv {
   CLOUDFLARE_ACCESS_TEAM_DOMAIN?: string;
   CLOUDFLARE_ACCESS_AUD?: string;
   CLOUDFLARE_ACCESS_APPS_AUD?: string;
-  CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS?: string;
-  CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN?: string;
   /**
    * The ids of the Access identity providers whose tokens count (comma or
    * space separated; Zero Trust → Settings → Authentication, or `everyapp
@@ -77,8 +72,6 @@ export interface AccessOuterRingConfig {
    */
   audiences: string[];
   certsUrl: string;
-  /** Everyone the outer ring lets in may join as a member. */
-  autoJoinEveryone: boolean;
   /**
    * Identity providers whose assertions count (the token's `idp.id`); empty:
    * any. With a list, a token naming no provider is refused.
@@ -89,8 +82,6 @@ export interface AccessOuterRingConfig {
 export interface AccessConfig {
   oidc: AccessOidcConfig | null;
   outerRing: AccessOuterRingConfig | null;
-  /** Email domains whose people join without an invitation. */
-  autoJoinDomains: string[];
   /** False only when the operator turned it off and another sign-in works. */
   passwordSignIn: boolean;
   /** CLOUDFLARE_ACCESS_IDP_IDS as read; empty when unset. */
@@ -223,17 +214,11 @@ function readOuterRing(
   const teamDomain = setting(env.CLOUDFLARE_ACCESS_TEAM_DOMAIN);
   const audSetting = setting(env.CLOUDFLARE_ACCESS_AUD);
   const appsAudSetting = setting(env.CLOUDFLARE_ACCESS_APPS_AUD);
-  const autoJoin = setting(env.CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN);
   if (!teamDomain && !audSetting) {
-    for (const [name, value] of [
-      ["CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN", autoJoin],
-      ["CLOUDFLARE_ACCESS_APPS_AUD", appsAudSetting],
-    ] as const) {
-      if (value) {
-        problems.push(
-          `${name} is set but the outer ring isn't (CLOUDFLARE_ACCESS_TEAM_DOMAIN, CLOUDFLARE_ACCESS_AUD); it does nothing.`,
-        );
-      }
+    if (appsAudSetting) {
+      problems.push(
+        "CLOUDFLARE_ACCESS_APPS_AUD is set but the outer ring isn't (CLOUDFLARE_ACCESS_TEAM_DOMAIN, CLOUDFLARE_ACCESS_AUD); it does nothing.",
+      );
     }
     return null;
   }
@@ -270,21 +255,11 @@ function readOuterRing(
     return null;
   }
 
-  let autoJoinEveryone = false;
-  if (autoJoin.toLowerCase() === "everyone") {
-    autoJoinEveryone = true;
-  } else if (autoJoin) {
-    problems.push(
-      'CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN takes only "everyone"; it is off.',
-    );
-  }
-
   return {
     issuer: url.origin,
     signInAudiences,
     audiences: [...new Set([...signInAudiences, ...appAudiences])],
     certsUrl: `${url.origin}/cdn-cgi/access/certs`,
-    autoJoinEveryone,
     idpIds,
   };
 }
@@ -310,27 +285,6 @@ function readIdpIds(env: AccessEnv, problems: string[]): string[] {
     }
   }
   return [...ids];
-}
-
-const DOMAIN =
-  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$/;
-
-function readAutoJoinDomains(env: AccessEnv, problems: string[]): string[] {
-  const domains = new Set<string>();
-  for (const entry of setting(env.CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS).split(
-    /[\s,]+/,
-  )) {
-    const domain = entry.trim().toLowerCase().replace(/^@/, "");
-    if (!domain) continue;
-    if (DOMAIN.test(domain)) {
-      domains.add(domain);
-    } else {
-      problems.push(
-        `CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS: "${domain.slice(0, 64)}" isn't an email domain (like example.com); skipped.`,
-      );
-    }
-  }
-  return [...domains];
 }
 
 function readPasswordSignIn(
@@ -364,13 +318,12 @@ export function readAccessConfig(
   const idpIds = readIdpIds(env, problems);
   const oidc = readOidc(env, options, problems, idpIds);
   const outerRing = readOuterRing(env, options, problems, idpIds);
-  const autoJoinDomains = readAutoJoinDomains(env, problems);
   const passwordSignIn = readPasswordSignIn(
     env,
     Boolean(oidc || outerRing || options.otherSignInConfigured),
     problems,
   );
-  return { oidc, outerRing, autoJoinDomains, passwordSignIn, idpIds, problems };
+  return { oidc, outerRing, passwordSignIn, idpIds, problems };
 }
 
 const reported = new Set<string>();

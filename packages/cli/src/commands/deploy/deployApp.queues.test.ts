@@ -148,9 +148,8 @@ const queueCalls = (...action: string[]) =>
     (call) => call.args[0] === "queues" && action.every((arg, index) => call.args[index + 1] === arg),
   );
 
-/** The account's queues but the Gateway's own activation queue (setup made it; the app never touches it). */
-const appQueues = () =>
-  [...account.queues.values()].filter((queue) => queue.name !== "every-app-gateway-activate").length;
+/** The account's queues: the app's own. */
+const appQueues = () => account.queues.size;
 
 const uploads = (worker: string) => account.deploys.filter((upload) => upload.workerName === worker);
 

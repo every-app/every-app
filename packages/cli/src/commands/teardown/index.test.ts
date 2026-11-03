@@ -158,7 +158,15 @@ async function deploy(manifest: EveryAppCliManifest): Promise<string> {
  */
 async function populate({ foreignMailRule = true }: { foreignMailRule?: boolean } = {}): Promise<void> {
   await deploy(TODO);
-  await turnAccessOn({ flags: { json: true }, out: out(), createCf: () => account.cf, team: "acme", emails: ["ben@acme.com"] });
+  // Access lets in the Gateway's members: an owner first.
+  await db().run([
+    { sql: "INSERT OR IGNORE INTO organizations (id, name, slug, created_at) VALUES ('org-1', 'Acme', 'acme', 0)" },
+    { sql: "INSERT INTO users (id, name, email) VALUES ('u-ben', 'Ben', 'ben@acme.com')" },
+    {
+      sql: "INSERT INTO members (id, organization_id, user_id, role, created_at) SELECT 'm-ben', id, 'u-ben', 'owner', 0 FROM organizations WHERE slug = 'acme'",
+    },
+  ]);
+  await turnAccessOn({ flags: { json: true }, out: out(), createCf: () => account.cf, team: "acme" });
   const routing = account.emailRoutingOf("zone-1");
   routing.enabled = true;
   account.dnsRecords.push({ zoneId: "zone-1", name: HOST, type: "MX", content: "route1.mx.cloudflare.net" });
@@ -651,8 +659,8 @@ describe("teardown", () => {
     account.queues.get(customerEvents)!.consumers.set("consumer-on-theirs", { script: TODO_WORKER, settings: {} });
     const theirs = account.createQueue("customer-queue");
     account.queues.get(theirs)!.consumers.set("consumer-theirs", { script: "other-worker", settings: {} });
-    // The Gateway's own activation queue (setup made it) is ours too.
-    const activation = [...account.queues].find(([, queue]) => queue.name === "every-app-gateway-activate")![0];
+    // The activation queue an older install's setup made is ours too.
+    const activation = account.createQueue("every-app-gateway-activate");
 
     await run({ dryRun: true });
     expect(done()!["data"]["plan"]).toMatchObject({
@@ -1067,14 +1075,14 @@ describe("teardown of one Gateway in an account that holds two", () => {
     workers: [TODO_WORKER, GATEWAY],
     d1: [TODO_WORKER, `${TODO_WORKER}--archive`, GATEWAY],
     kv: [`${GATEWAY}-OAUTH_KV`],
-    queues: [`${GATEWAY}-activate`],
+    queues: [] as string[],
     aiGateway: [`${TODO_WORKER}-ai-gateway`],
   };
   const DEMO_SET = {
     workers: ["every-demo--acme-todo", DEMO.worker],
     d1: ["every-demo--acme-todo", "every-demo--acme-todo--archive", DEMO.d1],
     kv: [DEMO.oauthKv],
-    queues: [DEMO.activationQueue],
+    queues: [] as string[],
     aiGateway: [`${DEMO.aiGatewayPrefix}acme-todo-ai-gateway`],
   };
   const sorted = (names: readonly string[]) => [...names].sort();

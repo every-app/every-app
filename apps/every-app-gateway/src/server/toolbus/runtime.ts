@@ -53,11 +53,8 @@ export function servedApp(app: ToolBusApp, route: SyncableApp): ToolBusApp {
 }
 
 function auditToolCall(event: ToolCallAuditEvent): void {
-  // Never the arguments or result: a keyed digest and a size. Nor an
-  // email: an Access credential's id is the person's address, which the
-  // audit row keeps; the log line has the user id.
-  const credentialId =
-    event.credentialKind === "access" ? undefined : event.credentialId;
+  // Never the arguments or result: a keyed digest and a size.
+  const credentialId = event.credentialId;
   logEvent("mcp.tool_call", {
     surface: event.surface,
     app: event.appId,

@@ -589,7 +589,6 @@ describe("workspace remove", () => {
     await removeMember(opts({ yes: true }), "mia@acme.com");
     expect(data()).toMatchObject({
       member: { id: "u-mia", email: "mia@acme.com" },
-      deactivatedInstead: false,
       accountDeleted: true,
       otherOrganizations: 0,
     });
@@ -627,7 +626,7 @@ describe("workspace remove", () => {
     expect(rows("SELECT user_id FROM members WHERE organization_id = ? AND role = 'owner'", ORG)).toEqual([{ user_id: "u-admin" }]);
   });
 
-  it("keeps the account on a hosted Gateway, and deactivates instead where Access could let them back in", async () => {
+  it("keeps the account on a hosted Gateway", async () => {
     // Only this test's events: the fixture seeds the audit log's rows.
     sqlite().sqlite.exec("DELETE FROM event_deliveries; DELETE FROM events");
     sqlite().sqlite.prepare("UPDATE _everyapp_install SET deployment_mode = 'hosted'").run();
@@ -635,23 +634,9 @@ describe("workspace remove", () => {
     expect(data()).toMatchObject({ accountDeleted: false, otherOrganizations: 0 });
     expect(rows("SELECT id FROM users WHERE id = 'u-mia'")).toHaveLength(1);
     expect(rows("SELECT id FROM members WHERE user_id = 'u-mia'")).toEqual([]);
-    sqlite().sqlite.prepare("UPDATE _everyapp_install SET deployment_mode = 'self-hosted'").run();
-
-    gatewayWorker().secrets["CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS"] = "acme.com";
-    events = [];
-    await removeMember(opts({ yes: true }), "ada@acme.com");
-    expect(data()).toMatchObject({ member: { id: "u-admin", deactivated: true }, deactivatedInstead: true, accountDeleted: false });
-    expect(rows("SELECT banned FROM users WHERE id = 'u-admin'")).toEqual([{ banned: 1 }]);
-    expect(rows("SELECT id FROM members WHERE user_id = 'u-admin'")).toHaveLength(1);
-    expect(rows("SELECT id FROM user_access_tokens WHERE id = 'pat-ada' AND revoked_at IS NULL")).toEqual([]);
-    expect(done()!["message"]).toContain("Deactivated ada@acme.com instead");
-    // The event says what happened: deactivated, with the Gateway's reason, not removed.
     expect(
       rows("SELECT type, data FROM events WHERE type LIKE 'member.%' ORDER BY rowid").map((row) => ({ type: row["type"], data: JSON.parse(String(row["data"])) })),
-    ).toEqual([
-      { type: "member.removed", data: { user: { id: "u-mia", email: "mia@acme.com", name: "Mia" }, accountDeleted: false } },
-      { type: "member.deactivated", data: { user: { id: "u-admin", email: "ada@acme.com", name: "Ada" }, reason: "deleted_with_access_auto_join" } },
-    ]);
+    ).toEqual([{ type: "member.removed", data: { user: { id: "u-mia", email: "mia@acme.com", name: "Mia" }, accountDeleted: false } }]);
   });
 });
 

@@ -227,10 +227,8 @@ const removeCommand = buildCommand({
     fullDescription: [
       "Deletes the membership, their app grants and places in groups, and revokes their personal",
       "access tokens for the organization and AI connections to it, in one write. The account goes",
-      "too when it belongs to no other organization (a hosted Gateway keeps accounts). Someone",
-      "Cloudflare Access would let straight back in (the Gateway has CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS",
-      "or CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN set) is deactivated and kept listed instead, as the",
-      "Gateway's own Delete does. Owners are peers, and the organization always keeps one who can",
+      "too when it belongs to no other organization (a hosted Gateway keeps accounts). Owners are",
+      "peers, and the organization always keeps one who can",
       "act: the last owner who isn't deactivated can't be removed (LAST_OWNER). Asks first at a",
       "terminal; elsewhere it needs --yes.",
       "",

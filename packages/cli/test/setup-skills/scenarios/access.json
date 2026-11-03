@@ -66,11 +66,8 @@
       "whenState": {
         "access.on": true
       },
-      "when": "send login code|login code|one-time (?:pin|code)|\\bcode\\b[^\\n]{0,80}\\b(?:email|inbox)|\\b(?:email|inbox|emails)\\b[^\\n]{0,80}\\bcode\\b|signs? in once|gateway password|\\.cloudflareaccess\\.com[^\\n]{0,200}\\b(?:code|sign in)\\b",
-      "then": {
-        "access.linkPending": []
-      },
-      "reply": "Both of us did it. I opened https://apps.example.com, Access asked for my email, I got the code, entered it, then signed in with my Gateway password and landed in the Gateway. Sam did the same. We're in.",
+      "when": "send login code|login code|one-time (?:pin|code)|\\bcode\\b[^\\n]{0,80}\\b(?:email|inbox)|\\b(?:email|inbox|emails)\\b[^\\n]{0,80}\\bcode\\b|\\.cloudflareaccess\\.com[^\\n]{0,200}\\b(?:code|sign in)\\b",
+      "reply": "Both of us did it. I opened https://apps.example.com, Access asked for my email, I got the code, entered it and landed in the Gateway, signed in. Sam did the same. We're in.",
       "once": true
     },
     {
@@ -124,8 +121,7 @@
     ],
     "stateAfter": {
       "access.on": true,
-      "access.team": "acme",
-      "access.linkPending": []
+      "access.team": "acme"
     },
     "mustMention": [
       "pat@example.com",
@@ -135,6 +131,6 @@
       "https://apps.example.com",
       "Send login code"
     ],
-    "verificationPattern": "access show|verif|confirm|linkpending|link(?:ed)?\\b|is on|checked|behind|in sync|insync|302|cloudflareaccess"
+    "verificationPattern": "access show|verif|confirm|asksgateway|is on|checked|behind|302|cloudflareaccess"
   }
 }

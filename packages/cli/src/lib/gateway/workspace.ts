@@ -970,8 +970,6 @@ WHERE id = ?1 AND EXISTS (SELECT 1 FROM members m WHERE m.user_id = ?1 AND m.org
 
 interface RemoveResult {
   member: WorkspaceMember;
-  /** Access would let them straight back in, so they were deactivated and kept listed instead. */
-  deactivatedInstead: boolean;
   /** The account went too: it belonged to no other organization. */
   accountDeleted: boolean;
   /** They belong to other organizations, where their account stays. */
@@ -984,15 +982,14 @@ interface RemoveResult {
  * (revoked) and AI connections to it (revoked), in one batch; then the
  * account, when it belongs to no other organization and
  * `deleteAccounts` (the self-hosted policy; a hosted Gateway keeps it).
- * Someone Cloudflare Access would let straight back in (`accessMayLetBackIn`)
- * is deactivated instead, as the Gateway does, and stays listed. Never the
+ * Never the
  * organization's last owner who can act; someone who owns another
  * organization keeps their account there, whatever they are here.
  */
 export async function remove(
   ws: Workspace,
   identifier: string,
-  options: { deleteAccounts: boolean; accessMayLetBackIn: (member: WorkspaceMember) => Promise<boolean> },
+  options: { deleteAccounts: boolean },
 ): Promise<RemoveResult> {
   const member = await findMember(ws, identifier);
   await refuseLastLiveOwner(ws, member, "removed", false);
@@ -1003,19 +1000,6 @@ export async function remove(
     },
   ]);
   const otherOrganizations = number(others[0]?.["n"]);
-  if (otherOrganizations === 0 && (await options.accessMayLetBackIn(member))) {
-    // Only this organization's member: the account-wide rule the ban holds is this organization's.
-    const [changed = []] = await ws.db.run([
-      ...deactivationWrites(
-        ws,
-        member,
-        `Removed by ${ws.operator.actor} (${CLI} workspace remove); deactivated instead, as Cloudflare Access would let them back in`,
-      ),
-      ...(await deactivatedEvent(ws, member, "deleted_with_access_auto_join")),
-    ]);
-    if (changed.length === 0) await refuseLastLiveOwner(ws, member, "removed", true, { afterWrite: true });
-    return { member: { ...member, deactivated: true }, deactivatedInstead: true, accountDeleted: false, otherOrganizations };
-  }
   const whoNow = [member.id, ws.organization.id, ws.now];
   const [, , , , removed = [], deleted = []] = await ws.db.run([
     { sql: `DELETE FROM user_app_access WHERE user_id = ?1 AND organization_id = ?2 AND ${MANAGEABLE_MEMBER}`, params: whoNow },
@@ -1052,7 +1036,7 @@ WHERE user_id = ?1 AND organization_id = ?2 AND revoked_at IS NULL AND ${MANAGEA
     })),
   ]);
   if (removed.length === 0) await refuseLastLiveOwner(ws, member, "removed", false, { afterWrite: true });
-  return { member, deactivatedInstead: false, accountDeleted: deleted.length > 0, otherOrganizations };
+  return { member, accountDeleted: deleted.length > 0, otherOrganizations };
 }
 
 /**

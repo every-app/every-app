@@ -34,12 +34,18 @@ describe("an app's public routes", () => {
   });
 
   it("reads a stored manifest's bearer routes, and nothing from one it can't read", () => {
-    expect(storedBearerRoutes(JSON.stringify({ id: "openzen", bearerRoutes: { paths: ["/api/**", 7, "/v1/*"], why: "Mac app" } }))).toEqual([
-      "/api/**",
-      "/v1/*",
-    ]);
+    expect(
+      storedBearerRoutes(
+        JSON.stringify({
+          id: "openzen",
+          public: [{ path: "/api/**", bearer: true }, { path: "/hooks/*" }, { path: 7, bearer: true }, { path: "/v1/*", bearer: true }],
+        }),
+      ),
+    ).toEqual(["/api/**", "/v1/*"]);
     expect(storedBearerRoutes(JSON.stringify({ id: "todo" }))).toEqual([]);
-    expect(storedBearerRoutes(JSON.stringify({ id: "todo", bearerRoutes: ["/api/**"] }))).toEqual([]);
+    // Only `bearer: true` makes one: the old bearerRoutes field means nothing.
+    expect(storedBearerRoutes(JSON.stringify({ id: "todo", bearerRoutes: { paths: ["/api/**"], why: "x" } }))).toEqual([]);
+    expect(storedBearerRoutes(JSON.stringify({ id: "todo", public: [{ path: "/api/**", bearer: "yes" }] }))).toEqual([]);
     expect(storedBearerRoutes("{not json")).toEqual([]);
     expect(storedBearerRoutes(null)).toEqual([]);
   });

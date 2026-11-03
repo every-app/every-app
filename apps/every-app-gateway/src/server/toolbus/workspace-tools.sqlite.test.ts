@@ -555,7 +555,6 @@ describe("who sees which workspace tools", () => {
     ).toMatchObject({
       user: { id: memberId, email: "member@example.com" },
       removed: true,
-      deactivatedInstead: false,
     });
     expect(
       (await data("everyapp_workspace_users", {}, owner()))["members"],

@@ -15,8 +15,10 @@
  *    /cdn-cgi/access/logout forgets you. The paths the runbook says to
  *    bypass pass without the header (the browser's CF_Authorization cookie
  *    still goes along): on the gateway's host /mcp, /mcp/*, /oauth/token,
- *    /oauth/register, /.well-known/*, /health and Apple's callback POST
- *    /api/auth/callback/apple; on app hosts
+ *    /oauth/register, /linked-dev/*, /.well-known/*, /health, Apple's
+ *    callback POST /api/auth/callback/apple and /access-evaluation/* (this
+ *    mock doesn't ask the Gateway who is a member; the Gateway's own check
+ *    on sign-in still refuses strangers); on app hosts
  *    (<app>.localhost:<proxy port>) nothing, unless --mcp-app <id> names
  *    the app (as `access on` does for a manifest that sets `mcp`): then
  *    its /mcp and /mcp/*. With --apps-aud, app hosts are a separate Access
@@ -259,6 +261,10 @@ const GATEWAY_BYPASS = [
   // Sign in with Apple's cross-site POST return (it only redirects to the
   // same URL as a GET, which goes through the ring).
   /^\/api\/auth\/callback\/apple$/,
+  // Access's own membership question (External Evaluation). This mock
+  // doesn't ask it: the Gateway's membership check on sign-in still holds.
+  /^\/access-evaluation\//,
+  /^\/linked-dev\//,
 ];
 const MCP_APP_BYPASS = [/^\/mcp(\/|$)/];
 const mcpApps = new Set(args["mcp-app"].map((id) => id.toLowerCase()));

@@ -679,21 +679,6 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
           : { done: "Mail routes removed" },
       ];
     },
-    // After a deploy or a delete behind Cloudflare Access: shown only when
-    // the public paths Access lets through changed.
-    "app.access": (event) =>
-      event.status === "ok"
-        ? {
-            done:
-              event.data?.["removed"] === true
-                ? `Cloudflare Access no longer lets ${text(event.data?.["appId"])}'s public routes through`
-                : `Cloudflare Access lets ${text(event.data?.["appId"])}'s public routes through`,
-          }
-        : null,
-    // After a Gateway deploy behind Cloudflare Access: shown only when an
-    // application changed (what this release lets through, its sign-in methods).
-    "gateway.access": (event) =>
-      event.status === "ok" ? { done: "Cloudflare Access brought in step with this Gateway" } : null,
     "app.bind": (event) =>
       event.status === "start"
         ? { spin: `Adding ${text(event.data?.["appId"])} to the Gateway...` }

@@ -279,26 +279,48 @@ describe("matchPublicRoute", () => {
 describe("matchBearerRoute", () => {
   it("matches a declared glob on every method, with the public canonicalization", () => {
     for (const method of ["GET", "POST", "PUT", "DELETE", "patch"]) {
-      expect(matchBearerRoute(["/api/**"], method, "/api/notes").public).toBe(
-        true,
-      );
+      expect(
+        matchBearerRoute(
+          [{ path: "/api/**", bearer: true }],
+          method,
+          "/api/notes",
+        ).public,
+      ).toBe(true);
     }
-    expect(matchBearerRoute(["/api/**"], "GET", "/api/../admin").public).toBe(
-      false,
-    );
     expect(
-      matchBearerRoute(["/api/**"], "GET", "/api/%2e%2e/admin").public,
+      matchBearerRoute(
+        [{ path: "/api/**", bearer: true }],
+        "GET",
+        "/api/../admin",
+      ).public,
     ).toBe(false);
-    expect(matchBearerRoute(["/api/**"], "GET", "/admin").public).toBe(false);
+    expect(
+      matchBearerRoute(
+        [{ path: "/api/**", bearer: true }],
+        "GET",
+        "/api/%2e%2e/admin",
+      ).public,
+    ).toBe(false);
+    expect(
+      matchBearerRoute([{ path: "/api/**", bearer: true }], "GET", "/admin")
+        .public,
+    ).toBe(false);
   });
 
   it("never matches the internal namespace, and nothing when none is declared", () => {
     expect(
-      matchBearerRoute(["/**/tools/**"], "POST", "/__everyapp/tools/call")
-        .public,
+      matchBearerRoute(
+        [{ path: "/**/tools/**", bearer: true }],
+        "POST",
+        "/__everyapp/tools/call",
+      ).public,
     ).toBe(false);
     expect(matchBearerRoute(undefined, "GET", "/api/notes").public).toBe(false);
     expect(matchBearerRoute([], "GET", "/api/notes").public).toBe(false);
+    // An anonymous public route is no bearer route.
+    expect(
+      matchBearerRoute([{ path: "/api/**" }], "GET", "/api/notes").public,
+    ).toBe(false);
   });
 });
 

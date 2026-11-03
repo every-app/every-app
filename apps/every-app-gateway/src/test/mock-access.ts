@@ -246,6 +246,20 @@ export async function createMockAccess() {
         OIDC_ISSUER,
         OIDC_CLIENT_ID,
       ),
+    /**
+     * The token Access POSTs to an External Evaluation rule's URL: the
+     * person's identity and a nonce, signed with the team's key.
+     */
+    evaluationRequest: (
+      identity: MockIdentity,
+      nonce: string = crypto.randomUUID(),
+    ) =>
+      sign(
+        teamKey,
+        { identity: { email: identity.email }, nonce, ...identity.claims },
+        TEAM_DOMAIN,
+        [OUTER_RING_AUD],
+      ),
     calls,
     state,
   };

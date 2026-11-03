@@ -9,7 +9,6 @@ import { UserRepository } from "../repositories/UserRepository";
 import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
 import { McpConnectionService } from "./McpConnectionService";
 import { MembershipService } from "./MembershipService";
-import { accessWouldLetBackIn } from "@/server/access-rejoin";
 import {
   cancelInvitationsIssuedBy,
   revokeAdminResetTokensIssuedBy,
@@ -88,65 +87,14 @@ async function listMembers(ctx: OrgContext) {
  * last live owner on their own too (wouldLeaveNoLiveOwner), for two owners
  * removing each other at once.
  *
- * Someone Cloudflare Access would let straight back in (an auto-join domain,
- * or everyone the outer ring admits) isn't kept out by deleting their
- * account: their next Access sign-in would make a new one and join again.
- * They are deactivated instead, and stay listed so they can be reactivated.
- *
  * Where the platform policy keeps accounts from tenant admins (the hosted
  * gateway) only the membership goes: the account is the person's own.
  */
 async function deleteUser(
   ctx: OrgContext,
   targetUserId: string,
-): Promise<{ deactivatedInstead: boolean }> {
+): Promise<void> {
   await MembershipService.requireManageableMember(ctx, targetUserId);
-
-  const [otherMemberships] = await db
-    .select({ value: count() })
-    .from(members)
-    .where(
-      and(
-        eq(members.userId, targetUserId),
-        ne(members.organizationId, ctx.orgId),
-      ),
-    );
-  const user = await UserRepository.findById(targetUserId);
-  if (
-    (otherMemberships?.value ?? 0) === 0 &&
-    user &&
-    accessWouldLetBackIn(user.email)
-  ) {
-    const deactivated = await UserRepository.deactivate(
-      targetUserId,
-      `Deleted by ${ctx.userId}; deactivated instead, as Cloudflare Access would let them back in`,
-      { unlessLastOwnerOf: ctx.orgId },
-    );
-    if (!deactivated) throw MembershipService.lastOwnerRefusal();
-    await McpConnectionService.revokeForDeactivatedUser(targetUserId);
-    await cancelInvitationsIssuedBy(
-      { userId: targetUserId },
-      await actorFor(ctx),
-      "issuer_deactivated",
-    );
-    await revokeAdminResetTokensIssuedBy({ userId: targetUserId });
-    forgetOrgContext(targetUserId);
-    logEvent("member.deactivated", {
-      organizationId: ctx.orgId,
-      userId: targetUserId,
-      by: ctx.userId,
-      reason: "deleted_with_access_auto_join",
-    });
-    await emit(async () => ({
-      organizationId: ctx.orgId,
-      actor: await actorFor(ctx),
-      ...catalogue.memberDeactivated({
-        user: await userSubject(targetUserId),
-        reason: "deleted_with_access_auto_join",
-      }),
-    }));
-    return { deactivatedInstead: true };
-  }
 
   // Read before the account may go, so the event still names the person;
   // a read that fails names the id alone rather than failing the removal.
@@ -187,7 +135,6 @@ async function deleteUser(
     actor: await actorFor(ctx),
     ...catalogue.memberRemoved({ user: subject, accountDeleted }),
   }));
-  return { deactivatedInstead: false };
 }
 
 async function cancelInvitation(

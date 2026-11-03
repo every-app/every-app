@@ -2695,10 +2695,7 @@ describe("Sign in with Every App on app hosts", () => {
     manifest: validateManifest({
       ...TODO.manifest,
       name: "Todos",
-      bearerRoutes: {
-        paths: ["/api/**"],
-        why: "The Mac app calls the API with its token.",
-      },
+      public: [{ path: "/api/**", bearer: true }],
     }),
   };
   function nativeDeps(over: Partial<GatewayDeps> = {}): GatewayDeps {
@@ -2948,7 +2945,10 @@ describe("Sign in with Every App on app hosts", () => {
       ...TODO_NATIVE,
       manifest: {
         ...TODO_NATIVE.manifest,
-        public: [{ path: "/api/**", methods: ["GET", "POST"] }],
+        public: [
+          { path: "/api/**", bearer: true },
+          { path: "/api/**", methods: ["GET", "POST"] },
+        ],
         publicAssets: ["/api/**"],
       },
     };

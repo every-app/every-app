@@ -130,9 +130,7 @@ export const OUTER_RING_DETAIL =
  * The password row's words: on, off, or off once an owner connects a
  * provider. Behind the outer ring (`outerRing`) a password session counts
  * only for the person Access vouches for on the request (the Access
- * plugin's hooks), so it is no fallback and no way around Access; its one
- * use is connecting an existing account to Access when that doesn't happen
- * by itself.
+ * plugin's hooks), so it is no fallback and no way around Access.
  */
 export function passwordSignInView(
   password: SignInProvidersListing["password"],
@@ -149,7 +147,7 @@ export function passwordSignInView(
       label: "On",
       note: password.offPending
         ? "Only for whoever Access already let in. EMAIL_PASSWORD_SIGN_IN=false is set, but passwords stay on until an owner has opened the workspace through Access once, so nobody is locked out."
-        : "Only for whoever Access already let in, so it's no way around Access: it connects an existing account to Access once, when that doesn't happen by itself. Set EMAIL_PASSWORD_SIGN_IN=false from a terminal to turn it off.",
+        : "Only for whoever Access already let in, so it's no way around Access. Set EMAIL_PASSWORD_SIGN_IN=false from a terminal to turn it off.",
     };
   }
   if (!password.on) {

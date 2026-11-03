@@ -449,9 +449,9 @@ export async function handleGatewayRequest(
   // Decided once, here: the setup gate needs it before the auth logic does.
   // A bearer route is served to a bearer alone, so it is never public and
   // never an asset, whatever else the manifest says of the path (the
-  // manifest refuses a path under both, but a stored row is read here).
+  // manifest refuses a path that is both, but a stored row is read here).
   const bearerMatch = matchBearerRoute(
-    app.manifest.bearerRoutes?.paths,
+    app.manifest.public,
     request.method,
     url.pathname,
   );
@@ -537,7 +537,7 @@ export async function handleGatewayRequest(
   const bearerPresent = hasBearerCredential(request.headers);
   const reservedBearerPresent = hasEveryAppBearer(request.headers);
 
-  // A bearer route (`bearerRoutes`) takes a bearer and nothing else: the
+  // A bearer route (`public: [{ path, bearer: true }]`) takes a bearer and nothing else: the
   // session cookie is refused there before anything reads it, on every
   // gateway, so the Cloudflare Access bypass these paths get for native
   // clients never serves a browser's ambient credential; and without a

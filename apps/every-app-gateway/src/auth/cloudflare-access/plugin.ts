@@ -10,8 +10,8 @@
  *  - Outer ring: when Access sits in front of the gateway's host, a
  *    `/get-session` from a browser without a session (or with someone
  *    else's) that carries a valid `Cf-Access-Jwt-Assertion` signs that
- *    person in, so they never see a second login. A browser signed in as
- *    the same person links the Access identity to their account.
+ *    person in, so they never see a second login: the account with that
+ *    email, or a new one for an invitee (membership.ts).
  *  - And behind the outer ring a session cookie counts only with Access's
  *    word for that same person on the request (a verified assertion, from
  *    the header or the `CF_Authorization` cookie browsers send everywhere):
@@ -23,12 +23,13 @@
  *    tokens and OAuth tokens don't pass through here: deactivation ends
  *    those.
  *
- * Both modes go through Better Auth's `handleOAuthUserInfo`, so linking an
- * Access identity to an existing account follows Better Auth 1.7's rules for
- * trusted providers: the Access email is verified, and the existing
- * account's own email must be verified too (or it was linked while signed
- * in), so an account someone registered with another person's address is
- * never handed to that person. Who may sign in at all is membership.ts.
+ * OIDC goes through Better Auth's own account linking (1.7's rules for
+ * trusted providers: the existing account's email must be verified). The
+ * outer ring links an Access identity to the account with the same email
+ * on its first sign-in, verified or not: behind the outer ring no session
+ * counts without Access's word for that same email on the request, so an
+ * account registered under someone else's address is no use to whoever
+ * registered it. Who may sign in at all is membership.ts.
  *
  * Registered only where the platform policy allows Access sign-in (a
  * self-hosted gateway): see auth/config.ts. What the sign-in pages offer,
@@ -207,7 +208,7 @@ export function cloudflareAccess(options: CloudflareAccessPluginOptions) {
                     );
                   }
                   if (!mode) return;
-                  await assertAccessUserMayBeCreated(user.email, mode, config);
+                  await assertAccessUserMayBeCreated(user.email);
                   return { data: { ...user, emailVerified: true } };
                 },
               },
@@ -240,7 +241,7 @@ export function cloudflareAccess(options: CloudflareAccessPluginOptions) {
                     );
                   }
                   if (mode) {
-                    await ensureAccessMembership(session.userId, mode, config);
+                    await ensureAccessMembership(session.userId);
                   }
                 },
               },
@@ -343,7 +344,9 @@ export function cloudflareAccess(options: CloudflareAccessPluginOptions) {
               current &&
               current.user.email.toLowerCase() === identity.email
             ) {
-              await linkSignedInAccount(ctx, current.user, identity);
+              // Signed in already (with a password, say) as the person
+              // Access vouches for: the identity is theirs.
+              await linkExistingAccount(ctx, identity);
               return;
             }
             if (current) {
@@ -415,14 +418,16 @@ async function assertAccessVouchesFor(
 
 /**
  * Sign an Access identity in the way Better Auth signs in any OAuth user:
- * the account it is linked to, else a linkable existing account, else a new
- * one (each subject to membership.ts). Null when that is refused.
+ * the account it is linked to (an existing account with that email is
+ * linked first: see the file comment), else a new one (each subject to
+ * membership.ts). Null when that is refused.
  */
 async function signInAccessIdentity(
   ctx: EndpointContext,
   identity: AccessIdentity,
 ): Promise<SessionPair | null> {
   try {
+    await linkExistingAccount(ctx, identity);
     const result = await handleOAuthUserInfo(ctx, {
       userInfo: {
         id: identity.email,
@@ -456,32 +461,39 @@ async function signInAccessIdentity(
 }
 
 /**
- * Someone signed in (with their password, say) whose browser came through
- * the outer ring as the same email: they have shown they hold both, so link
- * the Access identity to the account. From then on the outer ring signs them
- * in by itself.
+ * The account with the Access identity's email, linked to it when it isn't
+ * yet, and its email marked verified (Access verified it), so Better Auth
+ * signs the identity in to that account rather than refusing an unverified
+ * one. Nothing for an email with no account (an invitee: a new account),
+ * and nothing for one the Gateway wouldn't let in (deactivated, or neither
+ * a member nor invited): the sign-in is then refused with no link made.
  */
-async function linkSignedInAccount(
+async function linkExistingAccount(
   ctx: EndpointContext,
-  user: SessionPair["user"],
   identity: AccessIdentity,
 ): Promise<void> {
   const adapter = ctx.context.internalAdapter;
   const key = { providerId: ACCESS_PROVIDER_ID, accountId: identity.email };
   if (await adapter.findAccountByKey(key)) return;
+  const existing = await adapter.findUserByEmail(identity.email);
+  if (!existing) return;
+  const { mayUseGateway } = await import("../identity-membership");
+  if (!(await mayUseGateway(identity.email))) return;
   try {
-    await adapter.linkAccount({ ...key, userId: user.id });
+    await adapter.linkAccount({ ...key, userId: existing.user.id });
   } catch (error) {
     // Another request linked it first (one row per identity: the unique
-    // index in this plugin's schema). The session stands either way.
+    // index in this plugin's schema).
     logEvent("access.account_link_skipped", {
-      userId: user.id,
+      userId: existing.user.id,
       reason: error instanceof Error ? error.message.slice(0, 120) : "unknown",
     });
-    return;
   }
-  if (!user.emailVerified) {
-    await adapter.updateUser(user.id, { emailVerified: true });
+  if (!existing.user.emailVerified) {
+    await adapter.updateUser(existing.user.id, { emailVerified: true });
   }
-  logEvent("access.account_linked", { userId: user.id, mode: "outer-ring" });
+  logEvent("access.account_linked", {
+    userId: existing.user.id,
+    mode: "outer-ring",
+  });
 }

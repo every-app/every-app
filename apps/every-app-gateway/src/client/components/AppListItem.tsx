@@ -51,15 +51,15 @@ export const PAUSED_CARD_SENTENCE =
 
 /**
  * What a deploying card says in place of its description: what is
- * happening and that nothing is asked of the person (the launcher polls,
- * and the card becomes a link as soon as the Gateway reaches the Worker).
+ * happening, that the launcher polls, and that opening the app (the card
+ * is a link) finishes the deploy once the Gateway can reach the Worker.
  */
 export const DEPLOYING_CARD_SENTENCE =
-  "Deploying. This page checks every few seconds and opens the app as soon as the Gateway reaches it.";
+  "Deploying. This page checks every few seconds; opening the app finishes it as soon as the Gateway can reach it.";
 
-/** What a card says once a deploy has been binding for too long to finish on its own. */
+/** What a card says once a deploy has been binding for ten minutes. */
 export const STALLED_CARD_SENTENCE =
-  "Still deploying after 10 minutes: the Gateway can't reach its Worker. In the app's folder, run everyapp status, then deploy again.";
+  "Still deploying after 10 minutes. Open the app to finish it; if it won't open, run everyapp status in the app's folder, then deploy again.";
 
 /**
  * The app is a normal link; pinning is a separate, keyboard-accessible
@@ -69,8 +69,9 @@ export const STALLED_CARD_SENTENCE =
  * dialog that says how an agent uses it. A paused app (at its monthly
  * cap) opens as it did, since only its provider calls are refused: its
  * one chip says Paused and its description says who raises the cap. A
- * deploying app is no link yet: its description says the page is
- * checking, or after ten minutes that the deploy needs the CLI again.
+ * deploying app is a link too, since a visit is what makes it live: its
+ * chip says Deploying (or Deploy stalled after ten minutes) and its
+ * description says the page is checking.
  */
 export function AppListItem({
   app,
@@ -85,6 +86,9 @@ export function AppListItem({
   const needsSetup = appNeedsSetup(app);
   const mcp = mcpAppUsable(app);
   const paused = status.label === AppStatusLabel.Paused;
+  const deploying =
+    status.label === AppStatusLabel.Deploying ||
+    status.label === AppStatusLabel.Stalled;
   const sentence =
     status.label === AppStatusLabel.Paused
       ? PAUSED_CARD_SENTENCE
@@ -101,29 +105,31 @@ export function AppListItem({
   const { hostname } = app;
   const warm = hostname ? () => preconnectTo(hostname) : undefined;
   // What sits beside the name when there is no arrow, one chip per card:
-  // Paused on an app that is at its cap (a state the person acts on, so
-  // it comes before the kind), else the kind of an MCP app, else the
-  // state of an app that doesn't open.
+  // Paused on an app that is at its cap, or Deploying on one still
+  // deploying (states the person should see, so they come before the
+  // kind), else the kind of an MCP app, else the state of an app that
+  // doesn't open.
   // The kind in the badge's soft tint, so it never reads as a state.
-  const chip = paused ? (
-    <Badge
-      variant={status.variant}
-      className={cn("shrink-0", list && "md:hidden")}
-    >
-      {status.label}
-    </Badge>
-  ) : mcp ? (
-    <Badge variant="soft" className={cn("shrink-0", list && "md:hidden")}>
-      {MCP_APP_KIND_LABEL}
-    </Badge>
-  ) : !routable ? (
-    <Badge
-      variant={status.variant}
-      className={cn("shrink-0", list && "md:hidden")}
-    >
-      {status.label}
-    </Badge>
-  ) : null;
+  const chip =
+    paused || deploying ? (
+      <Badge
+        variant={status.variant}
+        className={cn("shrink-0", list && "md:hidden")}
+      >
+        {status.label}
+      </Badge>
+    ) : mcp ? (
+      <Badge variant="soft" className={cn("shrink-0", list && "md:hidden")}>
+        {MCP_APP_KIND_LABEL}
+      </Badge>
+    ) : !routable ? (
+      <Badge
+        variant={status.variant}
+        className={cn("shrink-0", list && "md:hidden")}
+      >
+        {status.label}
+      </Badge>
+    ) : null;
   const body = (
     <>
       <AppIcon

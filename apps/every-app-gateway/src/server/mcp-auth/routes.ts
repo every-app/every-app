@@ -4,9 +4,7 @@
  *
  * | Path                                              | Served by                                   |
  * | ------------------------------------------------- | ------------------------------------------- |
- * | `/mcp` with a verified Access assertion           | access-caller.ts (the person Access vouches |
- * |                                                   | for), behind the outer ring only            |
- * | `/mcp` otherwise                                  | the resource server (OAuth + PAT)           |
+ * | `/mcp`                                            | the resource server (OAuth + PAT)           |
  * | `/.well-known/oauth-protected-resource/mcp`       | the resource server (RFC 9728)              |
  * | `/.well-known/oauth-authorization-server`         | the authorization server                    |
  * | `/oauth/token` (and revocation)                   | the authorization server                    |
@@ -19,29 +17,18 @@
  * MCP_OAUTH_ENABLED off (or a GATEWAY_URL OAuth can't use), every OAuth path
  * is 404 and `/mcp` accepts personal access tokens only.
  *
- * Where Cloudflare Access's Managed OAuth fronts the gateway's host (the
- * runbook's self-hosted setup with nothing bypassed), Access is the OAuth
- * server AI apps talk to; it serves the discovery documents on the hostname
- * itself, so the gateway's own OAuth server sits idle, and it adds a
- * `Cf-Access-Jwt-Assertion` for the person to every `/mcp` request it lets
- * through. The gateway verifies that assertion and serves the person
- * (access-caller.ts). The `Authorization` header such a request may also
- * carry holds Access's own opaque token: with a verified assertion it is
- * never looked at; without one it is checked as any bearer and refused.
+ * Behind Cloudflare Access, `/mcp`, `/oauth/token`, `/oauth/register` and
+ * `/.well-known/*` are bypassed (packages/perimeter/src/install/access-plan.ts):
+ * they check their own credentials. An Access assertion on them is never
+ * read here.
  *
  * A failure (D1 or KV down, say) answers as each route's callers expect: an
  * error page where a browser is, an OAuth or JSON-RPC error elsewhere.
  */
 import { env, waitUntil } from "cloudflare:workers";
 import { extractBearerCredential, logEvent } from "@every-app/perimeter";
-import { accessConfigFromEnv } from "@/auth/cloudflare-access";
-import { verifyOuterRingAssertion } from "@/auth/cloudflare-access/outer-ring";
 import { isMcpOauthEnabled, isOauthPath } from "@/server/oauth-flag";
-import {
-  browserOriginAllowed,
-  serveGatewayMcp,
-} from "@/server/toolbus/gateway-mcp";
-import { resolveAccessCaller } from "./access-caller";
+import { serveGatewayMcp } from "@/server/toolbus/gateway-mcp";
 import { errorPage, handleAuthorize, handleConsentDecision } from "./authorize";
 import { payloadTooLarge, readBodyWithLimit, withBody } from "./body";
 import { MCP_OAUTH_PATHS, refreshMcpAuth, type McpAuth } from "./config";
@@ -51,8 +38,6 @@ import { allowRegistration } from "./registration-limit";
 import { resolvePatCaller } from "./validate";
 
 const MCP_PATH = "/mcp";
-/** The header Access adds to every request it lets through. */
-const ACCESS_ASSERTION_HEADER = "cf-access-jwt-assertion";
 const PROTECTED_RESOURCE_METADATA_PATH =
   "/.well-known/oauth-protected-resource/mcp";
 const AUTHORIZATION_SERVER_METADATA_PATH =
@@ -148,62 +133,6 @@ export async function serveMcpAuthRoute(
 }
 
 /**
- * `/mcp` through Access: the answer for a request that carries an assertion
- * for the gateway's own Access application, when the outer ring is
- * configured; null for every other request, which is served as it always
- * was (an OAuth token or a personal token in `Authorization`).
- *
- * The header only, never the `CF_Authorization` cookie. Where `/mcp` is
- * bypassed in Access (the setup without Managed OAuth, and the transition
- * to it), a browser's cookie reaches the gateway unverified, and reading it
- * here would let a cross-site POST act as the person; the header is what
- * Access adds to a request it has let through. Behind Managed OAuth, Access
- * lets a cookie-carrying browser request through too, header and all, so
- * what keeps such a browser from driving tool calls is the `Origin` rule
- * the ToolBus applies to every request: it runs here first, before the
- * assertion is verified or anything is read for the person (an origin in
- * MCP_ALLOWED_ORIGINS is trusted with that).
- *
- * An assertion that doesn't verify (forged, on a path Access bypasses) is
- * ignored, and so is a service token's (no email, so verification refuses
- * it): a script can reach `/mcp` through a Service Auth policy with its
- * personal token in `Authorization`, which is then checked as today. One
- * for the apps' application (the other AUD) vouches for nothing on the
- * gateway's host.
- */
-async function serveMcpThroughAccess(
-  request: Request,
-): Promise<Response | null> {
-  const { outerRing } = accessConfigFromEnv();
-  if (!outerRing) return null;
-  // Trimmed as readAccessAssertion trims it, so a blank header can't make
-  // it fall back to the cookie.
-  if (!request.headers.get(ACCESS_ASSERTION_HEADER)?.trim()) return null;
-  if (!browserOriginAllowed(request)) {
-    return Response.json(
-      {
-        jsonrpc: "2.0",
-        error: { code: -32000, message: "Forbidden: origin not allowed." },
-        id: null,
-      },
-      { status: 403 },
-    );
-  }
-  const identity = await verifyOuterRingAssertion(request.headers, outerRing);
-  if (!identity || !identity.maySignIn) {
-    logEvent(
-      "mcp.access_assertion_ignored",
-      { reason: identity ? "audience" : "invalid" },
-      "warn",
-    );
-    return null;
-  }
-  return serveGatewayMcp(request, await resolveAccessCaller(identity.email), {
-    credentialExpiresAt: identity.claims.exp,
-  });
-}
-
-/**
  * The resource an authorization request names, so the servers can be
  * rebuilt with a just-deployed app's origin before the request is parsed
  * (config.ts refreshMcpAuth). The token endpoint's is in its body, read
@@ -222,10 +151,6 @@ async function dispatch(
     ? await refreshMcpAuth(env, resourceNamed(request, pathname))
     : null;
   if (pathname === MCP_PATH) {
-    if (request.method !== "OPTIONS") {
-      const served = await serveMcpThroughAccess(request);
-      if (served) return served;
-    }
     return mcpAuth
       ? mcpAuth.resourceServer.fetch(request, env, requestContext())
       : serveMcpWithTokensOnly(request);

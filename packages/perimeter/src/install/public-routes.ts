@@ -3,9 +3,9 @@
  * declares under `public` is open to anyone on the internet with only the
  * signed public marker, a `publicAssets` pattern opens the static files of
  * the Worker's asset bundle it matches (GET and HEAD, no marker, so never
- * the Worker's code); `deploy` and `access on` let those paths through
- * Cloudflare Access too
- * (lib/access/plan.ts). `deploy` says so at the end of its run and
+ * the Worker's code); `access on` lets those paths through Cloudflare
+ * Access too (access-plan.ts). A `bearer: true` route is reached with a
+ * Gateway token only. `deploy` says so at the end of its run and
  * `status` lists them, so an operator sees what the manifest opened. Each
  * route carries the methods the Gateway answers on it: GET alone when the
  * route names none, as the perimeter matches them
@@ -23,6 +23,8 @@ export interface PublicRouteSummary {
   methods: string[];
   /** Set on a `publicAssets` pattern: static files only, never the Worker. */
   asset?: true;
+  /** Set on a bearer route: every method, a Gateway token only, never a cookie. */
+  bearer?: true;
 }
 
 /** How many routes the end of a deploy lists before saying how many more. */
@@ -40,7 +42,7 @@ export function publicRoutesOf(
 ): PublicRouteSummary[] {
   return [
     ...(manifest?.public ?? []).map((route) =>
-      summary(route.path, route.methods),
+      summary(route.path, route.methods, route.bearer),
     ),
     ...(manifest?.publicAssets ?? []).map(assetSummary),
   ];
@@ -71,6 +73,7 @@ export function storedPublicRoutes(stored: unknown): PublicRouteSummary[] {
                   (method): method is string => typeof method === "string",
                 )
               : undefined,
+            (route as { bearer?: unknown }).bearer === true,
           ),
         ];
       }),
@@ -84,23 +87,15 @@ export function storedPublicRoutes(stored: unknown): PublicRouteSummary[] {
 }
 
 /**
- * A stored manifest's `bearerRoutes.paths` (paths native apps and scripts
- * call with a Gateway token, docs/design/native-sign-in.md), in its order;
- * none when it sets none or can't be read. Shaped, not validated, like
- * `storedPublicRoutes`.
+ * A stored manifest's bearer routes (`public` entries with `bearer: true`:
+ * paths native apps and scripts call with a Gateway token,
+ * docs/design/native-sign-in.md), in its order; none when it sets none or
+ * can't be read.
  */
 export function storedBearerRoutes(stored: unknown): string[] {
-  if (typeof stored !== "string") return [];
-  try {
-    const bearer = (JSON.parse(stored) as { bearerRoutes?: unknown } | null)
-      ?.bearerRoutes;
-    const routes = (bearer as { paths?: unknown } | null | undefined)?.paths;
-    return Array.isArray(routes)
-      ? routes.filter((path): path is string => typeof path === "string")
-      : [];
-  } catch {
-    return [];
-  }
+  return storedPublicRoutes(stored)
+    .filter((route) => route.bearer)
+    .map((route) => route.path);
 }
 
 /**
@@ -118,7 +113,7 @@ export function listPublicRoutes(
       .slice(0, limit)
       .map(
         (route) =>
-          `${route.asset ? "asset" : route.methods.join("/")} ${route.path}`,
+          `${route.asset ? "asset" : route.bearer ? "bearer" : route.methods.join("/")} ${route.path}`,
       )
       .join(", "),
     more: Math.max(0, routes.length - limit),
@@ -128,7 +123,9 @@ export function listPublicRoutes(
 function summary(
   path: string,
   methods: readonly string[] | undefined,
+  bearer?: boolean,
 ): PublicRouteSummary {
+  if (bearer) return { path, methods: ["*"], bearer: true };
   return {
     path,
     methods: (methods ?? ["GET"]).map((method) => method.toUpperCase()),

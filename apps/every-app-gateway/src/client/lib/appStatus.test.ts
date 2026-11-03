@@ -88,7 +88,7 @@ describe("appStatus", () => {
 describe("appStatus for a deploying app", () => {
   const uploadedAt = Date.UTC(2026, 9, 25, 5, 18);
 
-  it("shows Deploying, not opening, while the row is binding and recent", () => {
+  it("shows Deploying while the row is binding and recent, and opens the app: a visit makes it live", () => {
     const status = appStatus(
       app({ status: "binding", updatedAt: new Date(uploadedAt) }),
       uploadedAt + DEPLOY_STALL_MS - 1,
@@ -96,7 +96,7 @@ describe("appStatus for a deploying app", () => {
     expect(status).toEqual({
       label: AppStatusLabel.Deploying,
       variant: "info",
-      opens: false,
+      opens: true,
     });
     expect(
       deployStalled(
@@ -120,7 +120,7 @@ describe("appStatus for a deploying app", () => {
       ).toEqual({
         label: AppStatusLabel.Stalled,
         variant: "warning",
-        opens: false,
+        opens: true,
       });
     }
     // Nothing is stalled about an app that isn't deploying, or one with no date.

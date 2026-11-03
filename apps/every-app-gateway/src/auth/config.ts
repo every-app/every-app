@@ -562,8 +562,8 @@ export function createAuth() {
           ] as const)),
       // Only where the policy has Access sign-in (self-hosted): a hosted
       // gateway has no Access in front of it, nor OIDC through it.
-      // Before the user-level database hooks: it makes an invited or
-      // auto-joining Access user a member before the session hook below
+      // Before the user-level database hooks: it makes an invited
+      // Access user a member before the session hook below
       // picks the session's organization.
       ...(policy.accessSignIn
         ? ([

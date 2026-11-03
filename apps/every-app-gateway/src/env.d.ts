@@ -74,10 +74,6 @@ declare namespace Cloudflare {
     CLOUDFLARE_ACCESS_TEAM_DOMAIN?: string;
     CLOUDFLARE_ACCESS_AUD?: string;
     CLOUDFLARE_ACCESS_APPS_AUD?: string;
-    // Email domains whose people join as members without an invitation
-    // (comma separated), and "everyone" to let in all the outer ring admits.
-    CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS?: string;
-    CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN?: string;
     // "false" turns password sign-in off, only while Access sign-in or a
     // sign-in provider is set up and an owner can use it.
     EMAIL_PASSWORD_SIGN_IN?: string;

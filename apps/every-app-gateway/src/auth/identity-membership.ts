@@ -8,11 +8,12 @@
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { logEvent } from "@every-app/perimeter";
 import { db } from "@/db";
-import { invitations, members } from "@/db/schema";
+import { invitations, members, users } from "@/db/schema";
 import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
 import { actorOf } from "@/server/events/subjects";
 import { invitationIssuerStillAuthorized } from "@/server/issuer-revocation";
+import { isUserBanned } from "@/server/user-ban";
 
 /** Which way in accepted the invitation, for the log and the event bus. */
 interface IdentityJoinVia {
@@ -50,6 +51,27 @@ export function pendingInvitationsFor(email: string) {
         gt(invitations.expiresAt, new Date()),
       ),
     );
+}
+
+/**
+ * Whether this email may use the Gateway: an account that isn't
+ * deactivated and belongs to an organization, or a pending invitation.
+ * Nobody before the Gateway is claimed. What Access's External Evaluation
+ * asks (server/access-evaluation.ts), and what the outer ring checks
+ * before it links an Access identity to an existing account.
+ */
+export async function mayUseGateway(email: string): Promise<boolean> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized.includes("@")) return false;
+  if (!(await findOwnerOrganizationId())) return false;
+  const [account] = await db
+    .select({ banned: users.banned, banExpires: users.banExpires })
+    .from(users)
+    .innerJoin(members, eq(members.userId, users.id))
+    .where(sql`lower(${users.email}) = ${normalized}`)
+    .limit(1);
+  if (account) return !isUserBanned(account);
+  return (await pendingInvitationsFor(normalized)).length > 0;
 }
 
 /**

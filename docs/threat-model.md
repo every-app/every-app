@@ -134,7 +134,7 @@ What an attacker would want, roughly in the order it would hurt.
 | **Operator** | The Cloudflare account login or an API token with Workers and D1 edit | Everything: deploy and delete Workers, edit any D1 row, set secrets, mint an owner setup link, redeploy the Gateway (ADR-0003) | Nothing is withheld; the design counts on this person being trusted. Removing them is done in Cloudflare |
 | **An app's code** (first-party, or the operator's own app) | A private Worker with the Gateway's `AppGateway` binding carrying its upload-time `{organizationId, appId, workerName}` props; its own bindings | Serve its routes to verified identities; call the AI proxy and the capabilities its manifest lists, attributed to its organization; read its organization's members who can open it; send mail under budgets | Mint identities; act for another organization; learn a provider key; read another app's bindings; reach a helper Worker that isn't its own; see a cookie or a bearer |
 | **A helper Worker** | A Worker named `<app worker>--<name>`, bound only by the app's Worker, with the same props | What the app's Worker hands it | Be reached by the Gateway or a browser; verify identities (it has none to verify) |
-| **An AI client over MCP** | An OAuth access token the Gateway issued (bound to `${GATEWAY_URL}/mcp`), a personal access token, or (behind Managed OAuth) a verified Access assertion | List and call the tools of the apps the person can open, within the connection's apps and the token's scopes; read-only callers see no write tools | Use the token on an app route; call a tool with a scope it lacks; connect accounts or mint tokens at a social network; page through the directory |
+| **An AI client over MCP** | An OAuth access token the Gateway issued (bound to `${GATEWAY_URL}/mcp`), or a personal access token | List and call the tools of the apps the person can open, within the connection's apps and the token's scopes; read-only callers see no write tools | Use the token on an app route; call a tool with a scope it lacks; connect accounts or mint tokens at a social network; page through the directory |
 | **A third-party app** (hosted only, behind the launch gate) | A Worker in the dispatch namespace, uploaded by a deploy key or an admin's install, reached on `<app>-<org>.<THIRD_PARTY_DOMAIN>` | Serve its organization's members with the per-host session; call the Gateway's proxies as any app | Reach the internet except through the `Outbound` allowlist (empty today); bind anything the deployer didn't rewrite; see the first-party session cookie; run without limits |
 | **Cloudflare** | Runs everything | Trusted completely: the runtime, D1, KV, Access, the edge TLS, Email Sending | Out of scope (see below) |
 | **A dependency** (npm packages, GitHub Actions) | Runs in the build, the CLI, the Worker, CI | Trusted as installed; floors on known-bad versions in `pnpm-workspace.yaml`, the lockfile audited in CI | Out of scope beyond that (see below) |
@@ -174,9 +174,6 @@ outer ring configured (`CLOUDFLARE_ACCESS_TEAM_DOMAIN`,
 - **Taking someone out of the Access policy ends their browser access**
   when their Access session ends (24 hours by default), whatever Gateway
   session they still hold.
-- **With Managed OAuth**, AI apps pass Access too: nothing on the gateway's
-  host but `/health` is bypassed, and a person taken out of the policy loses MCP within
-  the access token's lifetime (15 minutes by default).
 
 What Access does **not** cover, by design, so the Gateway's own checks
 remain the only thing between these and the data:
@@ -268,7 +265,7 @@ Cloudflare's job, some are simply not built.
 ## Trust boundaries
 
 Nine boundaries, each with what crosses it, the attacks it is there to
-stop, the invariants to try first (the complete register, 351 invariants
+stop, the invariants to try first (the complete register, 342 invariants
 with every code pointer and test, is
 [docs/threat-model-invariants.md](threat-model-invariants.md)), what is
 not that boundary's job, and the gaps found in this pass. B1 to B7 are
@@ -852,7 +849,7 @@ scope), since PR 2b of the provider registry.
 
 **What crosses.** An AI client (Claude, ChatGPT, Claude Code, Cursor, a
 script) holding an OAuth access token the Gateway issued, a personal access
-token (`epat_…`), or, behind Managed OAuth, a verified Access assertion;
+token (`epat_…`);
 the consent pages a person sees in the browser; the dynamic registration
 endpoint anyone can call. On the other side, every app's tools, called
 over the app's binding with a per-call identity, and the provider apps'
@@ -914,7 +911,7 @@ changing a remote MCP app.
 | `oauth.revocation-paths` | A user revokes only their own connections; removing a member revokes that organization's connections and grants; deactivating revokes all of theirs. | `apps/every-app-gateway/src/server/services/McpConnectionService.ts:143-172` | `gateway-mcp.e2e.sqlite.test.ts` :: refuses another user's connection |
 | `dcr.bounded-and-budgeted` | A dynamic registration is read under 16 KiB, keeps only the client's name, up to ten redirect URIs, its grant/response types and auth method, lives 60 days unused, and is limited per address per minute (per isolate), per address per day and per gateway per day in D1. | `registration.ts:31-171`; `registration-limit.ts` | `gateway-mcp.e2e.sqlite.test.ts` :: stores only what EveryApp uses, for 60 days |
 | `switches.kill-and-dcr` | With `MCP_OAUTH_ENABLED` off (any unrecognized value fails closed) every `/oauth/*` path and discovery document is 404 and `/mcp` takes personal tokens only; `MCP_DCR_ENABLED=false` closes registration. | `apps/every-app-gateway/src/server/oauth-flag.ts:25-54` | `gateway-mcp.e2e.sqlite.test.ts` :: takes personal tokens only and names no authorization server when OAuth is off |
-| `mcp.browser-origin-rule` | A request to the gateway's `/mcp` carrying an `Origin` is served only when that origin is the gateway's own or listed exactly in `MCP_ALLOWED_ORIGINS` (empty by default); behind Managed OAuth the rule runs before the assertion is read. | `apps/every-app-gateway/src/server/toolbus/gateway-mcp.ts:51-77` | `gateway-mcp.e2e.sqlite.test.ts` :: serves only the gateway's origin and MCP_ALLOWED_ORIGINS |
+| `mcp.browser-origin-rule` | A request to the gateway's `/mcp` carrying an `Origin` is served only when that origin is the gateway's own or listed exactly in `MCP_ALLOWED_ORIGINS` (empty by default). | `apps/every-app-gateway/src/server/toolbus/gateway-mcp.ts:51-77` | `gateway-mcp.e2e.sqlite.test.ts` :: serves only the gateway's origin and MCP_ALLOWED_ORIGINS |
 | `pat.format-and-hashing` | A personal token is `epat_` plus 32 random bytes as hex; only an HMAC-SHA256 under `BETTER_AUTH_SECRET` is stored, with a 9-character display prefix. | `UserPatService.ts:18-35, 133` | `UserPatService.test.ts` :: creates and verifies a PAT roundtrip |
 | `pat.scopes-decide-mcp-access` | On either `/mcp`, `*` is read & write, `mcp:read` read only, any other scope set (`mcp:write`, API scopes, `deploy`) is `403 token_scope`. | `validate.ts:95-151` | `gateway-mcp.e2e.sqlite.test.ts` :: reads only with mcp:read, sees only its app |
 | `pat.bound-to-org-and-app` | A personal token acts only in its own organization, only on its bound app when it has one, and fails when its user is no longer a member, is banned, or the organization is suspended. | `betterAuthAuthenticator.ts:55-76` | `betterAuthAuthenticator.test.ts` :: denies an app-scoped PAT for a different app in the same org |
@@ -946,7 +943,7 @@ changing a remote MCP app.
 | `native.revocation-paths` | A native grant ends by the person's revoke (Settings → Connections; nobody else's revoke finds it), the client's RFC 7009 revocation (`ended`), member removal, deactivation, the app's deletion (`app_removed`, with the tombstone; the origin leaves the resource list within a minute) or disabling (the origin leaves the list; the hourly maintenance revokes the rows), re-consent from the same client for the same app (`superseded`, by installation: a loopback port never counts), or 30 idle days; a refresh after any of these is `invalid_grant` (or `invalid_target` once the origin is gone), and the old refresh token dies once the new one is used. | `apps/every-app-gateway/src/server/mcp-auth/config.ts:172-201` (tokenExchangeCallback); `apps/every-app-gateway/src/server/mcp-auth/validate.ts:348-365` (`grantStands`); `apps/every-app-gateway/src/server/services/McpConnectionService.ts:119-160,279-300,337-400`; `apps/every-app-gateway/src/server/repositories/McpConnectionRepository.ts:121-160,562-615`; `apps/every-app-gateway/src/server/services/AppService.ts:199`; `apps/every-app-gateway/src/server/repositories/AppRepository.ts:350-365`; `apps/every-app-gateway/src/server/mcp-auth/maintenance.ts:157-159` | `apps/every-app-gateway/src/server/mcp-auth/native-sign-in.e2e.sqlite.test.ts` :: the person's revoke under Settings → Connections stops the next request and the refresh; `apps/every-app-gateway/src/server/mcp-auth/native-sign-in.e2e.sqlite.test.ts` :: deleting the app revokes its native connections (app_removed) and takes its origin out of the resources; `apps/every-app-gateway/src/server/mcp-auth/native-sign-in.e2e.sqlite.test.ts` :: nobody but the person revokes their native connection: another member's revoke is not found and changes nothing |
 | `native.loopback-or-https-redirect` | A native authorization uses an `https` redirect URI or `http` on a loopback host with any port (RFC 8252 §7.3: `127.0.0.0/8`, `::1`, `localhost`; `127.0.0.1.evil.example` is not loopback, userinfo and fragments are refused), exact in scheme, host, path and query; private-use schemes are refused (`allowPrivateUseRedirectUris` stays off); PKCE S256 and `state` as for every client; `iss` is in every authorization response; a refused request is shown on the gateway's page, never redirected; token exchange (RFC 8693) is not enabled. | `node_modules/@cloudflare/workers-oauth-provider/dist/oauth-provider.js:1194-1222` (listed and usable redirect URIs), `:5330-5357` (loopback port handling, anchored), `:3383` (grant types); `apps/every-app-gateway/src/server/mcp-auth/authorize.ts:106-129` (PKCE required of every client, errors on the page) | `apps/every-app-gateway/src/server/mcp-auth/native-sign-in.e2e.sqlite.test.ts` :: requires PKCE S256: no challenge, a plain one, or a missing verifier; `apps/every-app-gateway/src/server/mcp-auth/native-sign-in.e2e.sqlite.test.ts` :: takes a loopback redirect on any port and nothing else: another path, a remote http host, an unregistered https host, a private-use scheme |
 | `native.metadata-gateway-authored` | The RFC 9728 document an app host serves is written by the Gateway from the registry, names only the Gateway as authorization server, is never proxied to or from the app (a public route cannot cover it), is served only while the Gateway runs an OAuth server and only on a first-party host, and is 404 for an unknown host (an inactive app's host answers its usual deploying/unavailable status). | `packages/perimeter/src/gateway.ts``:280-300` (`protectedResourceMetadata`), `:438-446` (before any public route is consulted, `!deps.thirdParty`); `apps/every-app-gateway/src/server.ts:520-522` | `packages/perimeter/src/gateway.test.ts` :: serves protected-resource metadata from the registry and never proxies it; `packages/perimeter/src/gateway.test.ts` :: writes the metadata itself even where a public route covers the path; `apps/every-app-gateway/src/server/mcp-auth/native-sign-in.e2e.sqlite.test.ts` :: serves the metadata document from the registry on every active first-party host, and only that document |
-| `native.bearer-routes-no-cookie` | A route the manifest lists under `bearerRoutes.paths` is served to a bearer only: a request carrying the gateway's session cookie there is 401 before anything reads it, on every gateway, Access or not; without a bearer it gets the challenge, never a login page and never the public treatment, even where a stored row also lists the path as public; the manifest refuses a bearer route that is `/mcp`, covers it, is a catch-all, or is also public, and at most 25; `everyapp access on` bypasses exactly those paths and the metadata path on the apps' application, and `status` reports drift. | `packages/perimeter/src/gateway.ts``:451-462` (`matchBearerRoute` decides first), `:546-571` (the cookie refusal and the challenge); `packages/perimeter/src/publicRoutes.ts:295-306`; `packages/perimeter/src/manifest/manifest.ts:73-85` (`BearerRoutesSchema`), `:1563-1590` (`assertBearerRoutesAreSafe`, at registration `:1545` and author time `:1694`); `packages/cli/src/lib/access/plan.ts:144-175` (`appDestination`) | `packages/perimeter/src/gateway.test.ts` :: refuses the session cookie on a bearer route before reading it, Access or not; `apps/every-app-gateway/src/server/mcp-auth/native-sign-in.e2e.sqlite.test.ts` :: a bearer route takes the token and refuses the session cookie; a public route serves nobody a refused token; `packages/cli/src/lib/access/plan.test.ts` :: become path bypasses after the MCP paths, with the discovery document, before the public routes |
+| `native.bearer-routes-no-cookie` | A `public` entry with `bearer: true` is served to a bearer only: a request carrying the gateway's session cookie there is 401 before anything reads it, on every gateway, Access or not; without a bearer it gets the challenge, never a login page and never the public treatment; the manifest refuses a bearer route that names `methods`, is `/mcp`, covers it, is a catch-all, or is also an anonymous public route or public asset; `everyapp access on` bypasses exactly those paths and the metadata path on the apps' application. | `packages/perimeter/src/gateway.ts` (`matchBearerRoute` decides first, then the cookie refusal and the challenge); `packages/perimeter/src/publicRoutes.ts` (`matchBearerRoute`, `bearerPathsOf`; `matchPublicRoute` skips bearer entries); `packages/perimeter/src/manifest/manifest.ts` (`assertBearerRoutesAreSafe`, at registration and author time); `packages/perimeter/src/install/access-plan.ts` (`appDestination`) | `packages/perimeter/src/gateway.test.ts` :: refuses the session cookie on a bearer route before reading it, Access or not; `apps/every-app-gateway/src/server/mcp-auth/native-sign-in.e2e.sqlite.test.ts` :: a bearer route takes the token and refuses the session cookie; a public route serves nobody a refused token; `packages/cli/src/lib/access/plan.test.ts` :: become path bypasses after the MCP paths, with the discovery document, before the public routes |
 | `dev.audience-is-one-app` | A linked dev grant's audience is exactly `${GATEWAY_URL}/linked-dev/<app id>` for one active first-party app whose organization turned linked dev on; its token is validated for that resource only (`validateLinkedDevToken`, null for any other), opens no app host (the perimeter validates for `https://<host>` and a dev resource is never one), not `/mcp` (wrong audience), not another app's route (`invalid_token`), and a native or `/mcp` token is refused at the route; the app row must still be the grant's, in the token's organization, first-party, active and not shared. | A stolen dev token replayed on the app, `/mcp` or another app; a native token used for the Gateway's services. | `apps/every-app-gateway/src/server/mcp-auth/resources.ts` (`devResource`, `devResourceAppSlug`, `readDevResources`); `apps/every-app-gateway/src/server/mcp-auth/config.ts` (`validateLinkedDevToken`); `apps/every-app-gateway/src/server/linked-dev.ts` (`dispatch`: the row checks) | `apps/every-app-gateway/src/server/mcp-auth/linked-dev.e2e.sqlite.test.ts` :: issues a grant for an app's linked dev resource: scope *, one dev row, the audit event; :: opens that one app only: not another app's linked dev, not /mcp, not the app's own host; :: refuses a native token (an app host's audience) and a personal-token shape at the endpoint |
 | `dev.owner-admin-only` | Only an owner or admin of the app's organization (who opens every live app there by the role), in an organization with linked dev on, may consent (`devGrantFor`: refused on the page before the handle is spent, and the decision 403); every call and refresh re-reads the live role (owner or admin now), ban, organization status, the switch and app access (`resolveDevCaller`, `hasAccessByUserAndAppSlug`); a demoted member or a turned-off switch is 401 on the next call and `invalid_grant` at refresh; `whoami` is re-read by the CLI every minute. | A member linking dev to spend the organization's keys; a demoted admin's laptop keeping access. | `apps/every-app-gateway/src/server/mcp-auth/consent.ts` (`devGrantFor`); `apps/every-app-gateway/src/server/mcp-auth/authorize.ts` (the dev branch of `handleConsentDecision`); `apps/every-app-gateway/src/server/mcp-auth/validate.ts` (`resolveDevCaller`, `grantStands`); `apps/every-app-gateway/src/server/linked-dev.ts`; `packages/cli/src/commands/dev/linked.ts` (`createLinkedIdentity`) | `linked-dev.e2e.sqlite.test.ts` :: lets an admin link, and refuses a member even with app access; :: stops when the member is demoted and when linked dev is turned off; `packages/cli/src/commands/dev/linked.test.ts` :: is the Gateway's member, re-read every minute, and no session once the Gateway refuses |
 | `dev.off-by-default` | Linked dev is off until an owner or admin runs `everyapp workspace linked-dev on` (`org_settings.linked_dev`, migration 0022): off, no linked dev resource is listed (an authorization naming one is `invalid_target`), the consent refuses, the route answers 401 to every token and a refresh is `invalid_grant`; `MCP_OAUTH_ENABLED` off makes the route 404. | A Gateway whose owners never chose to let laptops spend its keys serving a dev token. | `apps/every-app-gateway/src/server/mcp-auth/resources.ts` (`readDevResources`: joined on `org_settings.linked_dev`); `apps/every-app-gateway/src/server/repositories/OrgSettingsRepository.ts` (`isLinkedDevOn`); `apps/every-app-gateway/src/server/linked-dev.ts` (`dispatch`); `packages/cli/src/lib/gateway/linkedDev.ts` (`setLinkedDev`) | `linked-dev.e2e.sqlite.test.ts` :: lists no linked dev resource, and refuses an authorization naming one, until the organization turns it on; :: is 404 for every linked dev path while MCP_OAUTH_ENABLED is false, and a JSON 401 without a bearer; `packages/cli/src/commands/workspace/index.test.ts` :: shows off by default, turns on with an event, says so when unchanged, and drops the empty row when turned off |
@@ -963,8 +960,7 @@ which opens the Gateway's providers and services for one app, as an owner
 or admin, from their laptop, and nothing else.
 
 **Not this boundary's job.** What a tool does with valid arguments (the
-app's code), the AI client's own storage of its tokens, and Access's
-Managed OAuth grant lifetime (Access's).
+app's code) and the AI client's own storage of its tokens.
 
 **Gaps.**
 
@@ -1006,15 +1002,15 @@ exceptions are the bypassed paths. With OIDC sign-in: an OpenID Connect
 code flow between Access and Better Auth. On the other side, Better Auth's
 sessions and the membership tables. The code is
 `apps/every-app-gateway/src/auth/cloudflare-access/` (the plugin, the JWT
-verifier, membership rules) and, for Managed OAuth on
-`/mcp`, `src/server/mcp-auth/access-caller.ts`.
+verifier, membership rules) and `src/server/access-evaluation.ts`
+(the membership question Access asks).
 
 **What it stops.** A forged or foreign assertion signing anyone in. A
 session being used behind the outer ring by a browser Access didn't
 authenticate as that person. The apps' Access application vouching for a
 gateway login. A stranger Access admits getting an account when they were
-never invited (unless the operator opted into auto-join). An Access
-identity being handed an existing password account by email coincidence.
+never invited, and a forged answer to Access's membership question
+letting someone past Access.
 A deactivated member getting back in because Access still admits them. A
 site planting a sign-in in someone's browser. The `/mcp` path taking the
 Access cookie, which a cross-site POST could ride. Cloudflare Access
@@ -1033,7 +1029,7 @@ the same URL as a GET, which is not bypassed; the POST reads no session
 and creates nothing, and is served exact-case before the refusal like
 `/health`, so every other spelling is the JSON 404.
 
-**Invariants.** The register has 42.
+**Invariants.** The register has 35.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -1048,19 +1044,15 @@ and creates nothing, and is served exact-case before the refusal like
 | `access.outer-ring.someone-elses-session-replaced` | On the gateway's session check, a live session for a different email than the assertion's is deleted and the Access person's own session is made, or the cookie is cleared. | `apps/every-app-gateway/src/auth/cloudflare-access/plugin.ts:290-325` | `access-sign-in.sqlite.test.ts` :: swaps a session that belongs to someone else for the Access person's |
 | `access.assertion.never-a-session-on-app-hosts` | On an app host the assertion alone never authenticates: without a Better Auth session the perimeter redirects to the gateway's sign-in. | `apps/every-app-gateway/src/perimeter/betterAuthAuthenticator.ts:157-171` | `outer-ring-perimeter.sqlite.test.ts` :: never treats the assertion itself as a session |
 | `access.perimeter.strips-cf-access-headers-and-cookie` | Before proxying, the perimeter removes the cookie header and every `cf-access-*` header; apps see only the gateway's identity. | `packages/perimeter/src/headers.ts:27` | `packages/perimeter/src/headers.test.ts` :: removes Cloudflare Access's assertion, email and service-token headers |
-| `access.membership.nothing-before-claim` | Until some organization has an owner, no Access sign-in creates a user or session, whatever the auto-join settings say. | `apps/every-app-gateway/src/auth/cloudflare-access/membership.ts:85-93` | `access-sign-in.sqlite.test.ts` :: creates no account on a gateway nobody has claimed |
-| `access.membership.members-invitees-autojoin-only` | An Access identity gets a session only as an existing member, a person with a live pending invitation for that exact email (claimed atomically, with the invited role), an email whose exact domain is in `CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`, or anyone when the outer ring's auto-join is `everyone`; everyone else is refused and nothing is created. | `membership.ts:95-123` | `access-sign-in.sqlite.test.ts` :: makes an invited person a member, with the invited role |
-| `access.membership.deactivated-refused` | A deactivated user is refused at every Access entry (outer ring, OIDC, `/mcp`), whatever Access says. | `membership.ts:214` | `access-sign-in.sqlite.test.ts` :: keeps a deactivated member out |
-| `access.linking.verified-local-email-or-signed-in` | An Access identity is linked to an existing account with the same email only when that account's own email is verified, or while the browser is signed in to it as the same email. | `apps/every-app-gateway/src/auth/config.ts:355-364` | `access-sign-in.sqlite.test.ts` :: asks an account whose email isn't verified to sign in with its password once |
+| `access.membership.nothing-before-claim` | Until some organization has an owner, no Access sign-in creates a user or session, and Access's membership question is answered no. | `apps/every-app-gateway/src/auth/identity-membership.ts` | `access-sign-in.sqlite.test.ts` :: creates no account on a gateway nobody has claimed |
+| `access.membership.members-invitees-autojoin-only` | An Access identity gets a session only as an existing member or a person with a live pending invitation for that exact email (claimed atomically, with the invited role); everyone else is refused and nothing is created. Access's policy asks the Gateway the same (External Evaluation), answered only to a token the team's key signed, with its nonce, under the Gateway's own key. | `membership.ts`; `apps/every-app-gateway/src/server/access-evaluation.ts` | `access-sign-in.sqlite.test.ts` :: makes an invited person a member, with the invited role; `access-evaluation.sqlite.test.ts` :: answers nothing to a token Access didn't sign, or one without a nonce |
+| `access.membership.deactivated-refused` | A deactivated user is refused at every Access entry (outer ring, OIDC), and Access's membership question is answered no for them, whatever Access says. | `membership.ts` | `access-sign-in.sqlite.test.ts` :: keeps a deactivated member out |
+| `access.linking.verified-local-email-or-signed-in` | Behind the outer ring an Access identity is linked to the account with the same email on its first Access sign-in (no session counts there without Access's word for that email); with OIDC only when that account's own email is verified, or while the browser is signed in to it as the same email. The link is made only for an email the Gateway would let in (`mayUseGateway`: a member who isn't deactivated, or a pending invitation), so a refused sign-in links nothing and leaves `emailVerified` as it was. Trade-off: an account someone else made under that address (a forwarded invite link) becomes the Access person's, and personal tokens and OAuth connections it already holds stay live, since the outer ring doesn't gate them. | `apps/every-app-gateway/src/auth/config.ts`; `plugin.ts` (linkExistingAccount) | `access-sign-in.sqlite.test.ts` :: signs in an account whose email isn't verified on its first Access sign-in, and links it; `apps/every-app-gateway/src/auth/cloudflare-access/access-sign-in.sqlite.test.ts` :: links no identity to an account it won't sign in, nor verifies its email |
 | `access.oidc.state-pkce-client-secret` | OIDC sign-in uses Better Auth's browser-bound state and PKCE S256 and redeems the code with the client secret; a callback in a browser that didn't start the sign-in fails `state_mismatch`. | `oidc-provider.ts:50-63` | `access-sign-in.sqlite.test.ts` :: sends the browser to Access with state and PKCE, and refuses a callback it didn't start |
 | `access.oidc.id-token-verified-no-posted-tokens` | The ID token is verified in full (signature by the application's JWKS, issuer, audience = client id, expiry, email) before its email is used; posted ID tokens are not a sign-in. | `oidc-provider.ts:76-77` | `access-sign-in.sqlite.test.ts` :: refuses an ID token for another client |
 | `access.passwords-off.lockout-protection` | `EMAIL_PASSWORD_SIGN_IN=false` closes the password paths only while an Access sign-in method is validly configured and at least one owner holds an Access identity. | `config.ts:288-308` | `config.test.ts` :: turns password sign-in off only with Access sign-in configured and an owner connected |
 | `access.hosted.ignored` | When the mode isn't `self_hosted`, every `CLOUDFLARE_ACCESS_*` setting is ignored with one logged problem and the plugin isn't registered. | `index.ts:19-42` | `access-sign-in.sqlite.test.ts` :: offers passwords alone, and open sign-up, on the hosted gateway |
-| `access.mcp.header-only-origin-first-gateway-aud` | On the gateway's `/mcp` an assertion is read from the header only, never the `CF_Authorization` cookie, only with the outer ring configured, only for the gateway application's AUD, and only after the browser `Origin` rule passed. | `apps/every-app-gateway/src/server/mcp-auth/routes.ts:174-202` | `access-mcp.sqlite.test.ts` :: never reads the CF_Authorization cookie |
-| `access.mcp.linked-account-only-nothing-created` | `/mcp` serves an Access identity only through the account row a browser sign-in linked; a user row that merely has that email is never a fallback; nothing is created from `/mcp`. | `access-caller.ts:56-73` | `access-mcp.sqlite.test.ts` :: refuses an identity no account is linked to, even when a user has that email |
 | `access.settings.secrets-only` | Every Access setting is read from the Worker's environment; no admin UI, server function or route writes one. | `config.ts:311-325` | **unpinned** (nothing asserts the absence of a writer) |
-| `access.cli.reconcile-on-gateway-deploy` | After every Gateway upload (`update`, `setup`, the installing `deploy`) on a live self-hosted Gateway behind Access (told by the live applications, never a flag), both Access applications are brought in line with what that release lets through, under the `access` lease; nothing created, settings never rewritten there; a failure is a warning naming `access on`. | `packages/cli/src/lib/access/applications.ts` (keepAccessAfterGatewayDeploy) | `runSetup.test.ts` :: brings both Access applications in line with the release on update, under the Access lease, and never fails the run for it |
-| `access.cli.status-reports-drift` | With Access on, `status` (and `access show`, from the same `accessDrift`) names every way the live shape differs from the release's plan: bypass paths, sign-in methods, a missing application, settings naming other applications; the problem ACCESS_DRIFT runs `access on`. | `packages/cli/src/lib/access/plan.ts` (accessDrift); `packages/cli/src/commands/status/index.ts` | `status.test.ts` :: says whether Cloudflare Access is in front, and whether it is in step with this Gateway |
 | `access.cli.default-on` | `setup` puts Access in front by default once the owner exists: asked at a terminal; unattended only when a Zero Trust team exists and the Cloudflare login is an owner or admin of the Gateway, else one warning names `access on`; `--no-access` opts out; `update` never offers it. | `packages/cli/src/commands/setup/runSetup.ts` (turnAccessOnUnattended) | `runSetup.test.ts` :: turns Access on by itself unattended when the account can, leaves it off with --no-access, and never from update |
 
 **Not this boundary's job.** Whether the Zero Trust configuration matches
@@ -1083,13 +1075,11 @@ command that sets it up the runbook's way. Personal tokens and OAuth tokens
   gateway doesn't verify* (medium, known, large). A single application for
   both hosts, a bypass wider than the list, HttpOnly off, are all silent
   weakenings to the gateway: `access.bypass-list.machine-endpoints-only`
-  is **not enforced** by it (it is operator configuration). Since
-  2026-10-26 the CLI closes most of the window: `everyapp access on` makes
-  the right shape, every Gateway upload brings both applications back to
-  it (`access.cli.reconcile-on-gateway-deploy`), and `status` reads them
-  back and reports drift (`access.cli.status-reports-drift`). What stays
-  open: a change made in the dashboard between two runs of the CLI, and a
-  gateway that would refuse to serve behind a shape it doesn't recognise.
+  is **not enforced** by it (it is operator configuration). `everyapp
+  access on` makes the right shape, and `access show` reports what is
+  there. What stays open: a change made in the dashboard between two runs
+  of `access on`, and a gateway that would refuse to serve behind a shape
+  it doesn't recognise.
 - *Access's email claim is trusted whatever identity provider issued it*
   (medium, medium fix). A generic OIDC provider that lets users pick their
   email would let them pick someone else's. The runbook says to enable only
@@ -1099,13 +1089,10 @@ command that sets it up the runbook's way. Personal tokens and OAuth tokens
   predecessor's account* (info). Both paths key the account by lowercased
   email, not Access's `sub`.
 - *A refused Access sign-in can leave a user row behind in a race* (info).
-- *Managed OAuth and the service-token path are unverified against a live
-  application* (low, known; TODO "MCP through Cloudflare Access").
+- *The service-token path is unverified against a live application* (low,
+  known).
 
-**Docs to fix.** `docs/security-model.md`: "The runbook asks for HttpOnly
-and the binding cookie on both" is true for the plain outer ring; the
-Managed OAuth body sets the binding cookie off for the gateway's
-application, as the runbook itself explains. The sign-out promise above.
+**Docs to fix.** The sign-out promise above.
 
 ### B7. Operator → Cloudflare: deploy authority on self-host
 
@@ -1917,11 +1904,7 @@ means it is on main (every boundary fix from this pass merged on
     makes the right shape (since #622: the wildcard bypasses nothing,
     no app host's `/mcp`, `/health` on the gateway's
     host, both sign-in methods) and `everyapp access show` says whether
-    the applications it finds match it (paths, sign-in methods, the
-    recorded settings); since 2026-10-26 `status` reads the applications
-    back and reports drift (ACCESS_DRIFT), and every Gateway upload
-    (`update`, `setup`) brings both applications back in line with the
-    release (`access.cli.reconcile-on-gateway-deploy`); Access is also
+    the applications it finds and the policy are there; Access is also
     setup's default unattended (`access.cli.default-on`). The gateway
     itself still verifies nothing of the shape.
 41. **Hygiene before the public copy** (the launch-review thread's scan):

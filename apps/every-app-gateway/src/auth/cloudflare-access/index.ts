@@ -89,5 +89,5 @@ export function prewarmOuterRingAssertion(headers: Headers): void {
 }
 
 export { ACCESS_PROVIDER_ID, isAccessSignInConfigured } from "./config";
-export { isPasswordSignInOn, joinsWithoutInvitation } from "./membership";
+export { isPasswordSignInOn } from "./membership";
 export { cloudflareAccess } from "./plugin";

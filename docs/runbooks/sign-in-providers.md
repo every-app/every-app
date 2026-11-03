@@ -39,9 +39,7 @@ rules hold:
   like accepting the invite link. They don't need the link or a password.
 - **Everyone else** is refused ("You don't have an account on this
   gateway. Ask an admin to invite you."), and nothing is created for them.
-  There is no auto-join by email domain for sign-in providers (Cloudflare
-  Access keeps its own, `CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`); see
-  TODO.md, "Sign-in providers (2026-10-25)".
+  There is no auto-join by email domain.
 - **An unverified email** signs nobody in and creates nothing, invited or
   not: Google's and Apple's `email_verified`, GitHub's verified primary
   address, the issuer's `email_verified`, and for Microsoft the rule below.

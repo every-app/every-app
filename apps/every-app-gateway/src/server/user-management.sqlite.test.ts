@@ -797,7 +797,7 @@ describe("user management (SQLite)", () => {
 
       await expect(
         AdminService.deleteUser(ctx(owner, "owner"), member),
-      ).resolves.toEqual({ deactivatedInstead: false });
+      ).resolves.toBeUndefined();
 
       expect(
         await db.select().from(members).where(eq(members.userId, member)),
