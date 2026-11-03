@@ -114,7 +114,8 @@ Release: someone else's app, without a clone: everyapp install
          tarball to a GitHub release of the app's repository, or give
          the repository the Release workflow that does it on every push
          (one step, everyapp release --publish; pnpm pack-for-app <app>
-         --workflow from this checkout; docs/runbooks/app-releases.md).
+         --npm <version> --workflow from this checkout, or --vendor to
+         pack its unreleased HEAD; docs/runbooks/app-releases.md).
 Data:    everyapp db migrate (local)   everyapp db query "<sql>" [--local] --json
          (a production write stops with CONFIRMATION_REQUIRED: add --yes only
          if the user said so). everyapp db restore --json undoes the last
