@@ -20,27 +20,23 @@ beforeAll(async () => {
 
 function devApp(withTools = true) {
   const listCalls = { count: 0 };
-  const app = everyApp(
-    async () => new Response("app"),
-    { id: "todo" },
-    {
-      publicKeys: [keys.publicKeyPem],
-      issuer: DEV_ISSUER,
-      allowDevIdentities: true,
-      ...(withTools
-        ? {
-            tools: defineTools({
-              list_todos: {
-                description: "List todos.",
-                risk: "read",
-                input: z.object({}).strict(),
-                handler: (_input, { user }) => `todos for ${user.email}`,
-              },
-            }),
-          }
-        : {}),
-    },
-  );
+  const app = everyApp(async () => new Response("app"), {
+    publicKeys: [keys.publicKeyPem],
+    issuer: DEV_ISSUER,
+    allowDevIdentities: true,
+    ...(withTools
+      ? {
+          tools: defineTools({
+            list_todos: {
+              description: "List todos.",
+              risk: "read",
+              input: z.object({}).strict(),
+              handler: (_input, { user }) => `todos for ${user.email}`,
+            },
+          }),
+        }
+      : {}),
+  });
   const target: DevToolBusApp = {
     appId: "todo",
     name: "Todos",
@@ -51,7 +47,7 @@ function devApp(withTools = true) {
           listCalls.count += 1;
         }
         // TODO(integration): PR 2 types everyApp()'s ctx as the runtime ExecutionContext.
-        return app.fetch(request, {}, {
+        return app.fetch(request, { EVERYAPP_APP_ID: "todo" }, {
           waitUntil: () => undefined,
         } as unknown as ExecutionContext);
       },

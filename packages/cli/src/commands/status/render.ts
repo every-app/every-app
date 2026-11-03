@@ -9,7 +9,7 @@ import chalk from "chalk";
 import type { AccessState } from "@/lib/access/settings";
 import { listed } from "@/lib/output/text";
 import type { EmailRouteProblem } from "@/lib/app/emailRoutes";
-import { describeMcp, listPublicRoutes } from "@/lib/app/publicRoutes";
+import { listPublicRoutes } from "@/lib/app/publicRoutes";
 import { renderSettingsTable, settingsRows } from "@/lib/app/settings";
 import type { InstallRecord } from "@/lib/gateway/install";
 import { describeOrigin } from "@/lib/gateway/release";
@@ -227,19 +227,13 @@ function deployer(deployedBy: string | null): string {
 const SHOWN_PUBLIC_ROUTES = 3;
 
 /**
- * The PUBLIC cell: what the deployed manifest opens without a sign-in. Its
- * routes (`GET /t/*, POST /t/e, GET /health +2 more`) and, where the
- * manifest asks for `/mcp` on the app's host, `MCP /mcp (gateway)`;
- * nothing when neither.
+ * The PUBLIC cell: what the deployed manifest opens without a sign-in, its
+ * routes (`GET /t/*, POST /t/e, GET /health +2 more`); nothing when none.
  */
 function publicCell(app: AppState): string {
-  const parts: string[] = [];
-  if (app.publicRoutes.length > 0) {
-    const { shown, more } = listPublicRoutes(app.publicRoutes, SHOWN_PUBLIC_ROUTES);
-    parts.push(`${shown}${more > 0 ? chalk.dim(` +${more} more`) : ""}`);
-  }
-  if (app.mcp) parts.push(describeMcp(app.mcp));
-  return parts.join(chalk.dim(" · "));
+  if (app.publicRoutes.length === 0) return "";
+  const { shown, more } = listPublicRoutes(app.publicRoutes, SHOWN_PUBLIC_ROUTES);
+  return `${shown}${more > 0 ? chalk.dim(` +${more} more`) : ""}`;
 }
 
 /**

@@ -52,7 +52,7 @@ A look-up table: find the job, open the file, copy it. `starter/` is the templat
 | Receiving email | `open-mail/workers/app.ts`, `open-mail/workers/everyapp/inbound.ts` | An `email()` export beside `everyApp()`; `email: { inbound: true }` |
 | AI through the Gateway | `open-mail/workers/everyapp/gateway.ts` | `createGatewayFetch({ env })` as the client's `fetch`, `aiBaseUrl(provider)` as its base URL; `aiBaseUrl()` with `model: "default"` takes the workspace's default model |
 | Every AI failure as a sentence | `landing-page/content/agent/identity.md` | `refusalFromError(error)` after a failed call; on a `*_not_configured` code, show the Gateway's `setup` sentence |
-| Whose call it is | `starter/src/server/events.ts` | Crons, Workflow steps and alarms run under `withOrganization()` |
+| Whose call it is | `starter/src/server/events.ts` | Crons, Workflow steps and alarms pass `for: { background: true }` on each Gateway call |
 
 ## Agents, Workflows and a second Worker
 

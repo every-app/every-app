@@ -573,7 +573,7 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
       emailDomains: wanted.domains,
     },
     // The plan's destinations: the wildcard, then one per app with public
-    // routes or /mcp (under Managed OAuth, with public routes only).
+    // or bearer routes.
     { gatewayHost, base, session, ...planCounts(plan) },
   );
 }
@@ -632,7 +632,7 @@ function askTeamAtTerminal(suggested: string): Promise<string> {
 function reportOn(
   out: EventSink,
   result: OnResult,
-  context: { gatewayHost: string; base: string; session: string; appsWithRoutes: number; appsWithMcp: number },
+  context: { gatewayHost: string; base: string; session: string; appsWithRoutes: number },
 ): void {
   const { gatewayHost, base } = context;
   const lines: string[] = [];
@@ -662,10 +662,8 @@ function reportOn(
 
   const routes =
     context.appsWithRoutes > 0
-      ? `public routes of ${plural(context.appsWithRoutes, "app")} let through${context.appsWithMcp > 0 ? `, /mcp on ${plural(context.appsWithMcp, "app host")}` : ""}`
-      : context.appsWithMcp > 0
-        ? `/mcp on ${plural(context.appsWithMcp, "app host")} let through`
-        : "no app has public routes or /mcp";
+      ? `public routes of ${plural(context.appsWithRoutes, "app")} let through`
+      : "no app has public routes";
   const machine = "MCP, the OAuth endpoints and /health let through";
   // An existing application that gained a sign-in method says so: nothing else about it may have changed.
   const signInNote = (outcome: ApplicationOutcome) =>
@@ -722,7 +720,7 @@ function reportOn(
       `${listed(leftOff.map((provider) => `${provider.name ?? provider.id} (${provider.type})`))} ${leftOff.length === 1 ? "is" : "are"} on the team but not allowed on the EveryApp applications: access on allows only the one-time PIN and a Cloudflare provider restricted to this account's members. Allow another on both applications in the dashboard (Zero Trust → Access controls → Applications); access on never takes a method off.`,
     );
   }
-  notes.push("MCP clients and personal access tokens keep working: the Gateway's /mcp, the OAuth endpoints, /health and each app's public routes are let through without a login (an app host's /mcp only where its manifest asks for it).");
+  notes.push("MCP clients and personal access tokens keep working: the Gateway's /mcp, the OAuth endpoints, /health and each app's public routes are let through without a login.");
   notes.push(`Once everyone has signed in through Access, passwords can go: ${CLI} secret set EMAIL_PASSWORD_SIGN_IN (false).`);
   next.push({ command: `${CLI} secret set EMAIL_PASSWORD_SIGN_IN`, note: "false, once everyone has linked Access" });
 
@@ -923,9 +921,8 @@ export async function showAccess(options: AccessOptions): Promise<void> {
     ? findAccessApplications(await listAccessApplications(cf), scope)
     : { gateway: null, apps: null };
   const people = await readPeople(db, now());
-  const managedOAuth = managedOAuthOn(found.gateway);
   const surfaces = await readPublicSurfaces(db);
-  const plan = appsDestinations(base, surfaces, { managedOAuth });
+  const plan = appsDestinations(base, surfaces);
   if (organization) warnIfOpenToAnyCloudflareAccount(out, providers);
 
   const on = settings.length === ACCESS_SETTINGS.length && found.gateway !== null;

@@ -5,11 +5,9 @@ import {
   applicationUpdateBody,
   appsDestinations,
   findAccessApplications,
-  managedOAuthOn,
   sameDestinations,
   splitDestinations,
   storedBearerRoutes,
-  storedMcp,
   storedPublicRoutes,
   type AccessApplication,
 } from "@every-app/perimeter/install";
@@ -65,9 +63,7 @@ export async function syncBrowserAccess(
           (route) => route.path,
         ),
         bearerPaths: storedBearerRoutes(row.manifest),
-        mcp: storedMcp(row.manifest) !== null,
       })),
-      { managedOAuth: managedOAuthOn(found.gateway) },
     );
     if (
       plan.dropped.some((route) => route.appId === appId) ||

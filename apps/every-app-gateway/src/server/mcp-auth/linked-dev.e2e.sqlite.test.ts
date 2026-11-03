@@ -94,7 +94,7 @@ import server, { clearHostnameCacheForTests } from "@/server";
 import { LINKED_DEV_LIMITS } from "@/server/linked-dev";
 import { McpConnectionService } from "@/server/services/McpConnectionService";
 import { OrgSettingsRepository } from "@/server/repositories/OrgSettingsRepository";
-import { resetAppHostMcpForTests } from "@/server/toolbus/app-host-mcp";
+import { resetToolBusForTests } from "@/server/toolbus/runtime";
 import { clearCatalogSyncClaimsForTests } from "@/server/toolbus/catalog-sync";
 import { clearAppCallerCacheForTests } from "@/server/app-gateway-entrypoint";
 import { createKvFake } from "@/test/kv-fake";
@@ -409,7 +409,6 @@ function app(id: string, publicKeyPem: string) {
       }
       return new Response(`${id} page`);
     },
-    { id },
     { publicKeys: [publicKeyPem], issuer: GATEWAY },
   );
 }
@@ -484,7 +483,7 @@ beforeEach(async () => {
   });
   hoisted.sessions.clear();
   hoisted.background.length = 0;
-  resetAppHostMcpForTests();
+  resetToolBusForTests();
   resetRegistrationLimitsForTests();
   clearCatalogSyncClaimsForTests();
   clearHostnameCacheForTests();

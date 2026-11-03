@@ -17,11 +17,9 @@ The OAuth authorization server lives in the gateway too
 (`@cloudflare/workers-oauth-provider` 1.2, `apps/every-app-gateway/src/server/mcp-auth`).
 It protects exactly one resource, `<GATEWAY_URL>/mcp`: Claude requires the
 protected resource metadata to name the exact URL the user typed, so there
-is one connector per gateway, not one per app. An app host's own `/mcp`
-(`https://<app-host>/mcp`), where the app's manifest sets `mcp` (by default
-an app host serves no MCP; `mcp` on the agent docs' manifest page), takes
-personal access tokens and the app's own pages' session only; it offers no
-OAuth.
+is one connector per gateway, not one per app. An app host serves no MCP:
+the gateway's `/mcp` serves every app's tools, and Access bypasses `/mcp`
+only on the gateway's host.
 
 ## On by default, with a kill switch
 

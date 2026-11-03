@@ -26,7 +26,7 @@ import { accessToApp } from "./effective-access";
 
 export type CatalogStatus = "ok" | "empty" | "unsupported" | "error";
 
-export type StoredCatalog = {
+type StoredCatalog = {
   appRowId: string;
   status: CatalogStatus;
   catalogHash: string | null;

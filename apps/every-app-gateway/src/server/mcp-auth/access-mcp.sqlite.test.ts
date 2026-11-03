@@ -75,7 +75,7 @@ import {
   clearCatalogSyncClaimsForTests,
   syncAppTools,
 } from "@/server/toolbus/catalog-sync";
-import { resetAppHostMcpForTests } from "@/server/toolbus/app-host-mcp";
+import { resetToolBusForTests } from "@/server/toolbus/runtime";
 import { listenIntervalsForTests } from "@/server/toolbus/runtime";
 import { createKvFake } from "@/test/kv-fake";
 import { withoutWorkspaceTools } from "@/test/mcp-tools";
@@ -118,56 +118,48 @@ function objectInput<T>(
 const seen: EveryAppUser[] = [];
 
 function todoApp(publicKeyPem: string) {
-  return everyApp(
-    async () => new Response("todo page"),
-    { id: "todo" },
-    {
-      publicKeys: [publicKeyPem],
-      issuer: GATEWAY,
-      tools: defineTools({
-        list_todos: {
-          description: "List todos.",
-          risk: "read",
-          input: objectInput(),
-          handler: (_input, { user }) => {
-            seen.push(user);
-            return { todos: [] };
-          },
+  return everyApp(async () => new Response("todo page"), {
+    publicKeys: [publicKeyPem],
+    issuer: GATEWAY,
+    tools: defineTools({
+      list_todos: {
+        description: "List todos.",
+        risk: "read",
+        input: objectInput(),
+        handler: (_input, { user }) => {
+          seen.push(user);
+          return { todos: [] };
         },
-        create_todo: {
-          description: "Create a todo.",
-          risk: "write",
-          input: objectInput<{ title: string }>({ title: { type: "string" } }, [
-            "title",
-          ]),
-          handler: ({ title }, { user }) => {
-            seen.push(user);
-            return { todo: { id: "t1", title } };
-          },
+      },
+      create_todo: {
+        description: "Create a todo.",
+        risk: "write",
+        input: objectInput<{ title: string }>({ title: { type: "string" } }, [
+          "title",
+        ]),
+        handler: ({ title }, { user }) => {
+          seen.push(user);
+          return { todo: { id: "t1", title } };
         },
-      }),
-    },
-  );
+      },
+    }),
+  });
 }
 
 /** An app with one read tool, `ping`. */
 function pingApp(id: string, publicKeyPem: string) {
-  return everyApp(
-    async () => new Response(`${id} page`),
-    { id },
-    {
-      publicKeys: [publicKeyPem],
-      issuer: GATEWAY,
-      tools: defineTools({
-        ping: {
-          description: "Ping.",
-          risk: "read",
-          input: objectInput(),
-          handler: () => "pong",
-        },
-      }),
-    },
-  );
+  return everyApp(async () => new Response(`${id} page`), {
+    publicKeys: [publicKeyPem],
+    issuer: GATEWAY,
+    tools: defineTools({
+      ping: {
+        description: "Ping.",
+        risk: "read",
+        input: objectInput(),
+        handler: () => "pong",
+      },
+    }),
+  });
 }
 
 let keys: { privateKeyPem: string; publicKeyPem: string };
@@ -361,7 +353,7 @@ beforeEach(async () => {
   });
   hoisted.background.length = 0;
   seen.length = 0;
-  resetAppHostMcpForTests();
+  resetToolBusForTests();
   clearCatalogSyncClaimsForTests();
   clearHostnameCacheForTests();
   clearJwksClientsForTests();
@@ -736,12 +728,12 @@ describe("a Cloudflare Access assertion on the gateway's /mcp (SQLite)", () => {
     beforeEach(() => {
       listenIntervalsForTests.pollMs = 100;
       listenIntervalsForTests.maxMs = 10_000;
-      resetAppHostMcpForTests();
+      resetToolBusForTests();
     });
     afterEach(() => {
       delete listenIntervalsForTests.pollMs;
       delete listenIntervalsForTests.maxMs;
-      resetAppHostMcpForTests();
+      resetToolBusForTests();
     });
 
     /**

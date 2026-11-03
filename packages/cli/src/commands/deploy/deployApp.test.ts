@@ -325,20 +325,10 @@ describe("deploy", () => {
     expect(account.cf.calls.some((call) => call.args.join(" ").includes("/api/"))).toBe(false);
   });
 
-  it("carries the routes the manifest opens to the internet, and its mcp, for the end of the run and done's data", async () => {
+  it("carries the routes the manifest opens to the internet for the end of the run and done's data", async () => {
     const plain = await deploy();
     expect(plain.publicRoutes).toEqual([]);
-    expect(plain.mcp).toBeNull();
-    expect(deployDone(plain).data).toMatchObject({ publicRoutes: [], mcp: null });
-    events = [];
-
-    const connector: EveryAppCliManifest = { ...TODO, mcp: { by: "gateway", why: "A connector per todo list." } };
-    const served = await deploy(connector);
-    expect(served.mcp).toEqual({ by: "gateway", why: "A connector per todo list." });
-    expect(events.find((event) => event["step"] === "app.register")).toMatchObject({
-      data: { appId: "todo", mcp: { by: "gateway", why: "A connector per todo list." } },
-    });
-    expect(deployDone(served).data).toMatchObject({ mcp: { by: "gateway", why: "A connector per todo list." } });
+    expect(deployDone(plain).data).toMatchObject({ publicRoutes: [] });
     events = [];
 
     const hooks: EveryAppCliManifest = {
@@ -354,9 +344,9 @@ describe("deploy", () => {
     // The register step carries them, so a person sees them at the end of
     // the run, first deploy or not.
     expect(events.find((event) => event["step"] === "app.register")).toMatchObject({
-      data: { appId: "todo", firstDeploy: false, publicRoutes: routes, mcp: null },
+      data: { appId: "todo", firstDeploy: false, publicRoutes: routes },
     });
-    expect(deployDone(result).data).toMatchObject({ url: "https://todo.example.com", publicRoutes: routes, mcp: null });
+    expect(deployDone(result).data).toMatchObject({ url: "https://todo.example.com", publicRoutes: routes });
   });
 
   it("grants nobody once the gateway has an owner, the deployer included: owners and admins open every app", async () => {

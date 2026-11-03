@@ -102,7 +102,7 @@ export interface CreateGatewayFetchOptions {
   /**
    * Whom the call is for. Left out, the request `everyApp()` is serving
    * (its user, while the identity is good) or the organization
-   * `withOrganization()` named; outside both, `RequestContextError`.
+   * an event delivery runs under; outside both, `RequestContextError`.
    * Explicitly: the inbound request, or `{ background: true,
    * organizationId }` for work no person started (crons, Workflows,
    * queues). A shared app's Worker must end up with one or the other

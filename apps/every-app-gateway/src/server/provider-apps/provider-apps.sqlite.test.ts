@@ -68,7 +68,7 @@ import { clearAppCapCache } from "@/server/app-cap";
 import { resetRegistrationLimitsForTests } from "@/server/mcp-auth/registration-limit";
 import { AppToolRepository } from "@/server/repositories/AppToolRepository";
 import { UserPatService } from "@/server/services/UserPatService";
-import { resetAppHostMcpForTests } from "@/server/toolbus/app-host-mcp";
+import { resetToolBusForTests } from "@/server/toolbus/runtime";
 import { clearCatalogSyncClaimsForTests } from "@/server/toolbus/catalog-sync";
 import { createKvFake } from "@/test/kv-fake";
 import { withoutWorkspaceTools } from "@/test/mcp-tools";
@@ -305,7 +305,7 @@ beforeEach(async () => {
     OAUTH_KV: createKvFake().kv,
   });
   hoisted.background.length = 0;
-  resetAppHostMcpForTests();
+  resetToolBusForTests();
   resetRegistrationLimitsForTests();
   clearCatalogSyncClaimsForTests();
   clearHostnameCacheForTests();

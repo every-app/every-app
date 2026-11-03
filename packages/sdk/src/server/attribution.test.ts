@@ -81,7 +81,7 @@ describe.each(Object.keys(helpers) as Array<keyof typeof helpers>)(
       const fetch = binding();
       const env = { EVERY_APP_GATEWAY: { fetch }, EVERY_APP_ORG_ID: "org-1" };
       expect(() => make(env)).toThrowError(RequestContextError);
-      expect(() => make(env)).toThrow(/withOrganization/);
+      expect(() => make(env)).toThrow(/background: true/);
       expect(fetch).not.toHaveBeenCalled();
     });
 

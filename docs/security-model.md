@@ -332,8 +332,8 @@ does, once, in
   - The SDK's `createGatewayFetch` and `integrationFetch` attribute each
     call from the request context (`for: request`, the identity forwarded,
     while `everyApp()` serves a request; `for: { background: true,
-    organizationId }`, `x-everyapp-org` and no identity, under
-    `withOrganization()`; `RequestContextError` under neither), and in a shared app's Worker
+    organizationId }`, `x-everyapp-org` and no identity, for background work; refused
+    as `request_context_missing` with neither), and in a shared app's Worker
     (`EVERYAPP_SHARED=1`) throw `AttributionError` for a call that names
     neither. The gateway enforces the rule either way.
 - Per-organization usage, in any mode: every provider call (AI proxy or
@@ -515,10 +515,8 @@ credential is involved, and the perimeter never sees git traffic.
   any `Sec-Fetch-Site` other than `same-origin`, and requests without the
   client's `x-tsr-serverFn` / `x-tsr-redirect` header are rejected before
   auth. The path is decoded the way Start decodes it (each valid `%XX` on
-  its own when another escape is malformed). An app whose server functions
-  live elsewhere (a router basepath or its own `serverFns.base`) declares
-  the path with `serverFnBase`; an app can opt out with
-  `serverFnGuard: false` in its manifest.
+  its own when another escape is malformed). The guard always covers
+  `/_serverFn`; no manifest field moves it or turns it off.
 - A cookie-authenticated WebSocket upgrade must come from the app's own
   `Origin`; bearer-only upgrades are exempt.
 - The gateway strips an inbound `Cloudflare-Workers-Version-Overrides`
@@ -798,13 +796,11 @@ the session is the same as after a password.
 
 ## Agent Tools (MCP)
 
-- Two endpoints can serve the same tools: the gateway's own `/mcp`, one
-  connector for every app a user reaches (tools named `<app>_<tool>`, plus
-  the read-only built-ins `everyapp_whoami` and `everyapp_list_apps`), and,
-  only where an app's manifest sets `mcp: { by: "gateway", why }`, that
-  app host's `/mcp`, for that app alone under its tools' own names. By
-  default an app host serves no MCP: its `/mcp` is a private route like
-  any other, and a token without `*` opens nothing there.
+- One endpoint serves the tools: the gateway's own `/mcp`, one connector
+  for every app a user reaches (tools named `<app>_<tool>`, plus the
+  read-only built-ins `everyapp_whoami` and `everyapp_list_apps`). An app
+  host serves no MCP: its `/mcp` is a private route like any other, and a
+  token without `*` opens nothing there.
   Both are served by the gateway's ToolBus from the tool catalogs it
   snapshots in D1 when an app is activated, when a hosted deploy goes live,
   when the app's host sees it run a new version, when the consent page
@@ -859,10 +855,8 @@ the session is the same as after a password.
   answers `403 token_scope` on every private app route and is served as
   an anonymous visitor on a declared public route (a narrow token never
   gets less than no token), so apps never check scopes on their own
-  routes. A `/mcp` the host serves as MCP
-  also takes a token with an `mcp:` scope (the ToolBus reads the exact
-  scopes); every route of a host without `mcp`, and a `/mcp` a public
-  route covers on a `by: "gateway"` host, take full scope alone.
+  routes. Every route of an app host takes full scope alone (only
+  `everyapp dev`'s local ToolBus takes an `mcp:` scope at `/mcp`).
 - Each call carries a fresh identity minted for that call alone:
   `chan: "mcp"`, explicit `mcp:*` scopes (never `*`), and a `tc` claim naming the tool and call id. The SDK
   refuses a tool call without it, or whose scopes don't cover the risk the

@@ -102,48 +102,40 @@ function objectInput<T>(): PlainToolSchema<T> {
 
 /** An app with one read tool, `ping`. */
 function pingApp(id: string) {
-  return everyApp(
-    async () => new Response(`${id} page`),
-    { id },
-    {
-      publicKeys: [keys.publicKeyPem],
-      issuer: GATEWAY,
-      tools: defineTools({
-        ping: {
-          description: "Ping.",
-          risk: "read",
-          input: objectInput(),
-          handler: () => "pong",
-        },
-      }),
-    },
-  );
+  return everyApp(async () => new Response(`${id} page`), {
+    publicKeys: [keys.publicKeyPem],
+    issuer: GATEWAY,
+    tools: defineTools({
+      ping: {
+        description: "Ping.",
+        risk: "read",
+        input: objectInput(),
+        handler: () => "pong",
+      },
+    }),
+  });
 }
 
 /** An app with `count` read tools, `tool_000` on: far past any per-app cap. */
 function manyToolsApp(count: number) {
   return (id: string) =>
-    everyApp(
-      async () => new Response(`${id} page`),
-      { id },
-      {
-        publicKeys: [keys.publicKeyPem],
-        issuer: GATEWAY,
-        tools: defineTools(
-          Object.fromEntries(
-            Array.from({ length: count }, (_, index) => [
-              `tool_${String(index).padStart(3, "0")}`,
-              {
-                description: `Tool number ${index}.`,
-                risk: "read" as const,
-                input: objectInput(),
-                handler: () => index,
-              },
-            ]),
-          ),
+    everyApp(async () => new Response(`${id} page`), {
+      publicKeys: [keys.publicKeyPem],
+      issuer: GATEWAY,
+      tools: defineTools(
+        Object.fromEntries(
+          Array.from({ length: count }, (_, index) => [
+            `tool_${String(index).padStart(3, "0")}`,
+            {
+              description: `Tool number ${index}.`,
+              risk: "read" as const,
+              input: objectInput(),
+              handler: () => index,
+            },
+          ]),
         ),
-      },
-    );
+      ),
+    });
 }
 
 /**

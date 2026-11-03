@@ -8,7 +8,7 @@ import type { AppSetup } from "@every-app/sdk/internal";
 import chalk from "chalk";
 import { APP_SECRETS_FILE, describeOriginVariables } from "@/lib/app/deploySecrets";
 import type { EmailRouteProblem } from "@/lib/app/emailRoutes";
-import type { McpSummary, PublicRouteSummary } from "@/lib/app/publicRoutes";
+import type { PublicRouteSummary } from "@/lib/app/publicRoutes";
 import { hasDrift } from "@/lib/access/plan";
 import type { AccessState } from "@/lib/access/settings";
 import { describeUnmetSettings } from "@/lib/app/settings";
@@ -113,8 +113,6 @@ export interface AppState {
   email: { senders: string[]; inbound: string[]; routed: string[]; declaresInbound: boolean };
   /** The routes its deployed manifest opens to anyone on the internet (`public` in everyapp.config.ts). */
   publicRoutes: PublicRouteSummary[];
-  /** Its deployed manifest's `mcp`: its host answers `/mcp`, by the Gateway or the app, and why; null when it sets none. */
-  mcp: McpSummary | null;
   /**
    * What its manifest needs set and whether it is (lib/app/settings.ts):
    * null when it declares nothing to set.

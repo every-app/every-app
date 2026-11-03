@@ -26,15 +26,6 @@ describe("isServerFnPath", () => {
     expect(isServerFnPath("/%5fserverfn/abc/%")).toBe(true);
     expect(isServerFnPath("/%5FserverFnx/%ZZ")).toBe(false);
   });
-
-  it("matches the server-function base an app declares", () => {
-    expect(isServerFnPath("/app/_serverFn/abc", "/app/_serverFn")).toBe(true);
-    expect(isServerFnPath("/app/%5FserverFn/abc", "/app/_serverFn/")).toBe(
-      true,
-    );
-    expect(isServerFnPath("/app/_serverFn", "/app/_serverFn")).toBe(true);
-    expect(isServerFnPath("/_serverFn/abc", "/app/_serverFn")).toBe(false);
-  });
 });
 
 describe("evaluateServerFnRequest", () => {

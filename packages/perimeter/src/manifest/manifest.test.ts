@@ -51,11 +51,10 @@ describe("validateManifest", () => {
     expect(validateManifestStrict(input)).toEqual(input);
   });
 
-  it("accepts resources, main, and public routes", () => {
+  it("accepts resources and public routes", () => {
     const m = validateManifest({
       id: "todo-app",
       name: "Todos",
-      main: "src/entry.worker.ts",
       compatibilityDate: "2026-06-01",
       resources: {
         d1: ["DB"],
@@ -278,12 +277,11 @@ describe("assertPublicPathIsSafe", () => {
   });
 });
 
-describe("access, ai and serverFnGuard manifest fields", () => {
+describe("access and ai manifest fields", () => {
   it("accepts them in both the tolerant and strict schemas", () => {
     const input = {
       id: "chef",
       access: "everyone",
-      serverFnGuard: false,
       ai: { models: ["gpt-5.2"], routes: ["/v1/files"] },
     };
     expect(validateManifest(input)).toMatchObject(input);
@@ -303,53 +301,7 @@ describe("access, ai and serverFnGuard manifest fields", () => {
   });
 });
 
-describe("mcp manifest field", () => {
-  it("takes { by, why } with by gateway or app, in both schemas", () => {
-    for (const by of ["gateway", "app"]) {
-      const input = {
-        id: "todo",
-        mcp: { by, why: "Scripts drive this app alone." },
-      };
-      expect(validateManifest(input)).toMatchObject(input);
-      expect(validateManifestStrict(input)).toMatchObject(input);
-    }
-    expect(validateManifest({ id: "todo" }).mcp).toBeUndefined();
-  });
-
-  it("refuses the old string form with the new shape, in both schemas", () => {
-    for (const mcp of ["gateway", "app", "both"]) {
-      for (const validate of [validateManifest, validateManifestStrict]) {
-        expect(() => validate({ id: "todo", mcp })).toThrow(
-          'mcp: mcp is { by: "gateway" | "app", why: "..." }',
-        );
-      }
-    }
-  });
-
-  it("needs a why that is plain text of at most 200 characters", () => {
-    const strict = (mcp: unknown) =>
-      validateManifestStrict({ id: "todo", mcp });
-    expect(() => strict({ by: "gateway" })).toThrow("mcp.why");
-    expect(() => strict({ by: "gateway", why: "" })).toThrow(
-      "say why the app needs /mcp on its own host",
-    );
-    expect(() => strict({ by: "gateway", why: "x".repeat(201) })).toThrow(
-      "mcp.why",
-    );
-    expect(() => strict({ by: "gateway", why: "a\u202eb" })).toThrow(
-      "no control characters",
-    );
-    expect(() => strict({ by: "both", why: "ok" })).toThrow("mcp.by");
-    expect(() => strict({ by: "app", why: "ok", extra: 1 })).toThrow(
-      ManifestError,
-    );
-    // The stored form tolerates an unknown key, like every other section.
-    expect(
-      validateManifest({ id: "todo", mcp: { by: "app", why: "ok", extra: 1 } })
-        .mcp,
-    ).toMatchObject({ by: "app", why: "ok" });
-  });
-
+describe("public routes the perimeter keeps private", () => {
   it("refuses a public route over the server-function endpoint", () => {
     for (const path of ["/_serverFn/**", "/_serverFn/*", "/:any/*"]) {
       expect(() =>
@@ -359,14 +311,6 @@ describe("mcp manifest field", () => {
         }),
       ).toThrow("it covers /_serverFn");
     }
-    // An app with its own base is held to that base.
-    expect(() =>
-      validateManifestStrict({
-        id: "todo",
-        serverFnBase: "/app/_serverFn",
-        public: [{ path: "/app/_serverFn/**" }],
-      }),
-    ).toThrow("it covers /app/_serverFn");
     // Public pages and their own data routes stay allowed.
     expect(() =>
       validateManifestStrict({
@@ -406,6 +350,22 @@ describe("mcp manifest field", () => {
   });
 });
 
+describe("fields that are gone", () => {
+  it("refuses main, devPort, serverFnGuard, serverFnBase and mcp when the manifest is authored", () => {
+    for (const field of [
+      { main: "src/entry.worker.ts" },
+      { devPort: 5173 },
+      { serverFnGuard: false },
+      { serverFnBase: "/app/_serverFn" },
+      { mcp: { by: "gateway", why: "Scripts drive this app alone." } },
+    ]) {
+      expect(() => validateManifestStrict({ id: "todo", ...field })).toThrow(
+        ManifestError,
+      );
+    }
+  });
+});
+
 describe("reserved app ids", () => {
   it("refuses the platform's own prefix when an app is authored", () => {
     expect(isReservedAppId("everyapp")).toBe(true);
@@ -420,24 +380,6 @@ describe("reserved app ids", () => {
 
   it("still reads an already-registered row tolerantly", () => {
     expect(validateManifest({ id: "everyapp" }).id).toBe("everyapp");
-  });
-});
-
-describe("serverFnBase manifest field", () => {
-  it("accepts a plain path in both schemas", () => {
-    for (const serverFnBase of ["/app/_serverFn", "/api/fn/", "/_rpc"]) {
-      const input = { id: "todo", serverFnBase };
-      expect(validateManifest(input)).toMatchObject(input);
-      expect(validateManifestStrict(input)).toMatchObject(input);
-    }
-  });
-
-  it("rejects the root, relative paths and dot segments", () => {
-    for (const serverFnBase of ["/", "_serverFn", "/a/../b", "/a/./b", ""]) {
-      expect(() => validateManifest({ id: "todo", serverFnBase })).toThrow(
-        ManifestError,
-      );
-    }
   });
 });
 

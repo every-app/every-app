@@ -286,8 +286,8 @@ reusable policy **Every App gateway members** with every member's and
 pending invitee's email (plus `--email` and `--email-domain`, never removing
 anyone), puts the two applications below in front of the gateway's host and
 `*.<app base domain>` with the bypass paths of the table and each app's
-public routes (and `/mcp` where its manifest sets `mcp`, its `bearerRoutes`
-where it sets them) as path overrides,
+public routes (and its `bearerRoutes` where it sets them; an app host serves
+no MCP, so `/mcp` is bypassed only on the gateway's host) as path overrides,
 and sets the three gateway settings in one new version of the Worker. New
 applications get a 720-hour session (`--session` for another), the HttpOnly
 and binding cookies, and the two sign-in methods the command vouches for
@@ -346,7 +346,7 @@ credentials:
 
 | Path                              | Where                                              | Why                                                                     |
 | --------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------- |
-| `/mcp`, `/mcp/*`                  | gateway; an app host only when its manifest sets `mcp` | MCP clients, with OAuth or a personal access token; by default an app host serves no MCP |
+| `/mcp`, `/mcp/*`                  | gateway only | MCP clients, with OAuth or a personal access token; an app host serves no MCP |
 | `/health`                         | gateway                                            | Uptime monitors: `GET` answers 200 or 503 after a bounded `SELECT 1`, reading no session |
 | `/oauth/token`, `/oauth/register` | gateway                                            | The OAuth server's token, revocation and registration                   |
 | `/.well-known/*`                  | gateway                                            | OAuth discovery documents                                               |
@@ -417,10 +417,9 @@ Each response's `aud` is that application's AUD tag. For an app's public
 routes, add a destination for that app's host to the apps' application, with
 its paths as overrides (for example `{"type": "public", "uri":
 "crm.apps.acme.com", "overrides": [{"path_pattern": "/hooks/*", "behavior":
-"public"}]}`); an app whose manifest sets `mcp: { by, why }` gets one with
-`/mcp` and `/mcp/*` first; one with `bearerRoutes` gets
-`/.well-known/oauth-protected-resource` and those paths next; then its
-public routes. `everyapp access on` and
+"public"}]}`); an app with `bearerRoutes` gets
+`/.well-known/oauth-protected-resource` and those paths first, then its
+public routes (an app host serves no MCP, so `/mcp` is never among them). `everyapp access on` and
 the sync after a deploy compute the same (`packages/cli/src/lib/access/plan.ts`).
 Neither body names `allowed_idps`, so Access allows every identity provider
 of the team, Sign in with Cloudflare and the one-time PIN included, and

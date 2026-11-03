@@ -76,49 +76,33 @@ describe("accessPathPattern", () => {
 });
 
 describe("appDestination", () => {
-  it("is the routes once each, methods ignored, and no MCP path unless the manifest sets mcp", () => {
+  it("is the routes once each, methods ignored", () => {
     const { destination, dropped } = appDestination(
-      { appId: "crm", hostname: "CRM.apps.acme.com", publicPaths: ["/t/*", "/t/e", "/health", "/health"], bearerPaths: [], mcp: false },
-      { managedOAuth: false },
+      { appId: "crm", hostname: "CRM.apps.acme.com", publicPaths: ["/t/*", "/t/e", "/health", "/health"], bearerPaths: [] }
     );
     expect(destination.uri).toBe("crm.apps.acme.com");
     expect(destination.overrides.map((o) => o.path_pattern)).toEqual(["/t/*", "/t/e", "/health"]);
     expect(dropped).toEqual([]);
   });
 
-  it("starts with the MCP paths where the manifest sets mcp, and leaves them out under Managed OAuth", () => {
-    const app = { appId: "crm", hostname: "crm.apps.acme.com", publicPaths: ["/health"], bearerPaths: [], mcp: true };
-    expect(appDestination(app, { managedOAuth: false }).destination.overrides.map((o) => o.path_pattern)).toEqual([
-      "/mcp",
-      "/mcp/*",
-      "/health",
-    ]);
-    expect(appDestination(app, { managedOAuth: true }).destination.overrides.map((o) => o.path_pattern)).toEqual([
-      "/health",
-    ]);
-  });
-
   it("drops what Access can't take, saying why: inexpressible first, then the 26th", () => {
     const many = Array.from({ length: 30 }, (_, i) => `/r${i}`);
     const { destination, dropped } = appDestination(
-      { appId: "big", hostname: "big.apps.acme.com", publicPaths: ["/a*b*", ...many], bearerPaths: [], mcp: true },
-      { managedOAuth: false },
+      { appId: "big", hostname: "big.apps.acme.com", publicPaths: ["/a*b*", ...many], bearerPaths: [] }
     );
     expect(destination.overrides).toHaveLength(25);
     expect(dropped).toEqual([
       { appId: "big", path: "/a*b*", reason: "not_expressible" },
-      ...many.slice(23).map((path) => ({ appId: "big", path, reason: "too_many" })),
+      ...many.slice(25).map((path) => ({ appId: "big", path, reason: "too_many" })),
     ]);
   });
 });
 
 describe("bearer routes", () => {
-  const zen = { appId: "openzen", hostname: "openzen.apps.acme.com", publicPaths: ["/hooks/*"], bearerPaths: ["/api/**", "/v1/:id"], mcp: true };
+  const zen = { appId: "openzen", hostname: "openzen.apps.acme.com", publicPaths: ["/hooks/*"], bearerPaths: ["/api/**", "/v1/:id"] };
 
-  it("become path bypasses after the MCP paths, with the discovery document, before the public routes", () => {
-    expect(appDestination(zen, { managedOAuth: false }).destination.overrides.map((o) => o.path_pattern)).toEqual([
-      "/mcp",
-      "/mcp/*",
+  it("become path bypasses with the discovery document, before the public routes", () => {
+    expect(appDestination(zen).destination.overrides.map((o) => o.path_pattern)).toEqual([
       PROTECTED_RESOURCE_METADATA_PATH,
       "/api/*",
       "/v1/*",
@@ -129,8 +113,7 @@ describe("bearer routes", () => {
   it("stay bypassed under Managed OAuth, and give an app with nothing else a destination of its own", () => {
     const plan = appsDestinations(
       "apps.acme.com",
-      [{ ...zen, publicPaths: [], mcp: false }],
-      { managedOAuth: true },
+      [{ ...zen, publicPaths: [] }]
     );
     expect(plan.destinations.map((d) => [d.uri, d.overrides.map((o) => o.path_pattern)])).toEqual([
       ["*.apps.acme.com", []],
@@ -140,8 +123,7 @@ describe("bearer routes", () => {
 
   it("are dropped like public routes, marked as bearer", () => {
     const { dropped } = appDestination(
-      { ...zen, bearerPaths: ["/a*b*"], publicPaths: [] },
-      { managedOAuth: false },
+      { ...zen, bearerPaths: ["/a*b*"], publicPaths: [] }
     );
     expect(dropped).toEqual([{ appId: "openzen", path: "/a*b*", reason: "not_expressible", bearer: true }]);
   });
@@ -154,7 +136,7 @@ describe("bearer routes", () => {
       [{ uri: "team.acme.com", overrides: gatewayDestination("team.acme.com", false).overrides.map((o) => o.path_pattern) }],
       signIn,
     );
-    const surfaces = [{ ...zen, publicPaths: [], mcp: false }];
+    const surfaces = [{ ...zen, publicPaths: [] }];
     const appsWith = (overrides: string[]) =>
       application("a", [{ uri: "*.apps.acme.com" }, { uri: "openzen.apps.acme.com", overrides }], signIn);
     const drift = (apps: AccessApplication) =>
@@ -170,40 +152,23 @@ describe("bearer routes", () => {
 });
 
 describe("appsDestinations", () => {
-  it("is the wildcard with nothing let through, then one destination per app with public routes or mcp under the base, by host", () => {
+  it("is the wildcard with nothing let through, then one destination per app with public routes under the base, by host", () => {
     const plan = appsDestinations("apps.acme.com", [
-      { appId: "todo", hostname: "todo.apps.acme.com", publicPaths: [], bearerPaths: [], mcp: false },
-      { appId: "crm", hostname: "crm.apps.acme.com", publicPaths: ["/t/*"], bearerPaths: [], mcp: false },
-      { appId: "analytics", hostname: "analytics.apps.acme.com", publicPaths: ["/collect"], bearerPaths: [], mcp: true },
-      { appId: "inbox", hostname: "inbox.apps.acme.com", publicPaths: [], bearerPaths: [], mcp: true },
-      { appId: "far", hostname: "far.elsewhere.com", publicPaths: ["/x"], bearerPaths: [], mcp: false },
-      { appId: "deep", hostname: "a.b.apps.acme.com", publicPaths: ["/x"], bearerPaths: [], mcp: false },
+      { appId: "todo", hostname: "todo.apps.acme.com", publicPaths: [], bearerPaths: [] },
+      { appId: "crm", hostname: "crm.apps.acme.com", publicPaths: ["/t/*"], bearerPaths: [] },
+      { appId: "analytics", hostname: "analytics.apps.acme.com", publicPaths: ["/collect"], bearerPaths: [] },
+      { appId: "far", hostname: "far.elsewhere.com", publicPaths: ["/x"], bearerPaths: [] },
+      { appId: "deep", hostname: "a.b.apps.acme.com", publicPaths: ["/x"], bearerPaths: [] },
     ]);
     expect(plan.destinations.map((d) => [d.uri, d.overrides.map((o) => o.path_pattern)])).toEqual([
       ["*.apps.acme.com", []],
-      ["analytics.apps.acme.com", ["/mcp", "/mcp/*", "/collect"]],
+      ["analytics.apps.acme.com", ["/collect"]],
       ["crm.apps.acme.com", ["/t/*"]],
-      ["inbox.apps.acme.com", ["/mcp", "/mcp/*"]],
     ]);
     expect(plan.outsideBase).toEqual(["deep", "far"]);
     expect(plan.dropped).toEqual([]);
   });
 
-  it("bypasses no MCP path under Managed OAuth, keeps the public routes, and makes no destination that lets nothing through", () => {
-    const plan = appsDestinations(
-      "apps.acme.com",
-      [
-        { appId: "inbox", hostname: "inbox.apps.acme.com", publicPaths: ["/hooks/*"], bearerPaths: [], mcp: true },
-        // mcp alone: nothing would be let through on its host, so no destination.
-        { appId: "openseo", hostname: "openseo.apps.acme.com", publicPaths: [], bearerPaths: [], mcp: true },
-      ],
-      { managedOAuth: true },
-    );
-    expect(plan.destinations.map((d) => [d.uri, d.overrides.map((o) => o.path_pattern)])).toEqual([
-      ["*.apps.acme.com", []],
-      ["inbox.apps.acme.com", ["/hooks/*"]],
-    ]);
-  });
 });
 
 describe("gatewayDestination", () => {

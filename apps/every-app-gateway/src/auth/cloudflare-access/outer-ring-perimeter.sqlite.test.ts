@@ -133,13 +133,7 @@ beforeEach(async () => {
     appSlug: "todo",
     name: "Todos",
     description: "Things to do",
-    manifest: {
-      id: "todo",
-      name: "Todos",
-      // Its own MCP server answers /mcp, which the outer ring lets through
-      // for it; the perimeter proxies the path with the identity.
-      mcp: { by: "app", why: "Runs its own MCP server." },
-    },
+    manifest: { id: "todo", name: "Todos" },
     deployerUserId: owner.userId,
     appBaseDomain: new URL(GATEWAY).host,
   });
@@ -259,13 +253,13 @@ describe("the outer ring on app hosts (SQLite)", () => {
     expect(received).toEqual([]);
   });
 
-  it("checks a cookie session on a path Access lets through, by its CF_Authorization cookie", async () => {
-    // An app host's /mcp is bypassed at Access where the manifest opts in
-    // (MCP clients use tokens), but the session cookie works there too:
-    // browsers send Access's own CF_Authorization cookie with it.
-    const mcp = (headers: Record<string, string>) =>
+  it("checks a cookie session that arrives without the assertion header, by its CF_Authorization cookie", async () => {
+    // A request with no Cf-Access-Jwt-Assertion header (as on a path Access
+    // lets through) still needs Access's word for the session cookie:
+    // browsers send Access's own CF_Authorization cookie, verified instead.
+    const call = (headers: Record<string, string>) =>
       server.fetch(
-        new Request(`https://${appHost}/mcp`, {
+        new Request(`https://${appHost}/api/ping`, {
           method: "POST",
           headers: {
             host: appHost,
@@ -278,9 +272,9 @@ describe("the outer ring on app hosts (SQLite)", () => {
       );
     const assertion = await access.assertion({ email: OWNER.email });
 
-    expect((await mcp({ cookie: ownerCookie })).status).toBe(401);
+    expect((await call({ cookie: ownerCookie })).status).toBe(401);
     expect(received).toEqual([]);
-    const vouched = await mcp({
+    const vouched = await call({
       cookie: `${ownerCookie}; CF_Authorization=${assertion}`,
     });
     expect(vouched.status).toBe(200);
@@ -294,7 +288,7 @@ describe("the outer ring on app hosts (SQLite)", () => {
       organizationId: owner.organizationId,
       name: "a script",
     });
-    const withToken = await mcp({ authorization: `Bearer ${plaintext}` });
+    const withToken = await call({ authorization: `Bearer ${plaintext}` });
     expect(withToken.status).toBe(200);
     expect(await withToken.text()).toBe("todo app");
   });

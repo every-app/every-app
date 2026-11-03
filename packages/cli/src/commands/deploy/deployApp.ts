@@ -85,7 +85,7 @@ import {
   type AppSecrets,
 } from "@/lib/app/deploySecrets";
 import { readBuildOutput, writeBuildOutput } from "@/lib/app/policy";
-import { mcpOf, publicRoutesOf, type McpSummary, type PublicRouteSummary } from "@/lib/app/publicRoutes";
+import { publicRoutesOf, type PublicRouteSummary } from "@/lib/app/publicRoutes";
 import { describeAppOrigin, type AppRelease } from "@/lib/app/release";
 import { recordUploadedVersion } from "@/lib/app/ownership";
 import { resourceInstaller } from "@/lib/app/resources";
@@ -211,8 +211,6 @@ interface DeployAppResult {
   live: boolean;
   /** The routes the manifest opens to anyone on the internet (`done`'s `data.publicRoutes`). */
   publicRoutes: PublicRouteSummary[];
-  /** The manifest's `mcp`: its host answers `/mcp`, and why (`done`'s `data.mcp`); null when it sets none. */
-  mcp: McpSummary | null;
   /** What to run next, when something is left to do (`done`'s `data.next`). */
   next: Array<{ command: string; note: string }>;
 }
@@ -402,12 +400,11 @@ async function deploySteps(
     );
   }
   // Until the app has been live once, the end of the run says who can open
-  // it; what the manifest opens to the internet, and whether its host
-  // answers /mcp, it says every time; so does the manifest's `ai.routes`
-  // (OpenAI paths beyond inference on the Gateway's shared key: the manifest
-  // is their grant, so the deploy shows them).
+  // it; what the manifest opens to the internet it says every time; so
+  // does the manifest's `ai.routes` (OpenAI paths beyond inference on the
+  // Gateway's shared key: the manifest is their grant, so the deploy shows
+  // them).
   const publicRoutes = publicRoutesOf(manifest);
-  const mcp = mcpOf(manifest);
   const aiRoutes = manifest.ai?.routes ?? [];
   out.emit({
     type: "step",
@@ -424,7 +421,6 @@ async function deploySteps(
       defaultAccess: plan.app.everyone,
       hasOwner,
       publicRoutes,
-      mcp,
       ...(aiRoutes.length > 0 ? { aiRoutes } : {}),
       scope: plan.app.scope,
       organizationId: organization.id,
@@ -664,9 +660,8 @@ async function deploySteps(
           },
     );
   }
-  // Behind Cloudflare Access, the app's public and bearer routes (and its
-  // /mcp, where the manifest sets mcp) are let through as soon as it is live (nothing
-  // to do when Access isn't in front).
+  // Behind Cloudflare Access, the app's public and bearer routes are let
+  // through as soon as it is live (nothing to do when Access isn't in front).
   await syncAppsAccessAfter(
     { cf, db: registry, install, out },
     {
@@ -674,7 +669,6 @@ async function deploySteps(
       surface: {
         publicRoutes: publicRoutes.length > 0,
         bearerRoutes: (manifest.bearerRoutes?.paths ?? []).length > 0,
-        mcp: mcp !== null,
       },
     },
   );
@@ -697,7 +691,6 @@ async function deploySteps(
     versionId,
     live: live || (status === "active" && !outsideBase),
     publicRoutes,
-    mcp,
     next,
   };
 }

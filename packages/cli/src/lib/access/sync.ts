@@ -1,10 +1,9 @@
 /**
  * The apps' Access application, kept in step with the registry: which app
- * hosts have a public surface (public routes, bearer routes, or `mcp` in
- * the manifest),
+ * hosts have a public surface (public or bearer routes in the manifest),
  * and what the application on `*.<base>` lets through on each. `access on`
  * creates and reconciles it; a deploy or a delete calls
- * `syncAppsAccessAfter` so an app's new public routes (and its `/mcp`) are
+ * `syncAppsAccessAfter` so an app's new public routes are
  * reachable without a login as soon as the app is, and a deleted app's
  * destination goes. With no apps application there is nothing to do:
  * Access isn't in front of the Gateway.
@@ -15,7 +14,7 @@
  * its own lease, so two deploys finishing together don't each PUT a list
  * without the other's host.
  */
-import { storedBearerRoutes, storedMcp, storedPublicRoutes } from "@/lib/app/publicRoutes";
+import { storedBearerRoutes, storedPublicRoutes } from "@/lib/app/publicRoutes";
 import type { D1Database } from "@/lib/cf/d1";
 import {
   applicationUpdateBody,
@@ -33,7 +32,6 @@ import { listed, plural } from "@/lib/output/text";
 import {
   appsDestinations,
   findAccessApplications,
-  managedOAuthOn,
   sameDestinations,
   splitDestinations,
   type AccessScope,
@@ -48,8 +46,8 @@ const SERVED_STATUSES = ["binding", "active", "disabled"];
 const SYNC_LEASE_WAIT_MS = 60_000;
 
 /**
- * Every served app's host, the public and bearer routes of the manifest it
- * was last deployed from and whether that manifest sets `mcp`, by host. A row
+ * Every served app's host and the public and bearer routes of the manifest
+ * it was last deployed from, by host. A row
  * without a hostname, or whose manifest won't parse, has no public surface.
  */
 export async function readPublicSurfaces(db: D1Database): Promise<AppPublicSurface[]> {
@@ -65,7 +63,6 @@ ORDER BY hostname`,
     hostname: String(row["hostname"]),
     publicPaths: storedPublicRoutes(row["manifest"]).map((route) => route.path),
     bearerPaths: storedBearerRoutes(row["manifest"]),
-    mcp: storedMcp(row["manifest"]) !== null,
   }));
 }
 
@@ -74,17 +71,11 @@ interface PublicSurfaceFlags {
   publicRoutes: boolean;
   /** The manifest sets `bearerRoutes`: they and the discovery document are let through. */
   bearerRoutes?: boolean;
-  /** The manifest sets `mcp`: its host's `/mcp` is let through (unless Managed OAuth is on). */
-  mcp: boolean;
 }
 
-/** "public routes", "bearer routes and /mcp", ...: what the app has, for the sync's lines. */
-function surfaceWords({ publicRoutes, bearerRoutes = false, mcp }: PublicSurfaceFlags): string {
-  const words = [
-    ...(publicRoutes ? ["public routes"] : []),
-    ...(bearerRoutes ? ["bearer routes"] : []),
-    ...(mcp ? ["/mcp"] : []),
-  ];
+/** "public routes", "public routes and bearer routes": what the app has, for the sync's lines. */
+function surfaceWords({ publicRoutes, bearerRoutes = false }: PublicSurfaceFlags): string {
+  const words = [...(publicRoutes ? ["public routes"] : []), ...(bearerRoutes ? ["bearer routes"] : [])];
   return words.length > 0 ? listed(words) : "public routes";
 }
 
@@ -158,13 +149,11 @@ async function reconcileAppsDestinations({
   db: D1Database;
   install: InstallRecord;
   application: AccessApplication;
-  /** The Gateway host's application: its Managed OAuth decides the MCP bypass; the same one when combined. */
+  /** The Gateway host's application: the same one when combined. */
   gateway: AccessApplication | null;
 }): Promise<AppsAccessSync> {
   const scope = scopeOf(install);
-  const plan = appsDestinations(scope.appBaseDomain, await readPublicSurfaces(db), {
-    managedOAuth: managedOAuthOn(gateway),
-  });
+  const plan = appsDestinations(scope.appBaseDomain, await readPublicSurfaces(db));
   const current = application.destinations ?? [];
   const { foreign } = splitDestinations(current, scope);
   const gatewayHostKept =
@@ -209,7 +198,7 @@ export function emitPlanWarnings(out: EventSink, plan: PlanLeftovers): void {
       type: "warning",
       code: "ACCESS_TOO_MANY_PUBLIC_ROUTES",
       step: "access.routes",
-      message: `${stays(overflow.length)} behind Access: ${listed(overflow.map(named))}\nAccess lets through at most 25 paths per host (two of them for /mcp where the manifest sets mcp, one for the discovery document where it sets bearerRoutes). Merge routes under one prefix, or keep these behind the login.`,
+      message: `${stays(overflow.length)} behind Access: ${listed(overflow.map(named))}\nAccess lets through at most 25 paths per host (one of them for the discovery document where the manifest sets bearerRoutes). Merge routes under one prefix, or keep these behind the login.`,
       data: { routes: overflow },
     });
   }
@@ -238,7 +227,7 @@ export function emitPlanWarnings(out: EventSink, plan: PlanLeftovers): void {
  * only when something changed, and never failing the run for it. Whether
  * Access is in front at all costs one list call; a login without the
  * Access permissions (a CI token) can't make it, which is said only when
- * the app has a public surface (public routes, or `mcp` in its manifest),
+ * the app has a public surface (public or bearer routes in its manifest),
  * the one thing a sync would change for it, and without claiming the
  * Gateway is behind Access.
  */
@@ -254,7 +243,7 @@ export async function syncAppsAccessAfter(
     applications = await listAccessApplications(cf);
   } catch (error) {
     const permission = error instanceof EveryAppError && error.code === "ACCESS_PERMISSION_MISSING";
-    if (permission && !surface.publicRoutes && !surface.bearerRoutes && !surface.mcp) return;
+    if (permission && !surface.publicRoutes && !surface.bearerRoutes) return;
     const until = removing
       ? `If the Gateway is behind Access, ${appId}'s host stays listed there until it is updated.`
       : `If the Gateway is behind Access, ${appId}'s ${what} need a login there until it is updated.`;

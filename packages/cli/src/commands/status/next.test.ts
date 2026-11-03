@@ -35,7 +35,6 @@ function app(
     deployedBy: "dev@example.com",
     email: { senders: [], inbound: [], routed: [], declaresInbound: false },
     publicRoutes: [],
-    mcp: null,
     setup: manifest ? appSetupFrom({ manifest, appId: id, gatewayNames, secretNames: [] }).setup : null,
   };
 }

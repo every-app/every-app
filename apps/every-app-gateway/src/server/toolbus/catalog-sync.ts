@@ -99,7 +99,7 @@ type SyncTrigger =
  * The gateway has no service binding to the app yet: a deploy just updated
  * the bindings and the new gateway version is still rolling out. Retry.
  */
-export class BindingNotReadyError extends Error {
+class BindingNotReadyError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "BindingNotReadyError";
@@ -330,10 +330,7 @@ const lastSyncClaim = new Map<string, number>();
  * What a sync claims: the app's row, or the row and version for a sync of
  * a new version, which runs whenever the last sync of the app did.
  */
-export function catalogSyncClaim(
-  app: SyncableApp,
-  trigger: SyncTrigger,
-): string {
+function catalogSyncClaim(app: SyncableApp, trigger: SyncTrigger): string {
   return trigger === "new_version"
     ? `${app.rowId}@${app.versionId}`
     : app.rowId;

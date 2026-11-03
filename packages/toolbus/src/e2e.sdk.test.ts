@@ -107,15 +107,15 @@ let snapshotApp: ToolBusApp;
 const ctx = { waitUntil: () => undefined } as unknown as ExecutionContext;
 // The Worker's name is the audience everyAppWorker() deploys it with.
 const WORKER = "every-acme-todo";
-const WORKER_ENV = { EVERYAPP_AUDIENCE: WORKER };
+const WORKER_ENV = { EVERYAPP_APP_ID: "todo", EVERYAPP_AUDIENCE: WORKER };
 
 beforeAll(async () => {
   keys = await testKeys();
-  app = everyApp(
-    async () => new Response("app page"),
-    { id: "todo" },
-    { publicKeys: [keys.publicKeyPem], issuer: ISSUER, tools },
-  );
+  app = everyApp(async () => new Response("app page"), {
+    publicKeys: [keys.publicKeyPem],
+    issuer: ISSUER,
+    tools,
+  });
   const snapshot = await fetchAppCatalog(
     {
       appId: "todo",

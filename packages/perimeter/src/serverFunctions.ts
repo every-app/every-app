@@ -17,10 +17,9 @@
  */
 import type { CsrfDecision } from "./csrf";
 
-// TanStack Start's default. An app with a router basepath or its own
-// `serverFns.base` declares where its server functions live instead
-// (manifest `serverFnBase`).
-const DEFAULT_SERVER_FN_BASE = "/_serverFn";
+// TanStack Start's default, where every Every App app's server functions
+// live.
+const SERVER_FN_BASE = "/_serverFn";
 
 /**
  * Decode a path the way TanStack Start (1.168+) does before routing: all at
@@ -44,15 +43,12 @@ function decodePath(rawPathname: string): string {
 
 /**
  * Whether TanStack Start would route this path to its server-function
- * handler at `base`. Start decodes the path and resolves dot segments and
+ * handler at `/_serverFn`. Start decodes the path and resolves dot segments and
  * leading slashes before matching, so this does the same rather than
  * trusting the raw form (`/%5FserverFn/…` and `/x/%2e%2e/_serverFn/…` both
  * reach it).
  */
-export function isServerFnPath(
-  rawPathname: string,
-  base: string = DEFAULT_SERVER_FN_BASE,
-): boolean {
+export function isServerFnPath(rawPathname: string): boolean {
   const decoded = decodePath(rawPathname);
   let resolved: string;
   try {
@@ -62,7 +58,7 @@ export function isServerFnPath(
     resolved = decoded;
   }
   const path = resolved.toLowerCase();
-  const prefix = base.toLowerCase().replace(/\/+$/, "");
+  const prefix = SERVER_FN_BASE.toLowerCase();
   return path === prefix || path.startsWith(`${prefix}/`);
 }
 

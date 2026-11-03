@@ -74,12 +74,8 @@ const tools = defineTools(
   { instructions: "Never guess ids." },
 );
 
-function appWith(options: Parameters<typeof everyApp>[2]) {
-  return everyApp(
-    async () => Response.json({ handler: true }),
-    { id: "todo" },
-    options,
-  );
+function appWith(options: Parameters<typeof everyApp>[1]) {
+  return everyApp(async () => Response.json({ handler: true }), options);
 }
 
 let app: ReturnType<typeof appWith>;
@@ -90,7 +86,11 @@ beforeAll(() => {
 // The Worker's name, as everyAppWorker() deploys it: the token audience.
 const WORKER = "every-todo";
 const fetchApp = (request: Request, target = app) =>
-  target.fetch(request, { EVERYAPP_AUDIENCE: WORKER }, ctx);
+  target.fetch(
+    request,
+    { EVERYAPP_APP_ID: "todo", EVERYAPP_AUDIENCE: WORKER },
+    ctx,
+  );
 
 const subject = {
   sub: "user_1",

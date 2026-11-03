@@ -737,7 +737,7 @@ export type EveryAppDevEnv<M, TEntrypoint = string> = ResourceEnv<
     EVERYAPP_LINKED_DEV_NONCE?: TextBinding;
     EVERYAPP_IDENTITY_PUBLIC_KEYS: TextBinding;
     EVERYAPP_IDENTITY_ISSUER: TextBinding;
-    /** The stub dev gateway's organization (`dev-org`), so `withOrganization(env.EVERY_APP_ORG_ID, …)` works in development as deployed. */
+    /** The stub dev gateway's organization (`dev-org`), so code that reads `env.EVERY_APP_ORG_ID` works in development as deployed. */
     EVERY_APP_ORG_ID: TextBinding;
   } & { [K in DevGatewayKeys<M>]: SecretBinding };
 
@@ -1091,8 +1091,7 @@ export function everyAppWorker<
     env["EVERYAPP_IDENTITY_ISSUER"] = { type: "text", value: DEV_ISSUER };
     env["GATEWAY_URL"] = devGatewayUrl();
     // The stub gateway's organization, as the deploy's secret would be, so
-    // background work's withOrganization(env.EVERY_APP_ORG_ID, …) runs
-    // here too. Not a pin: under the dev opt-in everyApp() enforces none,
+    // code that reads env.EVERY_APP_ORG_ID runs here too. Not a pin: under the dev opt-in everyApp() enforces none,
     // so `everyapp dev --mode mirror`'s real organizations still open.
     env["EVERY_APP_ORG_ID"] = { type: "text", value: DEV_ORG_ID };
     addDevProviders(env, options.root);

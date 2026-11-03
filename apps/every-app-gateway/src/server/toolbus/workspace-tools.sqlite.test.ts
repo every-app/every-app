@@ -150,24 +150,18 @@ async function deploy(
     jsonSchema: { type: "object", properties: {}, additionalProperties: false },
     validate: (value) => ({ value: value as Record<string, never> }),
   };
-  const worker = everyApp(
-    async () => new Response(`${appSlug} page`),
-    {
-      id: appSlug,
-    },
-    {
-      publicKeys: [keys.publicKeyPem],
-      issuer: GATEWAY,
-      tools: defineTools({
-        ping: {
-          description: "Ping.",
-          risk: "read",
-          input,
-          handler: () => "pong",
-        },
-      }),
-    },
-  );
+  const worker = everyApp(async () => new Response(`${appSlug} page`), {
+    publicKeys: [keys.publicKeyPem],
+    issuer: GATEWAY,
+    tools: defineTools({
+      ping: {
+        description: "Ping.",
+        risk: "read",
+        input,
+        handler: () => "pong",
+      },
+    }),
+  });
   hoisted.env[`APP__${app.workerName}`] = {
     fetch: (request: Request) =>
       worker.fetch(request, { EVERYAPP_AUDIENCE: app.workerName }, {

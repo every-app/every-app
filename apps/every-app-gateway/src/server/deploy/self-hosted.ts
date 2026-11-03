@@ -489,8 +489,7 @@ async function installSelfHosted(input: {
         manifest &&
         (manifest.public?.length ||
           manifest.publicAssets?.length ||
-          manifest.bearerRoutes?.paths.length ||
-          manifest.mcp),
+          manifest.bearerRoutes?.paths.length),
     )
   )
     await syncBrowserAccess(cf, app.appSlug);

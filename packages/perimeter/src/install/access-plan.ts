@@ -31,9 +31,8 @@ import type {
 const MAX_OVERRIDES_PER_DESTINATION = 25;
 
 /**
- * MCP clients reach `/mcp` with a token of their own: on the Gateway, and
- * on an app host whose manifest sets `mcp` (the Gateway's ToolBus or the
- * app's own server answers there, after the perimeter checked the token).
+ * MCP clients reach the Gateway's `/mcp` with a token of their own (an app
+ * host serves no MCP: the Gateway's `/mcp` is the one connector).
  */
 export const MCP_PATHS: readonly string[] = ["/mcp", "/mcp/*"];
 
@@ -118,22 +117,19 @@ export function accessPathPattern(path: string): string | null {
 const overridesFor = (patterns: readonly string[]): AccessOverride[] =>
   patterns.map((path_pattern) => ({ path_pattern, behavior: "public" }));
 
-/** An app as the plan sees it: its host, its manifest's public and bearer routes, and whether the manifest sets `mcp`. */
+/** An app as the plan sees it: its host and its manifest's public and bearer routes. */
 export interface AppPublicSurface {
   appId: string;
   hostname: string;
   publicPaths: readonly string[];
   /** The manifest's `bearerRoutes.paths`: paths native apps call with a token, which take no cookie. */
   bearerPaths: readonly string[];
-  /** The stored manifest has `mcp: { by, why }`: its host serves `/mcp`, which MCP clients reach with a token. */
-  mcp: boolean;
 }
 
 /** Whether an app needs a destination of its own: something on its host is reached without a login. */
 const hasPublicSurface = (
-  app: Pick<AppPublicSurface, "publicPaths" | "bearerPaths" | "mcp">,
-): boolean =>
-  app.publicPaths.length > 0 || app.bearerPaths.length > 0 || app.mcp;
+  app: Pick<AppPublicSurface, "publicPaths" | "bearerPaths">,
+): boolean => app.publicPaths.length > 0 || app.bearerPaths.length > 0;
 
 /** A public or bearer route Access won't let through, and why. */
 export interface DroppedRoute {
@@ -146,21 +142,17 @@ export interface DroppedRoute {
 }
 
 /**
- * The destination for an app with a public surface: the MCP paths when its
- * manifest sets `mcp` (unless Managed OAuth makes AI apps use the
- * Gateway's `/mcp` through Access), then, when it has bearer routes, the
- * discovery document and those routes, then its public routes, each in
- * manifest order, each once, up to the limit. Bearer routes are bypassed
- * whatever Managed OAuth says: they take a Gateway token and no cookie.
+ * The destination for an app with a public surface: when it has bearer
+ * routes, the discovery document and those routes, then its public routes,
+ * each in manifest order, each once, up to the limit. Bearer routes are
+ * bypassed whatever Managed OAuth says: they take a Gateway token and no
+ * cookie.
  */
-export function appDestination(
-  app: AppPublicSurface,
-  { managedOAuth }: { managedOAuth: boolean },
-): {
+export function appDestination(app: AppPublicSurface): {
   destination: AccessPublicDestination;
   dropped: DroppedRoute[];
 } {
-  const patterns = app.mcp && !managedOAuth ? [...MCP_PATHS] : [];
+  const patterns: string[] = [];
   if (app.bearerPaths.length > 0)
     patterns.push(PROTECTED_RESOURCE_METADATA_PATH);
   const dropped: DroppedRoute[] = [];
@@ -236,7 +228,6 @@ function underBase(hostname: string, base: string): boolean {
 export function appsDestinations(
   appBaseDomain: string,
   apps: readonly AppPublicSurface[],
-  { managedOAuth = false }: { managedOAuth?: boolean } = {},
 ): {
   destinations: AccessPublicDestination[];
   dropped: DroppedRoute[];
@@ -255,7 +246,7 @@ export function appsDestinations(
       outsideBase.push(app.appId);
       continue;
     }
-    const planned = appDestination(app, { managedOAuth });
+    const planned = appDestination(app);
     dropped.push(...planned.dropped);
     if (planned.destination.overrides.length === 0) continue;
     destinations.push(planned.destination);
@@ -452,9 +443,7 @@ export function accessDrift({
   const gatewayHost = scope.gatewayHost.toLowerCase();
   const wildcard = appsWildcard(scope.appBaseDomain);
   const managedOAuth = managedOAuthOn(found.gateway);
-  const plan = appsDestinations(scope.appBaseDomain, surfaces, {
-    managedOAuth,
-  });
+  const plan = appsDestinations(scope.appBaseDomain, surfaces);
   const combined =
     found.gateway !== null && found.gateway.id === found.apps?.id;
   const ours = (application: AccessApplication) =>

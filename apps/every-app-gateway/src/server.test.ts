@@ -26,7 +26,6 @@ const mocks = vi.hoisted(() => ({
   findByHostname: vi.fn(),
   authenticate: vi.fn(),
   controlPlaneFetch: vi.fn(),
-  serveAppHostMcp: vi.fn(),
   runMcpMaintenance: vi.fn(),
   sweep: vi.fn(),
   activateApp: vi.fn(),
@@ -60,10 +59,6 @@ vi.mock("./perimeter/drizzleAppRegistry", () => ({
   },
 }));
 
-vi.mock("./server/toolbus/app-host-mcp", () => ({
-  serveAppHostMcp: mocks.serveAppHostMcp,
-}));
-
 vi.mock("./server/app-activation", () => ({
   activateApp: mocks.activateApp,
   activateDeployingApps: mocks.activateDeployingApps,
@@ -93,15 +88,6 @@ const TODO: RegisteredApp = {
   organizationId: "org-1",
   status: "active",
   manifest: validateManifest({ id: "todo" }),
-};
-
-/** The same app, its manifest asking the gateway to serve /mcp on its host. */
-const TODO_MCP: RegisteredApp = {
-  ...TODO,
-  manifest: validateManifest({
-    id: "todo",
-    mcp: { by: "gateway", why: "Scripts drive this app alone." },
-  }),
 };
 
 /** A signing key for the tests that proxy to an app (the identity is minted). */
@@ -956,8 +942,9 @@ describe("gateway host (control plane)", () => {
     expect(response.status).toBe(401);
   });
 
-  it("serves an app host's /mcp from the ToolBus for a personal token, where the manifest opts in", async () => {
-    mocks.findByHostname.mockResolvedValue(TODO_MCP);
+  it("hands an app host's /mcp to the app like any private route", async () => {
+    // The gateway's own /mcp is the one connector; an app host serves none.
+    mocks.findByHostname.mockResolvedValue(TODO);
     mocks.authenticate.mockResolvedValue({
       sub: "user-1",
       email: "user@example.com",
@@ -970,33 +957,6 @@ describe("gateway host (control plane)", () => {
         scopes: ["*"],
       },
     });
-    mocks.serveAppHostMcp.mockResolvedValue(
-      Response.json({ jsonrpc: "2.0", id: 1, result: { tools: [] } }),
-    );
-
-    const response = await server.fetch(
-      new Request("https://todo.example.com/mcp", {
-        method: "POST",
-        headers: {
-          host: "todo.example.com",
-          authorization: "Bearer epat_x",
-          "content-type": "application/json",
-        },
-        body: "{}",
-      }),
-    );
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ result: { tools: [] } });
-    expect(mocks.serveAppHostMcp).toHaveBeenCalledWith(
-      expect.objectContaining({ app: TODO_MCP }),
-    );
-    expectSecurityHeaders(response);
-    mocks.serveAppHostMcp.mockReset();
-
-    // Without the field, the ToolBus is never asked: /mcp is the app's.
-    clearHostnameCacheForTests();
-    mocks.findByHostname.mockResolvedValue(TODO);
     const appFetch = vi.fn(
       async () => new Response("not found", { status: 404 }),
     );
@@ -1014,7 +974,6 @@ describe("gateway host (control plane)", () => {
       }),
     );
     expect(plain.status).toBe(404);
-    expect(mocks.serveAppHostMcp).not.toHaveBeenCalled();
     expect(appFetch).toHaveBeenCalledOnce();
   });
 

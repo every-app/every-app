@@ -152,7 +152,6 @@ async function providerApp(
 ) {
   const app = everyApp<ProviderAppEnv>(
     async () => new Response("Not found", { status: 404 }),
-    { id: route.appSlug },
     {
       publicKeys: [await publicKeyPem()],
       issuer: issuer(),

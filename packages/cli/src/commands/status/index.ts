@@ -74,8 +74,7 @@ interface StatusFlags {
  * still delivers it, what each app's manifest needs set and whether it is
  * (the Gateway Worker's secret names and each app Worker's, which it
  * records on the app's row for the gateway), what each app's deployed
- * manifest opens without a sign-in (its public routes, and `/mcp` on its
- * host where the manifest asks for it), each published hostname's
+ * manifest opens without a sign-in (its public routes), each published hostname's
  * certificate (Cloudflare's certificate packs), whether Cloudflare Access
  * is in front (the Gateway Worker's settings, by name), any deploy in
  * progress, what an app whose first deploy stopped still needs for its
@@ -254,7 +253,6 @@ export async function reportStatus({
       declaresInbound: app.declaresInbound,
     },
     publicRoutes: app.publicRoutes,
-    mcp: app.mcp,
     setup: settings.setups.get(app.appSlug) ?? null,
   }));
   const readCertificates = "error" in certificates ? null : certificates.value;

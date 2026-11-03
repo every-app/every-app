@@ -17,9 +17,8 @@
  * event sink's deliveries (`/__everyapp/events`) for `events: { on }`.
  *
  * Around the handler and around each tool call it opens the request
- * context (context.ts): `currentUser()` reads the user anywhere below, and
- * every call back to the Gateway is attributed to the request without a
- * `for`. A deployed Worker is pinned to its organization
+ * context (context.ts): every call back to the Gateway is attributed to
+ * the request without a `for`. A deployed Worker is pinned to its organization
  * (`EVERY_APP_ORG_ID`), and an identity for any other is refused on both
  * paths. The response leaves without `Set-Cookie`: the perimeter strips
  * every `Cookie` before a request reaches the app, so a cookie the app's
@@ -52,7 +51,7 @@ import {
   type AppEventsOptions,
 } from "./eventsEndpoint.js";
 
-export { ConfigurationError, IdentityError, isAdmin, isAgentCall };
+export { ConfigurationError, isAdmin, isAgentCall };
 export type { EveryAppUser, IdentityResult, OrgRole };
 
 /**
@@ -62,11 +61,6 @@ export type { EveryAppUser, IdentityResult, OrgRole };
  * `fetch` themselves pass a stub cast to it.
  */
 export type ExecutionContextLike = ExecutionContext;
-
-export interface EveryAppManifestLike {
-  id: string;
-  [key: string]: unknown;
-}
 
 export interface EveryAppOptions<TEnv = Record<string, unknown>> {
   /** Optional expected issuer (gateway URL). Defaults to env.EVERYAPP_IDENTITY_ISSUER when set. */
@@ -115,8 +109,6 @@ interface EveryAppExport<TEnv, TCtx extends ExecutionContextLike> {
 }
 
 interface VerificationConfig {
-  /** Expected audience when it can't come from env (legacy manifest argument). */
-  manifestAppId?: string;
   issuer?: string;
   keysEnvVar: string;
   publicKeys?: string[];
@@ -132,12 +124,8 @@ function envValue(env: unknown, key: string): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function configFrom(
-  manifest: EveryAppManifestLike | undefined,
-  options: EveryAppOptions<never> = {},
-): VerificationConfig {
+function configFrom(options: EveryAppOptions<never>): VerificationConfig {
   return {
-    manifestAppId: manifest?.id,
     issuer: options.issuer,
     keysEnvVar: options.keysEnvVar ?? PUBLIC_KEYS_ENV,
     publicKeys: options.publicKeys,
@@ -146,21 +134,9 @@ function configFrom(
   };
 }
 
-/**
- * The app id: EVERYAPP_APP_ID, or a manifest passed to everyApp() for
- * Workers without it; the two must agree when both are present.
- */
-function appIdFor(
-  env: unknown,
-  config: VerificationConfig,
-): string | undefined {
-  const fromEnv = envValue(env, APP_ID_ENV);
-  if (fromEnv && config.manifestAppId && fromEnv !== config.manifestAppId) {
-    throw new ConfigurationError(
-      `${APP_ID_ENV} ("${fromEnv}") does not match the manifest id ("${config.manifestAppId}").`,
-    );
-  }
-  return fromEnv ?? config.manifestAppId;
+/** The app id, from EVERYAPP_APP_ID (which `everyAppWorker()` sets). */
+function appIdFor(env: unknown): string | undefined {
+  return envValue(env, APP_ID_ENV);
 }
 
 function devIdentitiesAllowed(env: unknown, config: VerificationConfig) {
@@ -180,7 +156,7 @@ function devIdentitiesAllowed(env: unknown, config: VerificationConfig) {
  * app id stand in when EVERYAPP_AUDIENCE is unset.
  */
 function audienceFor(env: unknown, config: VerificationConfig): string {
-  const appId = appIdFor(env, config);
+  const appId = appIdFor(env);
   const audience = envValue(env, AUDIENCE_ENV);
   if (audience) return audience;
   if (appId && devIdentitiesAllowed(env, config)) return appId;
@@ -285,7 +261,6 @@ const servedRequests = new WeakMap<EveryAppUser, string>();
  * (a framework that hands out headers alone needs no made-up Request).
  * Answers from the request context or the per-request cache first, then
  * verifies the identity headers from the audience and public keys in env.
- * Inside a handler `everyApp()` serves, `currentUser()` is the shorter way.
  */
 export async function getEveryAppUser(
   request: Request | Headers,
@@ -328,20 +303,6 @@ export async function requireEveryAppUser(
 }
 
 /**
- * The user of the request being served (`currentUser()`), or throw the
- * same 401 JSON Response as `requireEveryAppUser()` on a public route.
- * Outside a request (`withOrganization()` work, a handler not under
- * `everyApp()`) it throws `RequestContextError`, as `currentUser()` does.
- */
-export function requireCurrentUser(): EveryAppUser {
-  const user = currentUser();
-  if (!user) {
-    throw unauthorized("this request does not have an authenticated user");
-  }
-  return user;
-}
-
-/**
  * `response` without `Set-Cookie`: the perimeter strips every `Cookie`
  * before a request reaches the app, so no cookie the app sets ever comes
  * back, and one named like the Gateway's session cookie locks the person
@@ -369,51 +330,15 @@ export function hasScope(user: EveryAppUser, scope: string): boolean {
   return user.scopes.includes("*") || user.scopes.includes(scope);
 }
 
-function isManifest(value: unknown): value is EveryAppManifestLike {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as { id?: unknown }).id === "string"
-  );
-}
-
 /** Wrap a Worker fetch handler with Every App identity verification. */
 export function everyApp<
   TEnv = Record<string, unknown>,
   TCtx extends ExecutionContextLike = ExecutionContext,
 >(
   handler: EveryAppHandler<TEnv, TCtx>,
-  options?: EveryAppOptions<TEnv>,
-): EveryAppExport<TEnv, TCtx>;
-/**
- * @deprecated Drop the manifest: the app id now comes from
- *   `env.EVERYAPP_APP_ID` and the audience from `env.EVERYAPP_AUDIENCE`.
- *   When passed, it must match the app id.
- */
-export function everyApp<
-  TEnv = Record<string, unknown>,
-  TCtx extends ExecutionContextLike = ExecutionContext,
->(
-  handler: EveryAppHandler<TEnv, TCtx>,
-  manifest: EveryAppManifestLike | undefined,
-  options?: EveryAppOptions<TEnv>,
-): EveryAppExport<TEnv, TCtx>;
-export function everyApp<
-  TEnv = Record<string, unknown>,
-  TCtx extends ExecutionContextLike = ExecutionContext,
->(
-  handler: EveryAppHandler<TEnv, TCtx>,
-  manifestOrOptions?: EveryAppManifestLike | EveryAppOptions<TEnv>,
-  legacyOptions: EveryAppOptions<TEnv> = {},
+  options: EveryAppOptions<TEnv> = {},
 ): EveryAppExport<TEnv, TCtx> {
-  const manifest = isManifest(manifestOrOptions)
-    ? manifestOrOptions
-    : undefined;
-  const options =
-    manifest || manifestOrOptions === undefined
-      ? legacyOptions
-      : (manifestOrOptions as EveryAppOptions<TEnv>);
-  const config = configFrom(manifest, options as EveryAppOptions<never>);
+  const config = configFrom(options as EveryAppOptions<never>);
 
   return {
     async fetch(request: Request, env: TEnv, ctx: TCtx) {
@@ -421,7 +346,7 @@ export function everyApp<
       let appId: string;
       try {
         audience = audienceFor(env, config);
-        appId = appIdFor(env, config) ?? audience;
+        appId = appIdFor(env) ?? audience;
       } catch (err) {
         if (err instanceof ConfigurationError) {
           console.error(err);

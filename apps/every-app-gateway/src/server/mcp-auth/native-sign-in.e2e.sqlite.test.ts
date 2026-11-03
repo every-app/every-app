@@ -96,7 +96,7 @@ import { AppAccessService } from "@/server/services/AppAccessService";
 import { AppService } from "@/server/services/AppService";
 import { McpConnectionService } from "@/server/services/McpConnectionService";
 import { MembershipService } from "@/server/services/MembershipService";
-import { resetAppHostMcpForTests } from "@/server/toolbus/app-host-mcp";
+import { resetToolBusForTests } from "@/server/toolbus/runtime";
 import { clearCatalogSyncClaimsForTests } from "@/server/toolbus/catalog-sync";
 import { createKvFake } from "@/test/kv-fake";
 import { deployLiveApp } from "@/test/registry";
@@ -408,7 +408,6 @@ function app(id: string, publicKeyPem: string) {
       }
       return new Response(`${id} page`);
     },
-    { id },
     {
       publicKeys: [publicKeyPem],
       issuer: GATEWAY,
@@ -477,7 +476,7 @@ beforeEach(async () => {
   });
   hoisted.sessions.clear();
   hoisted.background.length = 0;
-  resetAppHostMcpForTests();
+  resetToolBusForTests();
   resetRegistrationLimitsForTests();
   clearCatalogSyncClaimsForTests();
   clearHostnameCacheForTests();

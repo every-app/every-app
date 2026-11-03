@@ -5,27 +5,18 @@
  */
 export {
   ConfigurationError,
-  IdentityError,
   everyApp,
   getEveryAppUser,
   hasScope,
   isAdmin,
   isAgentCall,
-  requireCurrentUser,
   requireEveryAppUser,
   type EveryAppOptions,
-  type EveryAppManifestLike,
   type EveryAppHandler,
   type EveryAppUser,
   type IdentityResult,
   type OrgRole,
 } from "./everyApp.js";
-export {
-  OrganizationMismatchError,
-  RequestContextError,
-  currentUser,
-  withOrganization,
-} from "./context.js";
 export { AttributionError, type GatewayCallFor } from "./attribution.js";
 export { gatewayUrl } from "./gatewayUrl.js";
 export type { EveryAppEnv } from "./env.js";
@@ -64,11 +55,6 @@ export {
   type NodeServerHandlerOptions,
 } from "./nodeServer.js";
 export { sendEmail, type SendEmailOptions } from "./sendEmail.js";
-export {
-  gatewayEmailBinding,
-  type GatewayEmailBindingMessage,
-  type GatewayEmailBindingOptions,
-} from "./emailBinding.js";
 export { listMembers, type ListMembersOptions } from "./listMembers.js";
 export { emit, type EmitOptions } from "./emit.js";
 export {
@@ -111,11 +97,3 @@ export {
   type ToolSet,
 } from "./tools.js";
 export type { ToolRisk } from "../internal/index.js";
-export {
-  fromMcpTools,
-  type FromMcpToolsOptions,
-  type McpToolAnnotationsLike,
-  type McpToolLike,
-  type McpToolResultLike,
-  type McpToolSchemaLike,
-} from "./fromMcpTools.js";

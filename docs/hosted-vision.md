@@ -92,8 +92,8 @@ check it. Line numbers drift; symbol names less.
      `AUDIENCE_ENV` and the minters in `packages/sdk/src/internal/protocol.ts`; `audienceFor()` in
      `packages/sdk/src/server/everyApp.ts`; `verifyForwardedIdentity()` in
      `apps/every-app-gateway/src/server/app-gateway-entrypoint.ts` (`audience: props.workerName`);
-     the ToolBus mints in `toolbus/catalog-sync.ts`, `toolbus/gateway-mcp.ts` and
-     `toolbus/app-host-mcp.ts` (all `workerName`).
+     the ToolBus mints in `toolbus/catalog-sync.ts` and `toolbus/gateway-mcp.ts`
+     (both `workerName`).
    - Check:
      `grep -rn "audience:" apps/every-app-gateway/src packages/perimeter/src --include='*.ts' | grep -v test`
      shows only `workerName` and `providerAudience(…)` sources, apart from the Cloudflare Access

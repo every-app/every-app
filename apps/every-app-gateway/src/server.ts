@@ -20,12 +20,8 @@
  *    uploaded and follows the version it runs (server/app-activation.ts),
  *    authenticates the Better Auth session, mints the identity JWT, and
  *    proxies to the app's private worker over its service binding. App
- *    hosts reach this Worker as its Workers Custom Domains.
- *    Where an app's manifest says `mcp: { by: "gateway" }`, its host's
- *    `/mcp` is served by the ToolBus from the app's tool catalog instead
- *    (server/toolbus/app-host-mcp.ts), loaded with the first `/mcp`
- *    request; without the field (every launch app) the host serves no MCP
- *    and the gateway's own `/mcp` is the one connector;
+ *    hosts reach this Worker as its Workers Custom Domains. An app host
+ *    serves no MCP: the gateway's own `/mcp` is the one connector;
  *  - on a hosted gateway with a third-party domain, a host one label below
  *    it → the same proxy for a third-party (dispatch) app, authenticated by
  *    the host's own session (or a personal access token), never the Better
@@ -152,17 +148,6 @@ export async function resolveAppByHostname(
 
   return app;
 }
-
-/**
- * An app host's `/mcp`, served by the ToolBus from the app's tool catalog
- * where the manifest asks for it (`mcp: { by: "gateway" }`; the perimeter
- * calls this hook for no other app). The ToolBus loads with the first
- * `/mcp` request on an isolate; a page request on an app host never
- * evaluates it.
- */
-const interceptAppHostMcp: NonNullable<GatewayDeps["interceptMcp"]> = async (
-  input,
-) => (await import("./server/toolbus/app-host-mcp")).serveAppHostMcp(input);
 
 /** The gateway's MCP connector and OAuth paths, served before TanStack. */
 function isMcpAuthPath(pathname: string): boolean {
@@ -391,7 +376,6 @@ async function serveThirdPartyHost(
       key,
       tokens: createProdAuthenticator(platformPolicy(env)),
     }),
-    interceptMcp: interceptAppHostMcp,
     thirdParty: {
       startSession: (navigation) =>
         startHostSession(navigation, host, env.GATEWAY_URL),
@@ -521,7 +505,6 @@ export default {
         ...deps,
         authenticator: createProdAuthenticator(platformPolicy(env)),
         loginUrl: `${env.GATEWAY_URL}/sign-in`,
-        interceptMcp: interceptAppHostMcp,
         // "Sign in with Every App": a first-party host names the gateway's
         // OAuth server in its protected-resource metadata while OAuth is
         // on (the same switch MCP clients are under; no new one).

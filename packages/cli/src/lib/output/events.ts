@@ -25,7 +25,7 @@
  */
 import chalk from "chalk";
 import cliCursor from "cli-cursor";
-import { listPublicRoutes, type McpSummary, type PublicRouteSummary } from "@/lib/app/publicRoutes";
+import { listPublicRoutes, type PublicRouteSummary } from "@/lib/app/publicRoutes";
 import { ReportCode } from "@/lib/errors";
 import { GatewayChange } from "@/lib/gateway/change";
 import { onInterruptNotice } from "@/lib/interrupt";
@@ -550,17 +550,15 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       };
     },
     // Who can open an app that has never been live, what its manifest
-    // opens to anyone on the internet, whether its host answers /mcp, and
-    // the OpenAI paths its `ai.routes` opens (every deploy): facts for the end.
+    // opens to anyone on the internet, and the OpenAI paths its `ai.routes`
+    // opens (every deploy): facts for the end.
     "app.register": (event) => {
       const data = event.data ?? {};
       if (event.status !== "ok") return null;
       const routes = publicRoutesIn(data["publicRoutes"]);
-      const mcp = mcpIn(data["mcp"]);
       const aiRoutes = Array.isArray(data["aiRoutes"]) ? data["aiRoutes"].filter((route) => typeof route === "string") : [];
       const open: Shown[] = [
         ...(routes.length > 0 ? [{ fact: { label: "Public", value: publicValue(routes) } }] : []),
-        ...(mcp ? [{ fact: { label: "MCP", value: `Serves /mcp on its own host (${mcp.by}): ${mcp.why}` } }] : []),
         ...(aiRoutes.length > 0
           ? [{ fact: { label: "AI routes", value: `OpenAI paths beyond inference, on the Gateway's OpenAI key: ${aiRoutes.join(", ")}` } }]
           : []),
@@ -1043,13 +1041,6 @@ function publicRoutesIn(value: unknown): PublicRouteSummary[] {
  * The Public fact: what the manifest opens to anyone on the internet,
  * `GET /hooks/*, POST /collect`, the first few, then how many more.
  */
-/** A deploy's `data.mcp`: `{ by, why }`, or null. */
-function mcpIn(value: unknown): McpSummary | null {
-  if (!value || typeof value !== "object") return null;
-  const { by, why } = value as { by?: unknown; why?: unknown };
-  return (by === "gateway" || by === "app") && typeof why === "string" ? { by, why } : null;
-}
-
 function publicValue(routes: readonly PublicRouteSummary[]): string {
   const { shown, more } = listPublicRoutes(routes);
   // Where the rest are listed: the manifest fields this app uses.

@@ -66,7 +66,10 @@ export interface DevGatewayConfig {
   authenticator?: SessionAuthenticator;
   /** Seam override for tests; defaults to real service bindings. */
   fetcherFor?(env: Record<string, unknown>, app: RegisteredApp): AppFetcher;
-  /** Serve `<app>.localhost/mcp` from a local ToolBus (see GatewayDeps). */
+  /**
+   * Serve `<app>.localhost/mcp` from a local ToolBus (see GatewayDeps): that
+   * URL is how an app's tools are tried before it is deployed.
+   */
   interceptMcp?(input: McpInterceptInput): Promise<Response | null>;
 }
 
@@ -100,23 +103,7 @@ export function devAuthenticator(): SessionAuthenticator {
  * Host label so each worktree's base host Just Works.
  */
 export function createDevGatewayHandler(config: DevGatewayConfig) {
-  // `everyapp dev` serves `<app>.localhost/mcp` from the local ToolBus
-  // whatever the manifest says: dev is local only, and that URL is how an
-  // app's tools are tried before it is deployed. An app that runs its own
-  // MCP server (`by: "app"`) keeps it here too.
-  const registry = new InMemoryAppRegistry(
-    config.apps.map((app) =>
-      app.manifest.mcp
-        ? app
-        : {
-            ...app,
-            manifest: {
-              ...app.manifest,
-              mcp: { by: "gateway", why: "everyapp dev serves it locally." },
-            },
-          },
-    ),
-  );
+  const registry = new InMemoryAppRegistry(config.apps);
 
   const deps: GatewayDeps = {
     env: config.env,

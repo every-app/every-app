@@ -4,9 +4,7 @@ An app never speaks MCP. It describes its tools with `defineTools()` in
 src/tools.ts and passes them to `everyApp(handler, { tools })`; the Gateway
 snapshots that catalog and serves AI clients at `https://<gateway>/mcp` (every
 app the caller can use, tools named `<app-id>_<tool>`). An app's own host
-serves `https://<app-host>/mcp` (that app alone) only when everyapp.config.ts
-says `mcp: { by: "gateway", why: "..." }`; leave it out (the default), and
-point clients at the Gateway. Never add an MCP server, an /mcp route, a login
+serves no MCP: point clients at the Gateway. Never add an MCP server, an /mcp route, a login
 or a token check to an app. Full reference: https://everyapp.com/docs/agent/mcp.md (in a
 checkout landing-page/content/agent/mcp.md); the person's steps: https://everyapp.com/docs/connect-ai.
 
@@ -291,9 +289,8 @@ app sees that app alone):
 claude mcp add --transport http everyapp https://<gateway>/mcp --header "Authorization: Bearer $EVERYAPP_TOKEN"
 ```
 
-`https://<app-host>/mcp` takes the same header only where that app's manifest
-sets `mcp: { by: "gateway", why }`; on any other app host the path is the app's
-own private route and an MCP-only token gets 403 `token_scope` everywhere.
+On an app host `/mcp` is the app's own private route, and an MCP-only token
+gets 403 `token_scope` everywhere there.
 
 Disconnecting: **AI connections** in the account menu at the bottom of the
 sidebar (`/settings/connections`) lists each OAuth connection; revoking one
@@ -331,15 +328,13 @@ of a revoked connection); its body depends on the surface. On
 `WWW-Authenticate: Bearer realm="OAuth", resource_metadata="…/.well-known/oauth-protected-resource/mcp", scope="mcp:read mcp:write"`
 (`error="invalid_token"` added when a token was sent); a revoked connection's
 token gets `{"error":"invalid_token","error_description":"This connection was revoked or lost its access. Connect again."}`.
-On `https://<app-host>/mcp` (where the manifest sets `mcp`), and on the Gateway with OAuth off:
+On the Gateway with OAuth off:
 `{"error":"unauthenticated"}` with `WWW-Authenticate: Bearer realm="every-app"`
-(`error="invalid_token"` when a bearer was sent; the app host adds
-`error_description="Use a personal access token here, or connect <gateway>/mcp"`).
-An app host without `mcp` in its manifest answers `/mcp` as the app does (usually 404),
-and one with `by: "gateway"` but no catalog to serve answers 503 `{"error":"mcp_unavailable"}`.
+(`error="invalid_token"` when a bearer was sent).
+An app host answers `/mcp` as the app does (usually 404).
 403 `{"error":"forbidden","reason":…}` means the credential verified and was
 refused: `token_scope` (a token that is neither read only nor full, an
-MCP-only token on a page route, or any route of a host without `mcp`), `no_app_access` (app host: the person cannot
+MCP-only token on any route of an app host), `no_app_access` (app host: the person cannot
 open this app), `not_connected`, `organization_unresolved`, `account_deactivated`, `organization_suspended`.
 OAuth off: `MCP_OAUTH_ENABLED` is `false`, or `GATEWAY_URL` is neither https
 nor http on exactly localhost or 127.x: `/oauth/*` and the discovery documents
@@ -353,7 +348,7 @@ self-hosted Gateway, then `429 rate_limited` (wait, or use a CIMD client); past
 60 requests a minute per address on `/oauth/register` or `/oauth/token`, 429 `Too many attempts.`
 Behind Cloudflare Access: `pnpm everyapp access on` lets `/mcp`, `/mcp/*`,
 `/oauth/token`, `/oauth/register`, `/.well-known/*` and `/health` through on the Gateway
-host, and `/mcp` on an app host only where its manifest sets `mcp`, so OAuth and tokens keep working; the consent
+host, so OAuth and tokens keep working; the consent
 page stays behind Access. With Managed OAuth on the Gateway's Access application
 instead, Access is the OAuth server: the person must have signed in to the Gateway
 in a browser once (else `403 not_connected`), gets read & write to every app, no connection row.
@@ -362,7 +357,7 @@ in a browser once (else `403 not_connected`), gets read & write to every app, no
 
 - packages/sdk/src/server/tools.ts, toolsEndpoint.ts, everyApp.ts; packages/sdk/src/internal/tools.ts, protocol.ts
 - packages/toolbus/src/server.ts, http.ts, builtins.ts, policy.ts, dev/index.ts
-- apps/every-app-gateway/src/server/toolbus/catalog-sync.ts, gateway-mcp.ts, app-host-mcp.ts; src/server/app-activation.ts, deploy/run.ts; src/server/mcp-auth/routes.ts, config.ts, validate.ts, consent.ts, registration-limit.ts
+- apps/every-app-gateway/src/server/toolbus/catalog-sync.ts, gateway-mcp.ts; src/server/app-activation.ts, deploy/run.ts; src/server/mcp-auth/routes.ts, config.ts, validate.ts, consent.ts, registration-limit.ts
 - apps/every-app-gateway/src/routes/_app/admin/tokens.tsx, settings/connections.tsx; src/client/components/Sidebar.tsx, oauth/ConsentForm.tsx, admin/CreateUserTokenModal.tsx
 - packages/perimeter/src/gateway.ts; packages/cli/src/commands/dev/devAppGateway.ts, ready.ts; packages/cli/src/commands/deploy/deployApp.ts; packages/cli/src/lib/app/skill.ts
 - starter/src/tools.ts, entry.worker.ts, server/todos.ts, README.md; docs/runbooks/mcp-oauth.md; landing-page/content/agent/mcp.md; landing-page/content/docs/connect-ai.mdx

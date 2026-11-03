@@ -45,15 +45,6 @@ const TODO: RegisteredApp = {
   }),
 };
 
-/** The same app, its manifest asking the gateway to serve /mcp on its host. */
-const TODO_MCP: RegisteredApp = {
-  ...TODO,
-  manifest: validateManifest({
-    ...TODO.manifest,
-    mcp: { by: "gateway", why: "Scripts drive this app alone." },
-  }),
-};
-
 const SESSION: AuthenticatedSession = {
   sub: "user_1",
   email: "a@b.com",
@@ -196,7 +187,7 @@ describe("handleGatewayRequest", () => {
         },
       }),
       deps({
-        registry: new InMemoryAppRegistry([TODO_MCP]),
+        registry: new InMemoryAppRegistry([TODO]),
         authenticator: {
           sessionCookieNames: [],
           authenticate: async () => ({ ...SESSION, orgId: "org_2" }),
@@ -1915,23 +1906,6 @@ describe("server-function guard", () => {
     }
   });
 
-  it("guards the server-function base an app declares in its manifest", async () => {
-    const app = {
-      ...TODO,
-      manifest: validateManifest({
-        id: "todo",
-        serverFnBase: "/app/_serverFn",
-      }),
-    };
-    const { res, fetcher } = await call(
-      "/app/_serverFn/abc123",
-      { "sec-fetch-site": "cross-site" },
-      { app },
-    );
-    expect(res.status).toBe(403);
-    expect(fetcher).not.toHaveBeenCalled();
-  });
-
   it("leaves other paths alone", async () => {
     const { res } = await call("/tasks", {
       "sec-fetch-mode": "navigate",
@@ -1940,7 +1914,7 @@ describe("server-function guard", () => {
     expect(res.status).toBe(200);
   });
 
-  it("can be turned off per app in the manifest", async () => {
+  it("stays on for a stored manifest that still says serverFnGuard: false", async () => {
     const { res } = await call(
       SERVER_FN,
       { "sec-fetch-mode": "navigate", "sec-fetch-site": "same-origin" },
@@ -1951,7 +1925,7 @@ describe("server-function guard", () => {
         },
       },
     );
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
   });
 });
 
@@ -2183,10 +2157,10 @@ describe("ToolBus /mcp interception", () => {
     body: "{}",
   } satisfies RequestInit;
 
-  /** The caller holds a personal token; the app's manifest opts in. */
+  /** The caller holds a personal token. */
   function patDeps(over: Partial<GatewayDeps> = {}): GatewayDeps {
     return deps({
-      registry: new InMemoryAppRegistry([TODO_MCP]),
+      registry: new InMemoryAppRegistry([TODO]),
       authenticator: {
         sessionCookieNames: [],
         authenticate: async () => PAT_SESSION,
@@ -2211,7 +2185,7 @@ describe("ToolBus /mcp interception", () => {
     expect(interceptMcp).toHaveBeenCalledOnce();
     expect(interceptMcp).toHaveBeenCalledWith({
       request: expect.any(Request),
-      app: TODO_MCP,
+      app: TODO,
       session: PAT_SESSION,
     });
     expect(fetcher).not.toHaveBeenCalled();
@@ -2219,34 +2193,30 @@ describe("ToolBus /mcp interception", () => {
 
   it("answers 503 mcp_unavailable when the ToolBus declines (no catalog), never the app", async () => {
     const fetcher = vi.fn();
-    for (const interceptMcp of [async () => null, undefined]) {
-      const res = await handleGatewayRequest(
-        req("/mcp", MCP_POST),
-        patDeps({ interceptMcp, fetcherFor: () => ({ fetch: fetcher }) }),
-      );
-      expect(res.status).toBe(503);
-      await expect(res.json()).resolves.toEqual({
-        error: "mcp_unavailable",
-        app: "todo",
-      });
-      expectSecurityHeaders(res);
-    }
+    const res = await handleGatewayRequest(
+      req("/mcp", MCP_POST),
+      patDeps({
+        interceptMcp: async () => null,
+        fetcherFor: () => ({ fetch: fetcher }),
+      }),
+    );
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toEqual({
+      error: "mcp_unavailable",
+      app: "todo",
+    });
+    expectSecurityHeaders(res);
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("never runs for an app whose manifest has no mcp: /mcp is a private route like any other", async () => {
-    const interceptMcp = vi.fn(async () => new Response("served"));
-    const res = await handleGatewayRequest(
-      req("/mcp", MCP_POST),
-      patDeps({ interceptMcp, registry: new InMemoryAppRegistry([TODO]) }),
-    );
+  it("without the hook (the deployed Gateway), /mcp is a private route like any other", async () => {
+    const res = await handleGatewayRequest(req("/mcp", MCP_POST), patDeps());
     expect(res.status).toBe(200);
     const body = (await res.json()) as { identity: string; url: string };
     expect(body.url).toBe("https://todo.example.com/mcp");
     const pub = await importSPKI(keys.publicKeyPem, IDENTITY_ALG);
     const { payload } = await jwtVerify(body.identity, pub);
     expect(payload.chan).toBe("api");
-    expect(interceptMcp).not.toHaveBeenCalled();
   });
 
   it("challenges and refuses before the ToolBus ever runs", async () => {
@@ -2255,7 +2225,7 @@ describe("ToolBus /mcp interception", () => {
       req("/mcp", { method: "POST" }),
       deps({
         interceptMcp,
-        registry: new InMemoryAppRegistry([TODO_MCP]),
+        registry: new InMemoryAppRegistry([TODO]),
         authenticator: {
           sessionCookieNames: [],
           authenticate: async () => null,
@@ -2286,7 +2256,7 @@ describe("ToolBus /mcp interception", () => {
         method: "POST",
         headers: { cookie: "session=abc", origin: "https://evil.example" },
       }),
-      deps({ interceptMcp, registry: new InMemoryAppRegistry([TODO_MCP]) }),
+      deps({ interceptMcp, registry: new InMemoryAppRegistry([TODO]) }),
     );
     expect(crossSiteCookie.status).toBe(403);
     expect(interceptMcp).not.toHaveBeenCalled();
@@ -2299,7 +2269,7 @@ describe("ToolBus /mcp interception", () => {
         method: "POST",
         headers: { cookie: "session=abc", origin: "https://todo.example.com" },
       }),
-      deps({ interceptMcp, registry: new InMemoryAppRegistry([TODO_MCP]) }),
+      deps({ interceptMcp, registry: new InMemoryAppRegistry([TODO]) }),
     );
     expect(res.status).toBe(200);
     expect(interceptMcp).toHaveBeenCalledWith(
@@ -2307,35 +2277,25 @@ describe("ToolBus /mcp interception", () => {
     );
   });
 
-  it("leaves /mcp to apps that keep MCP (by: app, with the identity) or declare it public, and other paths alone", async () => {
+  it("leaves a /mcp the manifest declares public to the app, and other paths alone", async () => {
     const interceptMcp = vi.fn(async () => new Response("served"));
-    const ownMcp: RegisteredApp = {
-      ...TODO,
-      manifest: validateManifest({
-        id: "todo",
-        mcp: { by: "app", why: "Runs its own MCP server." },
-      }),
-    };
     const publicMcp: RegisteredApp = {
       ...TODO,
       manifest: validateManifest({
         id: "todo",
         public: [{ path: "/mcp", methods: ["POST"] }],
-        mcp: { by: "gateway", why: "Contradicted by the public route." },
       }),
     };
-    for (const app of [ownMcp, publicMcp]) {
-      const res = await handleGatewayRequest(
-        req("/mcp", MCP_POST),
-        patDeps({
-          interceptMcp,
-          registry: new InMemoryAppRegistry([app]),
-        }),
-      );
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as { identity: string | null };
-      expect(body.identity).toEqual(expect.any(String));
-    }
+    const res = await handleGatewayRequest(
+      req("/mcp", MCP_POST),
+      patDeps({
+        interceptMcp,
+        registry: new InMemoryAppRegistry([publicMcp]),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { identity: string | null };
+    expect(body.identity).toEqual(expect.any(String));
     for (const path of ["/mcp/", "/mcp/x", "/api/mcp", "/MCP"]) {
       await handleGatewayRequest(
         req(path, MCP_POST),
@@ -2396,7 +2356,7 @@ describe("MCP-only tokens", () => {
           path,
           session,
           {
-            registry: new InMemoryAppRegistry([TODO_MCP]),
+            registry: new InMemoryAppRegistry([TODO]),
             fetcherFor: () => ({ fetch: fetcher }),
           },
           init,
@@ -2412,9 +2372,8 @@ describe("MCP-only tokens", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("open nothing on a host whose manifest serves no MCP, /mcp included", async () => {
+  it("open nothing where no ToolBus serves /mcp (the deployed Gateway), /mcp included", async () => {
     const fetcher = vi.fn();
-    const interceptMcp = vi.fn(async () => new Response("toolbus"));
     for (const [path, init] of [
       ["/mcp", { method: "POST" }],
       ["/mcp", {}],
@@ -2423,7 +2382,7 @@ describe("MCP-only tokens", () => {
       const res = await call(
         path,
         credential(["mcp:read"]),
-        { interceptMcp, fetcherFor: () => ({ fetch: fetcher }) },
+        { fetcherFor: () => ({ fetch: fetcher }) },
         init,
       );
       expect(res.status, path).toBe(403);
@@ -2432,11 +2391,10 @@ describe("MCP-only tokens", () => {
         reason: "token_scope",
       });
     }
-    expect(interceptMcp).not.toHaveBeenCalled();
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("serve a /mcp a public route covers anonymously, never with the token's identity, even where the manifest opts in", async () => {
+  it("serve a /mcp a public route covers anonymously, never with the token's identity, even where the ToolBus serves /mcp", async () => {
     // The ToolBus skips a public /mcp (a pattern the author-time linter
     // refuses, or a row stored before it did), so the app answers: as it
     // answers anyone on a public route, with the marker and no identity.
@@ -2447,11 +2405,7 @@ describe("MCP-only tokens", () => {
     ]) {
       const covered: RegisteredApp = {
         ...TODO,
-        manifest: validateManifest({
-          id: "todo",
-          public: routes,
-          mcp: { by: "gateway", why: "Scripts drive this app alone." },
-        }),
+        manifest: validateManifest({ id: "todo", public: routes }),
       };
       const res = await call(
         "/mcp",
@@ -2472,55 +2426,33 @@ describe("MCP-only tokens", () => {
     expect(interceptMcp).not.toHaveBeenCalled();
   });
 
-  it("let them through at /mcp, to the ToolBus or to the app's own server", async () => {
+  it("let them through at /mcp to the ToolBus", async () => {
     const session = credential(["mcp:read"]);
     const interceptMcp = vi.fn(async () => new Response("toolbus"));
     const served = await call(
       "/mcp",
       session,
-      { interceptMcp, registry: new InMemoryAppRegistry([TODO_MCP]) },
+      { interceptMcp, registry: new InMemoryAppRegistry([TODO]) },
       {
         method: "POST",
       },
     );
     expect(await served.text()).toBe("toolbus");
 
-    // With by: "gateway" and nothing to serve, the app never sees the
-    // MCP-only token.
+    // With nothing to serve, the app never sees the MCP-only token.
     const fetcher = vi.fn();
     const unavailable = await call(
       "/mcp",
       session,
       {
         interceptMcp: async () => null,
-        registry: new InMemoryAppRegistry([TODO_MCP]),
+        registry: new InMemoryAppRegistry([TODO]),
         fetcherFor: () => ({ fetch: fetcher }),
       },
       { method: "POST" },
     );
     expect(unavailable.status).toBe(503);
     expect(fetcher).not.toHaveBeenCalled();
-
-    // by: "app": the app's own server gets the identity, scopes included.
-    const ownMcp: RegisteredApp = {
-      ...TODO,
-      manifest: validateManifest({
-        id: "todo",
-        mcp: { by: "app", why: "Runs its own MCP server." },
-      }),
-    };
-    const proxied = await call(
-      "/mcp",
-      session,
-      { interceptMcp, registry: new InMemoryAppRegistry([ownMcp]) },
-      { method: "POST" },
-    );
-    expect(proxied.status).toBe(200);
-    const { identity } = (await proxied.json()) as { identity: string };
-    const pub = await importSPKI(keys.publicKeyPem, IDENTITY_ALG);
-    const { payload } = await jwtVerify(identity, pub);
-    expect(payload["scopes"]).toEqual(["mcp:read"]);
-    expect(payload.chan).toBe("api");
     expect(interceptMcp).toHaveBeenCalledOnce();
   });
 
@@ -2546,7 +2478,7 @@ describe("MCP-only tokens", () => {
           path,
           credential(scopes),
           {
-            registry: new InMemoryAppRegistry([TODO_MCP]),
+            registry: new InMemoryAppRegistry([TODO]),
             fetcherFor: () => ({ fetch: fetcher }),
           },
           init,
@@ -2576,7 +2508,7 @@ describe("MCP-only tokens", () => {
         const res = await call(
           path,
           credential(scopes),
-          { registry: new InMemoryAppRegistry([TODO_MCP]) },
+          { registry: new InMemoryAppRegistry([TODO]) },
           init,
         );
         expect(res.status, `${scopes.join(" ")} ${path}`).toBe(200);
@@ -2592,7 +2524,7 @@ describe("MCP-only tokens", () => {
     }
     // The method the public row doesn't cover is a private route: refused.
     const res = await call("/webhook", credential(["todos:read"]), {
-      registry: new InMemoryAppRegistry([TODO_MCP]),
+      registry: new InMemoryAppRegistry([TODO]),
     });
     expect(res.status).toBe(403);
     await expect(res.json()).resolves.toEqual({
@@ -2606,7 +2538,7 @@ describe("MCP-only tokens", () => {
     const mixed = await call(
       "/mcp",
       credential(["mcp:read", "todos:write"]),
-      { interceptMcp, registry: new InMemoryAppRegistry([TODO_MCP]) },
+      { interceptMcp, registry: new InMemoryAppRegistry([TODO]) },
       { method: "POST" },
     );
     expect(await mixed.text()).toBe("toolbus");
@@ -2619,7 +2551,7 @@ describe("MCP-only tokens", () => {
         credential(scopes),
         {
           interceptMcp,
-          registry: new InMemoryAppRegistry([TODO_MCP]),
+          registry: new InMemoryAppRegistry([TODO]),
           fetcherFor: () => ({ fetch: fetcher }),
         },
         { method: "POST" },

@@ -10,7 +10,7 @@ import { attributionFromContext } from "./context.js";
  * Whom a call through the gateway is for, which decides the organization
  * it counts against. Left out, it comes from the request context: the
  * request `everyApp()` is serving (its person, while the identity is good),
- * or the organization `withOrganization()` named. Given explicitly:
+ * or the organization the SDK's event delivery runs under. Given explicitly:
  *
  *  - the inbound `Request`: its person, by the identity the gateway put on
  *    it (forwarded as is);

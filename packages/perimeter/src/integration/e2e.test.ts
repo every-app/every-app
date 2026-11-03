@@ -90,7 +90,6 @@ function buildFixtureApp(publicKeys: string[]) {
         sawOrg: request.headers.get("x-everyapp-org"),
       });
     },
-    { id: "todo" },
     // Real deployments inject the issuer (EVERYAPP_IDENTITY_ISSUER); mirror
     // that here so identity verification matches production and the gateway's
     // minting issuer below.

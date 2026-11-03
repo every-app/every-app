@@ -76,16 +76,12 @@ export async function startConformanceServer(port = 0): Promise<{
   close(): Promise<void>;
 }> {
   const keys = await generateKeyPair("RS256", { extractable: true });
-  const app = everyApp(
-    async () => new Response("not found", { status: 404 }),
-    { id: "notes" },
-    {
-      publicKeys: [await exportSPKI(keys.publicKey)],
-      issuer: ISSUER,
-      allowDevIdentities: true,
-      tools,
-    },
-  );
+  const app = everyApp(async () => new Response("not found", { status: 404 }), {
+    publicKeys: [await exportSPKI(keys.publicKey)],
+    issuer: ISSUER,
+    allowDevIdentities: true,
+    tools,
+  });
   const bus = createDevToolBus({
     apps: [
       {
@@ -95,7 +91,7 @@ export async function startConformanceServer(port = 0): Promise<{
         fetcher: {
           // TODO(integration): PR 2 types everyApp()'s ctx as the runtime ExecutionContext.
           fetch: (request) =>
-            app.fetch(request, {}, {
+            app.fetch(request, { EVERYAPP_APP_ID: "notes" }, {
               waitUntil() {},
             } as unknown as ExecutionContext),
         },

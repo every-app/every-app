@@ -80,7 +80,7 @@ import { resetRegistrationLimitsForTests } from "@/server/mcp-auth/registration-
 import { UsageRepository } from "@/server/repositories/UsageRepository";
 import { McpAppService } from "@/server/services/McpAppService";
 import { UserPatService } from "@/server/services/UserPatService";
-import { resetAppHostMcpForTests } from "@/server/toolbus/app-host-mcp";
+import { resetToolBusForTests } from "@/server/toolbus/runtime";
 import {
   clearCatalogSyncClaimsForTests,
   syncAppTools,
@@ -384,7 +384,7 @@ beforeEach(async () => {
     OAUTH_KV: createKvFake().kv,
   });
   hoisted.background.length = 0;
-  resetAppHostMcpForTests();
+  resetToolBusForTests();
   resetRegistrationLimitsForTests();
   clearCatalogSyncClaimsForTests();
   clearHostnameCacheForTests();

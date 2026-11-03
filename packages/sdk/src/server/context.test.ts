@@ -97,7 +97,7 @@ describe("the request context", () => {
       ),
     ).toBeNull();
     expect(() => currentUser()).toThrowError(RequestContextError);
-    expect(() => currentUser()).toThrow(/code|withOrganization/);
+    expect(() => currentUser()).toThrow(/outside a request/);
     let error: unknown;
     try {
       currentUser();

@@ -98,3 +98,11 @@ Add each scope your apps list to the provider's client too (Google's consent scr
 - CLI error codes: `SCOPE_SET_BUILTIN`, `SCOPE_SET_EXISTS`, `SCOPE_SET_IN_USE`, `SCOPE_SET_INVALID`, `SCOPE_SET_NOT_FOUND`, `SCOPE_SET_PROVIDER_UNKNOWN`.
 - Events: `provider.background_granted`, `provider.background_revoked`, `provider.background_lapsed`. `provider.connected` now carries `app` and `scopes`; payloads no longer carry `scopeSets` or `account.kind: "organization"`. A connection's first held-token call each UTC day emits `connection.used`.
 - The `x-everyapp-account` header.
+
+### Dead surface removed (2026-11-02)
+
+No app used any of these:
+
+- SDK (`@every-app/sdk/server`): `fromMcpTools()`, `gatewayEmailBinding()` (call `sendEmail()`), `currentUser()` and `requireCurrentUser()` (use `getEveryAppUser(request, env)` / `requireEveryAppUser()`), `withOrganization()` (background work passes `for: { background: true }`), the `IdentityError`, `RequestContextError` and `OrganizationMismatchError` exports (their `code` stays on the error), and `everyApp(handler, manifest, options)`: pass `everyApp(handler, options)`.
+- Manifest fields: `main`, `devPort`, `serverFnGuard`, `serverFnBase` and `mcp`. The strict schema refuses them. The server-function guard always covers `/_serverFn`. An app host serves no MCP: the Gateway's `/mcp` is the one connector, and Cloudflare Access bypasses no app host's `/mcp`.
+- `deploy --json` and `status --json` drop `mcp`; `status` drops `MCP /mcp (…)` from the PUBLIC column.

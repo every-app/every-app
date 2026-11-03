@@ -323,8 +323,8 @@ async function callTool(
   );
   let result: ToolCallResultV1;
   try {
-    // The call runs in the request context like a page would: currentUser()
-    // is the caller, and its Gateway calls are attributed to them.
+    // The call runs in the request context like a page would: its Gateway
+    // calls are attributed to the caller.
     const value = await serveRequest({ request, user, expiresAt }, () =>
       tool.handler(input.value, {
         user,

@@ -18,8 +18,22 @@ it("keeps protocol constants out of /server", () => {
   expect(server).not.toHaveProperty("mintSystemJwt");
 });
 
-it("exposes the env.EMAIL drop-in, and no second way to call a model", () => {
-  expect(typeof server.gatewayEmailBinding).toBe("function");
+it("leaves out what no app imports", () => {
+  for (const name of [
+    "gatewayEmailBinding",
+    "fromMcpTools",
+    "withOrganization",
+    "currentUser",
+    "requireCurrentUser",
+    "IdentityError",
+    "RequestContextError",
+    "OrganizationMismatchError",
+  ]) {
+    expect(server).not.toHaveProperty(name);
+  }
+});
+
+it("has no second way to call a model", () => {
   expect(typeof server.createGatewayFetch).toBe("function");
   for (const gone of [
     "ai",
@@ -35,7 +49,6 @@ it("exposes the env.EMAIL drop-in, and no second way to call a model", () => {
 
 it("exposes the agent tools API and not the old MCP handler", () => {
   expect(typeof server.defineTools).toBe("function");
-  expect(typeof server.fromMcpTools).toBe("function");
   expect(new server.ToolError("x")).toBeInstanceOf(Error);
   // Apps define tools and the gateway speaks MCP; createMcpHandler
   // (deprecated in 0.3.0) is gone.

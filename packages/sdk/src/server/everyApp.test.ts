@@ -11,7 +11,6 @@ import {
   getEveryAppUser,
   hasScope,
   isAdmin,
-  requireCurrentUser,
   requireEveryAppUser,
   type EveryAppHandler,
   type EveryAppUser,
@@ -91,7 +90,6 @@ describe("everyApp", () => {
     const app = everyApp(
       async (_req, _env, _ctx, user) =>
         new Response(JSON.stringify({ id: user?.id })),
-      { id: "todo" },
       { publicKeys: [publicPem] },
     );
     const token = await mint();
@@ -151,13 +149,9 @@ describe("everyApp", () => {
   });
 
   it("returns 401 when the identity token is missing", async () => {
-    const app = everyApp(
-      async () => new Response("ok"),
-      {
-        id: "todo",
-      },
-      { publicKeys: [publicPem] },
-    );
+    const app = everyApp(async () => new Response("ok"), {
+      publicKeys: [publicPem],
+    });
     const res = await app.fetch(
       new Request("https://todo.example.com/tasks"),
       env,
@@ -187,13 +181,9 @@ describe("everyApp", () => {
   });
 
   it("returns 401 on an audience mismatch", async () => {
-    const app = everyApp(
-      async () => new Response("ok"),
-      {
-        id: "todo",
-      },
-      { publicKeys: [publicPem] },
-    );
+    const app = everyApp(async () => new Response("ok"), {
+      publicKeys: [publicPem],
+    });
     const token = await mint("chef");
     const res = await app.fetch(
       new Request("https://todo.example.com/tasks", {
@@ -209,7 +199,6 @@ describe("everyApp", () => {
     const app = everyApp(
       async (_req, _env, _ctx, user) =>
         new Response(JSON.stringify({ isNull: user === null })),
-      { id: "todo" },
       { publicKeys: [publicPem] },
     );
     const res = await app.fetch(
@@ -229,7 +218,6 @@ describe("everyApp", () => {
         handlerRan = true;
         return new Response("ok");
       },
-      { id: "todo" },
       { publicKeys: [publicPem] },
     );
     const res = await app.fetch(
@@ -241,22 +229,6 @@ describe("everyApp", () => {
     );
     expect(res.status).toBe(401);
     expect(handlerRan).toBe(false);
-  });
-
-  it("supports the manifest-argument API", async () => {
-    const app = everyApp(
-      async (_req, _env, _ctx, user) => Response.json({ userId: user?.id }),
-      { id: "todo", name: "Todos" },
-      { publicKeys: [publicPem] },
-    );
-    const res = await app.fetch(
-      new Request("https://todo.example.com/tasks", {
-        headers: { [IDENTITY_HEADER]: await mint() },
-      }),
-      env,
-      ctx,
-    );
-    expect(await res.json()).toEqual({ userId: "user_1" });
   });
 
   it("takes the audience from EVERYAPP_AUDIENCE, never the app id, outside dev", async () => {
@@ -326,11 +298,9 @@ describe("everyApp", () => {
     // The app id alone never stands in for the audience in a deployed
     // Worker, with or without a manifest naming it.
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const app = everyApp(
-      async () => new Response("ok"),
-      { id: "todo" },
-      { publicKeys: [publicPem] },
-    );
+    const app = everyApp(async () => new Response("ok"), {
+      publicKeys: [publicPem],
+    });
     const res = await app.fetch(
       new Request("https://todo.example.com/tasks", {
         headers: { [IDENTITY_HEADER]: await mint("todo") },
@@ -381,36 +351,12 @@ describe("everyApp", () => {
     expect(deployed.status).toBe(500);
   });
 
-  it("returns 500 when EVERYAPP_APP_ID contradicts the manifest", async () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    let handlerRan = false;
-    const app = everyApp(
-      async () => {
-        handlerRan = true;
-        return new Response("ok");
-      },
-      { id: "todo" },
-      { publicKeys: [publicPem] },
-    );
-    const res = await app.fetch(
-      new Request("https://chef.example.com/tasks", {
-        headers: { [IDENTITY_HEADER]: await mint("chef") },
-      }),
-      { ...env, EVERYAPP_APP_ID: "chef" },
-      ctx,
-    );
-    spy.mockRestore();
-    expect(res.status).toBe(500);
-    expect(handlerRan).toBe(false);
-  });
-
   it("returns a resolved Promise from the WeakMap cache", async () => {
     const app = everyApp(
       async (request, handlerEnv) => {
         const user = await getEveryAppUser(request, handlerEnv);
         return Response.json({ userId: user?.id });
       },
-      { id: "todo" },
       { publicKeys: [publicPem] },
     );
     const res = await app.fetch(
@@ -450,7 +396,6 @@ describe("everyApp", () => {
           throw error;
         }
       },
-      { id: "todo" },
       { publicKeys: [publicPem] },
     );
     const res = await app.fetch(
@@ -466,7 +411,7 @@ describe("everyApp", () => {
 
   it("returns 500 JSON for missing key configuration instead of 401", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const app = everyApp(async () => new Response("ok"), { id: "todo" });
+    const app = everyApp(async () => new Response("ok"));
     const res = await app.fetch(
       new Request("https://todo.example.com/tasks", {
         headers: { [IDENTITY_HEADER]: await mint() },
@@ -480,13 +425,9 @@ describe("everyApp", () => {
   });
 
   it("enforces the issuer from env when present", async () => {
-    const app = everyApp(
-      async () => new Response("ok"),
-      { id: "todo" },
-      {
-        publicKeys: [publicPem],
-      },
-    );
+    const app = everyApp(async () => new Response("ok"), {
+      publicKeys: [publicPem],
+    });
     const token = await mint("every-todo", "https://evil.example.com");
     const res = await app.fetch(
       new Request("https://todo.example.com/tasks", {
@@ -499,11 +440,9 @@ describe("everyApp", () => {
   });
 
   it("returns a clear 401 when the user identity issuer is not configured", async () => {
-    const app = everyApp(
-      async () => new Response("ok"),
-      { id: "todo" },
-      { publicKeys: [publicPem] },
-    );
+    const app = everyApp(async () => new Response("ok"), {
+      publicKeys: [publicPem],
+    });
     const res = await app.fetch(
       new Request("https://todo.example.com/tasks", {
         headers: { [IDENTITY_HEADER]: await mint() },
@@ -521,11 +460,9 @@ describe("everyApp", () => {
   });
 
   it("accepts env-driven dev identities only for EVERYAPP_DEV=1", async () => {
-    const app = everyApp(
-      async () => new Response("ok"),
-      { id: "todo" },
-      { publicKeys: [publicPem] },
-    );
+    const app = everyApp(async () => new Response("ok"), {
+      publicKeys: [publicPem],
+    });
     const token = await mint("every-todo", DEV_ISSUER, IDENTITY_DEV_KEY_ID);
     const request = () =>
       new Request("https://todo.example.com/tasks", {
@@ -556,11 +493,10 @@ describe("everyApp", () => {
   });
 
   it("preserves explicit allowDevIdentities: true opt-in", async () => {
-    const app = everyApp(
-      async () => new Response("ok"),
-      { id: "todo" },
-      { publicKeys: [publicPem], allowDevIdentities: true },
-    );
+    const app = everyApp(async () => new Response("ok"), {
+      publicKeys: [publicPem],
+      allowDevIdentities: true,
+    });
     const res = await app.fetch(
       new Request("https://todo.example.com/tasks", {
         headers: {
@@ -571,7 +507,7 @@ describe("everyApp", () => {
           ),
         },
       }),
-      { [ISSUER_ENV]: DEV_ISSUER, [DEV_ENV]: "0" },
+      { [ISSUER_ENV]: DEV_ISSUER, [DEV_ENV]: "0", EVERYAPP_APP_ID: "todo" },
       ctx,
     );
     expect(res.status).toBe(200);
@@ -639,29 +575,6 @@ describe("the request context under everyApp()", () => {
     expect(await res.json()).toEqual({ id: "user_1", same: true });
     // And nothing leaks out of the request.
     expect(() => currentUser()).toThrowError(RequestContextError);
-  });
-
-  it("gives requireCurrentUser() the user, or the 401 on a public route", async () => {
-    const app = everyApp(async () => {
-      try {
-        return Response.json({ id: requireCurrentUser().id });
-      } catch (thrown) {
-        return thrown as Response;
-      }
-    }, options());
-    const res = await app.fetch(withToken(await mint()), env, ctx);
-    expect(await res.json()).toEqual({ id: "user_1" });
-    const marker = await mintPublicMarker();
-    const anonymous = await app.fetch(
-      new Request("https://todo.example.com/public", {
-        headers: { [PUBLIC_HEADER]: marker },
-      }),
-      env,
-      ctx,
-    );
-    expect(anonymous.status).toBe(401);
-    expect(await anonymous.json()).toMatchObject({ error: "unauthenticated" });
-    expect(() => requireCurrentUser()).toThrowError(RequestContextError);
   });
 
   it("lets getEveryAppUser() take the headers alone, answering from the context", async () => {

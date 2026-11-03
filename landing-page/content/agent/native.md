@@ -20,7 +20,7 @@ bearerRoutes: { paths: ["/api/**"], why: "The Mac app calls the API with its tok
 
 - A bearer route takes a token and refuses a session cookie (401, `reason: "cookie_on_bearer_route"`); with no bearer it answers the 401 challenge, never a login page. So keep the web UI's calls elsewhere (its server functions, or `/app/api/**`).
 - Behind Cloudflare Access, `deploy` and `access on` let these paths and `/.well-known/oauth-protected-resource` through on the app's host. Without the field the native app's calls get Access's HTML login there. Without Access the field changes nothing but the cookie refusal.
-- `why` is shown to the operator, as `mcp.why` is.
+- `why` is shown to the operator.
 - The token works on every route the member can reach; `bearerRoutes` only decides what Access lets through. Full field rules: [Manifest](/docs/agent/manifest#bearerroutes).
 
 In the handler, a native caller is an ordinary member: `getEveryAppUser()` returns them with `channel: "api"`, `actor.sub` `oauth:<connection id>` and `scopes: ["*"]` ([Identity](/docs/agent/identity)). Treat uploads from a device with whatever care the app needs; nothing else changes.

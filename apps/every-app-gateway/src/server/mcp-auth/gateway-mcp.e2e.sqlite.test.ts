@@ -118,7 +118,7 @@ import {
   clearCatalogSyncClaimsForTests,
   syncAppTools,
 } from "@/server/toolbus/catalog-sync";
-import { resetAppHostMcpForTests } from "@/server/toolbus/app-host-mcp";
+import { resetToolBusForTests } from "@/server/toolbus/runtime";
 import { listenIntervalsForTests } from "@/server/toolbus/runtime";
 import { createKvFake } from "@/test/kv-fake";
 import { withoutWorkspaceTools } from "@/test/mcp-tools";
@@ -170,110 +170,94 @@ function objectInput<T>(
 const seen: EveryAppUser[] = [];
 
 function todoApp(publicKeyPem: string, extraTool = false) {
-  return everyApp(
-    async () => new Response("todo page"),
-    { id: "todo" },
-    {
-      publicKeys: [publicKeyPem],
-      issuer: GATEWAY,
-      tools: defineTools({
-        list_todos: {
-          description: "List todos.",
-          risk: "read",
-          input: objectInput(),
-          handler: (_input, { user }) => {
-            seen.push(user);
-            return { todos: [] };
-          },
+  return everyApp(async () => new Response("todo page"), {
+    publicKeys: [publicKeyPem],
+    issuer: GATEWAY,
+    tools: defineTools({
+      list_todos: {
+        description: "List todos.",
+        risk: "read",
+        input: objectInput(),
+        handler: (_input, { user }) => {
+          seen.push(user);
+          return { todos: [] };
         },
-        create_todo: {
-          description: "Create a todo.",
-          risk: "write",
-          input: objectInput<{ title: string }>({ title: { type: "string" } }, [
-            "title",
-          ]),
-          handler: ({ title }, { user }) => {
-            seen.push(user);
-            return { todo: { id: "t1", title } };
-          },
+      },
+      create_todo: {
+        description: "Create a todo.",
+        risk: "write",
+        input: objectInput<{ title: string }>({ title: { type: "string" } }, [
+          "title",
+        ]),
+        handler: ({ title }, { user }) => {
+          seen.push(user);
+          return { todo: { id: "t1", title } };
         },
-        delete_todo: {
-          description: "Delete a todo.",
-          risk: "write",
-          destructive: true,
-          input: objectInput(),
-          handler: () => "deleted",
-        },
-        ...(extraTool
-          ? {
-              archive_todos: {
-                description: "Archive completed todos.",
-                risk: "write" as const,
-                input: objectInput(),
-                handler: () => "archived",
-              },
-            }
-          : {}),
-      }),
-    },
-  );
+      },
+      delete_todo: {
+        description: "Delete a todo.",
+        risk: "write",
+        destructive: true,
+        input: objectInput(),
+        handler: () => "deleted",
+      },
+      ...(extraTool
+        ? {
+            archive_todos: {
+              description: "Archive completed todos.",
+              risk: "write" as const,
+              input: objectInput(),
+              handler: () => "archived",
+            },
+          }
+        : {}),
+    }),
+  });
 }
 
 /** Another app with one read tool, `ping`, deployed beside the two above. */
 function pingApp(id: string, publicKeyPem: string) {
-  return everyApp(
-    async () => new Response(`${id} page`),
-    { id },
-    {
-      publicKeys: [publicKeyPem],
-      issuer: GATEWAY,
-      tools: defineTools({
-        ping: {
-          description: "Ping.",
-          risk: "read",
-          input: objectInput(),
-          handler: () => "pong",
-        },
-      }),
-    },
-  );
+  return everyApp(async () => new Response(`${id} page`), {
+    publicKeys: [publicKeyPem],
+    issuer: GATEWAY,
+    tools: defineTools({
+      ping: {
+        description: "Ping.",
+        risk: "read",
+        input: objectInput(),
+        handler: () => "pong",
+      },
+    }),
+  });
 }
 
 /** An app on the SDK that declares no tools. */
 function blankApp(publicKeyPem: string) {
-  return everyApp(
-    async () => new Response("blank page"),
-    { id: "blank" },
-    {
-      publicKeys: [publicKeyPem],
-      issuer: GATEWAY,
-    },
-  );
+  return everyApp(async () => new Response("blank page"), {
+    publicKeys: [publicKeyPem],
+    issuer: GATEWAY,
+  });
 }
 
 function notesApp(publicKeyPem: string) {
-  return everyApp(
-    async () => new Response("notes page"),
-    { id: "notes" },
-    {
-      publicKeys: [publicKeyPem],
-      issuer: GATEWAY,
-      tools: defineTools({
-        list_notes: {
-          description: "List notes.",
-          risk: "read",
-          input: objectInput(),
-          handler: () => ({ notes: [] }),
-        },
-        add_note: {
-          description: "Add a note.",
-          risk: "write",
-          input: objectInput(),
-          handler: () => "added",
-        },
-      }),
-    },
-  );
+  return everyApp(async () => new Response("notes page"), {
+    publicKeys: [publicKeyPem],
+    issuer: GATEWAY,
+    tools: defineTools({
+      list_notes: {
+        description: "List notes.",
+        risk: "read",
+        input: objectInput(),
+        handler: () => ({ notes: [] }),
+      },
+      add_note: {
+        description: "Add a note.",
+        risk: "write",
+        input: objectInput(),
+        handler: () => "added",
+      },
+    }),
+  });
 }
 
 let keys: { privateKeyPem: string; publicKeyPem: string };
@@ -704,7 +688,7 @@ beforeEach(async () => {
   hoisted.background.length = 0;
   seen.length = 0;
   appRequests.clear();
-  resetAppHostMcpForTests();
+  resetToolBusForTests();
   resetRegistrationLimitsForTests();
   clearCatalogSyncClaimsForTests();
   clearHostnameCacheForTests();
@@ -2673,7 +2657,7 @@ describe("every request re-checks the connection", () => {
   it("tells a held subscriptions/listen stream when an app goes, and ends it when the connection is revoked", async () => {
     listenIntervalsForTests.pollMs = 20;
     listenIntervalsForTests.maxMs = 10_000;
-    resetAppHostMcpForTests();
+    resetToolBusForTests();
     try {
       const { tokens, connectionId } = await connected(memberId);
       const discover = (await (
@@ -2716,7 +2700,7 @@ describe("every request re-checks the connection", () => {
     } finally {
       delete listenIntervalsForTests.pollMs;
       delete listenIntervalsForTests.maxMs;
-      resetAppHostMcpForTests();
+      resetToolBusForTests();
     }
   });
 
@@ -2724,7 +2708,7 @@ describe("every request re-checks the connection", () => {
     listenIntervalsForTests.pollMs = 20;
     // Two hours: the token's one-hour life ends the stream, not the hold.
     listenIntervalsForTests.maxMs = 2 * 60 * 60_000;
-    resetAppHostMcpForTests();
+    resetToolBusForTests();
     const reads = vi.spyOn(AppToolRepository, "findVisibleCatalogs");
     try {
       const { tokens } = await connected(memberId);
@@ -2763,7 +2747,7 @@ describe("every request re-checks the connection", () => {
       reads.mockRestore();
       delete listenIntervalsForTests.pollMs;
       delete listenIntervalsForTests.maxMs;
-      resetAppHostMcpForTests();
+      resetToolBusForTests();
     }
   });
 
@@ -2803,7 +2787,7 @@ describe("personal access tokens on the gateway's /mcp", () => {
   it("ends a held subscriptions/listen stream once the token is revoked", async () => {
     listenIntervalsForTests.pollMs = 20;
     listenIntervalsForTests.maxMs = 10_000;
-    resetAppHostMcpForTests();
+    resetToolBusForTests();
     try {
       const token = await pat();
       const listen = await mcp(token, "subscriptions/listen", {
@@ -2832,7 +2816,7 @@ describe("personal access tokens on the gateway's /mcp", () => {
     } finally {
       delete listenIntervalsForTests.pollMs;
       delete listenIntervalsForTests.maxMs;
-      resetAppHostMcpForTests();
+      resetToolBusForTests();
     }
   });
 

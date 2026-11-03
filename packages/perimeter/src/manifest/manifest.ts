@@ -66,7 +66,7 @@ export const MAX_PUBLIC_ASSETS = 25;
  * `bearerRoutes: { paths, why }`: the routes a bearer client (a native
  * app, a script with a personal token) reaches with its token only. `paths`
  * are globs with `public[].path`'s syntax and safety rules, every method;
- * `why` the app needs them, shown to the operator as `mcp.why` is. The
+ * `why` the app needs them, shown to the operator. The
  * perimeter refuses a request carrying its session cookie on one (401),
  * so the Cloudflare Access bypass `everyapp access on` makes for these
  * paths opens nothing to a browser. A bearer route is never public, and
@@ -912,44 +912,8 @@ const AiPolicySchemaStrict = z
   .strict();
 export type AiPolicy = z.infer<typeof AiPolicySchema>;
 
-/** What an author who wrote the old string form, or anything else, is told. */
-const MCP_SHAPE =
-  'mcp is { by: "gateway" | "app", why: "..." }: "gateway" serves the app\'s defineTools() at <app-host>/mcp, "app" leaves the path to the app\'s own MCP server; left out, the Gateway\'s own /mcp is the one connector';
-
 /** Operator text shown by `everyapp deploy` and `everyapp status`. */
 const PLAIN_TEXT = /^[^\p{Cc}\p{Cf}\p{Zl}\p{Zp}]*$/u;
-
-/**
- * Whether, and by whom, the app's own host answers `/mcp`. Left out, it
- * doesn't: `https://<gateway>/mcp` serves every app the caller can use,
- * and a second connector per app is one more surface to let through
- * Cloudflare Access for nothing. An app that needs one says why.
- */
-export const McpSchema = z
-  .object(
-    {
-      /**
-       * "gateway": the Gateway's ToolBus serves the tools the app defines
-       * with `defineTools()` at `<app-host>/mcp`. "app": the app runs its
-       * own MCP server there, and the perimeter proxies `/mcp` to it with
-       * the identity header, the token's scopes left for the app to read.
-       */
-      by: z.enum(["gateway", "app"]),
-      /** Why this app needs `/mcp` on its own host; shown by the CLI. */
-      why: z
-        .string()
-        .min(1, "say why the app needs /mcp on its own host")
-        .max(200)
-        .regex(PLAIN_TEXT, "why is plain text: no control characters"),
-    },
-    {
-      // A string (the field's old form) or anything else that isn't an
-      // object is told the shape, not "expected object".
-      error: (issue) => (issue.code === "invalid_type" ? MCP_SHAPE : undefined),
-    },
-  )
-  .passthrough();
-export type McpPolicy = z.infer<typeof McpSchema>;
 
 const EVENTS_SHAPE =
   'events is { subscribe: ["member.removed", "app.*", ...], why: "..." }: the Gateway events this app receives at everyApp(handler, { events: { on } })';
@@ -1024,11 +988,6 @@ export const ManifestSchema = z
         'icon must be the path of an SVG the app serves, such as "/everyapp-icon.svg"',
       )
       .optional(),
-    /**
-     * Legacy: the Worker entry now comes from `cloudflare.config.ts`. Still
-     * accepted so existing manifests validate.
-     */
-    main: z.string().optional(),
     /** Optional Cloudflare Workers compatibility date override. */
     compatibilityDate: CompatibilityDateSchema.optional(),
     /** Cloudflare resources the worker binds. Provisioned by the CLI. */
@@ -1110,43 +1069,14 @@ export const ManifestSchema = z
      * gateway UI afterwards.
      */
     access: AppAccessSchema.optional(),
-    /**
-     * The perimeter only lets same-origin fetch() calls from TanStack's client
-     * reach `/_serverFn/*`. Set false for an app whose server functions must
-     * be reachable some other way. Default: true.
-     */
-    serverFnGuard: z.boolean().optional(),
-    /**
-     * Where the app's TanStack Start server functions live, when that is not
-     * `/_serverFn`: an app with a router basepath or its own `serverFns.base`
-     * sets it (e.g. "/app/_serverFn") so the perimeter guards that path.
-     */
-    serverFnBase: z
-      .string()
-      .regex(
-        /^(\/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)+\/?$/,
-        'must be a path such as "/app/_serverFn"',
-      )
-      .optional(),
     /** Shell command that builds the app for production. Default: `cf build`. */
     build: z.string().min(1).optional(),
     /** Shell command that starts the app dev server for `everyapp dev`. Default: `cf dev`. */
     dev: z.string().min(1).optional(),
-    /**
-     * Legacy: the dev port now comes from the app's vite.config.ts (PORT).
-     * Still accepted so existing manifests validate.
-     */
-    devPort: z.number().int().positive().optional(),
     /** Dependency install command; false skips install; omitted auto-detects. */
     install: InstallSchema.optional(),
     /** Database migration strategy for the app's D1 database. */
     migrations: MigrationsSchema.optional(),
-    /**
-     * Whether the app's own host answers `/mcp`, and who does: see
-     * {@link McpSchema}. Left out (the default), the host serves no MCP and
-     * the Gateway's `/mcp` is the one connector.
-     */
-    mcp: McpSchema.optional(),
     /**
      * The Gateway events the app receives: see {@link EventsSchema}. Left
      * out (the default), none.
@@ -1588,7 +1518,6 @@ function manifestSchemaStrict(options: StrictManifestOptions = {}) {
     email: EmailSchemaStrict.optional(),
     database: DatabaseSchema.strict().optional(),
     limits: WorkerLimitsSchema.strict().optional(),
-    mcp: McpSchema.strict().optional(),
     bearerRoutes: BearerRoutesSchema.strict().optional(),
     events: EventsSchemaStrict.optional(),
   }).strict();
@@ -1663,8 +1592,8 @@ const BEARER_ROUTE_LABEL = "bearerRoutes: pattern";
 /**
  * A `bearerRoutes` pattern obeys the public-route safety rules (absolute,
  * no catch-all, no encoding, never the internal namespace), is never
- * `/mcp` nor covers it (the host's `/mcp` is served to MCP clients by its
- * own rule and must stay behind Access), and is not also a public route
+ * `/mcp` nor covers it (the host's `/mcp` stays private and behind
+ * Access), and is not also a public route
  * or public asset pattern: a path is served to anyone, or to a bearer
  * only, never both. Checked at registration and at author time alike, so
  * a stored row can't widen what the perimeter lets a cookie reach.
@@ -1685,7 +1614,7 @@ function assertBearerRoutesAreSafe(manifest: {
       matchPublicRoute([{ path, methods: ["GET"] }], "GET", "/mcp").public;
     if (covers) {
       throw new ManifestError(
-        `Invalid everyapp.config: bearerRoutes: ${path} can't be a bearer route${isMcpPath(path) ? "" : " (it covers /mcp)"}; /mcp takes MCP clients by its own rule`,
+        `Invalid everyapp.config: bearerRoutes: ${path} can't be a bearer route${isMcpPath(path) ? "" : " (it covers /mcp)"}; /mcp stays private on an app host`,
       );
     }
     if (publicPaths.has(path)) {
@@ -1761,12 +1690,10 @@ export function validateManifestStrict(
 
   for (const route of manifest.public ?? []) {
     assertPublicPathIsSafe(route.path);
-    // A public /mcp is served by nobody the Gateway vouches for: the
-    // perimeter skips the ToolBus there and Access lets it through. A
+    // /mcp stays private on an app host: the Gateway's own /mcp is the
+    // one MCP connector, and Access never lets an app's /mcp through. A
     // pattern that covers /mcp (`/:page`) under any of the route's
-    // methods is the same hole as the path itself. An app with its own
-    // MCP server says `mcp: { by: "app" }` and gets the identity header
-    // instead.
+    // methods is the same hole as the path itself.
     const named = route.path === "/mcp" || route.path.startsWith("/mcp/");
     const covers =
       named ||
@@ -1775,24 +1702,19 @@ export function validateManifestStrict(
       );
     if (covers) {
       throw new ManifestError(
-        `Invalid everyapp.config: public: ${route.path} can't be public${named ? "" : " (it covers /mcp)"}; an app that runs its own MCP server sets mcp: { by: "app", why: "..." }`,
+        `Invalid everyapp.config: public: ${route.path} can't be public${named ? "" : " (it covers /mcp)"}; /mcp stays private on an app host, and the Gateway's own /mcp serves the app's tools`,
       );
     }
     // A public route over the TanStack server-function endpoint makes every
     // server function that skips its own user check callable by anyone: the
     // same-origin guard there is a CSRF check, not authentication. A public
     // page that needs data gets its own route (`/api/public/...`).
-    const serverFnBase = (manifest.serverFnBase ?? "/_serverFn").replace(
-      /\/+$/,
-      "",
-    );
     const coversServerFns = ["GET", "POST"].some(
-      (method) =>
-        matchPublicRoute([route], method, `${serverFnBase}/fn`).public,
+      (method) => matchPublicRoute([route], method, "/_serverFn/fn").public,
     );
     if (coversServerFns) {
       throw new ManifestError(
-        `Invalid everyapp.config: public: ${route.path} can't be public (it covers ${serverFnBase}, where every server function lives); serve the public page's data from a route of its own, such as /api/public/...`,
+        `Invalid everyapp.config: public: ${route.path} can't be public (it covers /_serverFn, where every server function lives); serve the public page's data from a route of its own, such as /api/public/...`,
       );
     }
   }

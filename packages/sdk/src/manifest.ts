@@ -178,8 +178,6 @@ export interface EveryAppManifest {
   readonly description?: string;
   /** The path of an SVG the app serves (`"/everyapp-icon.svg"`). */
   readonly icon?: string;
-  /** Legacy: the entry comes from `cloudflare.config.ts`. */
-  readonly main?: string;
   /** YYYY-MM-DD. */
   readonly compatibilityDate?: string;
   readonly resources?: EveryAppResources;
@@ -237,14 +235,10 @@ export interface EveryAppManifest {
   readonly email?: { readonly inbound?: boolean };
   /** Who can open the app once registered; `"admins"` by default. */
   readonly access?: "everyone" | "admins";
-  readonly serverFnGuard?: boolean;
-  readonly serverFnBase?: string;
   /** Shell command that builds the app; `cf build` by default. */
   readonly build?: string;
   /** Shell command `everyapp dev` starts; it must listen on PORT. */
   readonly dev?: string;
-  /** Legacy: the port comes from PORT. */
-  readonly devPort?: number;
   /** Dependency install command; false skips it. */
   readonly install?: false | string;
   readonly migrations?: {
@@ -254,8 +248,6 @@ export interface EveryAppManifest {
     readonly config?: string;
     readonly binding?: string;
   };
-  /** Who answers `/mcp` on the app's own host, and why it needs to. */
-  readonly mcp?: { readonly by: "gateway" | "app"; readonly why: string };
   /**
    * The Gateway events the app receives at `everyApp(handler, { events: {
    * on } })`: types or patterns from `member.*` (but `member.password_reset`),

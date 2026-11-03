@@ -46,13 +46,6 @@ const CRM: EveryAppCliManifest = {
 /** An app with none. */
 const TODO: EveryAppCliManifest = { id: "todo", resources: { d1: ["DB"] } };
 
-/** An app whose manifest asks for /mcp on its own host, and has no public route. */
-const INBOX: EveryAppCliManifest = {
-  id: "inbox",
-  resources: { d1: ["DB"] },
-  mcp: { by: "gateway", why: "A connector per inbox, pinned in Claude." },
-};
-
 let account: FakeCloudflare;
 let worker: GatewayWorker;
 let tarball: string;
@@ -604,14 +597,12 @@ describe("access on, from nothing", () => {
     expect(warnings("ACCESS_INLINE_POLICIES")).toHaveLength(1);
     expect(done()).toMatchObject({ data: { applications: { gateway: { outcome: "skipped" }, apps: { outcome: "updated" } } } });
     // The destination for something else isn't an app with public routes.
-    expect(done()!["message"]).toContain("no app has public routes or /mcp");
+    expect(done()!["message"]).toContain("no app has public routes");
   });
 
-  it("drops the MCP bypass everywhere once the Gateway's application has Managed OAuth, keeping /health and Apple's sign-in POST", async () => {
+  it("drops the Gateway's MCP bypass once its application has Managed OAuth, keeping /health and Apple's sign-in POST", async () => {
     await seedPeople();
-    await deploy(appDir(INBOX), INBOX);
     await on({ team: "acme" });
-    expect(overrides(application(`*.${HOST}`)!, `inbox.${HOST}`)).toEqual(["/mcp", "/mcp/*"]);
     const gateway = application(HOST)!;
     gateway["oauth_configuration"] = { enabled: true };
 
@@ -619,9 +610,7 @@ describe("access on, from nothing", () => {
 
     expect(overrides(application(HOST)!, HOST)).toEqual(["/health", "/api/auth/callback/apple"]);
     expect(overrides(application(`*.${HOST}`)!, `*.${HOST}`)).toEqual([]);
-    // An app that asked for /mcp alone loses its destination: nothing would be let through on it.
-    expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`]);
-    expect(done()!["message"]).toContain("no app has public routes or /mcp");
+    expect(done()!["message"]).toContain("no app has public routes");
     // Then nothing more to do.
     await on();
     expect(writes()).toEqual([]);
@@ -659,7 +648,7 @@ describe("access keeps the apps application in step with deploys", { timeout: 30
       expect.objectContaining({ status: "ok", message: "Cloudflare Access lets crm's public routes through.", data: expect.objectContaining({ appId: "crm", changed: true }) }),
     ]);
     expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`, `crm.${HOST}`]);
-    // Its routes alone: the manifest doesn't ask for /mcp on its host.
+    // Its routes alone.
     expect(overrides(application(`*.${HOST}`)!, `crm.${HOST}`)).toEqual(["/t/*", "/t/e", "/health"]);
 
     // A redeploy with the same routes changes nothing at Access; neither does `access on`.
@@ -687,72 +676,18 @@ describe("access keeps the apps application in step with deploys", { timeout: 30
     expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`]);
   });
 
-  it("lets an app's /mcp through when its manifest opts in, with no public route", async () => {
-    await seedPeople();
-    await on({ team: "acme" });
-    events = [];
-
-    const dir = appDir(INBOX);
-    await deploy(dir, INBOX);
-    expect(steps("app.access")).toEqual([
-      expect.objectContaining({ status: "ok", message: "Cloudflare Access lets inbox's /mcp through." }),
-    ]);
-    expect(overrides(application(`*.${HOST}`)!, `inbox.${HOST}`)).toEqual(["/mcp", "/mcp/*"]);
-
-    // `access on` agrees; `show` lists it as desired.
-    events = [];
-    account.cf.calls.length = 0;
-    await on();
-    expect(writes()).toEqual([]);
-    // No app has public routes: only the /mcp count is said.
-    expect(done()!["message"]).toContain("/mcp on 1 app host let through");
-    expect(done()!["message"]).not.toContain("public routes of");
-    await show();
-    expect(done()).toMatchObject({ data: { desired: { apps: [{ uri: `*.${HOST}`, public: [] }, { uri: `inbox.${HOST}`, public: ["/mcp", "/mcp/*"] }] } } });
-
-
-    // A deploy without the opt-in takes it back.
-    events = [];
-    const plain: EveryAppCliManifest = { id: "inbox", resources: { d1: ["DB"] } };
-    account.apps.set(dir, plain);
-    fs.writeFileSync(path.join(dir, "everyapp.config.ts"), `export default ${JSON.stringify(plain, null, 2)} as const;\n`);
-    await deploy(dir, plain);
-    expect(steps("app.access")).toEqual([expect.objectContaining({ status: "ok", data: expect.objectContaining({ changed: true }) })]);
-    expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`]);
-
-    // Opted in again, then deleted: the delete takes /mcp back, in those words.
-    account.apps.set(dir, INBOX);
-    fs.writeFileSync(path.join(dir, "everyapp.config.ts"), `export default ${JSON.stringify(INBOX, null, 2)} as const;\n`);
-    await deploy(dir, INBOX);
-    expect(overrides(application(`*.${HOST}`)!, `inbox.${HOST}`)).toEqual(["/mcp", "/mcp/*"]);
-    events = [];
-    await removeApp({
-      appId: "inbox",
-      out: out(),
-      interactive: false,
-      purge: false,
-      createCf,
-      reconcile: { ...seams, openRelease: () => openRelease(tarball), source: () => releaseSource(tarball) },
-    });
-    expect(error()).toBeUndefined();
-    expect(steps("app.access")).toEqual([
-      expect.objectContaining({ status: "ok", message: "Cloudflare Access no longer lets inbox's /mcp through.", data: expect.objectContaining({ removed: true }) }),
-    ]);
-    expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`]);
-  });
-
-  it("says, under a login that can't read Access, that an opted-in /mcp wasn't checked", async () => {
+  it("says, under a login that can't read Access, that an app's public routes weren't checked", async () => {
     await seedPeople();
     account.cf.override(["zero-trust", "access", "applications", "list"], {
       exitCode: 1,
       stderr: "┌ APIError\n│ [10000] Authentication error\n└\n",
     });
 
-    await deploy(appDir(INBOX), INBOX);
+    await deploy(appDir(CRM), CRM);
 
     expect(error()).toBeUndefined();
     const warning = warnings("ACCESS_NOT_CHECKED")[0]!;
-    expect(warning["message"]).toContain("inbox's /mcp need a login there");
+    expect(warning["message"]).toContain("crm's public routes need a login there");
   });
 
   it("warns, and the deploy succeeds, when Access can't be updated", async () => {

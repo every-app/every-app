@@ -4,17 +4,17 @@
  * `AsyncLocalStorage`, which every Every App Worker has (`nodejs_compat`).
  *
  * `everyApp()` opens it around the handler and around each tool call, with
- * the verified user and the request the Gateway forwarded. Deeper in the
- * app, `currentUser()` reads the user without the request, and every call
- * back to the Gateway (`integrationFetch`, `ai`, `sendEmail`, `emit`, ...)
- * is attributed to that person without a `for`.
+ * the verified user and the request the Gateway forwarded. Every call back
+ * to the Gateway made inside it (`integrationFetch`, `sendEmail`, `emit`,
+ * ...) is attributed to that person without a `for`.
  *
  * Work no request started (a cron, a Workflow step, a queue consumer, a
- * Durable Object alarm) has no context of its own: it runs under
- * `withOrganization(organizationId, fn)`, which makes every Gateway call
- * inside it that organization's background work. A Gateway call with
- * neither is refused before it is made ({@link RequestContextError}): the
- * SDK never acts as nobody.
+ * Durable Object alarm) has no context of its own: it says whom each call
+ * is for, `for: { background: true }` (a shared app's Worker adds the
+ * `organizationId`). The SDK's own event delivery runs its handler under
+ * `withOrganization()`, which does the same for every call inside it. A
+ * Gateway call with neither is refused before it is made
+ * ({@link RequestContextError}): the SDK never acts as nobody.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { EveryAppUser } from "../internal/index.js";
@@ -44,9 +44,9 @@ const scopes = new AsyncLocalStorage<Scope>();
 export const IDENTITY_EXPIRY_MARGIN_MS = 15_000;
 
 /**
- * Code `request_context_missing`: `currentUser()` or a Gateway call with
- * no `for`, outside any request `everyApp()` serves and outside
- * `withOrganization()`. Work no request started names its organization.
+ * Code `request_context_missing`: a Gateway call with no `for`, outside
+ * any request `everyApp()` serves. Work no request started passes
+ * `for: { background: true }`.
  */
 export class RequestContextError extends Error {
   readonly code = "request_context_missing";
@@ -76,13 +76,11 @@ export function serveRequest<T>(served: ServedRequest, fn: () => T): T {
 /**
  * Run `fn` as `organizationId`'s background work: every Gateway call made
  * inside it (and in what it awaits or schedules) is that organization's,
- * with no person behind it. For a Workflow step, a cron, a queue consumer or
- * a Durable Object alarm, which no request started. An organization's own
- * app names its own (`env.EVERY_APP_ORG_ID`); a shared app's Worker names
- * the one the work is for. Inside a request another organization's person
- * is driving, it throws {@link OrganizationMismatchError}; inside that
- * organization's own request, the person stays attributed while their
- * identity is good.
+ * with no person behind it. The SDK's event delivery (eventsEndpoint.ts)
+ * runs the app's `events.on` under it; apps pass `for` instead. Inside a
+ * request another organization's person is driving, it throws
+ * {@link OrganizationMismatchError}; inside that organization's own
+ * request, the person stays attributed while their identity is good.
  */
 export function withOrganization<T>(organizationId: string, fn: () => T): T {
   if (typeof organizationId !== "string" || organizationId.trim() === "") {
@@ -101,16 +99,16 @@ export function withOrganization<T>(organizationId: string, fn: () => T): T {
 }
 
 /**
- * The verified user of the request being served: an `EveryAppUser`, or
- * `null` on a public route and inside `withOrganization()`'s background
- * work. Throws {@link RequestContextError} outside both: there is no one
- * to be, and a handler that isn't under `everyApp()` is a bug.
+ * The verified user of the request being served (`everyApp()` reads it to
+ * reuse one verification): an `EveryAppUser`, or `null` on a public route
+ * and inside `withOrganization()`'s background work. Throws
+ * {@link RequestContextError} outside both.
  */
 export function currentUser(): EveryAppUser | null {
   const scope = scopes.getStore();
   if (!scope) {
     throw new RequestContextError(
-      "currentUser() was called outside a request everyApp() serves and outside withOrganization(): there is no user here.",
+      "currentUser() was called outside a request everyApp() serves: there is no user here.",
     );
   }
   return scope.served?.user ?? null;
@@ -133,7 +131,7 @@ export function attributionFromContext(
   const scope = scopes.getStore();
   if (!scope) {
     throw new RequestContextError(
-      `${what} was called with no \`for\`, outside a request everyApp() serves and outside withOrganization(): the call would be nobody's. Pass for: request, or run the work under withOrganization(organizationId, fn).`,
+      `${what} was called with no \`for\`, outside a request everyApp() serves: the call would be nobody's. Pass for: request, or for: { background: true } for work no request started (a cron, a Workflow step, a queue consumer).`,
     );
   }
   const served = scope.served;

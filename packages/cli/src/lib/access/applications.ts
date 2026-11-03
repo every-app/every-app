@@ -46,7 +46,6 @@ import {
   findAccessApplications,
   gatewayDestination,
   managedOAuthOn,
-  MCP_PATHS,
   sameDestinations,
   signInInSync,
   splitDestinations,
@@ -249,7 +248,7 @@ export async function reconcileAccessApplications(
 ): Promise<ApplicationsOutcome> {
   const { gatewayHost, appBaseDomain: base } = scope;
   const managedOAuth = managedOAuthOn(found.gateway);
-  const plan = appsDestinations(base, await readPublicSurfaces(db), { managedOAuth });
+  const plan = appsDestinations(base, await readPublicSurfaces(db));
   const combined = found.gateway !== null && found.apps !== null && found.gateway.id === found.apps.id;
   const foreign: PlanLeftovers["foreign"] = [];
   const noteForeign = (application: AccessApplication | null) => {
@@ -303,12 +302,9 @@ export async function reconcileAccessApplications(
   return { apps, gateway, combined, leftovers: { dropped: plan.dropped, outsideBase: plan.outsideBase, foreign }, plan };
 }
 
-/** How many apps the plan lets public routes, and `/mcp`, through for (the done lines). */
-export function planCounts(plan: ReturnType<typeof appsDestinations>): { appsWithRoutes: number; appsWithMcp: number } {
-  return {
-    appsWithRoutes: plan.destinations.filter((d) => d.overrides.some((o) => !MCP_PATHS.includes(o.path_pattern))).length,
-    appsWithMcp: plan.destinations.filter((d) => d.overrides.some((o) => o.path_pattern === "/mcp")).length,
-  };
+/** How many apps the plan lets public routes through for (the done lines). */
+export function planCounts(plan: ReturnType<typeof appsDestinations>): { appsWithRoutes: number } {
+  return { appsWithRoutes: plan.destinations.filter((d) => d.overrides.length > 0).length };
 }
 
 /** The step the hook after a Gateway deploy reports on. */
@@ -408,11 +404,7 @@ export async function keepAccessAfterGatewayDeploy({
     }
     const counts = planCounts(result.plan);
     const routes =
-      counts.appsWithRoutes > 0
-        ? `public routes of ${plural(counts.appsWithRoutes, "app")}${counts.appsWithMcp > 0 ? `, /mcp on ${plural(counts.appsWithMcp, "app host")}` : ""}`
-        : counts.appsWithMcp > 0
-          ? `/mcp on ${plural(counts.appsWithMcp, "app host")}`
-          : "no app public routes";
+      counts.appsWithRoutes > 0 ? `public routes of ${plural(counts.appsWithRoutes, "app")}` : "no app public routes";
     out.emit({
       type: "step",
       step: KEEP_STEP,
