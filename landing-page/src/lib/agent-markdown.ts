@@ -102,8 +102,11 @@ export function renderAgentPage(markdown: string): {
         return `<figure class="my-4 bg-fd-card rounded-xl shiki relative border not-prose overflow-hidden text-sm"${language}><div class="text-[0.8125rem] py-3.5 overflow-auto max-h-[600px] fd-scroll-container"><pre class="min-w-full w-max *:flex *:flex-col"><code>${lines}</code></pre></div></figure>\n`;
       },
       html({ text }) {
-        // An HTML comment (a generated page's "Generated from …" note) stays out of the page.
-        return text.replace(/<!--[\s\S]*?-->/g, "");
+        // An HTML comment (a generated page's "Generated from …" note) stays
+        // out of the page. Anything else is a placeholder written in prose
+        // (`<app>`, `<name>.cloudflareaccess.com`, from a command's help), so
+        // it shows as text: the agent pages hold no HTML of their own.
+        return escapeHtml(text.replace(/<!--[\s\S]*?-->/g, ""));
       },
     },
   });

@@ -1,10 +1,8 @@
 /**
  * The agent docs (landing-page/content/agent, served at everyapp.com/docs/agent
- * and in llms.txt): the pages coding agents read and answer from. The tests
- * beside this file keep them in step with the code: a generated page is
- * rewritten from the source, and a hand-written one must name every code,
- * field, flag or constant the source defines. When a test fails, regenerate
- * and then document what is new:
+ * and in llms.txt): the pages coding agents read and answer from, and what
+ * the docs tests beside this file read them with. To rewrite what is
+ * generated:
  *
  *   pnpm -C packages/cli docs:update
  */
@@ -54,19 +52,62 @@ export function backticked(page: string): Set<string> {
   return found;
 }
 
-/** The `###` headings of a page, as written. */
-export function h3s(page: string): string[] {
-  return [...page.matchAll(/^### (.+)$/gm)].map((match) => match[1]!.trim());
-}
-
-/** GitHub-style anchor of a heading, as the docs site makes it. */
-export function anchorOf(heading: string): string {
+/** GitHub-style anchor of a heading's text, as the docs site makes it (github-slugger). */
+function anchorOf(heading: string): string {
   return heading
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s_-]/gu, "")
-    .trim()
-    .replace(/\s+/g, "-");
+    .replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, "")
+    .replace(/ /g, "-");
 }
+
+/**
+ * The anchors of a Markdown page's headings outside code, as the site makes
+ * them: a heading's own `[#id]`, or its text without code, emphasis and link
+ * markers, slugged, with `-1`, `-2` on a repeat.
+ */
+export function anchorsOf(markdown: string): Set<string> {
+  const anchors = new Set<string>();
+  const seen = new Map<string, number>();
+  let fence: string | null = null;
+  for (const line of markdown.split("\n")) {
+    const fenceMatch = line.match(/^\s*(`{3,}|~{3,})/);
+    if (fence) {
+      if (fenceMatch && fenceMatch[1]!.startsWith(fence[0]!) && fenceMatch[1]!.length >= fence.length) fence = null;
+      continue;
+    }
+    if (fenceMatch) {
+      fence = fenceMatch[1]!;
+      continue;
+    }
+    const heading = line.match(/^#{1,6}[ \t]+(.*?)[ \t]*$/);
+    if (!heading) continue;
+    const custom = heading[1]!.match(/\[#([^\]]+)\]\s*$/);
+    if (custom) {
+      anchors.add(custom[1]!.toLowerCase());
+      continue;
+    }
+    const text = heading[1]!
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/(`+)(.*?)\1/g, "$2")
+      .replace(/(\*\*|__)(.+?)\1/g, "$2")
+      .replace(/\\(.)/g, "$1");
+    const base = anchorOf(text);
+    const count = seen.get(base) ?? 0;
+    seen.set(base, count + 1);
+    anchors.add(count === 0 ? base : `${base}-${count}`);
+  }
+  return anchors;
+}
+
+/**
+ * Pages landing-page/scripts/sync-agent-docs.js writes at build time from
+ * the build-every-app skill (gitignored, so absent from a clean checkout),
+ * by slug → the repository path of the skill file they are made from.
+ */
+export const SKILL_PAGES: ReadonlyMap<string, string> = new Map([
+  ["build", "packages/cli/skills/build-every-app/SKILL.md"],
+  ["patterns", "packages/cli/skills/build-every-app/patterns.md"],
+]);
 
 /** ANSI colors out of a help text. */
 export function plain(text: string): string {

@@ -1,10 +1,10 @@
 /**
- * Every code the CLI can put in an event, read from the source, so the
- * errors page of the agent docs can be checked against them: the literal
- * codes commands raise, the ones the reporter gives, cf's kinds, the
- * argument parser's, the warnings, what `status` reports as fixes, the
- * actions a person must take, and what a hosted Gateway's deploy API
- * answers (the API stays; the CLI's deploy-key path left on 2026-10-24).
+ * Every code the CLI can put in an event, read from the source, which the
+ * errors page of the agent docs is generated from (errorsPage.ts): the
+ * literal codes commands raise, the ones the reporter gives, cf's kinds,
+ * the argument parser's, the registry's rules, the warnings, what
+ * `status` reports as fixes, and what a hosted Gateway's deploy API
+ * answers.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -12,7 +12,6 @@ import { fileURLToPath } from "node:url";
 import { ArgumentErrorCode } from "@/argumentErrors";
 import { ProblemCode } from "@/commands/status/problems";
 import { ReportCode } from "@/lib/errors";
-import { REQUIRED_ACTIONS } from "@/lib/output/events";
 
 const SRC = fileURLToPath(new URL("..", import.meta.url));
 const GATEWAY_DEPLOY = fileURLToPath(
@@ -21,6 +20,20 @@ const GATEWAY_DEPLOY = fileURLToPath(
 const SHARED_INSTALL = fileURLToPath(
   new URL("../../../perimeter/src/install", import.meta.url),
 );
+const REGISTRY = fileURLToPath(new URL("../../../perimeter/src/registry", import.meta.url));
+
+/** The registry's rules (`RegistrationErrorCode`), which the CLI and the deploy API re-raise. */
+function registryCodes(): string[] {
+  const text = readFileSync(path.join(REGISTRY, "registration.ts"), "utf8");
+  const union = text.match(/type RegistrationErrorCode =([\s\S]*?);/)?.[1] ?? "";
+  const codes = [...union.matchAll(/"([A-Z_0-9]+)"/g)].map((match) => match[1]!);
+  if (codes.length === 0) {
+    throw new Error(
+      "No registry codes read: `type RegistrationErrorCode =` in packages/perimeter/src/registry/registration.ts changed shape; update registryCodes() in packages/cli/src/docs/codes.ts.",
+    );
+  }
+  return codes;
+}
 
 function sourceFiles(root: string): string[] {
   const files: string[] = [];
@@ -78,7 +91,8 @@ interface CodeInventory {
   reporter: string[];
   argument: string[];
   status: string[];
-  actions: string[];
+  /** The registry's rules, which the CLI and the deploy API re-raise. */
+  registry: string[];
   /** The hosted deploy API's codes, by file under the gateway's server/deploy. */
   hostedApi: Map<string, Set<string>>;
 }
@@ -145,7 +159,7 @@ export function codeInventory(): CodeInventory {
     ],
     argument: Object.values(ArgumentErrorCode),
     status: Object.values(ProblemCode),
-    actions: [...REQUIRED_ACTIONS],
+    registry: registryCodes(),
     hostedApi,
   };
 }

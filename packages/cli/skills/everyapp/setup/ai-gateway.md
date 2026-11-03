@@ -91,8 +91,8 @@ credits) is not used: the Gateway always sends the provider's key, and
   (rotate it).
 - A model call answers 404 or 400 from `gateway.ai.cloudflare.com`: a
   provider path AI Gateway doesn't serve the way the catalog recorded
-  it (the entry's `aig` block; `landing-page/content/agent/ai.md` lists
-  each). `pnpm everyapp ai gateway off` sends everything direct again
+  it (the entry's `aig` block in
+  `packages/sdk/src/internal/catalog/inference.ts`). `pnpm everyapp ai gateway off` sends everything direct again
   while it is looked at.
 - Calls work but don't appear in the dashboard: the provider has no
   slug (Gemini, Cohere) and went direct.
@@ -114,4 +114,7 @@ credits) is not used: the Gateway always sends the provider's key, and
   pages under usage/providers/; authentication under
   configuration/authentication/; the header glossary), read 2026-10-25.
 - https://everyapp.com/docs/agent/ai (in the checkout
-  `landing-page/content/agent/ai.md`): how each provider is fronted.
+  `landing-page/content/agent/ai.md`): the default model and AI Gateway
+  in front.
+- `packages/sdk/src/internal/catalog/inference.ts`: each provider's
+  `aig` block, how AI Gateway fronts it.

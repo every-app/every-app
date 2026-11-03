@@ -1,8 +1,7 @@
 /**
  * The provider pages of the user docs (landing-page/content/docs/providers)
  * against the catalog, the OAuth presets and the sign-in providers they are
- * generated from, and the agent page providers.md's table of them. To
- * regenerate:
+ * generated from. To regenerate:
  *
  *   pnpm -C packages/cli docs:update
  */
@@ -10,14 +9,12 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseProviderSpec } from "@every-app/sdk/internal";
-import { UPDATE_DOCS, AGENT_DOCS_DIR, readPage, writePage } from "./pages";
-import { withBlock } from "./providersCatalog";
+import { UPDATE_DOCS, AGENT_DOCS_DIR } from "./pages";
 import {
   HAND_WRITTEN_PROVIDER_PAGES,
   PROVIDER_REQUEST_TEMPLATE,
   providerCompanies,
   providerPages,
-  providerPagesTable,
 } from "./providerPages";
 
 const DIR = fileURLToPath(new URL("../docs/providers/", AGENT_DOCS_DIR));
@@ -68,16 +65,5 @@ describe("the provider pages", () => {
         company.slug,
       ).toBeGreaterThan(0);
     }
-  });
-
-  it("has the table on the agent page providers.md", () => {
-    const page = readPage("providers");
-    const updated = withBlock(page, "provider-pages", providerPagesTable());
-    expect(updated, "providers.md has no provider-pages block").not.toBeNull();
-    if (UPDATE_DOCS) {
-      if (updated !== page) writePage("providers", updated!);
-      return;
-    }
-    expect(page, `providers.md's provider-pages block ${STALE}`).toBe(updated);
   });
 });

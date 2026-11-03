@@ -5,7 +5,6 @@
  * tests beside this file fail CI until it has:
  *
  *  - the catalog table of the agent page providers.md ({@link providersCatalog});
- *  - the AI and API-key settings tables of secrets.md ({@link catalogSettings});
  *  - the whole of the everyapp skill's setup/providers.md ({@link setupProvidersPage}).
  *
  * Each block on a page sits between `<!-- <name>:begin … -->` and
@@ -171,62 +170,16 @@ export function providersCatalog(): string {
       settingsOf(capability),
       hostsOf(capability),
       authRequest(capability.auth),
-      keySource(capability),
-      smokeOf(capability),
-      verifiedOf(capability),
     ]),
   );
   return marked("providers-catalog", [
-    `The built-in catalog has ${counts()}.`,
+    `The built-in catalog has ${counts()}. Where each key comes from, and a smoke request, are in the everyapp skill's \`setup/providers.md\` and on [the provider pages](/docs/providers).`,
     "",
-    "| Id | Name | Kind | Settings | Hosts | How the key is sent | Where the key comes from | Smoke request | Verified |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| Id | Name | Kind | Settings | Hosts | How the key is sent |",
+    "| --- | --- | --- | --- | --- | --- |",
     ...rows,
     "",
-    `OAuth clients (${code("oauth_client")}: the Gateway runs the flow; a person connects in each app, for the provider scopes that app lists): ${list(oauthClients.map(([id]) => id))}. Their settings, consoles, redirect URIs, hosts and scope spelling are generated in [the capabilities document](/docs/agent/repo/capabilities#oauth-clients). Gateway services (${code("service")}: no host, no spec): ${list(services)}.`,
-  ]);
-}
-
-/**
- * How an app asks for an AI entry: listed under `providers`, or, for the
- * proxy entry (AI Gateway), never: the operator turns it on and it fronts
- * the providers apps list. An entry with a chat route also serves the
- * default (`ai: { chat: true }`).
- */
-function manifestEntryOf(id: string, capability: AiProviderCapability): string {
-  if (capability.kind === "proxy") {
-    return `never listed: ${code("pnpm everyapp ai gateway on")} turns it on and every AI provider with an AI Gateway slug goes through it`;
-  }
-  return capability.chat
-    ? `${code(`providers: ["${id}"]`)}, or ${code("ai: { chat: true }")} when it is the Gateway's default`
-    : code(`providers: ["${id}"]`);
-}
-
-/** secrets.md's settings tables, one per kind: the AI providers' and the API-key providers'. */
-export function catalogSettings(kind: "ai" | "api_key"): string {
-  if (kind === "ai") {
-    return marked("ai-provider-settings", [
-      "| Setting | Configures | Manifest entry |",
-      "| --- | --- | --- |",
-      ...aiProviders.map(([id, capability]) =>
-        row([
-          settingsOf(capability),
-          `${capability.label} (${hostsOf(capability)}), the key sent as ${authRequest(capability.auth)}. ${hintOf(capability)}`,
-          manifestEntryOf(id, capability),
-        ]),
-      ),
-    ]);
-  }
-  return marked("api-key-provider-settings", [
-    "| Setting | Configures | Manifest entry |",
-    "| --- | --- | --- |",
-    ...apiKeys.map(([id, capability]) =>
-      row([
-        settingsOf(capability),
-        `${capability.label} (${hostsOf(capability)}), the key sent as ${authRequest(capability.auth)}. ${hintOf(capability)}`,
-        code(`capabilities: { ${id} }`),
-      ]),
-    ),
+    `OAuth clients (${code("oauth_client")}: the Gateway runs the flow; a person connects in each app, for the provider scopes that app lists): ${list(oauthClients.map(([id]) => id))}. Their consoles and redirect URIs are on [the provider pages](/docs/providers). Gateway services (${code("service")}: no host, no spec): ${list(services)}.`,
   ]);
 }
 

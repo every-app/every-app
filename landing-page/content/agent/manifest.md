@@ -1,1058 +1,158 @@
 ---
 title: everyapp.config.ts reference
-description: Every field of the app manifest (everyapp.config.ts), with its type, default, validation rule and exact error message, how the deploy turns it into the Worker, and what the Gateway does with it at request time.
-metaDescription: "Every field of everyapp.config.ts with its type, default and validation error, how the deploy builds the Worker, and what the Gateway does with it."
+description: Every field of the app manifest (everyapp.config.ts) with its rule and default, what the deploy makes from it, and what the Gateway does with it.
 ---
 
-The manifest is the single source of truth for an app's identity, resources and public surface. It is authored as `everyapp.config.ts` in the app's root, turned into the Worker definition by the app's `cloudflare.config.ts` (`everyAppWorker()` from `@every-app/sdk/cloudflare`), validated and snapshotted by the CLI into the Gateway's `apps` registry row as JSON at deploy time, and read by the Gateway's perimeter on every request. The schema lives in `packages/perimeter/src/manifest/manifest.ts`; everything below is derived from it and from the code that consumes each field.
-
-## Shape and loading
-
-The file default-exports the manifest wrapped in `defineEveryApp()` from `@every-app/sdk` (`packages/sdk/src/manifest.ts`; the starter's `everyapp.config.ts`):
+The manifest says who the app is, what it binds and what it opens to the internet. It is `everyapp.config.ts` in the app's root; `cloudflare.config.ts` turns it into the Worker with `everyAppWorker()`. The deploy validates it strictly (`INVALID_MANIFEST` names the field), registers it with the Gateway, and the Gateway enforces it on every request.
 
 ```ts
+// everyapp.config.ts
 import { defineEveryApp } from "@every-app/sdk";
 
 export default defineEveryApp({
   id: "notes",
   name: "Notes",
   resources: { d1: ["DB"] },
+  public: [{ path: "/share/:id" }],
+  capabilities: { email: { access: "write", why: "Sends a note to a teammate." } },
 });
 ```
 
-`defineEveryApp<const M extends EveryAppManifest>(manifest: M): M` returns the manifest as given. It types every field (`EveryAppManifest`, also exported from `@every-app/sdk`, with its parts `EveryAppResources`, `EveryAppCapabilityEntry`, `EveryAppSecretEntry`, `EveryAppSettingNeed`, `EveryAppPublicRoute`) and keeps the literal: `everyAppWorker<const M>()` infers the Worker's `Env` type from it (each D1, KV, R2, Durable Object, Workflow, Hyperdrive, AI Gateway and helper-Worker binding name becomes a typed key, and `EVERYAPP_MANIFEST` the manifest's own shape). A plain object literal ending in `as const` does the same without the field types; the test fixtures add `satisfies EveryAppCliManifest` (`packages/cli/src/test/fixtures/manifests/postiz.ts`). The type covers the shape (`EveryAppCapabilityEntry` is an API-key entry with `access` or an OAuth entry with `scopes` and `why`); the rules beyond it (which ids exist, reserved names) are the CLI's validation below. The schema (`packages/perimeter/src/manifest/manifest.ts`) is held to the SDK's type by `packages/perimeter/src/manifest/sdkManifest.test.ts`: a field added to one and not the other fails the perimeter's type check.
-
-`cloudflare.config.ts` consumes it like this (`starter/cloudflare.config.ts`):
-
 ```ts
+// cloudflare.config.ts
 import { defineConfig } from "cf/config";
 import { everyAppWorker } from "@every-app/sdk/cloudflare";
 import * as entrypoint from "./src/entry.worker.ts" with { type: "cf-worker" };
 import manifest from "./everyapp.config.ts";
 
-export default defineConfig((ctx) => ({
-  worker: everyAppWorker({ manifest, entrypoint, ctx }),
-}));
+export default defineConfig((ctx) => ({ worker: everyAppWorker({ manifest, entrypoint, ctx }) }));
 ```
 
-`everyAppWorker()` (`packages/sdk/src/cloudflare/worker.ts`) takes `manifest`, `entrypoint`, `ctx` (cf's `{ mode, isPreview }`), and optionally `root` (where `.dev.vars` and `.env` live), `crons` (five-field UTC schedules for the `scheduled` handler; `crons: "<s>" isn't a five-field cron schedule, e.g. "0 6 * * *".` otherwise) and `compatibilityFlags` (appended to `nodejs_compat`, which every Worker has). A helper Worker (`workers`) is built with `everyAppAuxiliaryWorker({ manifest, worker: "<name>", entrypoint, ctx })` and passed to the Vite plugin's `auxiliaryWorkers`. Nothing the Worker imports may be imported from `cloudflare.config.ts`: in dev the Cloudflare Vite plugin hides that file's imports from the Worker.
+Only `id` is required. Everything not declared is private and refused.
 
-`ctx.mode` is `development`, `production` or unset (cf's API commands and `cf workers types` pass none; unset builds as development). Any other mode throws `everyAppWorker() builds in the "development" or "production" mode, not "<mode>".` (`everyAppAuxiliaryWorker()` names itself for a helper). Production without `EVERYAPP_BUILD=1` in the environment throws ``EveryApp Workers are built for production only by `everyapp deploy` (`pnpm run deploy`), which sets EVERYAPP_BUILD=1 and installs the build: a bare `cf build` or `cf deploy` would ship a Worker whose name, identity keys, gateway binding and resources are placeholders. For a local build, run Vite in development mode (`vite build --mode development`).``; a local build of production shape is `vite build --mode development`.
+## Identity and display
 
-How the CLI loads it (`packages/cli/src/lib/manifest.ts`): `loadEveryAppManifest(cwd)` looks for `everyapp.config.ts` in the current directory, throws `MANIFEST_NOT_FOUND` with the message `No everyapp.config.ts in this directory` and the fix `run this from the app's directory` when there is none, evaluates it with jiti (`createJiti(pathToFileURL(manifestPath).href)` then `jiti.import(manifestPath, { default: true })`, so the file may import TypeScript), and passes the default export to `validateManifestStrict()`. `loadEveryAppManifestIfPresent(cwd)` returns null for a missing file (for commands that also run outside an app directory, like `secret`); a file that is present but invalid still throws. `loadEveryAppManifestFile(path)` loads a named file the same way, with `No manifest at <path>` when there is none unless the caller passes its own message (`email --manifest <path>`; `delete`).
+- `id`: kebab-case (`^[a-z]([a-z0-9-]*[a-z0-9])?$`), no `--`, not `everyapp`. It names the hostname (`<id>.<app base domain>`), the Worker (`every-<orgKey>-<id>`) and every resource (`<worker>--<binding>`). Changing it makes a new app.
+- `name`: the display name (default: the id). `description`: one line for the app library. `icon`: the path of an SVG the app serves (`/everyapp-icon.svg`).
+- `compatibilityDate`: `YYYY-MM-DD` for every Worker of the app (default `2026-06-01`).
+- `access`: who can open the app when it is first registered. `admins` (default): owners and admins, who open every app anyway. `everyone`: the app is available to everyone, every member now and later. A redeploy changes nothing; admins manage access in Admin → Apps afterwards.
 
-### What every Worker gets
+## `resources`
 
-What `everyAppWorker()` puts in the app's own Worker's `env` in each mode, before the manifest's resources are added (`packages/sdk/src/cloudflare/worker.ts`; the types are `EveryAppDevEnv` and `EveryAppDeployEnv`). In production every install-specific value is a placeholder from `sentinelDeployTarget()` that the deploy rewrites when it installs the build (`packages/perimeter/src/install/config.ts`).
+Bindings the Worker reads from `env`. The deploy creates each in the person's Cloudflare account, named after the Worker (`W`), records it as the app's, and reuses it on the next deploy. `everyapp delete --purge` deletes what the app recorded.
 
-| Binding                         | Type                             | Development (`cf dev`, or no mode)                                                                                                                  | Production                                                                                                                                                                                      |
-| ------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `EVERYAPP_APP_ID`               | `text`                           | the manifest's `id`                                                                                                                                 | the manifest's `id`                                                                                                                                                                             |
-| `EVERYAPP_MANIFEST`             | `json`                           | the manifest itself, as `everyapp.config.ts` exports it                                                                                             | same; the Worker reads what the app asked for here, since it can't import `everyapp.config.ts`                                                                                                  |
-| `CF_VERSION_METADATA`           | `version-metadata`               | present                                                                                                                                             | present                                                                                                                                                                                         |
-| `EVERYAPP_DEV`                  | `text`                           | `"1"`                                                                                                                                               | absent (the deploy policy refuses a Worker that has it)                                                                                                                                         |
-| `EVERYAPP_IDENTITY_PUBLIC_KEYS` | `text`                           | `JSON.stringify([DEV_PUBLIC_KEY_PEM])`: the well-known dev key from `@every-app/sdk/dev`, built in, so nothing needs writing to `.dev.vars`         | the install's identity public keys as a JSON array                                                                                                                                              |
-| `EVERYAPP_IDENTITY_ISSUER`      | `text`                           | `DEV_ISSUER`, `https://gateway.dev.localhost`                                                                                                       | the Gateway's URL                                                                                                                                                                               |
-| `EVERYAPP_AUDIENCE`             | `text`                           | absent                                                                                                                                              | the Worker name; the Gateway mints every identity token for it (`aud`)                                                                                                                          |
-| `EVERY_APP_GATEWAY`             | `worker`                         | absent (the SDK calls providers directly with local keys)                                                                                           | `{ type: "worker", worker: "every-app-gateway", exportName: "AppGateway", props: { organizationId, appId, workerName } }` (`gatewayBinding()`); the props are the app's identity to the Gateway |
-| `GATEWAY_URL`                   | `secret` (`text` in development) | where `everyapp dev` serves its launcher, which it passes to the app's dev server as `EVERYAPP_DEV_GATEWAY_URL`; `http://localhost:8787` without it | sent by the deploy through `cf deploy --secrets-file`; `gatewayUrl(env)` from `@every-app/sdk/server` reads it                                                                                  |
-| `EVERY_APP_ORG_ID`              | `secret`                         | absent                                                                                                                                              | sent the same way; installing a shared app, which serves every organization, drops it                                                                                                           |
-| `EVERYAPP_SHARED`               | `text`                           | absent                                                                                                                                              | `"1"` on a shared app's Workers only, put in by the install in place of `EVERY_APP_ORG_ID` (`installWorkerConfig()`)                                                                            |
-| `DATABASE_PROVIDER`             | `text`                           | `database.provider`, when `database` is declared                                                                                                    | same                                                                                                                                                                                            |
+| Field | Form | Account name and notes |
+|---|---|---|
+| `resources.d1` | `["DB"]` | `W` for `DB`, else `W--<binding>`. Migrated by the deploy (`migrations`). |
+| `resources.kv` | `["KV"]` | Same naming. |
+| `resources.r2` | `["FILES"]` | Same naming. R2 must be enabled on the account once (`R2_NOT_ENABLED`). |
+| `resources.durableObjects` | `[{ name, className, worker? }]` | `resources.durableObjects[].name` is the binding, `resources.durableObjects[].className` the exported class, `resources.durableObjects[].worker` the helper that defines it (default: the app's Worker). Dropping a class deletes its data: the deploy refuses without `--allow-delete-durable-object-data`. |
+| `resources.workflows` | `[{ name, className, worker? }]` | `W--<binding>`, at most 64 characters. `resources.workflows[].name`, `resources.workflows[].className`, `resources.workflows[].worker` as for Durable Objects. Dropping one needs `--allow-delete-workflows`. |
+| `resources.hyperdrive` | `[{ name, worker?, caching? }]` | Postgres through Hyperdrive ([Postgres](#postgres)). `resources.hyperdrive[].name` is the binding; `resources.hyperdrive[].worker` limits it to one helper; `resources.hyperdrive[].caching` is `off` (default: apps read their own writes) or `default`. |
+| `resources.queues` | `[{ name, consumer? }]` | [Queues](#queues). |
+| `resources.ai` | `["AI"]` | The Workers AI binding (`env.AI.run()`), account-wide, nothing created. Remote even under `everyapp dev`. Not the Gateway's AI providers (`providers`). |
+| `resources.browser` | `["BROWSER"]` | Browser Rendering (`@cloudflare/puppeteer`), account-wide. Works locally. |
+| `resources.images` | `["IMAGES"]` | Cloudflare Images, account-wide. Works locally. |
+| `resources.vectorize` | `[{ name, dimensions, metric }]` or `[{ name, preset }]` | [Vectorize](#vectorize). |
+| `resources.aiGateway` | `[{ name, collectLogs?, cacheTtl? }]` | An AI Gateway of the app's own, id `W-<binding>`. `resources.aiGateway[].name` is the binding (a json `{ id, accountId, url }`); `resources.aiGateway[].collectLogs` (default `true`); `resources.aiGateway[].cacheTtl` seconds (default `0`). Separate from the Gateway's AI proxy. |
+| `resources.sendEmail` | `[{ name, allowedSenderAddresses, … }]` | [Email sending](#email-sending). |
+| `resources.secretsStore` | `[{ name }]` | A Secrets Store secret `W--<binding>`, read with `await env.<NAME>.get()`. `resources.secretsStore[].name` is the binding. The account needs a store (create one once in the dashboard); the value comes from `<BINDING>=` in `.everyapp/secrets.env`. |
+| `resources.analyticsEngine` | `[{ name, dataset? }]` | `resources.analyticsEngine[].name` is the binding; `resources.analyticsEngine[].dataset` defaults to `W--<binding>`. Nothing created; data expires after 90 days. |
+| `resources.artifacts` | `[{ name }]` | A Cloudflare Artifacts namespace `W--<binding>` (git repos the Worker creates). `resources.artifacts[].name` is the binding. Remote under `everyapp dev`. |
 
-After these come the manifest's resources (`resources`, `workers[].binding`, the classes), and in development only, `secret` bindings for each of the app's `secrets` and `settings` (a setting not set locally but with a default: a `text` binding with the default), each `DEV_GATEWAY_KEYS` name of its `providers` and `capabilities`, and `EVERYAPP_EMAIL_SENDERS` for an app listing `email`, when set locally (`addSecrets()`; the sections below). A helper Worker gets a different set: see `workers`.
-
-### Strict validation, and how a stored row is read
-
-One schema, `ManifestSchemaStrict` (`.strict()` at the top level and in every sub-object; `secrets` and `settings` are arrays with their own rules, below), and one copy derived from it to read stored rows:
-
-| Validator                  | Schema                                                                                                                                                                                                                                                                                                                | Who runs it                                                                                                                                                                                                                                              | Unknown keys                             | Error prefix                |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | --------------------------- |
-| `validateManifestStrict()` | `ManifestSchemaStrict`                                                                                                                                                                                                                                                                                                | The CLI, on every load; every registration (`planRegistration()` and `markDeployedUpdate()`, with `unknownCapabilities: "accept"`: the CLI itself in self-host, where it writes the Gateway's D1, the Gateway's own installs, and the hosted deploy API) | Refused: `Unrecognized key: "backgroud"` | `Invalid everyapp.config: ` |
-| `validateManifest()`       | `ManifestSchema`: `ManifestSchemaStrict` loosened (`loosen()` in `packages/perimeter/src/manifest/manifest.ts`): every object open to unknown keys, every enum any string, every refinement and value rule (`.min`, `.regex`, `.refine`) left out; `capabilities` read with `CapabilityRequestSchema`, never loosened | The Gateway and the CLI whenever they read a stored row (`rowToRegisteredApp()`, `parseStoredManifest()`)                                                                                                                                                | Kept                                     | `Invalid manifest: `        |
-
-Why: the CLI and the Gateway are one release, and what is written is checked strictly. A stored row is read with the loosened copy, so a row an earlier or later everyapp wrote still routes; `parseStoredManifest()` returns null for a row that no longer parses. Registration wraps a failure as `INVALID_MANIFEST` (HTTP 400) and also refuses `manifest.id "<id>" does not match appId "<slug>"`.
-
-Both throw `ManifestError` and both reject: a public route that is not absolute, a catch-all public route, percent-encoding, backslashes, dot segments, an invalid named segment, and anything under `/__everyapp` (`assertPublicPathIsSafe`), each for a `public` route and for a `publicAssets` pattern. The strict path additionally runs the secret/binding clash check, the reserved-id check, the refusal of a `public` route that is `/mcp`, under it, or a pattern that covers it (`public: /:page can't be public (it covers /mcp)`), the refusal of a `public` route that covers the server-function endpoint (`/_serverFn`), under GET or POST (`public: /_serverFn/** can't be public (it covers /_serverFn, where every server function lives); …`): the same-origin guard there is a CSRF check, not authentication, so a public page serves its data from a route of its own such as `/api/public/...`, the same refusal of a `publicAssets` pattern (`publicAssets: /:page can't be a public asset (it covers /mcp); /mcp is never a static file`), `assertHelperWorkersAreDeclared` and `assertDatabaseIsConsistent` (each below). Issues are joined with `; ` and each is prefixed with its path (`capabilities.email.access: …`, or `(root)` at the top level).
-
-## Fields
-
-Every top-level field. Nothing is required but `id`.
-
-| Field               | Type                                                                                                                                          | Default                                  | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                | string, kebab-case                                                                                                                            | required                                 | The stable app id: the hostname's first label and the stem of the Worker name.                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `name`              | string, non-empty                                                                                                                             | the `id`                                 | Display name; the registry row's `name`. `everyapp create` writes the id's words capitalized (`my-app` is `My App`).                                                                                                                                                                                                                                                                                                                                                                  |
-| `description`       | string                                                                                                                                        | the `id`                                 | One line for the app library; the registry row's `description`.                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `icon`              | path of an SVG the app serves                                                                                                                 | the favicon                              | The launcher tile the Gateway's app library shows.                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `compatibilityDate` | `YYYY-MM-DD`                                                                                                                                  | `2026-06-01`                             | Workers compatibility date for the app's Worker and its helpers.                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `resources`         | object                                                                                                                                        | none                                     | The D1, KV, R2, Durable Object, Workflow, Hyperdrive, Queue (`resources.queues`), Vectorize (`resources.vectorize`), AI Gateway (`resources.aiGateway`) and Secrets Store (`resources.secretsStore`) bindings the deploy provisions and binds, and Workers AI (`resources.ai`), Browser Rendering (`resources.browser`), Images (`resources.images`), Cloudflare's `send_email` bindings (`resources.sendEmail`) and Analytics Engine (`resources.analyticsEngine`), which need none. |
-| `workers`           | array                                                                                                                                         | none                                     | Helper Workers deployed beside the app's Worker as `<app worker>--<name>`.                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `database`          | `{ provider, region? }`                                                                                                                       | none                                     | The database the app's code talks to (`DATABASE_PROVIDER`), and the region its Workers are placed near.                                                                                                                                                                                                                                                                                                                                                                               |
-| `limits`            | `{ cpuMs? }`                                                                                                                                  | Cloudflare's default                     | CPU time per invocation for the app's own Worker.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `public`            | array of `{ path, methods? }`                                                                                                                 | none (default-private)                   | Routes reachable without an authenticated session.                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `publicAssets`      | array of path globs, at most 25                                                                                                               | none                                     | Static files of the Worker's asset bundle (favicons, a web manifest, `/assets/**`) anyone may GET or HEAD; never the Worker's code.                                                                                                                                                                                                                                                                                                                                                   |
-| `providers`         | array of provider ids, or `{ id, why?, docs?, optional?, anyOf? }` entries                                                                    | none                                     | AI providers the app may call through the Gateway at `/api/ai/<provider>`.                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `capabilities`      | record by capability id of `{ access, why?, docs?, optional?, anyOf? }`, or `{ scopes, why, docs?, optional?, anyOf? }` for an OAuth provider | none                                     | Third-party APIs and Gateway services the Gateway performs for the app with keys it holds.                                                                                                                                                                                                                                                                                                                                                                                            |
-| `secrets`           | array of names, or `{ name, why?, docs?, optional?, anyOf?, setup? }` entries                                                                 | none                                     | The app's own secrets, set on its Workers by `everyapp configure <app>` (everything the manifest declares) or `everyapp secret set <NAME>` (one name).                                                                                                                                                                                                                                                                                                                                |
-| `settings`          | array of `{ name, why, type?, values?, default?, optional?, docs? }`                                                                          | none                                     | The app's plain settings: values that aren't secrets and differ per install (a host, a project id, a region), held on its Workers like its secrets, set by `everyapp configure <app>`, read from `env`.                                                                                                                                                                                                                                                                               |
-| `scopes`            | record of scope id to description                                                                                                             | none                                     | Opaque app-domain scopes personal access tokens may request.                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `ai`                | `{ models?, routes? }`                                                                                                                        | any model, inference only                | Limits on what the app may do through the Gateway's AI proxy.                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `email`             | `{ inbound? }`                                                                                                                                | none                                     | Declares the Worker's `email()` handler.                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `access`            | `"everyone"` or `"admins"`                                                                                                                    | `"admins"`                               | Who can open the app when it is first registered.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `build`             | shell command                                                                                                                                 | `cf build`                               | Builds the app for production.                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `dev`               | shell command                                                                                                                                 | `cf dev`                                 | Starts the app's dev server for `everyapp dev`.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `install`           | `false` or shell command                                                                                                                      | auto-detected                            | Installs dependencies before a build.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `migrations`        | object                                                                                                                                        | drizzle, first D1 binding, `drizzle` dir | How the app's database is migrated; `engine` is required once the object is given.                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `events`            | `{ subscribe, why }`                                                                                                                          | none                                     | The Gateway events the app receives at `everyApp(handler, { events: { on } })`, for its own organization, over its service binding. Only `member.*` (but `member.password_reset`), `group.*`, `app.*`, `mcp_app.*`, `connection.*` and `tool.*`.                                                                                                                                                                                                                                      |
-
-## id
-
-- Regex `^[a-z]([a-z0-9-]*[a-z0-9])?$`, message `id must be kebab-case (lowercase, digits, hyphens)`. The SDK checks the same regex when building the Worker (`everyapp.config.ts id must be kebab-case (lowercase letters, digits, hyphens); got "<id>".`).
-- Reserved: `everyapp` (it prefixes the Gateway's own MCP tools, `everyapp_<tool>`). The strict validator throws `Invalid everyapp.config: id "everyapp" is reserved for the platform.`; `isReservedAppId()` is the check. Registration refuses the same id with its own code, `RESERVED_APP_ID` (400): `The app id "everyapp" is reserved for the platform.` An id whose Worker name would be the Gateway's own (`app-gateway`, since `every-app-gateway` is `GATEWAY_WORKER_NAME`) is refused by the SDK (`App id "app-gateway" is reserved: its Worker would be the gateway's own (every-app-gateway).`) and by `everyapp create` (`"app-gateway" is reserved for the platform`).
-- Registration refuses an id containing `--` (`INVALID_APP_ID`: `App id "<id>" can't contain "--": it separates an app's Worker name from its resources' names. Choose another id.`). The regex alone allows it: `everyapp create` refuses such a name up front with its own `INVALID_APP_ID` (`"<name>" isn't a valid app name`, fix `don't put two dashes in a row, e.g. <name with single dashes>`; `packages/cli/src/commands/create/steps/appId.ts`, which also caps a name at 64 characters), and a manifest written by hand is caught at registration.
-
-What the id names:
-
-| Name                | Rule                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Source                                                            |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Hostname            | `<id>.<APP_BASE_DOMAIN>` for the install's own organization; `<id>-<orgKey>.<APP_BASE_DOMAIN>` for any other organization. The label must match `^(?=.{1,63}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$` or registration fails `INVALID_APP_HOSTNAME`.                                                                                                                                                                                                                                                                                                                                                                                         | `appNames()` in `packages/perimeter/src/registry/registration.ts` |
-| Worker name         | `every-<orgKey>-<id>` (`registryWorkerNameFor()`), assigned at registration so two organizations never share a Worker, D1 database or KV namespace. At most 63 characters (`MAX_WORKER_NAME_LENGTH`), else `INVALID_WORKER_NAME` (400): `App id "<id>" is too long: its Worker name "<name>" would exceed 63 characters.` Never `every-app-gateway` or a name starting `every-app-gateway-` (`isReservedName()`); that, or a stored Worker name that is not the app's own, is `INVALID_WORKER_NAME` with `App id "<id>" can't be registered: its Worker would be "<name>", which is reserved for the gateway or isn't the app's own.` | `packages/perimeter/src/manifest/manifest.ts`                     |
-| Legacy Worker name  | `every-<id>` (`workerNameFor()`; an id already starting `every-` is used as is). This is the dev Worker name (`everyapp dev`, local D1 ids) and the name apps registered before org-scoped names keep.                                                                                                                                                                                                                                                                                                                                                                                                                                | same                                                              |
-| `EVERYAPP_APP_ID`   | A text binding with the id on every one of the app's Workers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `packages/sdk/src/cloudflare/worker.ts`                           |
-| `EVERYAPP_AUDIENCE` | A text binding with the Worker name; the Gateway mints every identity token for that `aud`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | same                                                              |
-
-Every account-wide resource is named after the Worker name with the separator `--` (`RESOURCE_SEPARATOR`): org keys have no hyphens and no org-scoped app id may contain `--`, so `every-acme-notes--archive` can only ever be app `notes`'s `ARCHIVE` database, never app `notes-archive`'s own.
-
-## name, description and icon
-
-- `name`: `z.string().min(1)`. `description`: any string. Registration writes both to the registry row as `manifest.name ?? manifest.id` and `manifest.description ?? manifest.id` (`packages/cli/src/commands/appGateway.ts`), a redeploy updates them (`packages/cli/src/lib/gateway/registry.ts`), and the Gateway's admin UI can edit them afterwards (`AppRepository.ts`). `everyapp create` writes `name` as the id's dash-separated words with their first letter capitalized (`appNameFor()` in `packages/cli/src/commands/create/steps/updateConfiguration.ts`: `my-app` is `My App`, `crm2` is `Crm2`) and keeps the template's description.
-- `icon`: regex `^(\/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)*\/[A-Za-z0-9_~-][A-Za-z0-9._~-]*\.svg$`, message `icon must be the path of an SVG the app serves, such as "/everyapp-icon.svg"`. The Gateway reads it from the stored manifest (`json_extract(manifest, '$.icon')`) and the app library loads `//<hostname><icon>`, falls back to `//<hostname>/favicon.ico`, then to the first letter of the name; only an active app with a hostname gets an image (`apps/every-app-gateway/src/client/components/AppIcon.tsx`). The app draws the whole tile; the library only rounds its corners.
-
-## compatibilityDate
-
-- `compatibilityDate`: regex `^\d{4}-\d{2}-\d{2}$`, message `must be YYYY-MM-DD`. Default `2026-06-01` (`DEFAULT_COMPATIBILITY_DATE` in `packages/sdk/src/cloudflare/worker.ts`); applied to the app's Worker and every helper Worker. Compatibility flags are not a manifest field: every Worker gets `nodejs_compat`, and `everyAppWorker({ compatibilityFlags })` appends more; the Postiz fixture (`packages/cli/src/test/fixtures/manifests/postiz.ts`) adds `global_fetch_strictly_public` to both of its Workers.
-
-## resources
-
-Binding names are what the Worker reads from `env`. In the strict schema, `resources.d1`, `resources.kv`, `resources.r2`, `resources.ai`, `resources.browser`, `resources.images`, `resources.analyticsEngine[].name`, `resources.artifacts[].name`, `resources.workflows[].name`, `resources.hyperdrive[].name`, `resources.queues[].name`, `resources.vectorize[].name` and `resources.secretsStore[].name` must match `^[A-Za-z_][A-Za-z0-9_]*$` (`binding names must be JavaScript identifiers`; a queue's or an Artifacts binding also can't end with `_`, since its name in the account would end with a hyphen); `resources.durableObjects[].name` is any string; `resources.aiGateway[].name` is stricter, below. Unknown keys inside `resources` are refused in the strict schema. One name may be used once across `d1`, `kv`, `r2`, `hyperdrive`, `queues`, `ai`, `browser`, `images`, `vectorize`, `aiGateway`, `sendEmail`, `secretsStore`, `analyticsEngine` and `artifacts` (`the binding <NAME> is declared twice in resources.`). The SDK refuses a binding that reuses a name the Worker already has (`r2: <NAME> reuses a binding name the Worker already has.`, `hyperdrive: …`, `queues: …`, `ai: …`, `browser: …`, `images: …`, `vectorize: …`, `aiGateway: …`, `sendEmail: …`, `secretsStore: …`, `analyticsEngine: …`, `artifacts: …`, `workflows: <NAME> (<Class>) reuses a binding or class name the Worker already has.`).
-
-How each resource is named in the Cloudflare account, from the Worker name (`W`, e.g. `every-acme-notes`) and the binding:
-
-| Field                       | Account name                                   | Rule                                                                                                                                                                                                                                                                                           |
-| --------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `resources.d1`              | `W` for `DB`; `W--<binding>` otherwise         | `resourceNameFor()`: the suffix is the binding lowercased with `_` turned into `-`                                                                                                                                                                                                             |
-| `resources.kv`              | `W` for `KV`; `W--<binding>` otherwise         | same                                                                                                                                                                                                                                                                                           |
-| `resources.r2`              | `W` for `R2`; `W--<binding>` otherwise         | `bucketNameFor()`; `MAX_BUCKET_NAME_LENGTH` is 63. `R2` is the bucket apps bound by hand before `resources.r2` existed                                                                                                                                                                         |
-| `resources.workflows`       | `W--<binding>` always                          | `workflowNameFor()`; at most 64 characters (`workflows: <NAME> would be the Workflow "<name>", longer than Cloudflare's 64 characters; shorten the binding name.`)                                                                                                                             |
-| `resources.hyperdrive`      | `W--<binding>` always                          | `hyperdriveNameFor()` in `packages/cli/src/lib/app/resources.ts` (the same suffix rule as D1 and KV); the config is created and reconciled by the deploy through `packages/cli/src/lib/cf/hyperdrive.ts`                                                                                       |
-| `resources.queues`          | `W--<binding>` always                          | `queueNameFor()`; at most 63 lowercase letters, digits and hyphens (`MAX_QUEUE_NAME_LENGTH`, `isValidQueueName()`), checked by the deploy once the Worker's name is known (`QUEUE_NAME_INVALID`); the queue is created by the deploy through `packages/cli/src/lib/cf/queues.ts`               |
-| `resources.ai`              | none                                           | Workers AI is account-wide: nothing is created, recorded or deleted (`### Workers AI` below)                                                                                                                                                                                                   |
-| `resources.browser`         | none                                           | Browser Rendering is account-wide: nothing is created, recorded or deleted (`### Browser Rendering` below)                                                                                                                                                                                     |
-| `resources.images`          | none                                           | Images is account-wide: nothing is created, recorded or deleted (`### Images` below)                                                                                                                                                                                                           |
-| `resources.vectorize`       | `W--<binding>` always                          | `vectorizeNameFor()`; `MAX_VECTORIZE_NAME_LENGTH` is 64 (the deploy refuses a longer one with `VECTORIZE_NAME_TOO_LONG`); lowercase letters, digits and hyphens, which the rule always gives                                                                                                   |
-| `resources.aiGateway`       | `W-<binding>` always (one hyphen)              | `aiGatewayIdFor()`: the gateway's id, which Cloudflare allows only lowercase letters and digits joined by single hyphens, at most 64 characters (`isAiGatewayId()`), so it can't carry the `--` separator                                                                                      |
-| `resources.sendEmail`       | none                                           | Cloudflare's `send_email` binding is account-wide: nothing is created, recorded or deleted (`### Email sending` below)                                                                                                                                                                         |
-| `resources.secretsStore`    | `W--<binding>` always, in the account's store  | `storeSecretNameFor()`: the same suffix rule; a secret in the Secrets Store the account already has (`### Secrets Store` below)                                                                                                                                                                |
-| `resources.analyticsEngine` | `dataset` as written; `W--<binding>` otherwise | `analyticsDatasetFor()`; letters, digits, `-` and `_`, at most 128 characters (Cloudflare's rule). Never created, recorded or deleted (`### Analytics Engine` below)                                                                                                                           |
-| `resources.artifacts`       | `W--<binding>` always                          | `artifactsNamespaceFor()`: the namespace, at most 63 characters (`MAX_ARTIFACTS_NAMESPACE_LENGTH`, `isArtifactsNamespace()`), checked by the deploy once the Worker's name is known (`APP_POLICY`). Never created; recorded, and its repos deleted by `delete --purge` (`### Artifacts` below) |
-| `workers`                   | `W--<name>`                                    | `helperWorkerName()`; at most 63 characters (`Helper Worker <name> is longer than Cloudflare's 63 characters; shorten its name in everyapp.config.ts.`)                                                                                                                                        |
-
-Every D1 database, KV namespace, R2 bucket, queue (its producer binding) and Vectorize index is bound on all of the app's Workers (the app's own and each helper). In production the binding carries the ids and names the deploy provisioned (placeholders from `sentinelDeployTarget()` until `everyapp deploy` or a hosted deployer rewrites them; a bare `cf build` or `cf deploy` is refused unless `EVERYAPP_BUILD=1`). In development (`cf dev`, or no mode): a D1 binding gets the fixed local id `localD1Id(W, binding)` (the first 32 hex characters of `sha256("W:binding")`, which `cf d1 … --local` and `everyapp db` both address); a KV binding gets id `<binding>-W` when the manifest has helper Workers (so helpers share the namespace in dev) and cf's default otherwise; an R2 binding and a queue binding are named by the production rule.
-
-### Durable Objects and Workflows
-
-`resources.durableObjects` and `resources.workflows` are arrays of `{ name, className, worker? }`:
-
-- `resources.durableObjects[].name` / `resources.workflows[].name`: the binding.
-- `resources.durableObjects[].className` / `resources.workflows[].className`: the exported class.
-- `resources.durableObjects[].worker` / `resources.workflows[].worker`: the helper Worker (from `workers[].name`) that defines the class; the app's own Worker when unset. Naming an undeclared helper fails: `<NAME> is defined by Worker "<worker>", which workers doesn't declare.`
-
-The app's Worker binds every class (each pointing at the Worker that defines it); a helper Worker binds only the classes it defines. Each Worker exports the classes it defines: Durable Objects as `{ type: "durable-object", storage: "sqlite" }`, Workflows as `{ type: "workflow", name }`. Every Worker that binds a Workflow can start it and look up its instances. When the app's entrypoint is a `cf-worker` module import, the app's own Durable Object bindings reference the Worker definition itself, so cf types the namespace with the class (`DurableObjectNamespace<MailboxDO>`) and RPC calls type-check; a path entrypoint or a helper's class is bound by name and untyped.
-
-### Hyperdrive
-
-`resources.hyperdrive[]` takes `{ name, worker?, caching? }`:
-
-- `resources.hyperdrive[].name`: the binding; the config is named `W--<binding>`.
-- `resources.hyperdrive[].worker`: a helper Worker that alone binds it; every Worker binds it when unset. An undeclared helper fails: `Hyperdrive <NAME> is bound by Worker "<worker>", which workers doesn't declare.`
-- `resources.hyperdrive[].caching`: `off` (the default) or `default`. Off because Hyperdrive never invalidates a cached read when the app writes, and app code reads its own writes; `default` turns on Cloudflare's own caching (60 s, stale for 15 s more). The deploy sets `caching.disabled` on the config accordingly and corrects a config that caches otherwise (`cachesAs()` in `packages/cli/src/lib/cf/hyperdrive.ts`).
-
-The origin is the binding's required setting, and it never leaves the machine that deploys: the deploy creates the config from the origin URL in the app's secrets file `.everyapp/secrets.env`, `<BINDING>_ORIGIN_URL`, or `POSTGRES_DATABASE_URL` when the app has one config. Without it the deploy stops with [`HYPERDRIVE_ORIGIN_MISSING`](/docs/agent/errors#hyperdrive_origin_missing), naming the variable for this app (`POSTGRES_DATABASE_URL (or HYPERDRIVE_ORIGIN_URL)` for one config, the binding's own for several) and the file, and `everyapp status` names the same under the app while its first deploy hasn't finished. Once the config exists a redeploy needs no origin (with one, it repoints the config). The password goes to cf in a private body file, never on the command line, and nothing from that file reaches the Worker. `everyapp configure` doesn't write the file: it sets what the Gateway and the app's Worker hold. In development a binding exists only when `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_<binding>` is set in `.dev.vars` or `.env`. Hyperdrive is not available on the dispatch tier (below). Which databases it reaches, the steps and the code: [Postgres](#postgres).
+Every D1, KV, R2, queue producer and Vectorize binding is on all of the app's Workers.
 
 ### Queues
 
-`resources.queues[]` takes `{ name, consumer? }`: a Cloudflare Queue every Worker of the app sends to, and the Worker that consumes it.
-
-```ts
-export default defineEveryApp({
-  id: "crawl",
-  resources: {
-    d1: ["DB"],
-    queues: [
-      { name: "EMAILS" }, // a producer only
-      { name: "JOBS", consumer: true }, // the app's own Worker consumes
-      {
-        name: "CRAWLS",
-        consumer: {
-          worker: "crawler",
-          maxBatchSize: 5,
-          maxRetries: 2,
-          deadLetterQueue: "FAILED_CRAWLS",
-        },
-      },
-      { name: "FAILED_CRAWLS" },
-    ],
-  },
-  workers: [{ name: "crawler" }],
-});
-```
-
-- `resources.queues[].name`: the binding; the queue is named `W--<binding>` (`every-acme-crawl--failed-crawls`).
-- `resources.queues[].consumer`: `true` for the app's own Worker, or an object of Cloudflare's consumer settings (`@cloudflare/config`'s `QueueConsumerTriggerOptions` but the name, which is the queue's); absent, nothing in the app consumes it. In the strict schema the object is `.strict()`.
-- `resources.queues[].consumer.worker`: a helper Worker (from `workers[].name`) that consumes; the app's own Worker when unset. An undeclared helper fails: `Queue <NAME> is consumed by Worker "<worker>", which workers doesn't declare.`
-- `resources.queues[].consumer.maxBatchSize`: the most messages a batch holds (a positive integer).
-- `resources.queues[].consumer.maxBatchTimeout`: the most seconds to wait to fill a batch (Cloudflare keeps it as `max_wait_time_ms`).
-- `resources.queues[].consumer.maxRetries`: how many times a message is retried before it goes to the dead-letter queue, or is dropped without one.
-- `resources.queues[].consumer.maxConcurrency`: the most consumer invocations at once (a positive integer), or `null` (the same as unset) to scale with the backlog.
-- `resources.queues[].consumer.retryDelay`: the seconds before a message is retried.
-- `resources.queues[].consumer.visibilityTimeoutMs`: Cloudflare's setting for pulled messages, passed through as given.
-- `resources.queues[].consumer.deadLetterQueue`: another of the app's queue bindings, which takes the messages that ran out of retries; the trigger carries that queue's name. Anything else fails (`Queue <NAME>'s deadLetterQueue "<value>" isn't one of resources.queues; declare it there and name its binding.`), and so does the queue itself (`Queue <NAME> can't be its own dead-letter queue; name another of resources.queues.`): Cloudflare creates a dead-letter queue that doesn't exist, even under `--no-provision`, and no deploy would record it.
-
-**The bindings.** Every Worker of the app gets a producer binding `{ type: "queue", name }` for each queue (`QueueBinding` in `@every-app/sdk/cloudflare`; `cf workers types` types it as `Queue`), and the consuming Worker gets a trigger `{ type: "queue", name, deadLetterQueue?, maxBatchSize?, maxBatchTimeout?, maxRetries?, maxConcurrency?, retryDelay?, visibilityTimeoutMs? }` (`QueueConsumerTrigger`) in its `triggers`, after its crons. In production both `name`s (and `deadLetterQueue`) are `resourceSentinel(binding)` until the deploy rewrites them to the queue's name; in development they are `queueNameFor(<dev worker name>, binding)` (`every-crawl--jobs`), which Miniflare creates and emulates locally, producers and consumers both (nothing to set; [`dev`](/docs/agent/dev)).
-
-**The handler.** `everyApp()` returns only `{ fetch }`, so a consuming Worker exports its `queue()` handler beside it:
-
-```ts
-const app = everyApp<Env>(handler, { tools });
-
-export default {
-  ...app,
-  async queue(batch: MessageBatch<{ url: string }>, env: Env) {
-    for (const message of batch.messages) {
-      await crawl(message.body.url, env);
-      message.ack();
-    }
-  },
-} satisfies ExportedHandler<Env, { url: string }>;
-```
-
-Without one, the upload goes live and Cloudflare then refuses the consumer: [`QUEUE_HANDLER_MISSING`](/docs/agent/errors#queue_handler_missing) (export it and deploy again). A helper Worker that consumes exports `queue()` from its own entry. Send from any Worker of the app with `await env.JOBS.send({ … })` (or `sendBatch`).
-
-**What the deploy does.** In `app.resources`, before the build is installed: every queue's name is checked (`QUEUE_NAME_INVALID`), then each queue is looked up by exact `queue_name` in one `cf queues list` and created with `cf queues create --queue-name <name>` when missing, recorded first in the ledger as kind `queue` with its `queue_id`. A queue of the name that no deploy of this app recorded is refused (`RESOURCE_NAME_TAKEN`): a queue holds messages, so an existing one is never adopted. The install rewrites the placeholders; the policy allows a `queue` binding or trigger only for a queue this deploy provisioned, its dead-letter queue too ([`/docs/agent/deploy`](/docs/agent/deploy)); `cf deploy --prebuilt --no-provision` uploads each Worker and publishes its consumers from its triggers (one per queue, updated in place on a redeploy). A redeploy creates nothing.
-
-**What `delete --purge` does.** It detaches the consumers that are the app's Workers (`cf queues consumers delete`; Cloudflare won't delete a Worker that consumes a queue), deletes the Workers, then each recorded queue with its messages (`cf queues delete <id> --force`); a queue the app's last manifest names that no deploy recorded is kept (`RESOURCES_KEPT`), and so is one a Worker outside the app still binds. `everyapp teardown` lists queues whose `queue_name` starts with `every-` and the consumers that are its Workers, and deletes them in that order around the Workers.
-
-Error codes: [`QUEUE_NAME_INVALID`](/docs/agent/errors#queue_name_invalid), [`RESOURCE_NAME_TAKEN`](/docs/agent/errors#resource_name_taken), [`RESOURCE_REPLACED`](/docs/agent/errors#resource_replaced), [`RESOURCE_OWNED`](/docs/agent/errors#resource_owned), [`QUEUE_HANDLER_MISSING`](/docs/agent/errors#queue_handler_missing), [`APP_POLICY`](/docs/agent/errors#app_policy), [`CF_QUEUE_CONSUMER_WORKER`](/docs/agent/errors#cf_queue_consumer_worker), [`CF_QUEUE_IN_USE`](/docs/agent/errors#cf_queue_in_use). Queues are not available on the dispatch tier, nor to the hosted deployer (below).
-
-### Workers AI
-
-`resources.ai` is an array of binding names, one as a rule (`["AI"]`), several allowed. Each is the Workers AI binding the code calls as `env.AI.run()`:
-
-```ts
-// everyapp.config.ts
-export default {
-  id: "assistant",
-  resources: { d1: ["DB"], ai: ["AI"] },
-} as const;
-
-// in the Worker
-const { response } = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
-  prompt: "Summarize this ticket in one sentence.",
-});
-```
-
-- **Nothing to make.** Workers AI is account-wide: the deploy creates, records and deletes nothing for it (`delete --purge` and `teardown` have nothing of it to remove), and every call is billed to the Cloudflare account the app is deployed to, with no Gateway budget, cap or usage record.
-- **Production.** Every one of the app's Workers (its own and each helper) gets `{ type: "ai" }` (`addAiBindings()` in `packages/sdk/src/cloudflare/worker.ts`; `cf workers types` types it as `Ai`). There is no placeholder to install. The deploy's policy lets an `ai` binding through only under a name `resources.ai` declares, so `cloudflare.config.ts` can't add account-wide inference on its own ([`/docs/agent/deploy`](/docs/agent/deploy)).
-- **Development.** Every Worker gets `{ type: "ai", dev: { remote: true } }`. Miniflare has no Workers AI of its own: under `everyapp dev` the binding exists, but every call throws `Binding AI needs to be run remotely` until the app's `vite.config.ts` sets `remoteBindings: true` on the Cloudflare plugin (the starter sets `remoteBindings: false`) and `cf auth login` has run. Then calls reach the account's Workers AI, billed to it. The SDK already marks the binding remote, so `remoteBindings: true` is the one switch; it moves only the bindings marked remote, and D1, KV, R2 and the rest stay local. Details on [`/docs/agent/dev`](/docs/agent/dev).
-- **Dispatch tier.** Refused (Tier limits, below): the binding would bill the platform's account.
-- **The binding or the `workers-ai` provider.** Both reach Workers AI. The Gateway's `workers-ai` provider (`providers: ["workers-ai"]`, the section above) is the brokered path: the app calls the Gateway's OpenAI-compatible routes through `createGatewayFetch()`, the Gateway calls Workers AI with its own token (`WORKERS_AI_API_TOKEN`), holds the app to `ai.models`, and counts the calls under Manage workspace → Usage (a dollar cap doesn't see them: Workers AI reports no price). Pick it when the app talks chat or embeddings through an OpenAI-compatible client and the organization wants the calls counted and attributed. The binding is the native path, billed to the account directly: pick it when the code wants `env.AI.run()` itself, e.g. with the Agents SDK, for a model or task the OpenAI-compatible routes don't carry, or through an AI Gateway by id (`env.AI.run(model, input, { gateway: { id } })`). The top-level `ai` field limits the Gateway's proxy only; it doesn't touch the binding.
-
-### Browser Rendering
-
-`resources.browser` is an array of binding names, one as a rule (`["BROWSER"]`). Each is a Browser Rendering binding: a headless Chrome the code drives with `@cloudflare/puppeteer` or `@cloudflare/playwright`:
-
-```ts
-// everyapp.config.ts
-export default {
-  id: "crawler",
-  resources: { d1: ["DB"], browser: ["BROWSER"] },
-} as const;
-
-// in the Worker
-import puppeteer from "@cloudflare/puppeteer";
-
-const browser = await puppeteer.launch(env.BROWSER);
-const page = await browser.newPage();
-await page.goto("https://example.com");
-const screenshot = await page.screenshot();
-await browser.close();
-```
-
-- **Nothing to make.** Browser Rendering is account-wide: the deploy creates, records and deletes nothing for it (`delete --purge` and `teardown` have nothing of it to remove). Browser time is billed to the Cloudflare account the app is deployed to, and the binding needs the account on Workers Paid.
-- **Production.** Every one of the app's Workers (its own and each helper) gets `{ type: "browser" }` (`addBrowserBindings()` in `packages/sdk/src/cloudflare/worker.ts`; `cf workers types` types it as `BrowserRun`). There is no placeholder to install. The deploy's policy lets a `browser` binding through only under a name `resources.browser` declares, so `cloudflare.config.ts` can't add account-wide browser time on its own ([`/docs/agent/deploy`](/docs/agent/deploy)).
-- **Development.** The same `{ type: "browser" }`, and it works locally: Miniflare serves a local stand-in for Browser Rendering, and the first browser session downloads Chrome `126.0.6478.182` into the global `.wrangler` cache and starts it on the developer's machine. No login, no account, nothing billed. Details on [`/docs/agent/dev`](/docs/agent/dev).
-- **Dispatch tier.** Refused (Tier limits, below): the browser time would bill the platform's account.
-
-### Images
-
-`resources.images` is an array of binding names, one as a rule (`["IMAGES"]`). Each is a Cloudflare Images binding: resizing, cropping, re-encoding and reading images inside the Worker, from any stream (an upload, an R2 object, a `fetch()` body):
-
-```ts
-// everyapp.config.ts
-export default {
-  id: "gallery",
-  resources: { r2: ["R2"], images: ["IMAGES"] },
-} as const;
-
-// in the Worker
-const original = await env.R2.get("photos/cat.jpg");
-const thumbnail = await env.IMAGES.input(original!.body)
-  .transform({ width: 256 })
-  .output({ format: "image/webp" });
-return thumbnail.response();
-```
-
-- **Nothing to make.** Images is account-wide: the deploy creates, records and deletes nothing for it (`delete --purge` and `teardown` have nothing of it to remove). Transformations are billed to the Cloudflare account the app is deployed to, under Cloudflare Images' pricing.
-- **Production.** Every one of the app's Workers (its own and each helper) gets `{ type: "images" }` (`addImagesBindings()` in `packages/sdk/src/cloudflare/worker.ts`; `cf workers types` types it as the runtime's `ImagesBinding`). There is no placeholder to install. The deploy's policy lets an `images` binding through only under a name `resources.images` declares, so `cloudflare.config.ts` can't add account-wide transformations on its own ([`/docs/agent/deploy`](/docs/agent/deploy)).
-- **Development.** The same `{ type: "images" }`, and it works locally: Miniflare answers it with sharp, which ships with Miniflare, so `info()` and `input().transform().output()` run on the developer's machine with no login and nothing billed. Where sharp can't load, every call answers `503` with code `9523`. Details on [`/docs/agent/dev`](/docs/agent/dev).
-- **Dispatch tier.** Refused (Tier limits, below): the transformations would bill the platform's account.
+`resources.queues[].name` is the producer binding; the queue is `W--<binding>`. `resources.queues[].consumer` is `true` (the app's Worker consumes) or an object: `resources.queues[].consumer.worker` (a helper consumes), `resources.queues[].consumer.maxBatchSize`, `resources.queues[].consumer.maxBatchTimeout`, `resources.queues[].consumer.maxRetries`, `resources.queues[].consumer.maxConcurrency`, `resources.queues[].consumer.retryDelay`, `resources.queues[].consumer.visibilityTimeoutMs` and `resources.queues[].consumer.deadLetterQueue` (another declared queue's binding). The consuming Worker must export `queue(batch, env)` beside its fetch handler (`QUEUE_HANDLER_MISSING`).
 
 ### Vectorize
 
-`resources.vectorize[]` takes one of two forms, never both:
-
-```ts
-resources: {
-  vectorize: [
-    // Your own embeddings: their dimensions (32 to 1536) and the distance metric.
-    { name: "VECTORS", dimensions: 768, metric: "cosine" },
-    // Or a model Cloudflare knows: it sets the dimensions and metric.
-    { name: "DOC_CHUNKS", preset: "@cf/baai/bge-base-en-v1.5" },
-  ],
-},
-```
-
-- `resources.vectorize[].name`: the binding; the index is named `W--<binding>` (`every-acme-notes--doc-chunks`), at most 64 characters.
-- `resources.vectorize[].dimensions`: a whole number from 32 to 1536 (`a Vectorize index has 32 to 1536 dimensions`), the length of the vectors the app inserts; with `metric`.
-- `resources.vectorize[].metric`: `cosine`, `euclidean` or `dot-product`; with `dimensions`.
-- `resources.vectorize[].preset`: `@cf/baai/bge-small-en-v1.5` (384 dimensions), `@cf/baai/bge-base-en-v1.5` (768), `@cf/baai/bge-large-en-v1.5` (1024), `openai/text-embedding-ada-002` (1536) or `cohere/embed-multilingual-v2.0` (768), all cosine: Cloudflare sets the shape from the model, so the vectors that model embeds fit.
-
-Both or neither is refused: `<NAME>: a preset sets the index's dimensions and metric itself; give either preset, or dimensions and metric`, or `<NAME> needs dimensions and metric (e.g. 768 and "cosine"), or a preset (e.g. "@cf/baai/bge-base-en-v1.5")`. A stored row is read with any numbers and strings here, so a newer everyapp's preset never makes a row unreadable.
-
-The binding. In production `{ type: "vectorize", name }` on every Worker of the app (the app's own and each helper), `name` the index the deploy provisioned (`resourceSentinel(<binding>)` until the install rewrites it). In development `{ type: "vectorize", name: "every-<id>--<binding>", dev: { remote: true } }`: the account's index of the dev Worker's name. Cloudflare has no local Vectorize, so `everyapp dev` binds nothing local; calls reach that index only once the app's `vite.config.ts` turns the Cloudflare plugin's `remoteBindings` on (the starter has it off) and `cf auth login` has run, and until then every call throws (`Binding VECTORS needs to be run remotely`; [/docs/agent/dev](/docs/agent/dev#vectorize-in-development)). The typed `Env` has `VectorizeBinding` under each binding name, which `cf workers types` turns into `VectorizeIndex`.
-
-What the deploy does (`packages/cli/src/lib/app/resources.ts`, through `packages/cli/src/lib/cf/vectorize.ts`): checks every index name against the 64 characters first (`VECTORIZE_NAME_TOO_LONG`), then for each index `cf vectorize get <name>`; one the app recorded (`_everyapp_app_resources`, kind `vectorize`, the name as its id) is used when it has the declared shape and refused with `VECTORIZE_CONFIG_MISMATCH` when it doesn't (an index can't be reshaped: rename the binding to make a new one, or change the manifest back); one nobody recorded is `RESOURCE_NAME_TAKEN` (an index holds whoever wrote it's vectors); none is recorded as the app's, then created with `cf vectorize create --body @<file>` (`{ name, config: { dimensions, metric } }` or `{ name, config: { preset } }`; a body file because cf reads a flag value starting with `@` as a file). A recorded index that was deleted is made again, empty, after a `RESOURCE_RECREATED` warning. cf's own deploy never makes an index, so the index exists before the upload. `delete --purge` deletes every recorded index (`cf vectorize delete <name> --force`, its vectors with it) and names any index of the app's names it never recorded in `RESOURCES_KEPT`; `everyapp teardown` deletes every index named `every-*`. Vectorize is not available on the dispatch tier (below).
-
-### AI Gateway
-
-`resources.aiGateway[]` takes `{ name, collectLogs?, cacheTtl? }`: an [AI Gateway](https://developers.cloudflare.com/ai-gateway/) of the app's own in the Cloudflare account, for the model calls the app makes itself.
-
-```ts
-resources: {
-  aiGateway: [{ name: "AI_GATEWAY", collectLogs: true, cacheTtl: 0 }],
-},
-```
-
-- `resources.aiGateway[].name`: the binding, letters and digits joined by single underscores (`^[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)*$`; otherwise `an AI Gateway's binding is letters and digits joined by single underscores (it ends the gateway's id, which takes single hyphens only)`), since it ends the gateway's id.
-- `resources.aiGateway[].collectLogs`: whether the gateway keeps a log of each request (prompt, answer, tokens, cost) for its dashboard; `true` by default.
-- `resources.aiGateway[].cacheTtl`: how many seconds the gateway serves a repeated request from its cache, a whole number from 0; `0` (the default) caches nothing.
-
-**The id.** `W-<binding>` with the binding lowercased and `_` as `-`, joined by one hyphen (`aiGatewayIdFor()`): `every-acme-notes` and `AI_GATEWAY` give `every-acme-notes-ai-gateway`. Cloudflare refuses `--`, `_` and uppercase in a gateway id (`[7001] not valid ID format`) and more than 64 characters, so the `--` separator the other kinds carry can't be used; the id alone doesn't say whose it is (app `notes-ai`'s `GATEWAY` would be the same id), and the resource ledger does instead (below). The strict validator refuses a binding whose id could pass 64 characters on any Gateway, counting the longest organization key (12 characters): `resources.aiGateway: <NAME> would make an AI Gateway id of up to <n> characters (every-<orgKey>-<id>-<suffix>), longer than Cloudflare's 64; shorten the binding name.`
-
-**The binding** is a `json` binding on every Worker of the app (the app's own and each helper), typed `{ type: "json"; value: { id: string; accountId: string; url: string } }`, so the Worker reads `env.AI_GATEWAY.id`, `env.AI_GATEWAY.accountId` and `env.AI_GATEWAY.url`:
-
-| Mode        | `id`                                                 | `accountId` | `url`                                                   |
-| ----------- | ---------------------------------------------------- | ----------- | ------------------------------------------------------- |
-| Production  | the gateway's id                                     | the account | `https://gateway.ai.cloudflare.com/v1/<accountId>/<id>` |
-| Development | the id the deploy would use (`every-<id>-<binding>`) | `""`        | `""`                                                    |
-
-In production the build holds placeholders (`value.id` = `resourceSentinel(<binding>)`, `value.accountId` = `BUILD_SENTINEL.accountId`), which the install rewrites; it rewrites only a json binding whose `value.id` is its own binding's placeholder, never any other json binding. In development there is no gateway: an app treats an empty `url` as "call the provider directly".
-
-**Using it.** With Workers AI, pass the id; with a provider's own client and the app's own key (one of its `secrets`), put the client's base URL under the gateway (Anthropic's path is `/anthropic`, the OpenAI-compatible endpoint `/compat`):
-
-```ts
-await env.AI.run(model, input, { gateway: { id: env.AI_GATEWAY.id } });
-
-const openai = new OpenAI({
-  apiKey: env.OPENAI_API_KEY,
-  // Empty in development: straight to the provider.
-  baseURL: env.AI_GATEWAY.url ? `${env.AI_GATEWAY.url}/openai` : undefined,
-});
-```
-
-The gateway is unauthenticated (`authentication: false`): the provider key in the request is what authorizes the call, and the gateway adds logs, caching and analytics.
-
-**The Gateway's AI proxy is separate.** An app that lists `providers` calls models through the Gateway with the Gateway's keys (`createGatewayFetch()`, [providers](#providers)); whatever account-level AI Gateway the Gateway routes those calls through is the Gateway's setting, shared by every app. `resources.aiGateway` is the app's alone: its logs, cache and analytics hold only the app's own calls.
-
-**What the deploy does** (`packages/cli/src/lib/app/resources.ts`, `packages/cli/src/lib/cf/aiGateway.ts`): looks the id up (`cf ai-gateway gateways get <id>`); one the resource ledger records as the app's is used, and set back to the manifest's `collectLogs` and `cacheTtl` when they differ (`cf ai-gateway gateways update`, said as a `progress` line); one that exists unrecorded is refused, `RESOURCE_NAME_TAKEN` (a gateway holds logs of prompts and answers, so it is never adopted); none is recorded as the app's (ledger kind `ai-gateway`, the id as `resource_id`), then created (`cf ai-gateway gateways create --body @<file>` with `collect_logs`, `cache_ttl`, `cache_invalidate_on_update: false`, no rate limit and `authentication: false`). `everyapp delete --purge` deletes a recorded gateway and its stored logs (`cf ai-gateway gateways delete <id> --force`); `everyapp teardown` finds the account's `every-*` gateways (`cf ai-gateway gateways list --search every-`) and deletes them. AI Gateways are not available on the dispatch tier (below), and the hosted deployer refuses the json binding.
+`resources.vectorize[].name` is the binding; the index is `W--<binding>` (at most 64 characters). Give either `resources.vectorize[].dimensions` (32 to 1536) with `resources.vectorize[].metric` (`cosine`, `euclidean` or `dot-product`), or `resources.vectorize[].preset`: `@cf/baai/bge-small-en-v1.5`, `@cf/baai/bge-base-en-v1.5`, `@cf/baai/bge-large-en-v1.5`, `openai/text-embedding-ada-002` or `cohere/embed-multilingual-v2.0`. An index's shape can't change (`VECTORIZE_CONFIG_MISMATCH`): rename the binding for a new one.
 
 ### Email sending
 
-`resources.sendEmail[]` binds Cloudflare's own `send_email` binding on every one of the app's Workers. The Gateway's `email` capability (`capabilities: { email }`, `sendEmail()` from `@every-app/sdk/server`, the senders `everyapp email set --sender` allows; [the email page](/docs/agent/email)) stays the way to send mail: it keeps daily budgets, checks every `from` against the installation's sender list, logs each message, and works for an app whose zone has no Email Sending of its own. Declare the binding when the app wants Cloudflare's native API: code written against `env.EMAIL.send()` that you'd rather not port (OpenMail's upstream is), or mail an inbound `email()` handler (`email: { inbound: true }`) sends beyond what `message.reply()` can (`reply()` needs no binding, but answers only the sender, once, while the event runs).
-
-```ts
-// everyapp.config.ts
-export default defineEveryApp({
-  id: "notifier",
-  resources: {
-    sendEmail: [
-      {
-        name: "EMAIL",
-        allowedSenderAddresses: ["noreply@example.com"],
-        allowedDestinationAddresses: ["ops@example.com"],
-      },
-    ],
-  },
-});
-```
-
-Each entry takes `{ name, allowedSenderAddresses, destinationAddress?, allowedDestinationAddresses? }`, strict:
-
-- `resources.sendEmail[].name`: the binding (`env.EMAIL`), an identifier.
-- `resources.sendEmail[].allowedSenderAddresses`: required, at least one: the only `from` addresses the binding sends as. Cloudflare's binding without the list sends as any address on the account's Email Sending domains, the Gateway's own sender (invitations, resets) included, so every entry, a third-party release's too, names its senders; missing or empty is refused with `list the addresses the binding may send as: without allowedSenderAddresses it could send as any address on the account's Email Sending domains, the Gateway's own sender included`.
-- `resources.sendEmail[].destinationAddress`: the one address it sends to.
-- `resources.sendEmail[].allowedDestinationAddresses`: the only addresses it sends to.
-
-Every address must be an address (`must be an email address such as noreply@example.com, not a pattern`; a sender pattern such as `*@example.com`, which `everyapp email set --sender` takes, is not one), a destination list holds at least one (`list at least one address, or leave the list out`), and `destinationAddress` and `allowedDestinationAddresses` can't both be set (`destinationAddress and allowedDestinationAddresses can't both be set: one destination, or a list of them`; Cloudflare's own rule). The account has no resource to name, so the deploy makes nothing, records nothing, and `delete --purge` has nothing to delete.
-
-The binding is the same in both modes, on the app's Worker and every helper: `{ type: "send-email" }` plus the lists the entry gives (`addSendEmailBindings()` in `packages/sdk/src/cloudflare/worker.ts`; `cf workers types` types it as `SendEmail`). The deploy's policy accepts a `send-email` binding only under a name `resources.sendEmail` declares and with exactly its addresses (in any order), so `cloudflare.config.ts` can't add one or widen one ([`/docs/agent/deploy`](/docs/agent/deploy#the-policy-check-everything-it-refuses)).
-
-In development (`everyapp dev`, `cf dev`) nothing is sent: Miniflare checks the addresses (`email from <address> not allowed`, `email to <address> not allowed`) and logs the message. `send(new EmailMessage(from, to, raw))` (from `cloudflare:email`) logs `send_email binding called with the following message:` and the path of an `.eml` file under `.cloudflare/tmp/`; the builder form `send({ from, to, subject, text, html })` logs `send_email binding called with MessageBuilder:`, the message, and `.txt` and `.html` files.
-
-Deployed, the upload checks no address: Cloudflare checks each message when the Worker sends it. The `from` must be on a domain onboarded to Email Sending in the app's Cloudflare account and verified (`E_SENDER_DOMAIN_NOT_AVAILABLE`, `E_SENDER_NOT_VERIFIED`), the step `everyapp email set --sender` documents for the Gateway's senders ([the email page's operator setup](/docs/agent/email#operator-setup)); a recipient outside the binding's lists is `E_RECIPIENT_NOT_ALLOWED`; and sending to arbitrary recipients needs the Workers Paid plan. Email sending bindings are not available on the dispatch tier (below).
-
-### Secrets Store
-
-`resources.secretsStore[]` takes `{ name }`: the binding of a Cloudflare Secrets Store secret, which the code reads as `await env.<NAME>.get()`:
-
-```ts
-// everyapp.config.ts
-export default {
-  id: "shop",
-  resources: { d1: ["DB"], secretsStore: [{ name: "STRIPE_KEY" }] },
-} as const;
-
-// in the Worker
-const key = await env.STRIPE_KEY.get();
-```
+`resources.sendEmail` binds Cloudflare's own `send_email` binding, for an app that sends with its own Email Sending domain. Most apps use the Gateway's `email` capability and `sendEmail()` instead ([email](/docs/agent/email)). `resources.sendEmail[].name` is the binding; `resources.sendEmail[].allowedSenderAddresses` (required, exact addresses) are the only `from` addresses; `resources.sendEmail[].destinationAddress` or `resources.sendEmail[].allowedDestinationAddresses` limit the recipients. Under `everyapp dev` nothing is sent.
 
-- **The name.** The secret is `W--<binding>` (the binding lowercased, `_` turned into `-`: `every-acme-shop--stripe-key`; `storeSecretNameFor()` in `packages/perimeter/src/manifest/manifest.ts`), in the account's store, so the teardown's `every-` scan finds it. The name may not be one of the manifest's `secrets` or another binding (the strict schema's checks above).
-- **The store, made once by a person.** cf 1.0.0-beta.14 can list stores but has no command to create one, so the account needs a store before the first deploy: make one once in the Cloudflare dashboard (Secrets Store → Create store). The deploy uses the account's only store; with several, the one named `everyapp`, else the first Cloudflare lists; an app keeps using the store it recorded a secret in. With none, the deploy stops before anything is created with [`SECRETS_STORE_MISSING`](/docs/agent/errors#secrets_store_missing).
-- **The value.** The deploy creates the secret (scope `workers`) from `<BINDING>` in the app's secrets file `.everyapp/secrets.env` (`STRIPE_KEY=sk_live_…`, beside Hyperdrive's origins). The value reaches cf only in a private body file (`--body @<file>`), never the command line, the output or the ledger. Without it, the deploy stops before anything is created with [`SECRETS_STORE_VALUE_MISSING`](/docs/agent/errors#secrets_store_value_missing), naming the variable and the file. Once the secret exists, the value is no longer needed: a redeploy binds the secret as it is and never rewrites its value, so changing the value is the dashboard's (Secrets Store → the secret → Edit) until `everyapp secret set` learns to route there.
-- **Ownership.** The secret goes through the deploy's ledger as a D1 database does (kind `secrets-store-secret`, recorded as `<store id>/<secret id>`): a secret of the name that no deploy of this app recorded is refused ([`RESOURCE_NAME_TAKEN`](/docs/agent/errors#resource_name_taken): it may hold someone's credential); a recorded one that was deleted is created again with [`RESOURCE_RECREATED`](/docs/agent/errors#resource_recreated).
-- **Production.** Every one of the app's Workers (its own and each helper) gets `{ type: "secrets-store-secret", storeId, secretName }` with the store and secret the deploy provisioned (placeholders from `sentinelDeployTarget()` until installed; `cf workers types` types the binding as `SecretsStoreSecret`). The deploy's policy allows the binding only as the provisioned store and secret of a binding `resources.secretsStore` declares ([`/docs/agent/deploy`](/docs/agent/deploy)).
-- **Development.** Every Worker gets `{ type: "secrets-store-secret", storeId: "local", secretName: "every-<id>--<binding>" }`, which reads Miniflare's local store under `.cloudflare/state`. `everyapp dev` doesn't seed it yet, `.dev.vars` doesn't reach it and cf has no local `secrets create`, so `get()` throws until the secret is put there; the ready block says so, and [`/docs/agent/dev`](/docs/agent/dev) ("Secrets Store") says how to seed it.
-- **`delete --purge`** deletes the recorded secret (`cf secrets-store secrets delete <id> --store-id <store> --force`); the store stays. **`teardown`** deletes every secret named `every-*` in every store, and keeps the stores.
-- **Dispatch tier.** Refused (Tier limits, below): the store is the platform account's.
-- **A Secrets Store secret or an app secret.** An app secret (`secrets`, set with `everyapp configure`) is a value on the app's Workers and is the default; a Secrets Store secret lives once in the account's store, where the dashboard manages and audits it, and the Worker fetches it with `get()`. [`/docs/agent/secrets`](/docs/agent/secrets) compares them.
+### Postgres
 
-### Analytics Engine
+Any Postgres with a URL (Neon, Supabase, PlanetScale, your own) goes through Hyperdrive:
 
-`resources.analyticsEngine[]` takes `{ name, dataset? }`, one entry per dataset the app writes to:
-
-- `resources.analyticsEngine[].name`: the binding, a JavaScript identifier of at most 63 characters (so the dataset named after the Worker fits Cloudflare's 128).
-- `resources.analyticsEngine[].dataset`: the dataset's name, used as written: letters, digits, `-` and `_`, at most 128 characters (`dataset names are letters, digits, dashes and underscores, at most 128 characters (Cloudflare's rule)`; Cloudflare refuses anything else at upload with code `100144`). It may not be named like another app's: one that starts with `every-` must be `W--<name>`, the app's own (the deploy's policy, below). Left out, the dataset is named after the app's Worker, `W--<binding>` (`analyticsDatasetFor()` in `packages/perimeter/src/manifest/manifest.ts`, e.g. `every-acme-shop--events`).
+1. Put the direct (not pooled) URL in `.everyapp/secrets.env` as `POSTGRES_DATABASE_URL=postgres://…` (or `<BINDING>_ORIGIN_URL`). It stays on the machine that deploys; never paste it in chat.
+2. Declare `database: { provider: "postgres" }` and `resources: { hyperdrive: [{ name: "HYPERDRIVE" }] }`, and for drizzle migrations `migrations: { engine: "drizzle", dialect: "postgresql", config: "drizzle/pg.config.ts" }`.
+3. In code, open a client per request on `env.HYPERDRIVE.connectionString` (`postgres(url, { max: 1, fetch_types: false })`).
 
-```ts
-// everyapp.config.ts
-export default {
-  id: "shop",
-  resources: { d1: ["DB"], analyticsEngine: [{ name: "EVENTS" }] },
-} as const;
+Under `everyapp dev`, set `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://…` in `.dev.vars`. OpenSEO is the example. Turso isn't Postgres: its URL and token are app `secrets`.
 
-// in the Worker
-env.EVENTS.writeDataPoint({
-  blobs: [request.url, country],
-  doubles: [durationMs],
-  indexes: [customerId],
-});
-```
+## `workers`
 
-- **Nothing to make, nothing to delete.** A dataset exists once something is written to it: the deploy creates and records nothing for it. Cloudflare has no way to delete a dataset; its data expires after 90 days. So `delete --purge` and `teardown` leave every dataset as it is, including the ones named after the app's Worker. Writes are billed to the Cloudflare account the app is deployed to.
-- **Production.** Every one of the app's Workers (its own and each helper) gets `{ type: "analytics-engine-dataset", name }` (`addAnalyticsEngineBindings()` in `packages/sdk/src/cloudflare/worker.ts`; `cf workers types` types it as `AnalyticsEngineDataset`). In the tenant-neutral build the default name holds the placeholder Worker name, and the install rewrites it with every other placeholder; a `dataset` the manifest names stays as written. The deploy's policy lets the binding through only under a name `resources.analyticsEngine` declares and only to the dataset it declares, so `cloudflare.config.ts` can't add a dataset or point one elsewhere on its own, and a named dataset never takes another app's `every-…` name ([`/docs/agent/deploy`](/docs/agent/deploy)).
-- **Reading it.** Query the dataset through Cloudflare's Analytics Engine SQL API (`cf analytics_engine sql query --body '<SQL>'`, or `POST /accounts/<id>/analytics_engine/sql` with a token that may read account analytics). The default name holds `-`, so double-quote it: `SELECT count() FROM "every-acme-shop--events"`. Unquoted, the parser reads the dashes as minus, and backticks are refused.
-- **Development.** The binding is `{ type: "analytics-engine-dataset", name }` with the dataset named after the dev Worker (`every-<id>--<binding>`), and Miniflare accepts every `writeDataPoint()` and keeps nothing: nothing reaches the account and there is nothing to query locally. cf's shape for this binding takes no `dev` options. Details on [`/docs/agent/dev`](/docs/agent/dev).
-- **Dispatch tier.** Refused (Tier limits, below): a dataset's name is account-wide, and the writes would bill the platform's account.
+Helper Workers deployed beside the app's Worker, for work that shouldn't share its memory or CPU: `workers[].name` (kebab-case, at most 20 characters; the Worker is `W--<name>`), `workers[].binding` (a service binding on the app's Worker), `workers[].limits` with `workers[].limits.cpuMs`. Only the app's own Worker can reach a helper. Build one with `everyAppAuxiliaryWorker()`.
 
-### Artifacts
+## `database` and `limits`
 
-`resources.artifacts[]` takes `{ name }`, one entry per Cloudflare Artifacts namespace (git-compatible repos the Worker creates, reads and forks, and that clients clone and push with git):
+- `database.provider`: `d1` or `postgres`; every Worker gets it as `DATABASE_PROVIDER`. `database.region`: `aws:us-east-1`-style, for placement near the database.
+- `limits.cpuMs`: CPU time per invocation of the app's Worker, 1 to 300000.
 
-- `resources.artifacts[].name`: the binding, a JavaScript identifier that doesn't end with `_` (`an Artifacts binding can't end with _ (its namespace's name would end with a hyphen, which Cloudflare refuses)`).
-- The namespace is always `W--<binding>`, the binding lowercased with `_` turned into `-` (`artifactsNamespaceFor()` in `packages/perimeter/src/manifest/manifest.ts`, e.g. `every-acme-birds--memory`). It is at most 63 characters, so the deploy refuses a longer one before anything is created: `resources.artifacts: <NAME> would be the Artifacts namespace "<name>", which Cloudflare refuses (at most 63 characters)` (`APP_POLICY`; shorten the binding).
+## `public` and `publicAssets`
 
-```ts
-// everyapp.config.ts
-export default {
-  id: "birds",
-  resources: { d1: ["DB"], artifacts: [{ name: "MEMORY" }] },
-} as const;
+The app is private by default: every request needs a signed-in member with access.
 
-// in the Worker
-await env.MEMORY.create("agent-42");
-const repo = await env.MEMORY.get("agent-42");
-// A clone-only token for one client, for an hour (the default is write, for a day).
-const { plaintext } = await repo.createToken("read", 3600);
-```
+- `public`: routes anyone can reach, each `{ path, methods?, bearer? }`. Each `public[].path` is an absolute glob (`*` within a segment, `**` across, `:name` one segment), with `public[].methods` (default `["GET"]`). Public means auth-optional: a signed-in member still gets their identity; an anonymous visitor gets `x-everyapp-public` instead. Refused: catch-alls (`/**`), percent-encoding, backslashes, `.` segments, anything under `/__everyapp`, and `/mcp`. Declare a route public only when something other than a member must reach it (a webhook, a share page).
+- `public[].bearer`: `true` makes the entry a bearer route: a bearer client (a native app, a script with a personal token) reaches it with its Gateway token only, on every method, never anonymously, so it takes no `methods`. A request with the session cookie there is refused (`cookie_on_bearer_route`). It can't be `/mcp` or also an anonymous route. Behind Access, `access on` lets it through Access. [Native apps](/docs/agent/native)
 
-- **Nothing to make.** Artifacts makes a namespace with its first repo, and the binding needs none to exist: the deploy creates nothing. The first deploy looks the namespace up (`cf artifacts namespaces get <name>`): one that already exists was made by something else, and is refused (`RESOURCE_NAME_TAKEN`: `An Artifacts namespace named "<name>" already exists in this Cloudflare account`), never adopted, since `delete --purge` would delete its repos. One that doesn't exist yet is recorded in the resource ledger as the app's (kind `artifacts`), and a namespace another app recorded is refused (`RESOURCE_OWNED`). Later deploys bind the recorded namespace as it is. Repos and their storage bill the Cloudflare account the app is deployed to (Workers Paid).
-- **`delete --purge`** lists the recorded namespace's repos (`cf artifacts namespaces repos list --namespace <name>`), deletes each (`cf artifacts namespaces repos delete <repo> --namespace <name> --force`), then the namespace (`cf artifacts namespaces delete <name> --force`). A namespace Artifacts refuses to delete (a repo made during the purge) is kept and said (`RESOURCES_KEPT`). **`teardown`** doesn't look for namespaces yet: a Gateway's teardown leaves them.
-- **Production.** Every one of the app's Workers (its own and each helper) gets `{ type: "artifacts", namespace }` (`addArtifactsBindings()` in `packages/sdk/src/cloudflare/worker.ts`; `cf workers types` types it as `Artifacts`). In the tenant-neutral build the namespace holds the placeholder Worker name, and the install rewrites it with every other placeholder. The deploy's policy lets the binding through only under a name `resources.artifacts` declares and only to the namespace named after the Worker, so `cloudflare.config.ts` can't bind another app's repos ([`/docs/agent/deploy`](/docs/agent/deploy)).
-- **Repo tokens.** The Worker mints each repo's git tokens itself (`repo.createToken(scope, ttl)`; `create()` returns a first token too), and clients use them straight against the repo's git remote, never through the Gateway. A token reaches one repo; its scope defaults to `write` and its TTL to a day, so the app passes both, and revokes one it no longer needs (`repo.revokeToken()`). `import()` has Cloudflare fetch an HTTPS git remote the app names, outside the Gateway's egress.
-- **Development.** Cloudflare has no local Artifacts: the binding is `{ type: "artifacts", namespace, dev: { remote: true } }` with the namespace named after the dev Worker (`every-<id>--<binding>`), so calls reach the account's namespace once the Vite plugin's `remoteBindings` is on and `cf auth login` has run, and throw until then.
-- **Dispatch tier.** Refused (Tier limits, below), for now: the repos would live in, and bill, the platform's account.
+  ```ts
+  public: [{ path: "/api/**", bearer: true }],
+  ```
 
-## workers
+- `publicAssets`: up to 25 path globs of static files anyone may GET (favicons, `/assets/**` a public page loads). No identity is forwarded, ever.
 
-Helper Workers run beside the app's Worker, for work that should not share its memory or CPU budget (the Postiz test fixture's NestJS backend `api`; a crawler). Each entry:
+## What the app needs set: providers, capabilities, secrets, settings
 
-| Field                    | Rule                                                                                                                                                                                                                                                      |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `workers[].name`         | Regex `^[a-z]([a-z0-9]\|-(?!-))*[a-z0-9]$\|^[a-z]$`, at most 20 characters; message `helper Worker names are kebab-case (lowercase letters, digits, single hyphens)`. Listed twice: `workers lists "<name>" twice.`                                       |
-| `workers[].binding`      | Optional identifier (strict). A service binding `{ type: "worker", worker: "W--<name>" }` on the app's Worker to the helper's default export. Reusing a binding name: `workers: <name>'s binding <BINDING> reuses a binding name the Worker already has.` |
-| `workers[].limits`       | `{ cpuMs }` for that Worker (strict, no other keys).                                                                                                                                                                                                      |
-| `workers[].limits.cpuMs` | Integer 1 to 300000 (Cloudflare's 5 minutes).                                                                                                                                                                                                             |
+Each entry has a **need**: required (the default; the app shows Needs setup until it's set), `optional: true`, or `anyOf: "<group>"` (one member of the group is enough). `everyapp configure <app>` sets up whatever is unmet. [secrets](/docs/agent/secrets)
 
-A helper is built with `everyAppAuxiliaryWorker()` and gets: `EVERYAPP_APP_ID`; every D1, KV, R2 and `send_email` binding; `DATABASE_PROVIDER`; the Hyperdrive configs shared by all Workers plus those naming it; the classes it defines; in production `EVERY_APP_GATEWAY` (the AppGateway service binding with the app's identity, so the Gateway treats it as the app), `GATEWAY_URL` and `EVERY_APP_ORG_ID` as secrets; in development `EVERYAPP_DEV=1` and `GATEWAY_URL` as the app's Worker gets it. Unknown helper: `everyapp.config.ts declares no helper Worker "<name>" in workers.` It may take its own `crons`.
+### providers
 
-Who may reach it: only the app's own Worker, through `binding` or the Durable Objects and Workflows the helper defines. The deploy's policy (`packages/cli/src/lib/app/policy.ts`) refuses a build whose helper is public (`workersDev`, `previewUrls`, domains, routes), binds any Worker but the Gateway's AppGateway, or is not named after the app; a built Worker the manifest does not declare (`the build has a Worker "<name>" that everyapp.config.ts doesn't declare in workers`); and a declared helper missing from the build (`the build has no Worker <name>, which everyapp.config.ts declares; add it to the Vite plugin's auxiliaryWorkers with everyAppAuxiliaryWorker()`). Helper Workers are not available to hosted third-party apps.
+`providers`: AI providers the app calls through the Gateway's AI proxy, as ids (`"openrouter"`) or `{ id, why?, docs?, optional?, anyOf? }`: `providers[].id`, `providers[].why`, `providers[].docs`, `providers[].optional`, `providers[].anyOf`. The key stays on the Gateway. [ai](/docs/agent/ai)
 
-## database
+### capabilities
 
-| Field               | Rule                                                                                                                                                                                                                               |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `database.provider` | `d1` or `postgres`: the database the app's code talks to. Every Worker gets it as the text binding `DATABASE_PROVIDER`.                                                                                                            |
-| `database.region`   | Regex `^[a-z0-9]+:[a-z0-9-]+$`, message `region must be a cloud region such as "aws:us-east-1"`. Deployed Workers get `placement: { region }` (cf's targeted placement) so they run near the database; not applied in development. |
+`capabilities`: Gateway-held APIs by id. An API-key provider or service takes `capabilities.<id>.access` (`read` or `write`); an OAuth provider takes `capabilities.<id>.scopes` (the provider's own short scope names) and a required `capabilities.<id>.why`. All take `capabilities.<id>.docs`, `capabilities.<id>.optional` and `capabilities.<id>.anyOf`. The deployed entry is the grant; calls outside it are refused. Built-ins include `email`, `members`, `dataforseo`, `context`, `slack`, `google-workspace` and `microsoft-365`; the full catalog is on [providers](/docs/agent/providers).
 
-Strict: no other keys. `migrations.dialect: "postgresql"` requires `database.provider: "postgres"`: `Postgres migrations (migrations.dialect "postgresql") need database: { provider: "postgres" }.` Declaring `database` reserves the binding name `DATABASE_PROVIDER` (a secret may not take it). An app on Postgres (Neon, Supabase, any URL) declares it beside a Hyperdrive binding: [Postgres](#postgres).
+### secrets
 
-## limits
+`secrets`: the app's own secrets, as names or `{ name, why?, docs?, optional?, anyOf?, setup? }`: `secrets[].name`, `secrets[].why`, `secrets[].docs`, `secrets[].optional`, `secrets[].anyOf`, `secrets[].setup` (its guide, a Markdown file in the app's repository such as `docs/setup/main-secret.md`). A name is an identifier, not reserved (`GATEWAY_URL`, `CF_VERSION_METADATA`, `EVERYAPP_*`, `EVERY_APP_*`, `APP__*`), not a Gateway setting (list the provider instead), not ending in `_MCP_TOKEN`, and not a binding.
 
-`limits.cpuMs`: integer 1 to 300000, the CPU time an invocation of the app's own Worker may use (a Workflow step that crawls for minutes, say). Passed through as the Worker's `limits: { cpuMs }`. Helper Workers set theirs in `workers[].limits`. Strict: no other keys.
+### settings
 
-## public
+`settings`: plain values that differ per install (an analytics host, a region). `settings[].name`, a required `settings[].why`, `settings[].type` (`text`, `url`, `number` or `boolean`), `settings[].values` (a list a text setting must be one of), `settings[].default`, `settings[].optional`, `settings[].docs`. Shown when typed; anything that grants access belongs in `secrets`.
 
-The app is default-private: every route requires an authenticated session unless it matches a declared public route. Each entry is `{ path, methods?, bearer? }` (strict: nothing else).
+## `ai`
 
-- `public[].path`: an absolute glob. `*` matches within one segment, `**` across segments, `:name` after a `/` matches exactly one non-empty segment.
-- `public[].methods`: HTTP methods, compared case-insensitively. Default `["GET"]`.
-- `public[].bearer`: `true` makes the entry a bearer route ([Bearer routes](#bearer-routes) below): reached with a Gateway token only, on every method, never anonymously. It takes no `methods`.
+Limits on the app's use of the Gateway's AI proxy (not `resources.ai`):
 
-### What a declaration may not be
+- `ai.chat`: the app takes the workspace's default chat model. `true`, or `{ why?, docs?, optional?, anyOf? }`: `ai.chat.why`, `ai.chat.docs`, `ai.chat.optional`, `ai.chat.anyOf`.
+- `ai.models`: model ids the app may request. Omitted: any.
+- `ai.routes`: OpenAI API paths beyond inference (`/v1/files`), each covering its sub-paths. The deployed manifest is the grant.
 
-`assertPublicPathIsSafe()` runs in both validators; these fail the deploy rather than silently narrowing:
+## email and events
 
-| Declaration                                                       | Message                                                                                        |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Not starting with `/`                                             | `Public route path must be absolute (start with "/"): "<path>"`                                |
-| `/*`, `/**`, `*` or `/`                                           | `Public route "<path>" exposes the entire app. A catch-all public route is not allowed.`       |
-| Contains `%`                                                      | `Public route "<path>" must not contain percent-encoding; declare the decoded path.`           |
-| Contains `\`                                                      | `Public route "<path>" must not contain backslashes.`                                          |
-| A `.` or `..` segment                                             | `Public route "<path>" must not contain "." or ".." segments.`                                 |
-| A segment starting `:` not matching `^:[A-Za-z_][A-Za-z0-9_]*$`   | `Public route "<path>" has an invalid named segment "<segment>".`                              |
-| `/__everyapp`, anything under it, or a first segment `__everyapp` | `Public route "<path>" targets the reserved /__everyapp namespace, which can never be public.` |
+- `email.inbound`: `true` when the Worker exports an `email()` handler. The addresses are set with `everyapp email set --inbound`, not here. [email](/docs/agent/email)
+- `events`: `{ subscribe, why }`: Gateway events pushed to the app. `events.subscribe` lists 1 to 25 types or patterns (`member.*`, `app.tools_changed`); `events.why` is the subscription's description. [events](/docs/agent/events)
 
-### How a request matches
+## Build, dev and install
 
-`matchPublicRoute(routes, method, rawPathname)` in `packages/perimeter/src/publicRoutes.ts` is default-deny:
+- `build`: the production build command, run with `EVERYAPP_BUILD=1` (default `cf build`).
+- `dev`: the dev server command `everyapp dev` runs with `PORT` set; it must listen there (default `cf dev`).
+- `install`: `false` to skip, a command, or omitted to detect the package manager.
 
-1. No routes: not public (`no public routes declared`).
-2. `normalizePath(url.pathname)` canonicalizes the raw, percent-encoded path. It is **ambiguous**, and never public, when it is empty, not absolute, has control characters (`\x00` to `\x1f`, or `\x7f`), a backslash, an encoded separator (`%2f` or `%5c`, any case), invalid percent-encoding, a `%` surviving one decode (double-encoded), decodes to a control character or backslash, resolves `..` above the root, or used an encoded dot (`%2e`) in a `..` that traversed. Otherwise it drops empty and `.` segments, resolves `..`, and yields `/a/b/c` with no trailing slash. So `/blog/post/` and `/blog/./post` match `/blog/*`; `/a/%2fb` matches nothing.
-3. The canonical path inside `/__everyapp` is refused after normalization (`internal namespace is never public`), so `/p/%2e%2e/__everyapp/tools/call` cannot ride a `/p/**` route. `/__everyapp/tools/*` is refused earlier still, under any spelling, before public matching runs (`isReservedToolsPath()`).
-4. The first route whose methods include the request's (uppercased) and whose glob matches wins. `globToRegExp()` compiles `*` to `[^/]*`, `**` to `.*`, `/:name` to `/[^/]+`, escapes the rest and anchors with `^…$`.
+## `migrations`
 
-From the tests: `{ path: "/blog/*" }` matches `/blog/post-1` and not `/blog/a/b`; `{ path: "/assets/**" }` matches `/assets/css/app.css`; `{ path: "/api/webhook", methods: ["POST"] }` matches POST and not GET; `{ path: "/:user/:type", methods: ["GET", "POST"] }` matches `/alice/intro` and not `/alice/intro/extra`.
+| Field | Values | Default |
+|---|---|---|
+| `migrations.engine` | `drizzle`, `d1-sql` (SQL files written another way), `prisma` | required when `migrations` is set |
+| `migrations.dialect` | `sqlite` (D1), `postgresql` | `sqlite` |
+| `migrations.dir` | relative path | `drizzle` (required for `d1-sql`) |
+| `migrations.config` | the drizzle or Prisma config, relative | the tool's default |
+| `migrations.binding` | a `resources.d1` binding | the first one |
 
-### What the perimeter does on a public route
-
-In `packages/perimeter/src/gateway.ts`, after the app is found and active:
-
-- Every inbound `cookie`, `authorization`, `cloudflare-workers-version-overrides`, `x-everyapp-*` and `cf-access-*` header is stripped (`stripInboundHeaders()` in `packages/perimeter/src/headers.ts`). `authorization` is put back only on a public route, and only when the Gateway did not consume it: a personal access token (`epat_…`) or a Gateway OAuth token is never forwarded, and such a bearer without app access fails closed (401 `unauthenticated` or 403 `forbidden`, `reason: "no_app_access"`) rather than falling to anonymous access. Any other bearer (an app's own API key, a webhook signature scheme) reaches the app on public routes.
-- CSRF is evaluated on every request, but on a public route a failure only downgrades the request to anonymous (no cookie identity is forwarded); on a private route a cookie-carrying failure is 403 `csrf_denied`.
-- Public means auth-optional, not auth-stripped: a signed-in member with access still gets their identity JWT in `x-everyapp-identity` on a public route (so `/:user` booking pages next to a dashboard serve members signed in). Anonymous visitors and signed-in non-members get the public marker instead: a Gateway-signed, app-scoped JWT with `pub: true` and `typ: "public"` in `x-everyapp-public` (`PUBLIC_HEADER`), cached per app for half the identity TTL (60 of 120 seconds).
-- `/mcp`, anything under it, and a pattern that covers `/mcp` under any of the route's methods (`/:page`) can't be declared public: the strict schema refuses them (`public: /mcp can't be public; /mcp stays private on an app host, and the Gateway's own /mcp serves the app's tools`; for a pattern, `public: /:page can't be public (it covers /mcp); …`). A stored manifest that still has one is proxied to the app, and an MCP-only token is served there anonymously, as on any public route.
-
-In the app, `getIdentityFromRequest()` (`packages/sdk/src/internal/identity.ts`) verifies the marker and resolves to `{ user: null, isPublic: true }`; a bare or forged header throws, so a re-exposed Worker fails closed. Everything else needs the identity JWT.
-
-### Why a route is public
-
-Declare a route public when something other than a signed-in member of the organization has to reach it: a provider's webhook (declare `methods: ["POST"]`; the Gateway forwards the body and the provider's `authorization` header untouched, and the app verifies the provider's signature itself, as it would anywhere: `verifyWebhook()` from `@every-app/sdk/server` checks Slack's, GitHub's and a Gateway event delivery's signatures, [identity](/docs/agent/identity#the-server-api)), a tracking script and its collector that run on other sites, an OAuth callback the provider redirects the person's browser to (their session cookie still travels, so a member keeps their identity), or a page meant for the public. A health check is not one of them: an uptime monitor reaches an app's private `/health` with a personal access token, and the Gateway's own `GET https://<gateway>/health` is public ([Cloudflare Access](/docs/agent/access), "Uptime monitoring"). Keep it to exact paths or one named segment; the catch-alls are refused, `/mcp` can't be public, and `/__everyapp` can never be public. The rules behind this section are private by default and the header stripping in `docs/security.md` ([/docs/agent/repo/threat-model](/docs/agent/repo/threat-model)).
-
-## publicAssets
-
-Static files an app serves to anyone: favicons, an Apple touch icon, a web manifest and its icons, an Open Graph image, the built `/assets/**` a public page loads. List their paths here instead of one `public` route per file.
-
-```ts
-publicAssets: [
-  "/favicon.ico",
-  "/favicon-96x96.png",
-  "/apple-touch-icon.png",
-  "/site.webmanifest",
-  "/web-app-manifest-*.png",
-  "/assets/**",
-  "/images/**",
-],
-```
-
-- Each entry is a path glob with `public[].path`'s syntax (`*`, `**`, `:name`) and the same refusals (`assertPublicPathIsSafe()`, each message starting `publicAssets: pattern`: `publicAssets: pattern "/**" exposes the entire app. A catch-all public route is not allowed.`). The strict schema also refuses `/mcp`, anything under it, and a pattern that covers it (`publicAssets: /:page can't be a public asset (it covers /mcp); /mcp is never a static file`), and more than 25 patterns (`publicAssets: at most 25 patterns; use a glob such as "/icons/**"`; each pattern is one override on the app's Access destination, which holds 25 together with the `public` routes).
-- GET and HEAD only, the asset server's methods. There is no `methods` field. Any other method on the path is a private request.
-
-### What the perimeter does on a public asset
-
-`matchPublicAsset()` (`packages/perimeter/src/publicRoutes.ts`) matches the request exactly as `matchPublicRoute()` does (the same canonicalization, the same ambiguous-path and `/__everyapp` denials), with methods GET and HEAD, and never matches `/mcp` or anything under it, whatever a stored row says. On a match, `handleGatewayRequest()`:
-
-- strips every inbound `cookie`, `authorization`, `cloudflare-workers-version-overrides`, `x-everyapp-*` and `cf-access-*` header and puts nothing back: no identity JWT, no public marker, no `authorization`, not even an app's own bearer;
-- reads no session and no bearer, so a signed-in member's request is forwarded the same way (no identity), a personal access token on the path is dropped, not checked, and the cookie-tossing and CSRF checks don't apply (nothing reads a credential);
-- still answers the reserved paths first (`/__everyapp/tools/*` and the OAuth discovery documents are 404), and still applies the server-function guard;
-- skips the setup gate (`GatewayDeps.needsSetup`), as a public route does: while the app needs setup its public assets stay up;
-- logs the proxy line with `mode: "asset"`.
-
-Why this opens files and never code: Cloudflare's asset router answers a request for a file in the Worker's asset bundle before the Worker runs (and the Gateway's service binding goes through it, as for every request). A path that is not a file reaches the Worker carrying neither `x-everyapp-identity` nor `x-everyapp-public`, and `everyApp()` (`getIdentityFromRequest()`) answers 401 `unauthenticated` without running the handler. So the guarantee needs the Worker behind `everyApp()`, as every app is. `everyAppWorker()` sets no `assets` config of its own; an app that sets `assets.runWorkerFirst` (or `not_found_handling`) in `cloudflare.config.ts` sends those paths to the Worker first, where they are refused the same way. Don't put a page or an API under a `publicAssets` glob: members lose their identity there.
-
-Where a path matches both a `public` route and a `publicAssets` pattern, the public route wins: auth-optional, with the public marker for anonymous visitors and a member's identity for members. Public assets are listed with the public routes by `deploy` and `status` (`asset /favicon.ico`; `"asset": true` with `methods: ["GET", "HEAD"]` in `--json`), and `access on` lets them through Cloudflare Access like a public route.
-
-## providers
-
-`providers`: an array of ids matching `^[a-z][a-z0-9-]*$`, or of `{ id, why, docs, optional, anyOf }` entries (the section on needs, below); ids (`provider must start with a lowercase letter and contain only lowercase letters, digits, and hyphens`), each once (`duplicate provider`). The Gateway's AI providers (`apps/every-app-gateway/src/server/ai-proxy.ts`) are `openai` (key `OPENAI_API_KEY`), `openrouter` (`OPENROUTER_API_KEY`) and `workers-ai` (`WORKERS_AI_API_TOKEN` plus the install's `CLOUDFLARE_ACCOUNT_ID`). The app calls `/api/ai/<provider>/<path>` on the `EVERY_APP_GATEWAY` binding through the SDK's `createGatewayFetch()`; the Gateway puts the key on the upstream request, so no app holds it.
-
-| Refusal                                    | Code                                                                                                                                                                             | Status |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| Provider not in the manifest's `providers` | `provider_not_allowed`, `The app manifest does not allow this provider.`                                                                                                         | 403    |
-| Not a provider the Gateway has             | `ai_provider_not_supported`                                                                                                                                                      | 404    |
-| Key (or account) not set on the Gateway    | `ai_provider_not_configured`, `<Label> isn't set up on this Gateway: it needs <settings>. An admin runs: pnpm everyapp configure <app>`, with `settings` and `command` beside it | 503    |
-
-In development there is no Gateway: the SDK calls the provider directly with the developer's own key set locally under the same name (`OPENAI_API_KEY` in `.dev.vars`), and `everyAppWorker()` declares each such key as a secret binding when it is set (`DEV_GATEWAY_KEYS` in `packages/sdk/src/cloudflare/catalogSettings.generated.ts`, generated from the catalog). The keys of listed providers are Gateway settings the settings model marks required unless the entry says otherwise (`appSettings()` in `packages/sdk/src/internal/appSettings.ts`); see [`/docs/agent/secrets`](/docs/agent/secrets). Setting a provider's key on the Gateway, step by step: `packages/cli/skills/everyapp/setup/openai.md`, `setup/openrouter.md` and `setup/workers-ai.md` (in an app, `node_modules/everyapp/skills/everyapp/setup/<name>.md`).
-
-## capabilities
-
-`capabilities` is a record keyed by capability id. An API-key provider or a Gateway service takes `{ access, why?, docs?, optional?, anyOf? }`; an OAuth provider takes `{ scopes, why, docs?, optional?, anyOf? }` (the need fields are under [Required, optional, or one of a group](#required-optional-or-one-of-a-group)). Strict entries refuse any other key.
-
-```ts
-capabilities: {
-  dataforseo: { access: "read", why: "Keyword volumes for your projects." },
-  "google-workspace": {
-    scopes: ["webmasters.readonly", "analytics.readonly"],
-    why: "Reads Search Console and Analytics for the sites you pick.",
-  },
-},
-```
-
-| Field                      | Rule                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `capabilities.<id>.access` | API-key providers and Gateway services: `"read"` or `"write"`, and one the capability offers: `<Label> offers <read or write> access` otherwise (for example `capabilities.email.access: Email offers write access`). Refused on an OAuth provider: `OAuth providers take no access: the scopes are the grant. Remove access.`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `capabilities.<id>.why`    | 1 to 200 characters: why the app needs it, for whoever approves it and, for an OAuth provider, the person who connects. Optional for an API-key provider or a service; required for an OAuth provider: `<Label> needs why: what the app does with the account a person connects, in one sentence`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `capabilities.<id>.scopes` | OAuth providers only, required: the provider's own scopes the app uses, short (`gmail.modify`, joined onto the provider's scope prefix: Google's `https://www.googleapis.com/auth/`, Microsoft's `https://graph.microsoft.com/`) or in full, as the provider documents them (`Mail.Read`, `channels:read`, `repo`). `[]` for a provider with no scopes (Notion). 0 to 40 (`scopes lists at most 40 scopes`), each 1 to 200 characters (`a scope is 1 to 200 characters`) with no control character, space or comma (`one scope, with no space or comma: list each scope on its own`), each once in the provider's canonical spelling (`a scope is listed twice`). Missing: `<Label> needs scopes: the provider's own scopes this app uses (gmail.modify), or [] for none`. Never list the identity scopes (Google's `openid` and `email`, Microsoft's `User.Read` and `offline_access`): the Gateway adds them from the provider's spec. A person connects in the app for exactly these scopes, and the Gateway refuses a token that carries more ([/docs/agent/providers](/docs/agent/providers#oauth-providers-upload-a-client-the-gateway-runs-the-flow)). Refused on every other capability: `<Label> takes no scopes; list it as { access, why }`. |
-
-An OAuth entry also refuses three keys it used to take, each saying what to write instead: `background` (`background is gone: an app may use a connection made in it at any time. Remove it.`), `optionalScopes` (`optionalScopes is gone: list every scope under scopes.`) and `redirectPaths` (`redirectPaths is gone: the Gateway runs the flow; send people to connectUrl().`). An app uses a connection made in it whenever it likes, and names another member's connection to it with `for: { background: true, userId }` ([/docs/agent/providers](/docs/agent/providers#background-use-of-a-members-connection)).
-
-An unknown id fails with `unknown capability (the gateway offers: dataforseo, context, email, members, slack, google-workspace, microsoft-365)`: the catalog's ids. A deploy that has reached the Gateway checks against its registry instead, the catalog and the providers registered on it ([/docs/agent/providers](/docs/agent/providers)), so a registered id passes (an API-key provider checked for the access its spec offers, an OAuth provider for `{ scopes, why }`) and one nobody has is `CAPABILITY_UNKNOWN`. An AI provider fails with `<id> is an AI provider: list it under providers, not capabilities`. `email.senders` in the manifest fails with ``senders moved out of the manifest: set them with `everyapp email set --sender <pattern>` in the app's directory after its first deploy``: an installation's senders are its own, not the manifest's. Before the CLI has asked a Gateway (`dev`, `release`), an id outside the catalog is checked as an OAuth entry when it has `scopes` and as an API-key entry otherwise; one with both is refused (`an API-key provider takes access; an OAuth provider takes scopes, not both`). A stored manifest's `capabilities` are read with `CapabilityRequestSchema`: any entry under any id, `access` optional (missing reads as `read`) and a malformed `scopes` read as none.
-
-There is no separate approval step: the deployed manifest's entry is the grant, for calls with a person behind them and background work alike (`apps/every-app-gateway/src/server/integration-proxy.ts`). Approval is of the app: once the stored manifest lists a capability, every call the app makes may use it, attributed to the signed-in person whose identity it forwards or to the app. The Gateway checks the stored entry at call time (`email` needs `access: "write"`, `members` needs `"read"`, an OAuth provider its `scopes`) and refuses with a JSON body `{ error, code, message }`, the code repeated in the `x-everyapp-error` header (`GATEWAY_ERROR_HEADER`; `capabilityRefusal()` in `apps/every-app-gateway/src/server/capabilities/refusal.ts`), which is what the app's code sees:
-
-| Code                             | Status | When                                                                                                                                                 | Message                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| -------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `capability_not_requested`       | 403    | The stored manifest does not list the capability                                                                                                     | `api_key`: `This app doesn't list <Label> in its capabilities. Add it to everyapp.config.ts (capabilities.<id>) and deploy again.`; `members`: `This app doesn't list members in its capabilities. Add capabilities: { members: { access: "read" } } to everyapp.config.ts and deploy again.`; `email`: the same with `{ email: { access: "write" } }`; an OAuth provider: `This app doesn't list <Label> in its capabilities. Add it to everyapp.config.ts (capabilities.<id>) and deploy again.` |
-| `integration_method_not_allowed` | 405    | Not a method the capability takes                                                                                                                    | `api_key`: `<Label> calls may use <methods>.`, its `readMethods` joined with "or" (`GET or POST` for both api_key capabilities); `members`: `Members are listed with GET /api/integrations/members/list (listMembers() in @every-app/sdk/server).`; `email`: `Email is sent with POST /api/integrations/email/send (sendEmail() in @every-app/sdk/server).`                                                                                                                                        |
-| `integration_path_not_allowed`   | 403    | `api_key`: an account-wide path, however spelled                                                                                                     | `<Label>'s <path> describes the whole account the gateway's key belongs to, which every app shares.`                                                                                                                                                                                                                                                                                                                                                                                               |
-| `integration_not_configured`     | 503    | The Gateway lacks the key or client                                                                                                                  | `<Label> isn't set up on this Gateway: it needs <SETTINGS>. An admin runs: pnpm everyapp configure <app>`, with `settings` and `command` beside it ([setup info](/docs/agent/identity#setup-info-what-to-set-in-the-gateways-words)); an OAuth provider adds `or an owner or admin adds a client under Manage workspace → Providers`                                                                                                                                                               |
-| `integration_agent_not_allowed`  | 403    | `members` called on behalf of an MCP agent (`user.channel === "mcp"`)                                                                                | `An agent's tool call can't list the organization's members.`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `integration_read_only`          | 403    | `email` sent on behalf of an MCP agent whose connection lacks `mcp:write` (or `*`)                                                                   | `This agent connection is read-only, and sending email writes. Reconnect the agent with write access.`                                                                                                                                                                                                                                                                                                                                                                                             |
-| `integration_not_connected`      | 409    | An OAuth provider's call with no connection for the person (or the member named) in this app, an expired one, or one lacking a scope the entry lists | The body adds `connectPath` (`/connect/<id>?app=<app id>`), `reconnect` and, for missing scopes, `missingScopes` ([/docs/agent/providers](/docs/agent/providers#calls-with-the-held-token))                                                                                                                                                                                                                                                                                                        |
-| `app_monthly_cap_exceeded`       | 429    | The organization's monthly cap in dollars on this app's provider calls (Manage workspace → Usage) is reached                                         | `<app> has reached its monthly cap of $<dollars> of provider-reported cost for this organization[ (the workspace default)]. Its AI and provider calls are refused until the month ends (UTC) or an owner or admin raises the cap under Manage workspace → Usage.` with `retry-after`                                                                                                                                                                                                               |
-
-The registry (`CAPABILITIES` in `packages/sdk/src/internal/capabilities.ts`):
-
-| Id                 | Mode           | Access  | What it is                                                                                                                                                                                                                                                                  |
-| ------------------ | -------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dataforseo`       | `api_key`      | `read`  | DataForSEO (`api.dataforseo.com`, `sandbox.dataforseo.com`); GET and POST count as reads; account-wide paths (`tasks_ready`, `id_list`, `errors`, `appendix/user_data`, `appendix/webhook_resend`) are refused. Key `DATAFORSEO_API_KEY`.                                   |
-| `context`          | `api_key`      | `read`  | Context.dev (`api.context.dev`). Key `CONTEXT_API_KEY`.                                                                                                                                                                                                                     |
-| `email`            | `service`      | `write` | Outbound mail through the Gateway's sender: route `send` (POST) under `/api/integrations/email/`, the SDK's `sendEmail()`. Settings `EMAIL_FROM` and `EMAIL_FROM_NAME`; read when set: `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `RESEND_API_KEY`, `EMAIL_PROVIDER`. |
-| `members`          | `service`      | `read`  | The organization's members who can open the app: route `list` (GET), the SDK's `listMembers()`. No settings.                                                                                                                                                                |
-| `slack`            | `oauth_client` | scopes  | Slack's bot token (`slack.com`): `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET`.                                                                                                                                                                                                 |
-| `google-workspace` | `oauth_client` | scopes  | Gmail, Calendar, Drive, Search Console, Analytics and the other Google APIs: `GOOGLE_WORKSPACE_CLIENT_ID` / `GOOGLE_WORKSPACE_CLIENT_SECRET`.                                                                                                                               |
-| `microsoft-365`    | `oauth_client` | scopes  | Outlook mail and calendar, OneDrive and the rest of Microsoft Graph: `MICROSOFT_365_CLIENT_ID` / `MICROSOFT_365_CLIENT_SECRET`.                                                                                                                                             |
-
-Modes: `api_key` calls go through `integrationFetch()` to `/api/integrations/<id>/<host><path>` and the Gateway adds the key; `oauth_client` means a person connects in the app (`connectUrl()`) for the scopes its entry lists, the Gateway keeps the tokens, and `integrationFetch()` to the provider's API hosts carries the token of that person's connection in this app; `service` is something the Gateway does itself at `/api/integrations/<id>/<route>`. The settings named above are what the settings model (`appSettings()`) reports the manifest needs on the Gateway. In development, `everyAppWorker()` declares the matching `DEV_GATEWAY_KEYS` names that are set locally, plus `EVERYAPP_EMAIL_SENDERS` for an app listing `email`. The full design is [`/docs/agent/repo/capabilities`](/docs/agent/repo/capabilities). Setting a capability up on the Gateway, step by step: `packages/cli/skills/everyapp/setup/dataforseo.md`, `setup/context.md`, `setup/email.md`, `setup/google.md` (`google-workspace`), `setup/microsoft-365.md` and `setup/slack.md`, indexed by `setup/README.md`; in an app they are under `node_modules/everyapp/skills/everyapp/setup/`, linked from `.claude/skills/everyapp/` and `.agents/skills/everyapp/`.
-
-## secrets
-
-`secrets` names the app's own secrets: an API key it calls out with, a webhook signing secret. `everyapp configure <app>` sets up everything the manifest declares, each where it is held, and `everyapp secret set <NAME>` one name; an app's own secret lands on the app's Workers (every helper too), later deploys keep them, so production builds declare none. In development each one set locally is declared as a secret binding, read as the Vite plugin reads secrets: `.dev.vars.<mode>` or `.dev.vars` alone when present, otherwise `.env`, `.env.local`, `.env.<mode>`, `.env.<mode>.local` and the process environment. A secret is bound only when it is set locally, so treat each as optional in the app's `Env` type (the template generates it with `cf workers types`, its `types:check` script).
-
-Declaring a setting never fails a deploy: the deploy reads `secrets` only to build and check the Worker. It ends with the `APP_NEEDS_SETUP` warning when a required one is unset, and until it is set the app doesn't open (below). An `optional` one fails only where it is used: a never-set secret is absent from `env`; an unset provider key answers `ai_provider_not_configured`, an unset capability `integration_not_configured`, both 503. `everyapp secret list [<app>]` shows every setting and its state, and `everyapp configure [<app>]` asks for what is unmet and sets it (`packages/cli/src/commands/secret/index.ts`, `packages/cli/src/commands/configure/index.ts`, `packages/cli/src/lib/app/settings.ts`).
-
-Rules in the strict schema (`AppSecretsSchemaStrict`). The reserved-name and Gateway-setting rules read the name without regard to case (both uppercase it first); the others compare it as written, so `FOO` and `foo` are not duplicates of each other and a secret clashes with a binding only in the binding's exact spelling:
-
-| Rule                                                                                                                                                                                                                                          | Message                                                                                                                                                                                                                                                        |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| An identifier: `^[A-Za-z_][A-Za-z0-9_]*$`                                                                                                                                                                                                     | `binding names must be JavaScript identifiers`                                                                                                                                                                                                                 |
-| Each once                                                                                                                                                                                                                                     | `duplicate secret <NAME>`                                                                                                                                                                                                                                      |
-| Not `GATEWAY_URL`, `CF_VERSION_METADATA`, or a name starting `EVERYAPP_`, `EVERY_APP_` or `APP__`                                                                                                                                             | `<NAME> is set by everyapp itself (GATEWAY_URL, CF_VERSION_METADATA and the EVERYAPP_*, EVERY_APP_* and APP__* names)`                                                                                                                                         |
-| Not a settable Gateway setting (`SETTABLE_GATEWAY_SETTINGS` in `packages/sdk/src/internal/gatewaySettings.ts`: every provider key, every capability's client ids and secrets, the email, sign-in, MCP, Cloudflare Access and hosted settings) | ``<name> is a Gateway setting, which `everyapp secret set <NAME>` sets on the Gateway for every app; list `<id>` under providers instead`` (or `under capabilities instead`), or `; give the app's secret another name` when no provider or capability owns it |
-| Not a remote MCP app's credential name: nothing ending in `_MCP_TOKEN` (`REMOTE_MCP_SECRET_PATTERN`, any case; [/docs/agent/secrets](/docs/agent/secrets#mcp-apps))                                                                           | ``<NAME> is a remote MCP app's credential name (every name ending in _MCP_TOKEN is the Gateway's, set with `everyapp secret set`); give the app's secret another name``                                                                                        |
-| Not one of the app's bindings: its `resources` names, `workers[].binding`, `DATABASE_PROVIDER` when `database` is set, and `ASSETS` (`bindingNamesOf()`)                                                                                      | `Invalid everyapp.config: secrets: <NAME> is one of the app's bindings; pick another name for the secret`                                                                                                                                                      |
-
-Examples: `secrets: ["openai_api_key"]` fails with ``secrets.0: openai_api_key is a Gateway setting, which `everyapp secret set OPENAI_API_KEY` sets on the Gateway for every app; list `openai` under providers instead``; `secrets: ["EMAIL_FROM"]` says ``list `email` under capabilities instead``. Install-owned Gateway settings (`BETTER_AUTH_SECRET`, `JWT_PRIVATE_KEY`, …) are not in the settable list, so an app may have a secret of that name; the two never meet.
-
-At most 100 entries. The SDK repeats the reserved-name rule (`RESERVED_SECRET_NAME` in `packages/sdk/src/cloudflare/worker.ts`: `secrets: <NAME> is a name the deploy sets or a binding it builds.`). Hosted third-party apps may declare none (below).
-
-## settings
-
-`settings` lists the app's plain settings: a value that isn't a secret but differs from one install to the next, such as an analytics host and project id, a region or a model name. Before this field such a value went into `cloudflare.config.ts` as a text binding, which fixed it at build time and shipped it in every release built from the app. A setting is set per install and read from `env` as a string:
-
-```ts
-settings: [
-  { name: "POSTHOG_HOST", why: "Where the PostHog API is.", type: "url", default: "https://us.i.posthog.com" },
-  { name: "POSTHOG_PROJECT_ID", why: "Which PostHog project the dashboards read.", type: "number" },
-  { name: "REPORT_REGION", why: "Which region's holidays reports skip.", values: ["us", "eu"], optional: true },
-],
-```
-
-| Path                  | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `settings[].name`     | The `env` name. The same rules as a secret's name: an identifier, each once, not a name everyapp sets (`GATEWAY_URL`, `CF_VERSION_METADATA`, `EVERYAPP_*`, `EVERY_APP_*`, `APP__*`), not a Gateway setting, a sign-in provider's or a remote MCP app's name (`<name> is a Gateway setting, …; give the app's setting another name`), not one of the app's bindings (`settings: <NAME> is one of the app's bindings; pick another name for the setting`), and not one of its `secrets` too (`settings: <NAME> is one of the app's secrets too; declare it once, under secrets when it is a key, under settings when it isn't`). Duplicates: `duplicate setting <NAME>`. |
-| `settings[].why`      | Required, 1 to 200 characters: whoever installs the app is asked for it, and this is what they read.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `settings[].type`     | `text` (the default), `url` (an http or https URL), `number` (digits, an optional `-` and decimals) or `boolean` (`true` or `false`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `settings[].values`   | For a `text` setting that is one of a list: 2 to 50 values, each once (`each value once`), matched exactly. With another `type`: `values lists what a text setting may be; drop type "<type>" or values`.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `settings[].default`  | What the app reads while nobody has set it. It must be a value the setting takes (`the default isn't a value the setting takes: <why>`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `settings[].optional` | `true`: the app opens without it. A setting with a `default` is never unset, so it is optional already, and `optional` beside it is refused (`a setting with a default is never unset (the deploy sets the default), so it is optional already; drop optional`).                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `settings[].docs`     | Where the value comes from: an https URL, shown as `Get it at <docs>`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-
-The strict schema refuses any other field (`anyOf` and `setup` included); at most 100.
-
-How a setting reaches the app, by the path an app's own secret takes ([/docs/agent/secrets](/docs/agent/secrets#app-secrets)):
-
-- **Set per install.** `pnpm everyapp configure <app>` asks for each required setting at a visible prompt (a value, not a key), under `<NAME>: <why>` and `Takes <what>` (`Takes an http or https URL, default https://us.i.posthog.com`), and re-asks an answer the setting doesn't take. A script or an agent pipes `NAME=value` lines in, or exports the names and adds `--from-env`. A value the setting doesn't take is [`SETTING_VALUE_INVALID`](/docs/agent/errors#setting_value_invalid) before anything is written. `pnpm everyapp secret set NAME [--app <id>]` sets one, checked the same way. A new value is live at once, with no deploy.
-- **Held on the app's Workers.** Each value goes on the app's Worker and every helper Worker as a Worker secret, in the same Worker version as the app's secrets, and is recorded with them in `apps.secret_names`. Later deploys keep it, so production builds declare nothing for it.
-- **The default, written by the deploy.** Each deploy sends the default of every setting the app's Worker doesn't hold yet with the version it uploads, to the app's Worker and its helpers (`settingDefaultsToWrite` in `packages/perimeter/src/install/app-install.ts`, the same for browser installs). A value someone set, or a default written before, is never replaced. To go back to the default, set it again.
-- **Needs.** A setting with neither a default nor `optional` is required: the app doesn't open until it is set, as for a required secret. In the settings model (`appSettings()` in `packages/sdk/src/internal/appSettings.ts`) it is a row of kind `setting`, after the secrets, with its rule in `value` (`{ type, values?, default? }`). `everyapp status`, `everyapp secret list`, the end of `deploy` and the Gateway's "Needs setup" dialog show it with the app's secrets, with `Takes <what>` under its `why`.
-- **Installs.** A release carries the manifest, so `everyapp install` knows which settings the app declares. At a terminal, when the app needs setup, it asks `Set up <app> now?` (Yes by default) and runs `configure <app>`. Otherwise the install ends with the `APP_NEEDS_SETUP` warning and `pnpm everyapp configure <app>` under Next.
-- **In development.** `everyAppWorker()` declares each setting set locally (`.dev.vars`, `.env`, read as for secrets) as a secret binding. A setting that isn't set locally but has a default gets a text binding with that default. So `pnpm dev` reads what a deployed Worker reads, and `cf workers types` types each setting that is set locally or has a default; treat the others as optional in `Env`.
-- **Hosted third-party apps** declare none (`settings: third-party apps can't have settings of their own yet`), as for `secrets`.
-
-A setting is not a secret. Its value is shown when it is typed, and a script may echo it. Anything that grants access (a key, a token, a signing secret) goes under `secrets`.
-
-## Required, optional, or one of a group
-
-Every `providers`, `capabilities` and `secrets` entry (and every `settings` entry, by its own fields: [settings](#settings)) carries a **need**, read by the settings model (`appSettings()` in `packages/sdk/src/internal/appSettings.ts`; the maintainer reference is `docs/manifest-settings.md`). A bare string in `providers` or `secrets`, or a capability entry with neither flag, is **required**: the app does not open until the setting is set (the Gateway's home and Admin → Apps show "Needs setup", `everyapp status` and `everyapp secret list` show the SETTINGS table, and the app's host is gated on its private routes (`apps/every-app-gateway/src/server/app-needs-setup.ts`): an HTML GET navigation gets `302` to `<GATEWAY_URL>/?setup=<appId>`, the launcher's setup dialog; everything else gets `503 { "error": "app_needs_setup", "app" }`, never naming a setting; routes declared `public` are served, and the app's own code answers for what isn't configured. Its tools stay out of `/mcp` meanwhile, and `everyapp_list_apps` lists it `available: false`). The author's rule: required means the app is useless without it; a setting only one feature needs is optional, and that feature says what is missing where it is used.
-
-An entry may be written as an object to say more:
-
-| Path                                                                       | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `providers[].id`                                                           | The provider, as the bare string form names it (`openai`, `openrouter`, `workers-ai`); each once (`duplicate provider`, whichever form).                                                                                                                                                                                                                                                                                                                                                  |
-| `secrets[].name`                                                           | The app's own secret, as the bare string form names it; the same name rules as a bare name (identifier, each once, no reserved or Gateway name, no binding name).                                                                                                                                                                                                                                                                                                                         |
-| `providers[].why`, `capabilities.<id>.why`, `secrets[].why`                | Why the app needs it, 1 to 200 characters, shown to whoever sets it.                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `providers[].docs`, `capabilities.<id>.docs`, `secrets[].docs`             | Where the key or client comes from: an https URL (`must be an https URL`). Providers and capabilities get a default from the SDK registries (the provider's key page, an api_key capability's `docs`, an OAuth provider's `console`); the manifest may override it.                                                                                                                                                                                                                       |
-| `providers[].optional`, `capabilities.<id>.optional`, `secrets[].optional` | `true`: the app opens without it; the feature that uses it says what is missing (`integrationStatus().configured`, or the `ai_provider_not_configured` / `integration_not_configured` refusal).                                                                                                                                                                                                                                                                                           |
-| `providers[].anyOf`, `capabilities.<id>.anyOf`, `secrets[].anyOf`          | The name of a group (1 to 40 characters, trimmed) of which one set member is enough; more set is fine. Only for an app that picks among the set members at run time: the Gateway refuses a call to a provider whose key is unset whichever others are set. An app that picks at build time declares that one required and the others optional.                                                                                                                                            |
-| `secrets[].setup`                                                          | For an app's own secret, its setup guide, a Markdown file in the app's repository such as `docs/setup/main-secret.md` (lowercase segments, no `..`; else `must be a Markdown file in the app, such as "docs/setup/main-secret.md"`); the CLI prints it as `Guide: docs/setup/main-secret.md`. Providers and capabilities take theirs from the registries, guides in the everyapp skill (`setup/openai.md`, `setup/dataforseo.md`, …), and refuse the field (`Unrecognized key: "setup"`). |
-
-The strict schema refuses an entry that is both `optional` and in an `anyOf` group (`<path> is both optional and in the any-of group "<group>"; a group's member is optional by itself, so drop one of them.`) and a group with one member counted across providers, capabilities and secrets (`the any-of group "<group>" has one member (<path>); an any-of group needs two or more. Drop anyOf, or mark it optional.`). A stored row is read without these rules, its entries' unknown fields kept.
-
-```ts
-providers: ["openrouter"],
-capabilities: {
-  dataforseo: { access: "read", why: "Keyword, SERP and backlink data." },
-  context: { access: "read", optional: true, why: "Renders JavaScript-heavy pages in site audits." },
-},
-secrets: [
-  { name: "MAIN_SECRET", why: "Signs visitor salts and collect tokens; 32 or more random characters, e.g. openssl rand -base64 32." },
-  { name: "GITHUB_TOKEN", optional: true, why: "Raises GitHub's rate limit.", docs: "https://github.com/settings/tokens" },
-],
-```
-
-What is set is read per holder: a provider's or capability's settings on the Gateway Worker, an app's own secrets as the CLI last recorded them on the app's registry row (`apps.secret_names`; never recorded counts as unknown and never blocks). `everyapp status --json` carries the result as `data.apps[].setup`, `everyapp secret list [<app>] --json` as `data.app.setup`, and the one command that opens an app is `pnpm everyapp configure <app>` (`setup.command`), which asks for each unmet setting, which member of an any-of group, then the optional ones, and sets each where it is held; `pnpm everyapp secret set <NAME> [--app <id>]` sets one name. See [`/docs/agent/secrets`](/docs/agent/secrets) and [`/docs/agent/json`](/docs/agent/json).
-
-## ai
-
-`ai` limits what the app may do through the AI proxy (`/api/ai/<provider>`); strict: no other keys. It is not `resources.ai`, the Workers AI binding (`### Workers AI` above), which the proxy never sees.
-
-| Field       | Rule                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ai.models` | Model ids (1 to 200 characters each) the app may request from inference endpoints. Omitted: any model.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `ai.routes` | OpenAI API paths beyond inference, each matching `^\/v1(\/[a-z0-9_-]+)+$` (`must be an OpenAI API path such as "/v1/files"`); each covers its sub-paths. The manifest is the grant. Omitted: inference only.                                                                                                                                                                                                                                                                                                                                                                              |
-| `ai.chat`   | The app needs a chat model and takes the workspace's default model: `true`, or an entry with the need fields of [the settings model](#required-optional-or-one-of-a-group), `ai.chat.why`, `ai.chat.docs`, `ai.chat.optional` and `ai.chat.anyOf` (strict: nothing else). The app calls `/api/ai/default/v1/chat/completions` (and `/v1/embeddings`) with `createGatewayFetch()` and `aiBaseUrl()`; `ai.models` doesn't apply there (the workspace chose the model). An app that needs one provider lists it under `providers` instead, or as well. See [/docs/agent/ai](/docs/agent/ai). |
-
-Enforcement (`apps/every-app-gateway/src/server/ai-proxy.ts`):
-
-- Inference routes are always allowed as POST to the exact path. `openai`: `/v1/responses`, `/v1/chat/completions`, `/v1/embeddings`, `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translations`, `/v1/images/generations`, `/v1/images/edits`, `/v1/images/variations`. `openrouter`: `/api/v1/chat/completions`, `/api/v1/completions`, `/api/v1/responses`, `/api/v1/embeddings`. `workers-ai`: `/v1/chat/completions`, `/v1/embeddings`, `/v1/responses`.
-- `ai.models` is checked on inference routes, where the Gateway reads the model from the body: `model_not_allowed` (403), `The app manifest does not allow this model (<model>); list it in ai.models.` A request naming no model is refused too. Routes opted into with `ai.routes` stream through unread.
-- Any other path needs the app's `ai.routes` to cover it, and the provider must support extra routes (only `openai` does): otherwise `ai_route_not_allowed` (403), `This provider endpoint is not available to apps`. The manifest is the grant, as for capabilities, and no Gateway setting adds a second yes: every `deploy` and `install` prints the routes (the `AI routes` fact, `data.aiRoutes` on `app.register`), the browser install form shows them, and a new release can add one. Mind that the one key is shared by every app on the Gateway, and providers keep files, batches and fine-tunes per account, so an app granted `/v1/files` sees every file on that key.
-
-## email
-
-`email.inbound`: `true` when the Worker exports an `email()` handler beside `everyApp()`'s `fetch`. The addresses are not in the manifest: `everyapp email set --inbound <address>` writes them to the installation's row (`apps.email_inbound`) and the deploy's email routing step routes them (`packages/cli/src/lib/app/emailRoutes.ts` reads `receives: manifest.email?.inbound === true`). Senders for the `email` capability are set the same way with `--sender <pattern>`. Design: [`/docs/agent/email`](/docs/agent/email).
-
-Strict schema: `{ inbound?: boolean }` and nothing else; a non-boolean (an address list from before the move) fails with ``inbound is true (the Worker exports an email() handler) or left out; the addresses moved out of the manifest: set them with `everyapp email set --inbound <address>` in the app's directory after its first deploy``. Dispatch-tier apps may not declare it (below).
-
-## access
-
-`access` is `everyone` or `admins` and decides who can open the app when it is first registered (`initialEveryone()` in `packages/perimeter/src/registry/registration.ts`). Registration grants nobody: owners and admins open every app of their organization through their role.
-
-- `admins` (the default): the organization's owners and admins; an admin grants others (a person or a group) in the Gateway.
-- `everyone`: the app is available to everyone (`apps.everyone`): every member opens it, people who join later too.
-
-A redeploy of an existing app changes neither (`kind: "existing"`); admins manage access in the Gateway UI afterwards. A deleted app registered again (`kind: "revived"`) starts from its manifest again, with no grants from before. A shared-scope app is nobody's to grant: membership of any active organization opens it. Before the Gateway has an owner nobody opens the app; the first owner does as soon as they claim it.
-
-## Server functions
-
-TanStack Start server functions are cookie-authenticated RPC endpoints under one prefix, and the session cookie spans every app subdomain. Without a guard, a link, redirect or `<img>` on any sibling app could invoke one with the member's identity, and a navigation could render its response as a page (CVE-2026-102989). So the perimeter lets only same-origin `fetch()` calls from TanStack's client through, on every method, before any auth: real clients always send `x-tsr-serverFn: true` (1.168+) or `x-tsr-redirect: manual` (1.140-era), which a cross-origin page cannot add without a CORS preflight the app never grants. The check runs in `packages/perimeter/src/gateway.ts` once the app is found and active, before the session cookie is read or any auth runs; a refusal is 403 `server_fn_denied` with a `reason`: `server function navigation` (`sec-fetch-mode` `navigate` or `nested-navigate`, a `sec-fetch-dest` of `document`, `iframe` or `frame`, or, without Fetch Metadata, an `accept` that includes `text/html`), `sec-fetch-site <value>` for a `sec-fetch-site` other than `same-origin`, or `missing server function client header` (`evaluateServerFnRequest()` in `packages/perimeter/src/serverFunctions.ts`). The guard covers `/_serverFn`, TanStack Start's default, always: matching decodes and resolves the path as Start does (`/%5FserverFn/…` and `/x/%2e%2e/_serverFn/…` both reach it), case-insensitively. It is not a manifest field.
-
-## build, dev and install
-
-- `build`: a shell command run with `EVERYAPP_BUILD=1` in the app root (`packages/cli/src/lib/app/buildApp.ts`). Default: `cf build` with no `--mode` (cf refuses `--mode` for TanStack Start projects, and Vite builds in production mode by default), 10-minute timeout, failure `BUILD_FAILED`. The result must be a production Build Output in `.cloudflare/output/v0`, or the deploy's policy fails `APP_POLICY`: ``The app's Build Output isn't a production build. The manifest's build command must run `cf build` (production by default).``
-- `dev`: a shell command `everyapp dev` runs with `PORT` set to the internal loopback port the gateway-lite proxies to; it must listen there (`packages/cli/src/commands/dev/appServer.ts`). Default: `cf dev`, with `PORT` and the dev registry environment. An app with neither `dev` nor a `cloudflare.config.ts` fails `MISSING_CLOUDFLARE_CONFIG`.
-- `install`: `false` skips dependency installation; a string runs through the shell; omitted auto-detects (`packages/cli/src/lib/package-manager.ts`): the `packageManager` field of `package.json` (`pnpm`, `yarn` or `npm`), else `pnpm-lock.yaml`, `yarn.lock` or `package-lock.json`, else `pnpm`. Failure `INSTALL_FAILED`. A release deploy (`install <url>`) skips it.
-
-## migrations
-
-`migrations` is strict (no other keys) in both schemas. `migrations.engine` is required whenever `migrations` is declared (`Invalid everyapp.config: migrations.engine: Invalid option: expected one of "drizzle"|"d1-sql"|"prisma"` otherwise, so `migrations: { dir: "migrations" }` alone fails); every other key is optional. An absent `migrations` field means the drizzle engine against the first D1 binding, on both the deploy and the dev-preflight paths (`packages/cli/src/lib/manifest.ts`); diverging would silently skip the preflight for every app that does not spell the field out.
-
-| Field                | Values                        | Default                       | Meaning                                                                                                                                                                                                                |
-| -------------------- | ----------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `migrations.engine`  | `drizzle`, `d1-sql`, `prisma` | required                      | What writes and applies the migrations: drizzle-kit; SQL files written some other way (Prisma's generated SQL for D1, with `--> statement-breakpoint` between statements); or `prisma migrate deploy` (Postgres only). |
-| `migrations.dialect` | `sqlite`, `postgresql`        | `sqlite`                      | `sqlite`: the D1 database `binding` names. `postgresql`: the Postgres database at `POSTGRES_DATABASE_URL` in `.everyapp/secrets.env`, migrated before the upload.                                                      |
-| `migrations.dir`     | relative path                 | `drizzle` (`migrationsDir()`) | The SQL migration files, relative to the app root.                                                                                                                                                                     |
-| `migrations.config`  | relative path                 | the tool's default            | The drizzle config (or `prisma.config.ts` on the `prisma` engine); the schema check and the Postgres migration run the tool with it.                                                                                   |
-| `migrations.binding` | a D1 binding                  | the first of `resources.d1`   | The D1 database to migrate. Must be declared: `Manifest migrations binding "<NAME>" is not declared in resources.d1.`                                                                                                  |
-
-Refinements, each with its message:
-
-| Rule                                                          | Message                                                                                                                    |
-| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `engine: "prisma"` needs `dialect: "postgresql"`              | `migrations.engine: Prisma migrations run on Postgres (dialect "postgresql"); D1 takes the generated SQL through "d1-sql"` |
-| `dialect: "postgresql"` refuses `engine: "d1-sql"`            | `migrations.engine: Postgres migrations run on the "drizzle" or "prisma" engine`                                           |
-| `dialect: "postgresql"` refuses `binding`                     | `migrations.binding: binding names a D1 database; Postgres migrations have none`                                           |
-| `config` is relative, without `..`                            | `migrations.config: config must be a relative path without .. segments`                                                    |
-| `engine: "d1-sql"` needs `dir`                                | `migrations.dir: dir is required when migrations.engine is "d1-sql"`                                                       |
-| `dir` is relative, without `..`                               | `migrations.dir: dir must be a relative path without .. segments`                                                          |
-| `dialect: "postgresql"` needs `database.provider: "postgres"` | `Postgres migrations (migrations.dialect "postgresql") need database: { provider: "postgres" }.`                           |
-
-What runs (`packages/cli/src/commands/deploy/deployApp.ts`): on D1, `cf d1 migrations apply` against the provisioned database from `dir`, with a restore point recorded first; skipped when the app has no D1 binding or the directory is missing. In dev, `cf d1 migrations apply --local` against the same local id, for the `drizzle` and `d1-sql` engines alike. On Postgres, `drizzle-kit migrate` or `prisma migrate deploy` runs against `POSTGRES_DATABASE_URL` after the resources are provisioned, the app built and its Build Output checked, and before the upload; the URL itself is checked before anything is created (`POSTGRES_URL_MISSING` when unset: `<id> needs a Postgres URL to migrate its database`, fix `set POSTGRES_DATABASE_URL in .everyapp/secrets.env, then deploy again`). Prisma's run is skipped only when a `dir` the manifest names is missing, since Prisma finds its migrations through its config; there is no restore point (its own backups are the way back). The schema drift check (`packages/cli/src/commands/deploy/steps/checkSchemaDrift.ts`) runs only on the `drizzle` engine: `d1-sql` is skipped silently, `prisma` with the step message `Schema not checked against migrations (Prisma needs a shadow database; --verbose shows how)`. On `drizzle` it warns `SCHEMA_CHECK_SKIPPED` (`Can't check the schema against the migrations: <why>`) when drizzle-kit is not installed (`drizzle-kit isn't installed`, fix `add drizzle-kit to devDependencies`), when there is no `drizzle.config.ts` (with the detail `An app that writes its SQL by hand sets migrations.engine to "d1-sql".`), or when the `migrations.config` it names is missing (`no <config> (migrations.config)`). Releases: packing one refuses the `prisma` engine (`RELEASE_MIGRATIONS_UNSUPPORTED`: `<id> migrates with Prisma, which a release can't carry`, rerun `<cli> deploy` from a clone of the app, after pnpm install in it; `packages/cli/src/lib/app/release.ts`), and `install <url>` refuses any release whose manifest has `migrations.dialect: "postgresql"`, drizzle included (the same code: `<id> can't deploy from a release: its Postgres migrations need the source`, fix `clone it, then run pnpm install && <cli> deploy in it`, where `<cli>` is how everyapp was run (`invocation()` in `packages/cli/src/lib/output/command.ts`: `pnpm everyapp` under pnpm, `npx everyapp` under npm, `yarn everyapp` under yarn, `everyapp` when run directly)), because a release carries SQL files that only the D1 migration applies by itself. Gateway app installs of third-party apps accept only D1 SQL migrations (`sqlite` dialect, `drizzle` engine).
-
-## Postgres
-
-EveryApp reaches Postgres through Cloudflare Hyperdrive, which the deploy provisions with `cf`: any Postgres with a URL works, Neon, Supabase, PlanetScale Postgres, Xata, Crunchy Bridge or a server of your own, and a MySQL URL (`mysql://`) makes a MySQL config the same way. There is no Postgres resource to create in Cloudflare and no driver to proxy: the database stays where it is, and the app's Workers bind a Hyperdrive config that holds its credentials and pools connections to it.
-
-What a person does, three steps:
-
-1. Make the database at the provider and copy its URL (for Neon and Supabase the direct one, below).
-2. Put it in the app's `.everyapp/secrets.env`, which stays on the machine that deploys (`.everyapp/` is gitignored; never paste it into a chat):
-
-   ```sh
-   POSTGRES_DATABASE_URL=postgres://user:password@host:5432/db
-   ```
-
-3. Declare it in `everyapp.config.ts`:
-
-   ```ts
-   resources: { hyperdrive: [{ name: "HYPERDRIVE" }] },
-   database: { provider: "postgres" },
-   migrations: { engine: "drizzle", dialect: "postgresql" },
-   ```
-
-Then `pnpm everyapp deploy` creates the Hyperdrive config `every-<orgKey>-<appId>--hyperdrive` pointed at that URL with query caching off ([Hyperdrive](#hyperdrive); `caching: "default"` turns Cloudflare's on), binds it as `HYPERDRIVE` on every Worker of the app with `DATABASE_PROVIDER=postgres`, and runs `drizzle-kit migrate` (or `prisma migrate deploy`, `migrations.engine: "prisma"`) against the URL before the upload ([migrations](#migrations)). Leave out `migrations` and nothing is migrated: the app migrates its database itself. `database.region` (`"aws:us-east-1"`) places its Workers near the database. Without the URL the deploy stops with [`HYPERDRIVE_ORIGIN_MISSING`](/docs/agent/errors#hyperdrive_origin_missing) (or, with Postgres migrations, [`POSTGRES_URL_MISSING`](/docs/agent/errors#postgres_url_missing) before anything is created); a URL it can't read is [`DATABASE_URL_INVALID`](/docs/agent/errors#database_url_invalid). Every variable of the file: [/docs/agent/secrets](/docs/agent/secrets#the-postgres-secrets-file).
-
-In code, open a client on the binding's `connectionString` inside each request (Cloudflare refuses a socket one request opened to another), with `postgres` (postgres.js) or `pg`:
-
-```ts
-import postgres from "postgres";
-import { drizzle } from "drizzle-orm/postgres-js";
-
-// In the handler, per request: Hyperdrive pools the connections at the edge.
-// Env types HYPERDRIVE optional: under everyapp dev it exists only with a local URL (below).
-const url = env.HYPERDRIVE?.connectionString;
-if (!url) throw new Error("No HYPERDRIVE binding");
-const sql = postgres(url, { max: 1, fetch_types: false });
-const db = drizzle(sql);
-```
-
-OpenSEO does this (`open-seo/src/db/pg/client.ts`: `withPgClient()` keeps the request's client in `AsyncLocalStorage`; `open-seo/src/db/provider.ts` reads `DATABASE_PROVIDER` and the binding; `open-seo/drizzle/pg.config.ts` is the drizzle-kit config that reads `process.env.POSTGRES_DATABASE_URL`). With `pg`, `new Client({ connectionString: env.HYPERDRIVE.connectionString })` and `await client.connect()` per request. A MySQL config has no `database.provider` or migration dialect of its own: set `HYPERDRIVE_ORIGIN_URL=mysql://…`, leave `database` and `migrations` out, and connect with `mysql2` on the binding's `host`, `user`, `password`, `database` and `port`.
-
-In development (`everyapp dev`) Hyperdrive isn't contacted: set `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://…` in `.dev.vars` (a local Postgres, or a development branch of the database) and `env.HYPERDRIVE.connectionString` is that URL; without it the binding is absent ([/docs/agent/dev](/docs/agent/dev)).
-
-Neon and Supabase each offer a pooled URL and a direct one. Hyperdrive pools connections itself and wants the direct one: on Neon the host without `-pooler` (connection pooling unchecked in the dashboard's connection details), on Supabase the "Direct connection" string. `drizzle-kit migrate` works over either, so one direct `POSTGRES_DATABASE_URL` serves both; to give the config another URL than the migrations, set `HYPERDRIVE_ORIGIN_URL` beside it (a binding's own variable wins). Neon's API key in the providers catalog (`NEON_API_KEY`) manages projects and branches through the Gateway; it is not how an app reaches its database.
-
-Turso is libSQL (SQLite), not Postgres, so it isn't a Hyperdrive origin. Its URL and token are the app's own secrets, declared under `secrets` (`TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`) and set with `pnpm everyapp configure <app>` after the first deploy (`.dev.vars` in development); the app connects over HTTP with `createClient({ url: env.TURSO_DATABASE_URL, authToken: env.TURSO_AUTH_TOKEN })` from `@libsql/client/web` (`drizzle-orm/libsql` on top). `database.provider` stays `d1` or is left out, and the deploy runs no Turso migrations: run `drizzle-kit migrate` (dialect `turso`) yourself.
-
-## Bearer routes
-
-A `public` entry with `bearer: true` is a bearer route: a path a bearer client reaches with its token only, a native app signed in with Every App ([Native apps](/docs/agent/native)) or a script with a personal token. Behind Cloudflare Access it is let through by `everyapp access on` like any public route (with `/.well-known/oauth-protected-resource`, where the Gateway writes the app host's RFC 9728 metadata), and the perimeter still demands the token on every request to it.
-
-```ts
-public: [{ path: "/api/**", bearer: true }],
-```
-
-- The path has `public[].path`'s syntax and refusals, and matches every method (`matchBearerRoute()` in `packages/perimeter/src/publicRoutes.ts`), so a bearer route takes no `methods` (`public: /api/** is a bearer route, which answers every method; drop its methods`).
-- A path that is `/mcp`, under it, or covers it is refused (`public: /mcp can't be a bearer route; /mcp stays private on an app host`), and so is a path that is also an anonymous `public` route or a `publicAssets` pattern (`public: /api/** is both a bearer route and open to anyone; a path is open to anyone or to a bearer only, not both`). Both validators run these checks (`assertBearerRoutesAreSafe()`), so a stored manifest can't widen what a cookie reaches.
-
-On a bearer route the perimeter refuses a request carrying the Gateway's session cookie before reading it (401 `unauthenticated`, `reason: "cookie_on_bearer_route"`), on every gateway, Access or not; without a bearer the answer is the 401 challenge (`WWW-Authenticate: Bearer realm="every-app", resource_metadata="https://<app-host>/.well-known/oauth-protected-resource"`), never a login page and never the public treatment. A token works on every route the member can reach; a bearer route only says which of them Access lets a bearer reach. An app whose web UI calls the same paths as its native client must split them.
-
-Bearer routes count toward the 25 paths a host's Access destination holds, with the other `public` routes and `publicAssets`; `deploy` and `status` list them as `bearer <path>` (`"bearer": true` in `--json`). The app reads a native caller like any other: `getEveryAppUser()` with `channel: "api"` and actor `oauth:<connection id>` ([Identity](/docs/agent/identity)).
-
-## events
-
-`events` is an object, `{ subscribe, why }`, and is left out by default. It names the Gateway events the app receives (the `app` event sink, [Events](/docs/agent/events#the-app-sink)): the deploy makes one subscription for the app's own organization, kept in step with this field on every deploy, and the Gateway delivers each matching event to the app's Worker over its service binding, where `everyApp(handler, { events: { on } })` answers it.
-
-- `events.subscribe` is a list of 1 to 25 event types or patterns (`member.removed`, `member.*`, `app.tools_changed`, `app.crm.*`), checked against the catalogue as a subscription's patterns are, and only inside the families an app may read: `member.*` (but `member.password_reset`), `group.*`, `app.*`, `mcp_app.*`, `connection.*` and `tool.*`. Anything else is refused at deploy (`events.subscribe: "token.*" can't reach an app: …`), `*` included: `token.*`, `subscription.*`, `provider.*`, `signin_provider.*`, `cap.*`, `ai.*`, `access.*` and `organization.*` never reach an app. It is an allowlist: a family the catalogue gains later reaches no app until it is added to `APP_SINK_EVENT_FAMILIES` (`packages/sdk/src/internal/events.ts`).
-- `events.why` is a non-empty string of at most 200 characters, plain text, why the app needs these events; it is the subscription's description.
-
-```ts
-events: {
-  subscribe: ["member.removed", "member.deactivated", "app.tools_changed"],
-  why: "Stops a leaver's Agents at once; refreshes Agent tool policies.",
-},
-```
-
-Dropping the field removes the subscription on the next deploy; deleting the app removes it too. A Gateway from before migration `0023_app_event_sink.sql` refuses a manifest that declares `events` with [`GATEWAY_OUTDATED`](/docs/agent/errors#gateway_outdated).
-
-## remote
-
-`remote` is not a field of `everyapp.config.ts`. It is a field of the manifest the Gateway's registry stores on a remote MCP app's row: a provider-tier row (`PROVIDER_APP_TIER`, no Worker, no hostname) that `pnpm everyapp mcp add <url>`, Admin → Apps → Add app → Add an MCP server or `planRemoteMcpAppAdd` (`packages/perimeter/src/registry/remoteMcpApps.ts`) writes. Nobody authors it: the strict schema refuses it in an app's file (`Invalid everyapp.config: (root): Unrecognized key: "remote"`), and a stored row's reader (`validateManifest`) keeps it like any field it doesn't know. The block (`url`, `auth`, `risk`, `tools`, `rev`) is read by `parseRemoteMcpBlock` and `remoteMcpOf` in `packages/sdk/src/internal/remoteMcp.ts`, field by field, wherever the Gateway serves the row, so a row edited by hand can't widen what the rules allow. The settings model reads `remote.auth.secret` as one required Gateway setting of kind `remote-mcp`. Every field and rule: [/docs/agent/mcp](/docs/agent/mcp#the-registration).
-
-## Tier limits
-
-`manifestTierProblems(manifest, tier)` returns sentences for what an app on a tier cannot declare; `everyapp deploy` runs it against the registered app's tier and fails with `<id> can't be deployed as configured` followed by them.
-
-| Tier                                                                                | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `service_binding` (self-hosted: the app's Worker is bound to the Gateway)           | Nothing refused; every field above is available.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `dispatch` (hosted third-party: customer code in a Workers for Platforms namespace) | `resources.hyperdrive: Hyperdrive isn't available to apps in a dispatch namespace (an account holds at most 25 configs)`; `resources.r2: R2 buckets aren't available to apps in a dispatch namespace yet`; `resources.ai: the Workers AI binding isn't available to apps in a dispatch namespace (it bills the platform's account); list the workers-ai provider instead`; `resources.browser: Browser Rendering isn't available to apps in a dispatch namespace (it bills the platform's account)`; `resources.images: the Images binding isn't available to apps in a dispatch namespace (it bills the platform's account)`; `resources.queues: Queues aren't available to apps in a dispatch namespace yet`; `resources.vectorize: Vectorize indexes aren't available to apps in a dispatch namespace yet`; `resources.aiGateway: AI Gateways aren't available to apps in a dispatch namespace yet`; `resources.sendEmail: Email sending bindings aren't available to apps in a dispatch namespace (they send through the Gateway's email capability)`; `resources.secretsStore: Secrets Store secrets aren't available to apps in a dispatch namespace (the store is the platform account's)`; `resources.analyticsEngine: Analytics Engine datasets aren't available to apps in a dispatch namespace (their names are account-wide and their writes bill the platform's account)`; `resources.artifacts: Artifacts isn't available to apps in a dispatch namespace yet (its repos would live in, and bill, the platform's account)`; `email.inbound: apps in a dispatch namespace don't receive mail` (`DISPATCH_INBOUND_PROBLEM`; the platform's zones aren't an organization's to route); `secrets: third-party apps can't have secrets of their own yet` (a third-party Worker gets `GATEWAY_URL` and `EVERY_APP_ORG_ID` only). |
-| Anything else                                                                       | `apps on tier "<tier>" can't be deployed`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-
-The hosted Gateway's deployer (`apps/every-app-gateway/src/server/deploy/metadata.ts`, `manifestProblems()`) refuses more for a third-party bundle: `workers`, `resources.workflows`, `resources.kv` (`use D1`), R2 or Hyperdrive (`which the Gateway's app installer can't provision; use the CLI`), `resources.sendEmail` (`send through the Gateway's email capability`), Queues (`it declares Queues, which the Gateway's app installer can't provision; use the CLI`), migrations other than `sqlite`/`drizzle`, `secrets`, `email.inbound`, a Durable Object class naming a helper Worker (`a Durable Object class names a helper Worker`), and more than 2 Durable Object classes (`it declares <n> Durable Object classes; a third-party app may have 2`; `durableObjectClasses: 2` in `THIRD_PARTY_LIMITS`, `apps/every-app-gateway/src/server/platform-policy.ts`). Its bundle check (`bundleProblems()`, the same file) refuses a Workers AI, Browser Rendering, Images or Analytics Engine binding as a type third-party apps can't have (`AI is a ai binding, which third-party apps can't have`, `BROWSER is a browser binding, which third-party apps can't have`, `IMAGES is a images binding, which third-party apps can't have`, `EVENTS is a analytics-engine-dataset binding, which third-party apps can't have`); the manifest check doesn't name `resources.ai`, `resources.browser`, `resources.images` or `resources.analyticsEngine` yet. The same for `resources.secretsStore`: the bundle check refuses a `secrets-store-secret` binding as a type third-party apps can't have. The same holds for `resources.vectorize`: its manifest check passes, and the bundle check refuses the binding it builds (`is a vectorize binding, which third-party apps can't have`).
-
-## What the built Worker must be
-
-The deploy checks the Build Output against a policy before `cf deploy --prebuilt` uploads it (`packages/cli/src/lib/app/policy.ts`, error `APP_POLICY`; the full list is on [`/docs/agent/deploy`](/docs/agent/deploy)). In short: the Worker is named as the registry says; `workersDev` and `previewUrls` are `false`; no domains, routes or triggers other than cron schedules and consumers of the app's own queues (their dead-letter queues too); no `EVERYAPP_DEV`; `EVERYAPP_IDENTITY_PUBLIC_KEYS` and `EVERYAPP_IDENTITY_ISSUER` built in as text; `EVERYAPP_AUDIENCE` equal to the Worker name; only `text`, `json`, `secret`, `version-metadata`, `assets`, `d1`, `kv`, `r2`, `durable-object`, `workflow`, `worker`, `hyperdrive`, `queue`, `ai`, `browser`, `images`, `vectorize`, `send-email`, `secrets-store-secret`, `analytics-engine-dataset` and `artifacts` bindings; service bindings only to the Gateway's `AppGateway` and, from the app's own Worker, its helpers; D1, KV, Hyperdrive, queues, Vectorize indexes and AI Gateways only as the deploy provisioned; buckets only from `resources.r2` (or, without any, named after the Worker); Workers AI only under a name `resources.ai` declares; Browser Rendering only under a name `resources.browser` declares; Images only under a name `resources.images` declares; `send-email` only as `resources.sendEmail` declares it, by name and addresses; a Secrets Store secret only as the deploy provisioned it for a binding `resources.secretsStore` declares; Analytics Engine only under a binding `resources.analyticsEngine` declares, and only to the dataset it declares; Artifacts only under a binding `resources.artifacts` declares, and only to the namespace named after the Worker; Workflows and Durable Objects only the app's own; no Durable Object class deleted, transferred or container-backed. Build from `everyAppWorker()` and the policy holds by construction.
-
-## Examples
-
-The starter (`starter/everyapp.config.ts`): one D1 database named after the Worker, one public route and one capability; everything else is private and refused.
-
-```ts
-export default {
-  id: "simple-todo-template",
-  name: "Simple Todo",
-  description: "A todo list that shows who you are and what it was allowed.",
-  resources: {
-    d1: ["DB"],
-  },
-  // Every route needs a member the Gateway signed in. A route something else
-  // must reach (a provider's webhook, an OAuth callback) is listed here:
-  // public: [{ path: "/webhooks/github", methods: ["POST"] }]
-  // What the Gateway does for the app with keys it holds. A call for anything not listed is refused.
-  capabilities: {
-    members: { access: "read", why: "Shows who can open this app." },
-  },
-} as const;
-```
-
-A Postgres app with a helper Worker and a Workflow. Deployed for organization `acme` it is Worker `every-acme-crawler` with helper `every-acme-crawler--crawl`, Hyperdrive config `every-acme-crawler--hyperdrive` and Workflow `every-acme-crawler--crawl-site`, defined and exported by the helper; both Workers read `DATABASE_PROVIDER=postgres` and run near `aws:us-east-1`; `drizzle-kit migrate` runs against `POSTGRES_DATABASE_URL` from `.everyapp/secrets.env` before the upload. (This one validates against the strict schema; it is not a manifest in the repository.)
-
-```ts
-export default {
-  id: "crawler",
-  name: "Crawler",
-  description:
-    "Crawls the sites the team tracks and keeps their pages in Postgres.",
-  resources: {
-    hyperdrive: [{ name: "HYPERDRIVE", caching: "off" }],
-    workflows: [
-      { name: "CRAWL_SITE", className: "CrawlSiteWorkflow", worker: "crawl" },
-    ],
-  },
-  workers: [{ name: "crawl", binding: "CRAWL", limits: { cpuMs: 300_000 } }],
-  database: { provider: "postgres", region: "aws:us-east-1" },
-  migrations: { engine: "drizzle", dialect: "postgresql", dir: "drizzle" },
-  public: [],
-} as const;
-```
-
-An app with public webhook routes, capabilities and its own secrets. `/webhooks/stripe` takes POSTs whose `authorization` header the Gateway forwards and whose signature the app checks with `STRIPE_WEBHOOK_SECRET` (set with `everyapp secret set STRIPE_WEBHOOK_SECRET`); `/booking/:uid` is one booking page per id, where a signed-in member still gets their identity; the Gateway sends mail for the app through its own sender and lists the organization's members for it. (Validates against the strict schema; not a manifest in the repository. On the dispatch tier it would be refused for its `secrets`.)
-
-```ts
-export default {
-  id: "inbox-relay",
-  name: "Inbox Relay",
-  description: "Takes payment webhooks and emails the people on the account.",
-  resources: { d1: ["DB"] },
-  public: [
-    { path: "/webhooks/stripe", methods: ["POST"] },
-    { path: "/booking/:uid", methods: ["GET", "POST"] },
-  ],
-  capabilities: {
-    email: {
-      access: "write",
-      why: "Emails the account owners when a payment fails.",
-    },
-    members: { access: "read", why: "Finds the owners to email." },
-  },
-  secrets: ["STRIPE_WEBHOOK_SECRET"],
-  access: "everyone",
-} as const;
-```
-
-Real manifests in the repository: `starter/everyapp.config.ts` (the starter above: D1 `DB`, no public route (its `/health` is a private JSON endpoint; the comment shows a webhook as the public example) and the `members` capability; `everyapp create` copies it and renames its `id` and `name`), `packages/cli/src/test/fixtures/manifests/postiz.ts` (`database: { provider: "d1" }`, a `d1-sql` migration from `migrations` against `DB` (nine statements of our own separated by `--> statement-breakpoint`), a helper Worker `api` bound as `API` with `cpuMs: 300_000` defining `PUBLISH_POST` / `PublishPostWorkflow`, `providers: ["openai"]` with `ai.models`, own secrets `JWT_SECRET`, `X_API_KEY`, `X_API_SECRET`, `access: "everyone"`, custom `install`, `build` and `dev` commands) and `packages/cli/src/test/fixtures/manifests/agentic-inbox.ts` (two SQLite Durable Objects, `MAILBOX` / `MailboxDO` and `EMAIL_AGENT` / `EmailAgent`, `providers: ["workers-ai", "openrouter"]` with `ai.models`, `access: "everyone"`). Both fixtures end in `as const satisfies EveryAppCliManifest`, and each carries the `cloudflare.config.ts` equivalent that builds its Workers for production (`postizConfig`, `agenticInboxConfig`).
-
-## Sources
-
-- `packages/perimeter/src/manifest/manifest.ts`
-- `packages/perimeter/src/publicRoutes.ts`
-- `packages/perimeter/src/publicRoutes.test.ts`
-- `packages/perimeter/src/gateway.ts`
-- `packages/perimeter/src/headers.ts`
-- `packages/perimeter/src/serverFunctions.ts`
-- `packages/perimeter/src/registry/registration.ts`
-- `packages/sdk/src/cloudflare/worker.ts`
-- `packages/sdk/src/cloudflare/sentinel.ts`
-- `packages/sdk/src/internal/capabilities.ts`
-- `packages/sdk/src/internal/gatewaySettings.ts`
-- `packages/sdk/src/internal/aiProviders.ts`
-- `packages/sdk/src/internal/protocol.ts`
-- `packages/sdk/src/internal/identity.ts`
-- `packages/sdk/src/server/everyApp.ts`
-- `packages/sdk/src/server/gatewayFetch.ts`
-- `packages/cli/src/lib/manifest.ts`
-- `packages/cli/src/lib/app/policy.ts`
-- `packages/cli/src/lib/app/buildApp.ts`
-- `packages/cli/src/lib/app/release.ts`
-- `packages/cli/src/lib/app/localD1.ts`
-- `packages/cli/src/lib/app/deploySecrets.ts`
-- `packages/cli/src/lib/app/resources.ts`
-- `packages/perimeter/src/install/config.ts`
-- `packages/cli/src/lib/cf/hyperdrive.ts`
-- `packages/cli/src/lib/cf/secretsStore.ts`
-- `packages/cli/src/lib/cf/queues.ts`
-- `packages/cli/src/lib/cf/vectorize.ts`
-- `packages/cli/src/lib/cf/aiGateway.ts`
-- `packages/cli/src/lib/gateway/registry.ts`
-- `packages/cli/src/lib/output/command.ts`
-- `packages/cli/src/lib/package-manager.ts`
-- `packages/cli/src/commands/create/steps/appId.ts`
-- `packages/cli/src/commands/create/steps/updateConfiguration.ts`
-- `packages/cli/src/commands/appGateway.ts`
-- `packages/cli/src/commands/secret/index.ts`
-- `packages/cli/src/commands/deploy/deployApp.ts`
-- `packages/cli/src/commands/deploy/steps/checkSchemaDrift.ts`
-- `packages/cli/src/commands/dev/appServer.ts`
-- `packages/cli/src/commands/dev/index.ts`
-- `apps/every-app-gateway/src/server/ai-proxy.ts`
-- `apps/every-app-gateway/src/server/app-gateway-entrypoint.ts`
-- `apps/every-app-gateway/src/server/integration-proxy.ts`
-- `apps/every-app-gateway/src/server/capabilities/refusal.ts`
-- `apps/every-app-gateway/src/server/capabilities/members.ts`
-- `apps/every-app-gateway/src/server/capabilities/email.ts`
-- `apps/every-app-gateway/src/server/capabilities/heldToken.ts`
-- `apps/every-app-gateway/src/server/platform-policy.ts`
-- `apps/every-app-gateway/src/server/deploy/metadata.ts`
-- `apps/every-app-gateway/src/server/deploy/gateway-app-installs.ts`
-- `apps/every-app-gateway/src/server/deploy/run.ts`
-- `apps/every-app-gateway/src/server/repositories/AppRepository.ts`
-- `apps/every-app-gateway/src/server/services/UserPatService.ts`
-- `apps/every-app-gateway/src/client/components/AppIcon.tsx`
-- `starter/everyapp.config.ts`
-- `starter/cloudflare.config.ts`
-- `packages/cli/src/test/fixtures/manifests/postiz.ts`
-- `packages/cli/src/test/fixtures/manifests/agentic-inbox.ts`
+Prisma needs `postgresql`; `postgresql` needs `database.provider: "postgres"`. On D1 the deploy saves a restore point, then applies the migrations before the upload; `everyapp db restore` goes back. With drizzle the deploy first checks the schema against the migrations (`SCHEMA_DRIFT`: run `pnpm db:generate`).

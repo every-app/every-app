@@ -122,11 +122,11 @@ export async function llmsIndex(): Promise<string> {
     "",
     "> EveryApp puts the web apps a person builds online, in their own Cloudflare account, behind one Gateway that handles sign-in, access and each app's database. Open source, alpha, moving fast.",
     "",
-    'Two sets of pages. The user guides are short and written for the person; the agent docs are complete references written for a coding agent, which is how most people use these docs. Answer a person\'s "how do I" question from the agent docs, and send them to a user guide only for the steps they do themselves (Cloudflare account, domain, approving a login).',
+    'Two sets of pages. The user guides are short and written for the person; the agent docs are concise references written for a coding agent, which is how most people use these docs. Answer a person\'s "how do I" question from the agent docs, and send them to a user guide only for the steps they do themselves (Cloudflare account, domain, approving a login).',
     "",
-    `Every page is served as Markdown at its URL with \`.md\` appended (for example ${SITE_URL}/docs/agent/manifest.md); fetch the page you need rather than everything. The user guides and the agent pages in one file: ${SITE_URL}/llms-full.txt (the documents mirrored from the repository under /docs/agent/repo are fetched one at a time). The command line tool is \`everyapp\`, run as \`pnpm everyapp\` from the EveryApp checkout; add \`--json\` when an agent drives it (${SITE_URL}/docs/agent/json.md).`,
+    `Every page is served as Markdown at its URL with \`.md\` appended (for example ${SITE_URL}/docs/agent/manifest.md); fetch the page you need rather than everything. The user guides and the agent pages in one file: ${SITE_URL}/llms-full.txt (the documents mirrored from the repository under /docs/agent/repo are fetched one at a time). The command line tool is \`everyapp\` (\`npm install -g everyapp\`; \`pnpm everyapp\` inside a checkout of the EveryApp repository); add \`--json\` when an agent drives it (${SITE_URL}/docs/agent/json.md).`,
     "",
-    `Two skills ship with the CLI, in its package at \`node_modules/everyapp/skills/<name>\`, and every app \`everyapp create\` makes links them from \`.agents/skills/<name>\` and \`.claude/skills/<name>\`: \`everyapp\`, which drives the CLI, and \`build-every-app\`, which builds an app the way the four open apps and the starter do; the build skill is served here as ${SITE_URL}/docs/agent/build.md and its patterns index as ${SITE_URL}/docs/agent/patterns.md.`,
+    `Two skills ship with the CLI, in its package at \`node_modules/everyapp/skills/<name>\`, and every app \`everyapp create\` makes links them from \`.agents/skills/<name>\` and \`.claude/skills/<name>\`: \`everyapp\`, which drives the CLI, and \`build-every-app\`, which builds an app the way the open apps and the starter do; the build skill is served here as ${SITE_URL}/docs/agent/build.md and its patterns index as ${SITE_URL}/docs/agent/patterns.md.`,
     "",
     asSection(user, "User guides"),
     "",
@@ -138,9 +138,8 @@ export async function llmsIndex(): Promise<string> {
 /**
  * `/llms-full.txt`: the user guides, then every agent docs page written
  * for agents, each set in its sidebar's order. The documents mirrored from
- * the repository (`repo/…`: the security page, the capabilities, the
- * runbooks) are left out, since they run to megabytes and an agent fetches
- * the one it needs by its URL.
+ * the repository (`repo/…`: the security page) are left out; an agent
+ * fetches one by its URL.
  */
 export async function llmsFull(): Promise<string> {
   const user = await Promise.all(

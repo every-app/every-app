@@ -3,14 +3,15 @@
  * Prepare the agent docs (content/agent) for the site. Runs before every
  * dev, build and type check (package.json); nothing it writes is committed.
  *
- * 1. Mirror the repository's reference documents into content/agent/repo/,
- *    so the site serves them (/docs/agent/repo/…, llms.txt, llms-full.txt)
- *    without a second copy to keep in step: docs/ stays the only place they
- *    are edited. Each document gets frontmatter (its H1 as the title, a
- *    description from the table below), relative links between repository
- *    documents become site links where the target is mirrored and GitHub
- *    links otherwise, and a `<` that would read as an HTML tag outside code
- *    is escaped, since the pages render as plain Markdown.
+ * 1. Mirror the security page into content/agent/repo/, so the site
+ *    serves it (/docs/agent/repo/…, llms.txt) without a second copy to
+ *    keep in step: docs/ stays the only place it is edited. Each document
+ *    gets frontmatter (its H1 as the title, a description from the table
+ *    below), relative links between repository documents become site links
+ *    where the target is mirrored and GitHub links otherwise, and a `<` that
+ *    would read as an HTML tag outside code is escaped, since the pages
+ *    render as plain Markdown. Then write build.md and patterns.md from the
+ *    build-every-app skill.
  *
  * 2. Write every agent page as the Markdown the site serves for it, into
  *    public/docs/agent/<page>.md (and public/docs/agent.md for the home
@@ -20,8 +21,7 @@
  *    assets, so an agent's fetch of /docs/agent/<page>.md never runs the
  *    Worker, and the Worker reads them through its ASSETS binding for the
  *    HTML pages, llms.txt and llms-full.txt (src/lib/agent-docs.ts) instead
- *    of bundling the pages: compiled to MDX, 3 MB of Markdown became 17 MB
- *    of JavaScript in the Worker.
+ *    of bundling the pages as MDX.
  *
  * 3. Write src/lib/agent-pages.generated.json: every page's path, title
  *    and description, and the meta.json files, which is all the Worker
@@ -54,8 +54,10 @@ const SITE_URL = "https://everyapp.com";
  * Repository path → page under /docs/agent/repo, its one-line description
  * for llms.txt, a metaTitle or metaDescription where search results need a
  * shorter one, and for a document the code has moved past, a `note` the
- * page opens with (the source stays as its authors wrote it). The security
- * page keeps the `threat-model` slug, which vendored skills link to.
+ * page opens with (the source stays as its authors wrote it). Only the
+ * security page is mirrored, under the `threat-model` slug that vendored
+ * skills link to; links to any other repository document become GitHub
+ * links.
  */
 const DOCUMENTS = [
   {
@@ -65,81 +67,6 @@ const DOCUMENTS = [
       "Every App's security page: who is trusted with what, the boundaries and the test that pins each invariant, what Cloudflare Access adds, the known gaps.",
     description:
       "Security: the one rule (a person's credential stops at the Gateway), who is trusted with what, each boundary's invariants and the test that pins each, what Cloudflare Access adds, what is out of scope, the top known gaps, how to report a problem.",
-  },
-  {
-    from: "docs/capabilities.md",
-    to: "capabilities",
-    description:
-      "Every capability the Gateway holds for apps (API-key providers, OAuth clients, email, members) with its settings, manifest entry, SDK call and operator setup.",
-  },
-  {
-    from: "docs/TESTING.md",
-    to: "testing",
-    metaTitle: "Testing and verification",
-    description:
-      "How to run the repository's test suites, test locally with everyapp dev, and verify or roll back a production deploy.",
-  },
-  {
-    from: "docs/hosted-vision.md",
-    to: "hosted-vision",
-    metaDescription:
-      "The hosted EveryApp tier after the self-host launch: its end state, the rulings that stand, and the invariants every self-host change keeps.",
-    description:
-      "The hosted tier, which comes after the self-host-only launch: its end state, the rulings that stand (self-hosting keeps working from the same code), and the invariants every self-host change keeps.",
-  },
-  {
-    from: "docs/runbooks/cloudflare-access.md",
-    note: "`pnpm everyapp access on|off|show` sets the outer-ring settings this runbook describes for you ([/docs/agent/access](/docs/agent/access)).",
-    to: "runbooks/cloudflare-access",
-    description:
-      "Operator runbook: Cloudflare Access as the sign-in (OIDC) or as an outer ring in front of the Gateway and its apps; every setting, the bypassed paths, recovery.",
-  },
-  {
-    from: "docs/runbooks/mcp-oauth.md",
-    to: "runbooks/mcp-oauth",
-    description:
-      "Operator runbook: the Gateway's MCP connector and OAuth server, client registration (CIMD and DCR), personal access tokens, switches, limits and audit.",
-  },
-  {
-    from: "docs/runbooks/email-sending-setup.md",
-    to: "runbooks/email-sending-setup",
-    description:
-      "Operator runbook: set up the Gateway's outbound email with Cloudflare Email Sending or Resend, and the settings to set.",
-  },
-  {
-    from: "docs/runbooks/key-rotation.md",
-    to: "runbooks/key-rotation",
-    description:
-      "Operator runbook: rotate the Gateway's identity signing key pair in a maintenance window; apps answer 401 until they are redeployed with the new public key.",
-  },
-  {
-    from: "docs/runbooks/gateway-app-installs.md",
-    to: "runbooks/gateway-app-installs",
-    description:
-      "Operator runbook: Gateway app installs, where the Gateway installs app releases itself with its own deploy token (everyapp deploy-token add).",
-  },
-  {
-    from: "docs/runbooks/hosted-install.md",
-    note: "Written for the 2026-10-16 hosted build. The hosted tier is not open to third-party deploys at launch, and the CLI surface this runbook drives was removed on 2026-10-24 (its first paragraph says what).",
-    to: "runbooks/hosted-install",
-    metaDescription:
-      "Operator runbook for the hosted Gateway (post-launch): install, shared first-party apps, the gated third-party deploy API, deploy keys and launch checks.",
-    description:
-      "Operator runbook (hosted tier, post-launch): the hosted Gateway (app.everyapp.com): install, shared first-party apps, the gated third-party deploy API and its deploy keys, launch checks.",
-  },
-  {
-    from: "docs/adr/ADR-0001-hosted-vs-self-hosted-topology.md",
-    note: "Historical (2026-03-02). Section 6's single-tenant hosted Workers were overruled on 2026-10-16: first-party apps share one Worker per app, third-party apps get one Worker per organization on Workers for Platforms (/docs/agent/repo/threat-model and /docs/agent/repo/hosted-vision).",
-    to: "adr/0001-hosted-vs-self-hosted-topology",
-    description:
-      "Architecture decision: one codebase for the hosted and the self-hosted Gateway, and how the two differ.",
-  },
-  {
-    from: "docs/adr/ADR-0003-self-host-authority.md",
-    to: "adr/0003-self-host-authority",
-    metaTitle: "ADR-0003: Self-host operator authority",
-    description:
-      "Architecture decision: on a self-hosted Gateway, operator authority is Cloudflare account access; there is no deploy API.",
   },
 ];
 
@@ -251,24 +178,14 @@ for (const doc of present) {
   writeFileSync(target, content);
 }
 
-const pages = (prefix) =>
-  present
-    .filter((d) => d.to.startsWith(prefix))
-    .map((d) => d.to.slice(prefix.length));
 writeFileSync(
   join(outDir, "meta.json"),
   `${JSON.stringify(
     {
       title: "From the repository",
       description:
-        "Reference documents mirrored from the repository's docs/ directory.",
-      pages: [
-        ...pages("").filter((p) => !p.includes("/")),
-        "---Runbooks---",
-        ...pages("runbooks/").map((p) => `runbooks/${p}`),
-        "---Decisions---",
-        ...pages("adr/").map((p) => `adr/${p}`),
-      ],
+        "The security page, mirrored from the repository's docs/ directory.",
+      pages: present.map((d) => d.to),
     },
     null,
     2,
@@ -277,6 +194,58 @@ writeFileSync(
 console.log(
   `Mirrored ${present.length} repository documents into ${relative(process.cwd(), outDir)}`,
 );
+
+// 1b: the build skill as two pages, build.md and patterns.md, so the skill
+// every created app links and /docs/agent/build are one text.
+
+const SKILL = "packages/cli/skills/build-every-app";
+
+/** The frontmatter fields of a skill file and the body after it, without its H1. */
+function skillFile(name) {
+  const text = readFileSync(join(repoRoot, SKILL, name), "utf8");
+  const match = text.match(/^---\n([\s\S]*?)\n---\n/);
+  const fields = {};
+  for (const line of (match?.[1] ?? "").split("\n")) {
+    const colon = line.indexOf(":");
+    if (colon > 0)
+      fields[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
+  }
+  const body = (match ? text.slice(match[0].length) : text)
+    .replace(/^\s*# [^\n]*\n/, "")
+    .replace(/^\n+/, "")
+    .replace(/\s+$/, "");
+  return { fields, body };
+}
+
+const skillPage = (title, description, preface, body) =>
+  `---\ntitle: ${JSON.stringify(title)}\ndescription: ${JSON.stringify(description)}\n---\n\n${preface}\n\n${body}\n`;
+
+{
+  const skill = skillFile("SKILL.md");
+  writeFileSync(
+    join(contentDir, "build.md"),
+    skillPage(
+      "Build an app",
+      skill.fields.description ?? "How to build or change an EveryApp app.",
+      `This page is the \`build-every-app\` skill (\`${SKILL}/SKILL.md\` in the checkout), which ships in the CLI package (\`node_modules/everyapp/skills/build-every-app\` in an app) and which \`everyapp create\` links from \`.agents/skills/build-every-app\` and \`.claude/skills/build-every-app\`; its patterns index is [Example patterns](/docs/agent/patterns).`,
+      skill.body.replace(
+        /`patterns\.md`/g,
+        "[patterns.md](/docs/agent/patterns)",
+      ),
+    ),
+  );
+  const patterns = skillFile("patterns.md");
+  writeFileSync(
+    join(contentDir, "patterns.md"),
+    skillPage(
+      "Example patterns",
+      "How the apps on EveryApp do each thing and the file to copy from, in the starter or one of the open apps.",
+      `This page is \`patterns.md\` of the \`build-every-app\` skill (\`${SKILL}/patterns.md\` in the checkout), the index [Build an app](/docs/agent/build) reads before the first edit. Each app's repository is \`https://github.com/every-app/<name>\`.`,
+      patterns.body,
+    ),
+  );
+  console.log("Wrote build.md and patterns.md from the build-every-app skill");
+}
 
 // 2 and 3: the served Markdown of every agent page, and the pages index.
 

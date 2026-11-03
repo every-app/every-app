@@ -4,7 +4,7 @@ An app that lives in its own repository (OpenSEO, OpenCRM, OpenAnalytics,
 OpenMail, or yours) is installed on a Gateway with
 `pnpm everyapp install https://github.com/<owner>/<repo>`, which downloads
 `everyapp-release.tar.gz` from the repository's latest GitHub release
-(`landing-page/content/agent/deploy.md`, "Release installs"). A repository
+(`landing-page/content/agent/deploy.md`, "Releases"). A repository
 that publishes no release answers `NO_RELEASE`. This runbook is how a
 repository gets to publish one on every push, and how its clone builds with
 no EveryApp checkout beside it. It was set up for the four launch apps on

@@ -4,8 +4,8 @@
  * cites exists, every `everyapp <command>` it cites is a route the CLI
  * answers, every flag it gives a command is one the command has, every
  * manifest field it names is in the schema, and every site link in the user
- * docs is a page. agentDocs.test.ts holds the agent docs to the code the
- * other way round (every identifier the code defines is documented); this
+ * docs is a page. agentDocs.test.ts checks the generated agent pages, the
+ * links and anchors, and that the manifest page names every field; this
  * file catches what stays behind after a rename or a deletion, in the
  * hand-written pages around them: the README, docs/ and the runbooks, the
  * user docs, the skill and its setup files, the starter and the package
@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
 import { commandPaths } from "@/app";
 import { commandDocs } from "./cliReference";
 import { manifestFields } from "./manifestFields";
-import { AGENT_DOCS_DIR, PENDING_ROUTES, mirroredDocuments } from "./pages";
+import { AGENT_DOCS_DIR, PENDING_ROUTES, SKILL_PAGES, mirroredDocuments } from "./pages";
 
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -53,7 +53,10 @@ const DOCUMENTS = [
   ...filesIn("docs/adr", /\.md$/),
   ...filesIn("landing-page/content/docs", /\.mdx$/),
   "landing-page/content/docs/setup-prompt.txt",
-  ...filesIn("landing-page/content/agent", /\.md$/).filter((path) => !path.endsWith("/cli.md")),
+  // Not the generated cli.md, nor the skill pages the site build writes (the skill is checked below).
+  ...filesIn("landing-page/content/agent", /\.md$/).filter(
+    (path) => !path.endsWith("/cli.md") && !SKILL_PAGES.has(posix.basename(path, ".md")),
+  ),
   ...filesIn("packages/cli/skills/everyapp", /\.md$/),
   ...filesIn("packages/cli/skills/everyapp/setup", /\.md$/),
   ...filesIn("packages/cli/skills/build-every-app", /\.md$/),
@@ -415,6 +418,12 @@ describe("the user docs link", () => {
           }
           const dir = isAgent ? agentDocs : userDocs;
           const page = rest === "" ? "index" : rest;
+          // build and patterns are written from the skill by the site build.
+          const skill = isAgent ? SKILL_PAGES.get(page) : undefined;
+          if (skill) {
+            if (!existsSync(at(skill))) broken.push(`${file}:${line.n} → ${target}`);
+            continue;
+          }
           // A page, or a folder with an index page (/docs/apps is apps/index.mdx).
           const exists = [`${page}.md`, `${page}.mdx`, `${page}/index.mdx`].some((name) =>
             existsSync(posix.join(dir, name)),

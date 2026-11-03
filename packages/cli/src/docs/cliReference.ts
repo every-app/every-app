@@ -1,17 +1,13 @@
 /**
  * The CLI reference page of the agent docs (cli.md), generated from the
- * commands themselves: the root and group help, then every command with its
- * usage, flags and full help text, so a new command or flag reaches the
- * docs by the test that compares this to the page.
+ * commands themselves: every command with its arguments, its own flags and
+ * its description, so a new command or flag reaches the docs by the test
+ * that compares this to the page. The flags most commands share are listed
+ * once at the top instead of under every command.
  */
-import {
-  generateHelpTextForAllCommands,
-  type Application,
-  type Command,
-  type CommandContext,
-  type RouteMap,
-} from "@stricli/core";
-import { buildApp, groupHelp, rootHelp } from "@/app";
+import type { Command, CommandContext, RouteMap } from "@stricli/core";
+import { buildApp } from "@/app";
+import { accountFlag, apiFlags, gatewayFlag, jsonFlag, verboseFlag } from "@/commands/flags";
 import { CLI } from "@/lib/output/command";
 import { plain } from "./pages";
 
@@ -46,8 +42,8 @@ interface CommandDoc {
   hidden: boolean;
   flags: FlagDoc[];
   positional: PositionalDoc[];
-  /** `everyapp <path> --help`, as stricli prints it without color. */
-  help: string;
+  /** The command's own description (stricli's fullDescription), without color. */
+  description: string;
 }
 
 const kebab = (flag: string) =>
@@ -97,77 +93,131 @@ function positionalDocs(command: Command<CommandContext>): PositionalDoc[] {
 
 /** Every command, depth first, in the order the route maps list them. */
 export function commandDocs(): CommandDoc[] {
-  const helpByRoute = new Map(
-    generateHelpTextForAllCommands(app as Application<CommandContext>).map(([route, help]) => [
-      route.replace(new RegExp(`^${CLI} ?`), ""),
-      plain(help),
-    ]),
-  );
   const docs: CommandDoc[] = [];
   const visit = (target: Target, path: string[], hidden: boolean) => {
     if ("getAllEntries" in target) {
       // A group's default command (`dev`'s hidden `run`) is documented as
-      // the group itself, the way it is typed, with the group's help.
+      // the group itself, the way it is typed.
       const runs = target.getDefaultCommand();
-      if (runs) push(runs, path, hidden, plain(groupHelp([...path, "--help"]) ?? ""));
+      if (runs) push(runs, path, hidden);
       for (const entry of target.getAllEntries()) {
         if (entry.target === runs) continue;
         visit(entry.target, [...path, entry.name.original], hidden || entry.hidden);
       }
       return;
     }
-    push(target, path, hidden, helpByRoute.get(path.join(" ")) ?? "");
+    push(target, path, hidden);
   };
-  const push = (target: Command<CommandContext>, path: string[], hidden: boolean, help: string) => {
+  const push = (target: Command<CommandContext>, path: string[], hidden: boolean) => {
     docs.push({
       path: path.join(" "),
       brief: target.brief,
       hidden,
       flags: flagDocs(target),
       positional: positionalDocs(target),
-      help,
+      description: plain(target.fullDescription ?? ""),
     });
   };
   visit(app.root as unknown as Target, [], false);
   return docs;
 }
 
-const cell = (text: string) => text.replace(/\|/g, "\\|").replace(/\n/g, " ");
+/** The flags listed once at the top of the page, not under each command: each name with the definitions it shares. */
+const SHARED_FLAGS = new Map<string, readonly string[]>([
+  ["json", [jsonFlag.brief]],
+  ["verbose", [verboseFlag.brief]],
+  ["gateway", [gatewayFlag.brief, apiFlags.gateway.brief]],
+  ["account-id", [accountFlag.brief]],
+]);
 
-function flagsTable(flags: FlagDoc[]): string[] {
-  if (flags.length === 0) return ["No flags of its own."];
-  return [
-    "| Flag | Value | Required | Default | What it does |",
-    "| --- | --- | --- | --- | --- |",
-    ...flags.map((flag) => {
-      const value =
-        flag.kind === "boolean"
-          ? "switch"
-          : flag.kind === "counter"
-            ? "repeatable switch"
-            : flag.values
-              ? flag.values.map((value) => `\`${value}\``).join(", ")
-              : `\`<${flag.placeholder ?? "value"}>\`${flag.variadic ? " (repeatable)" : ""}`;
-      return `| \`--${flag.name}\`${flag.hidden ? " (hidden)" : ""} | ${value} | ${flag.optional ? "no" : "yes"} | ${flag.default === undefined ? "" : `\`${flag.default}\``} | ${cell(flag.brief)} |`;
-    }),
-  ];
+/** A flag the top of the page lists: a shared definition, not a flag of the same name with a meaning of its own (`db restore --gateway`). */
+const isShared = (flag: FlagDoc) => SHARED_FLAGS.get(flag.name)?.includes(flag.brief) ?? false;
+
+function flagLine(flag: FlagDoc): string {
+  const value =
+    flag.kind === "boolean" || flag.kind === "counter"
+      ? ""
+      : flag.values
+        ? ` ${flag.values.join("|")}`
+        : ` <${flag.placeholder ?? "value"}>`;
+  const notes = [
+    flag.variadic ? "repeatable" : "",
+    flag.optional ? "" : "required",
+    flag.default === undefined ? "" : `default \`${flag.default}\``,
+    flag.hidden ? "hidden" : "",
+  ].filter(Boolean);
+  return `- \`--${flag.name}${value}\`${notes.length ? ` (${notes.join(", ")})` : ""}: ${flag.brief.replace(/\n/g, " ")}`;
 }
 
-function positionalTable(positional: PositionalDoc[]): string[] {
-  if (positional.length === 0) return [];
-  return [
-    "| Argument | Required | What it is |",
-    "| --- | --- | --- |",
-    ...positional.map(
-      (arg) =>
-        // A `|` in a placeholder (`<senders|inbound>`) would split the table cell, code span or not.
-        `| \`<${arg.placeholder.replace(/\|/g, "\\|")}>${arg.list ? "..." : ""}\` | ${arg.optional ? "no" : "yes"} | ${cell(arg.brief)} |`,
-    ),
-    "",
-  ];
+function usage(doc: CommandDoc): string {
+  const args = doc.positional.map((arg) => {
+    const name = `<${arg.placeholder}>${arg.list ? "..." : ""}`;
+    return arg.optional ? `[${name}]` : name;
+  });
+  return [`${CLI} ${doc.path}`.trim(), ...args].join(" ");
 }
 
-const GROUPS = ["db", "access", "secret", "provider", "mcp", "email", "workspace"];
+/** An Examples heading of a help text (`Examples:`, `EXAMPLES`). */
+const EXAMPLES_HEADING = /^\s*examples?:?\s*$/i;
+
+/**
+ * A command line of a help text as a shell line: without its `$ ` prompt,
+ * and a note after it (`everyapp create my-app      ./my-app, its own
+ * repository`) as a `#` comment, so the line runs as copied.
+ */
+function shellLine(line: string): string {
+  const command = line.trim().replace(/^\$ /, "");
+  const noted = command.match(/^(.*?\S)\s{2,}(\S.*)$/);
+  if (!noted) return command;
+  return `${noted[1]}  # ${noted[2]!.replace(/^\((.*)\)$/, "$1")}`;
+}
+
+/**
+ * A command's description as Markdown: wrapped prose joined into
+ * paragraphs, and the command lines (every indented line under an
+ * Examples heading, and an indented line that starts with a command
+ * elsewhere) as a shell block.
+ */
+function description(text: string): string[] {
+  const out: string[] = [];
+  /** An indented line that is a command to type, not wrapped prose. */
+  const isCommand = (line: string) =>
+    /^ {2}(\$ )?([A-Z][A-Z0-9_]*=\S* )*(everyapp|pnpm|npx|npm|yarn|curl|claude|codex|git|cd|echo|printf|export|cf)( |$)/.test(
+      line,
+    );
+  for (const paragraph of text.trim().split(/\n\s*\n/)) {
+    if (!paragraph.trim()) continue;
+    // Text runs (a sentence, or a list item with its wrapped lines) and command lines, in order.
+    const blocks: Array<{ code: boolean; lines: string[] }> = [];
+    let examples = false;
+    for (const line of paragraph.split("\n")) {
+      const last = blocks.at(-1);
+      if (EXAMPLES_HEADING.test(line)) {
+        examples = true;
+        continue;
+      }
+      if ((examples && /^\s{2,}\S/.test(line)) || isCommand(line)) {
+        if (last?.code) last.lines.push(shellLine(line));
+        else blocks.push({ code: true, lines: [shellLine(line)] });
+      } else if (/^\s*(\d+\.|[-•])\s/.test(line) || !last || last.code) {
+        blocks.push({ code: false, lines: [line.trim()] });
+      } else {
+        last.lines.push(line.trim());
+      }
+    }
+    for (const block of blocks) {
+      if (block.code) {
+        out.push("```sh", ...block.lines, "```", "");
+        continue;
+      }
+      const sentence = block.lines.join(" ").replace(/\s+/g, " ").trim();
+      if (sentence) out.push(sentence);
+    }
+    out.push("");
+  }
+  // List items of one paragraph stay together; a blank line ends each paragraph.
+  return out;
+}
 
 /** The whole page. */
 export function cliReference(): string {
@@ -175,63 +225,49 @@ export function cliReference(): string {
   const out: string[] = [
     "---",
     'title: "CLI reference"',
-    'description: "Every everyapp command with its arguments, flags, defaults and help text, generated from the CLI itself. Exit codes and the global flags are here too."',
+    'description: "Every everyapp command with its arguments and flags, generated from the CLI itself, plus the exit codes and the flags most commands share."',
     "---",
     "",
-    "<!-- Generated from packages/cli/src/app.ts and the command definitions by packages/cli/src/docs/cliReference.ts; the test in packages/cli/src/docs/agentDocs.test.ts fails when this page is stale. Regenerate with `pnpm -C packages/cli docs:update`. -->",
+    "<!-- Generated from the command definitions by packages/cli/src/docs/cliReference.ts; regenerate with `pnpm -C packages/cli docs:update`. -->",
     "",
-    "The command is `everyapp`: `npm install -g everyapp`, then `everyapp …` (in a checkout of the EveryApp repository, `pnpm everyapp …`, which builds the Gateway from the tree). Every command takes `--help`; an agent adds `--json` and reads the event stream described on [/docs/agent/json](/docs/agent/json). What each error code means is on [/docs/agent/errors](/docs/agent/errors).",
+    "Install with `npm install -g everyapp`, then run `everyapp …` (in a checkout of the EveryApp repository, `pnpm everyapp …`). Every command takes `--help`. Agents add `--json` and read the events ([the protocol](/docs/agent/json)); codes are on [errors](/docs/agent/errors).",
     "",
     "## Exit codes",
     "",
-    "| Code | Meaning |",
-    "| --- | --- |",
-    "| `0` | Done. |",
-    "| `1` | An `error` event ended the run, whatever came before it (a declined prompt, `CANCELLED`, exits 1 too). |",
-    "| `2` | The run stopped on an `action_required` event: do the action, then run the command in its `data.rerun`. |",
-    "| `130` | Stopped with Ctrl-C. |",
-    "| `251` | No such command (`UNKNOWN_COMMAND`). |",
-    "| `252` | Bad arguments: an unknown flag, a missing or invalid value (`UNKNOWN_FLAG`, `INVALID_VALUE`, `MISSING_ARGUMENT`, `MISSING_FLAG_VALUE`, `TOO_MANY_ARGUMENTS`, `REPEATED_FLAG`). |",
+    "- `0`: done.",
+    "- `1`: an `error` event ended the run (a declined prompt, `CANCELLED`, too).",
+    "- `2`: stopped on `action_required`: do the action, then run `data.rerun`.",
+    "- `130`: Ctrl-C.",
+    "- `251`: no such command (`UNKNOWN_COMMAND`).",
+    "- `252`: bad arguments (`UNKNOWN_FLAG`, `INVALID_VALUE`, `MISSING_ARGUMENT`, …).",
     "",
-    "## Global flags",
+    "## Shared flags",
     "",
-    "| Flag | What it does |",
-    "| --- | --- |",
-    "| `--json` | Print NDJSON events on stdout and never prompt. Read before any command parses its arguments, so argument errors are events too. |",
-    "| `--verbose` | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace. |",
-    "| `--no-color` | Print without colors (also `NO_COLOR=1`). |",
-    "| `-h`, `--help` | Help for everyapp or a command. |",
-    "| `-v`, `--version` | everyapp's version. |",
+    "Not repeated under each command below:",
     "",
-    "## `everyapp --help`",
+    "- `--json`: NDJSON events on stdout, never prompts.",
+    "- `--verbose`: every step, the output of what everyapp runs, and stack traces.",
+    "- `--no-color`, `-h`/`--help`, `-v`/`--version`.",
+    "- `--gateway <url|name>`: which Gateway, when the account holds several (default `EVERYAPP_GATEWAY_URL`). On every command that reaches a Gateway. On the commands that call a Gateway tool (`workspace`, `events`, `ai`, `call`) the default is `EVERYAPP_GATEWAY_URL`, else the Gateway you signed in to with `login --gateway`, else the one your Cloudflare login finds.",
+    "- `--account-id <id>`: which Cloudflare account, when the login sees several (default `CLOUDFLARE_ACCOUNT_ID`).",
     "",
-    "```text",
-    plain(rootHelp()).trimEnd(),
-    "```",
-    "",
-    "## Command groups",
+    "## Commands",
     "",
   ];
-  for (const group of GROUPS) {
-    const help = groupHelp([group]);
-    if (!help) continue;
-    out.push(`### \`everyapp ${group}\``, "", "```text", plain(help).trimEnd(), "```", "");
-  }
-  out.push("## Commands", "");
   for (const doc of docs) {
+    if (!doc.path) continue;
+    const own = doc.flags.filter((flag) => !isShared(flag));
     out.push(
-      `### \`everyapp ${doc.path}\`${doc.hidden ? " (hidden)" : ""}`,
-      "",
+      `### \`${usage(doc)}\`${doc.hidden ? " (hidden)" : ""}`,
       `${doc.brief.replace(/\.?$/, ".")}`,
       "",
-      ...positionalTable(doc.positional),
-      ...flagsTable(doc.flags),
-      "",
-      "```text",
-      doc.help.trimEnd(),
-      "```",
-      "",
+      ...description(doc.description),
+      ...doc.positional
+        .filter((arg) => arg.brief)
+        .map((arg) => `- \`<${arg.placeholder}>\`: ${arg.brief.replace(/\n/g, " ")}`),
+      ...own.map(flagLine),
+      ...(doc.positional.some((arg) => arg.brief) || own.length > 0 ? [""] : []),
     );
   }
-  return out.join("\n");
+  return `${out.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()}\n`;
 }

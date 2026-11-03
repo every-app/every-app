@@ -11,20 +11,20 @@ the tree); `npm install -g everyapp` or `npx everyapp@latest` anywhere else.
 This file routes; the agent docs hold the detail. https://everyapp.com/llms.txt
 lists every page with a one-line summary; a page is Markdown at its URL plus
 .md (https://everyapp.com/docs/agent/manifest.md); in a checkout they are
-landing-page/content/agent/*.md. Pages: setup (driving setup for a person,
-every handoff), apps (the open apps, their install commands and settings),
-cli (every command and flag), json (the --json protocol), errors (every code
-and its fix), troubleshooting (by symptom), status (the report and its fixes),
+landing-page/content/agent/*.md. Pages: setup (driving setup for a person:
+what only they can do), apps (the open apps, their install commands and what
+each needs set), cli (every command and flag), json (the --json protocol),
+errors (every code, one line each), troubleshooting (by symptom), status (the report and its fixes),
 manifest (everyapp.config.ts), identity (headers, token, env, SDK), secrets
 (secrets vs Gateway settings vs capabilities), dev (dev vs production), email,
-events (webhooks, email alerts, every event type, emit()), mcp (tools,
+events (webhooks, email alerts, the event families, emit()), mcp (tools,
 connector, OAuth), native (Mac and phone apps; bearer routes), deploy (the
 pipeline, release and install), providers (API providers and registering one),
 access (Cloudflare Access), signin (sign-in providers), ai (the default model
 provider, AI Gateway), workspace (people, groups, caps, usage from the terminal
 and from an AI client), gateway (everything a Gateway offers, the CLI by job),
 build (the build-every-app skill as a page), patterns (its look-up table),
-repo/* (security model, capabilities, runbooks).
+repo/threat-model (the security page).
 
 Answering "how do I": fetch the page for the subject and answer from it with
 the exact command or manifest field, naming the page. A failed command: look

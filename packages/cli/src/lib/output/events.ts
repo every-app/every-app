@@ -40,7 +40,7 @@ type EventData = Record<string, unknown>;
 type StepStatus = "start" | "ok" | "skip" | "fail";
 
 /** Something only a person can do before the command can continue (the agent docs list each). */
-export const REQUIRED_ACTIONS = [
+const REQUIRED_ACTIONS = [
   "cloudflare_login",
   "register_workers_subdomain",
   "claim_owner",
