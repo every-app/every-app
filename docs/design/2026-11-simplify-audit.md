@@ -42,7 +42,9 @@ Where the audit below leans differently, these rulings win.
 | #958 | Agent docs about a quarter the size, generated reference |
 | #959 | Access: one fixed recipe, membership asked of the Gateway |
 
-**Events.** The design is [#953](2026-11-events.md). Nothing gets built until Ben approves it.
+All thirteen merged on 2026-11-03. The open questions and the everyapp.team rollout steps are in TODO.md, under "Simplify batch".
+
+**Events.** The design is [#953](2026-11-events.md), and it replaces I9 below. Nothing gets built until Ben approves it.
 
 ### Queued: OAuth providers in one shape
 
