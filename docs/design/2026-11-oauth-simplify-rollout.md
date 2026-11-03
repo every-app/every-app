@@ -4,17 +4,22 @@ Date: 2026-11-02. For Ben. The plan is [2026-11-oauth-simplify.md](2026-11-oauth
 
 ## Merged
 
-| Repo | PR | Commit | What |
-| --- | --- | --- | --- |
-| private-every-app | #939 | e8c4b44e | Proposal + `/docs/google-personal-accounts` |
-| private-every-app | #940 | 500fba5c | `pnpm pack-for-app --vendor` on main |
-| private-every-app | #941 | cc673523 | Simplification audit (docs only) |
-| private-every-app | #942 | aaddc038 | The OAuth change, `CHANGELOG.md` |
-| private-open-mail | #19 (into `everyapp`) | 6d35b5a8 | Gmail on the new model |
-| private-open-crm | #22 | fa914c36 | Mail through the Gateway; CRM holds no tokens |
-| private-open-seo | #1163 | 702935e3 | Per-member Google connections |
+| Repo              | PR                    | Commit   | What                                                                             |
+| ----------------- | --------------------- | -------- | -------------------------------------------------------------------------------- |
+| private-every-app | #939                  | e8c4b44e | Proposal + `/docs/google-personal-accounts`                                      |
+| private-every-app | #940                  | 500fba5c | Prettier fix for the docs page (its `pack-for-app --vendor` was removed in #944) |
+| private-every-app | #941                  | cc673523 | Simplification audit (docs only)                                                 |
+| private-every-app | #942                  | aaddc038 | The OAuth change, `CHANGELOG.md`                                                 |
+| private-open-mail | #19 (into `everyapp`) | 6d35b5a8 | Gmail on the new model                                                           |
+| private-open-crm  | #22                   | fa914c36 | Mail through the Gateway; CRM holds no tokens                                    |
+| private-open-seo  | #1163                 | 702935e3 | Per-member Google connections                                                    |
+| private-every-app | #944                  | 673bed8c | Never vendor the SDK or CLI into an app; `pnpm link` for local dev               |
+| private-every-app | #949                  | 1ea732ef | `PUBLISHED_VERSION` 0.3.0-rc.11 (on npm; Gateway release `gateway-v0.3.0-rc.11`) |
+| private-open-mail | #20                   | 08da9019 | Pin 0.3.0-rc.11 from npm                                                         |
+| private-open-crm  | #23                   | 9989f878 | Pin 0.3.0-rc.11 from npm                                                         |
+| private-open-seo  | #1167                 | eb41a238 | Pin 0.3.0-rc.11 from npm                                                         |
 
-All three apps vendor the SDK and CLI from `aaddc038` (`vendor/*.tgz`).
+All three apps pin the published `@every-app/sdk` and `everyapp` 0.3.0-rc.11 from npm. Nothing is vendored (the rule is in AGENTS.md).
 
 ## What changed
 
@@ -38,7 +43,7 @@ All three apps vendor the SDK and CLI from `aaddc038` (`vendor/*.tgz`).
 3. **Social presets are deleted** (X, LinkedIn, YouTube, …). Postiz isn't launching.
 4. **OpenSEO reads use the connection of the member who picked the property.** Other members see the same data.
 5. **CRM's old token columns are emptied, not dropped.** CRM's migration rules forbid dropping columns in one release. The drop is a TODO.
-6. **A temporary install exception.** CRM and OpenSEO allow `@inquirer/*` 8.7.5 (the unreleased CLI's dependency) until the SDK is on npm.
+6. **A temporary install exception.** CRM and OpenSEO exempt `@inquirer/*` 8.7.5 (a dependency of the rc.11 CLI) from `minimumReleaseAge`. Remove it after 2026-11-04.
 7. **The general deletion lane (L5) produced nothing.** It was interrupted. The audit covers the same ground, ranked.
 8. **#912 (`birds/feature`) needs a rebase.** It must drop #902/#921/#923/#924/#929, take #942's OAuth files and renumber its migrations from 0026.
 
@@ -51,9 +56,12 @@ All three apps vendor the SDK and CLI from `aaddc038` (`vendor/*.tgz`).
 
 ## Deploy to everyapp.team
 
+**Done 2026-11-03.** Ben deployed the Gateway from the `gateway-v0.3.0-rc.11` release, then OpenSEO, CRM and OpenMail; `agentic-inbox` is deleted. The app CLI (from npm) only updates a Gateway to a published release, so the order was: push `1ea732ef2` to public main and tag `gateway-v0.3.0-rc.11`, then `pnpm exec everyapp update` from an app checkout, then `pnpm exec everyapp deploy` in each app. The steps below are kept as written before the deploy.
+
 Downtime: OpenSEO's Google cards and CRM's mail sync stop between step 2 and their redeploys. Do steps 2–5 together.
 
 **1. Before you start (consoles).**
+
 - Google Cloud project of the `google-workspace` client:
   - Data Access: add `gmail.modify` and `gmail.send` (OpenMail);
   - keep `gmail.readonly`, `calendar.readonly`, `webmasters.readonly` and `analytics.readonly`;
@@ -114,6 +122,6 @@ cd /tmp/ea-deploy/pea && pnpm everyapp status --gateway https://everyapp.team
   - OpenMail: Connect Gmail.
 - Live check (TODO.md): two apps on one Google client get tokens with different scopes. `pnpm everyapp provider connections --provider google-workspace --all --gateway https://everyapp.team` lists them.
 
-**7. Later.** The old `agentic-inbox` app is unaffected (no OAuth). Delete it once OpenMail works: `pnpm everyapp delete agentic-inbox --gateway https://everyapp.team`.
+**7. Later.** The old `agentic-inbox` app is unaffected (no OAuth). Delete it once OpenMail works: `pnpm everyapp delete agentic-inbox --gateway https://everyapp.team`. (Done 2026-11-03.)
 
 **Rollback.** `pnpm everyapp db restore --gateway --account-id 23bc28f0b638fbfc1c7f838573c17ee3` (back to before migration 0025; the bookmark from step 2 is the same point), then `pnpm everyapp setup --allow-downgrade` from a checkout of `cc6735233`. The apps' previous versions stay in Cloudflare's version history.
