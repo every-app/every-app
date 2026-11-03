@@ -14,42 +14,36 @@ import {
   DialogTitle,
 } from "@/client/components/ui/dialog";
 import { getServerErrorMessage } from "@/client/errors";
-import { formatCostCap, formatCount } from "@/client/lib/usage";
+import { formatCostCap } from "@/client/lib/usage";
 import { setDefaultMonthlyCap } from "@/serverFunctions/usage";
 import { CapDialogDescription } from "./CapDialogDescription";
 import {
-  CAP_MAX,
-  CAP_MIN,
   COST_CAP_HELP,
   COST_CAP_MAX_USD,
   COST_CAP_MIN_USD,
-  checkCapFields,
+  checkCostCapField,
   costCapFieldValue,
-  fieldNumber,
+  fieldDollars,
 } from "./capField";
 
 const setDefaultCapSchema = z
-  .object({ cap: z.string(), costUsd: z.string() })
-  .superRefine(checkCapFields);
+  .object({ costUsd: z.string() })
+  .superRefine(checkCostCapField);
 
 interface SetDefaultCapModalProps {
-  /** The workspace default call cap today, or null for none. */
-  defaultCap: number | null;
-  /** The workspace default dollar cap today in micro-dollars, or null for none. */
+  /** The workspace default cap today in micro-dollars, or null for none. */
   defaultCostCapMicros: number | null;
   onClose: () => void;
-  /** After the defaults were set or removed: the usage view reloads. */
+  /** After the default was set or removed: the usage view reloads. */
   onSaved: () => void;
 }
 
 /**
- * Sets or removes the organization's default monthly caps (a number of
- * calls, dollars of provider-reported cost, or both), which bind every
- * app without a cap of that kind or "no cap" of its own. A field left
- * empty is no default of that kind. Render it only while it is open.
+ * Sets or removes the organization's default monthly cap in dollars of
+ * provider-reported cost, which binds every app without a cap or "no cap"
+ * of its own. Render it only while it is open.
  */
 export function SetDefaultCapModal({
-  defaultCap,
   defaultCostCapMicros,
   onClose,
   onSaved,
@@ -57,22 +51,14 @@ export function SetDefaultCapModal({
   const [error, setError] = useState<string | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
 
-  const save = async (caps: { cap: number | null; costUsd: number | null }) => {
+  const save = async (costUsd: number | null) => {
     setError(null);
     try {
-      await setDefaultMonthlyCap({ data: caps });
-      const words = [
-        caps.cap === null ? null : `${formatCount(caps.cap)} provider calls`,
-        caps.costUsd === null
-          ? null
-          : formatCostCap(Math.round(caps.costUsd * 1_000_000)),
-      ]
-        .filter(Boolean)
-        .join(" or ");
+      await setDefaultMonthlyCap({ data: { costUsd } });
       toast.success(
-        words
-          ? `Every app without its own cap is capped at ${words} a month`
-          : "No default monthly cap",
+        costUsd === null
+          ? "No default monthly cap"
+          : `Every app without its own cap is capped at ${formatCostCap(Math.round(costUsd * 1_000_000))} a month`,
       );
       onSaved();
       onClose();
@@ -82,24 +68,18 @@ export function SetDefaultCapModal({
   };
 
   const form = useAppForm({
-    defaultValues: {
-      cap: defaultCap === null ? "" : String(defaultCap),
-      costUsd: costCapFieldValue(defaultCostCapMicros),
-    },
+    defaultValues: { costUsd: costCapFieldValue(defaultCostCapMicros) },
     validationLogic: revalidateLogic(),
     validators: { onDynamic: setDefaultCapSchema },
     onSubmit: async ({ value }) => {
-      await save({
-        cap: fieldNumber(value.cap),
-        costUsd: fieldNumber(value.costUsd),
-      });
+      await save(fieldDollars(value.costUsd));
     },
   });
 
   const remove = async () => {
     setIsRemoving(true);
     try {
-      await save({ cap: null, costUsd: null });
+      await save(null);
     } finally {
       setIsRemoving(false);
     }
@@ -119,24 +99,10 @@ export function SetDefaultCapModal({
               <DialogTitle>Default monthly cap</DialogTitle>
               <CapDialogDescription />
             </DialogHeader>
-            <form.AppField name="cap">
-              {(field) => (
-                <field.TextField
-                  label="Calls per month, for every app without its own cap"
-                  type="number"
-                  inputMode="numeric"
-                  min={CAP_MIN}
-                  max={CAP_MAX}
-                  step={1}
-                  placeholder="1000"
-                  autoFocus
-                />
-              )}
-            </form.AppField>
             <form.AppField name="costUsd">
               {(field) => (
                 <field.TextField
-                  label="or dollars per month"
+                  label="Dollars per month, for every app without its own cap"
                   description={COST_CAP_HELP}
                   type="number"
                   inputMode="decimal"
@@ -144,6 +110,7 @@ export function SetDefaultCapModal({
                   max={COST_CAP_MAX_USD}
                   step={0.01}
                   placeholder="20"
+                  autoFocus
                 />
               )}
             </form.AppField>
@@ -157,7 +124,7 @@ export function SetDefaultCapModal({
               <form.Subscribe selector={(state) => state.isSubmitting}>
                 {(isSubmitting) => (
                   <>
-                    {defaultCap !== null || defaultCostCapMicros !== null ? (
+                    {defaultCostCapMicros !== null ? (
                       <Button
                         type="button"
                         variant="outline"

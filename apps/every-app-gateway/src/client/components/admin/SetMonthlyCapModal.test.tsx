@@ -2,7 +2,7 @@
 /**
  * The monthly cap dialog rendered for real: with a workspace default it
  * offers the default, no cap or a custom cap and sends the server the
- * right shape for each; without one it is a number and Remove cap; from
+ * right shape for each; without one it is dollars and Remove cap; from
  * Raise it starts on a custom cap prefilled with what binds today.
  */
 import { act } from "react";
@@ -52,17 +52,13 @@ function app(overrides: Partial<UsageAppRow> = {}): UsageAppRow {
     failures: 0,
     inputTokens: 0,
     outputTokens: 0,
-    costMicros: 0,
+    costMicros: 4_200_000,
     toolCalls: 0,
-    monthlyCallCap: null,
     capUnlimited: false,
-    effectiveMonthlyCallCap: null,
-    capSource: null,
     monthlyCostCapMicros: null,
     effectiveMonthlyCostCapMicros: null,
     costCapSource: null,
     paused: false,
-    pausedBy: null,
     callable: true,
     ...overrides,
   };
@@ -71,7 +67,6 @@ function app(overrides: Partial<UsageAppRow> = {}): UsageAppRow {
 function render(
   row: UsageAppRow,
   options: {
-    defaultCap?: number | null;
     defaultCostCapMicros?: number | null;
     isCurrentMonth?: boolean;
   } = {},
@@ -80,7 +75,6 @@ function render(
     root.render(
       <SetMonthlyCapModal
         app={row}
-        defaultCap={options.defaultCap ?? null}
         defaultCostCapMicros={options.defaultCostCapMicros ?? null}
         isCurrentMonth={options.isCurrentMonth ?? true}
         onClose={onClose}
@@ -127,10 +121,6 @@ function radio(label: string): HTMLElement {
 }
 
 function capInput(): HTMLInputElement | null {
-  return document.body.querySelector<HTMLInputElement>('input[name="cap"]');
-}
-
-function costInput(): HTMLInputElement | null {
   return document.body.querySelector<HTMLInputElement>('input[name="costUsd"]');
 }
 
@@ -175,118 +165,77 @@ function sent() {
   );
 }
 
+const underDefault = () =>
+  app({ effectiveMonthlyCostCapMicros: 20_000_000, costCapSource: "default" });
+const DEFAULT = { defaultCostCapMicros: 20_000_000 };
+
 describe("with a workspace default", () => {
   it("offers the default, no cap and a custom cap, starting on what binds today", () => {
-    render(app({ effectiveMonthlyCallCap: 1000, capSource: "default" }), {
-      defaultCap: 1000,
-    });
+    render(underDefault(), DEFAULT);
     expect(text()).toContain("Monthly cap for Notes");
     expect(radios()).toEqual([
-      { label: "Workspace default (1,000 calls)", checked: true },
+      { label: "Workspace default ($20.00)", checked: true },
       { label: "No cap", checked: false },
       { label: "Custom cap", checked: false },
     ]);
     expect(capInput()).toBeNull();
-    expect(text()).toContain("240 so far this month.");
+    expect(text()).toContain("$4.20 so far this month.");
     expect(text()).not.toContain("Remove cap");
   });
 
   it("sends unlimited for No cap", async () => {
-    render(app({ effectiveMonthlyCallCap: 1000, capSource: "default" }), {
-      defaultCap: 1000,
-    });
+    render(underDefault(), DEFAULT);
     await press(radio("No cap"));
     expect(radios()[1]).toEqual({ label: "No cap", checked: true });
     await save();
     expect(sent()).toEqual([
-      { appRowId: "row-notes", cap: null, costUsd: null, unlimited: true },
+      { appRowId: "row-notes", costUsd: null, unlimited: true },
     ]);
     expect(onSaved).toHaveBeenCalledOnce();
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("sends a null cap, not unlimited, for the workspace default", async () => {
-    render(app({ capUnlimited: true }), { defaultCap: 1000 });
+  it("sends null, not unlimited, for the workspace default", async () => {
+    render(app({ capUnlimited: true }), DEFAULT);
     expect(radios()[1]).toEqual({ label: "No cap", checked: true });
     await press(radio("Workspace default"));
     await save();
-    expect(sent()).toEqual([
-      { appRowId: "row-notes", cap: null, costUsd: null },
-    ]);
+    expect(sent()).toEqual([{ appRowId: "row-notes", costUsd: null }]);
   });
 
-  it("sends the number for a custom cap, and refuses an empty one", async () => {
-    render(app({ effectiveMonthlyCallCap: 1000, capSource: "default" }), {
-      defaultCap: 1000,
-    });
+  it("sends dollars for a custom cap, says which calls count, and refuses an empty one or a fraction of a cent", async () => {
+    render(underDefault(), DEFAULT);
     await press(radio("Custom cap"));
     const input = capInput();
     expect(input).not.toBeNull();
     expect(input?.value).toBe("");
-    expect(text()).toContain("240 so far this month.");
+    expect(text()).toContain("Dollars per month");
+    expect(text()).toContain(
+      "Counted only where the provider reports a price: OpenRouter, DataForSEO. Other calls, such as OpenAI or Workers AI, aren't capped. $4.20 so far this month.",
+    );
     await save();
     expect(sent()).toEqual([]);
-    expect(text()).toContain("Enter a number of calls, dollars, or both.");
-    await type(input!, "2500");
-    await save();
-    expect(sent()).toEqual([
-      { appRowId: "row-notes", cap: 2500, costUsd: null },
-    ]);
-  });
-
-  it("sends dollars alone for a custom dollar cap, says which calls count, and refuses a fraction of a cent", async () => {
-    render(app({ effectiveMonthlyCallCap: 1000, capSource: "default" }), {
-      defaultCap: 1000,
-      defaultCostCapMicros: 20_000_000,
-    });
-    expect(radios()[0]).toEqual({
-      label: "Workspace default (1,000 calls or $20.00)",
-      checked: true,
-    });
-    await press(radio("Custom cap"));
-    expect(text()).toContain("or dollars per month");
-    expect(text()).toContain(
-      "Counted only where the provider reports a price: OpenRouter, DataForSEO. Other calls count toward the call cap alone.",
-    );
-    expect(text()).toContain(
-      "A field left empty follows the workspace default.",
-    );
-    await type(costInput()!, "12.345");
+    expect(text()).toContain("Enter dollars per month.");
+    await type(input!, "12.345");
     await save();
     expect(sent()).toEqual([]);
     expect(text()).toContain("Enter dollars, with at most two decimals.");
-    await type(costInput()!, "12.5");
+    await type(input!, "12.5");
     await save();
-    expect(sent()).toEqual([
-      { appRowId: "row-notes", cap: null, costUsd: 12.5 },
-    ]);
+    expect(sent()).toEqual([{ appRowId: "row-notes", costUsd: 12.5 }]);
   });
 
-  it("starts on the app's own dollar cap when it has one", () => {
+  it("starts on the app's own cap when it has one", () => {
     render(
       app({
         monthlyCostCapMicros: 7_250_000,
         effectiveMonthlyCostCapMicros: 7_250_000,
         costCapSource: "app",
       }),
-      { defaultCap: 1000 },
+      DEFAULT,
     );
     expect(radios()[2]).toEqual({ label: "Custom cap", checked: true });
-    expect(capInput()?.value).toBe("");
-    expect(costInput()?.value).toBe("7.25");
-  });
-
-  it("starts on the app's own cap when it has one", () => {
-    render(
-      app({
-        monthlyCallCap: 5000,
-        effectiveMonthlyCallCap: 5000,
-        capSource: "app",
-      }),
-      { defaultCap: 1000 },
-    );
-    expect(radios()[2]).toEqual({ label: "Custom cap", checked: true });
-    expect(capInput()?.value).toBe("5000");
+    expect(capInput()?.value).toBe("7.25");
   });
 });
 
@@ -294,66 +243,64 @@ describe("from Raise on a paused app", () => {
   it("starts on a custom cap prefilled with the default that paused it, and says where the default changes", () => {
     render(
       app({
-        calls: 1000,
-        effectiveMonthlyCallCap: 1000,
-        capSource: "default",
+        costMicros: 20_000_000,
+        effectiveMonthlyCostCapMicros: 20_000_000,
+        costCapSource: "default",
         paused: true,
       }),
-      { defaultCap: 1000 },
+      DEFAULT,
     );
     expect(text()).toContain("Raise the monthly cap for Notes");
     expect(radios()[2]).toEqual({ label: "Custom cap", checked: true });
-    expect(capInput()?.value).toBe("1000");
+    expect(capInput()?.value).toBe("20");
     expect(text()).toContain(
       "The default itself is changed in the Default monthly cap row.",
     );
-    expect(text()).toContain("1,000 so far this month.");
+    expect(text()).toContain("$20.00 so far this month.");
   });
 
   it("prefills the app's own cap without the default line", () => {
     render(
       app({
-        calls: 5000,
-        monthlyCallCap: 5000,
-        effectiveMonthlyCallCap: 5000,
-        capSource: "app",
+        costMicros: 50_000_000,
+        monthlyCostCapMicros: 50_000_000,
+        effectiveMonthlyCostCapMicros: 50_000_000,
+        costCapSource: "app",
         paused: true,
       }),
-      { defaultCap: 1000 },
+      DEFAULT,
     );
     expect(text()).toContain("Raise the monthly cap for Notes");
-    expect(capInput()?.value).toBe("5000");
+    expect(capInput()?.value).toBe("50");
     expect(text()).not.toContain("Default monthly cap row");
   });
 });
 
 describe("without a workspace default", () => {
-  it("is a number with the count under it, and Remove cap once a cap exists", async () => {
+  it("is dollars with the month's cost under it, and Remove cap once a cap exists", async () => {
     render(
       app({
-        monthlyCallCap: 5000,
-        effectiveMonthlyCallCap: 5000,
-        capSource: "app",
+        monthlyCostCapMicros: 50_000_000,
+        effectiveMonthlyCostCapMicros: 50_000_000,
+        costCapSource: "app",
       }),
     );
     expect(radios()).toEqual([]);
-    expect(capInput()?.value).toBe("5000");
-    expect(text()).toContain("240 so far this month.");
+    expect(capInput()?.value).toBe("50");
+    expect(text()).toContain("$4.20 so far this month.");
     await press(button("Remove cap"));
     await settle();
-    expect(sent()).toEqual([
-      { appRowId: "row-notes", cap: null, costUsd: null },
-    ]);
+    expect(sent()).toEqual([{ appRowId: "row-notes", costUsd: null }]);
   });
 
-  it("shows the count before any cap exists, and no Remove cap", () => {
+  it("shows the cost before any cap exists, and no Remove cap", () => {
     render(app());
     expect(capInput()?.value).toBe("");
-    expect(text()).toContain("240 so far this month.");
+    expect(text()).toContain("$4.20 so far this month.");
     expect(text()).not.toContain("Remove cap");
   });
 
-  it("drops the count for a past month", () => {
+  it("drops the cost for a past month", () => {
     render(app(), { isCurrentMonth: false });
     expect(text()).not.toContain("so far this month");
   });

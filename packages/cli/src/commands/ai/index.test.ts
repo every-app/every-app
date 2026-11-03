@@ -129,13 +129,13 @@ describe("ai show and ai list", () => {
 
 describe("ai default", () => {
   it("writes org_settings with the choice and queues ai.default_changed once; the cap column stays", async () => {
-    await setDefaultCap(opts(), 1000);
+    await setDefaultCap(opts(), 20);
     events = [];
     await chooseDefault(opts(), "openrouter/anthropic/claude-sonnet-5.5");
-    expect(rows("SELECT organization_id, default_monthly_call_cap, ai_default, ai_models, updated_by FROM org_settings")).toEqual([
+    expect(rows("SELECT organization_id, default_monthly_cost_cap_micros, ai_default, ai_models, updated_by FROM org_settings")).toEqual([
       {
         organization_id: ORG,
-        default_monthly_call_cap: 1000,
+        default_monthly_cost_cap_micros: 20_000_000,
         ai_default: "openrouter",
         ai_models: '{"openrouter":{"chat":"anthropic/claude-sonnet-5.5"}}',
         updated_by: "u-owner",
@@ -154,8 +154,8 @@ describe("ai default", () => {
     // Off clears the choice, keeps the cap and the provider's model, and queues the event with the previous choice.
     events = [];
     await chooseDefault(opts(), "off");
-    expect(rows("SELECT default_monthly_call_cap, ai_default, ai_models FROM org_settings")).toEqual([
-      { default_monthly_call_cap: 1000, ai_default: null, ai_models: '{"openrouter":{"chat":"anthropic/claude-sonnet-5.5"}}' },
+    expect(rows("SELECT default_monthly_cost_cap_micros, ai_default, ai_models FROM org_settings")).toEqual([
+      { default_monthly_cost_cap_micros: 20_000_000, ai_default: null, ai_models: '{"openrouter":{"chat":"anthropic/claude-sonnet-5.5"}}' },
     ]);
     // The clock is fixed, so the two events don't sort: both are there.
     expect(aiEvents()).toHaveLength(2);
@@ -169,10 +169,10 @@ describe("ai default", () => {
 
   it("clearing the cap keeps the choice, and a row with neither goes", async () => {
     await chooseDefault(opts(), "groq");
-    await setDefaultCap(opts(), 1000);
+    await setDefaultCap(opts(), 20);
     await setDefaultCap(opts(), null);
-    expect(rows("SELECT default_monthly_call_cap, ai_default FROM org_settings")).toEqual([
-      { default_monthly_call_cap: null, ai_default: "groq" },
+    expect(rows("SELECT default_monthly_cost_cap_micros, ai_default FROM org_settings")).toEqual([
+      { default_monthly_cost_cap_micros: null, ai_default: "groq" },
     ]);
     await chooseDefault(opts(), "off");
     expect(rows("SELECT * FROM org_settings")).toEqual([]);

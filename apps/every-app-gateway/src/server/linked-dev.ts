@@ -293,8 +293,8 @@ async function dispatch(
     usage: UsageRepository,
     waitUntil: (task) => waitUntil(task),
     caps: {
-      effectiveMonthlyCaps: OrgAppSettingsRepository.getEffectiveMonthlyCaps,
-      monthlyUsage: UsageRepository.monthlyUsage,
+      effectiveMonthlyCap: OrgAppSettingsRepository.getEffectiveMonthlyCap,
+      monthlyCostMicros: UsageRepository.monthlyCostMicros,
     },
     providers: gatewayProviders,
     trusted: { organizationId: app.organizationId, user },

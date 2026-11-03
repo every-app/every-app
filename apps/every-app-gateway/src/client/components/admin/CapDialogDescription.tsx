@@ -5,7 +5,7 @@ import { DialogDescription } from "@/client/components/ui/dialog";
  * workspace default's): one wording, one spelling of Gateway.
  */
 const MONTHLY_CAP_DESCRIPTION =
-  "Provider calls per UTC month, AI providers and capabilities together. Once reached, the Gateway refuses the app's calls until the month ends or the cap is raised.";
+  "Dollars of provider-reported cost per UTC month, AI providers and capabilities together. Once reached, the Gateway refuses the app's calls until the month ends or the cap is raised.";
 
 /**
  * The built-in Cap alerts subscription an organization's first cap makes

@@ -88,7 +88,6 @@ export interface BuiltEvent {
 }
 
 type CapSource = "app" | "default";
-type CapKind = "calls" | "cost";
 type McpAppKind = "builtin" | "remote";
 type ToolClientKind = "pat" | "session" | "dev" | "oauth" | "access";
 
@@ -181,19 +180,18 @@ function compact<T extends Record<string, unknown>>(value: T): T {
 }
 
 /**
- * `<type>:<org>:<app row>:<month>:<kind>:<cap>`, with the threshold for a
- * warning: the call cap and the dollar cap are announced each on its own.
+ * `<type>:<org>:<app row>:<month>:<cap>`, with the threshold for a
+ * warning; the cap in micro-dollars.
  */
 export function capKey(
   type: string,
   organizationId: string,
   appRowId: string,
   month: string,
-  kind: CapKind,
   cap: number,
   threshold?: number,
 ): string {
-  const base = `${type}:${organizationId}:${appRowId}:${month}:${kind}:${cap}`;
+  const base = `${type}:${organizationId}:${appRowId}:${month}:${cap}`;
   return threshold === undefined ? base : `${base}:${threshold}`;
 }
 
@@ -202,44 +200,51 @@ function dollars(micros: number): number {
   return Math.round(micros / 10_000) / 100;
 }
 
-/** One cap's standing, as cap-events.ts hands it over. */
+/** The cap's standing, as cap-events.ts hands it over. */
 export interface CapInput {
   organizationId: string;
   app: EventApp;
-  kind: CapKind;
-  /** Calls, or micro-dollars for `cost`. */
+  /** Micro-dollars. */
   cap: number;
   source: CapSource;
-  /** The month's counted calls. */
-  calls: number;
   /** The month's provider-reported cost, micro-dollars. */
   costMicros: number;
   /** "YYYY-MM" */
   month: string;
 }
 
-/**
- * What `data` says of a cap: `kind`, then for the call cap `cap` and
- * `calls` as before, for the dollar cap `costCap` and `cost` in dollars
- * (with the month's `calls` beside them).
- */
+/** What `data` says of a cap: `costCap` and the month's `cost`, in dollars. */
 function capData(input: CapInput): Record<string, unknown> {
-  return input.kind === "cost"
-    ? {
-        app: app(input.app),
-        kind: "cost",
-        costCap: dollars(input.cap),
-        cost: dollars(input.costMicros),
-        calls: input.calls,
-        month: input.month,
-      }
-    : {
-        app: app(input.app),
-        kind: "calls",
-        cap: input.cap,
-        calls: input.calls,
-        month: input.month,
-      };
+  return {
+    app: app(input.app),
+    costCap: dollars(input.cap),
+    cost: dollars(input.costMicros),
+    month: input.month,
+  };
+}
+
+/** A change to a cap, as `cap.raised` and `cap.changed` carry it. */
+interface CapChange {
+  /** The app whose own setting changed; null for the workspace default (`source: "default"`). */
+  app: EventApp | null;
+  /**
+   * For an app, the cap in dollars that binds it after and before the
+   * change (its own, else the default; null = none), not the row's own
+   * column: a cap set under the default is no raise, `unlimited` under a
+   * default is a removal. For the default, the default itself.
+   */
+  costCap: number | null;
+  previousCostCap: number | null;
+  source: CapSource;
+}
+
+function capChangeData(input: CapChange): Record<string, unknown> {
+  return {
+    app: input.app ? app(input.app) : null,
+    costCap: input.costCap,
+    previousCostCap: input.previousCostCap,
+    source: input.source,
+  };
 }
 
 function capEventKey(type: string, input: CapInput, threshold?: number) {
@@ -248,7 +253,6 @@ function capEventKey(type: string, input: CapInput, threshold?: number) {
     input.organizationId,
     input.app.rowId,
     input.month,
-    input.kind,
     input.cap,
     threshold,
   );
@@ -576,64 +580,22 @@ export const catalogue = {
     );
   },
 
-  capRaised(input: {
-    /** The app whose own setting changed; null for the workspace default (`source: "default"`). */
-    app: EventApp | null;
-    /**
-     * For an app, the call cap that binds it after and before the change
-     * (its own, else the default; null = none), not the row's own column:
-     * a cap set under the default is no raise, `unlimited` under a default
-     * is a removal. For the default, the default itself.
-     */
-    cap: number | null;
-    previousCap: number | null;
-    /**
-     * The dollar cap after and before, in dollars by the same rule; given
-     * only when it changed (the event fires when either cap ended higher
-     * or gone).
-     */
-    costCap?: number | null;
-    previousCostCap?: number | null;
-    source: CapSource;
-  }): BuiltEvent {
+  capRaised(input: CapChange): BuiltEvent {
     return built(
       "cap.raised",
-      compact({
-        app: input.app ? app(input.app) : null,
-        cap: input.cap,
-        previousCap: input.previousCap,
-        costCap: input.costCap,
-        previousCostCap: input.previousCostCap,
-        source: input.source,
-      }),
+      capChangeData(input),
       input.app ? { appRowId: input.app.rowId } : {},
     );
   },
 
   /**
    * The counterpart of cap.raised: a cap set under the default, lowered,
-   * or an app's own row changed while the binding caps stayed. Same
-   * fields; `cap` and `previousCap` are the binding call caps after and
-   * before, `costCap` and `previousCostCap` the dollar caps when changed.
+   * or an app's own cap set at the default's value. Same fields.
    */
-  capChanged(input: {
-    app: EventApp | null;
-    cap: number | null;
-    previousCap: number | null;
-    costCap?: number | null;
-    previousCostCap?: number | null;
-    source: CapSource;
-  }): BuiltEvent {
+  capChanged(input: CapChange): BuiltEvent {
     return built(
       "cap.changed",
-      compact({
-        app: input.app ? app(input.app) : null,
-        cap: input.cap,
-        previousCap: input.previousCap,
-        costCap: input.costCap,
-        previousCostCap: input.previousCostCap,
-        source: input.source,
-      }),
+      capChangeData(input),
       input.app ? { appRowId: input.app.rowId } : {},
     );
   },
@@ -1270,32 +1232,19 @@ const usd = (value: number | null): string =>
         maximumFractionDigits: 2,
       })}`;
 
-/** A cap event's dollar cap was the one: `kind: "cost"`. */
-const isCost = (d: Data): boolean => str(d.kind) === "cost";
-
 /**
- * What `cap.raised` says changed: the call cap, then the dollar cap when
- * it is in the event (each "set to", "raised from … to" or "removed").
+ * What `cap.raised` and `cap.changed` say changed: "set to", "raised from
+ * … to", "lowered from … to" or "removed".
  */
 function raisedLine(whose: string, d: Data): string {
-  const change = (
-    now: number | null,
-    was: number | null,
-    say: (value: number | null) => string,
-  ): string | null => {
-    if (now === was) return null;
-    if (now === null) return `was removed (was ${say(was)})`;
-    if (was === null) return `set to ${say(now)}`;
-    return now > was
-      ? `raised from ${say(was)} to ${say(now)}`
-      : `lowered from ${say(was)} to ${say(now)}`;
-  };
-  const calls = change(num(d.cap), num(d.previousCap), n);
-  const cost =
-    "costCap" in d ? change(num(d.costCap), num(d.previousCostCap), usd) : null;
-  if (calls && cost) return `${whose} ${calls}; its dollar cap ${cost}`;
-  if (cost) return `${whose.replace(/cap$/, "dollar cap")} ${cost}`;
-  return `${whose} ${calls ?? `is ${n(num(d.cap))}`}`;
+  const now = num(d.costCap);
+  const was = num(d.previousCostCap);
+  if (now === was) return `${whose} is ${usd(now)}`;
+  if (now === null) return `${whose} was removed (was ${usd(was)})`;
+  if (was === null) return `${whose} set to ${usd(now)}`;
+  return now > was
+    ? `${whose} raised from ${usd(was)} to ${usd(now)}`
+    : `${whose} lowered from ${usd(was)} to ${usd(now)}`;
 }
 
 /**
@@ -1349,9 +1298,7 @@ export function summarize(
     case "app.ready":
       return `${appLabel(d.app)} is ready`;
     case "app.paused_cap":
-      return isCost(d)
-        ? `${appLabel(d.app)} is paused: monthly dollar cap of ${usd(num(d.costCap))} reached`
-        : `${appLabel(d.app)} is paused: monthly cap of ${n(num(d.cap))} reached`;
+      return `${appLabel(d.app)} is paused: monthly cap of ${usd(num(d.costCap))} reached`;
     case "app.tools_changed":
       return `${appLabel(d.app)}'s tools changed: ${n(num(d.toolCount))} tools (was ${n(num(d.previousToolCount))})`;
     case "app.renamed":
@@ -1378,14 +1325,10 @@ export function summarize(
     }
     case "cap.warning": {
       const share = `${num(d.threshold) ?? CAP_WARNING_THRESHOLD}%`;
-      return isCost(d)
-        ? `${appLabel(d.app)} is at ${share} of its monthly dollar cap (${usd(num(d.cost))} of ${usd(num(d.costCap))})`
-        : `${appLabel(d.app)} is at ${share} of its monthly cap (${n(num(d.calls))} of ${n(num(d.cap))})`;
+      return `${appLabel(d.app)} is at ${share} of its monthly cap (${usd(num(d.cost))} of ${usd(num(d.costCap))})`;
     }
     case "cap.reached":
-      return isCost(d)
-        ? `${appLabel(d.app)} reached its monthly dollar cap (${usd(num(d.costCap))})`
-        : `${appLabel(d.app)} reached its monthly cap (${n(num(d.cap))})`;
+      return `${appLabel(d.app)} reached its monthly cap (${usd(num(d.costCap))})`;
     case "cap.raised": {
       // The workspace default names no app.
       const whose =
@@ -1614,15 +1557,12 @@ export function eventEmailFields(type: string, data: Data): EmailField[] {
   add("Version", d.version);
   add("Source", d.source);
   if (list(d.unmet).length) add("Needs", list(d.unmet).join(", "));
-  add("Cap", d.cap);
-  add("Previous cap", d.previousCap);
   const dollarsField = (label: string, value: unknown) => {
     if (num(value) !== null) add(label, usd(num(value)));
   };
-  dollarsField("Dollar cap", d.costCap);
-  dollarsField("Previous dollar cap", d.previousCostCap);
+  dollarsField("Cap", d.costCap);
+  dollarsField("Previous cap", d.previousCostCap);
   dollarsField("Cost this month", d.cost);
-  add("Calls this month", d.calls);
   add("Month", d.month);
   add("Tool", d.tool);
   add("AI app", str(obj(d.client).name) ?? str(obj(d.connection).clientName));

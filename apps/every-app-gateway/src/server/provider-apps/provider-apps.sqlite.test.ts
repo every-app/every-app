@@ -675,7 +675,8 @@ describe("a provider app on the gateway's /mcp", () => {
     await db.insert(orgAppSettings).values({
       organizationId: orgId,
       appRowId: rowId,
-      monthlyCallCap: 1,
+      // A cent: the first call's $0.012 reached it.
+      monthlyCostCapMicros: 10_000,
       updatedAt: new Date(),
       updatedBy: ownerId,
     });
@@ -686,7 +687,7 @@ describe("a provider app on the gateway's /mcp", () => {
     });
     expect(call.result?.isError).toBe(true);
     expect(call.result?.content[0]?.text).toBe(
-      "DataForSEO has reached its monthly cap of 1 provider calls for this organization. Its AI and provider calls are refused until the month ends (UTC) or an owner or admin raises the cap under Manage workspace → Usage.",
+      "DataForSEO has reached its monthly cap of $0.01 of provider-reported cost for this organization. Its AI and provider calls are refused until the month ends (UTC) or an owner or admin raises the cap under Manage workspace → Usage.",
     );
     expect(upstream).toHaveLength(1);
     const [usage] = await db.select().from(usageDaily);
@@ -705,11 +706,15 @@ describe("a provider app on the gateway's /mcp", () => {
     ).toEqual([
       {
         type: "cap.reached",
-        data: expect.objectContaining({ cap: 1, calls: 1, source: "app" }),
+        data: expect.objectContaining({
+          costCap: 0.01,
+          cost: 0.01,
+          source: "app",
+        }),
       },
       {
         type: "app.paused_cap",
-        data: expect.objectContaining({ cap: 1, calls: 1 }),
+        data: expect.objectContaining({ costCap: 0.01, cost: 0.01 }),
       },
     ]);
   });

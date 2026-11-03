@@ -1,12 +1,11 @@
 /**
  * The cap events (docs/design/2026-10-events-out.md, section 5): from a
- * monthly cap check's standing (app-cap.ts), for each cap that binds (the
- * call cap and the dollar cap, each on its own), `cap.warning` once the
- * month's use reaches 80% of it, and `cap.reached` with `app.paused_cap`
- * once it reaches it; `data.kind` says which (`calls` or `cost`). The
- * AppGateway entrypoint and the provider-app call path both check the
- * caps, so both call this under `waitUntil`, after their answer. Each
- * event's dedupe key is per organization, app row, month, kind and cap,
+ * monthly cap check's standing (app-cap.ts), `cap.warning` once the
+ * month's reported cost reaches 80% of the cap that binds, and
+ * `cap.reached` with `app.paused_cap` once it reaches it. The AppGateway
+ * entrypoint and the provider-app call path both check the cap, so both
+ * call this under `waitUntil`, after their answer. Each event's dedupe
+ * key is per organization, app row, month and cap,
  * so a cap that is hit a thousand times in a month is announced once,
  * from whichever isolate gets there first; a raised cap starts the count
  * over, as its key changes. The keys this isolate emitted lately are
@@ -49,16 +48,16 @@ function remember(key: string, now: number): void {
   }
 }
 
-/** The events one cap's standing calls for: none below 80%. */
+/** The events the cap's standing calls for: none below 80%. */
 function dueFor(
   organizationId: string,
   appRowId: string,
   month: string,
   standing: CapStanding,
 ): Array<{ key: string; build: (input: CapInput) => BuiltEvent }> {
-  const { kind, cap, used } = standing;
+  const { cap, used } = standing;
   const key = (type: string, threshold?: number) =>
-    capKey(type, organizationId, appRowId, month, kind, cap, threshold);
+    capKey(type, organizationId, appRowId, month, cap, threshold);
   if (used >= cap) {
     return [
       {
@@ -86,29 +85,25 @@ export async function noteCapCheck(
   appRowId: string,
   check: MonthlyCapCheck,
 ): Promise<void> {
-  if (check.caps === undefined) return;
-  const { month, calls, costMicros } = check;
+  if (check.standing === undefined) return;
+  const { month, standing } = check;
   const now = Date.now();
-  for (const standing of check.caps) {
-    const due = dueFor(organizationId, appRowId, month, standing).filter(
-      ({ key }) => !remembered(key, now),
-    );
-    for (const { key, build } of due) {
-      await emit(async () => ({
+  const due = dueFor(organizationId, appRowId, month, standing).filter(
+    ({ key }) => !remembered(key, now),
+  );
+  for (const { key, build } of due) {
+    await emit(async () => ({
+      organizationId,
+      actor: GATEWAY_ACTOR,
+      ...build({
         organizationId,
-        actor: GATEWAY_ACTOR,
-        ...build({
-          organizationId,
-          app: await appSubject(appRowId),
-          kind: standing.kind,
-          cap: standing.cap,
-          source: standing.source,
-          calls,
-          costMicros,
-          month,
-        }),
-      }));
-      remember(key, now);
-    }
+        app: await appSubject(appRowId),
+        cap: standing.cap,
+        source: standing.source,
+        costMicros: standing.used,
+        month,
+      }),
+    }));
+    remember(key, now);
   }
 }

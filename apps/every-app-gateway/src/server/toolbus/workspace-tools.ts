@@ -94,21 +94,12 @@ function strings(value: unknown): string[] | undefined {
 }
 
 /**
- * The two caps of a cap tool as the service takes them: a number, null
- * for none, or left out (absent, or not a number or null) to keep it.
+ * A cap tool's `costUsd` as the service takes it: a number, null for none,
+ * or undefined (absent, or not a number or null).
  */
-function capArgs(args: JsonObject): {
-  cap?: number | null;
-  costUsd?: number | null;
-} {
-  const kept = (value: unknown) =>
-    typeof value === "number" || value === null ? value : undefined;
-  const cap = kept(args["cap"]);
-  const costUsd = kept(args["costUsd"]);
-  return {
-    ...(cap !== undefined && { cap }),
-    ...(costUsd !== undefined && { costUsd }),
-  };
+function costUsdArg(args: JsonObject): number | null | undefined {
+  const value = args["costUsd"];
+  return typeof value === "number" || value === null ? value : undefined;
 }
 
 /** `confirm: true`, checked here too: the action cannot be undone. */
@@ -818,33 +809,33 @@ const HANDLERS: Record<string, Handler> = {
       callable: true,
     });
     const unlimited = args["unlimited"];
-    // A cap left out keeps what the app has; the service refuses a cap
-    // and unlimited together, and a call that names neither cap nor
-    // unlimited, and answers the app's own settings with the caps that
-    // bind it now (AppCapState).
+    // The service refuses a cap and unlimited together, and a call that
+    // names neither, and answers the app's own settings with the cap that
+    // binds it now (AppCapState).
+    const costUsd = costUsdArg(args);
     const set = await AppCapService.setMonthlyCap(ctx, {
       appRowId: app.id,
-      ...capArgs(args),
+      ...(costUsd !== undefined && { costUsd }),
       ...(typeof unlimited === "boolean" ? { unlimited } : {}),
     });
     return {
       app: { id: app.id, appId: app.appSlug, name: app.name },
-      monthlyCallCap: set.monthlyCallCap,
       monthlyCostCapMicros: set.monthlyCostCapMicros,
       capUnlimited: set.capUnlimited,
-      effectiveMonthlyCallCap: set.effectiveMonthlyCallCap,
-      capSource: set.capSource,
       effectiveMonthlyCostCapMicros: set.effectiveMonthlyCostCapMicros,
       costCapSource: set.costCapSource,
     };
   },
 
   async workspace_cap_default(ctx, args) {
-    const set = await AppCapService.setDefaultMonthlyCap(ctx, capArgs(args));
-    return {
-      defaultMonthlyCallCap: set.defaultMonthlyCallCap,
-      defaultMonthlyCostCapMicros: set.defaultMonthlyCostCapMicros,
-    };
+    const costUsd = costUsdArg(args);
+    if (costUsd === undefined) {
+      throw new PublicError(
+        "INVALID_INPUT",
+        "costUsd is required: dollars, or null for no default",
+      );
+    }
+    return AppCapService.setDefaultMonthlyCap(ctx, { costUsd });
   },
 
   async workspace_app_delete(ctx, args) {

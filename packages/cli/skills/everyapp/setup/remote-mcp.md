@@ -37,9 +37,9 @@ supported yet"). If an OAuth server also takes an API key, add it with
 EveryApp charges nothing for an MCP app. The server's provider charges what
 it charges for its calls (its own plan and limits apply; read them on its
 site). Every forwarded call is counted in the organization's usage as
-`mcp:<id>`, and an owner or admin can cap an app's calls per month in Admin →
-Usage (off by default): past the cap a tool answers a tool error naming it
-until the next UTC month.
+`mcp:<id>`. Monthly caps in Admin → Usage count dollars of provider-reported
+cost, and a remote server reports no price, so a cap never stops an MCP app
+by URL: its own plan and limits are what bound it.
 
 ## Only a person can
 

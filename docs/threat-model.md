@@ -771,15 +771,18 @@ narrow within a scope: Google's `gmail.modify` includes sending).
   admin capped, or under a default they set**, #416 and #621). Every AI
   call, every DataForSEO paid call and every Context.dev render is
   attributed, logged and, since #381, counted per organization and app;
-  since #416 an owner or admin may cap an app's calls per month
-  (`org_app_settings.monthly_call_cap`, Manage workspace → Usage, null by
-  default) and, since #621, set one default cap for every app without its
-  own (`org_settings.default_monthly_call_cap`, null by default too),
-  refused at the effective cap with `429 app_monthly_cap_exceeded` before
-  any provider call. With no cap set nothing bounds the spend: on a
-  self-hosted gateway with one organization this is "an app can spend
-  your OpenAI key unless you cap it"; on hosted it is why the preview
-  stays invite-only (`docs/design/2026-10-teams.md`).
+  an owner or admin may cap an app's provider-reported cost per month in
+  dollars (`org_app_settings.monthly_cost_cap_micros`, Manage workspace →
+  Usage, null by default) and set one default cap for every app without
+  its own (`org_settings.default_monthly_cost_cap_micros`, null by default
+  too), refused at the effective cap with `429 app_monthly_cap_exceeded`
+  before any provider call. The cap counts only the cost a provider
+  reports (OpenRouter, DataForSEO), so calls to a provider that reports no
+  price (OpenAI, Anthropic, Workers AI, a remote MCP server) are never
+  bounded, and with no cap set nothing bounds the spend: on a self-hosted
+  gateway with one organization this is "an app can spend your OpenAI key";
+  on hosted it is why the preview stays invite-only
+  (`docs/design/2026-10-teams.md`).
 - *An app may use every connection made in it, at any time* (medium,
   accepted 2026-11-02, `docs/design/2026-11-oauth-simplify.md`). There is
   no separate consent for work while the person is away, and the Gateway

@@ -719,20 +719,28 @@ describe("running a workspace tool", () => {
         pad: new Array(2000).fill(0),
       }),
     ).toMatch(/^Invalid arguments for everyapp_workspace_group_create: /);
+    // Caps are dollars only: a call cap is an unknown field.
     expect(
-      await problem("everyapp_workspace_app_cap", { app: "crm", cap: 0 }),
+      await problem("everyapp_workspace_app_cap", { app: "crm", cap: 5000 }),
     ).toMatch(/^Invalid arguments for everyapp_workspace_app_cap: /);
     // And null is a cap.
     expect(
-      await problem("everyapp_workspace_app_cap", { app: "crm", cap: null }),
-    ).toContain('"cap":null');
-    // A dollar cap is from a cent, a number, and may stand alone.
+      await problem("everyapp_workspace_app_cap", {
+        app: "crm",
+        costUsd: null,
+      }),
+    ).toContain('"costUsd":null');
+    // A cap is from a cent, and a number.
     expect(
       await problem("everyapp_workspace_app_cap", { app: "crm", costUsd: 0 }),
     ).toMatch(/^Invalid arguments for everyapp_workspace_app_cap: /);
     expect(
       await problem("everyapp_workspace_cap_default", { costUsd: "20" }),
     ).toMatch(/^Invalid arguments for everyapp_workspace_cap_default: /);
+    // The default names its cap, or null.
+    expect(await problem("everyapp_workspace_cap_default", {})).toMatch(
+      /^Invalid arguments for everyapp_workspace_cap_default: /,
+    );
     expect(
       await problem("everyapp_workspace_app_cap", {
         app: "crm",
@@ -742,7 +750,7 @@ describe("running a workspace tool", () => {
     expect(calls).toHaveLength(2);
     expect(
       events.filter((event) => event.outcome === "invalid_arguments"),
-    ).toHaveLength(7);
+    ).toHaveLength(8);
     for (const event of events) {
       expect(event).toMatchObject({ appId: "everyapp", decision: "allowed" });
     }

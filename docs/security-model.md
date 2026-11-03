@@ -338,10 +338,11 @@ does, once, in
   forwarded identity or `x-everyapp-org`, as above), logged with it and
   counted per organization, app and member (`usage_daily`,
   `usage_monthly`; Manage workspace → Usage). An owner or admin may cap an
-  app's calls per month (`org_app_settings.monthly_call_cap`), set one
-  default cap for every app without a cap of its own
-  (`org_settings.default_monthly_call_cap`, migration `0014_caps_defaults`)
-  and leave one app out of the default (`org_app_settings.unlimited`);
+  app's provider-reported cost per month in dollars
+  (`org_app_settings.monthly_cost_cap_micros`), set one default cap for
+  every app without a cap of its own
+  (`org_settings.default_monthly_cost_cap_micros`) and leave one app out
+  of the default (`org_app_settings.unlimited`);
   each is null, unlimited, by default, and the app's own row wins over the
   default (a row holds exactly one of a cap or `unlimited`, both columns
   written in one statement; a row holding both keeps the app capped,

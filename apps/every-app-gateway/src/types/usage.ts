@@ -16,38 +16,29 @@ export interface UsageAppRow extends UsageTotals {
   appSlug: string | null;
   /** Allowed MCP tool calls on the app in the month (`mcp_tool_calls`). */
   toolCalls: number;
-  /**
-   * The organization's own cap on the app's provider calls per UTC month
-   * (`org_app_settings`), or null; always null on an app that is not
-   * callable.
-   */
-  monthlyCallCap: number | null;
   /** The app has no cap even though the organization set a default. */
   capUnlimited: boolean;
   /**
-   * The cap that binds the app this month: its own, else the
-   * organization's default unless the app is unlimited; null when nothing
-   * binds. `capSource` says which.
-   */
-  effectiveMonthlyCallCap: number | null;
-  capSource: "app" | "default" | null;
-  /**
-   * The organization's own cap in dollars on the cost the providers
-   * reported for the app's calls, in millionths of a US dollar, or null.
-   * Only providers that report a price (OpenRouter, DataForSEO) move it.
+   * The organization's own monthly cap in dollars on the cost the
+   * providers reported for the app's calls (`org_app_settings`), in
+   * millionths of a US dollar, or null; always null on an app that is not
+   * callable. Only providers that report a price (OpenRouter, DataForSEO)
+   * move it.
    */
   monthlyCostCapMicros: number | null;
-  /** The dollar cap that binds the app this month (micro-dollars), by the same rule; `costCapSource` says which. */
+  /**
+   * The cap that binds the app this month (micro-dollars): its own, else
+   * the organization's default unless the app is unlimited; null when
+   * nothing binds. `costCapSource` says which.
+   */
   effectiveMonthlyCostCapMicros: number | null;
   costCapSource: "app" | "default" | null;
   /**
-   * The app has reached an effective cap in the current UTC month, so the
+   * The app has reached its effective cap in the current UTC month, so the
    * Gateway refuses its AI and provider calls until the month ends or the
    * cap is raised. Always false for a past month.
    */
   paused: boolean;
-  /** Which cap paused it: `calls` when both are reached; null when not paused. */
-  pausedBy: "calls" | "cost" | null;
   /**
    * The organization can call the app today (its own live app, or a shared
    * one), so a cap can be set on it. Every callable app is listed, with
@@ -81,13 +72,8 @@ export interface UsageModelRow extends UsageTotals {
 /** What `setAppMonthlyCap` answers: the app's row and what binds it now. */
 export interface AppCapState {
   appRowId: string;
-  /** The app's own cap, or null. */
-  monthlyCallCap: number | null;
   /** The app has no cap, whatever the organization's default. */
   capUnlimited: boolean;
-  /** The cap that binds the app this month, and where it comes from. */
-  effectiveMonthlyCallCap: number | null;
-  capSource: "app" | "default" | null;
   /** The app's own dollar cap in micro-dollars, or null. */
   monthlyCostCapMicros: number | null;
   /** The dollar cap that binds the app this month (micro-dollars), and where it comes from. */
@@ -97,11 +83,10 @@ export interface AppCapState {
 
 /**
  * What an organization's apps spent in a UTC month ("YYYY-MM"), three
- * ways, with the organization's default caps (null for none).
+ * ways, with the organization's default cap (null for none).
  */
 export interface UsageSummary {
   month: string;
-  defaultMonthlyCallCap: number | null;
   /** The default dollar cap in micro-dollars, or null. */
   defaultMonthlyCostCapMicros: number | null;
   byApp: UsageAppRow[];

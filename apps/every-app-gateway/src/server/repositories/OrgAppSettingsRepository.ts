@@ -1,34 +1,23 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { organizations, orgAppSettings, orgSettings } from "@/db/schema";
-import { effectiveMonthlyCaps, type EffectiveCaps } from "@/server/app-cap";
-
-/** The organization's own row on an app as stored, or the empty row when there is none. */
-interface AppCapRow {
-  monthlyCallCap: number | null;
-  /** Micro-dollars. */
-  monthlyCostCapMicros: number | null;
-  unlimited: boolean;
-}
+import { effectiveMonthlyCap, type EffectiveCap } from "@/server/app-cap";
 
 /**
- * The caps that bind an app's provider calls for the organization this
- * month, each kind on its own: the app's own cap, none when the app is
- * unlimited, else the organization's default (`org_settings`), else none.
- * One query: the organization, with its row on the app and its defaults
- * joined.
+ * The cap that binds an app's provider calls for the organization this
+ * month: the app's own cap, none when the app is unlimited, else the
+ * organization's default (`org_settings`), else none. One query: the
+ * organization, with its row on the app and its default joined.
  */
-async function getEffectiveMonthlyCaps(
+async function getEffectiveMonthlyCap(
   organizationId: string,
   appRowId: string,
-): Promise<EffectiveCaps> {
+): Promise<EffectiveCap> {
   const [row] = await db
     .select({
-      appCap: orgAppSettings.monthlyCallCap,
-      appCostCap: orgAppSettings.monthlyCostCapMicros,
+      appCap: orgAppSettings.monthlyCostCapMicros,
       unlimited: orgAppSettings.unlimited,
-      defaultCap: orgSettings.defaultMonthlyCallCap,
-      defaultCostCap: orgSettings.defaultMonthlyCostCapMicros,
+      defaultCap: orgSettings.defaultMonthlyCostCapMicros,
     })
     .from(organizations)
     .leftJoin(
@@ -41,60 +30,29 @@ async function getEffectiveMonthlyCaps(
     .leftJoin(orgSettings, eq(orgSettings.organizationId, organizations.id))
     .where(eq(organizations.id, organizationId))
     .limit(1);
-  return effectiveMonthlyCaps({
+  return effectiveMonthlyCap({
     appCap: row?.appCap ?? null,
-    appCostCap: row?.appCostCap ?? null,
     unlimited: row?.unlimited ?? false,
     defaultCap: row?.defaultCap ?? null,
-    defaultCostCap: row?.defaultCostCap ?? null,
   });
 }
 
-/** The organization's own row on the app, before a write that keeps what it doesn't name. */
-async function getAppCapRow(
-  organizationId: string,
-  appRowId: string,
-): Promise<AppCapRow> {
-  const [row] = await db
-    .select({
-      monthlyCallCap: orgAppSettings.monthlyCallCap,
-      monthlyCostCapMicros: orgAppSettings.monthlyCostCapMicros,
-      unlimited: orgAppSettings.unlimited,
-    })
-    .from(orgAppSettings)
-    .where(
-      and(
-        eq(orgAppSettings.organizationId, organizationId),
-        eq(orgAppSettings.appRowId, appRowId),
-      ),
-    )
-    .limit(1);
-  return (
-    row ?? {
-      monthlyCallCap: null,
-      monthlyCostCapMicros: null,
-      unlimited: false,
-    }
-  );
-}
-
 /**
- * Set the organization's caps on the app (`cap`, `costCapMicros`), say
- * the app has none whatever the defaults (`unlimited`), or neither: delete
- * the row, so the defaults apply, and without them the app is unlimited.
- * Every column is written in one statement, keeping the row invariant.
+ * Set the organization's cap on the app (`costCapMicros`), say the app has
+ * none whatever the default (`unlimited`), or neither: delete the row, so
+ * the default applies, and without one the app is unlimited. Every column
+ * is written in one statement, keeping the row invariant.
  */
 async function setMonthlyCap(input: {
   organizationId: string;
   appRowId: string;
-  cap: number | null;
   costCapMicros: number | null;
   unlimited: boolean;
   updatedBy: string;
 }): Promise<void> {
-  const { organizationId, appRowId, cap, costCapMicros, unlimited, updatedBy } =
+  const { organizationId, appRowId, costCapMicros, unlimited, updatedBy } =
     input;
-  if (cap === null && costCapMicros === null && !unlimited) {
+  if (costCapMicros === null && !unlimited) {
     await db
       .delete(orgAppSettings)
       .where(
@@ -107,7 +65,6 @@ async function setMonthlyCap(input: {
   }
   const updatedAt = new Date();
   const row = {
-    monthlyCallCap: cap,
     monthlyCostCapMicros: costCapMicros,
     unlimited,
     updatedAt,
@@ -123,7 +80,6 @@ async function setMonthlyCap(input: {
 }
 
 export const OrgAppSettingsRepository = {
-  getEffectiveMonthlyCaps,
-  getAppCapRow,
+  getEffectiveMonthlyCap,
   setMonthlyCap,
 } as const;

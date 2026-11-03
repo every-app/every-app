@@ -5,8 +5,6 @@ import { publicErrorMiddleware } from "@/middleware/publicError";
 import { UsageRepository } from "@/server/repositories/UsageRepository";
 import {
   AppCapService,
-  MONTHLY_CALL_CAP_MAX,
-  MONTHLY_CALL_CAP_MIN,
   MONTHLY_COST_CAP_MAX_USD,
   MONTHLY_COST_CAP_MIN_USD,
 } from "@/server/services/AppCapService";
@@ -31,41 +29,32 @@ export const getUsage = createServerFn()
     });
   });
 
-const capSchema = z
-  .number()
-  .int("Cap must be a whole number")
-  .min(MONTHLY_CALL_CAP_MIN, `Cap must be at least ${MONTHLY_CALL_CAP_MIN}`)
-  .max(MONTHLY_CALL_CAP_MAX, "Cap must be at most 1,000,000,000")
-  .nullable();
-
 // Dollars with cents; AppCapService also refuses a fraction of a cent.
 const costUsdSchema = z
   .number()
   .min(
     MONTHLY_COST_CAP_MIN_USD,
-    `A dollar cap must be at least $${MONTHLY_COST_CAP_MIN_USD}`,
+    `A cap must be at least $${MONTHLY_COST_CAP_MIN_USD}`,
   )
-  .max(MONTHLY_COST_CAP_MAX_USD, "A dollar cap must be at most $1,000,000")
+  .max(MONTHLY_COST_CAP_MAX_USD, "A cap must be at most $1,000,000")
   .nullable();
 
 const setAppMonthlyCapSchema = z
   .object({
     appRowId: z.string().min(1, "App is required"),
-    cap: capSchema.optional(),
     costUsd: costUsdSchema.optional(),
     unlimited: z.boolean().optional(),
   })
-  .refine(
-    (data) => !data.unlimited || (data.cap == null && data.costUsd == null),
-    { message: "An app has a cap or no cap, not both", path: ["unlimited"] },
-  );
+  .refine((data) => !data.unlimited || data.costUsd == null, {
+    message: "An app has a cap or no cap, not both",
+    path: ["unlimited"],
+  });
 
 /**
- * Set the active organization's caps on an app's provider calls (`cap`
- * in calls, `costUsd` in dollars of provider-reported cost; one left out
- * keeps what the app has), say the app has none whatever the defaults
- * (`unlimited`), or neither (both null, not unlimited): the defaults
- * apply, and without them the app is unlimited. Owners and admins only.
+ * Set the active organization's cap on an app's provider calls (`costUsd`
+ * in dollars of provider-reported cost), say the app has none whatever the
+ * default (`unlimited`), or neither (null, not unlimited): the default
+ * applies, and without one the app is unlimited. Owners and admins only.
  */
 export const setAppMonthlyCap = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationAdminMiddleware])
@@ -74,15 +63,12 @@ export const setAppMonthlyCap = createServerFn({ method: "POST" })
     return AppCapService.setMonthlyCap(context.org, data);
   });
 
-const setDefaultMonthlyCapSchema = z.object({
-  cap: capSchema.optional(),
-  costUsd: costUsdSchema.optional(),
-});
+const setDefaultMonthlyCapSchema = z.object({ costUsd: costUsdSchema });
 
 /**
- * Set or clear the active organization's default caps (calls, dollars;
- * one left out is kept), which bind every app without a cap of that kind
- * or "no cap" of its own. Owners and admins only.
+ * Set or clear the active organization's default cap in dollars, which
+ * binds every app without a cap or "no cap" of its own. Owners and admins
+ * only.
  */
 export const setDefaultMonthlyCap = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationAdminMiddleware])

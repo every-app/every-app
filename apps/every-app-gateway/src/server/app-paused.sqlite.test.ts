@@ -76,13 +76,14 @@ describe("paused apps on the launcher (SQLite)", () => {
     return Object.fromEntries(apps.map((app) => [app.appId, app.paused]));
   }
 
+  /** `dollars` calls of $1 each. */
   async function spend(
     orgId: string,
     appRowId: string,
-    calls: number,
+    dollars: number,
     at?: Date,
   ) {
-    for (let i = 0; i < calls; i += 1) {
+    for (let i = 0; i < dollars; i += 1) {
       await UsageRepository.record({
         organizationId: orgId,
         appRowId,
@@ -90,6 +91,7 @@ describe("paused apps on the launcher (SQLite)", () => {
         kind: "ai",
         target: "openai",
         calls: 1,
+        costMicros: 1_000_000,
         status: 200,
         ...(at ? { at } : {}),
       });
@@ -113,11 +115,11 @@ describe("paused apps on the launcher (SQLite)", () => {
     });
 
     const admin = ctx(acme, acmeOwner);
-    await AppCapService.setDefaultMonthlyCap(admin, { cap: 2 });
-    await AppCapService.setMonthlyCap(admin, { appRowId: chef, cap: 3 });
+    await AppCapService.setDefaultMonthlyCap(admin, { costUsd: 2 });
+    await AppCapService.setMonthlyCap(admin, { appRowId: chef, costUsd: 3 });
     await AppCapService.setMonthlyCap(admin, {
       appRowId: openseo,
-      cap: null,
+      costUsd: null,
       unlimited: true,
     });
     await expect(pausedFor(acme, acmeOwner)).resolves.toEqual({
@@ -127,7 +129,10 @@ describe("paused apps on the launcher (SQLite)", () => {
     });
 
     await spend(acme, chef, 1);
-    await AppCapService.setMonthlyCap(admin, { appRowId: openseo, cap: null });
+    await AppCapService.setMonthlyCap(admin, {
+      appRowId: openseo,
+      costUsd: null,
+    });
     await expect(pausedFor(acme, acmeOwner)).resolves.toEqual({
       chef: true,
       todo: true,
@@ -138,7 +143,7 @@ describe("paused apps on the launcher (SQLite)", () => {
   it("pauses a shared app for the organization at its cap only, and not for a past month", async () => {
     await AppCapService.setMonthlyCap(ctx(acme, acmeOwner), {
       appRowId: openseo,
-      cap: 1,
+      costUsd: 1,
     });
     await spend(acme, openseo, 1);
     await spend(globex, openseo, 5);
@@ -152,13 +157,13 @@ describe("paused apps on the launcher (SQLite)", () => {
     // Last month's count against this month's cap pauses nothing.
     await AppCapService.setMonthlyCap(ctx(globex, globexOwner), {
       appRowId: openseo,
-      cap: 1,
+      costUsd: 1,
     });
     const lastMonth = new Date();
     lastMonth.setUTCMonth(lastMonth.getUTCMonth() - 1, 15);
     await AppCapService.setMonthlyCap(ctx(acme, acmeOwner), {
       appRowId: todo,
-      cap: 1,
+      costUsd: 1,
     });
     await spend(acme, todo, 3, lastMonth);
     await expect(pausedFor(acme, acmeOwner)).resolves.toMatchObject({

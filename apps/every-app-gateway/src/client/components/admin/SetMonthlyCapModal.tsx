@@ -16,28 +16,22 @@ import {
 import { Field, FieldLabel } from "@/client/components/ui/field";
 import { RadioGroup, RadioGroupItem } from "@/client/components/ui/radio-group";
 import { getServerErrorMessage } from "@/client/errors";
-import {
-  formatCostCap,
-  formatCostMicros,
-  formatCount,
-} from "@/client/lib/usage";
+import { formatCostCap, formatCostMicros } from "@/client/lib/usage";
 import { setAppMonthlyCap } from "@/serverFunctions/usage";
 import type { UsageAppRow } from "@/types/usage";
 import { CapDialogDescription } from "./CapDialogDescription";
 import {
-  CAP_MAX,
-  CAP_MIN,
   COST_CAP_HELP,
   COST_CAP_MAX_USD,
   COST_CAP_MIN_USD,
-  checkCapFields,
+  checkCostCapField,
   costCapFieldValue,
-  fieldNumber,
+  fieldDollars,
 } from "./capField";
 
 /**
- * What binds the app once a workspace default exists: the defaults (no
- * row of its own), nothing at all (its row says unlimited), or caps of
+ * What binds the app once a workspace default exists: the default (no
+ * row of its own), nothing at all (its row says unlimited), or a cap of
  * its own.
  */
 type CapMode = "default" | "none" | "custom";
@@ -45,51 +39,35 @@ type CapMode = "default" | "none" | "custom";
 const setMonthlyCapSchema = z
   .object({
     mode: z.enum(["default", "none", "custom"]),
-    cap: z.string(),
     costUsd: z.string(),
   })
   .superRefine((value, ctx) => {
-    if (value.mode === "custom") checkCapFields(value, ctx);
+    if (value.mode === "custom") checkCostCapField(value, ctx);
   });
 
 interface SetMonthlyCapModalProps {
   app: UsageAppRow;
-  /** The workspace default call cap, or null. */
-  defaultCap: number | null;
-  /** The workspace default dollar cap in micro-dollars, or null. */
+  /** The workspace default cap in micro-dollars, or null. */
   defaultCostCapMicros: number | null;
-  /** The row is the current UTC month's: its calls count toward the cap. */
+  /** The row is the current UTC month's: its cost counts toward the cap. */
   isCurrentMonth: boolean;
   onClose: () => void;
   /** After a cap was set or cleared: the usage view reloads. */
   onSaved: () => void;
 }
 
-/** "1,000 calls", "$20.00", or both: what a pair of caps says in a label or a toast. */
-function capsWords(cap: number | null, costMicros: number | null): string {
-  return [
-    cap === null ? null : `${formatCount(cap)} calls`,
-    costMicros === null ? null : formatCostCap(costMicros),
-  ]
-    .filter(Boolean)
-    .join(" or ");
-}
-
 /**
- * Sets or clears the organization's monthly caps on an app's provider
- * calls: a number of calls, dollars of provider-reported cost, or both
- * (the app is paused at whichever it reaches first). With a workspace
- * default (of either kind), the choice is the defaults, no cap, or caps
- * of the app's own, where a field left empty follows the default of its
- * kind; without one, the two fields and Remove cap. Opened from Raise on
- * a paused app, it starts on caps of its own prefilled with what binds
- * today, the defaults included: the raise is an override for this app,
- * and the defaults themselves are changed in their own row. Render it
- * only while it is open.
+ * Sets or clears the organization's monthly cap in dollars of
+ * provider-reported cost on an app's provider calls. With a workspace
+ * default, the choice is the default, no cap, or a cap of the app's own;
+ * without one, the field and Remove cap. Opened from Raise on a paused
+ * app, it starts on a cap of its own prefilled with what binds today, the
+ * default included: the raise is an override for this app, and the
+ * default itself is changed in its own row. Render it only while it is
+ * open.
  */
 export function SetMonthlyCapModal({
   app,
-  defaultCap,
   defaultCostCapMicros,
   isCurrentMonth,
   onClose,
@@ -99,34 +77,26 @@ export function SetMonthlyCapModal({
   const [isRemoving, setIsRemoving] = useState(false);
   const id = useId();
   const name = app.name ?? app.appRowId;
-  const hasDefault = defaultCap !== null || defaultCostCapMicros !== null;
-  const hasOwnCap =
-    app.monthlyCallCap !== null || app.monthlyCostCapMicros !== null;
+  const hasDefault = defaultCostCapMicros !== null;
+  const hasOwnCap = app.monthlyCostCapMicros !== null;
   // `paused` is only ever true for the current month.
   const raising = app.paused;
 
-  const save = async (
-    caps: { cap: number | null; costUsd: number | null },
-    unlimited = false,
-  ) => {
+  const save = async (costUsd: number | null, unlimited = false) => {
     setError(null);
     try {
       await setAppMonthlyCap({
         data: {
           appRowId: app.appRowId,
-          ...caps,
+          costUsd,
           ...(unlimited && { unlimited }),
         },
       });
-      const own = capsWords(
-        caps.cap,
-        caps.costUsd === null ? null : Math.round(caps.costUsd * 1_000_000),
-      );
       toast.success(
-        own
-          ? `${name} is capped at ${own} a month`
-          : !unlimited && hasDefault
-            ? `${name} uses the workspace default of ${capsWords(defaultCap, defaultCostCapMicros)} a month`
+        costUsd !== null
+          ? `${name} is capped at ${formatCostCap(Math.round(costUsd * 1_000_000))} a month`
+          : !unlimited && defaultCostCapMicros !== null
+            ? `${name} uses the workspace default of ${formatCostCap(defaultCostCapMicros)} a month`
             : `${name} has no monthly cap`,
       );
       onSaved();
@@ -143,13 +113,6 @@ export function SetMonthlyCapModal({
         : app.capUnlimited
           ? "none"
           : "default") as CapMode,
-      cap: raising
-        ? app.effectiveMonthlyCallCap === null
-          ? ""
-          : String(app.effectiveMonthlyCallCap)
-        : app.monthlyCallCap === null
-          ? ""
-          : String(app.monthlyCallCap),
       costUsd: costCapFieldValue(
         raising ? app.effectiveMonthlyCostCapMicros : app.monthlyCostCapMicros,
       ),
@@ -157,22 +120,16 @@ export function SetMonthlyCapModal({
     validationLogic: revalidateLogic(),
     validators: { onDynamic: setMonthlyCapSchema },
     onSubmit: async ({ value }) => {
-      if (value.mode === "default") await save({ cap: null, costUsd: null });
-      else if (value.mode === "none") {
-        await save({ cap: null, costUsd: null }, true);
-      } else {
-        await save({
-          cap: fieldNumber(value.cap),
-          costUsd: fieldNumber(value.costUsd),
-        });
-      }
+      if (value.mode === "default") await save(null);
+      else if (value.mode === "none") await save(null, true);
+      else await save(fieldDollars(value.costUsd));
     },
   });
 
   const remove = async () => {
     setIsRemoving(true);
     try {
-      await save({ cap: null, costUsd: null });
+      await save(null);
     } finally {
       setIsRemoving(false);
     }
@@ -181,53 +138,34 @@ export function SetMonthlyCapModal({
   // How far into the month the app is: only for the current month, since a
   // past month's count says nothing about it.
   const soFar = isCurrentMonth
-    ? `${formatCount(app.calls)} so far this month.`
+    ? `${formatCostMicros(app.costMicros)} so far this month.`
     : undefined;
-  const costSoFar = isCurrentMonth
-    ? ` ${formatCostMicros(app.costMicros)} so far this month.`
-    : "";
 
   const options: { value: CapMode; label: string }[] = [
     {
       value: "default",
-      label: `Workspace default (${capsWords(defaultCap, defaultCostCapMicros)})`,
+      label: `Workspace default (${formatCostCap(defaultCostCapMicros ?? 0)})`,
     },
     { value: "none", label: "No cap" },
     { value: "custom", label: "Custom cap" },
   ];
 
-  const capFields = (
-    <div className="flex flex-col gap-3">
-      <form.AppField name="cap">
-        {(field) => (
-          <field.TextField
-            label="Calls per month"
-            description={soFar}
-            type="number"
-            inputMode="numeric"
-            min={CAP_MIN}
-            max={CAP_MAX}
-            step={1}
-            placeholder="5000"
-            autoFocus
-          />
-        )}
-      </form.AppField>
-      <form.AppField name="costUsd">
-        {(field) => (
-          <field.TextField
-            label="or dollars per month"
-            description={`${COST_CAP_HELP}${costSoFar}`}
-            type="number"
-            inputMode="decimal"
-            min={COST_CAP_MIN_USD}
-            max={COST_CAP_MAX_USD}
-            step={0.01}
-            placeholder="20"
-          />
-        )}
-      </form.AppField>
-    </div>
+  const capField = (
+    <form.AppField name="costUsd">
+      {(field) => (
+        <field.TextField
+          label="Dollars per month"
+          description={soFar ? `${COST_CAP_HELP} ${soFar}` : COST_CAP_HELP}
+          type="number"
+          inputMode="decimal"
+          min={COST_CAP_MIN_USD}
+          max={COST_CAP_MAX_USD}
+          step={0.01}
+          placeholder="20"
+          autoFocus
+        />
+      )}
+    </form.AppField>
   );
 
   return (
@@ -280,20 +218,14 @@ export function SetMonthlyCapModal({
               {(mode) =>
                 mode === "custom" ? (
                   <div className={hasDefault ? "pl-6" : undefined}>
-                    {capFields}
-                    {hasDefault ? (
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        A field left empty follows the workspace default.
-                      </p>
-                    ) : null}
+                    {capField}
                   </div>
                 ) : soFar ? (
                   <p className="text-xs text-muted-foreground">{soFar}</p>
                 ) : null
               }
             </form.Subscribe>
-            {raising &&
-            (app.capSource === "default" || app.costCapSource === "default") ? (
+            {raising && app.costCapSource === "default" ? (
               <p className="text-xs text-muted-foreground">
                 The default itself is changed in the Default monthly cap row.
               </p>

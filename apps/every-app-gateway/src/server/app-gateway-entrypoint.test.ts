@@ -1342,13 +1342,13 @@ describe("the cap standing reaches the bus after the answer", () => {
     const tasks: Promise<unknown>[] = [];
     // Never resolves: a handler that awaited it would hang this test.
     const onCap = vi.fn(() => new Promise<void>(() => undefined));
-    let calls = 8;
+    let costMicros = 8_000_000;
     const caps: AppCapSources = {
-      effectiveMonthlyCaps: async () => ({
-        calls: { cap: 10, source: "app" as const },
-        cost: { cap: null, source: null },
+      effectiveMonthlyCap: async () => ({
+        cap: 10_000_000,
+        source: "app" as const,
       }),
-      monthlyUsage: async () => ({ calls, costMicros: 0 }),
+      monthlyCostMicros: async () => costMicros,
     };
     const options = {
       registeredApps: [app({ rowId: "row-chef" })],
@@ -1365,13 +1365,12 @@ describe("the cap standing reaches the bus after the answer", () => {
       "row-chef",
       expect.objectContaining({
         exceeded: false,
-        calls: 8,
-        caps: [{ kind: "calls", cap: 10, used: 8, source: "app" }],
+        standing: { cap: 10_000_000, used: 8_000_000, source: "app" },
       }),
     );
     expect(tasks).toHaveLength(1);
 
-    calls = 10;
+    costMicros = 10_000_000;
     const capped = await call(options);
     expect(capped.status).toBe(429);
     expect(onCap).toHaveBeenLastCalledWith(
@@ -1379,24 +1378,23 @@ describe("the cap standing reaches the bus after the answer", () => {
       "row-chef",
       expect.objectContaining({
         exceeded: true,
-        calls: 10,
-        reached: { kind: "calls", cap: 10, used: 10, source: "app" },
+        standing: { cap: 10_000_000, used: 10_000_000, source: "app" },
       }),
     );
     expect(tasks).toHaveLength(2);
   });
 
-  it("refuses at the dollar cap with 429, saying dollars and the default", async () => {
+  it("refuses at the cap with 429, saying dollars and the default", async () => {
     clearAppCapCache();
     const onCap = vi.fn(async () => undefined);
     const response = await call({
       registeredApps: [app({ rowId: "row-chef" })],
       caps: {
-        effectiveMonthlyCaps: async () => ({
-          calls: { cap: 1000, source: "app" as const },
-          cost: { cap: 20_000_000, source: "default" as const },
+        effectiveMonthlyCap: async () => ({
+          cap: 20_000_000,
+          source: "default" as const,
         }),
-        monthlyUsage: async () => ({ calls: 12, costMicros: 20_000_001 }),
+        monthlyCostMicros: async () => 20_000_001,
       },
       onCap,
       waitUntil: () => undefined,
@@ -1414,7 +1412,7 @@ describe("the cap standing reaches the bus after the answer", () => {
       "row-chef",
       expect.objectContaining({
         exceeded: true,
-        reached: expect.objectContaining({ kind: "cost" }),
+        standing: expect.objectContaining({ source: "default" }),
       }),
     );
   });
@@ -1425,11 +1423,8 @@ describe("the cap standing reaches the bus after the answer", () => {
     const response = await call({
       registeredApps: [app({ rowId: "row-chef" })],
       caps: {
-        effectiveMonthlyCaps: async () => ({
-          calls: { cap: null, source: null },
-          cost: { cap: null, source: null },
-        }),
-        monthlyUsage: async () => ({ calls: 0, costMicros: 0 }),
+        effectiveMonthlyCap: async () => ({ cap: null, source: null }),
+        monthlyCostMicros: async () => 0,
       },
       onCap,
       waitUntil: () => undefined,

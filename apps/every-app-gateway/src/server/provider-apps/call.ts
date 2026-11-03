@@ -91,15 +91,15 @@ export async function providerCall(
   // is not counted.
   const cap = await checkMonthlyCap(
     {
-      effectiveMonthlyCaps: OrgAppSettingsRepository.getEffectiveMonthlyCaps,
-      monthlyUsage: UsageRepository.monthlyUsage,
+      effectiveMonthlyCap: OrgAppSettingsRepository.getEffectiveMonthlyCap,
+      monthlyCostMicros: UsageRepository.monthlyCostMicros,
     },
     app.organizationId,
     app.rowId,
   );
   // The standing goes to the event bus after the answer (cap.warning,
   // cap.reached, app.paused_cap), as the AppGateway entrypoint reports it.
-  if (cap.caps !== undefined) {
+  if (cap.standing !== undefined) {
     waitUntil(
       noteCapCheck(app.organizationId, app.rowId, cap).catch((error: unknown) =>
         logEvent(

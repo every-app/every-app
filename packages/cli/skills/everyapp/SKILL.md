@@ -224,8 +224,9 @@ MCP apps: everyapp mcp on dataforseo --json   offers a data provider's
          on|off still run mcp on|off through launch week; provider list is the
          API providers' list. You, owners and admins get it;
          others are granted in Admin → Apps → Manage access. An owner or admin
-         caps an app's provider calls per month in Admin → Usage (off by
-         default): past it a provider tool answers a tool error naming the
+         caps an app's provider-reported cost in dollars per month in Admin →
+         Usage (off by default; only OpenRouter and DataForSEO report a
+         price): past it a provider tool answers a tool error naming the
          cap, and an app's brokered call gets 429 app_monthly_cap_exceeded
          until the next UTC month.
 APIs:    everyapp provider add stripe.json --json   registers an API

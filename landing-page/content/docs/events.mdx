@@ -17,7 +17,7 @@ The address must be public `https://`. `cap.*` means every cap event; leave `--e
 
 ## Post to Slack
 
-In Slack's Workflow Builder (paid plans), start a workflow **From a webhook**, add a text variable `summary`, add a **Send a message to a channel** step with `{{summary}}`, publish, and add Slack's webhook address here. Each event arrives as one line, like "crm is at 80% of its monthly cap (800 of 1,000)".
+In Slack's Workflow Builder (paid plans), start a workflow **From a webhook**, add a text variable `summary`, add a **Send a message to a channel** step with `{{summary}}`, publish, and add Slack's webhook address here. Each event arrives as one line, like "crm is at 80% of its monthly cap ($16.00 of $20.00)".
 
 A classic Slack incoming webhook (`https://hooks.slack.com/services/...`) won't work directly. Put Zapier, n8n or Make in between and post the `summary` field.
 

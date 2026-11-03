@@ -554,15 +554,15 @@ async function callTool(
   // upstream, as for a built-in provider app.
   const cap = await checkMonthlyCap(
     {
-      effectiveMonthlyCaps: OrgAppSettingsRepository.getEffectiveMonthlyCaps,
-      monthlyUsage: UsageRepository.monthlyUsage,
+      effectiveMonthlyCap: OrgAppSettingsRepository.getEffectiveMonthlyCap,
+      monthlyCostMicros: UsageRepository.monthlyCostMicros,
     },
     route.organizationId,
     route.rowId,
   );
   // The standing goes to the event bus after the answer (cap.warning,
   // cap.reached, app.paused_cap), as for a built-in provider app.
-  if (cap.caps !== undefined) {
+  if (cap.standing !== undefined) {
     waitUntil(
       noteCapCheck(route.organizationId, route.rowId, cap).catch(
         (error: unknown) =>

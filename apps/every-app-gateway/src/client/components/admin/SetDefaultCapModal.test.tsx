@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 /**
- * The default cap dialog rendered for real: a number that becomes the
+ * The default cap dialog rendered for real: dollars that become the
  * workspace default, Remove default once one exists, and the shared
  * description.
  */
@@ -9,7 +9,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  setDefaultMonthlyCap: vi.fn(async () => ({ defaultMonthlyCallCap: null })),
+  setDefaultMonthlyCap: vi.fn(async () => ({
+    defaultMonthlyCostCapMicros: null,
+  })),
 }));
 vi.mock("@/serverFunctions/usage", () => ({
   setDefaultMonthlyCap: mocks.setDefaultMonthlyCap,
@@ -41,14 +43,10 @@ afterEach(() => {
   container.remove();
 });
 
-function render(
-  defaultCap: number | null,
-  defaultCostCapMicros: number | null = null,
-) {
+function render(defaultCostCapMicros: number | null) {
   act(() =>
     root.render(
       <SetDefaultCapModal
-        defaultCap={defaultCap}
         defaultCostCapMicros={defaultCostCapMicros}
         onClose={onClose}
         onSaved={onSaved}
@@ -67,7 +65,7 @@ function button(label: string): HTMLButtonElement {
   return found;
 }
 
-function capInput(name = "cap"): HTMLInputElement {
+function capInput(name = "costUsd"): HTMLInputElement {
   const input = document.body.querySelector<HTMLInputElement>(
     `input[name="${name}"]`,
   );
@@ -112,50 +110,41 @@ function sent() {
 it("sets a default from an empty field, with no Remove default yet", async () => {
   render(null);
   expect(text()).toContain("Default monthly cap");
+  expect(text()).toContain(
+    "Dollars per month, for every app without its own cap",
+  );
+  expect(text()).toContain(
+    "Counted only where the provider reports a price: OpenRouter, DataForSEO. Other calls, such as OpenAI or Workers AI, aren't capped.",
+  );
   expect(capInput().value).toBe("");
   expect(text()).not.toContain("Remove default");
   await save();
   expect(sent()).toEqual([]);
-  expect(text()).toContain("Enter a number of calls, dollars, or both.");
-  await type(capInput(), "1000");
+  expect(text()).toContain("Enter dollars per month.");
+  await type(capInput(), "0");
   await save();
-  expect(sent()).toEqual([{ cap: 1000, costUsd: null }]);
+  expect(sent()).toEqual([]);
+  expect(text()).toContain("Enter an amount from $0.01 to $1,000,000.");
+  await type(capInput(), "25.50");
+  await save();
+  expect(sent()).toEqual([{ costUsd: 25.5 }]);
   expect(onSaved).toHaveBeenCalledOnce();
   expect(onClose).toHaveBeenCalledOnce();
 });
 
-it("starts on the default it has and removes it with a null cap", async () => {
-  render(1000);
-  expect(capInput().value).toBe("1000");
+it("starts on the default it has and removes it with null", async () => {
+  render(20_000_000);
+  expect(capInput().value).toBe("20");
   await act(async () => {
     button("Remove default").click();
   });
   await settle();
-  expect(sent()).toEqual([{ cap: null, costUsd: null }]);
-});
-
-it("sets a dollar default beside the call default, and offers Remove default for a dollar default alone", async () => {
-  render(null, 20_000_000);
-  expect(capInput().value).toBe("");
-  expect(capInput("costUsd").value).toBe("20");
-  expect(text()).toContain("or dollars per month");
-  expect(text()).toContain(
-    "Counted only where the provider reports a price: OpenRouter, DataForSEO.",
-  );
-  expect(text()).toContain("Remove default");
-  await type(capInput("costUsd"), "0");
-  await save();
-  expect(sent()).toEqual([]);
-  expect(text()).toContain("Enter an amount from $0.01 to $1,000,000.");
-  await type(capInput("costUsd"), "25.50");
-  await type(capInput(), "500");
-  await save();
-  expect(sent()).toEqual([{ cap: 500, costUsd: 25.5 }]);
+  expect(sent()).toEqual([{ costUsd: null }]);
 });
 
 it("shares the cap description, says who is emailed, and links the docs", () => {
   render(null);
-  expect(text()).toContain("Provider calls per UTC month");
+  expect(text()).toContain("Dollars of provider-reported cost per UTC month");
   expect(text()).toContain(
     "Owners and admins are emailed at 80% and at the cap once the Gateway can send mail; change that under Manage workspace → Events.",
   );

@@ -77,6 +77,7 @@ import { clearAppCapCache } from "@/server/app-cap";
 import { clearCapEventMemoryForTests } from "@/server/events/cap-events";
 import { clearEventSubjectCachesForTests } from "@/server/events/subjects";
 import { resetRegistrationLimitsForTests } from "@/server/mcp-auth/registration-limit";
+import { UsageRepository } from "@/server/repositories/UsageRepository";
 import { McpAppService } from "@/server/services/McpAppService";
 import { UserPatService } from "@/server/services/UserPatService";
 import { resetAppHostMcpForTests } from "@/server/toolbus/app-host-mcp";
@@ -759,21 +760,36 @@ describe("a remote MCP app on the gateway's /mcp", () => {
     expect(JSON.stringify(call)).not.toContain("evil.example");
   });
 
+  // A remote server reports no price, so the row's cost this month is
+  // seeded here: what a cap reads, whoever counted it.
+  const spend = (costMicros: number) =>
+    UsageRepository.record({
+      organizationId: orgId,
+      appRowId: rowId,
+      userId: "",
+      kind: "capability",
+      target: "treg",
+      calls: 1,
+      costMicros,
+      status: 200,
+    });
+
   it("checks the organization's monthly cap before forwarding", async () => {
     await db.insert(orgAppSettings).values({
       organizationId: orgId,
       appRowId: rowId,
-      monthlyCallCap: 1,
+      monthlyCostCapMicros: 1_000_000,
       updatedAt: new Date(),
       updatedBy: ownerId,
     });
     const token = await pat(ownerId);
     const first = await callTool(token, "treg_get_user", { id: "u1" });
     expect(first.result?.isError).toBeUndefined();
+    await spend(1_000_000);
     const second = await callTool(token, "treg_get_user", { id: "u2" });
     expect(second.result?.isError).toBe(true);
     expect(second.result?.content[0]?.text).toMatch(
-      /monthly cap of 1 provider calls/,
+      /monthly cap of \$1\.00 of provider-reported cost/,
     );
     expect(
       seen.filter((request) => request.body["method"] === "tools/call"),
@@ -795,7 +811,7 @@ describe("a remote MCP app on the gateway's /mcp", () => {
     await db.insert(orgAppSettings).values({
       organizationId: orgId,
       appRowId: rowId,
-      monthlyCallCap: 5,
+      monthlyCostCapMicros: 5_000_000,
       updatedAt: new Date(),
       updatedBy: ownerId,
     });
@@ -809,32 +825,33 @@ describe("a remote MCP app on the gateway's /mcp", () => {
           type: event.type,
           data: JSON.parse(event.data) as Record<string, unknown>,
         }));
-    // Four calls stand under 80% of five when they're checked.
-    for (const id of ["u1", "u2", "u3", "u4"]) {
-      const call = await callTool(token, "treg_get_user", { id });
-      expect(call.result?.isError).toBeUndefined();
-    }
+    // Under 80% of $5 when checked: forwarded, nothing to say.
+    await spend(3_000_000);
+    const first = await callTool(token, "treg_get_user", { id: "u1" });
+    expect(first.result?.isError).toBeUndefined();
     expect(await capEvents()).toEqual([]);
-    // The fifth is checked at four of five: forwarded, and warned.
-    const fifth = await callTool(token, "treg_get_user", { id: "u5" });
-    expect(fifth.result?.isError).toBeUndefined();
+    // Checked at $4 of $5: forwarded, and warned.
+    await spend(1_000_000);
+    const second = await callTool(token, "treg_get_user", { id: "u2" });
+    expect(second.result?.isError).toBeUndefined();
     expect(await capEvents()).toEqual([
       {
         type: "cap.warning",
         data: expect.objectContaining({
           app: expect.objectContaining({ id: "treg", rowId }),
-          cap: 5,
-          calls: 4,
+          costCap: 5,
+          cost: 4,
           threshold: 80,
           source: "app",
         }),
       },
     ]);
-    // The sixth and seventh are refused at the cap: reached and paused, once.
+    // At the cap, two calls are refused: reached and paused, once.
+    await spend(1_000_000);
     for (const id of ["u6", "u7"]) {
       const call = await callTool(token, "treg_get_user", { id });
       expect(call.result?.content[0]?.text).toMatch(
-        /monthly cap of 5 provider calls/,
+        /monthly cap of \$5\.00 of provider-reported cost/,
       );
     }
     clearCapEventMemoryForTests();
@@ -846,7 +863,7 @@ describe("a remote MCP app on the gateway's /mcp", () => {
       "app.paused_cap",
     ]);
     expect((await capEvents())[1]!.data).toEqual(
-      expect.objectContaining({ cap: 5, calls: 5, source: "app" }),
+      expect.objectContaining({ costCap: 5, cost: 5, source: "app" }),
     );
   });
 

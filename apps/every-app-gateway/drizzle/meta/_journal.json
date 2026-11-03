@@ -169,6 +169,13 @@
       "when": 1793671500300,
       "tag": "0025_oauth_per_app_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1793686571121,
+      "tag": "0026_caps_dollars_only",
+      "breakpoints": true
     }
   ]
 }

@@ -35,22 +35,17 @@ export function formatCostMicros(micros: number): string {
   return `$${dollars.toFixed(dollars < 1 ? 4 : 2)}`;
 }
 
-/** How far into a monthly cap an app is: "1,240 of 5,000". */
-export function formatCapProgress(calls: number, cap: number): string {
-  return `${formatCount(calls)} of ${formatCount(cap)}`;
-}
-
 const dollars = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
 });
 
-/** A dollar cap kept in USD millionths, in dollars and cents: "$1,250.00". */
+/** A cap kept in USD millionths, in dollars and cents: "$1,250.00". */
 export function formatCostCap(micros: number): string {
   return dollars.format(micros / 1_000_000);
 }
 
-/** How far into a monthly dollar cap an app is: "$4.20 of $20.00". */
+/** How far into a monthly cap an app is: "$4.20 of $20.00". */
 export function formatCostCapProgress(micros: number, cap: number): string {
   return `${formatCostCap(micros)} of ${formatCostCap(cap)}`;
 }

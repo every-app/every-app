@@ -47,8 +47,6 @@ vi.mock("@/server/services/AppCapService", () => ({
     setDefaultMonthlyCap: (...args: unknown[]) =>
       mocks.setDefaultMonthlyCap(...args),
   },
-  MONTHLY_CALL_CAP_MIN: 1,
-  MONTHLY_CALL_CAP_MAX: 1_000_000_000,
   MONTHLY_COST_CAP_MIN_USD: 0.01,
   MONTHLY_COST_CAP_MAX_USD: 1_000_000,
 }));
@@ -70,11 +68,13 @@ const getUsageServerFn = getUsage as unknown as ServerFnBuilder<{
 const setAppMonthlyCapServerFn =
   setAppMonthlyCap as unknown as ServerFnBuilder<{
     appRowId: string;
-    cap: number | null;
+    costUsd?: number | null;
     unlimited?: boolean;
   }>;
 const setDefaultMonthlyCapServerFn =
-  setDefaultMonthlyCap as unknown as ServerFnBuilder<{ cap: number | null }>;
+  setDefaultMonthlyCap as unknown as ServerFnBuilder<{
+    costUsd: number | null;
+  }>;
 
 const org = { orgId: "org-1", userId: "admin-1", role: "admin" };
 
@@ -104,7 +104,7 @@ describe("getUsage server function", () => {
   it("summarizes the active organization's month, never a requested one", async () => {
     const summary = {
       month: "2026-10",
-      defaultMonthlyCallCap: 1_000,
+      defaultMonthlyCostCapMicros: 20_000_000,
       byApp: [],
       byMember: [],
       byTarget: [],
@@ -135,80 +135,67 @@ describe("setAppMonthlyCap server function", () => {
     ]);
   });
 
-  it("takes a whole cap from 1 to a billion, null to inherit the default, or null and unlimited", () => {
+  it("takes dollars from a cent to a million, null to inherit the default, or null and unlimited", () => {
     const validate = setAppMonthlyCapServerFn.validatorFn;
-    expect(validate({ appRowId: "app-1", cap: 5000 })).toEqual({
-      appRowId: "app-1",
-      cap: 5000,
-    });
-    expect(validate({ appRowId: "app-1", cap: 1 })).toEqual({
-      appRowId: "app-1",
-      cap: 1,
-    });
-    expect(validate({ appRowId: "app-1", cap: 1_000_000_000 })).toEqual({
-      appRowId: "app-1",
-      cap: 1_000_000_000,
-    });
-    expect(validate({ appRowId: "app-1", cap: null })).toEqual({
-      appRowId: "app-1",
-      cap: null,
-    });
-    expect(validate({ appRowId: "app-1", cap: null, unlimited: true })).toEqual(
-      { appRowId: "app-1", cap: null, unlimited: true },
-    );
-    expect(validate({ appRowId: "app-1", cap: 5, unlimited: false })).toEqual({
-      appRowId: "app-1",
-      cap: 5,
-      unlimited: false,
-    });
-    for (const cap of [0, -1, 1.5, 1_000_000_001, "5000", NaN]) {
-      expect(() => validate({ appRowId: "app-1", cap })).toThrow();
-    }
-    // Dollars beside it, or alone: a cent to a million, or null.
     expect(validate({ appRowId: "app-1", costUsd: 12.5 })).toEqual({
       appRowId: "app-1",
       costUsd: 12.5,
     });
-    expect(validate({ appRowId: "app-1", cap: 100, costUsd: null })).toEqual({
+    expect(validate({ appRowId: "app-1", costUsd: 0.01 })).toEqual({
       appRowId: "app-1",
-      cap: 100,
+      costUsd: 0.01,
+    });
+    expect(validate({ appRowId: "app-1", costUsd: 1_000_000 })).toEqual({
+      appRowId: "app-1",
+      costUsd: 1_000_000,
+    });
+    expect(validate({ appRowId: "app-1", costUsd: null })).toEqual({
+      appRowId: "app-1",
       costUsd: null,
     });
+    expect(
+      validate({ appRowId: "app-1", costUsd: null, unlimited: true }),
+    ).toEqual({ appRowId: "app-1", costUsd: null, unlimited: true });
+    expect(
+      validate({ appRowId: "app-1", costUsd: 5, unlimited: false }),
+    ).toEqual({ appRowId: "app-1", costUsd: 5, unlimited: false });
     for (const costUsd of [0, -1, 0.001, 1_000_000.5, "20", NaN]) {
       expect(() => validate({ appRowId: "app-1", costUsd })).toThrow();
     }
+    // A call cap is no field: it is dropped, and the service refuses a
+    // call that names nothing.
+    expect(validate({ appRowId: "app-1", cap: 5000 })).toEqual({
+      appRowId: "app-1",
+    });
     expect(() =>
       validate({ appRowId: "app-1", costUsd: 5, unlimited: true }),
     ).toThrow("An app has a cap or no cap, not both");
-    expect(() => validate({ appRowId: "", cap: 10 })).toThrow(
+    expect(() => validate({ appRowId: "", costUsd: 10 })).toThrow(
       "App is required",
     );
     expect(() =>
-      validate({ appRowId: "app-1", cap: 10, unlimited: true }),
-    ).toThrow("An app has a cap or no cap, not both");
-    expect(() =>
-      validate({ appRowId: "app-1", cap: null, unlimited: "yes" }),
+      validate({ appRowId: "app-1", costUsd: null, unlimited: "yes" }),
     ).toThrow();
   });
 
   it("sets the cap for the active organization through the service", async () => {
     const state = {
       appRowId: "app-1",
-      monthlyCallCap: 5000,
+      monthlyCostCapMicros: 20_000_000,
       capUnlimited: false,
-      effectiveMonthlyCallCap: 5000,
-      capSource: "app",
+      effectiveMonthlyCostCapMicros: 20_000_000,
+      costCapSource: "app",
     };
     mocks.setMonthlyCap.mockResolvedValue(state);
     await expect(
       setAppMonthlyCapServerFn.serverHandler({
-        data: { appRowId: "app-1", cap: 5000 },
+        data: { appRowId: "app-1", costUsd: 20 },
         context: { org },
       }),
     ).resolves.toEqual(state);
     expect(mocks.setMonthlyCap).toHaveBeenCalledWith(org, {
       appRowId: "app-1",
-      cap: 5000,
+      costUsd: 20,
     });
   });
 });
@@ -225,35 +212,28 @@ describe("setDefaultMonthlyCap server function", () => {
     ]);
   });
 
-  it("takes a whole cap from 1 to a billion, or null to clear the default", () => {
+  it("takes dollars from a cent to a million, or null to clear the default", () => {
     const validate = setDefaultMonthlyCapServerFn.validatorFn;
-    expect(validate({ cap: 1_000 })).toEqual({ cap: 1_000 });
-    expect(validate({ cap: null })).toEqual({ cap: null });
-    for (const cap of [0, -1, 1.5, 1_000_000_001, "1000", NaN]) {
-      expect(() => validate({ cap })).toThrow();
-    }
     expect(validate({ costUsd: 20 })).toEqual({ costUsd: 20 });
-    expect(validate({ cap: null, costUsd: null })).toEqual({
-      cap: null,
-      costUsd: null,
-    });
-    for (const costUsd of [0, 0.001, 2_000_000, "20"]) {
+    expect(validate({ costUsd: null })).toEqual({ costUsd: null });
+    for (const costUsd of [0, 0.001, 2_000_000, "20", undefined]) {
       expect(() => validate({ costUsd })).toThrow();
     }
+    expect(() => validate({ cap: 1_000 })).toThrow();
   });
 
   it("sets the default for the active organization through the service", async () => {
     mocks.setDefaultMonthlyCap.mockResolvedValue({
-      defaultMonthlyCallCap: 1_000,
+      defaultMonthlyCostCapMicros: 20_000_000,
     });
     await expect(
       setDefaultMonthlyCapServerFn.serverHandler({
-        data: { cap: 1_000 },
+        data: { costUsd: 20 },
         context: { org },
       }),
-    ).resolves.toEqual({ defaultMonthlyCallCap: 1_000 });
+    ).resolves.toEqual({ defaultMonthlyCostCapMicros: 20_000_000 });
     expect(mocks.setDefaultMonthlyCap).toHaveBeenCalledWith(org, {
-      cap: 1_000,
+      costUsd: 20,
     });
   });
 });

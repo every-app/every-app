@@ -2,41 +2,34 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { orgSettings } from "@/db/schema";
 
-/** The organization's default monthly caps on every app: calls, and micro-dollars of reported cost. */
-interface DefaultCaps {
-  cap: number | null;
-  costCapMicros: number | null;
-}
-
-/** The organization's default monthly caps on every app's provider calls, null for none. */
-async function getDefaultMonthlyCaps(
+/**
+ * The organization's default monthly cap on every app's provider calls, in
+ * micro-dollars of reported cost; null for none.
+ */
+async function getDefaultMonthlyCap(
   organizationId: string,
-): Promise<DefaultCaps> {
+): Promise<number | null> {
   const [row] = await db
-    .select({
-      cap: orgSettings.defaultMonthlyCallCap,
-      costCapMicros: orgSettings.defaultMonthlyCostCapMicros,
-    })
+    .select({ costCapMicros: orgSettings.defaultMonthlyCostCapMicros })
     .from(orgSettings)
     .where(eq(orgSettings.organizationId, organizationId))
     .limit(1);
-  return { cap: row?.cap ?? null, costCapMicros: row?.costCapMicros ?? null };
+  return row?.costCapMicros ?? null;
 }
 
 /**
- * Set or clear both default caps. The row stays when it still holds the
- * default model provider or models; with nothing left in it, it is deleted.
+ * Set or clear the default cap. The row stays when it still holds the
+ * default model provider, models or linked dev; with nothing left in it,
+ * it is deleted.
  */
-async function setDefaultMonthlyCaps(input: {
+async function setDefaultMonthlyCap(input: {
   organizationId: string;
-  cap: number | null;
   costCapMicros: number | null;
   updatedBy: string;
 }): Promise<void> {
-  const { organizationId, cap, costCapMicros, updatedBy } = input;
+  const { organizationId, costCapMicros, updatedBy } = input;
   const updatedAt = new Date();
   const set = {
-    defaultMonthlyCallCap: cap,
     defaultMonthlyCostCapMicros: costCapMicros,
     updatedAt,
     updatedBy,
@@ -125,7 +118,6 @@ async function setLinkedDev(input: {
 async function dropEmptyRow(organizationId: string): Promise<void> {
   const [row] = await db
     .select({
-      cap: orgSettings.defaultMonthlyCallCap,
       costCap: orgSettings.defaultMonthlyCostCapMicros,
       aiDefault: orgSettings.aiDefault,
       aiModels: orgSettings.aiModels,
@@ -136,7 +128,6 @@ async function dropEmptyRow(organizationId: string): Promise<void> {
     .limit(1);
   if (
     row &&
-    row.cap === null &&
     row.costCap === null &&
     row.aiDefault === null &&
     row.aiModels === null &&
@@ -149,8 +140,8 @@ async function dropEmptyRow(organizationId: string): Promise<void> {
 }
 
 export const OrgSettingsRepository = {
-  getDefaultMonthlyCaps,
-  setDefaultMonthlyCaps,
+  getDefaultMonthlyCap,
+  setDefaultMonthlyCap,
   getAiSettings,
   setAiSettings,
   isLinkedDevOn,

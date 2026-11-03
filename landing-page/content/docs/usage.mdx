@@ -1,6 +1,6 @@
 ---
 title: Usage and caps
-description: See what your apps spend on AI and data providers, cap them per month, and get an email when a cap is near.
+description: See what your apps spend on AI and data providers, cap them in dollars per month, and get an email when a cap is near.
 ---
 
 Apps that use AI or a data provider like DataForSEO make those calls through your Gateway, and the Gateway counts them per app. Open **Manage workspace** at the bottom of the sidebar, then **Usage** (owners and admins).
@@ -14,14 +14,13 @@ Your provider still bills you directly; their invoice is the real bill. Calls an
 
 ## Cap an app
 
-In the **Monthly cap** column, select **Set cap** and enter calls, dollars, or both. Or:
+In the **Monthly cap** column, select **Set cap** and enter dollars. Or:
 
 ```bash
-everyapp workspace app cap <app> 1000
-everyapp workspace app cap <app> --usd 20
+everyapp workspace app cap <app> 20
 ```
 
-`off` removes a cap. Caps reset each calendar month (UTC). A dollar cap only counts providers that report a price, so pair it with a call cap if an app also uses OpenAI or Workers AI.
+`off` removes a cap. Caps reset each calendar month (UTC). A cap only counts providers that report a price (OpenRouter and DataForSEO), so calls to OpenAI or Workers AI never move it.
 
 When an app reaches a cap, its AI and provider calls stop until next month or until you select **Raise**. The app still opens and shows its data. A burst of calls can run slightly past the cap.
 
@@ -30,7 +29,7 @@ When an app reaches a cap, its AI and provider calls stop until next month or un
 **Default monthly cap**, above the table, caps every app without its own cap, including apps you add later:
 
 ```bash
-everyapp workspace cap default 1000 --usd 20
+everyapp workspace cap default 20
 ```
 
 To exempt one app, select **Edit** in its row and choose **No cap**.

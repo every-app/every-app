@@ -376,7 +376,7 @@ describe("deleteApp", () => {
       INSERT INTO mcp_connections (id, user_id, organization_id, client_id, client_name, redirect_uri, redirect_host, app_scope, access, created_at)
         VALUES ('conn-1', 'member', '${organizationId}', 'c', 'Claude', 'https://claude.ai/cb', 'claude.ai', 'selected', 'read', 0);
       INSERT INTO mcp_connection_apps (connection_id, app_row_id) VALUES ('conn-1', '${appRowId}');
-      INSERT INTO org_app_settings (organization_id, app_row_id, monthly_call_cap, updated_at) VALUES ('${organizationId}', '${appRowId}', 500, 0);
+      INSERT INTO org_app_settings (organization_id, app_row_id, monthly_cost_cap_micros, updated_at) VALUES ('${organizationId}', '${appRowId}', 5000000, 0);
     `);
   }
   const appData = () => ({
@@ -386,7 +386,7 @@ describe("deleteApp", () => {
     catalogs: sqlite.all("SELECT app_row_id FROM app_tool_catalogs"),
     tools: sqlite.all("SELECT name FROM app_tools"),
     connections: sqlite.all("SELECT connection_id FROM mcp_connection_apps"),
-    caps: sqlite.all("SELECT monthly_call_cap FROM org_app_settings"),
+    caps: sqlite.all("SELECT monthly_cost_cap_micros FROM org_app_settings"),
   });
   const nothing = {
     access: [],

@@ -306,15 +306,11 @@ describe("UsageRepository (SQLite)", () => {
           outputTokens: 2,
           costMicros: 1_200,
           toolCalls: 2,
-          monthlyCallCap: null,
           capUnlimited: false,
-          effectiveMonthlyCallCap: null,
-          capSource: null,
           monthlyCostCapMicros: null,
           effectiveMonthlyCostCapMicros: null,
           costCapSource: null,
           paused: false,
-          pausedBy: null,
           callable: true,
         },
         {
@@ -327,15 +323,11 @@ describe("UsageRepository (SQLite)", () => {
           outputTokens: 0,
           costMicros: 0,
           toolCalls: 0,
-          monthlyCallCap: null,
           capUnlimited: false,
-          effectiveMonthlyCallCap: null,
-          capSource: null,
           monthlyCostCapMicros: null,
           effectiveMonthlyCostCapMicros: null,
           costCapSource: null,
           paused: false,
-          pausedBy: null,
           callable: false,
         },
       ]);
@@ -485,14 +477,14 @@ describe("UsageRepository (SQLite)", () => {
         {
           organizationId: acme,
           appRowId: "app-chef",
-          monthlyCallCap: 5_000,
+          monthlyCostCapMicros: 50_000_000,
           updatedAt: AT,
           updatedBy: owner,
         },
         {
           organizationId: acme,
           appRowId: "app-quiet",
-          monthlyCallCap: 10,
+          monthlyCostCapMicros: 10_000_000,
           updatedAt: AT,
           updatedBy: owner,
         },
@@ -500,7 +492,7 @@ describe("UsageRepository (SQLite)", () => {
         {
           organizationId: other,
           appRowId: "app-chef",
-          monthlyCallCap: 1,
+          monthlyCostCapMicros: 1_000_000,
           updatedAt: AT,
           updatedBy: null,
         },
@@ -514,7 +506,7 @@ describe("UsageRepository (SQLite)", () => {
         expect.objectContaining({
           appRowId: "app-chef",
           calls: 1,
-          monthlyCallCap: 5_000,
+          monthlyCostCapMicros: 50_000_000,
         }),
         {
           appRowId: "app-quiet",
@@ -526,29 +518,25 @@ describe("UsageRepository (SQLite)", () => {
           outputTokens: 0,
           costMicros: 0,
           toolCalls: 0,
-          monthlyCallCap: 10,
           capUnlimited: false,
-          effectiveMonthlyCallCap: 10,
-          capSource: "app",
-          monthlyCostCapMicros: null,
-          effectiveMonthlyCostCapMicros: null,
-          costCapSource: null,
+          monthlyCostCapMicros: 10_000_000,
+          effectiveMonthlyCostCapMicros: 10_000_000,
+          costCapSource: "app",
           paused: false,
-          pausedBy: null,
           callable: true,
         },
       ]);
-      expect(summary.defaultMonthlyCallCap).toBeNull();
+      expect(summary.defaultMonthlyCostCapMicros).toBeNull();
       // Caps are not the month's: a past month shows the same cap.
       const past = await UsageRepository.summarize({
         organizationId: acme,
         month: "2026-09",
       });
       expect(
-        past.byApp.map((row) => [row.appRowId, row.monthlyCallCap]),
+        past.byApp.map((row) => [row.appRowId, row.monthlyCostCapMicros]),
       ).toEqual([
-        ["app-chef", 5_000],
-        ["app-quiet", 10],
+        ["app-chef", 50_000_000],
+        ["app-quiet", 10_000_000],
       ]);
     });
 
@@ -586,7 +574,7 @@ describe("UsageRepository (SQLite)", () => {
       await db.insert(orgAppSettings).values({
         organizationId: acme,
         appRowId: "app-openseo",
-        monthlyCallCap: 300,
+        monthlyCostCapMicros: 300_000_000,
         updatedAt: AT,
         updatedBy: owner,
       });
@@ -600,12 +588,12 @@ describe("UsageRepository (SQLite)", () => {
         summary.byApp.map((row) => [
           row.appRowId,
           row.calls,
-          row.monthlyCallCap,
+          row.monthlyCostCapMicros,
           row.callable,
         ]),
       ).toEqual([
         ["app-chef", 1, null, true],
-        ["app-openseo", 0, 300, true],
+        ["app-openseo", 0, 300_000_000, true],
         ["app-quiet", 0, null, true],
       ]);
       // Nothing of the other tables: the zero rows are not usage.
@@ -637,7 +625,7 @@ describe("UsageRepository (SQLite)", () => {
       await db.insert(orgAppSettings).values({
         organizationId: acme,
         appRowId: "app-old",
-        monthlyCallCap: 100,
+        monthlyCostCapMicros: 100_000_000,
         updatedAt: AT,
         updatedBy: owner,
       });
@@ -660,7 +648,7 @@ describe("UsageRepository (SQLite)", () => {
           appRowId: "app-old",
           name: "Old",
           calls: 1,
-          monthlyCallCap: null,
+          monthlyCostCapMicros: null,
           callable: false,
         }),
         expect.objectContaining({ appRowId: "app-chef", callable: true }),
@@ -686,56 +674,53 @@ describe("UsageRepository (SQLite)", () => {
       ]);
       await db.insert(orgSettings).values({
         organizationId: acme,
-        defaultMonthlyCallCap: 2,
+        defaultMonthlyCostCapMicros: 2_000_000,
         updatedAt: AT,
         updatedBy: owner,
       });
       await db.insert(orgAppSettings).values({
         organizationId: acme,
         appRowId: "app-free",
-        monthlyCallCap: null,
+        monthlyCostCapMicros: null,
         unlimited: true,
         updatedAt: AT,
         updatedBy: owner,
       });
       // Chef, under the default, has spent it; Free is unlimited; Quiet
-      // is under the default with nothing spent.
-      await UsageRepository.record(event({ organizationId: acme, at: AT }));
-      await UsageRepository.record(event({ organizationId: acme, at: AT }));
-      await UsageRepository.record(
-        event({ organizationId: acme, appRowId: "app-free", at: AT }),
-      );
-      await UsageRepository.record(
-        event({ organizationId: acme, appRowId: "app-free", at: AT }),
-      );
-      await UsageRepository.record(
-        event({ organizationId: acme, appRowId: "app-free", at: AT }),
-      );
+      // is under the default with nothing spent. A dollar a call.
+      const dollar = { organizationId: acme, at: AT, costMicros: 1_000_000 };
+      await UsageRepository.record(event(dollar));
+      await UsageRepository.record(event(dollar));
+      for (let i = 0; i < 3; i += 1) {
+        await UsageRepository.record(
+          event({ ...dollar, appRowId: "app-free" }),
+        );
+      }
       const summary = await UsageRepository.summarize({
         organizationId: acme,
         month: "2026-10",
         now: AT,
       });
-      expect(summary.defaultMonthlyCallCap).toBe(2);
+      expect(summary.defaultMonthlyCostCapMicros).toBe(2_000_000);
       expect(
         summary.byApp.map((row) => [
           row.appRowId,
-          row.monthlyCallCap,
+          row.monthlyCostCapMicros,
           row.capUnlimited,
-          row.effectiveMonthlyCallCap,
-          row.capSource,
+          row.effectiveMonthlyCostCapMicros,
+          row.costCapSource,
           row.paused,
         ]),
       ).toEqual([
         ["app-free", null, true, null, null, false],
-        ["app-chef", null, false, 2, "default", true],
-        ["app-quiet", null, false, 2, "default", false],
+        ["app-chef", null, false, 2_000_000, "default", true],
+        ["app-quiet", null, false, 2_000_000, "default", false],
       ]);
-      // Its own cap over the default, and over the count.
+      // Its own cap over the default, and over the spend.
       await db.insert(orgAppSettings).values({
         organizationId: acme,
         appRowId: "app-chef",
-        monthlyCallCap: 5,
+        monthlyCostCapMicros: 5_000_000,
         unlimited: false,
         updatedAt: AT,
         updatedBy: owner,
@@ -748,9 +733,9 @@ describe("UsageRepository (SQLite)", () => {
       expect(
         own.byApp.find((row) => row.appRowId === "app-chef"),
       ).toMatchObject({
-        monthlyCallCap: 5,
-        effectiveMonthlyCallCap: 5,
-        capSource: "app",
+        monthlyCostCapMicros: 5_000_000,
+        effectiveMonthlyCostCapMicros: 5_000_000,
+        costCapSource: "app",
         paused: false,
       });
       // A past month's count against today's cap says nothing.
@@ -762,7 +747,10 @@ describe("UsageRepository (SQLite)", () => {
       expect(past.byApp.every((row) => !row.paused)).toBe(true);
       expect(
         past.byApp.find((row) => row.appRowId === "app-quiet"),
-      ).toMatchObject({ effectiveMonthlyCallCap: 2, capSource: "default" });
+      ).toMatchObject({
+        effectiveMonthlyCostCapMicros: 2_000_000,
+        costCapSource: "default",
+      });
     });
 
     it("lists the apps the organization has paused this month, in one batch", async () => {
@@ -786,7 +774,7 @@ describe("UsageRepository (SQLite)", () => {
       ]);
       await db.insert(orgSettings).values({
         organizationId: acme,
-        defaultMonthlyCallCap: 1,
+        defaultMonthlyCostCapMicros: 1_000_000,
         updatedAt: AT,
         updatedBy: owner,
       });
@@ -794,7 +782,7 @@ describe("UsageRepository (SQLite)", () => {
         {
           organizationId: acme,
           appRowId: "app-free",
-          monthlyCallCap: null,
+          monthlyCostCapMicros: null,
           unlimited: true,
           updatedAt: AT,
           updatedBy: owner,
@@ -802,7 +790,7 @@ describe("UsageRepository (SQLite)", () => {
         {
           organizationId: acme,
           appRowId: "app-shared",
-          monthlyCallCap: 2,
+          monthlyCostCapMicros: 2_000_000,
           unlimited: false,
           updatedAt: AT,
           updatedBy: owner,
@@ -818,12 +806,17 @@ describe("UsageRepository (SQLite)", () => {
         "app-unlisted",
       ]) {
         await UsageRepository.record(
-          event({ organizationId: acme, appRowId, at: AT }),
+          event({ organizationId: acme, appRowId, at: AT, costMicros: 1e6 }),
         );
       }
       // The platform organization's own use of the shared app is not acme's.
       await UsageRepository.record(
-        event({ organizationId: platform, appRowId: "app-shared", at: AT }),
+        event({
+          organizationId: platform,
+          appRowId: "app-shared",
+          at: AT,
+          costMicros: 1e6,
+        }),
       );
       const ids = ["app-chef", "app-free", "app-shared", "app-none"];
       expect([...(await UsageRepository.pausedApps(acme, ids, AT))]).toEqual([
@@ -843,7 +836,7 @@ describe("UsageRepository (SQLite)", () => {
       expect([...(await UsageRepository.pausedApps(acme, [], AT))]).toEqual([]);
     });
 
-    it("reads the month's calls and reported cost for the caps from the one monthly row", async () => {
+    it("reads the month's reported cost for the caps from the one monthly row", async () => {
       await UsageRepository.record(
         event({ organizationId: acme, at: AT, costMicros: 1_250 }),
       );
@@ -860,21 +853,28 @@ describe("UsageRepository (SQLite)", () => {
           at: new Date("2026-09-30T23:59:59.000Z"),
         }),
       );
+      await UsageRepository.record(
+        event({
+          organizationId: acme,
+          at: new Date("2026-09-30T23:59:59.000Z"),
+          costMicros: 5,
+        }),
+      );
       await expect(
-        UsageRepository.monthlyUsage(acme, "app-chef", "2026-10"),
-      ).resolves.toEqual({ calls: 2, costMicros: 2_000 });
+        UsageRepository.monthlyCostMicros(acme, "app-chef", "2026-10"),
+      ).resolves.toBe(2_000);
       await expect(
-        UsageRepository.monthlyUsage(acme, "app-chef", "2026-09"),
-      ).resolves.toEqual({ calls: 1, costMicros: 0 });
+        UsageRepository.monthlyCostMicros(acme, "app-chef", "2026-09"),
+      ).resolves.toBe(5);
       await expect(
-        UsageRepository.monthlyUsage(acme, "app-chef", "2026-08"),
-      ).resolves.toEqual({ calls: 0, costMicros: 0 });
+        UsageRepository.monthlyCostMicros(acme, "app-chef", "2026-08"),
+      ).resolves.toBe(0);
       await expect(
-        UsageRepository.monthlyUsage("org-other", "app-chef", "2026-10"),
-      ).resolves.toEqual({ calls: 0, costMicros: 0 });
+        UsageRepository.monthlyCostMicros("org-other", "app-chef", "2026-10"),
+      ).resolves.toBe(0);
     });
 
-    it("pauses an app at a dollar cap, its own or the default, on reported cost alone", async () => {
+    it("pauses an app at its cap, its own or the default, on reported cost alone", async () => {
       await db.insert(apps).values({
         id: "app-free",
         organizationId: acme,
@@ -891,7 +891,6 @@ describe("UsageRepository (SQLite)", () => {
       await db.insert(orgAppSettings).values({
         organizationId: acme,
         appRowId: "app-free",
-        monthlyCallCap: 1_000,
         monthlyCostCapMicros: 50_000,
         unlimited: false,
         updatedAt: AT,
@@ -921,9 +920,7 @@ describe("UsageRepository (SQLite)", () => {
           own: row.monthlyCostCapMicros,
           binds: row.effectiveMonthlyCostCapMicros,
           from: row.costCapSource,
-          calls: row.effectiveMonthlyCallCap,
           paused: row.paused,
-          by: row.pausedBy,
         })),
       ).toEqual([
         {
@@ -931,18 +928,14 @@ describe("UsageRepository (SQLite)", () => {
           own: null,
           binds: 10_000,
           from: "default",
-          calls: null,
           paused: true,
-          by: "cost",
         },
         {
           app: "app-free",
           own: 50_000,
           binds: 50_000,
           from: "app",
-          calls: 1_000,
           paused: false,
-          by: null,
         },
       ]);
     });
@@ -955,7 +948,6 @@ describe("UsageRepository (SQLite)", () => {
       });
       expect(other).toEqual({
         month: "2026-10",
-        defaultMonthlyCallCap: null,
         defaultMonthlyCostCapMicros: null,
         byApp: [],
 

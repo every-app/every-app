@@ -659,23 +659,23 @@ async function main() {
     }
   }
 
-  // Monthly caps (Manage workspace → Usage): a workspace default of 1,000
-  // for every app without a row; OpenSEO well under its own cap, the
-  // provider app under a small one, the CRM unlimited whatever the
+  // Monthly caps in dollars (Manage workspace → Usage): a workspace
+  // default of $2 for every app without a row; OpenSEO well under its own
+  // $50, the provider app under $1, the CRM unlimited whatever the
   // default, and the inbox with no row of its own past the default (the
   // gateway refuses its calls and the launcher says Paused: the cap check
-  // reads the usage_monthly rows written below).
+  // reads the usage_monthly rows written below). Micro-dollars.
   await run(
-    "INSERT INTO org_settings (organization_id, default_monthly_call_cap, updated_at, updated_by) VALUES (?, ?, ?, ?)",
-    [orgA, 1_000, ago(2 * DAY), ownerId],
+    "INSERT INTO org_settings (organization_id, default_monthly_cost_cap_micros, updated_at, updated_by) VALUES (?, ?, ?, ?)",
+    [orgA, 2_000_000, ago(2 * DAY), ownerId],
   );
   for (const [app, cap, unlimited, by] of [
-    [appId("openseo"), 5_000, 0, ownerId],
-    [appId("provider-dataforseo"), 500, 0, ownerId],
+    [appId("openseo"), 50_000_000, 0, ownerId],
+    [appId("provider-dataforseo"), 1_000_000, 0, ownerId],
     [appId("crm"), null, 1, "seed-user-admin"],
   ]) {
     await run(
-      "INSERT INTO org_app_settings (organization_id, app_row_id, monthly_call_cap, unlimited, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO org_app_settings (organization_id, app_row_id, monthly_cost_cap_micros, unlimited, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)",
       [orgA, app, cap, unlimited, ago(DAY), by],
     );
   }
@@ -880,7 +880,17 @@ async function main() {
       31_000,
       0,
     ],
-    [appId("inbox"), "", "ai", "workers-ai", 1_204, 12, 5_400_000, 910_000, 0],
+    [
+      appId("inbox"),
+      "",
+      "ai",
+      "openrouter",
+      1_204,
+      12,
+      5_400_000,
+      910_000,
+      2_100_000,
+    ],
     [appId("inbox"), ownerId, "capability", "email", 37, 0, 0, 0, 0],
     [appId("crm"), "seed-user-admin", "ai", "openai", 15, 0, 48_000, 9_200, 0],
     [appId("crm"), "seed-user-gone", "ai", "openai", 4, 4, 1_000, 0, 0],
@@ -1398,12 +1408,11 @@ async function seedEvents({ orgA, ownerId, ownerName }) {
       gateway,
       {
         app: inbox,
-        kind: "calls",
-        cap: 1000,
-        calls: 800,
+        costCap: 2,
+        cost: 1.6,
         month,
         threshold: 80,
-        source: "app",
+        source: "default",
       },
     ],
     [
@@ -1413,11 +1422,10 @@ async function seedEvents({ orgA, ownerId, ownerName }) {
       gateway,
       {
         app: inbox,
-        kind: "calls",
-        cap: 1000,
-        calls: 1000,
+        costCap: 2,
+        cost: 2,
         month,
-        source: "app",
+        source: "default",
       },
     ],
     [
@@ -1427,11 +1435,10 @@ async function seedEvents({ orgA, ownerId, ownerName }) {
       gateway,
       {
         app: inbox,
-        kind: "calls",
-        cap: 1000,
-        calls: 1000,
+        costCap: 2,
+        cost: 2,
         month,
-        source: "app",
+        source: "default",
       },
     ],
     [

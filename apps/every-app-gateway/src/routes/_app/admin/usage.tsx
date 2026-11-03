@@ -25,12 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/client/components/ui/select";
-import {
-  formatCostCap,
-  formatCount,
-  monthLabel,
-  monthOptions,
-} from "@/client/lib/usage";
+import { formatCostCap, monthLabel, monthOptions } from "@/client/lib/usage";
 import { getAiDefault } from "@/serverFunctions/ai";
 import { getUsage } from "@/serverFunctions/usage";
 import type { UsageAppRow } from "@/types/usage";
@@ -68,16 +63,8 @@ function UsagePage() {
     queryFn: () => getUsage({ data: { month } }),
   });
   const summary = usageQuery.data;
-  const defaultCap = summary?.defaultMonthlyCallCap ?? null;
   const defaultCostCap = summary?.defaultMonthlyCostCapMicros ?? null;
-  const hasDefault = defaultCap !== null || defaultCostCap !== null;
-  // The default row's words: "1,000 provider calls", "$20.00", or both.
-  const defaultWords = [
-    defaultCap === null ? null : `${formatCount(defaultCap)} provider calls`,
-    defaultCostCap === null ? null : formatCostCap(defaultCostCap),
-  ]
-    .filter(Boolean)
-    .join(" or ");
+  const hasDefault = defaultCostCap !== null;
   // Nothing was counted in the month: By app still lists the apps the
   // organization can call (zeros, and the cap to set), the other tables
   // would be empty. With no apps either, the empty state alone.
@@ -171,8 +158,8 @@ function UsagePage() {
                 </p>
               </div>
               <div className="flex items-center gap-2 tabular-nums">
-                {hasDefault ? (
-                  <span>{defaultWords}</span>
+                {defaultCostCap !== null ? (
+                  <span>{formatCostCap(defaultCostCap)}</span>
                 ) : (
                   <span className="text-muted-foreground">Unlimited</span>
                 )}
@@ -230,7 +217,6 @@ function UsagePage() {
       {capApp ? (
         <SetMonthlyCapModal
           app={capApp}
-          defaultCap={defaultCap}
           defaultCostCapMicros={defaultCostCap}
           isCurrentMonth={isCurrentMonth}
           onClose={() => setCapApp(null)}
@@ -246,7 +232,6 @@ function UsagePage() {
       ) : null}
       {editingDefault ? (
         <SetDefaultCapModal
-          defaultCap={defaultCap}
           defaultCostCapMicros={defaultCostCap}
           onClose={() => setEditingDefault(false)}
           onSaved={onSaved}

@@ -6,7 +6,6 @@ import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import { Progress } from "@/client/components/ui/progress";
 import {
-  formatCapProgress,
   formatCostCap,
   formatCostCapProgress,
   formatCostMicros,
@@ -135,60 +134,14 @@ function toolCallsColumn<
   };
 }
 
-/** One cap that binds the app, as its cell shows it. */
-interface CapLine {
-  kind: "calls" | "cost";
-  cap: number;
-  used: number;
-  fromDefault: boolean;
-  /** "1,000" or "$20.00": the cap alone. */
-  capText: string;
-  /** "240 of 1,000" or "$4.20 of $20.00". */
-  progress: string;
-}
-
-/** The caps that bind the app, the call cap first. */
-function capLines(row: UsageAppRow): CapLine[] {
-  const lines: CapLine[] = [];
-  if (row.effectiveMonthlyCallCap !== null) {
-    const cap = row.effectiveMonthlyCallCap;
-    lines.push({
-      kind: "calls",
-      cap,
-      used: row.calls,
-      fromDefault: row.capSource === "default",
-      capText: formatCount(cap),
-      progress: formatCapProgress(row.calls, cap),
-    });
-  }
-  if (row.effectiveMonthlyCostCapMicros !== null) {
-    const cap = row.effectiveMonthlyCostCapMicros;
-    lines.push({
-      kind: "cost",
-      cap,
-      used: row.costMicros,
-      fromDefault: row.costCapSource === "default",
-      capText: formatCostCap(cap),
-      progress: formatCostCapProgress(row.costMicros, cap),
-    });
-  }
-  return lines;
-}
-
-/** What the Paused badge says paused the app. */
-const PAUSED_BY = { calls: "Paused by calls", cost: "Paused by dollars" };
-
 /**
- * The caps that bind the app this month and how far into each the app
- * is, or the caps alone for a past month (the counts are the current
- * month's): a call cap as a number, a dollar cap in dollars, each on its
- * own line, the workspace default's with " · default"; "No cap" for an
- * app told to ignore the defaults, "Unlimited" when nothing binds. A
- * paused app's line for the cap that paused it reads "Paused by calls ·
- * 1,000 of 1,000" (or "Paused by dollars · $20.00 of $20.00") in red with
- * a red bar, and its button is Raise. The button opens the cap dialog. An
- * app the organization can no longer call (deleted) has no cap and no
- * button.
+ * The cap that binds the app this month and how far into it the app is,
+ * or the cap alone for a past month (the counts are the current month's),
+ * the workspace default's with " · default"; "No cap" for an app told to
+ * ignore the default, "Unlimited" when nothing binds. A paused app reads
+ * "Paused · $20.00 of $20.00" in red with a red bar, and its button is
+ * Raise. The button opens the cap dialog. An app the organization can no
+ * longer call (deleted) has no cap and no button.
  */
 function MonthlyCapCell({
   row,
@@ -202,7 +155,7 @@ function MonthlyCapCell({
   onSetCap: (row: UsageAppRow) => void;
 }) {
   if (!row.callable) return null;
-  const lines = capLines(row);
+  const cap = row.effectiveMonthlyCostCapMicros;
   // The visible label and the verb a screen reader hears before "monthly
   // cap": "Set cap" reads as "Set monthly cap for Notes".
   const button = (label: string, verb = label) => (
@@ -216,7 +169,7 @@ function MonthlyCapCell({
       {label}
     </Button>
   );
-  if (lines.length === 0) {
+  if (cap === null) {
     // A "no cap" row only means something against a default; without one
     // it reads as the unlimited it is.
     const noCap = row.capUnlimited && hasDefault;
@@ -229,44 +182,32 @@ function MonthlyCapCell({
       </div>
     );
   }
-  const source = (line: CapLine) => (line.fromDefault ? " · default" : "");
+  const source = row.costCapSource === "default" ? " · default" : "";
   if (!isCurrentMonth) {
     return (
       <div className="flex items-center justify-end gap-2">
-        <div className="flex flex-col items-end">
-          {lines.map((line) => (
-            <span key={line.kind}>
-              {line.capText}
-              {source(line)}
-            </span>
-          ))}
-        </div>
+        <span>
+          {formatCostCap(cap)}
+          {source}
+        </span>
         {button("Edit")}
       </div>
     );
   }
+  const progress = formatCostCapProgress(row.costMicros, cap);
   return (
     <div className="flex items-center justify-end gap-2">
       <div className="flex flex-col items-end gap-1">
-        {lines.map((line) => {
-          const paused = row.pausedBy === line.kind;
-          return (
-            <div key={line.kind} className="flex flex-col items-end gap-1">
-              <span className={paused ? "text-destructive" : undefined}>
-                {paused
-                  ? `${PAUSED_BY[line.kind]} · ${line.progress}`
-                  : `${line.progress}${source(line)}`}
-              </span>
-              <Progress
-                value={Math.min(line.used, line.cap)}
-                max={line.cap}
-                aria-label={`${row.name ?? row.appRowId}: ${line.progress} ${line.kind === "cost" ? "of provider-reported cost" : "provider calls"} this month`}
-                className="w-28"
-                indicatorClassName={paused ? "bg-destructive" : undefined}
-              />
-            </div>
-          );
-        })}
+        <span className={row.paused ? "text-destructive" : undefined}>
+          {row.paused ? `Paused · ${progress}` : `${progress}${source}`}
+        </span>
+        <Progress
+          value={Math.min(row.costMicros, cap)}
+          max={cap}
+          aria-label={`${row.name ?? row.appRowId}: ${progress} of provider-reported cost this month`}
+          className="w-28"
+          indicatorClassName={row.paused ? "bg-destructive" : undefined}
+        />
       </div>
       {button(row.paused ? "Raise" : "Edit")}
     </div>
@@ -297,7 +238,7 @@ function buildAppColumns({
     {
       id: "monthlyCap",
       accessorFn: (row) =>
-        row.effectiveMonthlyCallCap ?? Number.POSITIVE_INFINITY,
+        row.effectiveMonthlyCostCapMicros ?? Number.POSITIVE_INFINITY,
       header: ({ column }) => (
         <SortableHeader column={column} label="Monthly cap" />
       ),

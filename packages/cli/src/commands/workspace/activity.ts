@@ -69,7 +69,7 @@ export async function connectionRevoke(flags: WorkspaceFlags, id: string): Promi
 const n = (value: number) => value.toLocaleString("en-US");
 /** Millionths of a US dollar as dollars: "$0.0123". */
 const dollars = (micros: number) => (micros === 0 ? chalk.dim("–") : `$${(micros / 1_000_000).toFixed(4)}`);
-/** A dollar cap: dollars and cents. */
+/** A cap: dollars and cents. */
 const usd = (micros: number) =>
   `$${(micros / 1_000_000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -79,26 +79,14 @@ export async function reportUsage(options: WorkspaceOptions<WorkspaceFlags & { m
   const { ws } = await connect(options);
   const month = flags.month ?? workspace.utcMonth(new Date(ws.now));
   const summary = await workspace.usage(ws, month);
-  // The caps that bind the app (calls, dollars), where each comes from,
-  // and which one paused it.
+  // The cap that binds the app, where it comes from, and whether it paused it.
   const capCell = (row: (typeof summary.byApp)[number]): string => {
     if (!row.callable) return chalk.dim("removed");
     if (row.capUnlimited) return chalk.dim("none (unlimited)");
-    const parts = [
-      row.effectiveMonthlyCallCap === null
-        ? null
-        : { kind: "calls", cap: n(row.effectiveMonthlyCallCap), source: row.capSource },
-      row.effectiveMonthlyCostCapMicros === null
-        ? null
-        : { kind: "cost", cap: usd(row.effectiveMonthlyCostCapMicros), source: row.costCapSource },
-    ].filter((part) => part !== null);
-    if (parts.length === 0) return chalk.dim("none");
-    return parts
-      .map((part) => {
-        const bound = part.source === "default" ? `${part.cap} ${chalk.dim("(default)")}` : part.cap;
-        return row.pausedBy === part.kind ? `${bound} ${chalk.yellow("paused")}` : bound;
-      })
-      .join(" / ");
+    if (row.effectiveMonthlyCostCapMicros === null) return chalk.dim("none");
+    const cap = usd(row.effectiveMonthlyCostCapMicros);
+    const bound = row.costCapSource === "default" ? `${cap} ${chalk.dim("(default)")}` : cap;
+    return row.paused ? `${bound} ${chalk.yellow("paused")}` : bound;
   };
   const apps = formatTable(
     ["APP", "CALLS", "FAILED", "TOOL CALLS", "TOKENS IN/OUT", "COST", "CAP"],
@@ -138,14 +126,10 @@ export async function reportUsage(options: WorkspaceOptions<WorkspaceFlags & { m
   const toolCalls = summary.byApp.reduce((sum, row) => sum + row.toolCalls, 0);
   const paused = summary.byApp.filter((row) => row.paused).length;
   const headline = `${ws.organization.name}, ${month}: ${plural(calls, "provider call")} and ${plural(toolCalls, "tool call")} across ${plural(summary.byApp.length, "app")}${paused > 0 ? `, ${paused} paused` : ""}`;
-  const defaults = [
-    summary.defaultMonthlyCallCap === null ? null : `${n(summary.defaultMonthlyCallCap)} calls a month`,
-    summary.defaultMonthlyCostCapMicros === null ? null : `${usd(summary.defaultMonthlyCostCapMicros)} a month`,
-  ].filter((part) => part !== null);
   const defaultCap =
-    defaults.length === 0
+    summary.defaultMonthlyCostCapMicros === null
       ? "No workspace default cap."
-      : `Workspace default cap: ${defaults.join(" or ")} for every app without its own.`;
+      : `Workspace default cap: ${usd(summary.defaultMonthlyCostCapMicros)} a month for every app without its own.`;
   out.emit({
     type: "done",
     message: headline,
@@ -163,7 +147,7 @@ export async function reportUsage(options: WorkspaceOptions<WorkspaceFlags & { m
       ...(summary.byTarget.length > 0 ? targets : [chalk.dim("no calls")]),
       "",
       chalk.dim(
-        `Cap an app: ${CLI} workspace app cap <app> [<n|off>] [--usd <dollars|off>] [--unlimited]; the default: ${CLI} workspace cap default [<n|off>] [--usd <dollars|off>]`,
+        `Cap an app: ${CLI} workspace app cap <app> [<dollars|off>] [--unlimited]; the default: ${CLI} workspace cap default <dollars|off>`,
       ),
     ].join("\n"),
     data: { organization: ws.organization, ...summary },
