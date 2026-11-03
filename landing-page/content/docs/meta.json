@@ -18,6 +18,7 @@
     "connect-ai",
     "native-sign-in",
     "connect-oauth",
+    "google-personal-accounts",
     "events",
     "ai",
     "providers",

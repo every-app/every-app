@@ -1,0 +1,52 @@
+---
+title: Let personal Gmail accounts connect
+description: Switch your Google consent screen to External so @gmail.com accounts can connect, and choose between Testing mode and Google's verification.
+metaDescription: "Let people with personal @gmail.com accounts connect Gmail to your EveryApp apps: External audience, test users, the 7-day reconnect, and Google's verification."
+---
+
+By default, your Google consent screen may be **Internal**. Internal only lets accounts in your Google Workspace connect, and anyone else gets an `org_internal` error. Personal `@gmail.com` accounts are outside every Workspace, so they need **External**.
+
+This page assumes you've already added the Google provider. If not, start with [Google](/docs/providers/google#connect-accounts).
+
+## 1. Switch the audience to External
+
+1. Open the [Audience page](https://console.cloud.google.com/auth/audience) of the Cloud project that holds your Gateway's Google client.
+2. Under **User type**, select **Make external**, then **Testing**.
+
+Your existing client ID and secret keep working. There's nothing to change in EveryApp.
+
+## 2. Recommended: stay in Testing and add test users
+
+In Testing, only the people you list can connect. That's usually exactly what you want for a team.
+
+1. On the same [Audience page](https://console.cloud.google.com/auth/audience), under **Test users**, select **Add users**.
+2. Enter each person's Google address, `@gmail.com` or Workspace, and select **Save**. You can add up to **100**.
+
+Once you're External, add *everyone* who connects, including people in your own Workspace. Anyone not on the list is refused.
+
+When they connect, people see a **"Google hasn't verified this app"** screen. They select **Continue**. That's expected for an app you made for yourself.
+
+### Connections expire every 7 days
+
+In Testing, Google ends every connection 7 days after the person approved it. The only exception is connections that ask for nothing beyond name, email and profile, and Gmail always asks for more. Here's what that means:
+
+- After 7 days, apps can no longer reach that person's Gmail. Background work stops too: OpenMail's sync and draft writing pause.
+- The person sees **Reconnect** in the app, and in the account menu under **Connected accounts**. Selecting it and approving Google's screen again starts a new 7 days. Nothing is lost: apps pick up where they left off.
+- There's no way to extend this in Testing. If weekly reconnects are too much, see the next section.
+
+## 3. The other option: publish and get verified
+
+Gmail's read and modify scopes (`gmail.readonly`, `gmail.modify`, `gmail.compose`) are **restricted** scopes, and `gmail.send` is **sensitive**. To let anyone connect without test users and without expiry, you need to:
+
+- **Publish the app** (Audience → **Publish app**). Until Google verifies it, people still see the unverified-app screen, and the project can only ever have 100 users in total. That cap can't be reset.
+- **Pass Google's verification.** You need:
+  - a home page and a privacy policy on a domain you own;
+  - a demo video of the consent flow;
+  - a written reason for each scope.
+
+  Review takes weeks, by email.
+- **Pass a security assessment (CASA) every year**, because restricted Gmail data reaches your servers. A third-party assessor does it. Google quotes roughly $500 to $4,500 a year, depending on the app.
+
+Most self-hosted teams don't want this. Stay in Testing unless you need more than 100 people or can't live with weekly reconnects.
+
+If everyone is in one Google Workspace, keeping the audience **Internal** avoids all of this. Internal needs no test users, no verification and no 7-day expiry.
