@@ -96,29 +96,33 @@ an older version of the script left (and `vendor/README.md`), copies `starter/.g
 `--npm` takes an exact version or a caret range (`^0.3.0-rc.10`, what
 `everyapp create` writes); `--no-install` skips the install.
 
-## Unreleased platform code in an app (`--vendor`)
+## Unreleased platform code in an app: `pnpm link`, never vendor
 
-To dogfood a platform branch in an app before a release carries it:
+**Never vendor the SDK or the CLI into an app.** No `vendor/` tarballs and no
+`file:` or `link:` specifiers in a committed `package.json`. An app always
+pins a published version (`--npm` above). Ben's rule, 2026-11-02.
+
+To try a platform branch in an app on your machine, link the checkout's
+packages. This is local only:
 
 ```sh
-pnpm pack-for-app ../workout --vendor
+cd ../private-every-app && pnpm install
+pnpm -C packages/sdk build && pnpm -C packages/cli build   # the SDK first: the CLI bundles it
+cd ../workout
+pnpm link ../private-every-app/packages/sdk ../private-every-app/packages/cli
 ```
 
-instead of `--npm`. It packs this checkout's HEAD (uncommitted changes are
-left out, with a warning): `git archive HEAD` into a temporary directory,
-`pnpm install --frozen-lockfile --ignore-scripts` filtered to the SDK and
-the CLI, both builds, `pnpm pack`, then the two tarballs into the app's
-`vendor/` as `everyapp-<version>-<commit>.tgz` and
-`every-app-sdk-<version>-<commit>.tgz`, `file:vendor/…` in `package.json`,
-and `vendor/README.md` naming the commit and branch. When the app's
-`.gitignore` would hide the tarballs it gains `!vendor/*.tgz`. Commit
-`vendor/` with `package.json` and `pnpm-lock.yaml` so a clone installs.
-Running it again replaces the tarballs with the new HEAD's.
+`pnpm link` writes a `link:` override into the app's `pnpm-workspace.yaml`
+and changes `pnpm-lock.yaml`. **Don't commit either.** Rebuild the package
+after a platform edit; the link picks it up. To go back:
 
-The way back is `--npm <version>` once a release has the code: it deletes
-the tarballs, `vendor/README.md` (and `vendor/` when that empties it) and
-the `!vendor/*.tgz` line. The vendored CLI runs `dev`, `db migrate` and
-`release`; deploys run from a checkout.
+```sh
+git checkout pnpm-workspace.yaml pnpm-lock.yaml && pnpm install
+```
+
+To ship it, publish an rc from the platform checkout (`pnpm publish:rc
+<version>`, `.github/RELEASE.md`), then pin it in the app with
+`pnpm pack-for-app <app> --npm <version>` and merge that.
 
 The app's default branch is what the workflow releases from. A repository
 whose default branch isn't `main` (OpenMail's is `everyapp` until it is
@@ -157,8 +161,9 @@ installs on a fresh account as it is.
 - **Vendored tarballs** were the launch-week default (2026-10-24, before
   anything was published): zero steps for anyone, but 560 KB of binaries
   per repository, refreshed by hand, and built from whatever the checkout
-  held, committed or not. Retired as the default on 2026-10-26; back on
-  2026-11-02 as `--vendor`, for unreleased code only, packed from HEAD.
+  held, committed or not. Retired on 2026-10-26, briefly back as
+  `--vendor` on 2026-11-02, and removed the same day: Ben ruled apps never
+  vendor; link locally, publish to ship.
 - **A git dependency on the platform repository**
   (`github:every-app/every-app#<sha>&path:/packages/sdk`): pnpm resolves it
   but ships only `package.json` and `README.md` (the package's `files` is

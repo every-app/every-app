@@ -2000,10 +2000,9 @@ Defaults taken in `fromMcpTools()` (SDK, `packages/sdk/src/server/fromMcpTools.t
   - [ ] Two new codes: `GITHUB_RUN_MISSING` (not in Actions, or no token) and `RELEASE_PUBLISH_FAILED` (retryable on 5xx/429).
   - [ ] `--publish` ships in the next rc. The four app repositories pinned to `0.3.0-rc.3` keep their 118-line workflow until their pin moves; then `pnpm pack-for-app <app> --npm <rc> --workflow` swaps it in.
   - [ ] `everyapp create` writes `.github/workflows/release.yml` into every app made outside the checkout (`starter/.github/workflows/release.yml` is now the one template, `pack-for-app --workflow` copies it). An app created inside the checkout (`apps/<name>`, `workspace:*`) gets none: it's not a repository of its own. Every other app, on npm ranges with a committed lockfile (#768), gets it.
-- **pack-for-app** (npm, and `--vendor` again since 2026-11-02). Defaults taken for Ben:
-  - [ ] ~~The vendor mode is gone~~ Back as `--vendor` (2026-11-02, Overnight F's dogfood note 1: dogfooding a branch meant OpenMail's hand recipe). It packs the checkout's HEAD only (uncommitted changes warned about, not packed) in a temporary `git archive` copy, names the tarballs `<package>-<version>-<commit>.tgz`, writes `vendor/README.md`, and adds `!vendor/*.tgz` to an app `.gitignore` that would hide them; `--npm` (now also a caret range, `^0.3.0-rc.10`) is the way back and takes that line out. The packages keep their checkout version (0.3.0), so `everyapp --version` doesn't name the commit. Alternatives: a `0.3.0-dev.<commit>` version in the packed copy; packing the working tree.
-  - [ ] `--npm` still deletes `vendor/everyapp-*.tgz`, `vendor/every-app-sdk-*.tgz` and `vendor/README.md` (and an emptied `vendor/`), so apps migrate off them.
-  - [ ] The historical records (launch doc, the "App releases (2026-10-24)" summary) still describe the tarballs as they were; only live guidance changed.
+- **pack-for-app** is `--npm` only. Ben, 2026-11-02: never vendor the SDK or CLI into an app. `--vendor` was removed; `pnpm link` locally, publish an rc to ship (AGENTS.md, docs/runbooks/app-releases.md).
+  - [ ] `--npm` still deletes leftover `vendor/` tarballs and the `!vendor/*.tgz` line, so apps migrate off them. Drop that cleanup once no app has a `vendor/`.
+  - [ ] Possible guard: `everyapp deploy`/`release` refuse a `file:` or `link:` specifier for `everyapp` or `@every-app/sdk`. Not built.
 
 ## Platform shortcuts (2026-10-26)/lane 3 binding shims
 
