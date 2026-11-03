@@ -704,7 +704,7 @@ export function markDeployed(
       const update = markDeployedUpdate(app, deployed);
       const events = await deployedEvents(db, app, deployed, update.deployedAt);
       // The app's own event subscription, as its manifest declares it now.
-      const subscription = await appSubscriptionStatements(db, app, deployed.manifest, {
+      const subscription = appSubscriptionStatements(app, deployed.manifest, {
         actor: deployed.actor,
         now: update.deployedAt,
       });
@@ -1093,7 +1093,7 @@ export async function deleteApp(
         params: [update.status, update.everyone ? 1 : 0, now, app.id],
       },
       ...withoutAppData(app, now, { secretNames: await hasSecretNamesColumn(db) }),
-      ...(await removeAppSubscription(db, app)),
+      ...removeAppSubscription(app),
       ...(await queueEventFromCli(db, {
         organizationId: app.organizationId,
         type: "app.removed",

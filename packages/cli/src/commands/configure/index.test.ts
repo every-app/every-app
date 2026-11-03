@@ -781,26 +781,6 @@ describe("configure from a script", () => {
   });
 });
 
-describe("the setup state configure records", () => {
-  const state = async () =>
-    ((await db().run([{ sql: "SELECT setup_state FROM apps WHERE app_slug = 'crm'" }]))[0] ?? [])[0]?.["setup_state"];
-  const types = async () =>
-    ((await db().run([{ sql: "SELECT type FROM events ORDER BY rowid" }]))[0] ?? []).map((row) => row["type"]);
-
-  it("records ready once configure sets what the app needed, with app.ready after the deploy's app.needs_setup", async () => {
-    await deploy(appDir(CRM), CRM);
-    expect(await state()).toBe("needs_setup");
-
-    await configureFrom({
-      appId: "crm",
-      stdin: "OPENROUTER_API_KEY=sk-or\nDATAFORSEO_API_KEY=login:password\nTOKEN_ENCRYPTION_KEY=tek\n",
-    });
-    expect(await state()).toBe("ready");
-    // Each destination's names once they are live (never a value), then the transition.
-    expect(await types()).toEqual(["app.installed", "app.needs_setup", "app.settings_changed", "app.settings_changed", "app.ready"]);
-  });
-});
-
 /** An app with plain settings: a URL and a number it needs, a region it may take. */
 const MC: EveryAppCliManifest = {
   id: "mc",

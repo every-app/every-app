@@ -127,6 +127,7 @@ describe("the workspace tool definitions", () => {
       "workspace_activity",
       "workspace_audit",
       "workspace_rename",
+      "workspace_linked_dev",
       "workspace_events",
       "workspace_events_add",
       "workspace_events_set",

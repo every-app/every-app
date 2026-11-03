@@ -62,7 +62,7 @@ The native sign-in branch already makes the Gateway's OAuth server issue tokens 
 
 The CLI's flow (`packages/cli/src/lib/linkedDev/`): discover `/.well-known/oauth-authorization-server`, register once per gateway (client id kept beside the token), bind a free loopback port, open the browser (`open`), exchange the code with PKCE, store `{ gateway, appId, clientId, refreshToken, accessToken, expiresAt }` in `~/.config/everyapp/linked-dev.json` (mode 0600, one entry per gateway + app). On a terminal with no browser it prints the URL. `everyapp dev unlink [--gateway]` revokes (RFC 7009) and forgets.
 
-Dynamic registration off on the gateway (`MCP_DCR_ENABLED=false`) means linked dev can't sign in: `LINKED_DEV_REGISTRATION_OFF`, with the switch named.
+Dynamic registration off on the gateway (`MCP_DCR_ENABLED=false`) means linked dev can't sign in: `OAUTH_REGISTRATION_OFF`, with the switch named.
 
 ### 4.2 Identity: the real person, the dev key
 

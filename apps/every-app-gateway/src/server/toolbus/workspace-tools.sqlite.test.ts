@@ -679,6 +679,7 @@ describe("an admin administering the workspace over /mcp", () => {
       organization: { id: organizationId, name: "acme", slug: "acme" },
       role: "admin",
       email: { configured: false },
+      linkedDev: "off",
       counts: { members: 3, pendingInvitations: 0, groups: 0, apps: 1 },
     });
   });
@@ -1341,6 +1342,28 @@ describe("an admin administering the workspace over /mcp", () => {
     expect(
       await refusal("everyapp_workspace_rename", { name: "a​b" }, admin()),
     ).toMatch(/^INVALID_ORGANIZATION_NAME: /);
+  });
+
+  it("reads and turns linked dev on and off, an event per change only", async () => {
+    expect(
+      (await data("everyapp_workspace_show", {}, admin()))["linkedDev"],
+    ).toBe("off");
+    expect(
+      await data("everyapp_workspace_linked_dev", { on: true }, admin()),
+    ).toEqual({ linkedDev: "on", changed: true });
+    expect(
+      (await data("everyapp_workspace_show", {}, admin()))["linkedDev"],
+    ).toBe("on");
+    expect(
+      await data("everyapp_workspace_linked_dev", { on: true }, admin()),
+    ).toEqual({ linkedDev: "on", changed: false });
+    expect(
+      await data("everyapp_workspace_linked_dev", { on: false }, admin()),
+    ).toEqual({ linkedDev: "off", changed: true });
+    const types = (await db.select().from(events)).map((row) => row.type);
+    expect(
+      types.filter((type) => type === "organization.linked_dev_changed"),
+    ).toHaveLength(2);
   });
 
   it("refuses an invitation to an address that isn't one, and past the organization's pending limit, as Better Auth's path does", async () => {

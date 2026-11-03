@@ -1,6 +1,6 @@
 # Agent parity: everything the UI can do, the CLI and MCP can do
 
-Status: built 2026-10-24 (launch week) as #614 (the MCP tools), #617 (the CLI), #610 (browser installs narrowed) and the docs PR that carries this document. The matrix at the end is a
+Status: built 2026-10-24 (launch week) as #614 (the MCP tools), #617 (the CLI), #610 (browser installs narrowed) and the docs PR that carries this document. Since 2026-11-02 (simplify/cli-admin-api) the CLI's admin commands are thin clients of the MCP tools, so CLI = MCP holds by construction; the sections below that describe the CLI's own SQL are superseded where they say so. The matrix at the end is a
 test fixture: `packages/cli/src/docs/parity.test.ts` reads it, so a new UI
 action without a CLI or MCP twin (or a written reason) fails CI.
 
@@ -16,16 +16,16 @@ and the apps."
 | Surface | Who acts | Authority | Audit |
 | --- | --- | --- | --- |
 | Gateway UI (Admin → Users, Groups, Apps, Tokens, Usage, Activity; AI connections; the account menu) | a signed-in person | their role in the active organization (owner, admin, member); server functions in `apps/every-app-gateway/src/serverFunctions/*.ts` gated by `organizationAdminMiddleware` (owner or admin; nothing is owner-only at the middleware since 2026-10-25) | `logEvent` lines |
-| CLI, `everyapp workspace …` | the operator: the Cloudflare login or API token that owns the Gateway's account | root (ADR-0003: write access to the Gateway's D1 is operator authority); the commands write D1 directly like `email set` and `provider on`, with the same guards the services hold (never the last owner; never an owner by an admin) written as SQL conditions | none in the Gateway (Cloudflare's audit log has the D1 writes); a workspace changes log is a follow-up |
+| CLI, `everyapp workspace …`, `events …`, `ai …`, `call` | the person, through the Gateway's own `/mcp` tools (`packages/cli/src/lib/gatewayApi`): `EVERYAPP_TOKEN` (a personal access token) or the OAuth sign-in `everyapp login --gateway` keeps | exactly the MCP row below: the same tools, the same services, the same role and access checks. The exceptions are `workspace reset-link` (the recovery link) and `workspace invite-link` (an invite link), written into D1 under the Cloudflare login, since the tools never return a link (ADR-0003, "What the CLI writes") | the MCP row's: one `mcp_tool_calls` row per call, client `everyapp-cli` |
 | Gateway MCP, `everyapp_workspace_*` tools on `/mcp` | the person behind an OAuth connection, a personal access token or a Cloudflare Access assertion | their live role, re-read on every request (`mcp-auth/validate.ts`), and the connection's access (read only, or read & write): a write tool is hidden from and refused for a read-only connection like any app write tool; a tool is hidden below its role; a credential narrowed to apps (a personal token bound to one app, a connection consented for selected apps) sees no workspace tool at all; the service's own rules apply on top | one `mcp_tool_calls` row per call, shown in Admin → Activity like any tool call (app `everyapp`, `via` when wrapped) |
 
-Why the CLI does not go through the Gateway: the Gateway's personal
-tokens are HMAC-hashed with `BETTER_AUTH_SECRET`, a Worker secret the CLI
-never holds, so the CLI cannot mint itself a credential; and the
-self-host model (ADR-0003) is that the Cloudflare login is root and the
-Gateway may be down. The cost is that the CLI re-implements each action as
-SQL; the tests run that SQL against the Gateway's real migrations
-(`packages/cli/src/test/fakeCloudflare.ts`).
+Why the CLI goes through the Gateway (2026-11-02): until then it re-implemented
+each action as SQL on 33 of the Gateway's tables, because it could not mint
+itself a personal token (they are HMAC-hashed with `BETTER_AUTH_SECRET`).
+It no longer needs to: it signs in as an OAuth client of the Gateway's
+`/mcp`, the native sign-in flow linked dev already used, or takes a personal
+token the person made in Admin → Tokens. The Cloudflare login stays root for
+the deploy path, setup, the recovery link and invite links (ADR-0003).
 
 Decisions taken as defaults (Ben can flip any; TODO.md "Agent parity (2026-10-24)"):
 
@@ -35,8 +35,8 @@ Decisions taken as defaults (Ben can flip any; TODO.md "Agent parity (2026-10-24
 2. **MCP admin tools never return a credential.** No invite link, no
    password-reset link, no token plaintext. `everyapp_workspace_invite`
    creates the invitation and says whether it was mailed; where the Gateway
-   has no email, the admin gets the link from Admin → Users or
-   `everyapp workspace invite-link`. Personal access tokens are listed and
+   has no email, the admin gets the link from Admin → Users, or from
+   `workspace invite-link` under the Cloudflare login (ADR-0003). Personal access tokens are listed and
    revoked over MCP, never created (a revocable connection must not mint
    itself a year-long credential). Flipping this is a small change per tool.
    The decision is about credentials that open the Gateway: the one secret
@@ -53,14 +53,9 @@ Decisions taken as defaults (Ben can flip any; TODO.md "Agent parity (2026-10-24
 4. **Workspace tools are listed in the full listing only.** In the compact
    listing an admin finds them with `everyapp_search_tools` and runs them
    through `everyapp_call_read` / `everyapp_call_write`, like app tools.
-5. **A CLI command acts on the install organization** unless `--org
-   <slug|id|name>` names another; the operator is root in every
-   organization of the Gateway.
-6. **`everyapp workspace invite` needs the operator to be a member** (an
-   invitation records its inviter; the operator's Cloudflare login email,
-   verified, names the user). An API-token operator with no account is told
-   to claim the Gateway or get invited.
-
+5. **A CLI command acts in its credential's organization** (superseded
+   2026-11-02: it was the install organization unless `--org` named
+   another, the operator being root in every one).
 ## Identifiers the tools and commands take
 
 - a user: their email, or the user id
@@ -152,50 +147,36 @@ Listing and calling, in `packages/toolbus`:
 
 ## The CLI (`everyapp workspace …`)
 
-Every command takes `--json`, `--gateway` and `--account-id`; all but `rename` and `role` (the UI review thread's, which act on the install organization) take `--org`; each acts
-under the Cloudflare login (ADR-0003) and prints what changed; `--yes`
-skips the confirmation of `remove`, `group delete` and `app delete`.
+Since 2026-11-02 each command is one tool above, its flags the tool's
+arguments (`packages/cli/src/commands/workspace/index.ts`); every command's
+help names its tool, and `everyapp call <tool> [json]` runs any of them by
+name. Every command takes `--json`, `--gateway` and `--account-id` (to find
+the Gateway through the Cloudflare login when nothing else names it);
+`--yes` skips the confirmation of `remove` and `group delete`. Three commands
+are not one tool:
 
-| Command | What it does | Writes |
-| --- | --- | --- |
-| `workspace show` | the organization, its owners, email configured, counts | – |
-| `workspace users` | members and pending invitations | – |
-| `workspace invite <email> [--role admin]` | create the invitation (72 hours, the auth config's `invitationExpiresIn`), print the link (`/accept-invitation?token=einv_…`); the Gateway mails nothing from here | `invitations`, `invitation_link_tokens` |
-| `workspace invite-link <email\|id>` | a new link for a pending invitation | `invitation_link_tokens` |
-| `workspace uninvite <email\|id>` | cancel a pending invitation | `invitations.status` |
-| `workspace role <email> <owner\|admin\|member>` | UI review thread's | `members.role` |
-| `workspace rename <name>` | UI review thread's | `organizations.name` |
-| `workspace deactivate <email>` | ban, end sessions, revoke tokens and connections, in one batch; never the last live owner | `users.banned`, `sessions`, `user_access_tokens`, `mcp_connections` |
-| `workspace reactivate <email>` | lift the ban (revoked tokens stay revoked) | `users.banned` |
-| `workspace remove <email>` | remove the membership (and the account when it belongs to no other organization); like the UI, deactivates instead where Access would let them back in, decided from whether an Access auto-join setting is set (its value is a secret the CLI cannot read, so it errs on the safe side and says how to delete anyway) | `members`, grants, groups, tokens, connections, `users` |
-| `workspace reset-link <email>` | a one-hour, single-use password-reset link to hand over (Better Auth's `verifications` row, `reset-password:<token>`); unlike the UI it works for an owner too (the operator is root: the way back in for a sole owner who lost their password; a decision for Ben) | `verifications` |
-| `workspace groups` | the groups with counts | – |
-| `workspace group create <name> [--description]` | | `groups` |
-| `workspace group set <group> [--name] [--description]` | | `groups` |
-| `workspace group delete <group>` | | `groups` (+ members, apps) |
-| `workspace group members <group> [--add <email>…] [--remove <email>…] [--set <email>…]` | list, or change | `group_members` |
-| `workspace group apps <group> [--add <app>…] [--remove <app>…] [--set <app>…]` | list, or change | `group_app_access` |
-| `workspace apps` | every app with who can open it and its setup state (`status` has the operator's view; this is the admin's) | – |
-| `workspace app set <app> [--name] [--description] [--everyone on\|off]` | | `apps` |
-| `workspace app access <app> [--add <email>…] [--remove <email>…] [--set <email>…]` | list, or change | `user_app_access` |
-| `workspace app cap <app> <n\|off>` | the organization's monthly cap on the app's provider calls; `off` removes the app's own cap (once the Caps thread's default exists: inherit it; `--unlimited` then means no cap at all) | `org_app_settings` |
-| `workspace cap default <n\|off>` | the workspace default for every app without its own cap (after the Caps thread's migration 0009) | `org_settings` |
-| `workspace usage [--month YYYY-MM]` | per app, member and provider; after 0009 also the effective cap, its source and whether the app is paused | – |
-| `workspace activity [--app] [--user] [--decision] [--risk] [--since] [--limit] [--before]` | the tool-call audit trail, with the Activity page's filters and its cursor (`done.data.nextBefore`) | – |
-| `workspace audit [--actor] [--type] [--since] [--limit] [--before]` | the audit log (the organization's events, 90 days), with the Audit view's filters and its cursor (`done.data.nextBefore`); the type's label and the subject, no summary line (the catalogue lives in the Gateway) | – |
-| `workspace tokens [--user <email>]` | personal access tokens (every member's for the operator; never a value) | – |
-| `workspace token revoke <id>` | | `user_access_tokens.revoked_at` |
-| `workspace connections [--user <email>]` | AI connections (every member's for the operator) | – |
-| `workspace connection revoke <id>` | | `mcp_connections.revoked_at` |
-| `workspace linked-dev <on\|off\|show>` | the organization's linked dev switch (`docs/design/linked-dev.md`): whether owners and admins may run `everyapp dev --gateway` against this Gateway; no MCP twin, the operator turns it on from a terminal as caps are | `org_settings.linked_dev` |
+- `workspace reset-link <email>`: the recovery link, a one-hour,
+  single-use password reset for an active member of the install
+  organization alone, written into D1 under the Cloudflare login
+  (`packages/cli/src/lib/gateway/recovery.ts`). It is the way back in for
+  an owner who can't sign in, so it can't need a Gateway credential.
+- `workspace invite-link <email|id>`: a new link for a pending invitation
+  of the install organization (`invitation_link_tokens`), written into D1
+  under the Cloudflare login (`recovery.ts` too). The tools never return a
+  link (decision 2), and a Gateway that sends no email has no other way to
+  hand an invitation over from the terminal. `workspace invite` points to
+  it when nothing was mailed.
+- `workspace tokens --all`: `everyapp_my_tokens`, revoked and expired ones
+  shown only with `--all`.
 
-Not in the CLI, and why: `workspace token create` (the token hash is keyed
-by `BETTER_AUTH_SECRET`, which the CLI never holds; an operator who needs a
-token creates it in Admin → Tokens); sending mail (the Gateway's sender;
-the CLI prints links instead). `everyapp delete <app>` already removes an
-app's Worker and row, so `workspace app delete` is not added.
+Gone with the SQL copy: `--org`, and `--user` on `tokens` and `connections` (the operator saw
+every member's; the tools show your own, like the UI).
 
 ## Follow-up contract: caps (the Caps thread's #621, t3/caps-core)
+
+Historical: since 2026-11-02 the cap commands call `everyapp_workspace_app_cap`
+and `everyapp_workspace_cap_default`, so the CLI's SQL and its
+`GATEWAY_PREDATES_*` guards below are gone.
 
 Once #621's migration (`caps_defaults`, numbered after the Events-out core PR's) is on main (`org_settings` with `default_monthly_call_cap`; `org_app_settings.unlimited`; `usage_cap_notices`), this thread extends the cap verbs and tools. Landed as the parity caps follow-up PR (#659): the migration is `0014_caps_defaults`, the guard's code is `GATEWAY_PREDATES_DEFAULT_CAPS`, `workspace usage` refuses a Gateway without the rows too, and the `cap.raised` for an app's cap follows the effective cap before and after (its own, else the default), as the Gateway's `raised()` does. The contract:
 
@@ -233,10 +214,10 @@ The fixture `packages/cli/src/docs/parity.test.ts` reads this section:
 | Admin → Users → Change role to admin / to member (and to owner, once the UI review thread widens it) | `admin.updateMemberRole` | `workspace role` | `everyapp_workspace_role` | the service's rules: never yourself, never the last owner; an admin changes members only, an owner changes admins and (after the UI review thread's PR) makes or demotes owners; until #604 lands the tool answers `owner` with `OWNER_ROLE_PENDING`; `workspace role` is #604's |
 | Admin → Users → Deactivate | `admin.deactivateUser` | `workspace deactivate` | `everyapp_workspace_deactivate` | |
 | Admin → Users → Reactivate | `admin.reactivateUser` | `workspace reactivate` | `everyapp_workspace_reactivate` | |
-| Admin → Users → Copy password-reset link | `admin.createPasswordResetLink` | `workspace reset-link` | — | no MCP: a credential is never returned over MCP (decision 2). The service's rules: never yourself or an owner, an admin only for a member, never someone in another organization (`USER_IN_OTHER_ORGANIZATION`), never a deactivated account, and only with password sign-in on; the CLI keeps the other-organization and deactivated rules, has no caller to protect (it is root), and unlike the UI works for an owner: the way back in for a sole owner who lost their password (a decision for Ben) |
-| Admin → Users → Send password-reset email | `admin.sendPasswordResetEmail` | — | `everyapp_workspace_reset_email` | no CLI: mail is the Gateway's sender; the CLI prints `reset-link`. The tool keeps every rule of the link variant (the service shares them) |
-| Admin → Users → Invite | `admin.inviteMember` | `workspace invite` | `everyapp_workspace_invite` | the CLI prints the link; MCP says whether it was mailed |
-| Admin → Users → Copy invite link | `admin.getInvitationLink` | `workspace invite-link` | — | no MCP: a credential is never returned over MCP (decision 2) |
+| Admin → Users → Copy password-reset link | `admin.createPasswordResetLink` | `workspace reset-link` | — | no MCP: a credential is never returned over MCP (decision 2). The CLI's is the recovery link, under the Cloudflare login (ADR-0003). The service's rules: never yourself or an owner, an admin only for a member, never someone in another organization (`USER_IN_OTHER_ORGANIZATION`), never a deactivated account, and only with password sign-in on; the CLI keeps the other-organization and deactivated rules, has no caller to protect (it is root), and unlike the UI works for an owner: the way back in for a sole owner who lost their password (a decision for Ben) |
+| Admin → Users → Send password-reset email | `admin.sendPasswordResetEmail` | `workspace reset-email` | `everyapp_workspace_reset_email` | The tool keeps every rule of the link variant (the service shares them) |
+| Admin → Users → Invite | `admin.inviteMember` | `workspace invite` | `everyapp_workspace_invite` | both say whether it was mailed, never the link; the CLI points to `workspace invite-link` when nothing was mailed |
+| Admin → Users → Copy invite link | `admin.getInvitationLink` | `workspace invite-link` | — | no MCP: a credential is never returned to a caller of the tools (decision 2). The CLI's is written into D1 under the Cloudflare login, for the install organization (ADR-0003) |
 | Admin → Users: whether the Gateway can send mail | `admin.getEmailStatus` | `workspace show` | `everyapp_workspace_show` | |
 | Admin → Users → Cancel invitation | `admin.cancelInvitation` | `workspace uninvite` | `everyapp_workspace_uninvite` | |
 | Admin → Activity: the list | `activity.listToolCalls` | `workspace activity` | `everyapp_workspace_activity` | the UI's filters are app, decision (allowed, blocked), risk (read, write, destructive) and a time range, paged by cursor at 50; the CLI takes `--app`, `--user`, `--decision`, `--risk`, `--since`, `--limit`, `--before`; the tool the same fields |
@@ -274,7 +255,7 @@ The fixture `packages/cli/src/docs/parity.test.ts` reads this section:
 | Account menu → Connected accounts: my OAuth connections, one per app I connected in | `connections.listMyConnections` | `provider connections` | `everyapp_provider_connections` | any member, their own |
 | Admin → Providers → Connections: every connection in the organization | `connections.listAllConnections` | `provider connections --all` | `everyapp_provider_connections` | owners and admins; never a token |
 | Connected accounts → Disconnect (my own), Admin → Providers → Disconnect (anyone's) | `connections.disconnectConnection` | `provider disconnect` | `everyapp_provider_disconnect` | revokes at the provider when its flow has a revoke endpoint |
-| Account menu → AI connections: the list | `mcpConnections.listMyMcpConnections` | `workspace connections` | `everyapp_my_connections` | any signed-in user, across every organization they belong to; the operator sees every member's (`--user` narrows) |
+| Account menu → AI connections: the list | `mcpConnections.listMyMcpConnections` | `workspace connections` | `everyapp_my_connections` | any signed-in user, across every organization they belong to; the CLI is the tool |
 | AI connections → Revoke | `mcpConnections.revokeMyMcpConnection` | `workspace connection revoke` | `everyapp_revoke_connection` | |
 | Admin → Groups: the list | `groups.listGroups` | `workspace groups` | `everyapp_workspace_groups` | |
 | Admin → Groups → New group | `groups.createGroup` | `workspace group create` | `everyapp_workspace_group_create` | |
@@ -289,25 +270,24 @@ The fixture `packages/cli/src/docs/parity.test.ts` reads this section:
 | The active organization and my role | `organizations.getActiveOrganization` | `workspace show` | `everyapp_whoami` | |
 | Accept an invitation | `organizations.acceptInvitation` | — | — | no twin: joining is the invited person's own act in their browser |
 | Account menu → Rename workspace (#605) | `organizations.renameOrganization` | `workspace rename` | `everyapp_workspace_rename` | owner or admin; 1 to 64 characters (`packages/sdk/src/internal/organizationName.ts`); the slug stays |
-| Admin → Tokens: the list | `userTokens.listUserTokens` | `workspace tokens` | `everyapp_my_tokens` | any member's own tokens: the page sits under the admin-gated `/admin`, the functions do not (TODO "Tokens for members"); the operator sees every member's |
+| Admin → Tokens: the list | `userTokens.listUserTokens` | `workspace tokens` | `everyapp_my_tokens` | any member's own tokens: the page sits under the admin-gated `/admin`, the functions do not (TODO "Tokens for members") |
 | Admin → Tokens → Create (an access token: name, one app or all, expiry 1 day to 1 year; or, where the platform deploys third-party apps, a deploy key with the `deploy` scope alone) | `userTokens.createUserToken` | — | — | no twin: both kinds are hashed with a Gateway secret the CLI never holds; over MCP a connection must not mint itself a credential (decision 2) |
-| Admin → Tokens → Revoke | `userTokens.revokeUserToken` | `workspace token revoke` | `everyapp_revoke_token` | own tokens only through MCP; any token for the operator |
-| Admin → Usage: the month | `usage.getUsage` | `workspace usage` | `everyapp_workspace_usage` | both twins show the summary's cap fields (#621): the workspace default (`defaultMonthlyCallCap`) and, per app, the effective cap (`effectiveMonthlyCallCap`), its source (`capSource`: `app`, `default`), `capUnlimited` and `paused`, and since the dollar caps `defaultMonthlyCostCapMicros`, per app `monthlyCostCapMicros`, `effectiveMonthlyCostCapMicros`, `costCapSource` and `pausedBy`; the CLI refuses a Gateway from before migration 0014 with `GATEWAY_PREDATES_DEFAULT_CAPS` |
-| Admin → Usage → Cap an app | `usage.setAppMonthlyCap` | `workspace app cap` | `everyapp_workspace_app_cap` | `off` removes the app's own cap (the workspace default then binds it); `--unlimited` and the tool's `unlimited` mean no cap even with a workspace default; a cap or no cap, never both, written in one statement; both answer the app's own cap and the effective one with its source; `cap.raised` follows the effective cap before and after, so a cap set under the default is no raise and `--unlimited` under a default is a removal. The dollar cap beside it (2026-10-25): the dialog's "or dollars per month", `--usd <dollars\|off>`, the tool's `costUsd`; a kind left out keeps the app's own, so `--usd` alone keeps the call cap; `cap.raised` carries `costCap`/`previousCostCap` in dollars when it changed; the CLI refuses `--usd` on a Gateway from before migration 0018 with `GATEWAY_PREDATES_COST_CAPS` |
+| Admin → Tokens → Revoke | `userTokens.revokeUserToken` | `workspace token revoke` | `everyapp_revoke_token` | your own tokens, on every surface |
+| Admin → Usage: the month | `usage.getUsage` | `workspace usage` | `everyapp_workspace_usage` | both twins show the summary's cap fields (#621): the workspace default (`defaultMonthlyCallCap`) and, per app, the effective cap (`effectiveMonthlyCallCap`), its source (`capSource`: `app`, `default`), `capUnlimited` and `paused`, and since the dollar caps `defaultMonthlyCostCapMicros`, per app `monthlyCostCapMicros`, `effectiveMonthlyCostCapMicros`, `costCapSource` and `pausedBy` |
+| Admin → Usage → Cap an app | `usage.setAppMonthlyCap` | `workspace app cap` | `everyapp_workspace_app_cap` | `off` removes the app's own cap (the workspace default then binds it); `--unlimited` and the tool's `unlimited` mean no cap even with a workspace default; a cap or no cap, never both, written in one statement; both answer the app's own cap and the effective one with its source; `cap.raised` follows the effective cap before and after, so a cap set under the default is no raise and `--unlimited` under a default is a removal. The dollar cap beside it (2026-10-25): the dialog's "or dollars per month", `--usd <dollars\|off>`, the tool's `costUsd`; a kind left out keeps the app's own, so `--usd` alone keeps the call cap; `cap.raised` carries `costCap`/`previousCostCap` in dollars when it changed |
 | Admin → Usage → AI default: what the default model resolves to | `ai.getAiDefault` | `ai show` | `everyapp_ai_show` | the resolution (provider, model, source, via, candidates); the tool shows `configured` and `settings` to owners and admins only |
-| Admin → Usage → AI default: choose or clear it | `ai.setAiDefault` | `ai default` | `everyapp_ai_default` | `provider` (+ `model?`) or null / `clear: true` / `off`; refused for an API provider, Cohere or AI Gateway; one setting, `<provider>[/<model>]` in `org_settings.ai_default` (2026-11-02: the per-provider model settings and `ai model` are gone); a change emits `ai.default_changed`; the CLI refuses a Gateway from before migration 0017 with `GATEWAY_PREDATES_AI_DEFAULT` |
-| Admin → Usage → Default monthly cap | `usage.setDefaultMonthlyCap` | `workspace cap default` | `everyapp_workspace_cap_default` | `off` / `cap: null` removes the default; first set, raised or removed it emits `cap.raised` with `source: "default"` and no app (a lowered one is no event), and the organization's first cap, default or an app's, makes the Cap alerts subscription; the CLI writes `o
-rg_settings` in the write's own batch with the subscription and the event, and refuses a Gateway from before migration 0014 with `GATEWAY_PREDATES_DEFAULT_CAPS`. The dollar default beside it (2026-10-25): the dialog's "or dollars per month", `--usd <dollars\|off>`, the tool's `costUsd`, a kind left out kept; clearing one keeps the other columns of `org_settings` (the other default, `ai_default`), and the row goes only when it holds nothing; `--usd` is refused on a Gateway from before migration 0018 with `GATEWAY_PREDATES_COST_CAPS` |
+| Admin → Usage → AI default: choose or clear it | `ai.setAiDefault` | `ai default` | `everyapp_ai_default` | `provider` (+ `model?`) or null / `clear: true` / `off`; refused for an API provider, Cohere or AI Gateway; one setting, `<provider>[/<model>]` in `org_settings.ai_default` (2026-11-02: the per-provider model settings and `ai model` are gone); a change emits `ai.default_changed` |
+| Admin → Usage → Default monthly cap | `usage.setDefaultMonthlyCap` | `workspace cap default` | `everyapp_workspace_cap_default` | `off` / `cap: null` removes the default; first set, raised or removed it emits `cap.raised` with `source: "default"` and no app (a lowered one is no event), and the organization's first cap, default or an app's, makes the Cap alerts subscription. The dollar default beside it (2026-10-25): the dialog's "or dollars per month", `--usd <dollars\|off>`, the tool's `costUsd`, a kind left out kept; clearing one keeps the other columns of `org_settings` (the other default, `ai_default`), and the row goes only when it holds nothing |
 
 ### Other UI actions (not server functions)
 
 | UI action | How the UI does it | CLI | MCP | Note |
 | --- | --- | --- | --- | --- |
-| Switch organization | Better Auth `organization.setActive` (session) | `workspace show` | — | no MCP: a connection is made in one organization; connect again from the other. The CLI has no session: `--org` on every workspace command picks the organization |
+| Switch organization | Better Auth `organization.setActive` (session) | `workspace show` | — | no MCP: a connection is made in one organization; connect again from the other; so does the CLI (`login --gateway`, or a token made there) |
 | Pin an app; grid or list layout | `localStorage` in the browser (`useAppLibrary.ts`) | — | — | no twin: per-browser preferences, not Gateway state |
 | Home: open an app (a card, a list row, a pinned link) | a link to the app's hostname (`AppListItem.tsx`; prefetched on hover); an app that needs setup opens the dialog instead | `status` | `everyapp_list_apps` | opening is the browser's act; both twins carry the URL |
 | Home with no apps, and Admin → Apps → Add app: the four app cards and Build your own | dialogs that show `pnpm everyapp install <repo>` and copy the build prompt (`AppGallery`, `AddAppDialog`, `featuredApps.ts`, `buildPrompt.ts`); nothing installs from the browser here | `install` | — | no MCP: a pointer to the CLI, like the Needs-setup dialog; `create` is what the prompt has the agent run |
-| Organizations page and the sidebar switcher: the organizations I belong to | Better Auth `organization.list` and `getActiveMemberRole` (auth client) | `workspace show` | — | no MCP: a connection is made in one organization; `everyapp_whoami` names it. The CLI shows one per `--org`; a `workspace list` of the operator's organizations is a follow-up |
+| Organizations page and the sidebar switcher: the organizations I belong to | Better Auth `organization.list` and `getActiveMemberRole` (auth client) | `workspace show` | — | no MCP: a connection is made in one organization; `everyapp_whoami` names it, and `workspace show` for the CLI |
 | Theme | `localStorage` | — | — | no twin: per browser |
 | Sign in (password, or Continue with Cloudflare Access, Google, Microsoft, GitHub, Apple, Cloudflare or SSO: one button per provider that is on), sign up (with an invitation token, or while the Gateway has no owner), sign out (through Access's logout behind the outer ring), forgot and reset password, verify email and resend, Connect <provider> to my account (the account menu, one item per provider not yet linked), Switch account on the consent page | Better Auth routes and the auth client (`/api/auth/*`, `signIn.social`, `linkSocial`, `listAccounts`, `sendVerificationEmail`), `/cdn-cgi/access/logout`, `GET /api/auth/sign-in-methods` | `access show` | — | no twin: the person's own credentials and identity links; `access show` and `signin list` report the operator's side |
 | Admin → Sign-in → Set up, Needs setup or Details: one provider's setup dialog (the OAuth app to make, the redirect URL, the settings, the command) | the Sign-in tab's listing (`signin.listSignInProviders`), one entry of it in a dialog | `signin show` | `everyapp_signin_show` | Never a value |
@@ -317,7 +297,7 @@ rg_settings` in the write's own batch with the subscription and the event, and r
 | Cloudflare Access on/off | Worker secrets `CLOUDFLARE_ACCESS_*` | `access on` / `access off` / `access show` | — | no MCP: a Gateway setting (Worker secret), never writable from inside the Gateway. Interactive `setup` offers it after the claim (the public-surface thread; never under `--json`, where `next` names `access on`) |
 | Secrets and Gateway settings | not in the UI (Worker secrets only, `docs/security-model.md`) | `secret set` / `secret unset` / `secret list` | — | no MCP: Worker secrets are the operator's; the Needs-setup dialog shows the command |
 | Email senders and inbound | not in the UI | `email set` / `email unset` / `email show` | — | no MCP: same |
-| Linked dev on/off (`everyapp dev --gateway` against this Gateway's providers) | not in the UI yet (`org_settings.linked_dev`, `docs/design/linked-dev.md`) | `workspace linked-dev` | — | no MCP: the operator turns it on from a terminal, as the caps' default; a Manage workspace switch is a follow-up |
+| Linked dev on/off (`everyapp dev --gateway` against this Gateway's providers) | not in the UI yet (`org_settings.linked_dev`, `docs/design/linked-dev.md`) | `workspace linked-dev` | `everyapp_workspace_linked_dev` | `show` and the tool's read are `everyapp_workspace_show`'s `linkedDev`; a Manage workspace switch is a follow-up |
 | MCP apps (tier `provider`: the built-in DataForSEO, and any remote MCP server by URL since docs/design/2026-10-mcp-by-url.md) on/off | Admin → Apps → Turn on / Turn off on an MCP row (`mcpApps.setMcpAppStatus`): status active ↔ disabled, access and the snapshot kept; Remove is the tombstone | `mcp on` / `mcp off` / `mcp remove` / `mcp list` | `everyapp_mcp_on` / `everyapp_mcp_off` / `everyapp_mcp_remove` / `everyapp_mcp_list` | `off` changed meaning from the tombstone (#599) to serve/stop when remote servers arrived (#631): on serves and off stops serving for both kinds, access, tokens and the snapshot kept, so on is instant; `remove` is the tombstone. `everyapp_mcp_list` lists the rows (`mcp list` also shows a built-in not added yet); `everyapp_list_apps` shows what a member can use
 | Install an app from a public release (Admin → Apps → Install, `/install?source=<url>`) | `GET /api/admin/apps/install` (is it on), `GET /api/admin/apps/install/context` (which workspaces), `POST /api/admin/apps/install`, `GET /api/admin/deploys/{id}` (the job); gate: the platform deploys third-party apps, or self-hosted with `BROWSER_APP_INSTALLS` not off and `CF_DEPLOY_TOKEN` plus `CLOUDFLARE_ACCOUNT_ID` set; caller: owner or admin of the chosen workspace and, on self-host since #610, of the install organization only | `install` | — | no MCP: a deploy authority (see "Browser installs" below) |
 | OAuth consent: allow or deny, read or read & write, which apps | `POST /oauth/consent/decision` | — | — | no twin: the human's decision by design |

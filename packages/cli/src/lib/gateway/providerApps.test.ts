@@ -269,16 +269,4 @@ describe("the events turning a built-in MCP app on, off and removing it queues",
     // The subscription came after the first: the four after it are delivered.
     expect(sqlite.all("SELECT subscription_id FROM event_deliveries")).toHaveLength(4);
   });
-
-  it("queues nothing, and still writes, on a Gateway whose D1 has no event tables", async () => {
-    sqlite.sqlite.exec("DROP TABLE event_deliveries; DROP TABLE event_subscriptions; DROP TABLE events;");
-    await on();
-    await off("dataforseo", NOW + 1);
-    expect(row("dataforseo")).toMatchObject({ status: "disabled" });
-    await on("dataforseo", BEN, NOW + 2);
-    expect(row("dataforseo")).toMatchObject({ status: "active" });
-    expect(await remove("dataforseo", NOW + 3)).toEqual({ removed: true });
-    expect(row("dataforseo")).toMatchObject({ status: "deleted" });
-    expect(sqlite.all("SELECT name FROM sqlite_master WHERE name LIKE 'event%'")).toEqual([]);
-  });
 });

@@ -7,8 +7,9 @@
  * is read, written when it changed, and a change emits `app.needs_setup`
  * (with the unmet setting names, never values) or `app.ready`. A first
  * evaluation (null to anything) emits only `needs_setup`: an app that
- * was always ready is not news. The CLI writes the same column after
- * `configure`, `secret set|unset` and `deploy`, with its own outbox row.
+ * was always ready is not news. Only the gateway writes it: a change the
+ * CLI makes (`configure`, `secret set|unset`, `deploy`) shows here at the
+ * next evaluation.
  *
  * The lists run often, so the last state seen is kept per isolate for a
  * while and the column is read again only when the state differs or the

@@ -1,50 +1,79 @@
 /**
  * `everyapp ai show|default|gateway on|off`: the workspace's default model
- * (docs/design/2026-10-model-providers.md), from the terminal under the
- * Cloudflare login. The reading and writing is
- * lib/gateway/aiDefault.ts; this file says what happened. The AI Gateway
- * switch creates a Cloudflare resource (lib/cf/aiGateway.ts, the Resource
- * provisioners thread's library) and records its id as a Gateway setting
- * through the same path `secret set` takes.
+ * (docs/design/2026-10-model-providers.md). `show` and `default` are each
+ * one Gateway tool (`everyapp_ai_show`, `everyapp_ai_default`) run as you
+ * (lib/gatewayApi). `ai gateway on|off` stays a Cloudflare job under the
+ * login: it finds or makes the AI Gateway resource (lib/cf/aiGateway.ts)
+ * and sets the Gateway setting AI_GATEWAY_ID through the same path
+ * `secret set` takes.
  */
-import chalk from "chalk";
-import { formatAiDefaultChoice, type AiDefaultCandidate, type AiDefaultResolution, type ProviderRegistry } from "@every-app/sdk/internal";
+import { formatAiDefaultChoice, parseAiDefaultChoice } from "@every-app/sdk/internal";
 import type { CfRunner } from "@/lib/cf/runner";
 import { ensureAiGateway, isValidAiGatewayId, type AiGateway } from "@/lib/cf/aiGateway";
 import { EveryAppError } from "@/lib/errors";
+import { listGatewaySecretNames } from "@/lib/app/settings";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
-import { aiReport, parseAiDefaultArgument, setAiDefault, type AiReport } from "@/lib/gateway/aiDefault";
-import { gatewayRegistry } from "@/lib/gateway/providers";
-import { openWorkspace, type Workspace } from "@/lib/gateway/workspace";
+import { formatRows, runTool, type ToolCommandFlags } from "@/lib/gatewayApi/command";
+import type { JsonObject } from "@/lib/gatewayApi";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal } from "@/lib/output/prompt";
 import { runCommand } from "@/lib/output/run";
-import { formatFacts, formatTable } from "@/lib/output/table";
-import { listed } from "@/lib/output/text";
 import { applyGatewaySettings } from "../secret";
 import type { GatewayCommandFlags } from "../flags";
 
-/** What the handlers take from the command line, and the seams tests use. */
+const DEFAULT_AI_GATEWAY_ID = "everyapp";
+
+const str = (value: unknown) => (typeof value === "string" ? value : "");
+
+/** "OpenRouter: anthropic/claude-sonnet-5.5 (the stored choice)". */
+const resolved = (answer: JsonObject) =>
+  answer["provider"]
+    ? `The default model: ${str(answer["label"]) || str(answer["provider"])}, ${str(answer["model"])} (${str(answer["source"])})`
+    : `No default model yet${answer["problem"] ? `: ${str(answer["problem"])}` : ""}`;
+
+/** The resolution, then every provider the default could be, in order. */
+export const show = (flags: ToolCommandFlags) =>
+  runTool(flags, {
+    tool: "everyapp_ai_show",
+    done: resolved,
+    display: (answer) => formatRows(Array.isArray(answer["candidates"]) ? (answer["candidates"] as JsonObject[]) : []),
+  });
+
+/** `provider[/model]` or `off`, as `ai default` takes it. */
+function defaultArgs(input: string): JsonObject {
+  const value = input.trim();
+  if (value === "off" || value === "none") return { clear: true };
+  const choice = parseAiDefaultChoice(value);
+  if (!choice) {
+    throw new EveryAppError(
+      "AI_DEFAULT_INVALID",
+      `${input} isn't a provider: write the provider's id (openrouter), or the id and a model (openrouter/anthropic/claude-haiku-5.5), or off`,
+      { fix: `${CLI} ai show names the providers the default can be` },
+    );
+  }
+  return { provider: choice.provider, ...(choice.model ? { model: choice.model } : {}) };
+}
+
+export const setDefault = (flags: ToolCommandFlags, choice: string) =>
+  runTool(flags, () => {
+    const args = defaultArgs(choice);
+    return Promise.resolve({
+      tool: "everyapp_ai_default",
+      args,
+      done: (answer: JsonObject) =>
+        args["clear"] ? `Cleared the default: ${resolved(answer)}` : `Chose ${formatAiDefaultChoice({ provider: String(args["provider"]), ...(typeof args["model"] === "string" ? { model: args["model"] } : {}) })}. ${resolved(answer)}`,
+    });
+  });
+
+/** `ai gateway on|off`: what the handlers take, and the seams tests use. */
 export interface AiOptions {
   flags: GatewayCommandFlags;
   out: EventSink;
   /** cf per account (tests). */
   createCf?: (accountId?: string) => CfRunner;
-  now?: () => number;
   /** The AI Gateway resource (tests inject a fake; lib/cf/aiGateway.ts by default). */
   ensureAiGateway?: typeof ensureAiGateway;
-}
-
-const DEFAULT_AI_GATEWAY_ID = "everyapp";
-const STEP = "ai.update";
-
-export async function show(flags: GatewayCommandFlags): Promise<void> {
-  await runCommand(flags, (out) => showDefault({ flags, out }));
-}
-
-export async function setDefault(flags: GatewayCommandFlags, choice: string): Promise<void> {
-  await runCommand(flags, (out) => chooseDefault({ flags, out }, choice));
 }
 
 export async function gatewayOn(flags: GatewayCommandFlags & { id?: string }): Promise<void> {
@@ -55,147 +84,15 @@ export async function gatewayOff(flags: GatewayCommandFlags): Promise<void> {
   await runCommand(flags, (out) => turnGatewayOff({ flags, out }));
 }
 
-interface Connected {
-  gateway: Awaited<ReturnType<typeof connectToGateway>>;
-  ws: Workspace;
-  /** The catalog and this Gateway's registered providers: a registered `ai` row may be the default. */
-  registry: ProviderRegistry;
-}
-
-/** The Gateway through the login, and the install organization's workspace. */
-async function connect(options: AiOptions): Promise<Connected> {
+function connect(options: AiOptions) {
   const { flags, out, createCf } = options;
-  const gateway = await connectToGateway({
+  return connectToGateway({
     gateway: requestedGatewayUrl(flags.gateway),
     accountId: flags["account-id"],
     interactive: canPromptInTerminal(flags.json ?? false),
     login: { json: flags.json, out, step: "login" },
     createCf,
   });
-  const ws = await openWorkspace(gateway.db, gateway.deployer, { now: options.now?.() });
-  return { gateway, ws, registry: await gatewayRegistry(gateway.db, gateway.install) };
-}
-
-/** The resolution as `--json` carries it, with the AI Gateway state. */
-function reportData(report: AiReport): Record<string, unknown> {
-  const { resolution, aiGateway } = report;
-  return {
-    provider: resolution.provider,
-    label: resolution.label,
-    model: resolution.model,
-    ...(resolution.embeddingsModel ? { embeddingsModel: resolution.embeddingsModel } : {}),
-    choice: report.choice,
-    source: resolution.source,
-    configured: resolution.configured,
-    settings: resolution.settings,
-    via: resolution.via,
-    chat: resolution.chat,
-    ...(resolution.embeddings ? { embeddings: resolution.embeddings } : {}),
-    candidates: resolution.candidates,
-    ...(resolution.problem ? { problem: resolution.problem } : {}),
-    aiGateway,
-  };
-}
-
-/** "OpenRouter (anthropic/claude-haiku-5.5)". */
-const named = (resolution: Pick<AiDefaultResolution, "label" | "model">) => `${resolution.label} (${resolution.model})`;
-
-/** A model as the table shows it, a dash where there is none. */
-const modelCell = (model: string | undefined) => (model === undefined ? chalk.dim("—") : model);
-
-const CANDIDATE_HEADERS = ["Provider", "Name", "Key", "Setting", "Chat model", "Embeddings model", ""];
-
-/**
- * One line per candidate: the id, its name, the key, set or not, and its
- * models: the catalog's, but the default's own row shows the chat model it
- * serves (the setting's, when it names one).
- */
-function candidateRows(
-  candidates: readonly AiDefaultCandidate[],
-  resolution: Pick<AiDefaultResolution, "provider" | "model">,
-): string[][] {
-  const current = resolution.provider;
-  return candidates.map((candidate) => [
-    candidate.id === current ? chalk.bold(candidate.id) : candidate.id,
-    candidate.label,
-    candidate.configured ? chalk.green("set") : chalk.dim("not set"),
-    candidate.settings.join(" "),
-    modelCell(candidate.id === current ? resolution.model : candidate.model),
-    modelCell(candidate.embeddingsModel),
-    candidate.id === current ? chalk.green("← the default") : "",
-  ]);
-}
-
-function sourceSentence(report: AiReport): string {
-  const { resolution } = report;
-  switch (resolution.source) {
-    case "setting":
-      return resolution.configured
-        ? `Chosen with ${CLI} ai default; ${resolution.settings.join(" and ")} ${resolution.settings.length === 1 ? "is" : "are"} set.`
-        : `Chosen with ${CLI} ai default, but ${listed(resolution.settings)} ${resolution.settings.length === 1 ? "isn't" : "aren't"} set: apps get ai_default_not_configured until ${CLI} secret set ${resolution.settings.join(" ")}.`;
-    case "order":
-      return `Nothing chosen: the first provider of the order whose key is set. ${CLI} ai default <provider> picks another.`;
-    case "none":
-      return `Nothing is set yet: apps that need a chat model show "Needs setup" until one key is set (${CLI} secret set ${resolution.settings.join(" ")}, or any provider's below).`;
-  }
-}
-
-export async function showDefault(options: AiOptions): Promise<void> {
-  const { out } = options;
-  const { gateway, ws, registry } = await connect(options);
-  const report = await aiReport(gateway.cf, gateway.names, ws, registry);
-  const { resolution, aiGateway } = report;
-  const lines = [
-    ...formatFacts([
-      { label: "Default", value: resolution.configured ? named(resolution) : `${named(resolution)} ${chalk.yellow("not configured")}` },
-      { label: "Route", value: `/api/ai/default/v1/chat/completions → ${resolution.chat.path}${resolution.embeddings ? `; /v1/embeddings → ${resolution.embeddings.path}` : ""}` },
-      { label: "Through", value: aiGateway.on ? "Cloudflare AI Gateway" : `direct (${CLI} ai gateway on puts AI Gateway in front)` },
-    ]),
-    "",
-    sourceSentence(report),
-    ...(resolution.problem ? [chalk.yellow(`The stored choice can't serve: ${resolution.problem}.`)] : []),
-    "",
-    ...formatTable(CANDIDATE_HEADERS, candidateRows(resolution.candidates, resolution)),
-    "",
-    `An app that takes the default says ai: { chat: true }; one that pins a provider lists it under providers. ${CLI} ai default <provider>[/<model>] chooses (the provider's catalog chat model when no model is given); off puts the order back.`,
-  ];
-  out.emit({
-    type: "done",
-    message: lines.join("\n"),
-    data: reportData(report),
-  });
-}
-
-export async function chooseDefault(options: AiOptions, argument: string): Promise<void> {
-  const { out } = options;
-  const choice = parseAiDefaultArgument(argument);
-  const { gateway, ws, registry } = await connect(options);
-  out.emit({ type: "step", step: STEP, status: "start", message: "Setting the default model..." });
-  const change = await setAiDefault(ws, choice, registry);
-  const report = await aiReport(gateway.cf, gateway.names, ws, registry);
-  const { resolution } = report;
-  const says = (value: typeof choice) => (value === null ? "the shipped order" : formatAiDefaultChoice(value));
-  out.emit({
-    type: "step",
-    step: STEP,
-    status: "ok",
-    message: `${ws.organization.name}: the default model is ${says(choice)}`,
-    data: { choice: choice === null ? null : formatAiDefaultChoice(choice), was: change.was === null ? null : formatAiDefaultChoice(change.was) },
-  });
-  const lines = [
-    change.changed
-      ? `${ws.organization.name}: the default is ${says(choice)} (was ${says(change.was)}).`
-      : `${ws.organization.name} had ${says(choice)} already. Nothing changed.`,
-    `Apps that ask for the default get ${named(resolution)} on the Gateway within 30 seconds.`,
-  ];
-  if (!resolution.configured) {
-    lines.push(
-      chalk.yellow(
-        `${listed(resolution.settings)} ${resolution.settings.length === 1 ? "isn't" : "aren't"} set: until then those apps get ai_default_not_configured. Set it: ${CLI} secret set ${resolution.settings.join(" ")}`,
-      ),
-    );
-  }
-  out.emit({ type: "done", message: lines.join("\n"), data: reportData(report) });
 }
 
 export async function turnGatewayOn(options: AiOptions, id = DEFAULT_AI_GATEWAY_ID): Promise<void> {
@@ -208,13 +105,10 @@ export async function turnGatewayOn(options: AiOptions, id = DEFAULT_AI_GATEWAY_
       { fix: `${CLI} ai gateway on --id <name>` },
     );
   }
-  const connection = await connect(options);
+  const gateway = await connect(options);
   const ensure = options.ensureAiGateway ?? ensureAiGateway;
   out.emit({ type: "step", step: "ai.gateway", status: "start", message: `Finding AI Gateway ${gatewayId}...` });
-  const made: AiGateway & { created: boolean } = await ensure(connection.gateway.cf, {
-    id: gatewayId,
-    accountId: connection.gateway.accountId,
-  });
+  const made: AiGateway & { created: boolean } = await ensure(gateway.cf, { id: gatewayId, accountId: gateway.accountId });
   out.emit({
     type: "step",
     step: "ai.gateway",
@@ -222,7 +116,7 @@ export async function turnGatewayOn(options: AiOptions, id = DEFAULT_AI_GATEWAY_
     message: made.created ? `Made AI Gateway ${made.id}` : `AI Gateway ${made.id} exists`,
     data: { id: made.id, url: made.url, created: made.created },
   });
-  await applyGatewaySettings(connection.gateway, { AI_GATEWAY_ID: made.id }, { flags: options.flags, out });
+  await applyGatewaySettings(gateway, { AI_GATEWAY_ID: made.id }, { flags: options.flags, out });
   out.emit({
     type: "done",
     message: [
@@ -235,16 +129,16 @@ export async function turnGatewayOn(options: AiOptions, id = DEFAULT_AI_GATEWAY_
 
 export async function turnGatewayOff(options: AiOptions): Promise<void> {
   const { out } = options;
-  const connection = await connect(options);
-  const report = await aiReport(connection.gateway.cf, connection.gateway.names, connection.ws);
-  if (!report.names.includes("AI_GATEWAY_ID")) {
+  const gateway = await connect(options);
+  const names = await listGatewaySecretNames(gateway.cf, gateway.names);
+  if (!names.includes("AI_GATEWAY_ID")) {
     out.emit({ type: "done", message: "AI Gateway isn't in front: AI_GATEWAY_ID isn't set. Nothing changed.", data: { on: false, changed: false } });
     return;
   }
-  await applyGatewaySettings(connection.gateway, { AI_GATEWAY_ID: null }, { flags: options.flags, out });
+  await applyGatewaySettings(gateway, { AI_GATEWAY_ID: null }, { flags: options.flags, out });
   out.emit({
     type: "done",
-    message: `Model calls go direct from the Gateway's next request. The AI Gateway and its logs stay in the account${report.names.includes("AI_GATEWAY_API_KEY") ? `; AI_GATEWAY_API_KEY stays until ${CLI} secret unset AI_GATEWAY_API_KEY` : ""}.`,
+    message: `Model calls go direct from the Gateway's next request. The AI Gateway and its logs stay in the account${names.includes("AI_GATEWAY_API_KEY") ? `; AI_GATEWAY_API_KEY stays until ${CLI} secret unset AI_GATEWAY_API_KEY` : ""}.`,
     data: { on: false, changed: true },
   });
 }

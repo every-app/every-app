@@ -214,7 +214,7 @@ const linkCommand = buildCommand({
       "does the same on its first run; this is for doing the browser step on its own, or again",
       "(a new sign-in replaces the earlier one). Owners and admins who can open the app, on a",
       "workspace with linked dev on (`everyapp workspace linked-dev on`); otherwise the Gateway",
-      "says why (LINKED_DEV_REFUSED, LINKED_DEV_REGISTRATION_OFF, LINKED_DEV_OAUTH_OFF).",
+      "says why (LINKED_DEV_REFUSED, OAUTH_REGISTRATION_OFF, OAUTH_OFF).",
       "",
       "Examples:",
       `  ${CLI} dev link --gateway https://apps.example.com`,

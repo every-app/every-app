@@ -18,6 +18,7 @@ import {
   type ArgumentProblem,
 } from "./argumentErrors";
 import { accessRoutes } from "./commands/access/command";
+import { callCommand } from "./commands/call/command";
 import { configureCommand } from "./commands/configure/command";
 import { createCommand } from "./commands/create/command";
 import { dbRoutes } from "./commands/db/command";
@@ -68,6 +69,7 @@ const routes = buildRouteMap({
     email: emailRoutes,
     events: eventsRoutes,
     workspace: workspaceRoutes,
+    call: callCommand,
   },
   // `everyapp provider …` was `mcp`'s name until 2026-10-24; it is the
   // provider registry's group now, and its hidden `on|off` run `mcp on|off`
@@ -130,7 +132,7 @@ const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
       "teardown",
     ],
   ],
-  ["MANAGE THE WORKSPACE", ["workspace"]],
+  ["MANAGE THE WORKSPACE", ["workspace", "call"]],
 ];
 
 /** What `everyapp <group> --help` shows as examples. */
@@ -185,16 +187,17 @@ const GROUP_NOTES: Readonly<Record<string, readonly string[]>> = {
     "Invites, and apps that don't set their own senders, send as the Gateway's sender.",
     `Set it with: ${CLI} secret set EMAIL_FROM EMAIL_FROM_NAME`,
   ],
-  events: [
-    "Each webhook is signed: X-EveryApp-Signature, HMAC-SHA256 over <t>.<body>; verify it with the snippet on /docs/events.",
-  ],
   workspace: [
     "Everything Admin → Users, Groups, Apps, Tokens, Usage and Activity do, from the terminal.",
-    "Acts under your Cloudflare login (the operator is root in every organization of the Gateway),",
-    "on the install organization unless --org names another by slug, id or name (a name two",
-    "organizations share is refused: give the slug). The Gateway mails nothing from here: invite",
-    "and reset-link print the link to hand over.",
+    "Each command is one of the Gateway's own tools (everyapp_workspace_*), run as you in your",
+    `organization: EVERYAPP_TOKEN, or the sign-in ${CLI} login --gateway <url> keeps (the first`,
+    "command asks for it in the browser). reset-link alone works under the Cloudflare login: the",
+    "way back in for a locked-out owner.",
     `Depth-two groups have their own help: ${CLI} workspace group --help, app, token, connection.`,
+  ],
+  events: [
+    "Each webhook is signed: X-EveryApp-Signature, HMAC-SHA256 over <t>.<body>; verify it with the snippet on /docs/events.",
+    "Each command is one of the Gateway's own tools (everyapp_workspace_events*), run as you.",
   ],
 };
 

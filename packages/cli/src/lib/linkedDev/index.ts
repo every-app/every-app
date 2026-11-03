@@ -82,7 +82,7 @@ export function gatewayOrigin(gateway: string): string {
   if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopbackGateway(gateway))) {
     throw new EveryAppError(
       "INVALID_GATEWAY_URL",
-      `--gateway must be https (http only on this machine: localhost or 127.0.0.1), not "${gateway}"\nLinked dev sends a token and the app's requests there.`,
+      `--gateway must be https (http only on this machine: localhost or 127.0.0.1), not "${gateway}"\nA token and your requests are sent there.`,
     );
   }
   return url.origin;

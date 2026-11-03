@@ -51,6 +51,7 @@ import { GroupRepository } from "@/server/repositories/GroupRepository";
 import { McpToolCallRepository } from "@/server/repositories/McpToolCallRepository";
 import { OrganizationMembersRepository } from "@/server/repositories/OrganizationMembersRepository";
 import { OrganizationRepository } from "@/server/repositories/OrganizationRepository";
+import { OrgSettingsRepository } from "@/server/repositories/OrgSettingsRepository";
 import { UsageRepository } from "@/server/repositories/UsageRepository";
 import { AdminService } from "@/server/services/AdminService";
 import { AppAccessService } from "@/server/services/AppAccessService";
@@ -536,16 +537,19 @@ const HANDLERS: Record<string, Handler> = {
   ...AI_HANDLERS,
 
   async workspace_show(ctx) {
-    const [organization, { users }, { groups }, apps] = await Promise.all([
-      OrganizationRepository.findSummaryById(ctx.orgId),
-      AdminService.listMembers(ctx),
-      GroupService.listGroups(ctx),
-      AppRepository.findAll(ctx.orgId),
-    ]);
+    const [organization, { users }, { groups }, apps, linkedDev] =
+      await Promise.all([
+        OrganizationRepository.findSummaryById(ctx.orgId),
+        AdminService.listMembers(ctx),
+        GroupService.listGroups(ctx),
+        AppRepository.findAll(ctx.orgId),
+        OrgSettingsRepository.isLinkedDevOn(ctx.orgId),
+      ]);
     return {
       organization,
       role: ctx.role,
       email: { configured: isEmailConfigured() },
+      linkedDev: linkedDev ? "on" : "off",
       counts: {
         members: users.filter((user) => !user.invitationId).length,
         pendingInvitations: users.filter((user) => user.invitationId).length,
@@ -921,6 +925,10 @@ const HANDLERS: Record<string, Handler> = {
     );
     const summary = await OrganizationRepository.findSummaryById(ctx.orgId);
     return { organization: { ...renamed, slug: summary?.slug ?? null } };
+  },
+
+  async workspace_linked_dev(ctx, args) {
+    return OrganizationService.setLinkedDev(ctx, args["on"] === true);
   },
 
   async workspace_events(ctx) {

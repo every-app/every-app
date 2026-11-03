@@ -148,7 +148,7 @@ describe("the linked forwarder", () => {
         invalidate: vi.fn(),
         token: async () => {
           if (tokens++ === 0) return "tok-old";
-          throw new EveryAppError("LINKED_DEV_SIGNIN_FAILED", "revoked");
+          throw new EveryAppError("OAUTH_SIGNIN_FAILED", "revoked");
         },
       }),
       nonce,

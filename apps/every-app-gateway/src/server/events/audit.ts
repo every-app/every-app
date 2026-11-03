@@ -5,8 +5,7 @@
  * and `tool.*` stay out unless a type filter names them: the tool-calls
  * view lists every call. The server function and the workspace tool both
  * read through here, so the two answer the same rows the same way; the
- * CLI reads D1 directly (packages/cli/src/lib/gateway/workspace.ts) and
- * shapes them with the same SDK helpers.
+ * CLI's `workspace audit` is the tool.
  */
 import {
   auditActorOf,

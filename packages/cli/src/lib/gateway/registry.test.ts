@@ -907,7 +907,7 @@ describe("the events a registry change queues (the outbox)", () => {
     ]);
   });
 
-  it("queues nothing for an upload whose record didn't land, nor on a Gateway from before the event tables", async () => {
+  it("queues nothing for an upload whose record didn't land", async () => {
     const { plan } = await registerApp("todo");
     // An admin switches the app off between each read and its write: the
     // record is refused (APP_CHANGING), and so is its event.
@@ -924,10 +924,5 @@ describe("the events a registry change queues (the outbox)", () => {
       markDeployed(database, plan.app.id, { versionId: "v1", manifest: { id: "todo" }, actor: "x" }),
     ).rejects.toMatchObject({ code: "APP_CHANGING" });
     expect(queued()).toEqual([]);
-
-    sqlite.sqlite.exec("DROP TABLE event_deliveries; DROP TABLE events; DROP TABLE event_subscriptions");
-    sqlite.sqlite.exec("UPDATE apps SET status = 'pending'");
-    await expect(markDeployed(db(), plan.app.id, { versionId: "v1", manifest: { id: "todo" }, actor: "x" })).resolves.toBe("binding");
-    await expect(deleteApp(db(), "todo", DEPLOYER)).resolves.toMatchObject({ status: "deleted" });
   });
 });

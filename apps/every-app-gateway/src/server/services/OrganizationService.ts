@@ -6,6 +6,7 @@ import {
 } from "@/server/organization/orgContext";
 import { validOrganizationName } from "@/server/organization/organization-name";
 import { OrganizationRepository } from "../repositories/OrganizationRepository";
+import { OrgSettingsRepository } from "../repositories/OrgSettingsRepository";
 import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
 import { actorFor } from "@/server/events/subjects";
@@ -75,7 +76,47 @@ async function rename(
   return { id: ctx.orgId, name };
 }
 
+/**
+ * Linked dev on or off for the organization (docs/design/linked-dev.md:
+ * whether its owners and admins may run `everyapp dev --gateway` against
+ * this Gateway). Owners and admins only. A change emits `organization.linked_dev_changed`; turning it off
+ * stops the tokens already issued on their next call (the resource list
+ * drops the app's linked dev resource on its next read).
+ */
+async function setLinkedDev(
+  ctx: OrgContext,
+  on: boolean,
+): Promise<{ linkedDev: "on" | "off"; changed: boolean }> {
+  if (ctx.role !== "owner" && ctx.role !== "admin") {
+    throw new GatewayError(
+      "UNAUTHORIZED",
+      "Unauthorized: Organization admin access required",
+    );
+  }
+  const before = await OrgSettingsRepository.isLinkedDevOn(ctx.orgId);
+  if (on === before) {
+    return { linkedDev: before ? "on" : "off", changed: false };
+  }
+  await OrgSettingsRepository.setLinkedDev({
+    organizationId: ctx.orgId,
+    on,
+    updatedBy: ctx.userId,
+  });
+  logEvent("organization.linked_dev_changed", {
+    organizationId: ctx.orgId,
+    by: ctx.userId,
+    linkedDev: on,
+  });
+  await emit(async () => ({
+    organizationId: ctx.orgId,
+    actor: await actorFor(ctx),
+    ...catalogue.linkedDevChanged({ linkedDev: on ? "on" : "off" }),
+  }));
+  return { linkedDev: on ? "on" : "off", changed: true };
+}
+
 export const OrganizationService = {
   getActive,
   rename,
+  setLinkedDev,
 } as const;

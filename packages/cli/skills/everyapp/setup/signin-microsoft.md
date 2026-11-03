@@ -123,7 +123,7 @@ The client secret expires (24 months at most; Microsoft recommends under
    lists `MICROSOFT_SIGNIN_TENANT` in `data.set`.
 2. The person's address must be a member's or have a pending invitation:
    `pnpm everyapp workspace invite <email>` for someone new (the pending
-   invitation for that exact address is enough; the printed link isn't
+   invitation for that exact address is enough; the invitation link isn't
    needed for this).
 3. **Person:** private window, `https://<gateway host>/sign-in` →
    **Continue with Microsoft** → their work account → (first time) the

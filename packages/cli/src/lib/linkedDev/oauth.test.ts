@@ -44,7 +44,7 @@ describe("linked dev's OAuth client", () => {
     });
     await expect(
       discover("https://other.example.com", fetchImpl as unknown as typeof fetch),
-    ).rejects.toMatchObject({ code: "LINKED_DEV_OAUTH_OFF" });
+    ).rejects.toMatchObject({ code: "OAUTH_OFF" });
     // Every endpoint must be the issuer's own: what the browser is opened at
     // and what the code and the refresh token are posted to.
     const foreignEndpoint = vi.fn(async () =>
@@ -55,26 +55,26 @@ describe("linked dev's OAuth client", () => {
       }),
     );
     await expect(discover(GATEWAY, foreignEndpoint as unknown as typeof fetch)).rejects.toMatchObject({
-      code: "LINKED_DEV_OAUTH_OFF",
+      code: "OAUTH_OFF",
       data: { endpoint: "token_endpoint" },
     });
     const schemeEndpoint = vi.fn(async () =>
       json({ issuer: GATEWAY, authorization_endpoint: "file:///etc/passwd", token_endpoint: `${GATEWAY}/t` }),
     );
     await expect(discover(GATEWAY, schemeEndpoint as unknown as typeof fetch)).rejects.toMatchObject({
-      code: "LINKED_DEV_OAUTH_OFF",
+      code: "OAUTH_OFF",
     });
     const wrongIssuer = vi.fn(async () =>
       json({ issuer: "https://evil.example", token_endpoint: "https://evil.example/t" }),
     );
     await expect(discover(GATEWAY, wrongIssuer as unknown as typeof fetch)).rejects.toMatchObject({
-      code: "LINKED_DEV_OAUTH_OFF",
+      code: "OAUTH_OFF",
     });
     const down = vi.fn(async () => {
       throw new Error("ECONNREFUSED");
     });
     await expect(discover(GATEWAY, down as unknown as typeof fetch)).rejects.toMatchObject({
-      code: "LINKED_DEV_GATEWAY_UNREACHABLE",
+      code: "OAUTH_GATEWAY_UNREACHABLE",
     });
   });
 
@@ -93,7 +93,7 @@ describe("linked dev's OAuth client", () => {
     ).resolves.toBe("cid");
     const { registration_endpoint: _off, ...noRegistration } = metadata;
     await expect(registerClient(noRegistration, "x")).rejects.toMatchObject({
-      code: "LINKED_DEV_REGISTRATION_OFF",
+      code: "OAUTH_REGISTRATION_OFF",
     });
   });
 
@@ -167,12 +167,12 @@ describe("linked dev's OAuth client", () => {
         },
         fetchImpl: vi.fn() as unknown as typeof fetch,
       }),
-    ).rejects.toMatchObject({ code: "LINKED_DEV_SIGNIN_FAILED", data: { error: "access_denied" } });
+    ).rejects.toMatchObject({ code: "OAUTH_SIGNIN_FAILED", data: { error: "access_denied" } });
 
     const gone = vi.fn(async () => json({ error: "invalid_grant" }, 400));
     await expect(
       refresh(metadata, "cid", "rt", `${GATEWAY}/linked-dev/todo`, gone as unknown as typeof fetch),
-    ).rejects.toMatchObject({ code: "LINKED_DEV_SIGNIN_FAILED", data: { error: "invalid_grant" } });
+    ).rejects.toMatchObject({ code: "OAUTH_SIGNIN_FAILED", data: { error: "invalid_grant" } });
 
     const revoked = vi.fn(async (_url: string, init?: RequestInit) => {
       expect(new URLSearchParams(String(init?.body)).get("token_type_hint")).toBe("refresh_token");

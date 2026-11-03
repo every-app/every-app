@@ -29,9 +29,9 @@
  * `live_version_id`), so the next `deploy` or `setup` replaces it
  * unattended. After a change to an app's Worker its secret names are
  * recorded on the app's row (`secret_names`), so the gateway knows what is
- * set, and every app the change can move gets its setup state recorded
- * (`apps.setup_state`, with `app.needs_setup` or `app.ready` on a
- * transition: lib/gateway/setupState.ts). The secret is live at once.
+ * set (the Gateway records each app's setup state, and its
+ * `app.needs_setup` or `app.ready`, when it next evaluates it). The secret
+ * is live at once.
  * `unset` asks first (`--yes` doesn't),
  * and a name nobody holds is no change. `list` prints names, never values:
  * one app's settings (the app here, or `list <app>`) as the settings model
@@ -97,7 +97,6 @@ import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { readInstall, writeInstall, type InstallRecord } from "@/lib/gateway/install";
 import { acquireAppLease, acquireGatewayLease, LeasePurpose } from "@/lib/gateway/lease";
 import { bindProviderSettings, gatewayRegistry, providerRowsNaming } from "@/lib/gateway/providers";
-import { refreshSetupStates } from "@/lib/gateway/setupState";
 import {
   bindRemoteMcpCredentials,
   remoteMcpCredentialNames,
@@ -1299,13 +1298,6 @@ async function apply(
           data: { action, names, versions },
         });
       }
-      // Whether each app the change can move opens now, on its row, with
-      // app.needs_setup or app.ready on a change (never failing the run).
-      await refreshSetupStates(
-        { cf, db, deployer, names: { worker: gatewayWorker } },
-        { gateway: applied.gateway?.names ?? [], appRowId: applied.app && app ? app.rowId : null, except: options.setupRecordedBy },
-        out,
-      );
       return applied;
     } finally {
       await appLease?.release();

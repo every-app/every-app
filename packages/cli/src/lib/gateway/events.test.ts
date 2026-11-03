@@ -3,15 +3,14 @@
  * through `cf d1 query` as a command sends it: the event row as the
  * Gateway's bus writes it, a pending delivery for each enabled
  * subscription of the organization whose patterns match, a dedupe key
- * that drops a second event and its deliveries, a condition that keeps a
- * write that didn't happen from being announced, and a Gateway from before
- * the event tables, where nothing is queued.
+ * that drops a second event and its deliveries, and a condition that keeps
+ * a write that didn't happen from being announced.
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { cfD1Database, type D1Statement } from "@/lib/cf/d1";
 import { FakeCf } from "@/lib/cf/fakeCf";
 import { createSqliteD1, GATEWAY_MIGRATIONS_DIR, sqliteD1Script, type SqliteD1 } from "@/test/sqliteD1";
-import { eventPatterns, hasEventsTables, operatorActor, queueEventFromCli, subscriptionName } from "./events";
+import { operatorActor, queueEventFromCli } from "./events";
 
 const DB_ID = "0123456789abcdef0123456789abcdef";
 const NOW = Date.parse("2026-10-25T09:00:00Z");
@@ -126,29 +125,5 @@ describe("queueEventFromCli", () => {
   it("refuses data with a key named like a credential, and a type the catalogue doesn't have", async () => {
     await expect(queue({ data: { app: { id: "crm" }, apiKey: "x" } })).rejects.toThrow(/apiKey/);
     await expect(queue({ type: "app.exploded" })).rejects.toThrow(/isn't in the event catalogue/);
-  });
-
-  it("queues nothing on a Gateway from before the event tables, and asks only once", async () => {
-    sqlite.sqlite.exec("DROP TABLE event_deliveries; DROP TABLE events; DROP TABLE event_subscriptions");
-    const database = db();
-    expect(await queueEventFromCli(database, { organizationId: "org-1", type: "access.changed", actor: ACTOR, data: { access: "on" } })).toEqual([]);
-    expect(await hasEventsTables(database)).toBe(false);
-    expect(cf.calls.filter((call) => JSON.stringify(call.files).includes("PRAGMA table_info(events)"))).toHaveLength(1);
-  });
-});
-
-describe("eventPatterns", () => {
-  it("splits commas across repeated flags, keeps each once, and reads none or * as everything", () => {
-    expect(eventPatterns(["cap.*, member.joined", "cap.*", "app.crm.*"])).toEqual(["cap.*", "member.joined", "app.crm.*"]);
-    expect(eventPatterns(undefined)).toEqual(["*"]);
-    expect(eventPatterns(["member.*,*"])).toEqual(["*"]);
-  });
-});
-
-describe("subscriptionName", () => {
-  it("is one trimmed line of at most 100 characters, or null for the default", () => {
-    expect(subscriptionName("  Slack\n #ops ")).toBe("Slack #ops");
-    expect(subscriptionName("   ")).toBeNull();
-    expect(subscriptionName("x".repeat(150))).toHaveLength(100);
   });
 });

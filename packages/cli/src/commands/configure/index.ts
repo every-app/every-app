@@ -60,7 +60,6 @@ import { EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { gatewayRegistry } from "@/lib/gateway/providers";
 import { findRegisteredApp } from "@/lib/gateway/registry";
-import { recordSetupStateQuietly, refreshSetupStates } from "@/lib/gateway/setupState";
 import { loadEveryAppManifestIfPresent } from "@/lib/manifest";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
@@ -221,19 +220,6 @@ export async function configureApp(options: ConfigureOptions): Promise<void> {
           : target.registry,
       })
     : before;
-  // The app's state on its row, with app.needs_setup or app.ready on a
-  // change, never failing the run: from what was just read when the
-  // manifest is the deployed one; from the deployed one, as the Gateway
-  // reads it, when configure read the everyapp.config.ts here.
-  if (target.deployed && target.source === ManifestSource.Registry) {
-    await recordSetupStateQuietly(
-      target.connection.db,
-      { appRowId: target.deployed.rowId, setup: after.setup, deployer: target.connection.deployer },
-      out,
-    );
-  } else if (target.deployed) {
-    await refreshSetupStates(target.connection, { gateway: [], appRowId: target.deployed.rowId }, out);
-  }
   finish(target, after, plan, names, applied, out);
 }
 

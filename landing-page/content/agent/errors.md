@@ -82,7 +82,7 @@ Source: `packages/cli/src/lib/cf/account.ts` (`resolveAccount`).
 
 **Fix:** `fix`: pick one of the providers `pnpm everyapp ai show` lists, as `<provider>` or `<provider>/<model>`. Nothing was written. Not retryable.
 
-Source: `packages/cli/src/lib/gateway/aiDefault.ts` (`setAiDefault`, `parseAiDefaultArgument`).
+Source: `packages/cli/src/commands/ai/index.ts` (`defaultArgs`); the Gateway's own refusals of a provider come back as `GATEWAY_TOOL_ERROR`.
 
 ### AI_GATEWAY_ID_INVALID
 
@@ -91,22 +91,6 @@ Source: `packages/cli/src/lib/gateway/aiDefault.ts` (`setAiDefault`, `parseAiDef
 **Fix:** `fix`: `pnpm everyapp ai gateway on --id <name>` with a valid name (the default, `everyapp`, is one). Not retryable.
 
 Source: `packages/cli/src/commands/ai/index.ts` (`turnGatewayOn`).
-
-### ALREADY_INVITED
-
-`workspace invite <email>`: the address has a pending invitation to the organization that hasn't expired (`invitations.status = 'pending'`, `expires_at` still to come). Checked before the write and again on it (the insert's `WHERE NOT EXISTS`), so an invite racing this one loses; a second raise after the write is `retryable`. An expired invitation doesn't count: a new one is made beside it. Headline: `<email> has a pending invitation to <organization> already`.
-
-**Fix:** `rerun`: `pnpm everyapp workspace invite-link <email>`, `rerunNote`: `prints a new link for it`. Cancel it first with `workspace uninvite` to invite with another role.
-
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`invite`, `refuseKnownAddress`).
-
-### ALREADY_MEMBER
-
-`workspace invite <email>`: a member of the organization has that email (letter case aside). Checked before the write and again on it. Headline: `<email> is a member of <organization> already`.
-
-**Fix:** `rerun`: `pnpm everyapp workspace users`, `rerunNote`: `lists the members`.
-
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`refuseKnownAddress`).
 
 ### APP_CHANGING
 
@@ -142,14 +126,6 @@ Source: `packages/cli/src/commands/create/index.ts`.
 
 Source: `packages/cli/src/commands/create/steps/appId.ts` (`resolveAppId`).
 
-### APP_NAME_INVALID
-
-`workspace app set <app> --name <name>`: the name is empty once trimmed, or longer than 255 characters (the rule Admin → Apps → Edit applies, `schemas/app.ts`). The command line's parser refuses it first, as `INVALID_VALUE` (exit 252: `--name can't be ""`); this is the library's own check behind it. Headline: `An app's name is 1 to 255 characters, not empty` (or `(<n> given)`). Nothing is written.
-
-**Fix:** `fix`: `give --name the name the app library should show, or leave --name off`. Not retryable.
-
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`appName`, `updateApp`), `packages/cli/src/commands/workspace/command.ts` (the `--name` parser).
-
 ### APP_NOT_FOUND
 
 The app the command acts on has no usable row in the Gateway's registry (never deployed, deleted, or gone mid-run). Each raise site says it its own way:
@@ -171,7 +147,7 @@ The app the command acts on has no usable row in the Gateway's registry (never d
 
 **Fix:** as the table says; for an app (not an MCP app) in every case but the last three, deploy the app first. No takeover.
 
-Source: `packages/cli/src/lib/gateway/registry.ts`, `packages/cli/src/lib/gateway/remoteMcpApps.ts`, `packages/cli/src/lib/gateway/workspace.ts`, `packages/cli/src/commands/deploy/steps/waitForLive.ts`, `packages/cli/src/commands/secret/index.ts`, `packages/perimeter/src/registry/registration.ts` (`assertLiveApp`).
+Source: `packages/cli/src/lib/gateway/registry.ts`, `packages/cli/src/lib/gateway/remoteMcpApps.ts`, `packages/cli/src/commands/deploy/steps/waitForLive.ts`, `packages/cli/src/commands/secret/index.ts`, `packages/perimeter/src/registry/registration.ts` (`assertLiveApp`).
 
 ### APP_NOT_LIVE
 
@@ -250,15 +226,7 @@ A step needs a person's yes, `--yes` wasn't given, and nobody is at a terminal (
 
 **Fix:** takeover: `rerun` is this same command with `--yes` (with `--register-providers` for `deploy`'s and `install`'s bundled providers, which `--yes` never approves), and `data.authorize: true`. Show the message and ask the person before rerunning with that flag. Not retryable.
 
-Source: `packages/cli/src/lib/output/prompt.ts` (`confirmUnlessYes`), called from `packages/cli/src/commands/access/index.ts` (`turnAccessOff`), `packages/cli/src/commands/db/index.ts`, `packages/cli/src/commands/db/restore.ts`, `packages/cli/src/commands/delete/index.ts`, `packages/cli/src/commands/secret/index.ts`, `packages/cli/src/commands/workspace/index.ts` (`removeMember`), `packages/cli/src/commands/workspace/groups.ts` (`deleteGroup`).
-
-### CONNECTION_NOT_FOUND
-
-`workspace connection revoke <id>`: no AI connection (`mcp_connections` row) with that id belongs to the organization. One revoked already is not an error: the command says so (`data.already: true`). Headline: `No AI connection <id> in <organization>`.
-
-**Fix:** `rerun`: `pnpm everyapp workspace connections`, `rerunNote`: `lists them by id`.
-
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`revokeConnection`).
+Source: `packages/cli/src/lib/output/prompt.ts` (`confirmUnlessYes`), called from `packages/cli/src/commands/access/index.ts` (`turnAccessOff`), `packages/cli/src/commands/db/index.ts`, `packages/cli/src/commands/db/restore.ts`, `packages/cli/src/commands/delete/index.ts`, `packages/cli/src/commands/secret/index.ts`, `packages/cli/src/lib/gatewayApi/command.ts` (`callAndReport`: `workspace remove`, `workspace group delete`).
 
 ### D1_NOT_FOUND
 
@@ -480,107 +448,36 @@ The domain of an inbound address isn't in any zone of the Gateway's Cloudflare a
 
 Source: `packages/cli/src/lib/app/emailRoutes.ts` (`emailZone`), `packages/cli/src/lib/domains/zones.ts` (`resolveZone`).
 
-### EVENT_DELIVERY_NOT_FOUND
-
-`events redeliver <delivery>`: no delivery with that id in the organization the command acts on (`--org`, else the install organization), within the 30 days the log is kept: a mistyped id, another organization's, or one the hourly maintenance has deleted. Every read carries the organization's id, so another organization's delivery reads as missing. Headline: `No delivery <id> in <organization>`, then `Deliveries are kept 30 days, under the organization of their subscription.`
-
-**Fix:** `rerun`: `pnpm everyapp events deliveries` (`rerunNote` `lists the last ones`). Not retryable.
-
-Source: `packages/cli/src/lib/gateway/events.ts` (`redeliver`).
-
-### EVENT_SECRET_INVALID
-
-`events add <url> --secret` (or `--secret-from-env <VAR>`): the signing secret read from the hidden prompt, stdin or the variable won't do: shorter than 16 or longer than 128 characters (`EVENT_SECRET_MIN_LENGTH`, `EVENT_SECRET_MAX_LENGTH` in `@every-app/sdk/internal`), or not all printable ASCII without spaces (`!` to `~`), so that every receiver's HMAC reads the same bytes. Checked after the URL and before anything is written; the secret is never shown back. Headline: `That signing secret won't do`, then `A signing secret is 16 to 128 characters (this one is <n>).` or `A signing secret is printable ASCII with no spaces, so every receiver's HMAC reads the same bytes.`
-
-**Fix:** `fix`: `leave --secret out and the CLI makes one, or give one of 16 to 128 printable characters`. Not retryable.
-
-Source: `packages/cli/src/lib/gateway/events.ts` (`checkedSecret`).
-
 ### EVENT_SINK_CONFLICT
 
-`events add`: the arguments don't name one way to deliver. Three headlines, checked before anything connects:
+`events add`: the arguments don't name one way to deliver. Two headlines, checked before anything connects:
 
 - A URL and `--email` together: `Give a webhook URL or --email, not both`, then `A subscription delivers one way: a signed POST to a URL, or mail to the organization's owners (and admins).`; `fix`: `add one subscription for each`.
 - `--email` with `--secret` or `--secret-from-env`: `An email subscription has no signing secret`, then `Only a webhook is signed; mail goes from the Gateway's own sender to the organization's members.`; `fix`: `leave --secret out`.
-- Neither a URL nor `--email`: `Name where events go: a webhook URL, or --email owners|admins`; `rerun`: `pnpm everyapp events add https://hooks.example.com/everyapp` (`rerunNote` `or --email admins`).
 
 **Fix:** as each says. Not retryable.
 
-Source: `packages/cli/src/commands/events/add.ts` (`addEvents`).
+Source: `packages/cli/src/commands/events/index.ts` (`addArgs`).
 
-### EVENT_SUBSCRIPTIONS_LIMIT
+### EVENT_TARGET_REQUIRED
 
-`events add` in an organization that has 25 subscriptions already (`EVENT_SUBSCRIPTIONS_MAX`), built-in and disabled ones included. The insert counts them itself (`INSERT … SELECT … WHERE (SELECT COUNT(*) …) < 25`), so two adds at once can't make a 26th. Nothing is written. Headline: `<organization> has 25 subscriptions, the most an organization may have`, then `Nothing was added.`
+`events add` with neither a webhook URL nor `--email`: a subscription needs somewhere to deliver. Checked before the Gateway is reached.
 
-**Fix:** `fix`: `remove one you no longer need (pnpm everyapp events remove <id>), or widen one's --events instead of adding another`; `rerun`: `pnpm everyapp events list` (`rerunNote` `lists them`). Not retryable.
+**Fix:** `events add https://hooks.example.com/everyapp`, or `events add --email admins`. No rerun, not retryable.
 
-Source: `packages/cli/src/lib/gateway/events.ts` (`addSubscription`).
-
-### EVENT_SUBSCRIPTION_DISABLED
-
-`events test <id>` on a subscription that is disabled, or `events redeliver <delivery>` of a delivery whose subscription is: the Gateway drops what is queued for a disabled subscription (`subscription_gone`), so the ping or the redelivery would go nowhere. Nothing is written. Headline: `<name> (<id>) is disabled`, then `The Gateway drops what is queued for a disabled subscription, so a test|sending it again would go nowhere.`
-
-**Fix:** `rerun`: `pnpm everyapp events enable <id>` (`rerunNote` `then run this again`). Not retryable.
-
-Source: `packages/cli/src/lib/gateway/events.ts` (`subscriptionDisabled`), `packages/cli/src/commands/events/ping.ts`.
-
-### EVENT_SUBSCRIPTION_NOT_FOUND
-
-`events remove|enable|disable|test <id>` or `events deliveries <id>`: no subscription with that id in the organization the command acts on (`--org`, else the install organization). Every read and write carries the organization's id, so another organization's subscription reads as missing. Headline: `No subscription <id> in <organization>`, then `Subscriptions belong to one organization; --org names another.` From `events redeliver <delivery>`, when the delivery's subscription was removed since: `<delivery> was for <subscription>, which is removed`, then `There is nowhere to send it again.`
-
-**Fix:** `rerun`: `pnpm everyapp events list` (`rerunNote` `lists them`, or `lists the subscriptions there are`). Not retryable.
-
-Source: `packages/cli/src/lib/gateway/events.ts` (`findSubscription`, `redeliver`).
-
-### EVENT_TARGET_REFUSED
-
-`events add <url>`: the URL breaks the Gateway's target rules (`checkEventTarget` in `packages/cli/src/lib/gateway/eventTarget.ts`, the CLI's copy of the Gateway's `server/events/target.ts`, which checks the stored URL again before every attempt). Checked after connecting (the rules need the install row's Gateway host and apps' domain, and the names of the Gateway Worker's settings) and before a secret is read or anything is written. Headline: `The Gateway won't deliver to that URL`, then one reason; the URL is never repeated, so a password typed into one isn't shown:
-
-| The URL                                                                                                                                                 | Reason                                                                                                                     |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| longer than 2,048 characters                                                                                                                            | `A webhook URL is at most 2,048 characters.`                                                                               |
-| not a URL                                                                                                                                               | `It isn't a URL: give the whole address, like https://hooks.example.com/everyapp.`                                         |
-| `http:`                                                                                                                                                 | `A webhook URL starts with https://: the event and its signature would cross the internet in the clear.`                   |
-| another scheme                                                                                                                                          | `A webhook URL starts with https://, not <scheme>//.`                                                                      |
-| a user name or password                                                                                                                                 | `A webhook URL carries no user name or password: the subscription's secret signs each delivery instead.`                   |
-| a fragment                                                                                                                                              | `A webhook URL has no fragment (#…): it is never sent to the receiver.`                                                    |
-| an IPv4 (in any spelling) or IPv6 literal                                                                                                               | `A webhook URL names its host, not an IP address.`                                                                         |
-| the Gateway's host, or the apps' domain or anything under it                                                                                            | `<host> is the Gateway's own host, or under its apps' domain <domain>: a delivery there would loop back into the Gateway.` |
-| `localhost`, `local`, `internal`, `home.arpa`, `onion`, `localdomain`, `intranet`, `lan`, `corp`, `private` or a name under one, or a name of one label | `<host> is a local or internal name, which the Gateway's Worker can't reach.`                                              |
-
-With `EVENTS_ALLOW_PRIVATE_TARGETS` set on the Gateway Worker (the CLI can read only that it is set; the Gateway honours it when its value is `true`), `http:`, IP literals and the private names are let through; the Gateway's own hosts never are. A hosted Gateway also refuses its third-party domain (`THIRD_PARTY_DOMAIN`), a setting whose value the CLI can't read, so a URL under it is added and each attempt is refused with `target_refused`.
-
-**Fix:** for `http:`, an IP literal or a private name, `fix`: `use a public https:// receiver; for one on a private network, set EVENTS_ALLOW_PRIVATE_TARGETS on the Gateway (pnpm everyapp secret set EVENTS_ALLOW_PRIVATE_TARGETS, value true; self-host only)`; otherwise `fix`: `give the receiver's full https:// URL (Slack's, Zapier's, n8n's, your own)`. Not retryable.
-
-Source: `packages/cli/src/lib/gateway/eventTarget.ts` (`checkEventTarget`), `packages/cli/src/lib/gateway/events.ts` (`webhookUrl`); the private names are `EVENT_PRIVATE_NAME_SUFFIXES` in `packages/sdk/src/internal/events.ts` (`isPrivateEventTargetName`), the one list the Gateway's rules use too.
-
-### EVENT_TEST_TIMEOUT
-
-`events test <id>` without `--no-wait`: the ping it queued wasn't attempted within 90 seconds (`TEST_WAIT_MS`). The CLI never calls the receiver: the Gateway's per-minute sweep sends queued deliveries, and a Gateway installed before events (no per-minute trigger) sends them hourly at best, or not at all before `update`. The ping stays queued. Headline: `The Gateway hasn't sent the test event in 1m 30s`, then `It stays queued. The Gateway sends queued events every minute; one installed before events were added sends them hourly at best until it is updated.`; `data.subscriptionId`, `data.eventId`, `data.deliveryId`.
-
-**Fix:** `fix`: `if the Gateway is older than this CLI, update it (pnpm everyapp update)`; `rerun`: `pnpm everyapp events deliveries <id>` (`rerunNote` `shows whether it went since`). Not retryable: running the test again queues another ping.
-
-Source: `packages/cli/src/commands/events/ping.ts` (`testEvents`), `packages/cli/src/lib/gateway/events.ts` (`waitForDelivery`).
-
-### EVENT_TYPE_UNKNOWN
-
-`events add --events <types>`: an entry that is no event type in the catalogue (`EVENT_TYPES` in `@every-app/sdk/internal`), no prefix of one (`member.*`), not an app's own events (`app.<app id>.*`, `app.<app id>.<name>`) and not `*` (`eventPatternProblem`). Every entry is checked before anything connects, and all the refused ones are named. Headline: `<entry> isn't an event type` (or `<n> of --events aren't event types`), then each entry's reason; `data.patterns` lists them.
-
-**Fix:** `fix`: `name types (member.joined), prefixes (member.*), an app's own events (app.crm.*) or * for everything`; `rerun`: `pnpm everyapp events types` (`rerunNote` `lists the types`). Not retryable.
-
-Source: `packages/cli/src/lib/gateway/events.ts` (`eventPatterns`), `packages/sdk/src/internal/events.ts` (`eventPatternProblem`).
+Source: `packages/cli/src/commands/events/index.ts` (`addArgs`)
 
 ## Error codes F–R
 
 The codes below follow the defaults in `packages/cli/src/lib/errors.ts`: an error event has no `data.rerun` unless its raise site sets one or the error is `retryable: true` (then `data.rerun` is this same command as typed, `--json` included when the run had it, built by `thisCommand()`: run it as it is); `data.authorize: true` is set only for the takeover flags in `TAKEOVER_FLAGS`, and no code in this range is one of them, so none of these reruns needs a person's yes. Each entry says whether the code is `retryable`; a `data.fix` is a remedy in words, `data.rerun` a command to run, `data.rerunNote` what follows it. Angle brackets inside quoted messages stand for values filled in at run time.
 
-### FLAGS_CONFLICT
+### GATEWAY_AMBIGUOUS
 
-`workspace group members`, `workspace group apps` and `workspace app access`: `--set` was given with `--add` or `--remove`. `--set` replaces the whole list; `--add` and `--remove` change it, and may go together. Checked before anything connects. Headline: `--set replaces the whole list: give it alone, or --add and --remove without it`.
+An admin command (`workspace`, `events`, `ai`, `call`) without `--gateway` or `EVERYAPP_GATEWAY_URL`, on a machine signed in to several Gateways (`login --gateway`): it won't guess which. `data.gateways` lists them.
 
-**Fix:** none offered; no rerun; not retryable.
+**Fix:** pass `--gateway <url>` or set `EVERYAPP_GATEWAY_URL`. Not retryable.
 
-Source: `packages/cli/src/commands/workspace/shared.ts` (`listChange`).
+Source: `packages/cli/src/lib/gatewayApi/index.ts` (`resolveGateway`)
 
 ### GATEWAY_BUILD_FAILED
 
@@ -633,13 +530,29 @@ Source: `packages/cli/src/lib/gateway/install.ts`, `packages/cli/src/lib/gateway
 
 ### GATEWAY_OUTDATED
 
-The Gateway is older than this everyapp: its database doesn't have the newest Gateway migration this everyapp was built with (`GATEWAY_SCHEMA`, the newest tag in `apps/every-app-gateway/drizzle/meta/_journal.json`; looked up in `d1_migrations`, the table `cf d1 migrations apply` keeps). Every command that connects to a Gateway checks it once, right after finding the Gateway and before reading or writing anything (`connectToGateway`): `deploy`, `delete`, `install`, `workspace …`, `ai …`, `provider …`, `mcp …`, `secret …`, `configure`, `email …`, `access …`, `db query` and the rest. `setup`, `update`, `status` and `db restore` don't: `update` is how the Gateway catches up, `status` reports it (a fix of severity `error`, [below](#what-status-reports-as-fixes)), and `db restore --gateway` is how a failed Gateway migration is undone (that migration has no `d1_migrations` row). CLI and Gateway are one release, and the CLI reads and writes the Gateway's tables directly, so there is no other version check. A Gateway newer than this everyapp is fine (Gateway migrations only add). Headline: `The Gateway is older than this everyapp`, then `Its database doesn't have migration <tag> yet, which this everyapp reads and writes.`; `data.needs` is the tag.
+The Gateway is older than this everyapp: its database doesn't have the newest Gateway migration this everyapp was built with (`GATEWAY_SCHEMA`, the newest tag in `apps/every-app-gateway/drizzle/meta/_journal.json`; looked up in `d1_migrations`, the table `cf d1 migrations apply` keeps). Every command that connects to a Gateway checks it once, right after finding the Gateway and before reading or writing anything (`connectToGateway`): `deploy`, `delete`, `install`, `workspace reset-link`, `workspace invite-link`, `ai gateway on|off`, `provider …`, `mcp …`, `secret …`, `configure`, `email …`, `access …`, `db query` and the rest. `setup`, `update`, `status` and `db restore` don't: `update` is how the Gateway catches up, `status` reports it (a fix of severity `error`, [below](#what-status-reports-as-fixes)), and `db restore --gateway` is how a failed Gateway migration is undone (that migration has no `d1_migrations` row). CLI and Gateway are one release, and where the CLI reads and writes the Gateway's tables directly there is no other version check. A Gateway newer than this everyapp is fine (Gateway migrations only add). Headline: `The Gateway is older than this everyapp`, then `Its database doesn't have migration <tag> yet, which this everyapp reads and writes.`; `data.needs` is the tag.
 
-The `events` commands raise it too, with their own headlines (`The Gateway predates events`, `The Gateway predates the audit log`), when the event tables or the audit log's columns are missing (`requireEventsTables`, `requireAuditColumns`).
+The admin commands that call the Gateway's own tools (`workspace` but `reset-link` and `invite-link`, `events`, `ai show|default`, `call`) don't raise it: they run on the live Gateway, whatever its version.
 
 **Fix:** `rerun`: `pnpm everyapp update` (`rerunNote` `then run this again`), which applies the Gateway's migrations. Not retryable.
 
-Source: `packages/cli/src/lib/gateway/schema.ts` (`requireGatewaySchema`), called from `packages/cli/src/lib/gateway/connect.ts`; `packages/cli/src/lib/gateway/events.ts`.
+Source: `packages/cli/src/lib/gateway/schema.ts` (`requireGatewaySchema`), called from `packages/cli/src/lib/gateway/connect.ts`.
+
+### GATEWAY_REFUSED
+
+The Gateway's `/mcp` redirected an admin command's request (Cloudflare Access with Managed OAuth in front of `/mcp`, or a URL that isn't the Gateway's; the credential is never sent on), or answered 401 or 403 to its credential: `EVERYAPP_TOKEN` was revoked, expired or belongs to another Gateway, or this machine's sign-in was revoked (Settings → AI connections), ended with a deactivation, or the Gateway refused the caller (`data.status`; a 403's `reason` and `message` are in the headline). On a 401 a stored sign-in is refreshed once and the call retried; a 401 after that, or a refresh the token endpoint refuses, forgets the sign-in so the next run signs in again. A refresh that fails on the network forgets nothing.
+
+**Fix:** `data.fix`: a new personal access token, or `login --gateway <url>` again. Not retryable.
+
+Source: `packages/cli/src/lib/gatewayApi/index.ts` (`rpc`)
+
+### GATEWAY_TOOL_ERROR
+
+The Gateway's tool refused the call: one of its services' rules (the last owner is never demoted, a name already taken, a shared app's access, a cap out of range, an unknown subscription, …) or its schema (`Invalid arguments for …`). The headline is the Gateway's own message; `data.code` is its code when it gave one (`LAST_OWNER`, `GROUP_NOT_FOUND`, `INVALID_INPUT`, …) and `data.tool` the tool. A tool the credential can't see (a read-only grant calling a write tool, a grant narrowed to some apps calling a workspace tool, a role below the tool's) answers as unknown here too, with a `fix` that says so (`pnpm everyapp call --list` shows what the credential may call).
+
+**Fix:** as the message says; sign in again with read & write and all apps (`login --gateway <url>`), or use such a token, when the tool is hidden from this grant. Not retryable.
+
+Source: `packages/cli/src/lib/gatewayApi/index.ts` (`toolAnswer`, `rpc`)
 
 ### GATEWAY_UPDATED
 
@@ -651,7 +564,7 @@ Source: `packages/cli/src/lib/gateway/apply.ts` (`checkDowngrade`).
 
 ### GATEWAY_URL_MISMATCH
 
-`--gateway` and `EVERYAPP_GATEWAY_URL` only pick among several Gateways; the URL a command uses always comes from the install row. `checkGatewayUrl()` raises this when the host they name (compared lowercase) isn't the found Gateway's `gateway_host`. Raised by every command through `connectToGateway()` (`deploy`, `install`, `delete`, `db query`, `db restore`, `secret`, `email`, `access on|off|show`, `mcp` (every subcommand), `events` but `events types`). Message `The Gateway here is <found host>, not <requested host>` then `Found in <account>. For <requested host>, pass its account with --account-id.`
+`--gateway` and `EVERYAPP_GATEWAY_URL` only pick among several Gateways; the URL a command uses always comes from the install row. `checkGatewayUrl()` raises this when the host they name (compared lowercase) isn't the found Gateway's `gateway_host`. Raised by every command through `connectToGateway()` (`deploy`, `install`, `delete`, `db query`, `db restore`, `secret`, `email`, `access on|off|show`, `mcp` (every subcommand), `workspace reset-link`, `workspace invite-link`, `ai gateway on|off`). Message `The Gateway here is <found host>, not <requested host>` then `Found in <account>. For <requested host>, pass its account with --account-id.`
 
 **Fix:** when the host came from `--gateway` on the command line, `data.rerun` is this command without `--gateway` and its value (`thisCommandWithout()`), `data.rerunNote` `to use <found host>`; when it came from the environment, `data.fix` is `unset EVERYAPP_GATEWAY_URL to use <found host>`. Not retryable.
 
@@ -664,30 +577,6 @@ Source: `packages/cli/src/lib/gateway/discover.ts`, `packages/cli/src/lib/gatewa
 **Fix:** as `data.fix`; not retryable.
 
 Source: `packages/cli/src/commands/release/publish.ts`
-
-### GROUP_NAME_INVALID
-
-`workspace group create <name>` and `workspace group set --name <name>`: the name, trimmed, is empty or longer than 60 characters, the Gateway's own rule. Checked before the write. Headline: `A group name is 1 to 60 characters (<n> given)`.
-
-**Fix:** none offered; no rerun; not retryable.
-
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`groupName`).
-
-### GROUP_NAME_TAKEN
-
-`workspace group create <name>` and `workspace group set --name <name>`: the organization has a group with that name, letter case aside (the Gateway's `groups_organization_name_unique` index is on `lower(name)`). Held on the write (`INSERT … WHERE NOT EXISTS`, `UPDATE … WHERE NOT EXISTS`), so two creates racing each other make one group. Headline: `A group named "<name>" exists already in this organization`.
-
-**Fix:** `rerun`: `pnpm everyapp workspace groups`, `rerunNote`: `lists them`.
-
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`createGroup`, `updateGroup`).
-
-### GROUP_NOT_FOUND
-
-`workspace group set/delete/members/apps <group>`: no group of the organization has that name (letter case aside) or `grp_` id. Headline: `No group named <group> in <organization>`.
-
-**Fix:** `rerun`: `pnpm everyapp workspace groups`, `rerunNote`: `lists them`.
-
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`findGroup`).
 
 ### HELPER_DURABLE_OBJECT_REMOVED
 
@@ -769,14 +658,6 @@ Source: `packages/cli/src/commands/create/steps/appId.ts`, `packages/perimeter/s
 
 Source: `packages/cli/src/lib/gateway/patchBuildOutput.ts`, `packages/cli/src/lib/app/policy.ts`
 
-### INVALID_CAP
-
-`workspace app cap <app> <dollars|off>` and `workspace cap default <dollars|off>`: the cap isn't dollars from 0.01 to 1,000,000 in whole cents, or `off`. The command line's parser refuses most such values first, as `INVALID_VALUE` (exit 252); this is the library's own check behind it. Headline: `A monthly cap is from $0.01 to $1,000,000 in whole cents, or off`. The library also raises it when a cap and `unlimited` reach it together (`An app has a cap or no cap, not both`), or neither (`Missing the cap`), which the command refuses first as `INVALID_VALUE` and `MISSING_ARGUMENT`.
-
-**Fix:** none offered; no rerun; not retryable.
-
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`setMonthlyCap`, `setDefaultMonthlyCap`), `packages/cli/src/lib/gateway/costCaps.ts` (`costCapMicros`), `packages/cli/src/commands/workspace/command.ts` (`parseUsd`).
-
 ### INVALID_DEV_MODE
 
 `everyapp dev`: `--mode`, or `EVERYAPP_DEV_MODE` when the flag is absent, isn't `stub` or `mirror` (compared lowercase). Message `--mode must be stub or mirror, not "<value>"` (or `EVERYAPP_DEV_MODE must be stub or mirror, not "<value>"`) then `stub signs you in as a seeded dev user; mirror uses real login through a local Gateway.`
@@ -819,39 +700,13 @@ The registry raises the same code (a `RegistrationError`, status 400, passed thr
 
 Source: `packages/cli/src/commands/dev/index.ts`, `packages/cli/src/lib/output/report.ts`, `packages/cli/src/lib/manifest.ts`, `packages/perimeter/src/registry/registration.ts`
 
-### INVALID_MONTH
-
-`workspace usage --month <month>`: the month isn't written `YYYY-MM`. The command line's parser refuses it first, as `INVALID_VALUE` (exit 252); this is the library's own check behind it. Headline: `--month <month> isn't a month: use YYYY-MM`.
-
-**Fix:** none offered; no rerun; not retryable.
-
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`usage`), `packages/cli/src/commands/workspace/command.ts` (`parseMonth`).
-
-### INVALID_EVENT_TYPE
-
-`workspace audit --type <type>`: the filter isn't an event type (`member.joined`), a prefix (`member.*`, `app.crm.*`) or `*`: lowercase letters, digits and underscores in dot-separated parts, at most 80 characters. The command line's parser refuses it first, as `INVALID_VALUE` (exit 252); this is the library's own check behind it. Headline: `--type is an event type (member.joined), a prefix (member.*, app.crm.*) or *`. Nothing is read.
-
-**Fix:** `fix` is absent (an argument error). Not retryable.
-
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`audit`).
-
 ### INVITATION_NOT_PENDING
 
-`workspace invite-link <email|id>` and `workspace uninvite <email|id>`: no pending invitation of the organization matches the id or the invited email (it was accepted, canceled or never made), or, for `invite-link`, the pending one has expired (`expires_at` passed), or it was used or canceled between the read and the write (the insert's `WHERE EXISTS`, the update's `AND status = 'pending'`). Headline: `No pending invitation for <x> in <organization>`, or `The invitation for <email> expired on <time>`, or `… was used or canceled meanwhile`.
+`workspace invite-link <email|id>`: no pending invitation of the install organization matches the id or the invited email (it was accepted, canceled or never made), or the pending one has expired (`expires_at` passed), or it was used or canceled between the read and the write (the insert's `WHERE EXISTS`). Nothing is written. Headline: `No pending invitation for <x> in <organization>`, or `The invitation for <email> expired on <time>`, or `… was used or canceled meanwhile`. `workspace uninvite` gets the Gateway's own refusal as `GATEWAY_TOOL_ERROR` (`data.code`).
 
-**Fix:** `rerun`: `pnpm everyapp workspace users`, `rerunNote`: `lists the pending invitations`; for an expired one, `rerun`: `pnpm everyapp workspace invite <email>`, `rerunNote`: `makes a new one`.
+**Fix:** `rerun`: `pnpm everyapp workspace users`, `rerunNote`: `lists the pending invitations`; for an expired one, `rerun`: `pnpm everyapp workspace invite <email>`, `rerunNote`: `makes a new one`. Not retryable.
 
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`findPendingInvitation`, `inviteLink`, `uninvite`).
-
-### LAST_OWNER
-
-`workspace role <email> admin|member` named an owner while no other owner of the workspace can act (step `workspace.role`): they are the only owner, or every other owner is deactivated (`users.banned` with no expiry or one still to come). The workspace always keeps at least one owner who can act, so the guarded `UPDATE` changed nothing and the row is as it was. Headline: `<email> is the last owner of <workspace>`, then `The workspace always keeps one owner, so their role stays until someone else is an owner.` The Gateway's Users page refuses the same move with the same code, and its write carries the same guard.
-
-`workspace remove <email>` refuses the organization's last owner who can act the same way (the predicate is the one `role` holds, `anotherLiveOwnerSql` in members.ts). `workspace deactivate <email>` bans the account, which is account-wide (every session, token and AI connection goes with it), so it keeps the rule in every organization the member owns: refused when they are the last live owner of the organization acted on or of any other, naming the one that would be left without an owner (`data.organization`). The Gateway refuses such a person to an admin outright (`USER_IN_OTHER_ORGANIZATION`); the operator, root everywhere, is held to the rule itself. Both are checked on the read and held on the write: every statement of the batch carries the same condition, so an owner left alone between the read and the write is refused too (nothing is written, and the read is repeated to say so). Headline: `<email> is the last owner of <organization> who can act, so they can't be deactivated` (or `removed`); for another organization of theirs, `<email> is the last owner of <organization> who can act, and a deactivation is account-wide: it would leave <organization> without one`; then `Make someone else an owner of <organization> first, then try again.`
-
-**Fix:** `data.rerun`: `pnpm everyapp workspace role <email> owner` (literal `<email>`: another member's), `data.rerunNote`: `for someone else, then this command again`, when the organization is the install one (the one `workspace role` acts on); for another organization, `fix`: `an owner of <organization> makes someone else an owner under Manage workspace → Users, then run this again`. From `role`, `data.workspace` (`id`, `name`), `data.member` (`id`, `email`, `name`), `data.role` (the role asked for); from `deactivate` and `remove`, `data.organization` (`id`, `name`, `slug`) and `data.member` (`id`, `email`, `name`). Not retryable.
-
-Source: `packages/cli/src/commands/workspace/index.ts` (`setRole`), `packages/cli/src/lib/gateway/members.ts` (`setMemberRole`, `anotherLiveOwnerSql`), `packages/cli/src/lib/gateway/workspace.ts` (`lastOwner`, `lastLiveOwnerOf`, `MANAGEABLE_MEMBER`, `DEACTIVATABLE_MEMBER`).
+Source: `packages/cli/src/lib/gateway/recovery.ts` (`mintInvitationLink`).
 
 ### LEASE_HELD
 
@@ -883,15 +738,15 @@ Source: `packages/cli/src/commands/dev/index.ts`, `packages/cli/src/commands/dev
 
 Source: `packages/cli/src/commands/dev/index.ts`
 
-### LINKED_DEV_GATEWAY_UNREACHABLE
+### OAUTH_GATEWAY_UNREACHABLE
 
-Linked dev's sign-in (`dev --gateway`, `dev link`, and `dev unlink`'s revocation): the Gateway's `/.well-known/oauth-authorization-server` couldn't be fetched (DNS, a refused connection, no route). Headline `Can't reach the Gateway at <origin>`, then the error. `data.gateway` is the origin. Not retryable; check the URL and the network, then run again.
+The CLI's sign-in to a Gateway (`login --gateway` and the admin commands' first run; linked dev's `dev --gateway`, `dev link`, and `dev unlink`'s revocation): the Gateway's `/.well-known/oauth-authorization-server` couldn't be fetched (DNS, a refused connection, no route). Headline `Can't reach the Gateway at <origin>`, then the error. `data.gateway` is the origin. Not retryable; check the URL and the network, then run again.
 
 Source: `packages/cli/src/lib/linkedDev/oauth.ts` (`discover`)
 
-### LINKED_DEV_OAUTH_OFF
+### OAUTH_OFF
 
-Linked dev's sign-in: the Gateway answered its authorization-server metadata with an error, without an `issuer`, or with an issuer other than its own origin, so `everyapp dev` can't be its OAuth client. Usually `MCP_OAUTH_ENABLED` is off on that Gateway (`docs/runbooks/mcp-oauth.md`), or the URL isn't an Every App Gateway. Headline `<origin> offers no sign-in for everyapp dev` (or `… names another issuer`), with the status. `data.gateway`, `data.status` or `data.issuer`.
+The CLI's sign-in to a Gateway (the admin API or linked dev): the Gateway answered its authorization-server metadata with an error, without an `issuer`, or with an issuer other than its own origin, so `everyapp dev` can't be its OAuth client. Usually `MCP_OAUTH_ENABLED` is off on that Gateway (`docs/runbooks/mcp-oauth.md`), or the URL isn't an Every App Gateway. Headline `<origin> offers no sign-in for everyapp dev` (or `… names another issuer`), with the status. `data.gateway`, `data.status` or `data.issuer`.
 
 Source: `packages/cli/src/lib/linkedDev/oauth.ts` (`discover`)
 
@@ -901,15 +756,15 @@ The Gateway refused `everyapp dev`'s token for this app. As an error (`dev --gat
 
 Source: `packages/cli/src/lib/linkedDev/index.ts` (`whoami`), `packages/cli/src/commands/dev/linked.ts`
 
-### LINKED_DEV_REGISTRATION_OFF
+### OAUTH_REGISTRATION_OFF
 
-Linked dev's first sign-in to a Gateway: its metadata names no `registration_endpoint`, so the CLI can't register itself as a client (the operator set `MCP_DCR_ENABLED=false`; [mcp](/docs/agent/mcp#switches)). Headline `<origin> doesn't register clients, so everyapp dev can't sign in there`. A client id registered before the switch went off keeps working (the CLI reuses the one it has for that Gateway). `data.gateway`.
+The CLI's first sign-in to a Gateway (the admin API or linked dev): its metadata names no `registration_endpoint`, so the CLI can't register itself as a client (the operator set `MCP_DCR_ENABLED=false`; [mcp](/docs/agent/mcp#switches)). Headline `<origin> doesn't register clients, so everyapp dev can't sign in there`. A client id registered before the switch went off keeps working (the CLI reuses the one it has for that Gateway). `data.gateway`.
 
 Source: `packages/cli/src/lib/linkedDev/oauth.ts` (`registerClient`)
 
-### LINKED_DEV_SIGNIN_FAILED
+### OAUTH_SIGNIN_FAILED
 
-Linked dev's sign-in didn't end in a token: the Gateway refused the registration (`data.status`), the browser came back with an OAuth error (`data.error`: `access_denied` when you chose "Don't allow", or what the Gateway's consent refused: only owners and admins who can open the app, on a workspace with linked dev on, may link), nothing came back within 10 minutes (`data.timeout: true`), the code exchange failed, or a refresh was refused (`data.error: "invalid_grant"`: the grant was revoked, you lost the role, or linked dev was turned off; the stored token is forgotten). The headline says which. Run `pnpm everyapp dev --gateway <url>` (or `dev link`) again once the cause is fixed.
+The CLI's sign-in to a Gateway (the admin API or linked dev) didn't end in a token: the Gateway refused the registration (`data.status`), the browser came back with an OAuth error (`data.error`: `access_denied` when you chose "Don't allow", or what the Gateway's consent refused: only owners and admins who can open the app, on a workspace with linked dev on, may link), nothing came back within 10 minutes (`data.timeout: true`), the code exchange failed, or a refresh was refused (`data.error: "invalid_grant"`: the grant was revoked, you lost the role, or linked dev was turned off; the stored token is forgotten). The headline says which. Run `pnpm everyapp dev --gateway <url>` (or `dev link`) again once the cause is fixed.
 
 Source: `packages/cli/src/lib/linkedDev/oauth.ts` (`authorize`, `exchange`), `packages/cli/src/lib/linkedDev/index.ts`
 
@@ -936,14 +791,6 @@ Source: `packages/cli/src/commands/mcp/index.ts` (`changeTool`)
 **Fix:** as the message says. Not retryable.
 
 Source: `packages/cli/src/commands/mcp/index.ts` (`changeTool`)
-
-### MEMBER_NOT_FOUND
-
-`workspace role <email> <role>` found no member with that address in the workspace (matched without case; step `workspace.role`), or the Gateway has no workspace at all. Headline: `No member <email> in <workspace>`, then `Someone still invited isn't a member until they accept.`; with no organization on the Gateway yet: `This Gateway has no workspace yet`, then `Nobody has claimed its owner link, so it has no members.`
-
-**Fix:** `data.fix`: `check the address against Manage workspace → Users, or invite them first`; `data.workspace` (`id`, `name`), `data.email`. Without a workspace, `data.rerun`: `pnpm everyapp setup`, `data.rerunNote`: `to claim it`. Not retryable.
-
-Source: `packages/cli/src/commands/workspace/index.ts` (`setRole`).
 
 ### MIGRATIONS_FAILED
 
@@ -1007,14 +854,6 @@ Before `cf build` or `cf dev` (the cf calls that run the project's package manag
 
 Source: `packages/cli/src/lib/cf/toolchain.ts`, `packages/cli/src/lib/cf/runner.ts`, `packages/cli/src/lib/runtime.ts`
 
-### NOTHING_TO_SET
-
-`workspace app set <app>` without `--name`, `--description` or `--everyone`, and `workspace group set <group>` without `--name` or `--description`: there is nothing to change. Checked before the write (`group set` before anything connects). Headline: `Nothing to set: give --name, --description or --everyone on|off` (or `give --name or --description`).
-
-**Fix:** none offered; no rerun; not retryable.
-
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`updateApp`), `packages/cli/src/commands/workspace/groups.ts` (`updateGroup`).
-
 ### NO_D1
 
 `everyapp db query` on an app whose manifest declares no `resources.d1` (checked before `--local` or production is decided). Message `<app> declares no D1 database`.
@@ -1039,21 +878,13 @@ Source: `packages/cli/src/lib/app/release.ts`, `packages/cli/src/lib/release/git
 
 Source: `packages/cli/src/commands/db/restore.ts`, `packages/cli/src/lib/migrations/remote.ts`
 
-### ORG_AMBIGUOUS
-
-Every `workspace …` command that takes `--org`, and every `events …` command but `events types`, when the value is no organization's id or slug and matches more than one by name (letter case aside). Names aren't unique (the `organizations` table is unique on `slug` only) and any owner or admin can rename their organization, so a script's `--org <name>` could land on an organization someone renamed; the command refuses rather than take the older one. Headline: `<n> organizations are named <x>: <slug> (<id>) and <slug> (<id>)`, then `A name isn't unique, and any owner or admin can rename their organization; a slug or id is one organization's.`; `fix`: `name it by its slug or id with --org`; `data.organizations` lists the candidates (`id`, `name`, `slug`). Nothing is read or written past this. Scripts should pass the slug or the id.
-
-**Fix:** as above. Not retryable.
-
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`resolveOrganization`, through `openWorkspace` and `organizationFor`).
-
 ### ORGANIZATION_NOT_FOUND
 
-Every `workspace …` command, and every `events …` command but `events types`, when the organization it acts on can't be found. Raised after connecting (for `events`, after the event tables are checked), before anything else is read or written. Without `--org`, the install organization (the oldest with an owner, or the oldest of all) and the Gateway has none yet: headline `The Gateway has no organization yet`, then `Its owner creates the first one by claiming it.`; `rerun`: `pnpm everyapp setup`, `rerunNote`: `prints the owner link`. With `--org <x>`, no organization has that id, slug or name (letter case aside): headline `No organization named <x> on this Gateway`, then `The Gateway has: <slug> (<name>) and …`; `fix`: `name one by its slug, id or name with --org`; `data.organizations` lists them (`id`, `name`, `slug`). A name two organizations share is `ORG_AMBIGUOUS` instead.
+`workspace reset-link <email>` or `workspace invite-link <email|id>` on a Gateway nobody has claimed: it has no organization yet, so no member to reset and no invitation. `rerun`: `pnpm everyapp setup` (`rerunNote` `prints the owner link`).
 
 **Fix:** as above. Not retryable.
 
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`openWorkspace` for `workspace`, `organizationFor` for `events`, `resolveOrganization` for both).
+Source: `packages/cli/src/lib/gateway/recovery.ts` (`mintRecoveryLink`, `mintInvitationLink`).
 
 ### OWNER_WAIT_NETWORK
 
@@ -1065,9 +896,9 @@ Source: `packages/cli/src/lib/gateway/setup-link.ts` (`waitForSetupLink`, `isNet
 
 `workspace reset-link <email>`: the member is deactivated (`users.banned`, with `ban_expires` unset or still to come), and a password-reset link is only made for an active account, the Gateway's own rule. Headline: `<email> is deactivated, and a password-reset link is only for an active account`.
 
-**Fix:** `rerun`: `pnpm everyapp workspace reactivate <email>`, `rerunNote`: `first, if they should be back`.
+**Fix:** `pnpm everyapp workspace reactivate <email>` first, if they should be back. Not retryable.
 
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`resetLink`).
+Source: `packages/cli/src/lib/gateway/recovery.ts` (`mintRecoveryLink`).
 
 ### PIPED_LINE_INVALID
 
@@ -1385,7 +1216,7 @@ Source: `packages/cli/src/lib/app/resources.ts`, `packages/cli/src/lib/app/deplo
 
 **Fix:** `fix`: `export <VAR> first, or name another variable with --from-env`; from `configure`: `give <NAME> a value, or leave the line out`.
 
-Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/commands/configure/index.ts`, `packages/cli/src/commands/events/add.ts`, `packages/cli/src/commands/signin/index.ts`
+Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/commands/configure/index.ts`, `packages/cli/src/commands/events/index.ts`, `packages/cli/src/commands/signin/index.ts`
 
 ### SECRET_NAME_INVALID
 
@@ -1441,7 +1272,7 @@ Source: `packages/cli/src/lib/secretValue.ts`
 
 **Fix:** `rerun`: `pnpm everyapp secret set <name> --from-env <name>`; from `configure`: `pnpm everyapp configure <app> --from-env` (`rerunNote` `with the variables exported`), or before the app's first deploy `pnpm everyapp configure --from-env` with `in the app's directory, with the variables exported` (the name form is refused until then).
 
-Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/commands/configure/index.ts`, `packages/cli/src/commands/events/add.ts`
+Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/commands/configure/index.ts`, `packages/cli/src/commands/events/index.ts`
 
 ### SETTING_VALUE_INVALID
 
@@ -1450,14 +1281,6 @@ Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/commands/config
 **Fix:** `fix`: `use <what the setting takes>`, the line the prompt shows as `Takes …`: e.g. `use true or false; false turns password sign-in off (only while Cloudflare Access sign-in is on)`, `use an address, or Name <address>`, `use email domains whose people join without an invitation, comma separated, e.g. example.com`. A validation error: no rerun.
 
 Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/lib/signinValues.ts`, `packages/cli/src/commands/signin/index.ts`, `packages/sdk/src/internal/appSettings.ts` (`settingValueProblem`)
-
-### SHARED_APP_ACCESS
-
-`workspace app set <app> --everyone on`, `workspace app access <app>` (listing or changing), and `workspace group apps <group> --add/--set <app>`: the app is a shared app (`apps.scope = 'shared'`), which every member of every organization can open already, so its access is nobody's to change and it is never an organization's default or a group's app. Checked before the write; the group insert checks it again (`WHERE EXISTS (… scope != 'shared' …)`). Headline: `<app> is a shared app: every member of every organization can open it, so its access can't be changed`.
-
-**Fix:** none offered; no rerun; not retryable.
-
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`sharedAppAccess`).
 
 ### SHARED_APP_FORBIDDEN
 
@@ -1619,14 +1442,6 @@ Source: `packages/cli/src/lib/teardown/guards.ts` (`checkTokenScope`).
 
 Source: `packages/cli/src/commands/deploy/deployApp.ts`, `packages/perimeter/src/manifest/manifest.ts` (`manifestTierProblems`)
 
-### TOKEN_NOT_FOUND
-
-`workspace token revoke <id>`: no personal access token (`user_access_tokens` row) with that id belongs to the organization. One revoked already is not an error: the command says so (`data.already: true`). Headline: `No personal access token <id> in <organization>`.
-
-**Fix:** `rerun`: `pnpm everyapp workspace tokens`, `rerunNote`: `lists them by id`.
-
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`revokeToken`).
-
 ### UNKNOWN_D1_BINDING
 
 `db query --binding <name>` where `<name>` isn't one of the manifest's `resources.d1`: `No D1 binding <name> in everyapp.config.ts` / `It declares <bindings>.` Without `--binding` the query goes to the migration binding (`migrations.binding`, else the first D1 binding).
@@ -1661,17 +1476,17 @@ Source: `packages/cli/src/lib/runtime.ts`, `packages/cli/src/bin/cli.ts`
 
 `workspace reset-link <email>`: the member also belongs to another organization of the Gateway. A password is account-wide, so a reset link made through one organization sets the password that signs in to the others too; the Gateway's own rule (`requireAccountWideManageable` in MembershipService) refuses it to every admin, and the CLI keeps it (the design's parity row for `admin.createPasswordResetLink`). Checked after the member is found and before anything is written. Headline: `<email> also belongs to <organization> and <organization>, and a password is account-wide`, then `The Gateway's own rule: a password-reset link is never made for someone in another organization, since it would reach that one too.`; `data.member` (`id`, `email`, `name`), `data.organizations` (the others: `id`, `name`, `slug`).
 
-**Fix:** `fix`: `they reset it themselves with Forgot password (the Gateway's email must be configured), or they are removed from the other organization first`. Not retryable. (`deactivate` and `remove` don't carry this code: the operator is root in every organization, and their account-wide rule is `LAST_OWNER` across every organization the person owns.)
+**Fix:** `fix`: `they reset it themselves with Forgot password (the Gateway's email must be configured), or they are removed from the other organization first`. Not retryable.
 
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`resetLink`).
+Source: `packages/cli/src/lib/gateway/recovery.ts` (`mintRecoveryLink`).
 
 ### USER_NOT_FOUND
 
-`workspace deactivate/reactivate/remove/reset-link <email>`, `workspace group members --add/--remove/--set`, `workspace app access --add/--remove/--set`, and the `--user` of `workspace activity/tokens/connections` given an email: no member of the organization has that email (letter case aside) or user id. A member of another organization only is not found here: `--org` names the organization. The group and grant inserts check membership again on the write (`WHERE EXISTS (SELECT 1 FROM members …)`). Headline: `<x> isn't a member of <organization>`. On the three trails, a `--user` that isn't an email and isn't a member's id is taken as the id of someone who has since left (the trails keep their rows, named by id, as Admin → Activity shows them), so it lists their rows or none, and the headline says `<id> (no longer a member)`.
+`workspace reset-link <email>`: no member of the install organization has that email (letter case aside) or user id. The other workspace commands get the Gateway's own `USER_NOT_FOUND` as `GATEWAY_TOOL_ERROR` (`data.code`).
 
-**Fix:** `rerun`: `pnpm everyapp workspace users`, `rerunNote`: `lists the members and invitations`.
+**Fix:** `pnpm everyapp workspace users` lists the members. Not retryable.
 
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`findMember`), `packages/cli/src/commands/workspace/shared.ts` (`userFilter`).
+Source: `packages/cli/src/lib/gateway/recovery.ts` (`mintRecoveryLink`).
 
 ### VALUE_ON_COMMAND_LINE
 
@@ -1683,7 +1498,7 @@ A value typed on the command line where everyapp never takes one: it lands in th
 
 **Fix:** as each says. No rerun; rotate the value if it was real.
 
-Source: `packages/cli/src/commands/configure/index.ts`, `packages/cli/src/argumentErrors.ts`, `packages/cli/src/commands/events/add.ts`
+Source: `packages/cli/src/commands/configure/index.ts`, `packages/cli/src/argumentErrors.ts`, `packages/cli/src/commands/events/index.ts`
 
 ### VECTORIZE_CONFIG_MISMATCH
 
@@ -1748,30 +1563,6 @@ Source: `packages/perimeter/src/install/config.ts`
 **Fix:** a takeover: `rerun` is this command with `--allow-delete-workflows`, with `data.authorize: true` (show it and ask before running it). Not retryable.
 
 Source: `packages/perimeter/src/install/app-install.ts` (`droppedWorkflows`; `TAKEOVER_FLAGS` in `packages/cli/src/lib/errors.ts`)
-
-### WORKSPACE_NAME_INVALID
-
-`workspace rename <name>` with a name the shared rule refuses (`validOrganizationName` in `packages/sdk/src/internal/organizationName.ts`, the rule the Gateway's own Manage workspace → Rename applies): empty, over 64 characters, or carrying a control or invisible formatting character (a line break, a bidirectional override, a zero-width character). A name is trimmed and its runs of spaces made one before the check. Refused before any login or network. Headline: `Use 1 to 64 characters with no line breaks`.
-
-**Fix:** `fix`: give the name as one argument, quoted when it has spaces. Not retryable.
-
-Source: `packages/cli/src/commands/workspace/index.ts` (`renameWorkspace`).
-
-### WORKSPACE_NOT_A_MEMBER
-
-`workspace invite <email>`: an invitation records who sent it (`invitations.inviter_id`), so the operator needs an account on the Gateway that is a member of the organization, found by the Cloudflare login's verified email as the registry finds a deployer. Raised when the login is an API token (no email), when no verified account has the login's email, or when that account isn't a member of the organization. Nothing is written. Headline: `Only a member can invite: an invitation records who sent it`, then which of the three it is.
-
-**Fix:** `fix`: `claim the Gateway (pnpm everyapp setup) or get invited to <organization>, or invite from Admin → Users` (for an API token: `log in with your Cloudflare account (pnpm everyapp login), claim the Gateway …`). No rerun; not retryable.
-
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`requireOperatorMembership`).
-
-### WORKSPACE_NOT_CLAIMED
-
-`workspace rename` on a Gateway nobody has claimed yet: its install organization has no owner (`installOrganization` in `packages/cli/src/lib/gateway/registry.ts` finds no organization with an owner). The setup claim names the workspace after its owner, so a name written before it would be overwritten. Headline: `The Gateway has no owner yet`.
-
-**Fix:** `fix`: open the Gateway in a browser and claim it, then run the command again. Not retryable.
-
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`claimedWorkspace`).
 
 ### ZONE_CUSTOM_DOMAIN_LIMIT
 
@@ -2531,12 +2322,6 @@ Source: `packages/cli/src/commands/dev/gatewayServer.ts`
 `preflightDomains` with `--force-dns`: the A, AAAA, CNAME or NS record(s) that answer a new hostname (at the name, or a wildcard over a name with no records of its own) are being replaced instead of refused (`DNS_RECORD_CONFLICT` above): `Replacing <host>'s DNS record (<records>)` or `Replacing the DNS records of <n> hostnames` / `<host> (<records>); …`, plus `A wildcard record stays, and keeps answering every other name.` when a wildcard was involved. `data.conflicts`: `[{ host, records }]`.
 
 Source: `packages/cli/src/lib/domains/preflight.ts`
-
-### EVENT_EMAIL_NOT_CONFIGURED
-
-`events add --email owners|admins`, step `events.add`: the Gateway Worker has no `EMAIL_FROM` setting (read by name only), so it can't send the mails yet: each delivery is dead at once with `email_not_configured` until a sender is set. The subscription is added all the same. `The Gateway has no sender (EMAIL_FROM), so these mails can't go out yet` / `Each one is dead at once with email_not_configured until a sender is set.`; `data.rerun`: `pnpm everyapp secret set EMAIL_FROM EMAIL_FROM_NAME`.
-
-Source: `packages/cli/src/commands/events/add.ts`
 
 ### GATEWAY_AT_ZONE_APEX
 

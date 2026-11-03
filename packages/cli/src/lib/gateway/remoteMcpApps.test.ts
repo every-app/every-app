@@ -484,14 +484,4 @@ describe("the events adding, turning on and off and removing a remote MCP app qu
     await expect(add()).rejects.toMatchObject({ code: "REMOTE_MCP_EXISTS" });
     expect(queued().map((event) => event.type)).toEqual(["mcp_app.added"]);
   });
-
-  it("queues nothing, and still writes, on a Gateway whose D1 has no event tables", async () => {
-    sqlite.sqlite.exec("DROP TABLE event_deliveries; DROP TABLE events; DROP TABLE event_subscriptions");
-    await add();
-    expect(await setMcpAppStatus(db(), await current(), "disabled", BEN, NOW + 1)).toEqual({ changed: true });
-    expect(await setMcpAppStatus(db(), await current(), "active", BEN, NOW + 2)).toEqual({ changed: true });
-    expect(await removeMcpApp(db(), await current(), BEN, NOW + 3)).toEqual({ removed: true });
-    expect(row("treg")).toMatchObject({ status: "deleted" });
-    expect(sqlite.all("SELECT name FROM sqlite_master WHERE name LIKE 'event%'")).toEqual([]);
-  });
 });

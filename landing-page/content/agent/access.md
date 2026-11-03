@@ -192,6 +192,8 @@ The Gateway's `/mcp`, `/oauth/token`, `/oauth/register` and `/.well-known/*` are
 
 A native app signed in with "Sign in with Every App" ([Native apps](/docs/agent/native)) passes Access's login once, in the system browser, at `/oauth/authorize`; its token exchange uses `/oauth/token`, bypassed, and its calls to the app host reach only the app's bearer routes, which `access on` bypasses with the discovery document.
 
+The CLI's admin commands call the Gateway's `/mcp` like any MCP client (their sign-in opens `/oauth/authorize` in the browser, behind Access); its deploys write D1 through cf.
+
 Personal access tokens and service tokens: a script's `Authorization: Bearer epat_…` works on every bypassed path. Elsewhere on an app host it also needs an Access service token (`CF-Access-Client-Id` and `CF-Access-Client-Secret`) from a reusable Service Auth policy on that application; the service token alone opens nothing (its assertion names no person, so the Gateway ignores it and checks the personal token).
 
 ## Recovery

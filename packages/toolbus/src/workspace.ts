@@ -232,7 +232,7 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "workspace_show",
     title: "Show the workspace",
     description:
-      "Show this organization: its id, name and slug, your role, whether the Gateway can send email, and how many members, pending invitations, groups and apps it has. Owners and admins.",
+      "Show this organization: its id, name and slug, your role, whether the Gateway can send email, whether linked dev is on (`linkedDev`: on or off), and how many members, pending invitations, groups and apps it has. Owners and admins.",
     inputSchema: NO_INPUT,
   },
   {
@@ -722,6 +722,22 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
         },
       },
       ["name"],
+    ),
+  },
+  {
+    ...ADMIN_WRITE,
+    name: "workspace_linked_dev",
+    title: "Linked dev on or off",
+    description:
+      "Turn linked dev on or off for the organization: whether its owners and admins may run `everyapp dev --gateway` against this Gateway, their app running on their own computer with its AI, email, provider and member calls going through the Gateway as them (counted, capped and audited like the deployed app's). Off by default; turning it off stops the tokens already issued on their next call. Answers `linkedDev` (on or off) and whether it `changed`; everyapp_workspace_show reads it. Owners and admins.",
+    inputSchema: objectWith(
+      {
+        on: {
+          type: "boolean",
+          description: "true turns it on, false off.",
+        },
+      },
+      ["on"],
     ),
   },
   // Events out (docs/design/2026-10-events-out.md, section 9): the

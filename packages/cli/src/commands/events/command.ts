@@ -1,24 +1,21 @@
 /**
  * The `everyapp events` route map: each command's arguments, flags and help
- * (the handlers are in ./index.ts and the files beside it). Every command
- * that reaches the Gateway takes --org, --gateway, --account-id, --json and
- * --verbose; `types` reads the CLI's own catalogue and takes only the last
- * two.
+ * (the handlers are in ./index.ts). Every command but `types` is one Gateway
+ * tool and takes --gateway, --account-id, --json and --verbose; `types`
+ * reads the CLI's own catalogue and takes only the last two.
  */
 import { buildCommand, buildRouteMap } from "@stricli/core";
 import { EVENT_EMAIL_RECIPIENTS, EVENTS_ALLOW_PRIVATE_TARGETS_SETTING } from "@every-app/sdk/internal";
 import { CLI } from "@/lib/output/command";
-import { accountFlag, gatewayFlag, jsonFlag, orgFlag, verboseFlag } from "../flags";
-import { parseLimit } from "./deliveries";
+import { apiFlags, jsonFlag, verboseFlag } from "../flags";
 
-/** Every events command that reaches the Gateway: which organization, where the Gateway is, and how to print. */
-const eventsFlags = {
-  org: orgFlag,
-  gateway: gatewayFlag,
-  "account-id": accountFlag,
-  json: jsonFlag,
-  verbose: verboseFlag,
-} as const;
+const eventsFlags = apiFlags;
+
+function parseLimit(value: string): number {
+  const limit = Number(value);
+  if (!Number.isInteger(limit) || limit < 1) throw new Error("Use a whole number from 1.");
+  return limit;
+}
 
 const subscriptionParameter = {
   placeholder: "id",
@@ -187,24 +184,19 @@ const testCommand = buildCommand({
   parameters: {
     positional: { kind: "tuple", parameters: [subscriptionParameter] },
     flags: {
-      "no-wait": {
-        kind: "boolean",
-        optional: true,
-        brief: "Return once the test event is queued; events deliveries shows how it went",
-      },
       ...eventsFlags,
     },
   },
   docs: {
     brief: "Send a test event (ping) to one subscription and wait to see whether it was delivered",
     fullDescription: [
-      "Queues a ping for that subscription only, then waits up to 90 seconds while the Gateway",
-      "sends it (it sends queued events every minute), and says delivered or failed with the",
-      "receiver's status code or the error. A failed test is retried like any delivery.",
+      "Sends a ping to that subscription only, paused or not, and waits for the first attempt:",
+      "delivered or failed with the receiver's status code or the error. A failed test is retried",
+      "like any delivery.",
       "",
       "Examples:",
       `  ${CLI} events test sub_0123456789abcdef01234567`,
-      `  ${CLI} events test sub_0123456789abcdef01234567 --no-wait --json`,
+      `  ${CLI} events test sub_0123456789abcdef01234567 --json`,
     ].join("\n"),
   },
 });
@@ -230,7 +222,14 @@ const deliveriesCommand = buildCommand({
         parse: parseLimit,
         optional: true,
         placeholder: "n",
-        brief: "How many to show, newest first: 1 to 200 (default 20)",
+        brief: "How many to show, newest first: 1 to 100 (default 20)",
+      },
+      before: {
+        kind: "parsed",
+        parse: String,
+        optional: true,
+        placeholder: "cursor",
+        brief: "The next page: the previous page's nextBefore",
       },
       ...eventsFlags,
     },

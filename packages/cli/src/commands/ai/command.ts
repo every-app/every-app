@@ -1,6 +1,6 @@
 import { buildCommand, buildRouteMap } from "@stricli/core";
 import { CLI } from "@/lib/output/command";
-import { accountFlag, gatewayFlag, jsonFlag, verboseFlag } from "../flags";
+import { accountFlag, apiFlags, gatewayFlag, jsonFlag, verboseFlag } from "../flags";
 
 const connectFlags = {
   gateway: gatewayFlag,
@@ -11,7 +11,7 @@ const connectFlags = {
 
 const showCommand = buildCommand({
   loader: async () => (await import(".")).show,
-  parameters: { positional: { kind: "tuple", parameters: [] }, flags: connectFlags },
+  parameters: { positional: { kind: "tuple", parameters: [] }, flags: apiFlags },
   docs: {
     brief: "What the workspace's default model resolves to now, and every provider it could be",
     fullDescription: [
@@ -19,8 +19,8 @@ const showCommand = buildCommand({
       "in its manifest): the setting (ai default) if there is one, else the first provider of the",
       "shipped order whose key is set (OpenRouter, Workers AI, OpenAI, Anthropic, Groq, Mistral,",
       "Gemini), else what to set. Then every provider the default could be, in order, each with its",
-      "key set or not and its catalog models. Reads the Gateway's setting names, never values.",
-      "Says whether calls go through Cloudflare AI Gateway (ai gateway on).",
+      "key set or not and its catalog models; never a key's value. Says whether calls go through",
+      "Cloudflare AI Gateway (ai gateway on). The Gateway tool: everyapp_ai_show, run as you.",
       "",
       "Example:",
       `  ${CLI} ai show`,
@@ -41,7 +41,7 @@ const defaultCommand = buildCommand({
         },
       ],
     },
-    flags: connectFlags,
+    flags: apiFlags,
   },
   docs: {
     brief: "Choose the default model (provider and model) for every app that asks for one, or off for the shipped order",
@@ -49,10 +49,10 @@ const defaultCommand = buildCommand({
       "The workspace's one AI setting, the same as Manage workspace → Usage → AI default. The",
       "provider id is everything up to the first slash, the model everything after it (a model id",
       "may hold slashes); without a model, the provider's catalog model serves. Embeddings always",
-      "use the provider's catalog model. A provider whose key isn't set is accepted with a warning",
-      "naming the key; one the default can't be (an API provider, an entry without an OpenAI-shaped",
-      "chat route, AI Gateway) is refused (AI_DEFAULT_INVALID). The Gateway reads the change within",
-      "30 seconds; a change queues ai.default_changed.",
+      "use the provider's catalog model. A provider whose key isn't set is accepted; one the",
+      "default can't be (an API provider, an entry without an OpenAI-shaped chat route, AI",
+      "Gateway) is refused by the Gateway. The Gateway reads the change within 30 seconds; a",
+      "change queues ai.default_changed. The Gateway tool: everyapp_ai_default, run as you.",
       "",
       "Examples:",
       `  ${CLI} ai default openrouter`,

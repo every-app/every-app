@@ -1,472 +1,269 @@
 /**
- * `everyapp workspace show|users|invite|invite-link|uninvite|deactivate|
- * reactivate|remove|reset-link`: the organization and its people, managed
- * from the terminal under the Cloudflare login (lib/gateway/workspace.ts
- * does the reading and writing; this file says what happened). The
- * groups, apps and the read-only trails are in the files beside this one.
+ * `everyapp workspace …`: each command is one Gateway tool
+ * (lib/gatewayApi/command.ts `runTool`), its flags the tool's arguments.
+ * What a member, an invitation, a group, an app or a cap may be is the
+ * Gateway's to say; this file only says which tool, with what, and the
+ * line a person reads after it. `reset-link` and `invite-link` are in
+ * ./links.ts.
  */
-import { stripVTControlCharacters } from "node:util";
-import { MAX_ORGANIZATION_NAME_LENGTH, validOrganizationName } from "@every-app/sdk/internal";
-import chalk from "chalk";
-import { listWorkerSecrets } from "@/lib/cf/secrets";
-import { EveryAppError } from "@/lib/errors";
-import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
-import { setMemberRole } from "@/lib/gateway/members";
-import { installOrganization } from "@/lib/gateway/registry";
-import * as workspace from "@/lib/gateway/workspace";
+import { formatAnswer, formatRows, listChange, runTool, type ToolCommandFlags, type ToolRun } from "@/lib/gatewayApi/command";
+import type { JsonObject } from "@/lib/gatewayApi";
 import { CLI } from "@/lib/output/command";
-import { ticked } from "@/lib/output/events";
-import { canPromptInTerminal, confirmUnlessYes } from "@/lib/output/prompt";
-import { runCommand } from "@/lib/output/run";
-import { formatFacts, formatTable } from "@/lib/output/table";
-import { listed, plural } from "@/lib/output/text";
-import type { GatewayCommandFlags } from "../flags";
-import type { WorkspaceRole } from "./command";
-import {
-  connect,
-  interactiveIn,
-  invitationData,
-  iso,
-  memberData,
-  memberState,
-  when,
-  type WorkspaceFlags,
-  type WorkspaceOptions,
-} from "./shared";
+import type { LinkedDevSetting, WorkspaceRole } from "./command";
 
-const STEP = "workspace.update";
-const RENAME_STEP = "workspace.rename";
-const ROLE_STEP = "workspace.role";
+const W = (name: string) => `everyapp_workspace_${name}`;
 
-export async function rename(flags: GatewayCommandFlags, name: string): Promise<void> {
-  await runCommand(flags, (out) => renameWorkspace({ flags, out }, name));
-}
+type ChangeFlags = ToolCommandFlags & { add?: string[]; remove?: string[]; set?: string[] };
 
-export async function role(flags: GatewayCommandFlags, email: string, role: WorkspaceRole): Promise<void> {
-  await runCommand(flags, (out) => setRole({ flags, out }, email, role));
-}
+const str = (value: unknown, fallback = "") => (typeof value === "string" ? value : fallback);
+const obj = (value: unknown): JsonObject => (value && typeof value === "object" && !Array.isArray(value) ? (value as JsonObject) : {});
+const rows = (value: unknown): JsonObject[] => (Array.isArray(value) ? (value as JsonObject[]) : []);
+const emailOf = (answer: JsonObject) => str(obj(answer["user"])["email"]);
 
-/** The Gateway through the login, for the commands that act on the install organization. */
-function connectGateway(options: WorkspaceOptions) {
-  const { flags, out } = options;
-  return connectToGateway({
-    gateway: requestedGatewayUrl(flags.gateway),
-    accountId: flags["account-id"],
-    interactive: canPromptInTerminal(flags.json ?? false),
-    login: { json: flags.json, out, step: "login" },
-    createCf: options.createCf,
+/** A read: the tool, and its answer drawn as it comes. */
+const read = (flags: ToolCommandFlags, tool: string, args: JsonObject, done: (answer: JsonObject) => string) =>
+  runTool(flags, { tool, args, done });
+
+export const show = (flags: ToolCommandFlags) =>
+  read(flags, W("show"), {}, (answer) => `${str(obj(answer["organization"])["name"], "The workspace")}: you are ${str(answer["role"], "a member")}`);
+
+export const users = (flags: ToolCommandFlags) =>
+  read(flags, W("users"), {}, (answer) => `${rows(answer["members"]).length} members, ${rows(answer["invitations"]).length} pending invitations`);
+
+export const rename = (flags: ToolCommandFlags, name: string) =>
+  runTool(flags, {
+    tool: W("rename"),
+    args: { name },
+    done: (answer) => `The workspace is now called ${str(obj(answer["organization"])["name"], name)}`,
+    display: () => "",
   });
-}
 
-/** "an owner", "an admin", "a member". */
-const withArticle = (role: string) => `${/^[aeiou]/.test(role) ? "an" : "a"} ${role}`;
+export const role = (flags: ToolCommandFlags, user: string, role: WorkspaceRole) =>
+  runTool(flags, {
+    tool: W("role"),
+    args: { user, role },
+    done: (answer) => `${emailOf(answer) || user} is now ${str(answer["role"], role)}`,
+    display: () => "",
+  });
 
-/**
- * `workspace role <email> <owner|admin|member>`: a member's role in the
- * install's workspace, set in the Gateway's D1 (lib/gateway/members.ts),
- * for when the Gateway's own Users page isn't the way: the only owner is
- * locked out, or a script sets up a team. The rule is the Gateway's
- * (MembershipService): owners are peers, and the workspace always keeps at
- * least one who can act, so an owner's role is never changed while no
- * other owner is live. The Gateway reads a role change within 30 seconds.
- */
-export async function setRole(options: WorkspaceOptions, email: string, role: WorkspaceRole): Promise<void> {
-  const { out } = options;
-  const address = email.trim().toLowerCase();
-  const gateway = await connectGateway(options);
-  const found = await installOrganization(gateway.db);
-  if (!found) {
-    throw new EveryAppError(
-      "MEMBER_NOT_FOUND",
-      "This Gateway has no workspace yet\nNobody has claimed its owner link, so it has no members.",
-      { rerun: `${CLI} setup`, rerunNote: "to claim it" },
-    );
-  }
-  const { organization } = found;
-  const workspaceData = { id: organization.id, name: organization.name };
-  out.emit({ type: "step", step: ROLE_STEP, status: "start", message: `Setting ${address}'s role...` });
-  const result = await setMemberRole(gateway.db, organization.id, address, role, gateway.deployer);
-  if (result.kind === "not_found") {
-    throw new EveryAppError(
-      "MEMBER_NOT_FOUND",
-      `No member ${address} in ${organization.name}\nSomeone still invited isn't a member until they accept.`,
-      {
-        fix: "check the address against Manage workspace → Users, or invite them first",
-        data: { workspace: workspaceData, email: address },
-      },
-    );
-  }
-  const member = { id: result.member.id, email: result.member.email, name: result.member.name };
-  if (result.kind === "last_owner") {
-    throw new EveryAppError(
-      "LAST_OWNER",
-      `${address} is the last owner of ${organization.name}\nThe workspace always keeps one owner, so their role stays until someone else is an owner.`,
-      {
-        rerun: `${CLI} workspace role <email> owner`,
-        rerunNote: "for someone else, then this command again",
-        data: { workspace: workspaceData, member, role },
-      },
-    );
-  }
-  const changed = result.kind === "changed";
-  const line = changed
-    ? `${address} is now ${withArticle(role)} of ${organization.name}`
-    : `${address} is already ${withArticle(role)} of ${organization.name}`;
-  out.emit({ type: "step", step: ROLE_STEP, status: "ok", message: line, data: { email: address, role, changed } });
-  const note = changed ? "The Gateway picks up the change within 30 seconds." : "Nothing changed.";
-  out.emit({
-    type: "done",
-    message: stripVTControlCharacters(`${line}. ${note}`),
-    display: [changed ? ticked(line) : chalk.dim(`${line}.`), chalk.dim(note)].join("\n"),
-    data: {
-      workspace: workspaceData,
-      member,
-      role,
-      changed,
-      ...(changed ? { previousRole: result.previousRole } : {}),
+export const invite = (flags: ToolCommandFlags & { role: "member" | "admin" }, email: string) =>
+  runTool(flags, {
+    tool: W("invite"),
+    args: { email, role: flags.role },
+    done: (answer) =>
+      answer["emailed"] === true
+        ? `Invited ${email} as ${flags.role}: the invitation was mailed`
+        : `Invited ${email} as ${flags.role}, not mailed: ${CLI} workspace invite-link ${email} prints the link (under your Cloudflare login), or copy it from Admin → Users`,
+  });
+
+export const uninvite = (flags: ToolCommandFlags, invitation: string) =>
+  runTool(flags, { tool: W("uninvite"), args: { invitation }, done: () => `Canceled the invitation for ${invitation}`, display: () => "" });
+
+export const deactivate = (flags: ToolCommandFlags, user: string) =>
+  runTool(flags, {
+    tool: W("deactivate"),
+    args: { user },
+    done: (answer) => `Deactivated ${emailOf(answer) || user}: signed out everywhere, tokens and AI connections revoked`,
+    display: () => "",
+  });
+
+export const reactivate = (flags: ToolCommandFlags, user: string) =>
+  runTool(flags, {
+    tool: W("reactivate"),
+    args: { user },
+    done: (answer) => `Reactivated ${emailOf(answer) || user}: they can sign in again`,
+    display: () => "",
+  });
+
+export const remove = (flags: ToolCommandFlags & { yes?: boolean }, user: string) =>
+  runTool(flags, {
+    tool: W("remove"),
+    args: { user, confirm: true },
+    confirm: `Remove ${user} from the workspace? This can't be undone.`,
+    done: (answer) => `Removed ${emailOf(answer) || user}`,
+    display: () => "",
+  });
+
+export const resetEmail = (flags: ToolCommandFlags, user: string) =>
+  runTool(flags, {
+    tool: W("reset_email"),
+    args: { user },
+    done: (answer) => `Mailed ${emailOf(answer) || user} a password-reset link`,
+    display: () => "",
+  });
+
+export const groups = (flags: ToolCommandFlags) =>
+  read(flags, W("groups"), {}, (answer) => `${rows(answer["groups"]).length} groups`);
+
+export const groupCreate = (flags: ToolCommandFlags & { description?: string }, name: string) =>
+  runTool(flags, {
+    tool: W("group_create"),
+    args: { name, ...(flags.description !== undefined ? { description: flags.description } : {}) },
+    done: () => `Made the group ${name}`,
+  });
+
+export const groupSet = (flags: ToolCommandFlags & { name?: string; description?: string }, group: string) =>
+  runTool(flags, {
+    tool: W("group_set"),
+    args: {
+      group,
+      ...(flags.name !== undefined ? { name: flags.name } : {}),
+      ...(flags.description !== undefined ? { description: flags.description } : {}),
     },
+    done: () => `Changed the group ${group}`,
   });
-}
 
-/**
- * `workspace rename <name>`: the workspace's name, written on the install's
- * organization row (lib/gateway/workspace.ts `renameInstallOrganization`).
- * The name follows the rule the Gateway's own rename applies
- * (`validOrganizationName` in `@every-app/sdk/internal`), checked before
- * anything is read, so a refused name costs no login. The Gateway reads
- * the row live and each member sees the name on their next page.
- */
-export async function renameWorkspace(options: WorkspaceOptions, rawName: string): Promise<void> {
-  const { out } = options;
-  // The name first: no login, no network.
-  const name = validOrganizationName(rawName);
-  if (!name) {
-    throw new EveryAppError(
-      "WORKSPACE_NAME_INVALID",
-      `Use 1 to ${MAX_ORGANIZATION_NAME_LENGTH} characters with no line breaks\nA name is trimmed, and runs of spaces become one.`,
-      { fix: "give the name as one argument, quoted when it has spaces" },
-    );
-  }
-  const gateway = await connectGateway(options);
-  out.emit({ type: "step", step: RENAME_STEP, status: "start", message: "Renaming the workspace..." });
-  const { organization, previousName, changed } = await workspace.renameInstallOrganization(gateway.db, name, gateway.deployer);
-  out.emit({
-    type: "step",
-    step: RENAME_STEP,
-    status: "ok",
-    message: changed ? `Renamed ${previousName} to ${name}` : `${name} already`,
-    data: { id: organization.id, name, previousName, changed },
+export const groupDelete = (flags: ToolCommandFlags & { yes?: boolean }, group: string) =>
+  runTool(flags, {
+    tool: W("group_delete"),
+    args: { group },
+    confirm: `Delete the group ${group}? What it granted ends with it.`,
+    done: () => `Deleted the group ${group}`,
+    display: () => "",
   });
-  const headline = changed ? `Renamed the workspace to ${name}.` : `The workspace is named ${name} already.`;
-  const note = changed ? "Members see the name on their next page." : "Nothing changed.";
-  out.emit({
-    type: "done",
-    message: stripVTControlCharacters(`${headline} ${note}`),
-    display: [headline, chalk.dim(note)].join("\n"),
-    data: {
-      organization: { id: organization.id, name: organization.name, slug: organization.slug },
-      previousName,
-      changed,
-      gateway: gateway.gatewayUrl,
-    },
-  });
-}
 
-export async function show(flags: WorkspaceFlags): Promise<void> {
-  await runCommand(flags, (out) => showWorkspace({ flags, out }));
-}
-
-export async function users(flags: WorkspaceFlags): Promise<void> {
-  await runCommand(flags, (out) => listUsers({ flags, out }));
-}
-
-export async function invite(flags: WorkspaceFlags & { role: "member" | "admin" }, email: string): Promise<void> {
-  await runCommand(flags, (out) => inviteMember({ flags, out }, email, flags.role));
-}
-
-export async function inviteLink(flags: WorkspaceFlags, invitation: string): Promise<void> {
-  await runCommand(flags, (out) => newInviteLink({ flags, out }, invitation));
-}
-
-export async function uninvite(flags: WorkspaceFlags, invitation: string): Promise<void> {
-  await runCommand(flags, (out) => cancelInvitation({ flags, out }, invitation));
-}
-
-export async function deactivate(flags: WorkspaceFlags, user: string): Promise<void> {
-  await runCommand(flags, (out) => deactivateMember({ flags, out }, user));
-}
-
-export async function reactivate(flags: WorkspaceFlags, user: string): Promise<void> {
-  await runCommand(flags, (out) => reactivateMember({ flags, out }, user));
-}
-
-export async function remove(flags: WorkspaceFlags & { yes?: boolean }, user: string): Promise<void> {
-  await runCommand(flags, (out) => removeMember({ flags, out }, user));
-}
-
-export async function resetLink(flags: WorkspaceFlags, user: string): Promise<void> {
-  await runCommand(flags, (out) => passwordResetLink({ flags, out }, user));
-}
-
-/**
- * Whether the Gateway can mail, as far as its setting names say: a sender
- * and a provider key (server/email/sendEmail.ts reads the values).
- */
-function emailConfigured(names: readonly string[]): boolean {
-  return names.includes("EMAIL_FROM") && (names.includes("RESEND_API_KEY") || names.includes("EMAIL_REST_API_TOKEN"));
-}
-
-export async function showWorkspace(options: WorkspaceOptions): Promise<void> {
-  const { out } = options;
-  const { gateway, ws, gatewayUrl } = await connect(options);
-  const [summary, names] = await Promise.all([
-    workspace.summarize(ws),
-    listWorkerSecrets(gateway.cf, gateway.names.worker),
-  ]);
-  const { organization, owners, counts } = summary;
-  const operator = ws.operator;
-  const email = emailConfigured(names);
-  const you =
-    operator.email === null
-      ? `${operator.actor} (an API token; no account)`
-      : operator.userId
-        ? `${operator.email}`
-        : `${operator.email} (no account on this Gateway)`;
-  const facts = [
-    { label: "Organization", value: `${organization.name} ${chalk.dim(`(${organization.slug}, ${organization.id})`)}` },
-    { label: "Gateway", value: chalk.cyan(gatewayUrl) },
-    { label: "Owners", value: owners.length > 0 ? owners.join(", ") : chalk.yellow("none yet (claim the Gateway: everyapp setup)") },
-    { label: "You", value: you },
-    { label: "Email", value: email ? "configured: the Gateway can mail invitations from Admin → Users" : chalk.dim("not configured: this CLI prints links to hand over") },
-    { label: "Members", value: `${counts.members}${counts.deactivated > 0 ? chalk.dim(` (${counts.deactivated} deactivated)`) : ""}` },
-    { label: "Invitations", value: `${counts.invitations} pending` },
-    { label: "Groups", value: String(counts.groups) },
-    { label: "Apps", value: String(counts.apps) },
-  ];
-  const message = `${organization.name}: ${plural(counts.members, "member")}, ${plural(counts.invitations, "pending invitation")}, ${plural(counts.groups, "group")}, ${plural(counts.apps, "app")}`;
-  out.emit({
-    type: "done",
-    message,
-    display: formatFacts(facts).join("\n"),
-    data: {
-      organization,
-      gateway: gatewayUrl,
-      owners,
-      operator: { actor: operator.actor, email: operator.email, userId: operator.userId },
-      email: { configured: email },
-      counts,
-    },
-  });
-}
-
-export async function listUsers(options: WorkspaceOptions): Promise<void> {
-  const { out } = options;
-  const { ws } = await connect(options);
-  const { members, invitations } = await workspace.listUsers(ws);
-  const rows = [
-    ...members.map((member) => [
-      member.email,
-      member.name && member.name !== member.email ? member.name : chalk.dim("–"),
-      member.primaryRole ?? member.role,
-      memberState(member),
-      when(member.createdAt),
-    ]),
-    ...invitations.map((invitation) => [
-      invitation.email,
-      chalk.dim("–"),
-      invitation.role,
-      invitation.live ? chalk.cyan(`invited, expires ${when(invitation.expiresAt)}`) : chalk.dim("invitation expired"),
-      when(invitation.createdAt),
-    ]),
-  ];
-  const table = formatTable(["EMAIL", "NAME", "ROLE", "STATUS", "SINCE"], rows);
-  // "Pending" counts what can still be accepted, as `workspace show` counts it; expired rows are listed, and said.
-  const expired = invitations.filter((invitation) => !invitation.live).length;
-  const summary = `${plural(members.length, "member")} and ${plural(invitations.length - expired, "pending invitation")}${expired > 0 ? ` (${expired} expired)` : ""} in ${ws.organization.name}`;
-  out.emit({
-    type: "done",
-    message: summary,
-    display: rows.length > 0 ? table.join("\n") : chalk.dim(`Nobody in ${ws.organization.name} yet.`),
-    data: {
-      organization: ws.organization,
-      members: members.map(memberData),
-      invitations: invitations.map(invitationData),
-    },
-  });
-}
-
-export async function inviteMember(
-  options: WorkspaceOptions,
-  email: string,
-  role: "member" | "admin",
+/** A list read, or its `_set` twin when a change flag is given. */
+function listOrSet(
+  flags: ChangeFlags,
+  tool: string,
+  target: JsonObject,
+  fullKey: "users" | "apps",
+  what: string,
 ): Promise<void> {
-  const { out } = options;
-  const { ws, gatewayUrl } = await connect(options);
-  out.emit({ type: "step", step: STEP, status: "start", message: `Inviting ${email}...` });
-  const { invitation, token } = await workspace.invite(ws, email, role);
-  const url = workspace.invitationUrl(gatewayUrl, token);
-  out.emit({
-    type: "step",
-    step: STEP,
-    status: "ok",
-    message: `Invited ${invitation.email} as ${role}`,
-    data: { invitationId: invitation.id },
-  });
-  const lines = [
-    `Invited ${invitation.email} to ${ws.organization.name} as ${role}.`,
-    `Send them this link (it is the invitation's only secret; it expires ${when(invitation.expiresAt)} UTC):`,
-    `  ${url}`,
-    `The Gateway mailed nothing; Admin → Users mails invitations when email is configured.`,
-  ];
-  out.emit({
-    type: "done",
-    message: stripVTControlCharacters(lines.join("\n")),
-    display: [lines[0], chalk.dim(lines[1]!), chalk.cyan(lines[2]!), chalk.dim(lines[3]!)].join("\n"),
-    data: {
-      organization: ws.organization,
-      invitation: invitationData(invitation),
-      url,
-      emailed: false,
-      next: [{ command: `${CLI} workspace invite-link ${invitation.email}`, note: "a new link, if this one is lost" }],
+  const change = listChange(flags, fullKey);
+  const run: ToolRun = change
+    ? { tool: `${tool}_set`, args: { ...target, ...change }, done: () => `Changed ${what}` }
+    : { tool, args: target, done: () => what.charAt(0).toUpperCase() + what.slice(1) };
+  return runTool(flags, run);
+}
+
+export const groupMembers = (flags: ChangeFlags, group: string) =>
+  listOrSet(flags, W("group_members"), { group }, "users", `the members of ${group}`);
+
+export const groupApps = (flags: ChangeFlags, group: string) =>
+  listOrSet(flags, W("group_apps"), { group }, "apps", `the apps ${group} opens`);
+
+export const apps = (flags: ToolCommandFlags) => read(flags, W("apps"), {}, (answer) => `${rows(answer["apps"]).length} apps`);
+
+export const appSet = (
+  flags: ToolCommandFlags & { name?: string; description?: string; everyone?: "on" | "off" },
+  app: string,
+) =>
+  runTool(flags, {
+    tool: W("app_set"),
+    args: {
+      app,
+      ...(flags.name !== undefined ? { name: flags.name } : {}),
+      ...(flags.description !== undefined ? { description: flags.description } : {}),
+      ...(flags.everyone !== undefined ? { everyone: flags.everyone === "on" } : {}),
     },
+    done: () => `Changed ${app}`,
   });
+
+export const appAccess = (flags: ChangeFlags, app: string) =>
+  listOrSet(flags, W("app_access"), { app }, "users", `who can open ${app}`);
+
+/** A cap argument: dollars, null for `off`, nothing when left out. */
+const capArg = (value: number | "off" | undefined): JsonObject =>
+  value === undefined ? {} : { costUsd: value === "off" ? null : value };
+
+export const appCap = (flags: ToolCommandFlags & { unlimited?: boolean }, app: string, usd?: number | "off") =>
+  runTool(flags, {
+    tool: W("app_cap"),
+    args: { app, ...capArg(usd), ...(flags.unlimited ? { unlimited: true } : {}) },
+    done: () => `Set ${app}'s monthly cap`,
+  });
+
+export const capDefault = (flags: ToolCommandFlags, usd: number | "off") =>
+  runTool(flags, {
+    tool: W("cap_default"),
+    args: capArg(usd),
+    done: () => "Set the workspace default cap",
+  });
+
+export const usage = (flags: ToolCommandFlags & { month?: string }) =>
+  read(flags, W("usage"), flags.month ? { month: flags.month } : {}, (answer) => `Usage for ${str(answer["month"], flags.month ?? "this month")}`);
+
+interface PageFlags extends ToolCommandFlags {
+  since?: string;
+  limit?: number;
+  before?: { at: number; id: string };
 }
 
-export async function newInviteLink(options: WorkspaceOptions, identifier: string): Promise<void> {
-  const { out } = options;
-  const { ws, gatewayUrl } = await connect(options);
-  const { invitation, token } = await workspace.inviteLink(ws, identifier);
-  const url = workspace.invitationUrl(gatewayUrl, token);
-  const lines = [
-    `A new link for ${invitation.email}'s invitation to ${ws.organization.name} (expires ${when(invitation.expiresAt)} UTC):`,
-    `  ${url}`,
-    "Earlier links keep working until the invitation is accepted or canceled.",
-  ];
-  out.emit({
-    type: "done",
-    message: stripVTControlCharacters(lines.join("\n")),
-    display: [lines[0], chalk.cyan(lines[1]!), chalk.dim(lines[2]!)].join("\n"),
-    data: { organization: ws.organization, invitation: invitationData(invitation), url },
-  });
+const pageArgs = (flags: PageFlags, cursorTime: "createdAt" | "time"): JsonObject => ({
+  ...(flags.since ? { since: flags.since } : {}),
+  ...(flags.limit ? { limit: flags.limit } : {}),
+  ...(flags.before ? { before: { [cursorTime]: flags.before.at, id: flags.before.id } } : {}),
+});
+
+/** A page's `nextBefore` as `--before` takes it, for the line after the table. */
+function nextPage(answer: JsonObject, cursorTime: "createdAt" | "time"): string {
+  const next = obj(answer["nextBefore"]);
+  return next["id"] ? `More: --before ${String(next[cursorTime])}:${String(next["id"])}` : "";
 }
 
-export async function cancelInvitation(options: WorkspaceOptions, identifier: string): Promise<void> {
-  const { out } = options;
-  const { ws } = await connect(options);
-  out.emit({ type: "step", step: STEP, status: "start", message: `Canceling the invitation for ${identifier}...` });
-  const invitation = await workspace.uninvite(ws, identifier);
-  out.emit({ type: "step", step: STEP, status: "ok", message: `Canceled ${invitation.email}'s invitation` });
-  out.emit({
-    type: "done",
-    message: `Canceled ${invitation.email}'s invitation to ${ws.organization.name}. Its links no longer work.`,
-    data: { organization: ws.organization, invitation: invitationData(invitation) },
-  });
-}
-
-export async function deactivateMember(options: WorkspaceOptions, identifier: string): Promise<void> {
-  const { out } = options;
-  const { ws } = await connect(options);
-  out.emit({ type: "step", step: STEP, status: "start", message: `Deactivating ${identifier}...` });
-  const { member, already } = await workspace.deactivate(ws, identifier);
-  out.emit({ type: "step", step: STEP, status: "ok", message: `Deactivated ${member.email}`, data: { userId: member.id, already } });
-  const lines = already
-    ? [`${member.email} was deactivated already.`, "Their sessions, tokens and AI connections are revoked again, in case any came back."]
-    : [
-        `Deactivated ${member.email}.`,
-        "They can't sign in anywhere on this Gateway; their sessions are ended and their personal access tokens and AI connections revoked.",
-        `${CLI} workspace reactivate ${member.email} lets them back in (revoked tokens and connections stay revoked).`,
-      ];
-  out.emit({
-    type: "done",
-    message: lines.join("\n"),
-    display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line))].join("\n"),
-    data: { organization: ws.organization, member: memberData(member), already },
-  });
-}
-
-export async function reactivateMember(options: WorkspaceOptions, identifier: string): Promise<void> {
-  const { out } = options;
-  const { ws } = await connect(options);
-  out.emit({ type: "step", step: STEP, status: "start", message: `Reactivating ${identifier}...` });
-  const { member, already } = await workspace.reactivate(ws, identifier);
-  out.emit({ type: "step", step: STEP, status: "ok", message: `Reactivated ${member.email}`, data: { userId: member.id, already } });
-  const lines = already
-    ? [`${member.email} was active already. Nothing changed.`]
-    : [`Reactivated ${member.email}.`, "They can sign in again. Tokens and AI connections revoked at deactivation stay revoked: they make new ones."];
-  out.emit({
-    type: "done",
-    message: lines.join("\n"),
-    display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line))].join("\n"),
-    data: { organization: ws.organization, member: memberData(member), already },
-  });
-}
-
-export async function removeMember(
-  options: WorkspaceOptions<WorkspaceFlags & { yes?: boolean }>,
-  identifier: string,
-): Promise<void> {
-  const { out, flags } = options;
-  const { gateway, ws } = await connect(options);
-  const member = await workspace.findMember(ws, identifier);
-  await confirmUnlessYes({
-    yes: flags.yes,
-    interactive: interactiveIn(options),
-    confirm: options.confirm,
-    question: `Remove ${member.email} from ${ws.organization.name}?`,
-    unattended: "Removing a member needs confirmation at a terminal, or --yes",
-    context: [
-      "Their membership, app grants, group places, tokens and AI connections for the organization go;",
-      "their account too, when it belongs to no other organization.",
-    ],
-    cancelled: "Cancelled. Nothing removed.",
-    data: { userId: member.id, email: member.email },
-  });
-  out.emit({ type: "step", step: STEP, status: "start", message: `Removing ${member.email}...` });
-  const hosted = gateway.install.deploymentMode === "hosted";
-  const result = await workspace.remove(ws, member.id, { deleteAccounts: !hosted });
-  out.emit({
-    type: "step",
-    step: STEP,
-    status: "ok",
-    message: `Removed ${member.email}`,
-    data: { userId: member.id, accountDeleted: result.accountDeleted },
-  });
-  const lines = [
-    `Removed ${member.email} from ${ws.organization.name}.`,
-    "Their grants and group places went with the membership; their tokens for it and AI connections to it are revoked.",
-    result.accountDeleted
-      ? "Their account is deleted: it belonged to no other organization."
-      : result.otherOrganizations > 0
-        ? `Their account stays: they belong to ${plural(result.otherOrganizations, "other organization")}.`
-        : "Their account stays: this Gateway keeps accounts.",
-  ];
-  out.emit({
-    type: "done",
-    message: lines.join("\n"),
-    display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line))].join("\n"),
-    data: {
-      organization: ws.organization,
-      member: memberData(result.member),
-      accountDeleted: result.accountDeleted,
-      otherOrganizations: result.otherOrganizations,
+export const activity = (
+  flags: PageFlags & { app?: string; user?: string; decision?: "allowed" | "blocked"; risk?: "read" | "write" },
+) =>
+  runTool(flags, {
+    tool: W("activity"),
+    args: {
+      ...(flags.app ? { app: flags.app } : {}),
+      ...(flags.user ? { user: flags.user } : {}),
+      ...(flags.decision ? { decision: flags.decision } : {}),
+      ...(flags.risk ? { risk: flags.risk } : {}),
+      ...pageArgs(flags, "createdAt"),
     },
+    done: (answer) => `${rows(answer["calls"] ?? answer["rows"]).length} tool calls, newest first`,
+    display: (answer) => [formatAnswer({ ...answer, nextBefore: undefined }), nextPage(answer, "createdAt")].filter(Boolean).join("\n\n"),
   });
+
+export const audit = (flags: PageFlags & { actor?: string; type?: string }) =>
+  runTool(flags, {
+    tool: W("audit"),
+    args: {
+      ...(flags.actor ? { actor: flags.actor } : {}),
+      ...(flags.type ? { type: flags.type } : {}),
+      ...pageArgs(flags, "time"),
+    },
+    done: (answer) => `${rows(answer["events"] ?? answer["rows"]).length} audit events, newest first`,
+    display: (answer) => [formatAnswer({ ...answer, nextBefore: undefined }), nextPage(answer, "time")].filter(Boolean).join("\n\n"),
+  });
+
+export const tokens = (flags: ToolCommandFlags & { all?: boolean }) =>
+  runTool(flags, {
+    tool: "everyapp_my_tokens",
+    done: (answer) => `${shownTokens(answer, flags.all).length} personal access tokens`,
+    display: (answer) => formatRows(shownTokens(answer, flags.all)),
+  });
+
+/** Live tokens only, unless `--all`. */
+function shownTokens(answer: JsonObject, all?: boolean): JsonObject[] {
+  const listed = rows(answer["tokens"]);
+  if (all) return listed;
+  const now = Date.now();
+  return listed.filter((token) => !token["revokedAt"] && !token["revoked"] && !(typeof token["expiresAt"] === "string" && Date.parse(token["expiresAt"]) <= now));
 }
 
-export async function passwordResetLink(options: WorkspaceOptions, identifier: string): Promise<void> {
-  const { out } = options;
-  const { ws, gatewayUrl } = await connect(options);
-  const { member, token, expiresAt } = await workspace.resetLink(ws, identifier);
-  const url = workspace.passwordResetUrl(gatewayUrl, token);
-  const lines = [
-    `A password-reset link for ${member.email} (single use; expires ${when(expiresAt)} UTC):`,
-    `  ${url}`,
-    "Whoever opens it sets the account's password: hand it to them yourself.",
-  ];
-  out.emit({
-    type: "done",
-    message: stripVTControlCharacters(lines.join("\n")),
-    display: [lines[0], chalk.cyan(lines[1]!), chalk.dim(lines[2]!)].join("\n"),
-    data: { organization: ws.organization, member: memberData(member), url, expiresAt: iso(expiresAt) },
+export const tokenRevoke = (flags: ToolCommandFlags, token: string) =>
+  runTool(flags, { tool: "everyapp_revoke_token", args: { token }, done: () => `Revoked the token ${token}`, display: () => "" });
+
+export const connections = (flags: ToolCommandFlags) =>
+  read(flags, "everyapp_my_connections", {}, (answer) => `${rows(answer["connections"]).length} AI connections`);
+
+export const connectionRevoke = (flags: ToolCommandFlags, connection: string) =>
+  runTool(flags, {
+    tool: "everyapp_revoke_connection",
+    args: { connection },
+    done: () => `Revoked the AI connection ${connection}`,
+    display: () => "",
   });
-}
+
+/** `show` reads it from everyapp_workspace_show (a read-only credential can); on and off are the write. */
+export const linkedDev = (flags: ToolCommandFlags, setting: LinkedDevSetting = "show") =>
+  runTool(flags, {
+    tool: setting === "show" ? W("show") : W("linked_dev"),
+    args: setting === "show" ? {} : { on: setting === "on" },
+    done: (answer) => `Linked dev is ${str(answer["linkedDev"])}${answer["changed"] === true ? " now" : ""}`,
+    display: () => "",
+  });

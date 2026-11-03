@@ -162,7 +162,7 @@ Workspace tools (Gateway connector only; every admin action of the UI, listed
          `everyapp_ai_show` (any member), `everyapp_ai_default`,
          `everyapp_workspace_usage`, `everyapp_workspace_activity`,
          `everyapp_workspace_audit` (the audit log: who did what, 90 days),
-         `everyapp_workspace_rename`, and the
+         `everyapp_workspace_rename`, `everyapp_workspace_linked_dev`, and the
          events tools `everyapp_workspace_events`, `everyapp_workspace_events_add`
          (a generated signing secret comes back once, in that answer: it opens
          nothing on the Gateway, so the person stores it in the receiver now),

@@ -463,20 +463,11 @@ describe("the command pages", () => {
   it("events.md documents every event type, flag, header, code and the app-emit refusals", () => {
     expectDocumented("events", "the event types (EVENT_TYPES in packages/sdk/src/internal/events.ts)", EVENT_TYPES.map((info) => info.type));
     // Section 8's flags must be in the walk, so a missing or renamed `events` group fails here rather than documenting nothing.
-    expect(flagsOf("events")).toEqual(expect.arrayContaining(["--events", "--email", "--secret-from-env", "--no-wait", "--dead"]));
+    expect(flagsOf("events")).toEqual(expect.arrayContaining(["--events", "--email", "--secret-from-env", "--dead"]));
     expectDocumented("events", "the flags of everyapp events", flagsOf("events"));
     expectDocumented("events", "the delivery headers (EVENT_HEADERS)", Object.values(EVENT_HEADERS));
     expectDocumented("events", "the setting, the SDK call and the app event pattern", [EVENTS_ALLOW_PRIVATE_TARGETS_SETTING, "emit", "app.<id>.<name>"]);
-    expectDocumented("events", "the error codes of everyapp events", [
-      "EVENT_TARGET_REFUSED",
-      "EVENT_SUBSCRIPTIONS_LIMIT",
-      "EVENT_SUBSCRIPTION_NOT_FOUND",
-      "EVENT_DELIVERY_NOT_FOUND",
-      "EVENT_TYPE_UNKNOWN",
-      "EVENT_SECRET_INVALID",
-      "EVENT_SINK_CONFLICT",
-      "EVENT_TEST_TIMEOUT",
-    ]);
+    expectDocumented("events", "the error codes of everyapp events", ["EVENT_SINK_CONFLICT", "EVENT_TARGET_REQUIRED", "GATEWAY_TOOL_ERROR"]);
     expectDocumented("events", "the refusals of an app's emit", [
       "event_name_invalid",
       "event_data_invalid",

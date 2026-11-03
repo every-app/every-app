@@ -222,6 +222,10 @@ Email, so invites and resets go out by mail: the person onboards the domain in t
 
 The person connects Claude, ChatGPT, Claude Code or Cursor to the Gateway's one MCP address, `https://<gateway>/mcp`, once: the assistant signs in to the Gateway as them and asks which apps it may use. The steps per client are in [/docs/connect-ai](/docs/connect-ai) (Claude Code: `claude mcp add --transport http everyapp https://<gateway>/mcp`, then `/mcp` → **everyapp** → **Authenticate**); a tool that can't sign in takes a personal access token from **Admin** → **Tokens** → **New token** as `Authorization: Bearer`. Connections are listed and revoked under **AI connections** (`https://<gateway>/settings/connections`). It works behind Access. Reference: [/docs/agent/mcp](/docs/agent/mcp).
 
+### Manage the workspace from the terminal
+
+`pnpm everyapp workspace …`, `events …`, `ai show|list|default|model` and `pnpm everyapp call <tool> [json]` are the Gateway's own tools, run as the person ([workspace](/docs/agent/workspace)). They need a Gateway credential, not the Cloudflare login: `EVERYAPP_TOKEN` (a personal access token the person makes under **Admin** → **Tokens**), or a one-time browser sign-in, `pnpm everyapp login --gateway https://<gateway> --json`: hand the person the URL in the `gateway.signin` progress event (they choose **Read & write** and **All apps** on the consent page) and keep reading; the run waits. `--sign-out` with `--gateway` (`pnpm everyapp login --gateway https://<gateway> --sign-out`) revokes and forgets it. The first admin command signs in the same way when nothing is stored.
+
 ### AI keys and app secrets
 
 ```bash

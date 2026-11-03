@@ -226,7 +226,7 @@ describe("help", () => {
   it("says under events how a webhook is signed, with the four examples", () => {
     const help = groupHelp(["events"])!;
     expect(help).toContain(
-      `.\n\nEach webhook is signed: X-EveryApp-Signature, HMAC-SHA256 over <t>.<body>; verify it with the snippet on /docs/events.\n\nUSAGE\n  ${CLI} events <command> [flags]\n\nCOMMANDS\n`,
+      `.\n\nEach webhook is signed: X-EveryApp-Signature, HMAC-SHA256 over <t>.<body>; verify it with the snippet on /docs/events.\nEach command is one of the Gateway's own tools (everyapp_workspace_events*), run as you.\n\nUSAGE\n  ${CLI} events <command> [flags]\n\nCOMMANDS\n`,
     );
     for (const example of [
       "events add https://hooks.example.com/everyapp --events cap.*,member.*",

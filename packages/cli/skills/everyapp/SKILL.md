@@ -59,6 +59,14 @@ the error; if data.authorize is set, ask before using data.rerun. waiting: true
 | The default model                      | `everyapp ai show`, `ai default <provider>`                                             | ai        |
 | Remove an app                          | `everyapp delete <id>`                                                                  | cli       |
 
+The workspace, events and `ai show|default` commands are the Gateway's own
+tools, run as the person: EVERYAPP_TOKEN (a personal access token), or the
+browser sign-in `everyapp login --gateway <url>` keeps (hand its URL to the
+person; it waits). A refusal is GATEWAY_TOOL_ERROR, its code in data.code.
+`everyapp call <tool> '<json>'` runs any tool by name (`call --list`).
+`workspace invite-link` and `workspace reset-link` print a link under the
+Cloudflare login: hand it to the person.
+
 An app's AI tools are defineTools() in src/tools.ts, served at
 https://<gateway>/mcp as <app>_<tool>: mcp.md beside this file says how to
 write, connect and debug them.

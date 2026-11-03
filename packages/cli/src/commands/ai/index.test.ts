@@ -1,9 +1,8 @@
 /**
- * `everyapp ai …` end to end, in a fake Cloudflare account with a deployed
- * gateway (as workspace/index.test.ts): what `show` resolves from the
- * Gateway's secret names, what `default` writes (the
- * `org_settings` row, the `ai.default_changed` event, the cap column
- * untouched) and refuses, and what `gateway on|off` sets.
+ * `everyapp ai gateway on|off` end to end, in a fake Cloudflare account
+ * with a deployed gateway: the part of `ai` that stays a Cloudflare job
+ * under the login (the rest are Gateway tools, tested on the Gateway). It
+ * finds or makes the AI Gateway and sets or unsets AI_GATEWAY_ID.
  */
 import fs from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,29 +14,27 @@ import { createNdjsonSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { buildGatewayRelease } from "@/test/gatewayRelease";
 import { makeTestHome } from "@/test/home";
-import { setDefaultCap } from "../workspace/apps";
-import { chooseDefault, showDefault, turnGatewayOff, turnGatewayOn } from "./index";
+import { turnGatewayOff, turnGatewayOn } from "./index";
 
 const GATEWAY = "every-app-gateway";
-const NOW = Date.parse("2026-10-25T12:00:00Z");
-const ORG = "org-acme";
 
 let account: FakeCloudflare;
-let tarball: string;
 let release: GatewayRelease;
 let home: string;
 let events: Array<Record<string, any>>;
 
 const out = () => createNdjsonSink((line) => events.push(JSON.parse(line)));
-const seams = { sleep: async () => undefined, leaseWaitMs: 0 };
 const createCf = vi.fn(() => account.cf);
-const opts = () => ({ flags: { json: true }, out: out(), createCf, now: () => NOW });
-const sqlite = () => account.database(GATEWAY);
-const rows = (sql: string, ...params: Array<string | number | null>) => sqlite().all(sql, ...params);
+const opts = () => ({ flags: { json: true }, out: out(), createCf });
 /** The command's own done event: the last one (a setting write emits its own first). */
-const done = () => events.filter((event) => event["type"] === "done").at(-1);
-const data = () => done()!["data"] as Record<string, any>;
+const data = () => events.filter((event) => event["type"] === "done").at(-1)!["data"] as Record<string, any>;
 const gatewaySecrets = () => account.workers.get(GATEWAY)!.secrets;
+const fakeEnsure = (created: boolean) =>
+  vi.fn(async (_cf: unknown, options: { id: string; accountId: string }) => ({
+    id: options.id,
+    url: `https://gateway.ai.cloudflare.com/v1/${options.accountId}/${options.id}`,
+    created,
+  }));
 
 beforeEach(async () => {
   events = [];
@@ -45,8 +42,7 @@ beforeEach(async () => {
   vi.stubEnv("HOME", home);
   vi.stubEnv("CLOUDFLARE_API_TOKEN", "");
   account = new FakeCloudflare();
-  tarball = await buildGatewayRelease();
-  release = await openRelease(tarball);
+  release = await openRelease(await buildGatewayRelease());
   const resources = await ensureGatewayResources(account.cf);
   await applyGateway({
     cf: account.cf,
@@ -61,17 +57,9 @@ beforeEach(async () => {
     db: cfD1Database(account.cf, resources.d1Id),
     interactive: false,
     cliVersion: "0.3.0",
-    ...seams,
+    sleep: async () => undefined,
+    leaseWaitMs: 0,
   });
-  const db = sqlite().sqlite;
-  const exec = (sql: string, ...params: Array<string | number | null>) => db.prepare(sql).run(...params);
-  exec("INSERT INTO organizations (id, name, slug, created_at) VALUES (?, 'Acme', 'acme', ?)", ORG, NOW - 10);
-  exec(
-    "INSERT INTO users (id, name, email, email_verified, created_at, updated_at) VALUES ('u-owner', 'Dev', 'dev@example.com', 1, ?, ?)",
-    NOW - 9,
-    NOW - 9,
-  );
-  exec("INSERT INTO members (id, organization_id, user_id, role, created_at) VALUES ('m-owner', ?, 'u-owner', 'owner', ?)", ORG, NOW - 8);
   events = [];
 });
 
@@ -81,128 +69,13 @@ afterEach(async () => {
   fs.rmSync(home, { recursive: true, force: true });
 });
 
-const aiEvents = () =>
-  rows("SELECT data FROM events WHERE type = 'ai.default_changed' ORDER BY id").map((row) =>
-    JSON.parse(String(row["data"])),
-  );
-
-describe("ai show", () => {
-  it("resolves on the Gateway's secret names: nothing set, then the first of the order that is", async () => {
-    await showDefault(opts());
-    expect(data()).toMatchObject({
-      provider: "openrouter",
-      model: "anthropic/claude-haiku-5.5",
-      source: "none",
-      configured: false,
-      settings: ["OPENROUTER_API_KEY"],
-      via: "direct",
-      aiGateway: { on: false },
-    });
-    expect(data()["candidates"].map((candidate: { id: string }) => candidate.id)).toEqual([
-      "openrouter",
-      "workers-ai",
-      "openai",
-      "anthropic",
-      "groq",
-      "mistral",
-      "gemini",
-    ]);
-    expect(done()!["message"]).toContain("Nothing is set yet");
-
-    gatewaySecrets()["WORKERS_AI_API_TOKEN"] = "cf";
-    gatewaySecrets()["CLOUDFLARE_ACCOUNT_ID"] = "acc";
-    events = [];
-    await showDefault(opts());
-    expect(data()).toMatchObject({ provider: "workers-ai", source: "order", configured: true });
-    expect(done()!["message"]).toContain("Workers AI");
-  });
-
-  it("lists the candidates with their state, the default marked", async () => {
-    gatewaySecrets()["GROQ_API_KEY"] = "gsk";
-    await showDefault(opts());
-    expect(data()["provider"]).toBe("groq");
-    const groq = data()["candidates"].find((candidate: { id: string }) => candidate.id === "groq");
-    expect(groq).toMatchObject({ configured: true, settings: ["GROQ_API_KEY"], model: "openai/gpt-oss-20b" });
-    expect(done()!["message"]).toContain("← the default");
-  });
-});
-
-describe("ai default", () => {
-  it("writes org_settings with the one setting and queues ai.default_changed once; the cap column stays", async () => {
-    await setDefaultCap(opts(), 20);
-    events = [];
-    await chooseDefault(opts(), "openrouter/anthropic/claude-sonnet-5.5");
-    expect(rows("SELECT organization_id, default_monthly_cost_cap_micros, ai_default, updated_by FROM org_settings")).toEqual([
-      {
-        organization_id: ORG,
-        default_monthly_cost_cap_micros: 20_000_000,
-        ai_default: "openrouter/anthropic/claude-sonnet-5.5",
-        updated_by: "u-owner",
-      },
-    ]);
-    expect(aiEvents()).toEqual([{ aiDefault: { provider: "openrouter", model: "anthropic/claude-sonnet-5.5" }, previous: null }]);
-    expect(data()).toMatchObject({ provider: "openrouter", model: "anthropic/claude-sonnet-5.5", source: "setting", configured: false });
-    expect(done()!["message"]).toContain("OPENROUTER_API_KEY isn't set");
-
-    // The same choice again: nothing changes, no second event.
-    events = [];
-    await chooseDefault(opts(), "openrouter/anthropic/claude-sonnet-5.5");
-    expect(done()!["message"]).toContain("Nothing changed");
-    expect(aiEvents()).toHaveLength(1);
-
-    // Off clears the setting, keeps the cap, and queues the event with the previous choice.
-    events = [];
-    await chooseDefault(opts(), "off");
-    expect(rows("SELECT default_monthly_cost_cap_micros, ai_default FROM org_settings")).toEqual([
-      { default_monthly_cost_cap_micros: 20_000_000, ai_default: null },
-    ]);
-    // The clock is fixed, so the two events don't sort: both are there.
-    expect(aiEvents()).toHaveLength(2);
-    expect(aiEvents()).toEqual(
-      expect.arrayContaining([
-        { aiDefault: null, previous: { provider: "openrouter", model: "anthropic/claude-sonnet-5.5" } },
-      ]),
-    );
-    expect(data()["source"]).toBe("none");
-  });
-
-  it("clearing the cap keeps the choice, and a row with neither goes", async () => {
-    await chooseDefault(opts(), "groq");
-    await setDefaultCap(opts(), 20);
-    await setDefaultCap(opts(), null);
-    expect(rows("SELECT default_monthly_cost_cap_micros, ai_default FROM org_settings")).toEqual([
-      { default_monthly_cost_cap_micros: null, ai_default: "groq" },
-    ]);
-    await chooseDefault(opts(), "off");
-    expect(rows("SELECT * FROM org_settings")).toEqual([]);
-  });
-
-  it("refuses what the default can't be before connecting, and names the candidates", async () => {
-    await expect(chooseDefault(opts(), "stripe")).rejects.toMatchObject({ code: "AI_DEFAULT_INVALID" });
-    await expect(chooseDefault(opts(), "ai-gateway")).rejects.toThrow(/everyapp ai gateway on/);
-    await expect(chooseDefault(opts(), "cohere")).rejects.toThrow(/chat route/);
-    await expect(chooseDefault(opts(), "Open Router")).rejects.toMatchObject({ code: "AI_DEFAULT_INVALID" });
-    await expect(chooseDefault(opts(), "openrouter/anthropic/claude\thaiku-5.5")).rejects.toThrow(/isn't a model id/);
-    expect(rows("SELECT * FROM org_settings")).toEqual([]);
-    expect(aiEvents()).toEqual([]);
-  });
-});
-
 describe("ai gateway on and off", () => {
   it("finds or makes the gateway through the seam and sets AI_GATEWAY_ID; off unsets it", async () => {
-    const ensureAiGateway = vi.fn(async (_cf: unknown, options: { id: string; accountId: string }) => ({
-      id: options.id,
-      url: `https://gateway.ai.cloudflare.com/v1/${options.accountId}/${options.id}`,
-      created: true,
-    }));
+    const ensureAiGateway = fakeEnsure(true);
     await turnGatewayOn({ ...opts(), ensureAiGateway });
     expect(ensureAiGateway).toHaveBeenCalledWith(expect.anything(), { id: "everyapp", accountId: ACCOUNT_ID });
     expect(gatewaySecrets()["AI_GATEWAY_ID"]).toBe("everyapp");
     expect(data()).toMatchObject({ id: "everyapp", url: `https://gateway.ai.cloudflare.com/v1/${ACCOUNT_ID}/everyapp`, created: true });
-
-    events = [];
-    await showDefault(opts());
-    expect(data()["aiGateway"]).toEqual({ on: true });
 
     events = [];
     await turnGatewayOff(opts());
@@ -215,18 +88,11 @@ describe("ai gateway on and off", () => {
   });
 
   it("takes --id, lowercased, and refuses an id Cloudflare would", async () => {
-    const ensureAiGateway = vi.fn(async (_cf: unknown, options: { id: string; accountId: string }) => ({
-      id: options.id,
-      url: `https://gateway.ai.cloudflare.com/v1/${options.accountId}/${options.id}`,
-      created: false,
-    }));
+    const ensureAiGateway = fakeEnsure(false);
     await turnGatewayOn({ ...opts(), ensureAiGateway }, "Acme-Models");
     expect(gatewaySecrets()["AI_GATEWAY_ID"]).toBe("acme-models");
-    await expect(turnGatewayOn({ ...opts(), ensureAiGateway }, "bad--id")).rejects.toMatchObject({
-      code: "AI_GATEWAY_ID_INVALID",
-    });
-    await expect(turnGatewayOn({ ...opts(), ensureAiGateway }, "under_score")).rejects.toMatchObject({
-      code: "AI_GATEWAY_ID_INVALID",
-    });
+    for (const bad of ["bad--id", "under_score"]) {
+      await expect(turnGatewayOn({ ...opts(), ensureAiGateway }, bad)).rejects.toMatchObject({ code: "AI_GATEWAY_ID_INVALID" });
+    }
   });
 });

@@ -114,9 +114,9 @@ app's name and logo: unverified).
 1. `pnpm everyapp signin list --json`: the `google` entry has `status:
    "on"` and `missing` empty.
 2. The person's address must be a member's or have a pending invitation.
-   For someone new: `pnpm everyapp workspace invite <email>` (it prints an
-   invitation link; for Google sign-in they don't need it, the pending
-   invitation for that exact address is enough).
+   For someone new: `pnpm everyapp workspace invite <email>` (mailed when
+   the Gateway sends email; for Google sign-in they don't need the link,
+   the pending invitation for that exact address is enough).
 3. **Person:** in a private window open `https://<gateway host>/sign-in`:
    **Continue with Google** is there. Select it, choose the Google account,
    and they land on the Gateway signed in. An existing password account

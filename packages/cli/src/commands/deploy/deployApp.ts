@@ -108,7 +108,6 @@ import { directoryExists } from "@/lib/file-operations";
 import { connectToGateway } from "@/lib/gateway/connect";
 import { acquireAppLease, LeasePurpose } from "@/lib/gateway/lease";
 import { gatewayRegistry } from "@/lib/gateway/providers";
-import { recordSetupStateQuietly } from "@/lib/gateway/setupState";
 import {
   findRegisteredApp,
   installOrganization,
@@ -596,10 +595,9 @@ async function deploySteps(
       ...(secretNames ? { secretNames } : {}),
     });
     // What the app still needs set, once its upload is on record: a
-    // warning with the one command, said again under Next; and the state
-    // on the app's row, with app.needs_setup or app.ready on a change.
-    const setup = await warnIfNeedsSetup({ cf, gateway: names, manifest, appId: manifest.id, secretNames, out, next, providers });
-    await recordSetupStateQuietly(registry, { appRowId: plan.app.id, setup, deployer }, out);
+    // warning with the one command, said again under Next. The Gateway
+    // records the app's setup state when it next evaluates it.
+    await warnIfNeedsSetup({ cf, gateway: names, manifest, appId: manifest.id, secretNames, out, next, providers });
   } finally {
     await lease.release();
   }

@@ -17,15 +17,15 @@ export const accountFlag = {
 } as const;
 
 /**
- * `--org` on a Gateway command that acts on one organization (`workspace`,
- * `events`): resolved by lib/gateway/workspace.ts `resolveOrganization`.
+ * `--gateway` on a command that calls the Gateway's admin API
+ * (lib/gatewayApi): its URL, or its name among the Gateways the Cloudflare
+ * login finds.
  */
-export const orgFlag = {
+const apiGatewayFlag = {
   kind: "parsed",
   parse: String,
   brief:
-    "The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)",
-  placeholder: "slug",
+    "The Gateway's URL (default: EVERYAPP_GATEWAY_URL, else the Gateway you signed in to with login --gateway, else the one your Cloudflare login finds; a name picks among several there)",
   optional: true,
 } as const;
 
@@ -49,6 +49,18 @@ export const verboseFlag = {
   brief:
     "Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace",
   optional: true,
+} as const;
+
+/**
+ * Every command that is one Gateway tool (lib/gatewayApi): which Gateway,
+ * and how to print. The credential is EVERYAPP_TOKEN or the browser
+ * sign-in, never a flag.
+ */
+export const apiFlags = {
+  gateway: apiGatewayFlag,
+  "account-id": accountFlag,
+  json: jsonFlag,
+  verbose: verboseFlag,
 } as const;
 
 export const yesFlag = {
@@ -106,12 +118,6 @@ export interface GatewayCommandFlags {
   "account-id"?: string;
   json?: boolean;
   verbose?: boolean;
-}
-
-/** The flags of a Gateway command that acts on one organization: the Gateway's, and `--org`. */
-export interface OrganizationCommandFlags extends GatewayCommandFlags {
-  /** `--org`: the organization by slug, id or name; the install organization without it. */
-  org?: string;
 }
 
 /** `deploy`'s and `install`'s flags: the Gateway's, the takeovers, and the two of their own. */

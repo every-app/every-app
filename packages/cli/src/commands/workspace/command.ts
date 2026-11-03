@@ -1,40 +1,23 @@
-import { buildCommand, buildRouteMap } from "@stricli/core";
-import {
-  ACTIVITY_PAGE_MAX,
-  AUDIT_TYPE_FILTER,
-  AUDIT_TYPE_MAX,
-  MONTH,
-  appName,
-} from "@/lib/gateway/workspace";
-import { MONTHLY_COST_CAP_MAX_USD, MONTHLY_COST_CAP_MIN_USD } from "@/lib/gateway/costCaps";
-import { CLI } from "@/lib/output/command";
-import { accountFlag, gatewayFlag, jsonFlag, orgFlag, verboseFlag } from "../flags";
-
-/** Every workspace command: where the Gateway is, which organization, and how to print. */
-const workspaceFlags = {
-  org: orgFlag,
-  gateway: gatewayFlag,
-  "account-id": accountFlag,
-  json: jsonFlag,
-  verbose: verboseFlag,
-} as const;
-
 /**
- * The flags of `rename` and `role`, which act on the install organization
- * (the UI review thread's commands): the Gateway's, and the output's.
+ * `everyapp workspace …`: Manage workspace from the terminal. Each command
+ * but `reset-link` and `invite-link` is one of the Gateway's own tools
+ * (`everyapp_workspace_*`, `everyapp_my_*`, `everyapp_revoke_*`), run as you
+ * through its admin API (lib/gatewayApi; `everyapp call` reaches the same
+ * tools by name), so the Gateway's services decide every rule. Those two
+ * print a link, which the tools never return: the operator's way back in
+ * for a locked-out owner, and an invite link for a Gateway that sends no
+ * email, written into the Gateway's D1 under the Cloudflare login (ADR-0003,
+ * "What the CLI writes").
  */
-const connectFlags = {
-  gateway: gatewayFlag,
-  "account-id": accountFlag,
-  json: jsonFlag,
-  verbose: verboseFlag,
-} as const;
+import { buildCommand, buildRouteMap } from "@stricli/core";
+import { CLI } from "@/lib/output/command";
+import { accountFlag, apiFlags, gatewayFlag, jsonFlag, verboseFlag } from "../flags";
 
 /** A member's role in the workspace, as `workspace role` sets it. */
 export const WORKSPACE_ROLES = ["owner", "admin", "member"] as const;
 export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
 
-export function parseWorkspaceRole(value: string): WorkspaceRole {
+function parseWorkspaceRole(value: string): WorkspaceRole {
   const role = WORKSPACE_ROLES.find((name) => name === value.trim().toLowerCase());
   if (!role) throw new Error("Use owner, admin or member.");
   return role;
@@ -79,139 +62,144 @@ const invitationParameter = {
 /** `--add`, `--remove` and `--set`: how a list of members or apps changes. */
 const listChangeFlags = (what: string, placeholder: string) =>
   ({
-    add: {
-      kind: "parsed",
-      parse: String,
-      variadic: true,
-      optional: true,
-      placeholder,
-      brief: `Add ${what} (repeat for several)`,
-    },
-    remove: {
-      kind: "parsed",
-      parse: String,
-      variadic: true,
-      optional: true,
-      placeholder,
-      brief: `Remove ${what} (repeat for several)`,
-    },
+    add: { kind: "parsed", parse: String, variadic: true, optional: true, placeholder, brief: `Add ${what} (repeat for several)` },
+    remove: { kind: "parsed", parse: String, variadic: true, optional: true, placeholder, brief: `Remove ${what} (repeat for several)` },
     set: {
       kind: "parsed",
       parse: String,
       variadic: true,
       optional: true,
       placeholder,
-      brief: `Replace the whole list with these (repeat for several; alone, with neither --add nor --remove)`,
+      brief: "Replace the whole list with these (repeat for several; alone, with neither --add nor --remove)",
     },
   }) as const;
 
+/** A command's help: its lines, then the Gateway tool (or tools) it is. */
+const docs = (tool: string, lines: readonly string[]) => {
+  const tools = tool.split(", ");
+  return [
+    ...lines,
+    ...(lines.length ? [""] : []),
+    tools.length === 1
+      ? `The Gateway tool: ${tool} (${CLI} call ${tool}).`
+      : `The Gateway tools: ${tools.join(" to read, ")} to change.`,
+  ].join("\n");
+};
+
+const noArgs = { kind: "tuple", parameters: [] } as const;
+
 const showCommand = buildCommand({
   loader: async () => (await import(".")).show,
-  parameters: { positional: { kind: "tuple", parameters: [] }, flags: workspaceFlags },
+  parameters: { positional: noArgs, flags: apiFlags },
   docs: {
-    brief: "The organization: its owners, whether it can send mail, and how many members, invitations, groups and apps it has",
-    fullDescription: [
-      "Nothing is changed. Email counts as configured when the Gateway settings EMAIL_FROM and a",
-      "provider key are set, which is what invitations need to be mailed from the Gateway (this",
-      "command prints links instead either way).",
-      "",
-      `Example:\n  ${CLI} workspace show --json`,
-    ].join("\n"),
+    brief: "The organization: your role, whether it can send mail, and how many members, invitations, groups and apps it has",
+    fullDescription: docs("everyapp_workspace_show", [`Example:\n  ${CLI} workspace show --json`]),
   },
 });
 
 const usersCommand = buildCommand({
   loader: async () => (await import(".")).users,
-  parameters: { positional: { kind: "tuple", parameters: [] }, flags: workspaceFlags },
+  parameters: { positional: noArgs, flags: apiFlags },
   docs: {
     brief: "The members with their role and state, then the pending invitations",
-    fullDescription: [
-      "Nothing is changed. A deactivated member is listed as such; a pending invitation with when",
-      "it expires.",
-      "",
-      `Example:\n  ${CLI} workspace users`,
-    ].join("\n"),
+    fullDescription: docs("everyapp_workspace_users", [`Example:\n  ${CLI} workspace users`]),
   },
 });
 
 const inviteCommand = buildCommand({
   loader: async () => (await import(".")).invite,
   parameters: {
-    positional: {
-      kind: "tuple",
-      parameters: [{ placeholder: "email", brief: "The address to invite", parse: parseEmail }],
-    },
+    positional: { kind: "tuple", parameters: [{ placeholder: "email", brief: "The address to invite", parse: parseEmail }] },
     flags: {
-      role: {
-        kind: "enum",
-        values: ["member", "admin"],
-        default: "member",
-        brief: "The role they join with",
-      },
-      ...workspaceFlags,
+      role: { kind: "enum", values: ["member", "admin"], default: "member", brief: "The role they join with" },
+      ...apiFlags,
     },
   },
   docs: {
-    brief: "Invite someone by email and print the link to send them (the Gateway mails nothing from here)",
-    fullDescription: [
-      "Makes a pending invitation (72 hours, single use, only for an account with that email) in",
-      "your name: your Cloudflare login's email must be a member of the organization. Prints",
-      "<gateway>/accept-invitation?token=einv_…, which is the invitation's only secret: hand it to",
-      "the person yourself. The Gateway mails invitations only from Admin → Users.",
+    brief: "Invite someone by email: the Gateway mails the invitation when it can send email",
+    fullDescription: docs("everyapp_workspace_invite", [
+      "The answer says whether it was mailed. The tool never returns the link: where the Gateway",
+      `sends no email, ${CLI} workspace invite-link <email> prints one (under your Cloudflare login),`,
+      "or copy it from Admin → Users.",
       "",
       "Examples:",
       `  ${CLI} workspace invite ann@example.com`,
       `  ${CLI} workspace invite ann@example.com --role admin --json`,
-    ].join("\n"),
+    ]),
   },
 });
 
 const inviteLinkCommand = buildCommand({
-  loader: async () => (await import(".")).inviteLink,
-  parameters: { positional: { kind: "tuple", parameters: [invitationParameter] }, flags: workspaceFlags },
+  loader: async () => (await import("./links")).inviteLink,
+  parameters: {
+    positional: { kind: "tuple", parameters: [invitationParameter] },
+    flags: { gateway: gatewayFlag, "account-id": accountFlag, json: jsonFlag, verbose: verboseFlag },
+  },
   docs: {
-    brief: "Print a new link for a pending invitation (earlier links keep working until it is used)",
+    brief: "Print a new link for a pending invitation, under the Cloudflare login (for a Gateway that sends no email)",
     fullDescription: [
-      "The link's token is new each time and stored only as its hash. Every link of an invitation",
-      "stops working once it is accepted, canceled or expired.",
+      "The CLI twin of Admin → Users → Copy invite link: a new invite link for a pending, unexpired",
+      "invitation of the install organization, written into the Gateway's D1 with your Cloudflare",
+      "login. The Gateway's tools never return a link to their caller, so this is one of the two",
+      "workspace commands that write D1 (ADR-0003). Earlier links keep working until the invitation",
+      "is accepted or canceled. Hand the link to the person yourself.",
       "",
-      `Example:\n  ${CLI} workspace invite-link ann@example.com`,
+      "Examples:",
+      `  ${CLI} workspace invite ann@example.com`,
+      `  ${CLI} workspace invite-link ann@example.com`,
     ].join("\n"),
   },
 });
 
 const uninviteCommand = buildCommand({
   loader: async () => (await import(".")).uninvite,
-  parameters: { positional: { kind: "tuple", parameters: [invitationParameter] }, flags: workspaceFlags },
+  parameters: { positional: { kind: "tuple", parameters: [invitationParameter] }, flags: apiFlags },
   docs: {
     brief: "Cancel a pending invitation: its links stop working",
-    fullDescription: `Example:\n  ${CLI} workspace uninvite ann@example.com`,
+    fullDescription: docs("everyapp_workspace_uninvite", [`Example:\n  ${CLI} workspace uninvite ann@example.com`]),
+  },
+});
+
+const roleCommand = buildCommand({
+  loader: async () => (await import(".")).role,
+  parameters: {
+    positional: {
+      kind: "tuple",
+      parameters: [
+        { ...userParameter, brief: "The member, by email or user id" },
+        { placeholder: "owner|admin|member", brief: "The role to give them", parse: parseWorkspaceRole },
+      ],
+    },
+    flags: apiFlags,
+  },
+  docs: {
+    brief: "Set a member's role: owner, admin or member",
+    fullDescription: docs("everyapp_workspace_role", [
+      "The Gateway's rules: only an owner changes an admin or an owner, or makes one; nobody",
+      "changes their own role; the last owner is never demoted.",
+      "",
+      "Examples:",
+      `  ${CLI} workspace role sam@example.com owner`,
+      `  ${CLI} workspace role sam@example.com member --json`,
+    ]),
   },
 });
 
 const deactivateCommand = buildCommand({
   loader: async () => (await import(".")).deactivate,
-  parameters: { positional: { kind: "tuple", parameters: [userParameter] }, flags: workspaceFlags },
+  parameters: { positional: { kind: "tuple", parameters: [userParameter] }, flags: apiFlags },
   docs: {
     brief: "Lock a member out everywhere: no sign-in, every session ended, their tokens and AI connections revoked",
-    fullDescription: [
-      "The account stays, listed as deactivated, and the ban holds in every organization it belongs",
-      "to; workspace reactivate lifts it (revoked tokens and connections stay revoked). An",
-      "organization always keeps an owner who can act, and the ban is account-wide, so the last",
-      "live owner of this organization, or of any other they own, can't be deactivated",
-      "(LAST_OWNER, naming the organization): a deactivated owner doesn't count.",
-      "",
-      `Example:\n  ${CLI} workspace deactivate ann@example.com`,
-    ].join("\n"),
+    fullDescription: docs("everyapp_workspace_deactivate", [`Example:\n  ${CLI} workspace deactivate ann@example.com`]),
   },
 });
 
 const reactivateCommand = buildCommand({
   loader: async () => (await import(".")).reactivate,
-  parameters: { positional: { kind: "tuple", parameters: [userParameter] }, flags: workspaceFlags },
+  parameters: { positional: { kind: "tuple", parameters: [userParameter] }, flags: apiFlags },
   docs: {
     brief: "Lift a deactivation: they can sign in again (revoked tokens and connections stay revoked)",
-    fullDescription: `Example:\n  ${CLI} workspace reactivate ann@example.com`,
+    fullDescription: docs("everyapp_workspace_reactivate", [`Example:\n  ${CLI} workspace reactivate ann@example.com`]),
   },
 });
 
@@ -219,49 +207,56 @@ const removeCommand = buildCommand({
   loader: async () => (await import(".")).remove,
   parameters: {
     positional: { kind: "tuple", parameters: [userParameter] },
-    flags: { yes: yesFlag("Remove"), ...workspaceFlags },
+    flags: { yes: yesFlag("Remove"), ...apiFlags },
     aliases: { y: "yes" },
   },
   docs: {
     brief: "Remove a member from the organization, and their account when it belongs to no other",
-    fullDescription: [
-      "Deletes the membership, their app grants and places in groups, and revokes their personal",
-      "access tokens for the organization and AI connections to it, in one write. The account goes",
-      "too when it belongs to no other organization (a hosted Gateway keeps accounts). Owners are",
-      "peers, and the organization always keeps one who can",
-      "act: the last owner who isn't deactivated can't be removed (LAST_OWNER). Asks first at a",
-      "terminal; elsewhere it needs --yes.",
+    fullDescription: docs("everyapp_workspace_remove", [
+      "Asks first at a terminal; elsewhere it needs --yes.",
       "",
       `Example:\n  ${CLI} workspace remove ann@example.com --yes --json`,
-    ].join("\n"),
+    ]),
+  },
+});
+
+const resetEmailCommand = buildCommand({
+  loader: async () => (await import(".")).resetEmail,
+  parameters: { positional: { kind: "tuple", parameters: [userParameter] }, flags: apiFlags },
+  docs: {
+    brief: "Mail a member a password-reset link (the link goes to their inbox, never to you)",
+    fullDescription: docs("everyapp_workspace_reset_email", [`Example:\n  ${CLI} workspace reset-email ann@example.com`]),
   },
 });
 
 const resetLinkCommand = buildCommand({
-  loader: async () => (await import(".")).resetLink,
-  parameters: { positional: { kind: "tuple", parameters: [userParameter] }, flags: workspaceFlags },
+  loader: async () => (await import("./links")).resetLink,
+  parameters: {
+    positional: { kind: "tuple", parameters: [{ ...userParameter, brief: "The member of the install organization, by email" }] },
+    flags: { gateway: gatewayFlag, "account-id": accountFlag, json: jsonFlag, verbose: verboseFlag },
+  },
   docs: {
-    brief: "Print a one-hour, single-use password-reset link to hand to a member",
+    brief: "The way back in: print a one-hour, single-use password-reset link for a member, under the Cloudflare login",
     fullDescription: [
-      "Better Auth's own reset token, consumed by the Gateway's /reset-password page: whoever opens",
-      "it sets the account's password, so hand it to the person yourself. Only for an active",
-      "account (PASSWORD_RESET_REQUIRES_ACTIVE_USER) that belongs to this organization alone",
-      "(USER_IN_OTHER_ORGANIZATION: a password is account-wide, so the Gateway's rule holds here",
-      "too). Password sign-in must be on (EMAIL_PASSWORD_SIGN_IN) for the page to take it. An",
-      "owner's too: the operator is root (the Gateway refuses that to admins and other owners),",
-      "which is the way back in for a sole owner who lost their password.",
+      "For an owner locked out of the Gateway (a lost password, no email sending): Better Auth's",
+      "own reset token, written into the Gateway's D1 with your Cloudflare login, consumed by the",
+      "Gateway's /reset-password page. Whoever opens it sets the account's password, so hand it",
+      "to the person yourself. Only for an active member of the install organization that belongs",
+      "to no other (USER_IN_OTHER_ORGANIZATION: a password is account-wide). Password sign-in must",
+      "be on (EMAIL_PASSWORD_SIGN_IN). Everything else here but invite-link goes through the Gateway",
+      `as you; this is the recovery path that can't (ADR-0003). A member who can sign in uses ${CLI} workspace reset-email.`,
       "",
-      `Example:\n  ${CLI} workspace reset-link ann@example.com`,
+      `Example:\n  ${CLI} workspace reset-link owner@example.com`,
     ].join("\n"),
   },
 });
 
 const groupsCommand = buildCommand({
-  loader: async () => (await import("./groups")).groups,
-  parameters: { positional: { kind: "tuple", parameters: [] }, flags: workspaceFlags },
+  loader: async () => (await import(".")).groups,
+  parameters: { positional: noArgs, flags: apiFlags },
   docs: {
     brief: "The groups, with how many members and apps each has",
-    fullDescription: `Nothing is changed.\n\nExample:\n  ${CLI} workspace groups`,
+    fullDescription: docs("everyapp_workspace_groups", [`Example:\n  ${CLI} workspace groups`]),
   },
 });
 
@@ -274,116 +269,103 @@ const descriptionFlag = {
 } as const;
 
 const groupCreateCommand = buildCommand({
-  loader: async () => (await import("./groups")).groupCreate,
+  loader: async () => (await import(".")).groupCreate,
   parameters: {
     positional: {
       kind: "tuple",
       parameters: [{ placeholder: "name", brief: "The group's name, 1 to 60 characters, unique in the organization", parse: String }],
     },
-    flags: { description: descriptionFlag, ...workspaceFlags },
+    flags: { description: descriptionFlag, ...apiFlags },
   },
   docs: {
     brief: "Make a group: a named set of members that apps are granted to as one",
-    fullDescription: [
-      "A member opens an app when they hold a grant to it, or belong to a group that does.",
-      "",
+    fullDescription: docs("everyapp_workspace_group_create", [
       `Example:\n  ${CLI} workspace group create Sales --description "The sales team"`,
-    ].join("\n"),
+    ]),
   },
 });
 
 const groupSetCommand = buildCommand({
-  loader: async () => (await import("./groups")).groupSet,
+  loader: async () => (await import(".")).groupSet,
   parameters: {
     positional: { kind: "tuple", parameters: [groupParameter] },
     flags: {
       name: { kind: "parsed", parse: String, optional: true, placeholder: "name", brief: "A new name" },
       description: descriptionFlag,
-      ...workspaceFlags,
+      ...apiFlags,
     },
   },
   docs: {
     brief: "Rename or describe a group",
-    fullDescription: `Example:\n  ${CLI} workspace group set Sales --name "Sales and marketing"`,
+    fullDescription: docs("everyapp_workspace_group_set", [`Example:\n  ${CLI} workspace group set Sales --name "Sales and marketing"`]),
   },
 });
 
 const groupDeleteCommand = buildCommand({
-  loader: async () => (await import("./groups")).groupDelete,
+  loader: async () => (await import(".")).groupDelete,
   parameters: {
     positional: { kind: "tuple", parameters: [groupParameter] },
-    flags: { yes: yesFlag("Delete"), ...workspaceFlags },
+    flags: { yes: yesFlag("Delete"), ...apiFlags },
     aliases: { y: "yes" },
   },
   docs: {
     brief: "Delete a group: what it granted ends with it",
-    fullDescription: [
-      "Its members keep their direct grants and their other groups. Asks first at a terminal;",
-      "elsewhere it needs --yes.",
+    fullDescription: docs("everyapp_workspace_group_delete", [
+      "Asks first at a terminal; elsewhere it needs --yes.",
       "",
       `Example:\n  ${CLI} workspace group delete Sales --yes`,
-    ].join("\n"),
+    ]),
   },
 });
 
 const groupMembersCommand = buildCommand({
-  loader: async () => (await import("./groups")).groupMembers,
+  loader: async () => (await import(".")).groupMembers,
   parameters: {
     positional: { kind: "tuple", parameters: [groupParameter] },
-    flags: { ...listChangeFlags("a member, by email or user id", "email"), ...workspaceFlags },
+    flags: { ...listChangeFlags("a member, by email or user id", "email"), ...apiFlags },
   },
   docs: {
     brief: "Who is in a group; --add, --remove or --set change it",
-    fullDescription: [
-      "Without a change flag, lists every member of the organization and whether they are in the",
-      "group. Only members of the organization can be in its groups.",
-      "",
+    fullDescription: docs("everyapp_workspace_group_members, everyapp_workspace_group_members_set", [
       "Examples:",
       `  ${CLI} workspace group members Sales`,
       `  ${CLI} workspace group members Sales --add ann@example.com --add bob@example.com`,
       `  ${CLI} workspace group members Sales --set ann@example.com`,
-    ].join("\n"),
+    ]),
   },
 });
 
 const groupAppsCommand = buildCommand({
-  loader: async () => (await import("./groups")).groupApps,
+  loader: async () => (await import(".")).groupApps,
   parameters: {
     positional: { kind: "tuple", parameters: [groupParameter] },
-    flags: { ...listChangeFlags("an app, by id", "app"), ...workspaceFlags },
+    flags: { ...listChangeFlags("an app, by id", "app"), ...apiFlags },
   },
   docs: {
     brief: "Which apps a group opens; --add, --remove or --set change it",
-    fullDescription: [
-      "Without a change flag, lists the organization's own apps and whether the group opens each.",
-      "A shared app opens for everyone already and is never granted to a group.",
-      "",
+    fullDescription: docs("everyapp_workspace_group_apps, everyapp_workspace_group_apps_set", [
       "Examples:",
       `  ${CLI} workspace group apps Sales`,
       `  ${CLI} workspace group apps Sales --add crm`,
-    ].join("\n"),
+    ]),
   },
 });
 
 const appsCommand = buildCommand({
-  loader: async () => (await import("./apps")).apps,
-  parameters: { positional: { kind: "tuple", parameters: [] }, flags: workspaceFlags },
+  loader: async () => (await import(".")).apps,
+  parameters: { positional: noArgs, flags: apiFlags },
   docs: {
-    brief: "Every app with who can open it, whether everyone can, its state and what it still needs set",
-    fullDescription: [
-      "The admin's view (Admin → Apps); everyapp status has the operator's. Nothing is changed.",
-      "",
-      `Example:\n  ${CLI} workspace apps --json`,
-    ].join("\n"),
+    brief: "Every app with whether everyone can open it, how many members have access, its state and what it still needs set",
+    fullDescription: docs("everyapp_workspace_apps", [`Example:\n  ${CLI} workspace apps --json`]),
   },
 });
 
 const appSetCommand = buildCommand({
-  loader: async () => (await import("./apps")).appSet,
+  loader: async () => (await import(".")).appSet,
   parameters: {
     positional: { kind: "tuple", parameters: [appParameter] },
     flags: {
-      name: { kind: "parsed", parse: appName, optional: true, placeholder: "name", brief: "The name the app library shows (1 to 255 characters)" },
+      name: { kind: "parsed", parse: String, optional: true, placeholder: "name", brief: "The name the app library shows (1 to 255 characters)" },
       description: { kind: "parsed", parse: String, optional: true, placeholder: "text", brief: "The description under it" },
       everyone: {
         kind: "enum",
@@ -391,67 +373,55 @@ const appSetCommand = buildCommand({
         optional: true,
         brief: "Available to everyone: on, every member opens it, new members too; off, only owners, admins and those granted it",
       },
-      ...workspaceFlags,
+      ...apiFlags,
     },
   },
   docs: {
     brief: "Change an app's name, description or whether everyone can open it",
-    fullDescription: [
+    fullDescription: docs("everyapp_workspace_app_set", [
       "Catalog metadata only: the next deploy sets the name and description again from",
       "everyapp.config.ts.",
       "",
       "Examples:",
       `  ${CLI} workspace app set crm --everyone on`,
       `  ${CLI} workspace app set crm --name "Open CRM" --description "Contacts and deals"`,
-    ].join("\n"),
+    ]),
   },
 });
 
 const appAccessCommand = buildCommand({
-  loader: async () => (await import("./apps")).appAccess,
+  loader: async () => (await import(".")).appAccess,
   parameters: {
     positional: { kind: "tuple", parameters: [appParameter] },
-    flags: { ...listChangeFlags("a member's direct grant, by email or user id", "email"), ...workspaceFlags },
+    flags: { ...listChangeFlags("a member's direct grant, by email or user id", "email"), ...apiFlags },
   },
   docs: {
     brief: "Who can open an app; --add, --remove or --set change the direct grants",
-    fullDescription: [
-      "Without a change flag, lists every member with whether they hold a direct grant, whether",
-      "their role opens it (owners and admins open every app) and which groups open it for them.",
-      "A change touches direct grants only; what a group grants stays (workspace group apps), and",
-      "so does \"available to everyone\" (workspace app set --everyone). A shared app's access",
-      "can't be changed.",
+    fullDescription: docs("everyapp_workspace_app_access, everyapp_workspace_app_access_set", [
+      "Owners and admins open every app by their role. A change touches direct grants only; what",
+      "a group grants stays (workspace group apps), and so does \"available to everyone\"",
+      "(workspace app set --everyone).",
       "",
       "Examples:",
       `  ${CLI} workspace app access crm`,
       `  ${CLI} workspace app access crm --add ann@example.com`,
       `  ${CLI} workspace app access crm --set ann@example.com --set bob@example.com --json`,
-    ].join("\n"),
+    ]),
   },
 });
 
-/**
- * `<dollars|off>`: US dollars of provider-reported cost per month, in whole
- * cents from 0.01 to 1,000,000 (a leading $ is fine), or `off` (never
- * null: an optional positional's type drops null along with undefined).
- */
+/** `<dollars|off>`: US dollars per month (a leading $ is fine), or `off` (the Gateway checks the range). */
 function parseUsd(input: string): number | "off" {
   const value = input.trim().toLowerCase().replace(/^\$/, "");
   if (value === "off" || value === "none") return "off";
   if (!/^\d+(\.\d{1,2})?$/.test(value)) {
     throw new Error(`a cap is dollars with at most two decimals, or off (not ${input})`);
   }
-  const usd = Number(value);
-  if (usd < MONTHLY_COST_CAP_MIN_USD || usd > MONTHLY_COST_CAP_MAX_USD) {
-    throw new Error(
-      `a cap is from $${MONTHLY_COST_CAP_MIN_USD} to $${MONTHLY_COST_CAP_MAX_USD.toLocaleString("en-US")} a month`,
-    );
-  }
-  return usd;
+  return Number(value);
 }
 
 const appCapCommand = buildCommand({
-  loader: async () => (await import("./apps")).appCap,
+  loader: async () => (await import(".")).appCap,
   parameters: {
     positional: {
       kind: "tuple",
@@ -471,30 +441,25 @@ const appCapCommand = buildCommand({
         optional: true,
         brief: "No cap at all, even with a workspace default (instead of dollars or off)",
       },
-      ...workspaceFlags,
+      ...apiFlags,
     },
   },
   docs: {
     brief: "Cap an app's provider spend per month in dollars, lift its own cap, or exempt it from the workspace default",
-    fullDescription: [
-      "An app has a cap of its own (dollars), no cap whatever the workspace default",
-      "(--unlimited), or neither (off): the default set with workspace cap default binds it, and",
-      "without one it is uncapped. The cap counts the cost a provider reports (OpenRouter,",
-      "DataForSEO); calls to other providers never move it. Past the cap that binds it, a",
-      "provider tool answers a tool error naming it and an app's brokered call gets 429",
-      "app_monthly_cap_exceeded until the next UTC month. Binds within seconds. --unlimited with",
-      "dollars or off is refused (INVALID_VALUE).",
+    fullDescription: docs("everyapp_workspace_app_cap", [
+      "off clears the app's own cap (the workspace default then binds); --unlimited with dollars",
+      "or off is refused.",
       "",
       "Examples:",
       `  ${CLI} workspace app cap crm 20`,
       `  ${CLI} workspace app cap crm off`,
       `  ${CLI} workspace app cap crm --unlimited`,
-    ].join("\n"),
+    ]),
   },
 });
 
 const capDefaultCommand = buildCommand({
-  loader: async () => (await import("./apps")).capDefault,
+  loader: async () => (await import(".")).capDefault,
   parameters: {
     positional: {
       kind: "tuple",
@@ -506,144 +471,86 @@ const capDefaultCommand = buildCommand({
         },
       ],
     },
-    flags: { ...workspaceFlags },
+    flags: apiFlags,
   },
   docs: {
     brief: "Set or clear the workspace default cap: what binds every app without a cap or --unlimited of its own",
-    fullDescription: [
-      "The same setting as Manage workspace → Usage → Default monthly cap: dollars of",
-      "provider-reported cost per UTC month. An app's own cap, or its --unlimited, stays. The cap",
-      "counts the cost a provider reports (OpenRouter, DataForSEO); calls to other providers never",
-      "move it. The Gateway holds every app without its own to it within 30 seconds; past it, a",
-      "provider tool answers a tool error naming the cap and an app's brokered call gets 429",
-      "app_monthly_cap_exceeded until the next UTC month. As in the Gateway, the workspace's",
-      "first cap makes the built-in Cap alerts subscription, and a default set, raised or removed",
-      "queues cap.raised (a lowered one queues cap.changed). The default model provider in the",
-      "same row stays.",
-      "",
+    fullDescription: docs("everyapp_workspace_cap_default", [
       "Examples:",
       `  ${CLI} workspace cap default 20`,
       `  ${CLI} workspace cap default off --json`,
-    ].join("\n"),
+    ]),
   },
 });
 
-/** `--month YYYY-MM`, checked before the command runs. */
-function parseMonth(input: string): string {
-  const value = input.trim();
-  if (!MONTH.test(value)) throw new Error(`a month is written YYYY-MM (not ${input})`);
-  return value;
-}
-
 const usageCommand = buildCommand({
-  loader: async () => (await import("./activity")).usage,
+  loader: async () => (await import(".")).usage,
   parameters: {
-    positional: { kind: "tuple", parameters: [] },
+    positional: noArgs,
     flags: {
-      month: {
-        kind: "parsed",
-        parse: parseMonth,
-        optional: true,
-        placeholder: "YYYY-MM",
-        brief: "The UTC month (default: this one)",
-      },
-      ...workspaceFlags,
+      month: { kind: "parsed", parse: String, optional: true, placeholder: "YYYY-MM", brief: "The UTC month (default: this one)" },
+      ...apiFlags,
     },
   },
   docs: {
     brief: "What the apps spent in a month: per app (with the cap that binds it), per member and per provider",
-    fullDescription: [
-      "Provider calls, failures, tokens and provider-reported cost, counted at the Gateway after a",
-      "provider answered, and allowed MCP tool calls from the audit trail. Every callable app is",
-      "listed, with zeros in a month it made no call, its own cap in dollars, the cap that binds",
-      "it and where it comes from (its own, or the workspace default), whether it is exempt",
-      "(--unlimited) and whether it is paused this month; the workspace default cap comes with",
-      "it. Nothing is changed.",
-      "",
-      `Example:\n  ${CLI} workspace usage --month 2026-10 --json`,
-    ].join("\n"),
+    fullDescription: docs("everyapp_workspace_usage", [`Example:\n  ${CLI} workspace usage --month 2026-10 --json`]),
   },
 });
 
-/** `--since <time>`: an ISO 8601 time, or a date, to milliseconds. */
-function parseSince(input: string): number {
+/** `--since <time>`: an ISO 8601 time, or a date. */
+function parseSince(input: string): string {
   const ms = Date.parse(input.trim());
   if (Number.isNaN(ms)) throw new Error(`a time is written like 2026-10-24 or 2026-10-24T09:00:00Z (not ${input})`);
-  return ms;
+  return new Date(ms).toISOString();
 }
 
-/** `--limit <n>`: 1 to the page the Gateway lists. */
 function parseLimit(input: string): number {
   const value = Number(input.trim());
-  if (!Number.isInteger(value) || value < 1 || value > ACTIVITY_PAGE_MAX) {
-    throw new Error(`a limit is a whole number from 1 to ${ACTIVITY_PAGE_MAX}`);
-  }
+  if (!Number.isInteger(value) || value < 1) throw new Error("a limit is a whole number from 1");
   return value;
 }
 
 /** `--before <cursor>`: the previous page's `nextBefore`, as `<ms>:<id>`. */
-function parseCursor(input: string): { createdAt: number; id: string } {
+function parseCursor(input: string): { at: number; id: string } {
   const match = /^(\d+):(.+)$/.exec(input.trim());
-  if (!match) throw new Error("a cursor is the previous page's nextBefore, written <createdAt>:<id>");
-  return { createdAt: Number(match[1]), id: match[2]! };
+  if (!match) throw new Error("a cursor is the previous page's nextBefore, written <time>:<id>");
+  return { at: Number(match[1]), id: match[2]! };
 }
 
+const pageFlags = {
+  since: { kind: "parsed", parse: parseSince, optional: true, placeholder: "time", brief: "At or after this time (ISO 8601, UTC)" },
+  limit: { kind: "parsed", parse: parseLimit, optional: true, placeholder: "n", brief: "Rows per page, 1 to 200 (default 50)" },
+  before: { kind: "parsed", parse: parseCursor, optional: true, placeholder: "cursor", brief: "The next page: the previous page's nextBefore, as <time>:<id>" },
+} as const;
+
 const activityCommand = buildCommand({
-  loader: async () => (await import("./activity")).activity,
+  loader: async () => (await import(".")).activity,
   parameters: {
-    positional: { kind: "tuple", parameters: [] },
+    positional: noArgs,
     flags: {
       app: { kind: "parsed", parse: String, optional: true, placeholder: "app", brief: "Calls on this app only, by id or row id" },
       user: { kind: "parsed", parse: String, optional: true, placeholder: "email", brief: "Calls by this member only, by email or user id" },
       decision: { kind: "enum", values: ["allowed", "blocked"], optional: true, brief: "Allowed or blocked calls only" },
       risk: { kind: "enum", values: ["read", "write"], optional: true, brief: "Tools of this risk only" },
-      since: { kind: "parsed", parse: parseSince, optional: true, placeholder: "time", brief: "Calls at or after this time (ISO 8601, UTC)" },
-      limit: { kind: "parsed", parse: parseLimit, optional: true, placeholder: "n", brief: `Rows per page, 1 to ${ACTIVITY_PAGE_MAX} (default 50)` },
-      before: { kind: "parsed", parse: parseCursor, optional: true, placeholder: "cursor", brief: "The next page: the previous page's nextBefore, as <createdAt>:<id>" },
-      ...workspaceFlags,
+      ...pageFlags,
+      ...apiFlags,
     },
   },
   docs: {
     brief: "The tool-call audit trail, newest first: who called which tool on which app, and what came of it",
-    fullDescription: [
-      "Never the arguments or the result: the trail holds neither. One page at a time; --json",
-      "carries data.nextBefore for the next page. Nothing is changed.",
-      "",
+    fullDescription: docs("everyapp_workspace_activity", [
       "Examples:",
       `  ${CLI} workspace activity --limit 20`,
       `  ${CLI} workspace activity --app crm --decision blocked --since 2026-10-24 --json`,
-    ].join("\n"),
+    ]),
   },
 });
 
-const userFlag = {
-  kind: "parsed",
-  parse: String,
-  optional: true,
-  placeholder: "email",
-  brief: "One member's only, by email or user id",
-} as const;
-
-/** `--type <type>`: an event type, a prefix with `.*`, or `*`. */
-function parseEventTypeFilter(input: string): string {
-  const value = input.trim();
-  if (value.length === 0 || value.length > AUDIT_TYPE_MAX || !AUDIT_TYPE_FILTER.test(value)) {
-    throw new Error(`a type filter is an event type (member.joined), a prefix (member.*, app.crm.*) or * (not ${input})`);
-  }
-  return value;
-}
-
-/** `--before <cursor>` on `audit`: the previous page's `nextBefore`, as `<time>:<id>`. */
-function parseAuditCursor(input: string): { time: number; id: string } {
-  const match = /^(\d+):(.+)$/.exec(input.trim());
-  if (!match) throw new Error("a cursor is the previous page's nextBefore, written <time>:<id>");
-  return { time: Number(match[1]), id: match[2]! };
-}
-
 const auditCommand = buildCommand({
-  loader: async () => (await import("./activity")).audit,
+  loader: async () => (await import(".")).audit,
   parameters: {
-    positional: { kind: "tuple", parameters: [] },
+    positional: noArgs,
     flags: {
       actor: {
         kind: "parsed",
@@ -654,84 +561,127 @@ const auditCommand = buildCommand({
       },
       type: {
         kind: "parsed",
-        parse: parseEventTypeFilter,
+        parse: String,
         optional: true,
         placeholder: "type",
         brief: "One event type (member.joined), every type under a prefix (member.*, app.crm.*), or * for everything, pings and tool calls included",
       },
-      since: { kind: "parsed", parse: parseSince, optional: true, placeholder: "time", brief: "Events at or after this time (ISO 8601, UTC)" },
-      limit: { kind: "parsed", parse: parseLimit, optional: true, placeholder: "n", brief: `Rows per page, 1 to ${ACTIVITY_PAGE_MAX} (default 50)` },
-      before: { kind: "parsed", parse: parseAuditCursor, optional: true, placeholder: "cursor", brief: "The next page: the previous page's nextBefore, as <time>:<id>" },
-      ...workspaceFlags,
+      ...pageFlags,
+      ...apiFlags,
     },
   },
   docs: {
-    brief: "The audit log, newest first: every event the Gateway recorded (members, apps, caps, connections, tokens, Access, MCP apps, providers, apps' own events), who did it and what it was about",
-    fullDescription: [
-      "The same rows as Admin → Activity → Audit and everyapp_workspace_audit, kept 90 days. Each",
-      "row is when, who (a member by name, agent · <AI app>, CLI · <operator>, app · <id>, or",
-      "Gateway), what (the type in plain words) and the subject; never an event's data, a",
-      "secret or a tool's arguments. Test pings and tool calls stay out unless --type names",
-      "them (tool.*, *): workspace activity lists the calls. One page at a time; --json carries",
-      "data.nextBefore for the next page. Refused on a Gateway from before the audit log",
-      "(GATEWAY_OUTDATED): run update first. Nothing is changed.",
-      "",
+    brief: "The audit log, newest first: every event the Gateway recorded, who did it and what it was about",
+    fullDescription: docs("everyapp_workspace_audit", [
       "Examples:",
       `  ${CLI} workspace audit --limit 20`,
       `  ${CLI} workspace audit --actor mia@acme.com --type member.* --since 2026-10-24 --json`,
-    ].join("\n"),
+    ]),
   },
 });
 
 const tokensCommand = buildCommand({
-  loader: async () => (await import("./activity")).tokens,
-  parameters: { positional: { kind: "tuple", parameters: [] }, flags: { user: userFlag, all: { kind: "boolean", optional: true, brief: "Revoked and expired tokens too" }, ...workspaceFlags } },
+  loader: async () => (await import(".")).tokens,
+  parameters: {
+    positional: noArgs,
+    flags: { all: { kind: "boolean", optional: true, brief: "Revoked and expired tokens too" }, ...apiFlags },
+  },
   docs: {
-    brief: "Every member's personal access tokens for the organization (never a token's value)",
-    fullDescription: [
-      "Tokens are created in Admin → Tokens only: their hash is keyed by a Gateway secret the CLI",
-      "never holds. Nothing is changed.",
+    brief: "Your personal access tokens for the organization (never a token's value)",
+    fullDescription: docs("everyapp_my_tokens", [
+      "Tokens are made under Manage workspace → Tokens only.",
       "",
-      `Example:\n  ${CLI} workspace tokens --user ann@example.com`,
-    ].join("\n"),
+      `Example:\n  ${CLI} workspace tokens --all`,
+    ]),
   },
 });
 
 const tokenRevokeCommand = buildCommand({
-  loader: async () => (await import("./activity")).tokenRevoke,
+  loader: async () => (await import(".")).tokenRevoke,
   parameters: {
-    positional: { kind: "tuple", parameters: [{ placeholder: "id", brief: "The token's id (workspace tokens lists them)", parse: String }] },
-    flags: workspaceFlags,
+    positional: { kind: "tuple", parameters: [{ placeholder: "id", brief: "The token's id or name (workspace tokens lists them)", parse: String }] },
+    flags: apiFlags,
   },
   docs: {
-    brief: "Revoke a personal access token: it stops working on its next request",
-    fullDescription: `Example:\n  ${CLI} workspace token revoke 3f2a…`,
+    brief: "Revoke one of your personal access tokens: it stops working on its next request",
+    fullDescription: docs("everyapp_revoke_token", [`Example:\n  ${CLI} workspace token revoke 3f2a…`]),
   },
 });
 
 const connectionsCommand = buildCommand({
-  loader: async () => (await import("./activity")).connections,
-  parameters: { positional: { kind: "tuple", parameters: [] }, flags: { user: userFlag, ...workspaceFlags } },
+  loader: async () => (await import(".")).connections,
+  parameters: { positional: noArgs, flags: apiFlags },
   docs: {
-    brief: "Every member's AI connections to the organization: which AI app, which apps it may use, read or write",
-    fullDescription: [
-      "A connection is an OAuth client (Claude, Cursor, …) a member connected to the Gateway's /mcp.",
-      "Nothing is changed.",
-      "",
-      `Example:\n  ${CLI} workspace connections`,
-    ].join("\n"),
+    brief: "Your AI connections to the Gateway: which AI app, which apps it may use, read or write",
+    fullDescription: docs("everyapp_my_connections", [`Example:\n  ${CLI} workspace connections`]),
   },
 });
 
 const connectionRevokeCommand = buildCommand({
-  loader: async () => (await import("./activity")).connectionRevoke,
+  loader: async () => (await import(".")).connectionRevoke,
   parameters: {
     positional: { kind: "tuple", parameters: [{ placeholder: "id", brief: "The connection's id (workspace connections lists them)", parse: String }] },
-    flags: workspaceFlags,
+    flags: apiFlags,
   },
   docs: {
-    brief: "Revoke an AI connection: the client is out on its next request",
-    fullDescription: `Example:\n  ${CLI} workspace connection revoke mcpc_…`,
+    brief: "Revoke one of your AI connections: the client is out on its next request",
+    fullDescription: docs("everyapp_revoke_connection", [`Example:\n  ${CLI} workspace connection revoke mcpc_…`]),
+  },
+});
+
+const renameCommand = buildCommand({
+  loader: async () => (await import(".")).rename,
+  parameters: {
+    positional: {
+      kind: "tuple",
+      parameters: [{ placeholder: "name", brief: "The new name: 1 to 64 characters, no line breaks (quote one with spaces)", parse: String }],
+    },
+    flags: apiFlags,
+  },
+  docs: {
+    brief: "Rename the workspace: the name members see in the organization switcher and in invitations",
+    fullDescription: docs("everyapp_workspace_rename", [
+      "Examples:",
+      `  ${CLI} workspace rename 'Acme Corp'`,
+      `  ${CLI} workspace rename 'Acme Corp' --json`,
+    ]),
+  },
+});
+
+export type LinkedDevSetting = "on" | "off" | "show";
+
+function parseLinkedDevSetting(value: string): LinkedDevSetting {
+  const setting = value.trim().toLowerCase();
+  if (setting === "on" || setting === "off" || setting === "show") return setting;
+  throw new Error("Use on, off or show.");
+}
+
+const linkedDevCommand = buildCommand({
+  loader: async () => (await import(".")).linkedDev,
+  parameters: {
+    positional: {
+      kind: "tuple",
+      parameters: [
+        {
+          placeholder: "on|off|show",
+          brief: "Turn linked dev on or off for the organization, or show it (default)",
+          parse: parseLinkedDevSetting,
+          optional: true,
+        },
+      ],
+    },
+    flags: apiFlags,
+  },
+  docs: {
+    brief: "Let owners and admins run `everyapp dev --gateway` against this Gateway's providers (linked dev), or stop it",
+    fullDescription: docs("everyapp_workspace_show, everyapp_workspace_linked_dev", [
+      "Off by default: a Gateway that didn't turn it on refuses the sign-in and the route.",
+      "Turning it off stops tokens already issued on their next call.",
+      "",
+      "Examples:",
+      `  ${CLI} workspace linked-dev on`,
+      `  ${CLI} workspace linked-dev show`,
+    ]),
   },
 });
 
@@ -758,138 +708,12 @@ const capRoutes = buildRouteMap({
 
 const tokenRoutes = buildRouteMap({
   routes: { revoke: tokenRevokeCommand },
-  docs: { brief: "Revoke a personal access token" },
+  docs: { brief: "Revoke one of your personal access tokens" },
 });
 
 const connectionRoutes = buildRouteMap({
   routes: { revoke: connectionRevokeCommand },
-  docs: { brief: "Revoke an AI connection" },
-});
-
-export type LinkedDevSetting = "on" | "off" | "show";
-
-/** The command line's `on|off|show`, in any case. */
-export function parseLinkedDevSetting(value: string): LinkedDevSetting {
-  const setting = value.trim().toLowerCase();
-  if (setting === "on" || setting === "off" || setting === "show") return setting;
-  throw new Error("Use on, off or show.");
-}
-
-const linkedDevCommand = buildCommand({
-  loader: async () => (await import("./linkedDev")).linkedDev,
-  parameters: {
-    positional: {
-      kind: "tuple",
-      parameters: [
-        {
-          placeholder: "on|off|show",
-          brief: "Turn linked dev on or off for the organization, or show it (default)",
-          parse: parseLinkedDevSetting,
-          optional: true,
-        },
-      ],
-    },
-    flags: workspaceFlags,
-  },
-  docs: {
-    brief: "Let owners and admins run `everyapp dev --gateway` against this Gateway's providers (linked dev), or stop it",
-    fullDescription: [
-      "Linked dev: an owner or admin runs `everyapp dev --gateway <this gateway>` in an app's",
-      "directory, signs in once in the browser, and the app runs on their computer as them with",
-      "its AI, email, provider and member calls going through this Gateway, so no provider key",
-      "is copied to the laptop. Calls bill the organization's providers as the deployed app's",
-      "do (counted, capped, rate-limited per connection, audited: connection.created and a",
-      "connection.used event per day). The app's data stays on the laptop; its own secrets",
-      "stay in .dev.vars. Off by default: a Gateway that didn't turn it on refuses the",
-      "sign-in and the route. Turning it off stops tokens already issued on their next call.",
-      "The organization's owners and admins see and revoke their own links under Settings →",
-      "Connections. Queues organization.linked_dev_changed in the write's own batch.",
-      "",
-      "Examples:",
-      `  ${CLI} workspace linked-dev on`,
-      `  ${CLI} workspace linked-dev show`,
-    ].join("\n"),
-  },
-});
-
-const renameCommand = buildCommand({
-  loader: async () => {
-    const { rename } = await import(".");
-    return rename;
-  },
-  parameters: {
-    positional: {
-      kind: "tuple",
-      parameters: [
-        {
-          placeholder: "name",
-          brief: "The new name: 1 to 64 characters, no line breaks (quote one with spaces)",
-          parse: String,
-        },
-      ],
-    },
-    flags: connectFlags,
-  },
-  docs: {
-    brief: "Rename the workspace: the name members see in the organization switcher and in invitations",
-    fullDescription: [
-      "The workspace is the Gateway's organization: the one the setup claim made, named after",
-      "its owner. This gives it the name you want; the same rename is under Manage workspace in",
-      "the Gateway, for owners and admins. Nothing is built or deployed: the Gateway reads the",
-      "name live, and each member sees it on their next page.",
-      "",
-      "Before the Gateway is claimed there is no workspace to rename (WORKSPACE_NOT_CLAIMED):",
-      "claim it in a browser first.",
-      "",
-      "Examples:",
-      `  ${CLI} workspace rename 'Acme Corp'`,
-      `  ${CLI} workspace rename 'Acme Corp' --json`,
-    ].join("\n"),
-  },
-});
-
-const roleCommand = buildCommand({
-  loader: async () => {
-    const { role } = await import(".");
-    return role;
-  },
-  parameters: {
-    positional: {
-      kind: "tuple",
-      parameters: [
-        {
-          placeholder: "email",
-          brief: "The member's email address, as Manage workspace → Users lists it",
-          parse: String,
-        },
-        {
-          placeholder: "owner|admin|member",
-          brief: "The role to give them",
-          parse: parseWorkspaceRole,
-        },
-      ],
-    },
-    flags: connectFlags,
-  },
-  docs: {
-    brief: "Set a member's role: owner, admin or member",
-    fullDescription: [
-      "The workspace is the Gateway's own organization, the one its owner claimed. Owners are",
-      "peers: any owner can make a member or an admin an owner, and change another owner's",
-      "role, from Manage workspace → Users or with this command under the Cloudflare login.",
-      "The workspace always keeps at least one owner, so the last owner's role is never",
-      "changed (LAST_OWNER): make someone else an owner first. Deactivated owners don't",
-      "count here, so this command can't leave a workspace whose only owner is locked out",
-      "(the Gateway's own Users page needs no such rule: a deactivated owner can't act, and",
-      "only an owner acts on an owner). Only a member can be given a role; someone still",
-      "invited isn't one yet (MEMBER_NOT_FOUND). The Gateway picks up the change within 30",
-      "seconds.",
-      "",
-      "Examples:",
-      `  ${CLI} workspace role sam@example.com owner`,
-      `  ${CLI} workspace role sam@example.com member --json`,
-    ].join("\n"),
-  },
+  docs: { brief: "Revoke one of your AI connections" },
 });
 
 export const workspaceRoutes = buildRouteMap({
@@ -904,6 +728,7 @@ export const workspaceRoutes = buildRouteMap({
     deactivate: deactivateCommand,
     reactivate: reactivateCommand,
     remove: removeCommand,
+    "reset-email": resetEmailCommand,
     "reset-link": resetLinkCommand,
     groups: groupsCommand,
     group: groupRoutes,

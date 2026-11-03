@@ -651,20 +651,10 @@ describe("provider events", () => {
     expect((await eventRows()).filter((event) => event.type === "provider.removed")).toHaveLength(1);
   });
 
-  it("writes the row and queues nothing on a Gateway without the event tables, or before it has an organization", async () => {
-    // No organization yet: the registry changes, nothing is queued.
+  it("writes the row and queues nothing before the Gateway has an organization", async () => {
     await add(specDir(NORTHWIND));
     await remove("northwind");
     expect(await eventRows()).toEqual([]);
-
-    await organizationWithSubscriber();
-    await db().run([{ sql: "DROP TABLE event_deliveries" }, { sql: "DROP TABLE events" }, { sql: "DROP TABLE event_subscriptions" }]);
-    await add(specDir(NORTHWIND));
-    expect((await rows()).map((row) => row["id"])).toEqual(["northwind"]);
-    await remove("northwind");
-    expect(await rows()).toEqual([]);
-    const [tables = []] = await db().run([{ sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'event%'" }]);
-    expect(tables).toEqual([]);
   });
 });
 
