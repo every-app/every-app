@@ -183,7 +183,7 @@ describe("pnpm security-review", { timeout: 30_000 }, () => {
     const { dir, write } = repo();
     write("src.ts", "export const a = 2;\n");
     write("new.ts", "export const fresh = 1;\n");
-    write("packages/loop/providers.env", "ANTHROPIC_API_KEY=sk-ant-not-for-the-model\n");
+    write("packages/tests/accounts.json", '{"token":"not-for-the-model"}\n');
     write("notes.pem", "-----BEGIN PRIVATE KEY-----\nnot-for-the-model\n");
     fs.mkdirSync(path.join(dir, "nested"));
     spawnSync("git", ["init", "-q", path.join(dir, "nested")]);
@@ -191,7 +191,7 @@ describe("pnpm security-review", { timeout: 30_000 }, () => {
     const run = review(dir, fake, "--base", "main");
     expect(run.status, run.stderr).toBe(0);
     expect(run.stderr).toContain("untracked, reviewed as new files: new.ts");
-    expect(run.stderr).toContain("packages/loop/providers.env (the onboarding loop's provider keys)");
+    expect(run.stderr).toContain("packages/tests/accounts.json (the test accounts and their tokens)");
     expect(run.stderr).toContain("notes.pem (key material)");
     expect(run.stderr).toContain("nested/ (not a regular file)");
     const prompt = fake.prompt(1);

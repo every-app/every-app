@@ -514,22 +514,19 @@ lands (`/tmp/build-skill-runs/<scenario>-<n>/`). What the two harnesses
 share (the claude session, the person's rules, the stubs) is
 `packages/cli/test/shared/`.
 
-### The onboarding loop
+### Test accounts and the wipe
 
-The loop and every other live test run only when Ben asks for that specific run.
-Nothing schedules or repeats them, and agents don't start them on their own.
+Live tests run only when Ben asks for that specific run. Nothing schedules or
+repeats them, and agents don't start them on their own.
 
-`packages/onboarding-loop` proves the setup prompt on /docs/gateway on a coding
-agent, from a wiped, dedicated test Cloudflare account: `pnpm loop doctor`
-once, then `pnpm loop run --harness claude --account loop-1` (45 to 75
-minutes; the harnesses, the accounts and what a pass means:
-`packages/onboarding-loop/README.md`, the design
-`docs/design/2026-10-onboarding-loop.md`, the accounts
-`docs/runbooks/onboarding-loop-test-accounts.md`). Its unit tests:
-`pnpm -C packages/onboarding-loop test`. The wipe is
+The `*.live.test.ts` files run against a dedicated test Cloudflare account
+(`loop-1` or `loop-2`; how to make one and where its token lives:
+`docs/runbooks/test-accounts.md`). The wipe is
 `pnpm everyapp teardown --account-id <id> [--dry-run]`, tested against the
 fake account in `packages/cli/src/commands/teardown/index.test.ts`; it
-refuses any account outside `EVERYAPP_TEST_ACCOUNTS`.
+refuses any account outside `EVERYAPP_TEST_ACCOUNTS`. The onboarding loop that
+ran the setup prompt on coding agents against those accounts was deleted on
+2026-11-02 (design record: `docs/design/2026-10-onboarding-loop.md`).
 
 ## B. Local testing with `everyapp dev`
 

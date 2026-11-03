@@ -1597,9 +1597,9 @@ Source: `packages/cli/src/commands/db/index.ts`
 
 ### TEARDOWN_ACCOUNT_FORBIDDEN
 
-`teardown --account-id <id>` (the default Gateway's teardown, or `--all`; `--gateway <name>` doesn't read the list) names an account on the forbidden list: `EVERYAPP_FORBIDDEN_ACCOUNTS` (ids separated by commas or whitespace) and the file `~/.config/everyapp/forbidden-accounts` (`$XDG_CONFIG_HOME/everyapp/forbidden-accounts` when set; one id per line, `#` starts a comment), read together, the same way as the allowlist. No id ships in the CLI: the machine that can reach a live account lists it there (the onboarding loop hands its host's list to the teardown child in `EVERYAPP_FORBIDDEN_ACCOUNTS`). Refused before the allowlist is read and before anything is asked of Cloudflare, whatever the allowlist says; `cf auth whoami` listing a forbidden account is `TEARDOWN_TOKEN_TOO_BROAD`. Headline: `Cloudflare account <id> can never be torn down`, then `It is on the forbidden list (EVERYAPP_FORBIDDEN_ACCOUNTS, <file>): a live account, refused by id before any allowlist is read.`; `data.accountId`, `data.file`.
+`teardown --account-id <id>` (the default Gateway's teardown, or `--all`; `--gateway <name>` doesn't read the list) names an account on the forbidden list: `EVERYAPP_FORBIDDEN_ACCOUNTS` (ids separated by commas or whitespace) and the file `~/.config/everyapp/forbidden-accounts` (`$XDG_CONFIG_HOME/everyapp/forbidden-accounts` when set; one id per line, `#` starts a comment), read together, the same way as the allowlist. No id ships in the CLI: the machine that can reach a live account lists it there. Refused before the allowlist is read and before anything is asked of Cloudflare, whatever the allowlist says; `cf auth whoami` listing a forbidden account is `TEARDOWN_TOKEN_TOO_BROAD`. Headline: `Cloudflare account <id> can never be torn down`, then `It is on the forbidden list (EVERYAPP_FORBIDDEN_ACCOUNTS, <file>): a live account, refused by id before any allowlist is read.`; `data.accountId`, `data.file`.
 
-**Fix:** none offered; no rerun; not retryable. Use a dedicated test account (docs/runbooks/onboarding-loop-test-accounts.md in the checkout).
+**Fix:** none offered; no rerun; not retryable. Use a dedicated test account (docs/runbooks/test-accounts.md in the checkout).
 
 Source: `packages/cli/src/lib/teardown/guards.ts` (`checkAccountEligible`).
 
@@ -1663,7 +1663,7 @@ Source: `packages/cli/src/lib/teardown/guards.ts` (`checkAccountEligible`).
 
 `teardown --account-id <id>` (the default Gateway's teardown, or `--all`; never `--gateway <name>`) where `<id>` isn't on the allowlist of dedicated test accounts: `EVERYAPP_TEST_ACCOUNTS` (ids separated by commas or whitespace) and the file `~/.config/everyapp/test-accounts` (`$XDG_CONFIG_HOME/everyapp/test-accounts` when set; one id per line, `#` starts a comment), read together. Checked before the token and before any read. Headline: `Cloudflare account <id> isn't on the teardown allowlist`, then `teardown deletes everything EveryApp made in an account, so it runs only against accounts listed as dedicated test accounts.`; `data.accountId`, `data.file`.
 
-**Fix:** `fix`: `only for a dedicated test account that holds nothing else (docs/runbooks/onboarding-loop-test-accounts.md): set EVERYAPP_TEST_ACCOUNTS=<id> for this one command, or add a line <id> to <file>`; no rerun; not retryable. Never add an account to the list on the person's behalf.
+**Fix:** `fix`: `only for a dedicated test account that holds nothing else (docs/runbooks/test-accounts.md): set EVERYAPP_TEST_ACCOUNTS=<id> for this one command, or add a line <id> to <file>`; no rerun; not retryable. Never add an account to the list on the person's behalf.
 
 Source: `packages/cli/src/lib/teardown/guards.ts` (`checkAccountEligible`, `readAllowlist`).
 
@@ -1990,7 +1990,7 @@ Source: `packages/cli/src/lib/cf/errors.ts`
 
 ### CF_ACCESS_NOT_ENABLED
 
-`access_not_enabled`: the message carries `access.api.error.not_enabled` (API code `9999`, 403): the account never opened Zero Trust, so every Access endpoint but `organization create` refuses (seen on a fresh account on 2026-10-24, on `access/organizations`). `teardown` reads it as a service with nothing of EveryApp's in it (a skipped `teardown.found` step, see `TEARDOWN_READ_FAILED`). `access on` and `access show` read it as "no team yet" (`getAccessOrganizationOrNone()` in `packages/cli/src/lib/cf/access.ts`) and `on` creates the team, which works on such an account without the dashboard's onboarding, plan pick or payment details (checked live on the loop's test account, 2026-10-24, `docs/onboarding-loop`); so the code surfaces from `access on` only when the create itself failed and something else refused after it.
+`access_not_enabled`: the message carries `access.api.error.not_enabled` (API code `9999`, 403): the account never opened Zero Trust, so every Access endpoint but `organization create` refuses (seen on a fresh account on 2026-10-24, on `access/organizations`). `teardown` reads it as a service with nothing of EveryApp's in it (a skipped `teardown.found` step, see `TEARDOWN_READ_FAILED`). `access on` and `access show` read it as "no team yet" (`getAccessOrganizationOrNone()` in `packages/cli/src/lib/cf/access.ts`) and `on` creates the team, which works on such an account without the dashboard's onboarding, plan pick or payment details (checked live on the test account loop-1, 2026-10-24); so the code surfaces from `access on` only when the create itself failed and something else refused after it.
 
 **Fix:** none given. Run `access on` again; if Cloudflare keeps answering it after the team was created, open Zero Trust once in the dashboard.
 

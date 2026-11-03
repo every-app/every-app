@@ -51,7 +51,7 @@ describe("the teardown allowlist", () => {
     expect(
       parseAllowlist(
         [
-          "# the loop's accounts",
+          "# the test accounts",
           "",
           `${TEST}   # loop-1`,
           TEST.toUpperCase(),

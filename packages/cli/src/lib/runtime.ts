@@ -18,8 +18,8 @@ export const MIN_NODE_VERSION = "22.18.0";
  * only and the build fails with `connect ECONNREFUSED 127.0.0.1:<port>`
  * from `@tanstack/start-plugin-core`'s prerender: GATEWAY_BUILD_FAILED on
  * the Gateway's `build:release`, and the same from `cf build` of an app.
- * Seen on every Linux first setup, reproduced in the onboarding loop's
- * container on 2026-10-24; macOS resolves `localhost` to 127.0.0.1 first
+ * Seen on every Linux first setup, reproduced in a Linux container on
+ * 2026-10-24; macOS resolves `localhost` to 127.0.0.1 first
  * and never hits it.
  */
 export const BUILD_NODE_FLAG = "--dns-result-order=ipv4first";

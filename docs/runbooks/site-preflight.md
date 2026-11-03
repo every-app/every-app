@@ -27,7 +27,7 @@ Then by hand, since a script can't:
 
 - `curl -sI https://www.everyapp.com/docs` and `curl -sI https://everyapp.dev/docs` answer `301` with `location: https://everyapp.com/docs` (the redirect Worker in `landing-page/redirect`, deployed separately with `pnpm -C landing-page deploy:redirect`; it rarely changes).
 - Open `https://everyapp.com/` and `https://everyapp.com/docs` on a phone, or in a window about 390 px wide: the hero wraps, the docs sidebar collapses into the menu, nothing overflows sideways. Switch the docs between light and dark with the toggle at the top of the sidebar; the home page is dark by design.
-- On `https://everyapp.com/docs/gateway`, the setup prompt under "Or let your coding agent do it" is one code block with a copy button, and what it copies is `landing-page/content/docs/setup-prompt.txt` word for word (the same text `packages/onboarding-loop/prompts/setup.md` holds; `packages/onboarding-loop` has a test that fails when the two differ).
+- On `https://everyapp.com/docs/gateway`, the setup prompt under "Or let your coding agent do it" is one code block with a copy button, and what it copies is `landing-page/content/docs/setup-prompt.txt` word for word.
 - The search box on any docs page finds "Access".
 - Leave an address in the home page's "Keep me posted" form: it answers "Thanks. We'll keep you posted." (it writes to the `waitlist_signups` table of the landing page's D1 database, which `pnpm -C landing-page deploy` migrates first).
 - Paste `https://everyapp.com/` and one docs page into a link preview debugger (Slack, X, or opengraph.xyz): the title and the description show, with the home card (`/og/home.png`) for the home page and a card with the page's title (`/og/docs/<page>.png`) for the docs page.

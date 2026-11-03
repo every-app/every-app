@@ -16,8 +16,9 @@ dist/
 **/.pnpm-store/
 .env
 
-# Copies of the onboarding loop's secret files, which live in ~/.config/everyapp/onboarding-loop and
-# never belong in a checkout: a stray copy of accounts.json got committed once (#488, removed in #496).
+# Copies of the test accounts file, which lives in ~/.config/everyapp/onboarding-loop and never
+# belongs in a checkout: a stray copy got committed once (#488, removed in #496). The deleted
+# onboarding loop's provider keys may still sit beside it until they are cleaned up.
 accounts.json
 providers.env
 providers.json

@@ -810,7 +810,7 @@ USAGE
   everyapp teardown (--account-id id) [--gateway name] [--all] [--confirm id] [--dry-run] [--json] [--verbose]
   everyapp teardown --help
 
-For the accounts the onboarding loop installs into, over and over: removes every Worker,
+For a dedicated test account that live tests install into, over and over: removes every Worker,
 Workflow, D1 database, KV namespace, R2 bucket, Hyperdrive config, queue, Vectorize index,
 AI Gateway and Secrets Store secret of the default Gateway's names (every-*, but never
 another Gateway's: every-app-gateway-<name>... or every-<name>--...), the Gateway's own

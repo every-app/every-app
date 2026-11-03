@@ -148,7 +148,7 @@ async function deploy(manifest: EveryAppCliManifest): Promise<string> {
 }
 
 /**
- * Everything the loop's run leaves behind, and what isn't Every App's:
+ * Everything an install leaves behind, and what isn't Every App's:
  * the app, Access on, mail routed to the app (and a rule of someone
  * else's), the zone's Universal certificate, R2 buckets (one not empty), a
  * Hyperdrive config, a Vectorize index, an AI Gateway, a Secrets Store

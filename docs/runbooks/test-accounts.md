@@ -1,42 +1,42 @@
-# Test Cloudflare accounts for the onboarding loop
+# Test Cloudflare accounts
 
-The onboarding loop (docs/design/2026-10-onboarding-loop.md) installs EveryApp from nothing, over and over, and wipes everything it made between runs. It needs Cloudflare accounts that hold nothing else. This runbook creates them.
+The live tests (`packages/cli/test/provisioners/*.live.test.ts`, run with `EVERYAPP_LIVE_PROVISIONERS=1`) and end-to-end runs by hand install EveryApp into a real Cloudflare account, and `everyapp teardown` wipes everything they made. They need Cloudflare accounts that hold nothing else: `loop-1` and `loop-2`, named for the onboarding loop, which was deleted on 2026-11-02. This runbook creates them.
 
 Three rules:
 
-1. **A test account belongs to a separate Cloudflare user.** Not an extra account under your own login: a token minted by your user can see every account that user is a member of, and the teardown must have no path to a live account. Your live account (openseo.so, everyapp.team) is never eligible: list its id in `~/.config/everyapp/forbidden-accounts` (one id per line, `#` comments; or `EVERYAPP_FORBIDDEN_ACCOUNTS`), and the teardown, the loop and the live provisioner tests refuse it by id. No id ships in the code.
-2. **A token's value never goes through chat or into the repository.** You create it in the dashboard and put it where the loop reads it yourself (below).
-3. **A live run happens only when Ben asks for that specific run** (decided 2026-10-28). Nothing schedules or repeats the loop or the live tests, and agents stop at "ready for a live check" and ask.
+1. **A test account belongs to a separate Cloudflare user.** Not an extra account under your own login: a token minted by your user can see every account that user is a member of, and the teardown must have no path to a live account. Your live account (openseo.so, everyapp.team) is never eligible: list its id in `~/.config/everyapp/forbidden-accounts` (one id per line, `#` comments; or `EVERYAPP_FORBIDDEN_ACCOUNTS`), and the teardown and the live provisioner tests refuse it by id. No id ships in the code.
+2. **A token's value never goes through chat or into the repository.** You create it in the dashboard and put it in the accounts file yourself (below).
+3. **A live run happens only when Ben asks for that specific run** (decided 2026-10-28). Nothing schedules or repeats the live tests, and agents stop at "ready for a live check" and ask.
 
-One account is enough to run harnesses one after another. Two let two harnesses run at the same time, each against its own account. The steps are the same for each; do them once per account.
+One account is enough to run live tests one after another. Two let two runs go at the same time, each against its own account. The steps are the same for each; do them once per account.
 
 ## 1. Create the user and the account (10 minutes)
 
 1. Make a new email address you control, e.g. `everyapp-loop-1@<your domain>` (an alias or a group that lands in your inbox works; the login's email also receives Cloudflare's verification mails and the one-time PIN mails when `access on` is tested).
 2. Open https://dash.cloudflare.com/sign-up in a private browser window (so you are not signed in as yourself), sign up with that address and a new password from your password manager, and verify the email.
 3. Turn on two-factor authentication for the new user (My Profile → Authentication) and store the TOTP secret with the password. It is a bot account; nobody types its code by hand.
-4. Note the **account id**: Compute (Workers) → Overview shows it on the right, or any dashboard URL `dash.cloudflare.com/<account id>/…`. Keep the id; the loop's allowlist takes it.
+4. Note the **account id**: Compute (Workers) → Overview shows it on the right, or any dashboard URL `dash.cloudflare.com/<account id>/…`. Keep the id; the teardown's allowlist takes it.
 
 ## 2. Workers Paid (2 minutes, but do it last, after step 7)
 
 `everyapp setup` is meant to stop on a Free account before it creates anything, but whether it recognises a Free account is unverified (TODO.md, onboarding audit: a Free account may have no `workers_*` subscription row at all, and then setup only warns). A brand-new account is the one chance to find out, so leave it on Free until the token exists (step 5) and the check in step 7 passes. Then, still on Free:
 
 1. Run `CLOUDFLARE_API_TOKEN=<token> CLOUDFLARE_ACCOUNT_ID=<id> cf accounts subscriptions get` and keep the output (it holds no secrets): its Workers rows go into `packages/cli/src/lib/cf/plan.test.ts`.
-2. Let the loop run `setup` once against the Free account. It must stop on `upgrade_workers_paid` (exit 2) with nothing created; `pnpm everyapp teardown --account-id <id> --dry-run` should list nothing. If it installs instead, that is the first finding.
+2. Run `setup` once against the Free account. It must stop on `upgrade_workers_paid` (exit 2) with nothing created; `pnpm everyapp teardown --account-id <id> --dry-run` should list nothing. If it installs instead, that is the first finding.
 
 Only then: Compute (Workers) → Plans → **Workers Paid** ($5 a month, then usage) → add a card. Teardown never cancels the subscription. Turn on billing usage notifications for the account (Notifications → Billing) so a runaway agent shows up as mail, not as next month's invoice; the token has no spending ceiling inside the account.
 
 ## 3. Buy a domain (5 minutes)
 
-The Gateway needs an active zone in the account. Domain Registration → Register Domains: pick the cheapest name you will recognise in the loop's reports, e.g. `everyapp-loop1.com` (a .com is about $10 a year; some TLDs are cheaper). A domain bought here is an active zone at once, nameservers included. Teardown never deletes the zone, only records the CLI created in it.
+The Gateway needs an active zone in the account. Domain Registration → Register Domains: pick the cheapest name you will recognise, e.g. `everyapp-loop1.com` (a .com is about $10 a year; some TLDs are cheaper). A domain bought here is an active zone at once, nameservers included. Teardown never deletes the zone, only records the CLI created in it.
 
 ## 4. The workers.dev subdomain: don't pick it yet
 
-Whether a fresh account's first Worker upload needs a `workers.dev` name is unverified (TODO.md, onboarding audit: cf demands one for Workers that define Workflows, and the Gateway defines none). Leave it unset so the first loop run records what really happens. If `setup` stops on `register_workers_subdomain` (exit 2), the loop's scripted user registers the name itself with `PUT /accounts/{id}/workers/subdomain` (the token's Workers Scripts: Edit covers it; the name is `everyapp-loop<n>`), answers the agent, and records `workers_subdomain: first-run` with cf's exact error text; by hand, pick it once in the dashboard (Compute (Workers) → Workers & Pages → the "Set up a subdomain" prompt) and run again. Either way the report says which happened. Teardown never removes it, so only the first run per account exercises this hand-off.
+Whether a fresh account's first Worker upload needs a `workers.dev` name is unverified (TODO.md, onboarding audit: cf demands one for Workers that define Workflows, and the Gateway defines none). Leave it unset so the first run records what really happens. If `setup` stops on `register_workers_subdomain` (exit 2), pick it once in the dashboard (Compute (Workers) → Workers & Pages → the "Set up a subdomain" prompt) or with `PUT /accounts/{id}/workers/subdomain` (the token's Workers Scripts: Edit covers it; the name is `everyapp-loop<n>`), note cf's exact error text, and run again. Teardown never removes it, so only the first run per account exercises this hand-off.
 
 ## 5. Create the API token (5 minutes)
 
-Prefer an **account-owned token**, which belongs to the account and to no person: in the test account, Manage Account → **Account API Tokens** → **Create Token** → Custom token → "Get started" (its value starts with `cfat_`; the loop and `cf` verify it at the account endpoint). A user token from My Profile → API Tokens works too, with the same permissions.
+Prefer an **account-owned token**, which belongs to the account and to no person: in the test account, Manage Account → **Account API Tokens** → **Create Token** → Custom token → "Get started" (its value starts with `cfat_`; `cf` verifies it at the account endpoint). A user token from My Profile → API Tokens works too, with the same permissions.
 
 Permissions (the least that lets `setup`, `create` then `deploy`, `access on`, `email set` and the teardown run; derived from the cf commands the CLI calls):
 
@@ -60,15 +60,15 @@ Permissions (the least that lets `setup`, `create` then `deploy`, `access on`, `
 | Zone    | Email Routing Rules                                      | Edit   | `email set --inbound`, teardown                                                 |
 | Zone    | Zone Settings                                            | Read   | zone status                                                                     |
 
-Resources: **Account Resources → Include → the test account only**. **Zone Resources → Include → All zones from an account → the test account**. No client IP filter. TTL: an end date 30 days out during launch week (transcripts that may contain the token go to the harnesses' model vendors; see section 8 for rotation), 90 days once the loop is routine. Continue to summary → Create Token → copy it once.
+Resources: **Account Resources → Include → the test account only**. **Zone Resources → Include → All zones from an account → the test account**. No client IP filter. TTL: an end date 90 days out (section 8 for rotation). Continue to summary → Create Token → copy it once.
 
-The template deliberately has no user-scope permission (no API Tokens, Memberships or User Details), so the token can neither see another account nor roll itself: rotation is by hand (section 8). On the first real token, confirm `CLOUDFLARE_API_TOKEN=<token> cf auth whoami` prints `tokenValid: true`, `authSource: "CLOUDFLARE_API_TOKEN environment variable"` and exactly one account; the loop's preflight and the teardown both require that exact shape.
+The template deliberately has no user-scope permission (no API Tokens, Memberships or User Details), so the token can neither see another account nor roll itself: rotation is by hand (section 8). On the first real token, confirm `CLOUDFLARE_API_TOKEN=<token> cf auth whoami` prints `tokenValid: true`, `authSource: "CLOUDFLARE_API_TOKEN environment variable"` and exactly one account; the teardown and the live harness both require that exact shape.
 
-If a run fails with `CLOUDFLARE_TOKEN_REJECTED` or a cf `auth` error naming a resource, the table above is missing a permission: add it to the token in the dashboard (Edit) and note the row here. The loop's preflight treats `CLOUDFLARE_TOKEN_REJECTED` (or `tokenValid: false`) as a fixture error: it refuses to start the run, prints which account's token it was, and nothing is created or deleted.
+If a run fails with `CLOUDFLARE_TOKEN_REJECTED` or a cf `auth` error naming a resource, the table above is missing a permission: add it to the token in the dashboard (Edit) and note the row here.
 
-## 6. Give the token to the loop, never to the agent
+## 6. Write the accounts file, never through the agent
 
-The loop reads each account from a file outside the repository, `~/.config/everyapp/onboarding-loop/accounts.json`, mode 600. Write it yourself in a terminal (the agent never sees the values):
+The live harness (`packages/cli/test/provisioners/live.ts`) reads each account from a file outside the repository, `~/.config/everyapp/onboarding-loop/accounts.json`, mode 600 (the directory keeps the deleted loop's name, so the file Ben already has keeps working). Write it yourself in a terminal (the agent never sees the values):
 
 ```sh
 mkdir -p ~/.config/everyapp/onboarding-loop && chmod 700 ~/.config/everyapp/onboarding-loop
@@ -88,27 +88,15 @@ EOF
 chmod 600 ~/.config/everyapp/onboarding-loop/accounts.json
 ```
 
-Only if the loop moves off this Mac onto Modal sandboxes (the design doc's fallback substrate) do the same values go into Modal secrets instead, created from your terminal, one per account plus one for the provider keys below:
+Only `accounts.json` is still read from that directory. The deleted loop left other files there: `providers.env` (its Anthropic, OpenAI, Cursor and OpenCode keys), `confirm-<id>` files, `locks/` and `runs-archive/`. Delete them, and roll those provider keys if you want:
 
 ```sh
-uvx modal secret create everyapp-loop-1 CLOUDFLARE_API_TOKEN=<token> CLOUDFLARE_ACCOUNT_ID=<id> EVERYAPP_LOOP_ZONE=everyapp-loop1.com
-uvx modal secret create everyapp-loop-providers ANTHROPIC_API_KEY=<key> CODEX_API_KEY=<key> OPENCODE_API_KEY=<key> CURSOR_API_KEY=<key>
+rm -rf ~/.config/everyapp/onboarding-loop/{providers.env,providers.json,confirm-*,locks,runs-archive}
 ```
 
-The **teardown allowlist** is separate from this file and holds no secrets: set `EVERYAPP_TEST_ACCOUNTS=<account id>,<account id>` in the environment of the teardown command, or write the ids one per line to `~/.config/everyapp/test-accounts`. By hand you set it yourself, deliberately, each time. The loop (`pnpm loop`) derives it from accounts.json and sets it, with the token, in the environment of the one child process that runs `everyapp teardown`, never in its own; it refuses to start if `EVERYAPP_TEST_ACCOUNTS`, `CLOUDFLARE_API_TOKEN` or `EVERYAPP_GATEWAY_URL` is already set in the shell it was launched from. The teardown refuses any account id not on the list, refuses an account on the forbidden list (`EVERYAPP_FORBIDDEN_ACCOUNTS` or `~/.config/everyapp/forbidden-accounts`; the loop passes its host's list to the teardown child, whose container has no such file) even if the allowlist names it, and refuses a token that can see any account outside the list, is not a `CLOUDFLARE_API_TOKEN` environment token, or is not valid.
+The **teardown allowlist** is separate from this file and holds no secrets: set `EVERYAPP_TEST_ACCOUNTS=<account id>,<account id>` in the environment of the teardown command, or write the ids one per line to `~/.config/everyapp/test-accounts`. You set it yourself, deliberately, each time. The teardown refuses any account id not on the list, refuses an account on the forbidden list (`EVERYAPP_FORBIDDEN_ACCOUNTS` or `~/.config/everyapp/forbidden-accounts`) even if the allowlist names it, and refuses a token that can see any account outside the list, is not a `CLOUDFLARE_API_TOKEN` environment token, or is not valid.
 
-The **second confirmation** is the account id: typed at the terminal when a person runs the loop, or, for an unattended run, read from a file you write once by hand, `~/.config/everyapp/onboarding-loop/confirm-<account id>` (mode 600) whose whole content is the line `delete everything in <account id>`. The loop forwards it as `--confirm <id>`. No file, no unattended teardown, no run. `pnpm loop accounts` prints each account's name, zone and owner email from accounts.json, and which provider keys are set (never an id or a token); the id is the one you noted in step 1.
-
-**Provider keys** go in `~/.config/everyapp/onboarding-loop/providers.env` (mode 600; `KEY=value` lines), one per harness, each created for the loop and nothing else, each with a spend cap where the console has one:
-
-| Variable             | Harness             | Where it comes from                                                                                                    |
-| -------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `ANTHROPIC_API_KEY`  | Claude Code, Hermes | a dedicated Anthropic Console workspace with a monthly spend limit (Hermes uses it with `--provider anthropic`; no OpenRouter) |
-| `CODEX_API_KEY`      | Codex CLI           | a dedicated OpenAI platform project with a hard budget (a ChatGPT subscription does not work for `codex exec`)          |
-| `OPENCODE_API_KEY`   | OpenCode            | OpenCode Zen (opencode.ai/zen), prepaid; the balance is the cap                                                         |
-| `CURSOR_API_KEY`     | Cursor agent CLI    | a **separate Cursor account** made for the loop, on Premium (user keys are not offered below it): a user key also reaches the Cloud Agents API and every repository that account connects, so never your own |
-
-Gemini CLI and Grok Build are parked (the first was replaced by Antigravity CLI, the second is subscription-gated), so no `GEMINI_API_KEY` or `XAI_API_KEY` is needed.
+The **second confirmation** is the account id: typed at the terminal, or passed again as `--confirm <id>` for a run without one. There is no `--yes`.
 
 ## 7. Check it (1 minute)
 
@@ -122,15 +110,11 @@ A fresh account answers with an error saying no Gateway was found in that accoun
 
 ## 8. Rotating a token
 
-The loop cannot roll a token (that needs API Tokens: Write at user scope, which the template leaves out on purpose). When a run's report prints `ROTATE: cf_token loop-1`, the agent printed the token into a transcript that is now at a model vendor; the loop refuses that account until the token changes. Rotate by hand: sign in as the test user → My Profile → API Tokens → Roll (same id and permissions, new value) → paste the new value into accounts.json. The loop refuses a value by its hash (`~/.config/everyapp/onboarding-loop/runs/<run id>/rotate.json`), so the rolled token is accepted on its own; nothing to delete. Roll both tokens after launch week whatever the reports said. Provider keys rotate in their consoles the same way (`ROTATE: <variable>`); a rolled key goes into providers.env.
-
-## 9. The Mac that runs the loop (10 minutes, once)
-
-The loop runs each harness in a Docker container on this machine (Docker Desktop is installed and running; the `docker` binary is at `/Applications/Docker.app/Contents/Resources/bin/docker`, off PATH, and the script finds it there). Before the first run: Docker Desktop → Settings → Resources → Memory **16 GB** (the default 8 GB fits one run, not two); Settings → Software updates → turn automatic updates off (an update restarts the engine mid-run); leave "Start Docker Desktop when you sign in" as you like, the preflight stops with `docker info failed` when the engine is not answering: start Docker Desktop and run again. The script re-executes itself under `caffeinate -i` so the Mac does not sleep during a run.
+The token cannot roll itself (that needs API Tokens: Write at user scope, which the template leaves out on purpose). If a value ever reaches a transcript, a log or a file you don't own, rotate by hand: sign in as the test user → My Profile → API Tokens → Roll (same id and permissions, new value) → paste the new value into accounts.json.
 
 ## Running the teardown
 
-From the checkout, with the token and the allowlist in the environment of the one command (the loop sets them from accounts.json; by hand you set them yourself, each time). Look first, then delete:
+From the checkout, with the token and the allowlist in the environment of the one command (you set them yourself, each time). Look first, then delete:
 
 ```sh
 # What would go: reads only, exit 0, data.plan lists every kind.
@@ -139,7 +123,7 @@ EVERYAPP_TEST_ACCOUNTS=<id> CLOUDFLARE_API_TOKEN=<token> pnpm everyapp teardown 
 # At a terminal: shows the inventory, then asks you to type the account id.
 EVERYAPP_TEST_ACCOUNTS=<id> CLOUDFLARE_API_TOKEN=<token> pnpm everyapp teardown --account-id <id>
 
-# Without a terminal (the loop, a script): the id again as --confirm. There is no --yes.
+# Without a terminal (a script): the id again as --confirm. There is no --yes.
 EVERYAPP_TEST_ACCOUNTS=<id> CLOUDFLARE_API_TOKEN=<token> pnpm everyapp teardown --account-id <id> --confirm <id> --json
 ```
 
@@ -167,4 +151,4 @@ The zone, the Workers Paid subscription, the workers.dev subdomain, the Zero Tru
 - Its Zero Trust team `everyapp-loop1.cloudflareaccess.com` exists since 2026-10-24T23:25Z (created by API for the Access live check; the API cannot delete a team, and `teardown` never tries).
 - It carries two identity providers: the one-time PIN that `access on` added, and a `cloudflare` provider (`restrict_to_account_members: true`) that the public-surface thread's CLI lane added at about 2026-10-25T00:02Z to check that a Cloudflare provider can be created by API on a team the API created (dashboard-created teams get one automatically; API-created ones do not). `teardown` removes Access applications and policies, not identity providers, so every later `access on` on loop-1 finds both and lists both in `allowed_idps`.
 - A check that needs a never-enabled account, or a team with the PIN only, needs the second test account.
-- Token rule, applied to that lane's read of `accounts.json`: a process on this machine reading the file in-process and passing the value only through a child's environment is inside the file's threat model (anyone running as Ben can read it); the loop's rotate rule is about the value reaching a transcript, a stream or a file it does not own. Not rolled for that. Other threads touching loop-1 live should check `~/.config/everyapp/onboarding-loop/locks/` first so they never overlap a run.
+- Token rule, applied to that lane's read of `accounts.json`: a process on this machine reading the file in-process and passing the value only through a child's environment is inside the file's threat model (anyone running as Ben can read it); rotation is for the value reaching a transcript, a stream or a file it does not own. Not rolled for that.

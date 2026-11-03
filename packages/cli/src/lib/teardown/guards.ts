@@ -166,7 +166,7 @@ function warnIgnored(out: EventSink, list: Allowlist & { file: string }, name: s
 /** How to put an id on the allowlist, said in every refusal that needs it. */
 function howToAllow(accountId: string, file: string): string {
   return [
-    `only for a dedicated test account that holds nothing else (docs/runbooks/onboarding-loop-test-accounts.md):`,
+    `only for a dedicated test account that holds nothing else (docs/runbooks/test-accounts.md):`,
     `set ${ALLOWLIST_VARIABLE}=${accountId} for this one command, or add a line ${accountId} to ${file}`,
   ].join(" ");
 }

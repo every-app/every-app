@@ -40,8 +40,8 @@ const CLAUDE_CODE = "https://docs.claude.com/en/docs/claude-code";
 // File names that only ever hold credentials: an untracked one is never sent.
 const CREDENTIAL_FILES = [
   { pattern: /^1k(\..*)?$/, why: "the Cloudflare token file committed in #488" },
-  { pattern: /^accounts(\..*)?\.json(\..*)?$/, why: "the onboarding loop's test accounts and their tokens" },
-  { pattern: /^providers\.env(\..*)?$/, why: "the onboarding loop's provider keys" },
+  { pattern: /^accounts(\..*)?\.json(\..*)?$/, why: "the test accounts and their tokens" },
+  { pattern: /^providers\.env(\..*)?$/, why: "the deleted onboarding loop's provider keys, which may still sit in ~/.config/everyapp/onboarding-loop" },
   { pattern: /^\.dev\.vars(\..*)?$/, allow: /\.example$/, why: "local dev secrets" },
   { pattern: /^\.env(\..*)?$/, allow: /\.example$/, why: "an environment file" },
   { pattern: /\.(pem|key|p12|pfx|jks|keystore|ppk)$/, why: "key material" },

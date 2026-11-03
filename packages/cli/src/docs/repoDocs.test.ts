@@ -62,7 +62,6 @@ const DOCUMENTS = [
   "apps/every-app-gateway/README.md",
   "packages/cli/README.md",
   "packages/sdk/README.md",
-  "packages/onboarding-loop/README.md",
   ".github/RELEASE.md",
   ".claude/skills/security-review/SKILL.md",
 ].filter((path) => existsSync(at(path)));

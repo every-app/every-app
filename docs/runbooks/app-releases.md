@@ -8,7 +8,7 @@ OpenMail, or yours) is installed on a Gateway with
 that publishes no release answers `NO_RELEASE`. This runbook is how a
 repository gets to publish one on every push, and how its clone builds with
 no EveryApp checkout beside it. It was set up for the four launch apps on
-2026-10-24 and verified live on the onboarding loop's test account (a fresh
+2026-10-24 and verified live on the test account loop-1 (a fresh
 clone's release of OpenAnalytics installed and went live; OpenCRM's stopped
 on `R2_NOT_ENABLED`, the account having never enabled R2).
 

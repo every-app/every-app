@@ -342,31 +342,6 @@ importers:
         specifier: ^3.2.4
         version: 3.2.6(@types/debug@4.1.12)(@types/node@22.19.1)(happy-dom@21.0.4)(jiti@2.6.1)(lightningcss@1.33.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)
 
-  packages/onboarding-loop:
-    dependencies:
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@types/node':
-        specifier: ^22.18.13
-        version: 22.20.5
-      knip:
-        specifier: ^5.66.4
-        version: 5.88.1(@types/node@22.20.5)(typescript@5.9.3)
-      prettier:
-        specifier: ^3.6.2
-        version: 3.6.2
-      tsx:
-        specifier: ^4.20.6
-        version: 4.23.15
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^3.2.6
-        version: 3.2.7(@types/debug@4.1.12)(@types/node@22.20.5)(happy-dom@21.0.4)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)
-
   packages/perimeter:
     dependencies:
       '@cloudflare/config':

@@ -1606,8 +1606,8 @@ through a provider). Session cookies, CSRF and the Origin rules (B1, B2).
 - *Google, Microsoft, GitHub and Apple are Better Auth's providers, run
   against mocked endpoints only* (low, known; TODO "Sign-in providers
   (2026-10-25)"). The gateway's tests answer their real endpoint URLs with a
-  mock; no live OAuth app was run in this pass (none exists in the loop's
-  account notes). Apple's `form_post` callback and its six-month client
+  mock; no live OAuth app was run in this pass (none exists in the test
+  accounts' notes). Apple's `form_post` callback and its six-month client
   secret are untested live.
 - *Apple's POST callback behind the outer ring needs a bypass* (low,
   known). `everyapp access on` leaves `/api/auth/callback/apple` public (the
@@ -1944,7 +1944,7 @@ means it is on main (every boundary fix from this pass merged on
     (2026-10-25)"). Better Auth's providers, exercised through the gateway's
     membership hooks with a fetch mock on their real URLs; the generic OIDC
     provider is the gateway's own and is tested in full. A live run needs an
-    OAuth app in the loop's account.
+    OAuth app in a test account.
 44. **Apple's POST callback needs `/api/auth/callback/apple` public behind
     the outer ring** (B10, low, known). `everyapp access on` does it; a ring
     made by hand without it blocks Apple sign-in. The POST creates nothing.

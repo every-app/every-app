@@ -461,7 +461,7 @@ export class FakeCloudflare {
    * `[9999] access.api.error.not_enabled` 403, as a fresh account did live
    * on 2026-10-24 (whatever `zeroTrust` holds), except `organization
    * create`, which works and enables Access (seen live the same day on the
-   * loop's test account).
+   * test account loop-1).
    */
   accessNotEnabled = false;
   /** The account never enabled R2: every bucket call answers `[10042] Please enable R2 ...` 403 (seen live the same day). */

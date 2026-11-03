@@ -48,7 +48,7 @@ export type AccessOrganization = z.infer<typeof OrganizationOutput>;
  * here, so `teardown` can say the service has nothing in it; `access on`
  * reads it as "no team yet", since `zero-trust organization create` works
  * on such an account without the dashboard's onboarding (seen live on the
- * loop's test account the same day, docs/onboarding-loop), after which
+ * test account loop-1 the same day), after which
  * every Access call answers normally.
  */
 export async function getAccessOrganization(cf: CfRunner): Promise<AccessOrganization | null> {

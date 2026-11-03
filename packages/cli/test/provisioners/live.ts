@@ -6,16 +6,15 @@
  *
  *   EVERYAPP_LIVE_PROVISIONERS=1 pnpm -C packages/cli exec vitest run test/provisioners/<kind>.live.test.ts
  *
- * The account comes from the onboarding loop's file
+ * The account comes from the test accounts file
  * (`~/.config/everyapp/onboarding-loop/accounts.json`, mode 600, written
- * by hand; docs/runbooks/onboarding-loop-test-accounts.md), read in this
+ * by hand; docs/runbooks/test-accounts.md), read in this
  * process and handed to `cf` only through the child's environment: the
  * token is never printed, logged or written. The harness refuses to run
  * unless `cf auth whoami` with that environment says the token is what it
  * authenticated with and it sees exactly the one account, which is never
  * on the teardown's forbidden list (EVERYAPP_FORBIDDEN_ACCOUNTS and
- * `~/.config/everyapp/forbidden-accounts`, under the real home), and unless no loop run
- * holds the account's lock. Everything a test makes is named
+ * `~/.config/everyapp/forbidden-accounts`, under the real home). Everything a test makes is named
  * `every-provisioners-…`, which the teardown's `every-` scan would find,
  * and each test deletes what it made in a `finally`.
  */
@@ -63,10 +62,11 @@ interface LiveAccount {
 }
 
 /**
- * The loop's config directory, under the real home: the test setup
- * rebinds HOME to an empty directory, so `os.homedir()` would miss it.
+ * The test accounts' config directory, under the real home: the test setup
+ * rebinds HOME to an empty directory, so `os.homedir()` would miss it. It
+ * keeps the name the deleted onboarding loop gave it.
  */
-function loopConfigDir(): string {
+function accountsConfigDir(): string {
   const home = os.userInfo().homedir;
   const configHome = process.env["XDG_CONFIG_HOME"] || path.join(home, ".config");
   return path.join(configHome, "everyapp", "onboarding-loop");
@@ -74,24 +74,23 @@ function loopConfigDir(): string {
 
 /**
  * The test account `name` (default `loop-1`), checked: the file's mode,
- * the id, the forbidden list, no loop lock, and cf's own word on what it
+ * the id, the forbidden list, and cf's own word on what it
  * authenticated with. Throws a message that names the problem and never
  * the token.
  */
 export async function liveAccount(name = "loop-1"): Promise<LiveAccount> {
-  const dir = loopConfigDir();
-  const file = path.join(dir, "accounts.json");
+  const file = path.join(accountsConfigDir(), "accounts.json");
   let stat: fs.Stats;
   try {
     stat = fs.statSync(file);
   } catch {
-    throw new Error(`No ${file}: see docs/runbooks/onboarding-loop-test-accounts.md.`);
+    throw new Error(`No ${file}: see docs/runbooks/test-accounts.md.`);
   }
   if ((stat.mode & 0o077) !== 0) {
     throw new Error(`${file} must be mode 600 (chmod 600 ${file}).`);
   }
   const parsed = AccountsFile.safeParse(JSON.parse(fs.readFileSync(file, "utf8")));
-  if (!parsed.success) throw new Error(`${file} isn't the loop's accounts file.`);
+  if (!parsed.success) throw new Error(`${file} isn't the test accounts file.`);
   const account = parsed.data.accounts.find((row) => row.name === name);
   if (!account) {
     throw new Error(`No account "${name}" in ${file}; it has ${parsed.data.accounts.map((row) => row.name).join(", ")}.`);
@@ -100,10 +99,6 @@ export async function liveAccount(name = "loop-1"): Promise<LiveAccount> {
   const configHome = process.env["XDG_CONFIG_HOME"] || path.join(os.userInfo().homedir, ".config");
   if (readForbiddenList({ ...process.env, XDG_CONFIG_HOME: configHome }).ids.includes(account.accountId)) {
     throw new Error(`${name} is on the forbidden list; never a test account.`);
-  }
-  const lock = path.join(dir, "locks", `${account.accountId}.json`);
-  if (fs.existsSync(lock)) {
-    throw new Error(`A loop run holds ${name} (${lock}); run the live test once it is done.`);
   }
 
   // The token reaches cf through the child's environment and nothing else.
