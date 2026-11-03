@@ -37,7 +37,6 @@ import {
   PUBLIC_KEYS_ENV,
   getIdentityFromRequest,
   isAdmin,
-  isAgentCall,
   type EveryAppUser,
   type IdentityResult,
   type OrgRole,
@@ -51,7 +50,7 @@ import {
   type AppEventsOptions,
 } from "./eventsEndpoint.js";
 
-export { ConfigurationError, isAdmin, isAgentCall };
+export { ConfigurationError, isAdmin };
 export type { EveryAppUser, IdentityResult, OrgRole };
 
 /**

@@ -39,7 +39,7 @@ An RS256 JWT, `kid` `everyapp-identity` (`everyapp-identity-dev` under `everyapp
 | `sub` | The user id. Key every row by it. |
 | `email` | The user's email. |
 | `org_id`, `org_role`, `org_name` | The organization, the person's role in it (`owner`, `admin`, `member`), its display name. |
-| `chan` | The channel: `web` (a browser), `api` (a personal token), `mcp` (an AI client's tool call), `agent`. |
+| `chan` | The channel: `web` (a browser), `api` (a personal token), `mcp` (an AI client's tool call). |
 | `act` | `{ sub }`: what acted for the person (`pat:<id>`, `oauth:<id>`, `access:<email>`). |
 | `scopes` | `["*"]` for a session or a full token. |
 | `jti`, `tc` | The token id; on a tool call, `{ id, name }` of the one call. |
@@ -47,7 +47,7 @@ An RS256 JWT, `kid` `everyapp-identity` (`everyapp-identity-dev` under `everyapp
 
 `everyApp()` verifies it before the handler runs: pinned `alg` and `kid`, the keys in `EVERYAPP_IDENTITY_PUBLIC_KEYS` (current and next, for rotation), audience, issuer and expiry. A failure is `401 unauthenticated`. An identity for another organization than the Worker's `EVERY_APP_ORG_ID` is refused. Apps never check scopes on their own routes; the perimeter already did.
 
-The user object (the handler's fourth argument, `getEveryAppUser()`, `requireEveryAppUser()`) is `{ id, email, orgId, orgRole, orgName, channel, actor, scopes, jti, toolCall }`. `isAdmin(user)` is owner or admin; `hasScope()` and `isAgentCall()` read the rest.
+The user object (the handler's fourth argument, `getEveryAppUser()`, `requireEveryAppUser()`) is `{ id, email, orgId, orgRole, orgName, channel, actor, scopes, jti, toolCall }`. `isAdmin(user)` is owner or admin; `hasScope()` reads the scopes.
 
 ## Env
 
@@ -85,7 +85,7 @@ A TanStack Start app passes the request to Start's server entry and reads the us
 
 ## The server API (`@every-app/sdk/server`)
 
-- Identity: `everyApp`, `getEveryAppUser`, `requireEveryAppUser`, `isAdmin`, `hasScope`, `isAgentCall`, `gatewayUrl`.
+- Identity: `everyApp`, `getEveryAppUser`, `requireEveryAppUser`, `isAdmin`, `hasScope`, `gatewayUrl`.
 - AI ([ai](/docs/agent/ai)): `createGatewayFetch` (the one way to call a model), `aiBaseUrl`, `providerBaseUrl`.
 - Capabilities ([providers](/docs/agent/providers)): `integrationFetch`, `integrationStatus`, `connectUrl`, `connectPath`, `devAccessTokenName`.
 - Email and members: `sendEmail`, `listMembers`.

@@ -105,20 +105,12 @@ export const LINKED_DEV_HEADER = "x-everyapp-linked-dev";
 /** Where the gateway-lite serves the forwarder, under the app's own host. */
 export const LINKED_DEV_FORWARD_PATH = "/__everyapp/gateway";
 
-export type IdentityChannel = "web" | "api" | "mcp" | "agent";
-/**
- * The channels a tool call arrives on: `mcp` for an AI client's MCP
- * connection, `agent` for an agent principal the Gateway runs a call for.
- * Only the ToolBus mints either with a `tc` claim.
- */
-export const TOOL_CALL_CHANNELS: readonly IdentityChannel[] = ["mcp", "agent"];
-/** `act.sub` of an agent principal: `agent:<agt_id>`; `sub` stays its sponsor. */
-export const AGENT_ACTOR_PREFIX = "agent:";
+export type IdentityChannel = "web" | "api" | "mcp";
 export type IdentityTokenType = "user" | "public" | "system";
 /** What a system token may open. One purpose per token. */
 export type SystemTokenPurpose = "tools.list" | "events.deliver";
 
-/** The actor on whose behalf the request is made (user, MCP client, agent). */
+/** The actor on whose behalf the request is made (user, MCP client). */
 export interface IdentityActor {
   sub: string;
 }
@@ -152,23 +144,6 @@ export function isAdmin(user: { orgRole: OrgRole | string }): boolean {
   return user.orgRole === "owner" || user.orgRole === "admin";
 }
 
-/**
- * Whether an agent principal made this call: `chan: "agent"` with
- * `act.sub` `agent:<agt_id>`. `user.id` is still the sponsoring member (the
- * person accountable for the agent), so key rows by it as for anyone;
- * `user.actor.sub` names the agent.
- */
-export function isAgentCall(user: {
-  channel: IdentityChannel;
-  actor: IdentityActor;
-}): boolean {
-  return (
-    user.channel === "agent" &&
-    user.actor.sub.startsWith(AGENT_ACTOR_PREFIX) &&
-    user.actor.sub.length > AGENT_ACTOR_PREFIX.length
-  );
-}
-
 export interface EveryAppUser {
   /** User id (the `sub` claim). */
   id: string;
@@ -185,15 +160,14 @@ export interface EveryAppUser {
   channel: IdentityChannel;
   /**
    * The acting principal: the user id, the credential acting for them
-   * (`pat:<id>`, `oauth:<id>`, `access:<email>`), or an agent
-   * (`agent:<agt_id>`, on `channel: "agent"`; {@link isAgentCall}).
+   * (`pat:<id>`, `oauth:<id>`, `access:<email>`).
    */
   actor: IdentityActor;
   scopes: string[];
   jti: string;
   /**
-   * Set only on a tool call (`channel: "mcp"` or `"agent"`): the one call
-   * this identity was minted for.
+   * Set only on a tool call (`channel: "mcp"`): the one call this
+   * identity was minted for.
    */
   toolCall?: ToolCallClaim;
 }

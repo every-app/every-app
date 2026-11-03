@@ -17,8 +17,8 @@
  *
  * Apps never speak MCP. The gateway snapshots this catalog at deploy, serves
  * MCP clients from the snapshot, and calls a tool over the internal tools
- * contract (../internal/tools.ts) with a verified `chan: "mcp"` or
- * `chan: "agent"` identity.
+ * contract (../internal/tools.ts) with a verified `chan: "mcp"`
+ * identity.
  *
  * `input` and `output` accept any validator implementing Standard Schema and
  * Standard JSON Schema (zod >= 4.2 does both), or a plain
@@ -114,9 +114,8 @@ export type ToolSchema<Output = unknown> =
 /** What a tool handler receives besides its validated input. */
 export interface ToolContext<TEnv = Cloudflare.Env> {
   /**
-   * The verified caller. `channel` is "mcp" (an AI client) or "agent" (an
-   * agent principal: `isAgentCall(user)`, `actor.sub` `agent:<id>`, `id`
-   * its sponsor); `toolCall` names this call.
+   * The verified caller. `channel` is "mcp" (an AI client); `toolCall`
+   * names this call.
    */
   user: EveryAppUser;
   env: TEnv;

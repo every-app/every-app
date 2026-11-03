@@ -4,8 +4,8 @@
  * gateway's service binding and never public:
  *
  *   POST /__everyapp/tools/list  x-everyapp-system JWT (purpose "tools.list")
- *   POST /__everyapp/tools/call  x-everyapp-identity JWT, chan "mcp" or
- *                                "agent" + tc claim
+ *   POST /__everyapp/tools/call  x-everyapp-identity JWT, chan "mcp"
+ *                                + tc claim
  *
  * MCP itself (protocol eras, headers, envelopes) stays in the gateway; apps
  * only ever speak this small versioned JSON shape. Both sides import the
@@ -24,7 +24,7 @@ export const TOOLS_CALL_PATH = `${TOOLS_PATH_PREFIX}/call`;
 export const TOOL_RISKS = ["read", "write"] as const;
 export type ToolRisk = (typeof TOOL_RISKS)[number];
 
-/** Scopes the gateway mints on tool-call identities (`chan: "mcp"` or `"agent"`), one per risk. */
+/** Scopes the gateway mints on tool-call identities (`chan: "mcp"`), one per risk. */
 export const MCP_READ_SCOPE = "mcp:read";
 export const MCP_WRITE_SCOPE = "mcp:write";
 
@@ -83,7 +83,7 @@ export interface ToolsListResponseV1 {
   warnings?: string[];
 }
 
-/** The `tc` identity claim: binds a tool-call token (`chan: "mcp"` or `"agent"`) to one call. */
+/** The `tc` identity claim: binds a tool-call token (`chan: "mcp"`) to one call. */
 export interface ToolCallClaim {
   id: string;
   name: string;

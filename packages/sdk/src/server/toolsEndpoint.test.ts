@@ -13,7 +13,7 @@ import {
   type ToolsListResponseV1,
 } from "../internal";
 import { RequestContextError, currentUser } from "./context";
-import { everyApp, isAgentCall } from "./everyApp";
+import { everyApp } from "./everyApp";
 import { ToolError, defineTools, type ToolContext } from "./tools";
 
 const ISSUER = "https://home.example.com";
@@ -390,60 +390,17 @@ describe("POST /__everyapp/tools/call", () => {
     expect(destructive.body.result.content[0].text).toBe("deleted");
   });
 
-  it("accepts an agent principal's call with explicit mcp: scopes and a tc claim", async () => {
-    seen.contexts = [];
-    const token = await identity({ channel: "agent", actor: "agent:agt_1" });
-    const { status, body } = await call("list_todos", {}, token);
-
-    expect(status).toBe(200);
-    expect(body.result.content[0].text).toBe('{"todos":[],"user":"user_1"}');
-    const user = seen.contexts[0].user;
-    expect(user).toMatchObject({
-      id: "user_1",
-      channel: "agent",
-      actor: { sub: "agent:agt_1" },
-      toolCall: { id: "call_1", name: "list_todos" },
-    });
-    expect(isAgentCall(user)).toBe(true);
-
-    // The same scope rule as an MCP connection: a read-only agent can't
-    // write and `*` never counts.
-    const readOnly = await identity({
-      channel: "agent",
-      actor: "agent:agt_1",
-      scopes: ["mcp:read"],
-      toolCall: { id: "call_1", name: "create_todo" },
-    });
-    const wildcard = await identity({
-      channel: "agent",
-      actor: "agent:agt_1",
-      scopes: ["*"],
-      toolCall: { id: "call_1", name: "create_todo" },
-    });
-    for (const t of [readOnly, wildcard]) {
-      const refused = await call("create_todo", { title: "x" }, t);
-      expect(refused.status).toBe(403);
-      expect(refused.body.error.message).toContain("mcp:write");
-    }
-  });
-
-  it("isAgentCall is true only for chan agent with an agent: actor", () => {
-    const base = { channel: "agent" as const, actor: { sub: "agent:agt_1" } };
-    expect(isAgentCall(base)).toBe(true);
-    expect(isAgentCall({ ...base, channel: "mcp" })).toBe(false);
-    expect(isAgentCall({ ...base, actor: { sub: "pat:tok_1" } })).toBe(false);
-    expect(isAgentCall({ ...base, actor: { sub: "agent:" } })).toBe(false);
-  });
-
   it("only accepts an identity minted for this exact call", async () => {
     const cases: [string, Promise<string>][] = [
       ["web channel", identity({ channel: "web" })],
       ["api channel", identity({ channel: "api" })],
       ["an unknown channel", identity({ channel: "robot" as IdentityChannel })],
-      ["agent channel without an agent actor", identity({ channel: "agent" })],
       [
-        "agent channel without a tc claim",
-        identity({ channel: "agent", actor: "agent:agt_1", toolCall: null }),
+        "an agent channel",
+        identity({
+          channel: "agent" as IdentityChannel,
+          actor: "agent:agt_1",
+        }),
       ],
       ["no tc claim", identity({ toolCall: null })],
       [

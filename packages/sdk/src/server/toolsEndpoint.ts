@@ -7,9 +7,8 @@
  *  - `/__everyapp/tools/list` needs the gateway's system token for this app
  *    (purpose "tools.list"). It describes tools; it never runs them.
  *  - `/__everyapp/tools/call` needs an identity token minted for this exact
- *    call: `chan: "mcp"` (an AI client's MCP connection) or `chan: "agent"`
- *    (an agent principal, `act.sub` `agent:<id>`, with its sponsor as `sub`),
- *    plus a `tc` claim naming the tool and call id. The
+ *    call: `chan: "mcp"` (an AI client's MCP connection) plus a `tc` claim
+ *    naming the tool and call id. The
  *    token's scopes must include the scope the tool's risk requires; `*` does
  *    not count, because the ToolBus only ever mints explicit scopes.
  *
@@ -21,13 +20,11 @@ import {
   IDENTITY_HEADER,
   IdentityError,
   SYSTEM_HEADER,
-  TOOL_CALL_CHANNELS,
   TOOLS_CALL_PATH,
   TOOLS_LIST_PATH,
   TOOLS_PROTOCOL_VERSION,
   assertOrganizationPin,
   catalogHash,
-  isAgentCall,
   requiredScopeForRisk,
   resolveVerifyOptions,
   verifyIdentity,
@@ -251,13 +248,7 @@ async function callTool(
     }
     throw error;
   }
-  if (
-    !TOOL_CALL_CHANNELS.includes(user.channel) ||
-    !user.toolCall ||
-    // An agent call names its agent; a `chan: "agent"` token without one
-    // is not something the ToolBus mints.
-    (user.channel === "agent" && !isAgentCall(user))
-  ) {
+  if (user.channel !== "mcp" || !user.toolCall) {
     return toolsError(
       403,
       "forbidden",
