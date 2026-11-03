@@ -320,7 +320,7 @@ function directProviderPath(
     // names a model sends it as it is).
     const values = env as Record<string, unknown>;
     const resolution = resolveAiDefault({
-      provider: null,
+      choice: null,
       isSet: (name) =>
         typeof values[name] === "string" &&
         (values[name] as string).trim().length > 0,

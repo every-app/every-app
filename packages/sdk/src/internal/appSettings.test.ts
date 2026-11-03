@@ -98,7 +98,6 @@ describe("appSettings", () => {
           docs: "https://example.com/google",
         },
       },
-      ai: { routes: ["/v1/files"] },
       secrets: [
         "MAIN_SECRET",
         { name: "GITHUB_TOKEN", optional: true, why: "Raises the rate limit." },
@@ -175,14 +174,6 @@ describe("appSettings", () => {
         { kind: "optional" },
       ],
       [
-        "ai-routes",
-        "ai-routes",
-        "gateway",
-        ["AI_PROXY_EXTRA_ROUTES"],
-        [],
-        { kind: "required" },
-      ],
-      [
         "secret",
         "MAIN_SECRET",
         "app",
@@ -216,7 +207,6 @@ describe("appSettings", () => {
     expect(byId["slack"]!.docs).toBe("https://api.slack.com/apps");
     expect(byId["google-workspace"]!.docs).toBe("https://example.com/google");
     expect(byId["email"]!.docs).toBeUndefined();
-    expect(byId["ai-routes"]!.why).toContain("/v1/files");
     expect(byId["GITHUB_TOKEN"]!.why).toBe("Raises the rate limit.");
     expect(byId["GITHUB_TOKEN"]!.docs).toBeUndefined();
     // The everyapp skill's setup guides: the registries' for Gateway settings.
@@ -226,7 +216,6 @@ describe("appSettings", () => {
     expect(byId["google-workspace"]!.setup).toBe("setup/google.md");
     expect(byId["members"]!.setup).toBeUndefined();
     expect(byId["slack"]!.setup).toBe("setup/slack.md");
-    expect(byId["ai-routes"]!.setup).toBe("setup/openai.md");
     expect(byId["MAIN_SECRET"]!.setup).toBeUndefined();
   });
 
@@ -245,7 +234,6 @@ describe("appSettings", () => {
       appSettings({
         providers: ["nope"],
         capabilities: { northwind: { access: "read" } },
-        ai: { routes: [] },
       }),
     ).toEqual([]);
   });

@@ -489,10 +489,9 @@ describe("AppCapService (SQLite)", () => {
 
   it("keeps the other columns of org_settings: the default beside the AI default, the row gone only when empty", async () => {
     await AppCapService.setDefaultMonthlyCap(asAcmeAdmin(), { costUsd: 20 });
-    await OrgSettingsRepository.setAiSettings({
+    await OrgSettingsRepository.setAiDefault({
       organizationId: acme,
       aiDefault: "openrouter",
-      aiModels: null,
       updatedBy: acmeAdmin,
     });
     await AppCapService.setDefaultMonthlyCap(asAcmeAdmin(), { costUsd: null });
@@ -503,10 +502,9 @@ describe("AppCapService (SQLite)", () => {
       }),
     ]);
     await AppCapService.setDefaultMonthlyCap(asAcmeAdmin(), { costUsd: 5 });
-    await OrgSettingsRepository.setAiSettings({
+    await OrgSettingsRepository.setAiDefault({
       organizationId: acme,
       aiDefault: null,
-      aiModels: null,
       updatedBy: acmeAdmin,
     });
     // The cap default alone keeps the row.

@@ -66,7 +66,6 @@ const PROVIDER_GATEWAY_SETTINGS: readonly string[] = [
 
 /** The Gateway's own optional settings `everyapp secret set` changes: nothing a provider reads. */
 export const GATEWAY_OWN_SETTINGS = [
-  "AI_PROXY_EXTRA_ROUTES",
   // Email's providers: Cloudflare's REST token, Resend's key, the choice.
   "EMAIL_REST_API_TOKEN",
   "RESEND_API_KEY",
@@ -154,7 +153,6 @@ export const PLAIN_GATEWAY_SETTINGS = [
   "EMAIL_FROM_NAME",
   "EMAIL_PROVIDER",
   "EMAIL_PASSWORD_SIGN_IN",
-  "AI_PROXY_EXTRA_ROUTES",
   "MCP_OAUTH_ENABLED",
   "MCP_DCR_ENABLED",
   "MCP_ALLOWED_ORIGINS",

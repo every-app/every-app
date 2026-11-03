@@ -121,8 +121,6 @@ const DNS_NAME =
 const TEAM_DOMAIN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com$/;
 /** An Access application's AUD tag (`audienceList` in the Gateway). */
 const AUD_TAG = /^[A-Za-z0-9._:-]{1,256}$/;
-/** A path the AI proxy forwards beyond inference (`AI_ROUTE_PATTERN` in the Gateway). */
-const AI_ROUTE = /^\/v1(\/[a-z0-9_-]+)+$/;
 const MAX_AUDIT_RETENTION_DAYS = 3650;
 
 const isDomain = (value: string): boolean => DOMAIN.test(value.toLowerCase().replace(/^@/, ""));
@@ -188,10 +186,6 @@ const PLAIN_SETTINGS: Partial<Record<(typeof PLAIN_GATEWAY_SETTINGS)[number], Pl
     takes:
       "true or false; false turns password sign-in off (only while Cloudflare Access sign-in is on)",
     check: oneOf(SWITCH_VALUES),
-  },
-  AI_PROXY_EXTRA_ROUTES: {
-    takes: "/v1 paths beyond inference the AI proxy may forward, comma separated, e.g. /v1/files",
-    check: listOf((route) => AI_ROUTE.test(route), "a /v1/... path"),
   },
   MCP_OAUTH_ENABLED: {
     takes: "true or false; false turns the OAuth server for MCP clients off",

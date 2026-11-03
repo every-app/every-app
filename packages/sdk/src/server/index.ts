@@ -40,20 +40,10 @@ export {
   createGatewayFetch,
   type CreateGatewayFetchOptions,
 } from "./gatewayFetch.js";
+export { aiBaseUrl, providerBaseUrl } from "./ai.js";
 export {
-  ai,
-  aiBaseUrl,
-  aiStatus,
-  providerBaseUrl,
-  AI_DEFAULT_BASE_URL,
-  type AiClient,
-  type AiStatus,
-} from "./ai.js";
-export {
-  AI_NOT_CONFIGURED_CODES,
   GatewayRefusalError,
   gatewayRefusal,
-  isAiNotConfigured,
   refusalFromError,
   type GatewayRefusal,
   type SetupInfo,
@@ -74,7 +64,6 @@ export {
   type NodeServerHandlerOptions,
 } from "./nodeServer.js";
 export { sendEmail, type SendEmailOptions } from "./sendEmail.js";
-export { gatewayAiBinding, type GatewayAiBindingOptions } from "./aiBinding.js";
 export {
   gatewayEmailBinding,
   type GatewayEmailBindingMessage,

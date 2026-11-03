@@ -25,7 +25,6 @@ two holders:
 | `provider`   | `providers: ["openrouter"]`                        | the Gateway Worker   | its key is set: `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, or for Workers AI `WORKERS_AI_API_TOKEN` (`CLOUDFLARE_ACCOUNT_ID` is the install's own, set by `everyapp setup`, and never asked for)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `capability` | `capabilities: { dataforseo: { access: "read" } }` | the Gateway Worker   | its required Gateway settings are set: an API-key capability's key; an OAuth provider's client id and secret; a service's `settings` (`members` has none, so it is always set). A capability's optional settings are read when set and never required. The gateway may answer by the capability's own rule instead of its names: email is configured once a sender parses and a provider is selectable (`isEmailConfigured()`). The model names `EMAIL_FROM` and `EMAIL_FROM_NAME` for it, since the sender needs a display name; `EMAIL_FROM="Name <address>"` carries the name too, which the gateway reads and the CLI, reading names alone, cannot; a bare address is not configured |
 | `secret`     | `secrets: ["MAIN_SECRET"]`                         | the app's own Worker | the name is set on the app's Worker                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `ai-routes`  | `ai: { routes: ["/v1/files"] }`                    | the Gateway Worker   | `AI_PROXY_EXTRA_ROUTES` is set. Always required; it has no entry of its own to annotate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 A Gateway setting is set when its value is non-empty in the Gateway
 Worker's env (the CLI reads the same names with
@@ -502,9 +501,9 @@ interface AppSetup {
 }
 
 interface AppSetupSetting {
-  kind: "provider" | "capability" | "secret" | "ai-routes";
-  id: string; // provider id, capability id, secret name, or "ai-routes"
-  label: string; // "OpenRouter", "DataForSEO", "MAIN_SECRET", "AI proxy routes"
+  kind: "provider" | "capability" | "secret";
+  id: string; // provider id, capability id or secret name
+  label: string; // "OpenRouter", "DataForSEO", "MAIN_SECRET"
   holder: "gateway" | "app";
   names: string[]; // every name that must be set for the setting to count as set
   need:

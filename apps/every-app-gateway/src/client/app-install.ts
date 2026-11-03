@@ -27,6 +27,8 @@ interface InstallReleaseReview {
   name: string;
   version: string;
   resources: Record<string, unknown>;
+  /** The manifest's `ai.routes`: OpenAI paths beyond inference on the Gateway's key. */
+  aiRoutes: string[];
   providers: Array<{
     id: string;
     name: string;

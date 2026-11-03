@@ -74,7 +74,7 @@ Mirror mode's "per-app access not enforced" does not carry over: the consent ref
 
 ### 4.3 Gateway services: the shim and the endpoint
 
-**SDK.** Every SDK service (`createGatewayFetch`, `integrationFetch`, `sendEmail`, `listMembers`, `emit`, `aiStatus`) reads `env.EVERY_APP_GATEWAY` today. They go through one helper, `gatewayBinding(env)`: the binding when deployed; under `EVERYAPP_DEV` with `EVERYAPP_LINKED_DEV` set, a `{ fetch }` that rewrites `http://every-app-gateway.internal/<path>` to `http://127.0.0.1:<gateway-lite port>/__everyapp/gateway/<path>` and adds `x-everyapp-linked-dev: <run nonce>`. The `.dev.vars` provider-key fallback stays for stub and mirror modes and for linked mode when the Gateway refuses (the shim answers the Gateway's refusal as is; the SDK never silently falls back to a local key when linked).
+**SDK.** Every SDK service (`createGatewayFetch`, `integrationFetch`, `sendEmail`, `listMembers`, `emit`) reads `env.EVERY_APP_GATEWAY` today. They go through one helper, `gatewayBinding(env)`: the binding when deployed; under `EVERYAPP_DEV` with `EVERYAPP_LINKED_DEV` set, a `{ fetch }` that rewrites `http://every-app-gateway.internal/<path>` to `http://127.0.0.1:<gateway-lite port>/__everyapp/gateway/<path>` and adds `x-everyapp-linked-dev: <run nonce>`. The `.dev.vars` provider-key fallback stays for stub and mirror modes and for linked mode when the Gateway refuses (the shim answers the Gateway's refusal as is; the SDK never silently falls back to a local key when linked).
 
 `everyAppWorker()` gets the loopback URL and nonce from the process environment the CLI starts `cf dev` with (`EVERYAPP_LINKED_DEV_URL`, `EVERYAPP_LINKED_DEV_NONCE`), as it gets `EVERYAPP_DEV_GATEWAY_URL` today; nothing is written into the app.
 

@@ -187,9 +187,9 @@ export interface ApiKeyCapability extends ProviderDetails {
  * An AI provider (OpenAI, OpenRouter, Workers AI): the AI proxy's table as
  * a catalog entry. The app's path is joined onto `origin` and `basePath`
  * (with `{SETTING}` placeholders filled from the Gateway's settings, each
- * URL-encoded) and must be one of `inferenceRoutes` (a POST), unless both
- * the operator (`AI_PROXY_EXTRA_ROUTES`) and the app's manifest (`ai.routes`)
- * allow more (`extraRoutes`). `unstoredRoutes` get `store: false`.
+ * URL-encoded) and must be one of `inferenceRoutes` (a POST), unless the
+ * app's manifest (`ai.routes`) allows more on an entry that takes more
+ * (`extraRoutes`). `unstoredRoutes` get `store: false`.
  * `normalize` names the one response rewrite the gateway has.
  */
 export interface AiProviderCapability extends ProviderDetails {
@@ -213,6 +213,7 @@ export interface AiProviderCapability extends ProviderDetails {
   basePath?: string;
   inferenceRoutes: readonly string[];
   unstoredRoutes?: readonly string[];
+  /** Paths beyond inference an app may name in its manifest's `ai.routes`: OpenAI only. */
   extraRoutes?: boolean;
   normalize?: "workers-ai";
   /**
@@ -267,11 +268,11 @@ export interface AiRoute {
   /** One of the entry's `inferenceRoutes`: `/api/v1/chat/completions`. */
   path: string;
   /**
-   * The seed: the model the Gateway fills in when its operator set none
-   * for this provider (`everyapp ai model`, `org_settings.ai_models`), a
-   * cheap, capable one of the provider's. Data, never the only answer:
-   * read it through `resolveAiDefault` (./aiDefault.ts), which puts the
-   * operator's setting first.
+   * The seed: the model the Gateway fills in when the workspace's default
+   * names this provider without a model (or the order picked it), a
+   * cheap, capable one of the provider's. Read it through
+   * `resolveAiDefault` (./aiDefault.ts), which puts the setting's model
+   * first.
    */
   seedModel: string;
 }
@@ -449,8 +450,8 @@ export const CAPABILITIES = {
       "/v1/images/variations",
     ],
     unstoredRoutes: ["/v1/responses", "/v1/chat/completions"],
-    // More than inference needs both the operator (AI_PROXY_EXTRA_ROUTES)
-    // and the app's manifest (`ai.routes`): OpenAI paths only.
+    // More than inference needs the app's manifest (`ai.routes`): OpenAI
+    // paths only.
     extraRoutes: true,
     // Tool calling on chat completions needs `reasoning_effort: "none"`
     // on the GPT-6 family (the responses route takes tools as it is).

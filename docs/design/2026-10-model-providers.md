@@ -40,6 +40,8 @@ What stayed code, on purpose: the inference allowlist's enforcement, `store: fal
 
 The call is counted against the provider it went to (never `default`), and, new for every AI call that read a model, in `usage_models` (organization, app, provider, model, month: calls, failures, tokens, cost), which Manage workspace → Usage shows under "By model" and `workspace usage --json` carries as `byModel`. The log line `ai.proxy.request` carries the resolved `provider`, `via: "default"` and `source`.
 
+> Superseded 2026-11-02: the default is one setting, `org_settings.ai_default` = `<provider>[/<model>]` (migration 0027 folded `ai_models` into it and dropped it); `ai()`, `aiStatus()` and `everyapp ai model` / `ai list` are gone. An app sends `model: "default"` to `aiBaseUrl("default")` through `createGatewayFetch()`. The text below is the design as first built.
+
 **The SDK.** `ai({ env, for })` in `@every-app/sdk/server` returns `{ baseURL, fetch, model, chatCompletionsUrl, embeddingsUrl }`: an OpenAI client takes the first two as they are and sends `model: "default"`. In local development with no binding, `createGatewayFetch`'s fallback resolves `/api/ai/default` on `.dev.vars` by the same order and calls that provider directly with the model filled in.
 
 ## 4. How the default resolves

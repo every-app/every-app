@@ -92,9 +92,9 @@ interface AiProvider {
   /** Inference results the provider keeps account-wide unless told not to. */
   unstoredRoutes: ReadonlySet<string>;
   /**
-   * More than inference needs both the operator (AI_PROXY_EXTRA_ROUTES) and
-   * the app's manifest (`ai.routes`): whoever can deploy an app writes its
-   * manifest. OpenAI paths only.
+   * More than inference needs the app's manifest (`ai.routes`): the
+   * manifest is the grant, as for capabilities (deploy, install and the
+   * browser install form show the routes). OpenAI paths only.
    */
   extraRoutes: boolean;
   /** Turns the provider's answer at a path into what OpenAI clients parse. */
@@ -147,13 +147,9 @@ function aiProviderFor(
 
 /**
  * The Gateway's settings by name: the providers' keys (and Workers AI's
- * account, `CLOUDFLARE_ACCOUNT_ID`), and `AI_PROXY_EXTRA_ROUTES`: OpenAI
- * paths beyond inference that apps may use, set by the operator (comma or
- * space separated, e.g. "/v1/files"). Each also covers its sub-paths. An
- * app still has to list a path in its manifest's `ai.routes`.
+ * account, `CLOUDFLARE_ACCOUNT_ID`).
  */
 type AiProxyEnv = Partial<Record<CapabilitySecret, string>> & {
-  AI_PROXY_EXTRA_ROUTES?: string;
   /** Cloudflare AI Gateway in front of the providers: its id, and the token of an authenticated gateway. */
   AI_GATEWAY_ID?: string;
   AI_GATEWAY_API_KEY?: string;
@@ -163,9 +159,6 @@ type AiProxyEnv = Partial<Record<CapabilitySecret, string>> & {
 const AI_GATEWAY_ORIGIN = "https://gateway.ai.cloudflare.com";
 const AI_GATEWAY_ID_HEADER = "cf-aig-gateway-id";
 const AI_GATEWAY_AUTH_HEADER = "cf-aig-authorization";
-
-// The same shape the manifest accepts for `ai.routes`.
-const AI_ROUTE_PATTERN = /^\/v1(\/[a-z0-9_-]+)+$/;
 
 interface HandleAuthenticatedAiProxyRequestOptions {
   request: Request;
@@ -177,7 +170,7 @@ interface HandleAuthenticatedAiProxyRequestOptions {
   policy?: AiPolicy;
   /**
    * For `provider` "default": what the Gateway's default resolved to
-   * (`resolveAiDefault`, on the organization's choice and the env). The
+   * (`resolveAiDefault`, on the organization's setting and the env). The
    * call goes to that provider's chat or embeddings route with its model
    * filled in where the app named none.
    */
@@ -377,8 +370,7 @@ export async function handleAuthenticatedAiProxyRequest({
       );
     }
     upstreamPath = route.path;
-    // The operator's model for the provider, else the catalog's seed
-    // (resolveAiDefault).
+    // The workspace's model, else the provider's seed (resolveAiDefault).
     fillModel =
       requested.path === AI_DEFAULT_ROUTES.chat
         ? aiDefault!.model
@@ -407,15 +399,7 @@ export async function handleAuthenticatedAiProxyRequest({
     upstreamUrl = target.toString();
   }
 
-  if (
-    !isAllowedRoute(
-      aiProvider,
-      request.method,
-      upstreamPath,
-      policy,
-      operatorRoutes(env.AI_PROXY_EXTRA_ROUTES),
-    )
-  ) {
+  if (!isAllowedRoute(aiProvider, request.method, upstreamPath, policy)) {
     return aiRefusal(
       "ai_route_not_allowed",
       403,
@@ -553,34 +537,26 @@ export async function handleAuthenticatedAiProxyRequest({
   );
 }
 
-function operatorRoutes(value: string | undefined): string[] {
-  return (value ?? "")
-    .split(/[\s,]+/)
-    .filter((route) => AI_ROUTE_PATTERN.test(route));
-}
-
 function covers(route: string, path: string): boolean {
   return path === route || path.startsWith(`${route}/`);
 }
 
 /**
- * Inference, or a path both the app's manifest and the operator allow: an
- * app's own `ai.routes` never widens what the shared key can do by itself.
+ * Inference, or a path the app's manifest names in `ai.routes` on a
+ * provider that takes more than inference (OpenAI).
  */
 function isAllowedRoute(
   provider: AiProvider,
   method: string,
   path: string,
   policy: AiPolicy | undefined,
-  allowedByOperator: string[],
 ): boolean {
   if (method.toUpperCase() === "POST" && provider.inferenceRoutes.has(path)) {
     return true;
   }
   return (
     provider.extraRoutes &&
-    (policy?.routes ?? []).some((route) => covers(route, path)) &&
-    allowedByOperator.some((route) => covers(route, path))
+    (policy?.routes ?? []).some((route) => covers(route, path))
   );
 }
 
@@ -789,99 +765,6 @@ function aiNotConfiguredRefusal(code: string, info: SetupInfo): Response {
       ...info,
     },
     { status: 503, headers: { [GATEWAY_ERROR_HEADER]: code } },
-  );
-}
-
-/** Whether a model call to `provider` would go through, as `aiStatus()` reads it. */
-interface AiStatus {
-  /** The id asked about: `default`, or a provider's. */
-  provider: string;
-  /** The manifest asks for it: `ai.chat` for `default`, else `providers`. */
-  requested: boolean;
-  /** The Gateway holds every setting it needs. */
-  configured: boolean;
-  /** Calls would go through. */
-  ready: boolean;
-  /** For `default`: the provider and model calls go to now (null while none is configured). */
-  resolved: { provider: string; label: string; model: string } | null;
-  settings: string[];
-  setup: string | null;
-  command: string | null;
-}
-
-/**
- * `GET /api/ai/<provider>` (no path after it): the status of a provider
- * or of the default, without calling anything. Only an app that asks for
- * it learns whether it is set up.
- */
-export function aiStatusResponse({
-  provider,
-  requested,
-  env,
-  lookup = CATALOG,
-  aiDefault,
-  setupCommand = null,
-}: {
-  provider: string;
-  requested: boolean;
-  env: AiProxyEnv;
-  lookup?: CapabilityLookup;
-  aiDefault?: AiDefaultResolution;
-  setupCommand?: string | null;
-}): Response {
-  const none = { settings: [], setup: null, command: null };
-  const status = (
-    configured: boolean,
-    resolved: AiStatus["resolved"],
-    setup: SetupInfo | typeof none,
-  ): Response =>
-    // An app that doesn't ask for it learns nothing about its settings.
-    Response.json({
-      provider,
-      requested,
-      configured: requested && configured,
-      ready: requested && configured,
-      resolved: requested ? resolved : null,
-      ...(requested && !configured ? setup : none),
-    } satisfies AiStatus);
-  if (provider === AI_DEFAULT_PROVIDER) {
-    if (!aiDefault) {
-      return status(false, null, defaultModelSetup(undefined, setupCommand));
-    }
-    return status(
-      aiDefault.configured,
-      aiDefault.configured
-        ? {
-            provider: aiDefault.provider,
-            label: aiDefault.label,
-            model: aiDefault.model,
-          }
-        : null,
-      defaultModelSetup(aiDefault, setupCommand),
-    );
-  }
-  const aiProvider = aiProviderFor(provider, lookup);
-  if (!aiProvider || aiProvider.proxy) {
-    return Response.json({
-      provider,
-      requested: false,
-      configured: false,
-      ready: false,
-      resolved: null,
-      ...none,
-    } satisfies AiStatus);
-  }
-  const configured = Boolean(
-    aiProvider.authorization(env) && aiProvider.upstreamBaseUrl(env),
-  );
-  return status(
-    configured,
-    null,
-    setupInfo({
-      label: lookup.get(provider)?.label ?? provider,
-      settings: [...aiProvider.keySettings, ...aiProvider.alsoNeeds],
-      command: setupCommand,
-    }),
   );
 }
 

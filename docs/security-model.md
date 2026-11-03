@@ -567,14 +567,16 @@ credential is involved, and the perimeter never sees git traffic.
   "Connected AI apps (OAuth)" below.
 - The AI proxy only forwards inference endpoints (with `store: false` for
   responses and chat completions). The provider key is shared by every app,
-  so anything else needs both the operator's allowlist (the
-  `AI_PROXY_EXTRA_ROUTES` Gateway setting, e.g. `/v1/files`) and the app
-  manifest's `ai.routes`; `ai.models` can restrict models. The upstream
+  so anything else needs the app manifest's `ai.routes` (e.g. `/v1/files`,
+  OpenAI only). The manifest is the grant, as for capabilities: every
+  deploy and install prints the routes and the browser install form shows
+  them, and a new release can add one;
+  `ai.models` can restrict models. The upstream
   request carries the gateway's key and none of the app's credentials or
   account selectors (`x-api-key`, `OpenAI-Organization`, `OpenAI-Project`),
   no AI Gateway header (`cf-aig-*`), no `x-everyapp-*` header, no cookie and
   no forwarding headers. OpenRouter (`/api/ai/openrouter`) gets inference
-  only: `AI_PROXY_EXTRA_ROUTES` and `ai.routes` never widen it, so its
+  only: `ai.routes` never widens it, so its
   account-wide credits and keys endpoints stay closed. Workers AI
   (`/api/ai/workers-ai`) runs in the gateway's own account with its
   `WORKERS_AI_API_TOKEN`, joined under `/client/v4/accounts/<id>/ai` (an

@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { ConfigurationError } from "../internal/index";
-import { ai } from "./ai";
 import { createGatewayFetch } from "./gatewayFetch";
 import {
   GatewayRefusalError,
   gatewayRefusal,
-  isAiNotConfigured,
   refusalFromError,
 } from "./refusal";
 
@@ -81,7 +79,6 @@ describe("refusalFromError", () => {
       JSON.stringify(AI_BODY),
     );
     expect(refusalFromError(error)).toEqual(EXPECTED);
-    expect(isAiNotConfigured(error)).toBe(true);
   });
 
   it("reads an OpenAI SDK APIError, whose error is the body's error object", () => {
@@ -103,9 +100,6 @@ describe("refusalFromError", () => {
       lastError: refused,
     });
     expect(refusalFromError(retry)?.code).toBe("ai_default_not_configured");
-    expect(isAiNotConfigured(new Error("wrapped", { cause: retry }))).toBe(
-      true,
-    );
   });
 
   it("passes a GatewayRefusalError's fields through", () => {
@@ -122,7 +116,6 @@ describe("refusalFromError", () => {
       settings: ["EMAIL_FROM", "EMAIL_FROM_NAME"],
       command: "pnpm everyapp configure inbox",
     });
-    expect(isAiNotConfigured(error)).toBe(false);
   });
 
   it("answers local development's missing key as the deployed refusal would", () => {
@@ -133,7 +126,6 @@ describe("refusalFromError", () => {
       thrown = error;
     }
     expect(thrown).toBeInstanceOf(ConfigurationError);
-    expect(isAiNotConfigured(thrown)).toBe(true);
     expect(refusalFromError(thrown)).toMatchObject({
       status: 503,
       code: "ai_provider_not_configured",
@@ -143,14 +135,14 @@ describe("refusalFromError", () => {
 
   it("names the default's key when the default can't resolve in local development", async () => {
     // Cohere's key reaches Cohere, but Cohere is never the default.
-    const client = ai({
+    const fetch = createGatewayFetch({
       env: { EVERYAPP_DEV: "1", COHERE_API_KEY: "co" },
       for: FOR,
     });
-    const error = await client
-      .fetch(client.chatCompletionsUrl, { method: "POST" })
-      .catch((caught: unknown) => caught);
-    expect(isAiNotConfigured(error)).toBe(true);
+    const error = await fetch(
+      "http://every-app-gateway.internal/api/ai/default/v1/chat/completions",
+      { method: "POST" },
+    ).catch((caught: unknown) => caught);
     expect(refusalFromError(error)).toMatchObject({
       code: "ai_default_not_configured",
       settings: ["OPENROUTER_API_KEY"],
@@ -165,6 +157,5 @@ describe("refusalFromError", () => {
     ).toBeNull();
     expect(refusalFromError("text")).toBeNull();
     expect(refusalFromError(new Response("x", { status: 503 }))).toBeNull();
-    expect(isAiNotConfigured(undefined)).toBe(false);
   });
 });

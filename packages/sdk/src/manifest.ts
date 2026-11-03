@@ -230,7 +230,7 @@ export interface EveryAppManifest {
     readonly models?: readonly string[];
     /** OpenAI API paths beyond inference (`"/v1/files"`). */
     readonly routes?: readonly string[];
-    /** The app takes the Gateway's default chat model (`ai()`). */
+    /** The app takes the workspace's default chat model (`/api/ai/default`, `aiBaseUrl()`). */
     readonly chat?: boolean | EveryAppSettingNeed;
   };
   /** `inbound: true`: the Worker exports an `email()` handler. */

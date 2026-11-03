@@ -104,9 +104,9 @@ Source: `packages/cli/src/lib/cf/account.ts` (`resolveAccount`).
 
 ### AI_DEFAULT_INVALID
 
-`ai default <provider>[/<model>]` with something the default model provider can't be: text that isn't a provider id (`Open Router`), an id the catalog doesn't have, an API provider (`stripe`), an entry without an OpenAI-shaped chat route (`cohere`: an app pins it under `providers`), or `ai-gateway` (it fronts the providers and serves no models; `ai gateway on` turns it on). The message says which.
+`ai default <provider>[/<model>]` with something the default model provider can't be: text that isn't a provider id (`Open Router`), an id the catalog doesn't have, an API provider (`stripe`), an entry without an OpenAI-shaped chat route (`cohere`: an app pins it under `providers`), or `ai-gateway` (it fronts the providers and serves no models; `ai gateway on` turns it on), or a model that isn't a model id (1 to 200 characters, no surrounding spaces). The message says which.
 
-**Fix:** `fix`: pick one of the providers `pnpm everyapp ai list` shows, as `<provider>` or `<provider>/<model>`. Nothing was written. Not retryable.
+**Fix:** `fix`: pick one of the providers `pnpm everyapp ai show` lists, as `<provider>` or `<provider>/<model>`. Nothing was written. Not retryable.
 
 Source: `packages/cli/src/lib/gateway/aiDefault.ts` (`setAiDefault`, `parseAiDefaultArgument`).
 
@@ -683,11 +683,11 @@ Source: `packages/cli/src/lib/gateway/events.ts` (`requireEventsTables`, `requir
 
 ### GATEWAY_PREDATES_AI_DEFAULT
 
-`ai default` against a Gateway whose D1 predates migration `0017_ai_default_and_usage_models` (2026-10-25): `org_settings` has no `ai_default` column, so there is nowhere to store the choice (`ai show` reads it as no choice meanwhile).
+`ai default` against a Gateway whose D1 predates migration `0017_ai_default_and_usage_models` (2026-10-25): `org_settings` has no `ai_default` column, so there is nowhere to store the choice (`ai show` reads it as no choice meanwhile). Also against one that predates the one-setting migration (`0027_ai_default_one_setting`, 2026-11-02): `org_settings` still has `ai_models`, and that Gateway reads only the provider from the setting, so a model would not take effect. Headline: `The Gateway predates the one default-model setting`.
 
 **Fix:** `rerun`: `pnpm everyapp update` (`rerunNote` `then run this again`), which applies the Gateway's migrations. Not retryable.
 
-Source: `packages/cli/src/lib/gateway/aiDefault.ts` (`requireAiDefault`).
+Source: `packages/cli/src/lib/gateway/aiDefault.ts` (`setAiDefault`).
 
 ### GATEWAY_PREDATES_COST_CAPS
 

@@ -62,7 +62,6 @@ function report(choice: string | null): AiDefaultReport {
       candidates,
     },
     choice,
-    models: {},
     aiGateway: { on: false },
   } as AiDefaultReport;
 }
@@ -161,7 +160,7 @@ it("preselects what serves now and saves it with the provider's own model", asyn
   expect(modelInput().value).toBe("");
   expect(modelInput().placeholder).toBe("anthropic/claude-haiku-5.5");
   expect(text()).toContain(
-    "Leave empty to keep the provider's model (shown). A model id may contain slashes.",
+    "Leave empty for the provider's model (shown). A model id may contain slashes.",
   );
   // Nothing stored: the order already decides.
   expect(button("Use the shipped order")).toBeUndefined();

@@ -173,12 +173,8 @@ describe("handleAuthenticatedAiProxyRequest", () => {
         duplex: "half",
       } as RequestInit & { duplex: "half" }),
       provider: "openai",
-      // Outside inference, only routes the operator allows and the manifest
-      // opts into, streamed.
-      env: {
-        OPENAI_API_KEY: "gateway-secret-key",
-        AI_PROXY_EXTRA_ROUTES: "/v1/files",
-      },
+      // Outside inference, only routes the manifest opts into, streamed.
+      env: { OPENAI_API_KEY: "gateway-secret-key" },
       policy: { routes: ["/v1/files"] },
       fetchUpstream,
     });
@@ -198,7 +194,6 @@ describe("AI proxy lockdown", () => {
     path: string,
     init: RequestInit = {},
     policy?: { models?: string[]; routes?: string[] },
-    operatorRoutes?: string,
   ) {
     const fetchUpstream = vi.fn(async (_request: Request) =>
       Response.json(
@@ -209,10 +204,7 @@ describe("AI proxy lockdown", () => {
     const response = handleAuthenticatedAiProxyRequest({
       request: createRequest(`/api/ai/openai${path}`, init),
       provider: "openai",
-      env: {
-        OPENAI_API_KEY: "gateway-secret-key",
-        AI_PROXY_EXTRA_ROUTES: operatorRoutes,
-      },
+      env: { OPENAI_API_KEY: "gateway-secret-key" },
       policy,
       caller: { organizationId: "org-1", appId: "chef" },
       fetchUpstream,
@@ -248,30 +240,28 @@ describe("AI proxy lockdown", () => {
     }
   });
 
-  it("allows extra endpoints the operator allows and the manifest opts into", async () => {
+  it("allows extra endpoints the manifest opts into, each with its sub-paths", async () => {
     const { response, fetchUpstream } = call(
       "/v1/files/file_1",
       { method: "GET" },
-      { routes: ["/v1/files"] },
-      "/v1/batches, /v1/files",
+      { routes: ["/v1/batches", "/v1/files"] },
     );
     expect((await response).status).toBe(200);
     expect(fetchUpstream).toHaveBeenCalledOnce();
   });
 
-  it("ignores a manifest's opt-in the operator has not allowed", async () => {
-    for (const operatorRoutes of [
+  it("refuses a path beyond inference the manifest doesn't name", async () => {
+    for (const routes of [
       undefined,
-      "",
-      "/v1/batches",
-      "/v1/files/file_2",
-      "files",
+      [],
+      ["/v1/batches"],
+      ["/v1/files/file_2"],
+      ["/v1/file"],
     ]) {
       const { response, fetchUpstream } = call(
         "/v1/files/file_1",
         { method: "GET" },
-        { routes: ["/v1/files"] },
-        operatorRoutes,
+        routes ? { routes } : undefined,
       );
       const result = await response;
       expect(result.status).toBe(403);
@@ -280,17 +270,6 @@ describe("AI proxy lockdown", () => {
       });
       expect(fetchUpstream).not.toHaveBeenCalled();
     }
-  });
-
-  it("needs the app's opt-in too, whatever the operator allows", async () => {
-    const { response, fetchUpstream } = call(
-      "/v1/files",
-      { method: "GET" },
-      undefined,
-      "/v1/files",
-    );
-    expect((await response).status).toBe(403);
-    expect(fetchUpstream).not.toHaveBeenCalled();
   });
 
   it("forces store:false on responses and chat completions", async () => {
@@ -345,7 +324,6 @@ describe("AI proxy lockdown", () => {
       "/v1/files",
       { method: "GET" },
       { models: ["gpt-5.2"], routes: ["/v1/files"] },
-      "/v1/files",
     );
     expect((await response).status).toBe(200);
     expect(fetchUpstream).toHaveBeenCalledOnce();
@@ -366,7 +344,6 @@ describe("AI proxy lockdown", () => {
         path,
         { method: "GET" },
         { routes: ["/v1/files"] },
-        "/v1/files",
       );
       const result = await response;
       expect(result.status).toBe(400);
@@ -493,7 +470,6 @@ describe("OpenRouter", () => {
       env: {
         OPENAI_API_KEY: "openai-key",
         OPENROUTER_API_KEY: "openrouter-key",
-        AI_PROXY_EXTRA_ROUTES: "/v1/files",
       },
       policy: models ? { models } : undefined,
       fetchUpstream,
@@ -519,7 +495,7 @@ describe("OpenRouter", () => {
     expect(upstream.headers.get("authorization")).toBe("Bearer openrouter-key");
   });
 
-  it("allows inference only, whatever the operator allows for OpenAI", async () => {
+  it("allows inference only", async () => {
     for (const [method, path] of [
       ["GET", "/api/v1/credits"],
       ["GET", "/api/v1/keys"],
@@ -748,8 +724,8 @@ describe("Workers AI", () => {
         path,
         method === "POST" ? { ...chat(), method } : { method },
         {
-          // Neither the operator nor the manifest widens Workers AI.
-          env: { ...WORKERS_AI_ENV, AI_PROXY_EXTRA_ROUTES: "/v1/files" },
+          // The manifest doesn't widen Workers AI.
+          env: WORKERS_AI_ENV,
           policy: { routes: ["/v1/files"] },
         },
       );

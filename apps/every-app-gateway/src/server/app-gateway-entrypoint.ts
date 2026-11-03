@@ -15,13 +15,12 @@ import {
   type AppRegistry,
   type RegisteredApp,
 } from "@every-app/perimeter";
+import { aiRefusal, handleAuthenticatedAiProxyRequest } from "./ai-proxy";
 import {
-  aiRefusal,
-  aiStatusResponse,
-  handleAuthenticatedAiProxyRequest,
-} from "./ai-proxy";
-import { AI_DEFAULT_PROVIDER, resolveAiDefault } from "@every-app/sdk/internal";
-import type { AiDefaultSettings } from "./ai-default";
+  AI_DEFAULT_PROVIDER,
+  resolveAiDefault,
+  type AiDefaultChoice,
+} from "@every-app/sdk/internal";
 import {
   capExceededFields,
   capRefusalMessage,
@@ -69,7 +68,6 @@ interface AppGatewayEnv extends IntegrationProxyEnv {
   OPENROUTER_API_KEY?: string;
   WORKERS_AI_API_TOKEN?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
-  AI_PROXY_EXTRA_ROUTES?: string;
   /** Cloudflare AI Gateway in front of the AI providers (ai-proxy.ts). */
   AI_GATEWAY_ID?: string;
   AI_GATEWAY_API_KEY?: string;
@@ -130,12 +128,11 @@ interface HandleAppGatewayRequestOptions {
     fetchUpstream: (request: Request) => Promise<Response>,
   ) => Promise<OAuthProxyDepsLoaded | null>;
   /**
-   * The organization's stored default model provider and models
-   * (`org_settings.ai_default` and `ai_models`, ai-default.ts in the
-   * Worker), for the `default` route; the catalog's order and seeds alone
-   * when absent (tests).
+   * The workspace's default model setting (`org_settings.ai_default`,
+   * ai-default.ts in the Worker), for the `default` route; tests pass a
+   * fake.
    */
-  aiDefault?: (organizationId: string) => Promise<AiDefaultSettings>;
+  aiDefault?: (organizationId: string) => Promise<AiDefaultChoice | null>;
   /**
    * What a cap check's standing is reported to, after the answer
    * (events/cap-events.ts: cap.warning at 80%, cap.reached and
@@ -268,7 +265,7 @@ export async function handleAppGatewayRequest({
   caps,
   providers,
   oauth = loadOAuthProxyDeps,
-  aiDefault = readAiDefaultSettings,
+  aiDefault = readAiDefaultChoice,
   onCap = noteCapCheckLater,
   trusted,
 }: HandleAppGatewayRequestOptions): Promise<Response> {
@@ -537,47 +534,6 @@ export async function handleAppGatewayRequest({
     const allowed = isDefault
       ? Boolean(app.manifest.ai?.chat)
       : providerIds(app.manifest).includes(provider);
-    if (route.status) {
-      // `GET /api/ai/<provider>`: whether calls would go through. The
-      // default resolves on the organization's choice when the request
-      // says whose it is, else on the order alone.
-      const organizationId = allowed
-        ? await attributeCall(
-            request,
-            app,
-            props,
-            env,
-            organizations,
-            trusted,
-          ).then(
-            (attribution) => attribution.organizationId,
-            () => null,
-          )
-        : null;
-      return aiStatusResponse({
-        provider,
-        requested: allowed,
-        env,
-        lookup,
-        ...(isDefault && allowed
-          ? {
-              aiDefault: resolveAiDefault({
-                ...(organizationId
-                  ? await aiDefault(organizationId)
-                  : { provider: null }),
-                isSet: (name) => {
-                  const value = (env as Record<string, unknown>)[name];
-                  return typeof value === "string"
-                    ? value.trim().length > 0
-                    : Boolean(value);
-                },
-                lookup,
-              }),
-            }
-          : {}),
-        setupCommand,
-      });
-    }
     if (!allowed) {
       throw new AppGatewayError(
         "provider_not_allowed",
@@ -598,11 +554,11 @@ export async function handleAppGatewayRequest({
     );
     await enforceCap(organizationId);
     attributed = { organizationId, orgSource, user };
-    // The default resolves on the organization's choice and this env;
+    // The default resolves on the organization's setting and this env;
     // the proxy refuses with what to set when nothing is configured.
     const resolution = isDefault
       ? resolveAiDefault({
-          ...(await aiDefault(organizationId)),
+          choice: await aiDefault(organizationId),
           isSet: (name) => {
             const value = (env as Record<string, unknown>)[name];
             return typeof value === "string"
@@ -720,12 +676,12 @@ function missingCallerIdentity(): AppGatewayError {
   );
 }
 
-/** The organization's stored default model provider and models, read through the per-isolate cache (ai-default.ts), loaded with the first default-route call. */
-async function readAiDefaultSettings(
+/** The workspace's default model setting, read through the per-isolate cache (ai-default.ts), loaded with the first default-route call. */
+async function readAiDefaultChoice(
   organizationId: string,
-): Promise<AiDefaultSettings> {
-  const { aiDefaultSettingsFor } = await import("./ai-default");
-  return aiDefaultSettingsFor(organizationId);
+): Promise<AiDefaultChoice | null> {
+  const { aiDefaultChoiceFor } = await import("./ai-default");
+  return aiDefaultChoiceFor(organizationId);
 }
 
 /** The bus's cap events, loaded with the first cap that is set on an isolate. */
@@ -739,7 +695,7 @@ async function noteCapCheckLater(
 }
 
 type GatewayRoute =
-  | { kind: "ai"; provider: string; status: boolean }
+  | { kind: "ai"; provider: string }
   | { kind: "integration" }
   | { kind: "events" };
 
@@ -747,11 +703,7 @@ type GatewayRoute =
 function routeFromPath(request: Request): GatewayRoute {
   const { pathname } = new URL(request.url);
   const ai = pathname.match(/^\/api\/ai\/([a-z][a-z0-9-]*)(\/|$)/);
-  if (ai?.[1]) {
-    // The bare `/api/ai/<provider>`, read with GET: its status (aiStatus()).
-    const status = ai[2] === "" && request.method.toUpperCase() === "GET";
-    return { kind: "ai", provider: ai[1], status };
-  }
+  if (ai?.[1]) return { kind: "ai", provider: ai[1] };
   if (pathname.startsWith("/api/integrations/")) return { kind: "integration" };
   if (pathname === EVENTS_EMIT_PATH) return { kind: "events" };
   throw new AppGatewayError(

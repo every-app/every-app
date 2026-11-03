@@ -725,7 +725,7 @@ as before. PR 2c added the MCP tools: `everyapp_provider_add` and `everyapp_prov
 | `attr.shared-app-organization` | A shared app's call is attributed to the verified identity's organization (an invalid identity is 401, never a fallback to the platform organization); without one it must name an active organization with a live member in `x-everyapp-org`. | `app-gateway-entrypoint.ts:374-434` | `app-gateway-entrypoint.test.ts` :: attributes the call to the organization of the forwarded identity |
 | `attr.sdk-never-app-chosen` | The SDK puts on a gateway call only the inbound request's identity, background work's organization, or the member `for: { background: true, userId }` names (`x-everyapp-user`, with no identity, even mid-request), deleting any `x-everyapp-identity`/`x-everyapp-org`/`x-everyapp-user` the app set itself; a shared Worker throws `AttributionError` for a call that names neither. | `packages/sdk/src/server/attribution.ts` | `packages/sdk/src/server/attribution.test.ts` :: forwards the request's identity and never an organization the app set; `packages/sdk/src/server/integrationFetch.test.ts` :: names a member's connection with for: { background: true, userId }, never the person being served, even mid-request |
 | `ai.key-never-reaches-app` | The upstream AI request carries only the gateway's key and none of the app's credentials, account selectors (`x-api-key`, `openai-organization`, `openai-project`), `x-everyapp-*`, cookies or forwarding headers. | `ai-proxy.ts:13-42` | `ai-proxy.test.ts` :: forwards request to OpenAI with gateway-managed key and strips internal headers |
-| `ai.inference-only-by-default` | Without both `AI_PROXY_EXTRA_ROUTES` and the manifest's `ai.routes` covering the path, only POST to the provider's exact inference routes is forwarded; files, batches, fine-tunes, assistants and GETs are refused. | `ai-proxy.ts:78-88` | `ai-proxy.test.ts` :: rejects non-inference endpoints (files, batches, stored responses) |
+| `ai.inference-only-by-default` | Without the manifest's `ai.routes` covering the path, only POST to the provider's exact inference routes is forwarded; files, batches, fine-tunes, assistants and GETs are refused. | `ai-proxy.ts:78-88` | `ai-proxy.test.ts` :: rejects non-inference endpoints (files, batches, stored responses) |
 | `ai.extra-routes-openai-only` | Extra routes widen OpenAI only; OpenRouter and Workers AI serve inference and nothing else, so OpenRouter's credits and keys endpoints and Cloudflare's wider API stay closed. | `ai-proxy.ts:97-104` | `ai-proxy.test.ts` :: allows inference only, whatever the operator allows for OpenAI |
 | `ai.store-false` | On OpenAI's responses and chat completions the body's `store` is rewritten to false, so no app's completions are retained account-wide. | `ai-proxy.ts:89` | `ai-proxy.test.ts` :: forces store:false on responses and chat completions |
 | `ai.model-allowlist` | When the manifest sets `ai.models`, a request naming a model outside the list, or none, is `403 model_not_allowed` before any upstream call. | `ai-proxy.ts:234-246` | `ai-proxy.test.ts` :: enforces the manifest's model allowlist |
@@ -805,10 +805,16 @@ narrow within a scope: Google's `gmail.modify` includes sending).
 - *The AI proxy passes provider response headers through, `set-cookie`
   included* (low, small fix). Harmless for a Worker consumer unless the app
   relays the provider's response to a browser.
-- *`AI_PROXY_EXTRA_ROUTES` opens every method and sub-path of a route to
-  every opted-in app across organizations* (low, hosted; allowing
-  `/v1/files` lets any opted-in app list and delete every app's files under
-  the shared account).
+- *`ai.routes` opens every method and sub-path of a route to the app
+  that names it, across organizations* (medium, accepted 2026-11-02: the
+  manifest is the grant, with no operator allowlist beside it). An app
+  granted `/v1/files` can list and delete every app's files under the
+  shared OpenAI account. Whoever can install an app grants it: the
+  operator from the CLI, an organization's owner or admin where browser
+  installs are on (off by default), a deploy key's holder on hosted. Every
+  deploy and install prints the routes and the browser install form shows
+  them, but a new release can add one and the update installs it without a
+  separate yes. OpenAI only; OpenRouter and Workers AI stay inference-only.
 - *Email budget check is read-then-increment* (low): concurrent sends can
   overrun a budget by the concurrency factor.
 - *AI request bodies are fully buffered with no size cap* (low): email caps

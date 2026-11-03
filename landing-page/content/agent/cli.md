@@ -57,7 +57,7 @@ RUN A GATEWAY
   signin        Let people sign in with Google, Microsoft, GitHub, Apple, Cloudflare or your SSO, beside passwords
   secret        Set, remove and list secrets and Gateway settings
   provider      Register API providers for apps to call with the Gateway's key, and OAuth providers people connect their accounts to
-  ai            The default model provider apps get when they ask for one, and AI Gateway in front
+  ai            The default model apps get when they ask for one, and AI Gateway in front
   mcp           Offer MCP servers to members' AI clients as MCP apps, with the Gateway holding each one's key
   email         Manage the addresses an app sends as and receives at
   events        Send the Gateway's events to Slack, Zapier, n8n or your own endpoint (signed), or by email
@@ -2082,7 +2082,7 @@ Same as everyapp mcp off; this alias goes after launch week.
 
 ### `everyapp ai show`
 
-What the Gateway's default model provider resolves to now, and why.
+What the workspace's default model resolves to now, and every provider it could be.
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
@@ -2097,9 +2097,10 @@ USAGE
   everyapp ai show --help
 
 The provider and model an app that asks for the default chat model gets (ai: { chat: true }
-in its manifest, the SDK's ai()): the stored choice (ai default) if there is one, else the
-first provider of the shipped order whose key is set (OpenRouter, Workers AI, OpenAI, Anthropic,
-Groq, Mistral, Gemini), else what to set. Reads the Gateway's setting names, never values.
+in its manifest): the setting (ai default) if there is one, else the first provider of the
+shipped order whose key is set (OpenRouter, Workers AI, OpenAI, Anthropic, Groq, Mistral,
+Gemini), else what to set. Then every provider the default could be, in order, each with its
+key set or not and its catalog models. Reads the Gateway's setting names, never values.
 Says whether calls go through Cloudflare AI Gateway (ai gateway on).
 
 Example:
@@ -2114,44 +2115,9 @@ FLAGS
       --                       All subsequent inputs should be interpreted as arguments
 ```
 
-### `everyapp ai list`
-
-Every provider the default model could be, in order, each with its key set or not.
-
-| Flag | Value | Required | Default | What it does |
-| --- | --- | --- | --- | --- |
-| `--gateway` | `<value>` | no |  | The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither) |
-| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
-| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
-| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
-
-```text
-USAGE
-  everyapp ai list [--gateway value] [--account-id value] [--json] [--verbose]
-  everyapp ai list --help
-
-The shipped order first, then any other AI provider with an OpenAI-shaped chat route; the
-one the default resolves to now is marked. An API provider (Stripe) or one without such a
-route (Cohere) isn't here: an app pins those under providers.
-
-Example:
-  everyapp ai list
-
-ALIASES
-  everyapp ai ls
-
-FLAGS
-     [--gateway]               The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)
-     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
-     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
-     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
-  -h  --help                   Print help information and exit
-      --                       All subsequent inputs should be interpreted as arguments
-```
-
 ### `everyapp ai default`
 
-Choose the default model provider (and model) for every app that asks for one, or off for the shipped order.
+Choose the default model (provider and model) for every app that asks for one, or off for the shipped order.
 
 | Argument | Required | What it is |
 | --- | --- | --- |
@@ -2169,14 +2135,14 @@ USAGE
   everyapp ai default [--gateway value] [--account-id value] [--json] [--verbose] <provider[/model]|off>
   everyapp ai default --help
 
-The same setting as Manage workspace → Usage → AI default. The provider id is everything
-up to the first slash, the model everything after it (a model id may hold slashes); the
-model is stored as that provider's chat model, as everyapp ai model --chat stores it. Without
-a model, the provider's model setting stays (the catalog's seed when none). A provider whose key isn't set is
-accepted with a warning naming the key; one the default can't be (an API provider, an entry
-without an OpenAI-shaped chat route, AI Gateway) is refused (AI_DEFAULT_INVALID). The Gateway
-reads the change within 30 seconds; a change queues ai.default_changed. Refused on a Gateway
-from before the setting (GATEWAY_PREDATES_AI_DEFAULT): run update first.
+The workspace's one AI setting, the same as Manage workspace → Usage → AI default. The
+provider id is everything up to the first slash, the model everything after it (a model id
+may hold slashes); without a model, the provider's catalog model serves. Embeddings always
+use the provider's catalog model. A provider whose key isn't set is accepted with a warning
+naming the key; one the default can't be (an API provider, an entry without an OpenAI-shaped
+chat route, AI Gateway) is refused (AI_DEFAULT_INVALID). The Gateway reads the change within
+30 seconds; a change queues ai.default_changed. Refused on a Gateway from before the setting
+(GATEWAY_PREDATES_AI_DEFAULT): run update first.
 
 Examples:
   everyapp ai default openrouter
@@ -2194,55 +2160,6 @@ FLAGS
 
 ARGUMENTS
   provider[/model]|off  The provider's id (openrouter), or the id and a model (openrouter/anthropic/claude-sonnet-5.5), or off
-```
-
-### `everyapp ai model`
-
-Set the chat and embeddings models a provider serves when an app takes the default and names none.
-
-| Argument | Required | What it is |
-| --- | --- | --- |
-| `<provider>` | yes | The provider's id, as ai list shows it (openrouter, workers-ai, openai, …) |
-
-| Flag | Value | Required | Default | What it does |
-| --- | --- | --- | --- | --- |
-| `--chat` | `<model>` | no |  | The chat model to fill in when an app names none; seed for the catalog's |
-| `--embeddings` | `<model>` | no |  | The embeddings model to fill in when an app names none; seed for the catalog's |
-| `--gateway` | `<value>` | no |  | The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither) |
-| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
-| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
-| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
-
-```text
-USAGE
-  everyapp ai model [--chat model] [--embeddings model] [--gateway value] [--account-id value] [--json] [--verbose] <provider>
-  everyapp ai model --help
-
-Each provider the default can be has a chat model and (most) an embeddings model the Gateway
-fills in when an app calls /api/ai/default/… without naming one: the operator's setting here,
-else the catalog's seed (ai list shows both). Works whether or not the provider is the
-default now. --chat seed or --embeddings seed puts the seed back. Refused for a provider the
-default can't be, or an embeddings model on a provider without embeddings (AI_DEFAULT_INVALID).
-The Gateway reads the change within 30 seconds; a change queues ai.model_changed. Refused on a
-Gateway from before the setting (GATEWAY_PREDATES_AI_DEFAULT): run update first.
-
-Examples:
-  everyapp ai model openrouter --chat anthropic/claude-sonnet-5.5
-  everyapp ai model openrouter --embeddings openai/text-embedding-3-large
-  everyapp ai model workers-ai --chat seed --embeddings seed
-
-FLAGS
-     [--chat]                  The chat model to fill in when an app names none; seed for the catalog's
-     [--embeddings]            The embeddings model to fill in when an app names none; seed for the catalog's
-     [--gateway]               The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)
-     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
-     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
-     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
-  -h  --help                   Print help information and exit
-      --                       All subsequent inputs should be interpreted as arguments
-
-ARGUMENTS
-  provider  The provider's id, as ai list shows it (openrouter, workers-ai, openai, …)
 ```
 
 ### `everyapp ai gateway on`

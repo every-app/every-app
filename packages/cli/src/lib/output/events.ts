@@ -550,16 +550,20 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       };
     },
     // Who can open an app that has never been live, what its manifest
-    // opens to anyone on the internet, and whether its host answers /mcp
-    // (every deploy): facts for the end.
+    // opens to anyone on the internet, whether its host answers /mcp, and
+    // the OpenAI paths its `ai.routes` opens (every deploy): facts for the end.
     "app.register": (event) => {
       const data = event.data ?? {};
       if (event.status !== "ok") return null;
       const routes = publicRoutesIn(data["publicRoutes"]);
       const mcp = mcpIn(data["mcp"]);
+      const aiRoutes = Array.isArray(data["aiRoutes"]) ? data["aiRoutes"].filter((route) => typeof route === "string") : [];
       const open: Shown[] = [
         ...(routes.length > 0 ? [{ fact: { label: "Public", value: publicValue(routes) } }] : []),
         ...(mcp ? [{ fact: { label: "MCP", value: `Serves /mcp on its own host (${mcp.by}): ${mcp.why}` } }] : []),
+        ...(aiRoutes.length > 0
+          ? [{ fact: { label: "AI routes", value: `OpenAI paths beyond inference, on the Gateway's OpenAI key: ${aiRoutes.join(", ")}` } }]
+          : []),
       ];
       if (data["firstDeploy"] !== true) return open.length > 0 ? open : null;
       const organization = text(data["organizationName"]);

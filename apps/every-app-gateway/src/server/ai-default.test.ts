@@ -5,9 +5,8 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import {
+  parseAiDefaultChoice,
   resolveAiDefault,
-  withAiModelSetting,
-  type AiModelSettings,
 } from "@every-app/sdk/internal";
 import { handleAuthenticatedAiProxyRequest } from "./ai-proxy";
 
@@ -31,7 +30,6 @@ async function call(input: {
   env: Record<string, string>;
   body?: string | FormData;
   choice?: string | null;
-  models?: AiModelSettings;
   defaultRoute?: boolean;
   headers?: Record<string, string>;
 }): Promise<Seen> {
@@ -47,23 +45,10 @@ async function call(input: {
   };
   const aiDefault =
     input.provider === "default"
-      ? (() => {
-          // A choice as typed: the provider, and its chat model setting.
-          const provider = input.choice ? input.choice.split("/")[0]! : null;
-          const model = input.choice?.includes("/")
-            ? input.choice.slice(input.choice.indexOf("/") + 1)
-            : undefined;
-          return resolveAiDefault({
-            provider,
-            models:
-              provider && model
-                ? withAiModelSetting(input.models ?? {}, provider, {
-                    chat: model,
-                  })
-                : (input.models ?? {}),
-            isSet: isSetIn(input.env),
-          });
-        })()
+      ? resolveAiDefault({
+          choice: parseAiDefaultChoice(input.choice ?? null),
+          isSet: isSetIn(input.env),
+        })
       : undefined;
   const response = await handleAuthenticatedAiProxyRequest({
     request: new Request(`${ORIGIN}/api/ai/${input.provider}${input.path}`, {
@@ -143,27 +128,24 @@ describe("the default route", () => {
     expect(JSON.parse(seen.body).model).toBe("openai/gpt-oss-120b");
   });
 
-  it("fills in the operator's models for the provider the order picked, the seed where none is set", async () => {
-    const models = {
-      openrouter: { embeddings: "openai/text-embedding-3-large" },
-    };
+  it("fills in the setting's chat model, and the provider's seed for embeddings", async () => {
     const chat = await call({
       provider: "default",
       path: "/v1/chat/completions",
       env: OPENROUTER,
-      models,
+      choice: "openrouter/anthropic/claude-sonnet-5.5",
     });
-    expect(JSON.parse(chat.body).model).toBe("anthropic/claude-haiku-5.5");
+    expect(JSON.parse(chat.body).model).toBe("anthropic/claude-sonnet-5.5");
     const embeddings = await call({
       provider: "default",
       path: "/v1/embeddings",
       env: OPENROUTER,
       body: '{"input":"hi","model":"default"}',
-      models,
+      choice: "openrouter/anthropic/claude-sonnet-5.5",
     });
     expect(embeddings.url).toBe("https://openrouter.ai/api/v1/embeddings");
     expect(JSON.parse(embeddings.body).model).toBe(
-      "openai/text-embedding-3-large",
+      "openai/text-embedding-3-small",
     );
   });
 

@@ -30,7 +30,7 @@ providers: ["cohere"],
 
 The app calls `/api/ai/cohere/…` with `createGatewayFetch()`. More in [AI](/docs/agent/ai).
 
-**Check it worked:** `everyapp ai list` shows `cohere` with its key set.
+**Check it worked:** `everyapp ai show` lists `cohere` with its key set.
 
 **Rate limits:** Production: 500 calls a minute for Command A chat and most endpoints, rerank 1,000. Trial: 20 chat calls a minute, 1,000 calls a month.
 

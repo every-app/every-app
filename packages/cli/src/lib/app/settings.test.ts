@@ -128,19 +128,6 @@ describe("the Gateway names an app needs, as secret list --json has always said 
     const none = appSetupFrom({ manifest: CRM, appId: "crm", gatewayNames: [], secretNames: [] });
     expect(gatewayMissing(none.report.settings, [])).toEqual(["OPENAI_API_KEY", "OPENROUTER_API_KEY"]);
   });
-
-  it("says a name once when two settings read it, required where either does", () => {
-    const { report } = appSetupFrom({
-      manifest: { providers: ["openai"], ai: { routes: ["/v1/files"] } },
-      appId: "files",
-      gatewayNames: [],
-      secretNames: [],
-    });
-    expect(gatewayNeeds(report.settings, []).map((need) => need.name)).toEqual([
-      "OPENAI_API_KEY",
-      "AI_PROXY_EXTRA_ROUTES",
-    ]);
-  });
 });
 
 describe("the STATUS vocabulary", () => {
@@ -384,7 +371,6 @@ describe("the setup guides the registries name", () => {
             : [[id, capability.mode === "oauth_client" ? { scopes: [] } : { access: capability.access[0] }]],
         ),
       ),
-      ai: { routes: ["/v1/files"] },
     };
     const guides = [...new Set(appSettings(everything).flatMap((setting) => (setting.setup ? [setting.setup] : [])))];
     expect(guides.length).toBeGreaterThan(0);

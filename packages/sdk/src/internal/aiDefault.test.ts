@@ -4,12 +4,7 @@ import {
   aiDefaultCandidates,
   aiDefaultChoiceProblem,
   aiDefaultSetupHint,
-  aiModelPatchProblem,
-  formatAiModelSettings,
   isAiModelName,
-  parseAiDefaultProvider,
-  parseAiModelSettings,
-  withAiModelSetting,
   aiRequiredSettings,
   canBeAiDefault,
   formatAiDefaultChoice,
@@ -97,7 +92,7 @@ describe("the catalog's AI entries", () => {
 
 describe("resolveAiDefault", () => {
   it("with nothing chosen and nothing set: the first of the order, unconfigured, with what to set", () => {
-    const resolution = resolveAiDefault({ provider: null, isSet: () => false });
+    const resolution = resolveAiDefault({ choice: null, isSet: () => false });
     expect(resolution.provider).toBe("openrouter");
     expect(resolution.source).toBe("none");
     expect(resolution.configured).toBe(false);
@@ -111,7 +106,7 @@ describe("resolveAiDefault", () => {
 
   it("with nothing chosen: the first configured provider of the order", () => {
     const resolution = resolveAiDefault({
-      provider: null,
+      choice: null,
       isSet: setOf([
         "WORKERS_AI_API_TOKEN",
         "CLOUDFLARE_ACCOUNT_ID",
@@ -126,8 +121,7 @@ describe("resolveAiDefault", () => {
 
   it("takes the choice over the order, even when it isn't configured", () => {
     const resolution = resolveAiDefault({
-      provider: "openai",
-      models: { openai: { chat: "gpt-6-sol" } },
+      choice: { provider: "openai", model: "gpt-6-sol" },
       isSet: setOf(["OPENROUTER_API_KEY"]),
     });
     expect(resolution.provider).toBe("openai");
@@ -138,37 +132,30 @@ describe("resolveAiDefault", () => {
     expect(resolution.settings).toEqual(["OPENAI_API_KEY"]);
   });
 
-  it("serves the operator's models for the provider, else the seeds", () => {
+  it("serves the setting's model, else the provider's seeds", () => {
     const seeded = resolveAiDefault({
-      provider: null,
+      choice: null,
       isSet: setOf(["OPENROUTER_API_KEY"]),
     });
-    expect(seeded.model).toBe(seeded.seed.chat);
-    expect(seeded.embeddingsModel).toBe(seeded.seed.embeddings);
-    const set = resolveAiDefault({
-      provider: null,
-      models: {
-        openrouter: { embeddings: "openai/text-embedding-3-large" },
-        groq: { chat: "openai/gpt-oss-120b" },
-      },
+    expect(seeded.source).toBe("order");
+    expect(seeded.model).toBe("anthropic/claude-haiku-5.5");
+    expect(seeded.embeddingsModel).toBe("openai/text-embedding-3-small");
+    const bare = resolveAiDefault({
+      choice: { provider: "openrouter" },
       isSet: setOf(["OPENROUTER_API_KEY"]),
     });
-    expect(set.source).toBe("order");
-    expect(set.model).toBe("anthropic/claude-haiku-5.5");
-    expect(set.embeddingsModel).toBe("openai/text-embedding-3-large");
-    expect(set.seed).toEqual({
-      chat: "anthropic/claude-haiku-5.5",
-      embeddings: "openai/text-embedding-3-small",
-    });
-    const groq = set.candidates.find((candidate) => candidate.id === "groq")!;
-    expect(groq.model).toBe("openai/gpt-oss-120b");
-    expect(groq.seed).toEqual({ chat: "openai/gpt-oss-20b" });
+    expect(bare.source).toBe("setting");
+    expect(bare.model).toBe("anthropic/claude-haiku-5.5");
+    const groq = seeded.candidates.find(
+      (candidate) => candidate.id === "groq",
+    )!;
+    expect(groq.model).toBe("openai/gpt-oss-20b");
     expect(groq.embeddingsModel).toBeUndefined();
   });
 
   it("reports a choice the default can't be and lets the order decide", () => {
     const resolution = resolveAiDefault({
-      provider: "cohere",
+      choice: { provider: "cohere" },
       isSet: setOf(["OPENROUTER_API_KEY"]),
     });
     expect(resolution.provider).toBe("openrouter");
@@ -178,7 +165,7 @@ describe("resolveAiDefault", () => {
 
   it("says when the call goes through AI Gateway", () => {
     const through = resolveAiDefault({
-      provider: null,
+      choice: null,
       isSet: setOf([
         "OPENROUTER_API_KEY",
         "AI_GATEWAY_ID",
@@ -187,7 +174,7 @@ describe("resolveAiDefault", () => {
     });
     expect(through.via).toBe("ai-gateway");
     const gemini = resolveAiDefault({
-      provider: "gemini",
+      choice: { provider: "gemini" },
       isSet: setOf([
         "GEMINI_API_KEY",
         "AI_GATEWAY_ID",
@@ -215,7 +202,7 @@ describe("resolveAiDefault", () => {
 
   it("writes the setup sentence: the one key, then the alternatives", () => {
     const hint = aiDefaultSetupHint(
-      resolveAiDefault({ provider: null, isSet: () => false }),
+      resolveAiDefault({ choice: null, isSet: () => false }),
     );
     expect(hint).toContain("set OPENROUTER_API_KEY");
     expect(hint).toContain(
@@ -225,63 +212,13 @@ describe("resolveAiDefault", () => {
   });
 });
 
-describe("the model settings", () => {
-  it("reads what was stored and drops what isn't a model setting", () => {
-    expect(parseAiModelSettings(null)).toEqual({});
-    expect(parseAiModelSettings("not json")).toEqual({});
-    expect(parseAiModelSettings("[1]")).toEqual({});
-    expect(
-      parseAiModelSettings(
-        JSON.stringify({
-          openrouter: { chat: "anthropic/claude-sonnet-5.5", other: "x" },
-          groq: { chat: " padded " },
-          openai: "gpt-6-sol",
-        }),
-      ),
-    ).toEqual({ openrouter: { chat: "anthropic/claude-sonnet-5.5" } });
-  });
-
-  it("formats sorted, and null when empty", () => {
-    expect(formatAiModelSettings({})).toBeNull();
-    expect(
-      formatAiModelSettings({
-        openrouter: { embeddings: "e" },
-        groq: { chat: "c" },
-      }),
-    ).toBe('{"groq":{"chat":"c"},"openrouter":{"embeddings":"e"}}');
-  });
-
-  it("patches one provider: a name sets, null puts the seed back, absent leaves it", () => {
-    const one = withAiModelSetting({}, "openrouter", {
-      chat: "a",
-      embeddings: "b",
-    });
-    expect(one).toEqual({ openrouter: { chat: "a", embeddings: "b" } });
-    const two = withAiModelSetting(one, "openrouter", { chat: null });
-    expect(two).toEqual({ openrouter: { embeddings: "b" } });
-    expect(withAiModelSetting(two, "openrouter", { embeddings: null })).toEqual(
-      {},
-    );
-  });
-
-  it("refuses what can't be stored", () => {
-    expect(aiModelPatchProblem("openrouter", { chat: "x" })).toBeNull();
-    expect(aiModelPatchProblem("stripe", { chat: "x" })).toContain(
-      "API provider",
-    );
-    expect(aiModelPatchProblem("groq", { embeddings: "x" })).toContain(
-      "no embeddings route",
-    );
-    expect(aiModelPatchProblem("openrouter", { chat: " x" })).toContain(
-      "isn't a model id",
-    );
+describe("isAiModelName", () => {
+  it("takes a model id and refuses blank or padded text", () => {
     expect(isAiModelName("@cf/baai/bge-m3")).toBe(true);
     expect(isAiModelName("")).toBe(false);
-  });
-
-  it("reads the stored provider alone", () => {
-    expect(parseAiDefaultProvider("openrouter")).toBe("openrouter");
-    expect(parseAiDefaultProvider("openrouter/anthropic/x")).toBe("openrouter");
-    expect(parseAiDefaultProvider(null)).toBeNull();
+    expect(isAiModelName(" x")).toBe(false);
+    expect(
+      aiDefaultChoiceProblem({ provider: "openrouter", model: " x" }),
+    ).toContain("isn't a model id");
   });
 });

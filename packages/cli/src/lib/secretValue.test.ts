@@ -189,10 +189,6 @@ describe("readSecretValue", () => {
       null,
       '"@example.com" isn\'t a domain like example.com.',
     ]);
-    expect(await problems("AI_PROXY_EXTRA_ROUTES", ["/v1/files, /v1/batches", "/files"])).toEqual([
-      null,
-      '"/files" isn\'t a /v1/... path.',
-    ]);
     expect(await problems("CLOUDFLARE_ACCESS_AUD", ["abc.123, def_4", "a b/c"])).toEqual([
       null,
       '"b/c" isn\'t an AUD tag.',

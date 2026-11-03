@@ -32,12 +32,6 @@ export interface GatewayRefusal extends SetupInfo {
   message: string;
 }
 
-/** The refusal codes that mean no model is set up for the call. */
-export const AI_NOT_CONFIGURED_CODES: readonly string[] = [
-  "ai_provider_not_configured",
-  "ai_default_not_configured",
-];
-
 /**
  * A refusal the AppGateway binding made, thrown: what `sendEmail()` throws
  * when the gateway won't send (`email_sender_not_allowed`,
@@ -102,27 +96,6 @@ export function refusalFromError(error: unknown): GatewayRefusal | null {
     current = record["lastError"] ?? record["cause"];
   }
   return null;
-}
-
-/**
- * Whether `error` (or a refusal already read) means no model is set up:
- * `ai_provider_not_configured` or `ai_default_not_configured`, from the
- * Gateway or, in local development, from the SDK with no key in
- * `.dev.vars`. Show `refusalFromError(error).setup` to the person.
- */
-export function isAiNotConfigured(error: unknown): boolean {
-  const refusal = isRefusal(error) ? error : refusalFromError(error);
-  return refusal !== null && AI_NOT_CONFIGURED_CODES.includes(refusal.code);
-}
-
-function isRefusal(value: unknown): value is GatewayRefusal {
-  return (
-    !!value &&
-    typeof value === "object" &&
-    !(value instanceof Error) &&
-    typeof (value as GatewayRefusal).code === "string" &&
-    typeof (value as GatewayRefusal).status === "number"
-  );
 }
 
 function refusalHere(error: object): GatewayRefusal | null {

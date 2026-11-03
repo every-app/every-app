@@ -6,7 +6,7 @@
  * `ai_default_not_configured`) and every status that isn't ready for
  * that reason carries these three fields, so an app shows them as they
  * are and never hardcodes a setting name or a CLI command
- * (`refusalFromError()`, `integrationStatus()` and `aiStatus()` in
+ * (`refusalFromError()` and `integrationStatus()` in
  * `@every-app/sdk/server` read them).
  *
  * The command is `everyapp configure <app>`, which asks for every setting

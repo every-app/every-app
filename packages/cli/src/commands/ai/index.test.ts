@@ -1,7 +1,7 @@
 /**
  * `everyapp ai …` end to end, in a fake Cloudflare account with a deployed
- * gateway (as workspace/index.test.ts): what `show` and `list` resolve
- * from the Gateway's secret names, what `default` writes (the
+ * gateway (as workspace/index.test.ts): what `show` resolves from the
+ * Gateway's secret names, what `default` writes (the
  * `org_settings` row, the `ai.default_changed` event, the cap column
  * untouched) and refuses, and what `gateway on|off` sets.
  */
@@ -16,7 +16,7 @@ import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { buildGatewayRelease } from "@/test/gatewayRelease";
 import { makeTestHome } from "@/test/home";
 import { setDefaultCap } from "../workspace/apps";
-import { chooseDefault, chooseModels, listCandidates, showDefault, turnGatewayOff, turnGatewayOn } from "./index";
+import { chooseDefault, showDefault, turnGatewayOff, turnGatewayOn } from "./index";
 
 const GATEWAY = "every-app-gateway";
 const NOW = Date.parse("2026-10-25T12:00:00Z");
@@ -86,7 +86,7 @@ const aiEvents = () =>
     JSON.parse(String(row["data"])),
   );
 
-describe("ai show and ai list", () => {
+describe("ai show", () => {
   it("resolves on the Gateway's secret names: nothing set, then the first of the order that is", async () => {
     await showDefault(opts());
     expect(data()).toMatchObject({
@@ -119,7 +119,7 @@ describe("ai show and ai list", () => {
 
   it("lists the candidates with their state, the default marked", async () => {
     gatewaySecrets()["GROQ_API_KEY"] = "gsk";
-    await listCandidates(opts());
+    await showDefault(opts());
     expect(data()["provider"]).toBe("groq");
     const groq = data()["candidates"].find((candidate: { id: string }) => candidate.id === "groq");
     expect(groq).toMatchObject({ configured: true, settings: ["GROQ_API_KEY"], model: "openai/gpt-oss-20b" });
@@ -128,16 +128,15 @@ describe("ai show and ai list", () => {
 });
 
 describe("ai default", () => {
-  it("writes org_settings with the choice and queues ai.default_changed once; the cap column stays", async () => {
+  it("writes org_settings with the one setting and queues ai.default_changed once; the cap column stays", async () => {
     await setDefaultCap(opts(), 20);
     events = [];
     await chooseDefault(opts(), "openrouter/anthropic/claude-sonnet-5.5");
-    expect(rows("SELECT organization_id, default_monthly_cost_cap_micros, ai_default, ai_models, updated_by FROM org_settings")).toEqual([
+    expect(rows("SELECT organization_id, default_monthly_cost_cap_micros, ai_default, updated_by FROM org_settings")).toEqual([
       {
         organization_id: ORG,
         default_monthly_cost_cap_micros: 20_000_000,
-        ai_default: "openrouter",
-        ai_models: '{"openrouter":{"chat":"anthropic/claude-sonnet-5.5"}}',
+        ai_default: "openrouter/anthropic/claude-sonnet-5.5",
         updated_by: "u-owner",
       },
     ]);
@@ -151,11 +150,11 @@ describe("ai default", () => {
     expect(done()!["message"]).toContain("Nothing changed");
     expect(aiEvents()).toHaveLength(1);
 
-    // Off clears the choice, keeps the cap and the provider's model, and queues the event with the previous choice.
+    // Off clears the setting, keeps the cap, and queues the event with the previous choice.
     events = [];
     await chooseDefault(opts(), "off");
-    expect(rows("SELECT default_monthly_cost_cap_micros, ai_default, ai_models FROM org_settings")).toEqual([
-      { default_monthly_cost_cap_micros: 20_000_000, ai_default: null, ai_models: '{"openrouter":{"chat":"anthropic/claude-sonnet-5.5"}}' },
+    expect(rows("SELECT default_monthly_cost_cap_micros, ai_default FROM org_settings")).toEqual([
+      { default_monthly_cost_cap_micros: 20_000_000, ai_default: null },
     ]);
     // The clock is fixed, so the two events don't sort: both are there.
     expect(aiEvents()).toHaveLength(2);
@@ -183,51 +182,16 @@ describe("ai default", () => {
     await expect(chooseDefault(opts(), "ai-gateway")).rejects.toThrow(/everyapp ai gateway on/);
     await expect(chooseDefault(opts(), "cohere")).rejects.toThrow(/chat route/);
     await expect(chooseDefault(opts(), "Open Router")).rejects.toMatchObject({ code: "AI_DEFAULT_INVALID" });
+    await expect(chooseDefault(opts(), "openrouter/anthropic/claude\thaiku-5.5")).rejects.toThrow(/isn't a model id/);
     expect(rows("SELECT * FROM org_settings")).toEqual([]);
     expect(aiEvents()).toEqual([]);
   });
-});
 
-describe("ai model", () => {
-  const modelEvents = () =>
-    rows("SELECT data FROM events WHERE type = 'ai.model_changed' ORDER BY id").map((row) => JSON.parse(String(row["data"])));
-
-  it("sets a provider's models without choosing it, seed puts the catalog's back, and the row goes when empty", async () => {
-    gatewaySecrets()["GROQ_API_KEY"] = "gsk";
-    await chooseModels(opts(), "openrouter", { chat: "anthropic/claude-sonnet-5.5", embeddings: "openai/text-embedding-3-large" });
-    expect(rows("SELECT ai_default, ai_models FROM org_settings")).toEqual([
-      {
-        ai_default: null,
-        ai_models: '{"openrouter":{"chat":"anthropic/claude-sonnet-5.5","embeddings":"openai/text-embedding-3-large"}}',
-      },
-    ]);
-    expect(modelEvents()).toEqual([
-      {
-        provider: "openrouter",
-        models: { chat: "anthropic/claude-sonnet-5.5", embeddings: "openai/text-embedding-3-large" },
-        previous: { chat: null, embeddings: null },
-      },
-    ]);
-    // Groq serves (its key is set); OpenRouter's models wait for it.
-    expect(data()["provider"]).toBe("groq");
-    expect(done()!["message"]).toContain("once it is the default");
-    const openrouter = data()["candidates"].find((candidate: { id: string }) => candidate.id === "openrouter");
-    expect(openrouter).toMatchObject({
-      model: "anthropic/claude-sonnet-5.5",
-      embeddingsModel: "openai/text-embedding-3-large",
-      seed: { chat: "anthropic/claude-haiku-5.5", embeddings: "openai/text-embedding-3-small" },
+  it("refuses on a Gateway that still keeps a model per provider (before migration 0027)", async () => {
+    sqlite().sqlite.prepare("ALTER TABLE org_settings ADD COLUMN ai_models text").run();
+    await expect(chooseDefault(opts(), "openrouter/anthropic/claude-sonnet-5.5")).rejects.toMatchObject({
+      code: "GATEWAY_PREDATES_AI_DEFAULT",
     });
-
-    events = [];
-    await chooseModels(opts(), "openrouter", { chat: "seed", embeddings: "seed" });
-    expect(rows("SELECT * FROM org_settings")).toEqual([]);
-    expect(modelEvents()).toHaveLength(2);
-  });
-
-  it("refuses an embeddings model on a provider without embeddings, a provider the default can't be, and no flags", async () => {
-    await expect(chooseModels(opts(), "groq", { embeddings: "x" })).rejects.toThrow(/no embeddings route/);
-    await expect(chooseModels(opts(), "stripe", { chat: "x" })).rejects.toMatchObject({ code: "AI_DEFAULT_INVALID" });
-    await expect(chooseModels(opts(), "openrouter", {})).rejects.toMatchObject({ code: "AI_DEFAULT_INVALID" });
     expect(rows("SELECT * FROM org_settings")).toEqual([]);
   });
 });

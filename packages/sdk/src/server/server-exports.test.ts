@@ -18,9 +18,19 @@ it("keeps protocol constants out of /server", () => {
   expect(server).not.toHaveProperty("mintSystemJwt");
 });
 
-it("exposes the env.AI and env.EMAIL drop-ins", () => {
-  expect(typeof server.gatewayAiBinding).toBe("function");
+it("exposes the env.EMAIL drop-in, and no second way to call a model", () => {
   expect(typeof server.gatewayEmailBinding).toBe("function");
+  expect(typeof server.createGatewayFetch).toBe("function");
+  for (const gone of [
+    "ai",
+    "aiStatus",
+    "AI_DEFAULT_BASE_URL",
+    "gatewayAiBinding",
+    "isAiNotConfigured",
+    "AI_NOT_CONFIGURED_CODES",
+  ]) {
+    expect(server).not.toHaveProperty(gone);
+  }
 });
 
 it("exposes the agent tools API and not the old MCP handler", () => {

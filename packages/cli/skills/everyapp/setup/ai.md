@@ -1,11 +1,11 @@
-# The default model provider
+# The default model
 
 An app that says `ai: { chat: true }` in its manifest (OpenMail,
-OpenCRM's research agent) takes whichever chat model the Gateway's
-operator made the default, through `/api/ai/default/…`; it never names a
-provider. One key, set once, makes every such app work. This file sets
-that one key and, when the person wants a particular provider or model,
-the choice. At the end the person has one model provider's key on the
+OpenCRM's research agent) takes the workspace's default chat model,
+through `/api/ai/default/…`; it never names a provider. One key, set
+once, makes every such app work. This file sets that one key and, when
+the person wants a particular provider or model, the one setting
+(`<provider>[/<model>]`). At the end the person has one model provider's key on the
 Gateway, `pnpm everyapp ai show` saying what the default resolves to,
 and every app that needs "a chat model" open.
 
@@ -14,13 +14,13 @@ and every app that needs "a chat model" open.
 | NAME                                                     | Required or optional                         | What it holds                                                                                              |
 | -------------------------------------------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | one provider's key (`OPENROUTER_API_KEY` first in the order) | required by every app whose manifest says `ai.chat` | the provider's key as its file says ([openrouter.md](openrouter.md), [workers-ai.md](workers-ai.md), [openai.md](openai.md), or [providers.md](providers.md) under `anthropic`, `groq`, `mistral`, `gemini`) |
-| the choice (`pnpm everyapp ai default <provider>[/<model>]`) | optional                                     | which provider (and model) the default is; without it the order decides                                     |
+| the setting (`pnpm everyapp ai default <provider>[/<model>]`) | optional                                     | which provider (and model) the default is; without it the order decides                                     |
 
 The order the Gateway resolves the default in, the first whose settings
 are set: `openrouter` (one key, many models, the price in every answer),
 `workers-ai` (no provider account: the Gateway's own Cloudflare token;
 weaker models), `openai`, `anthropic`, `groq`, `mistral`, `gemini`. The
-operator's choice wins over the order. Cloudflare AI Gateway is never
+setting wins over the order. Cloudflare AI Gateway is never
 the default: it fronts whichever provider resolves
 ([ai-gateway.md](ai-gateway.md)).
 
@@ -78,17 +78,16 @@ Usage and in `pnpm everyapp workspace usage --json` (`byModel`).
    the value from the person's terminal, or `pnpm everyapp configure
    <app id>`, which asks for exactly the one key the app's `ai-default`
    setting names.
-3. **Store the choice when it isn't the order's.** The first configured
-   provider of the order is the default by itself; nothing to store when
-   it is OpenRouter and the person is happy with its model. Otherwise:
-   `pnpm everyapp ai default <provider>` (`groq`), or with a model,
-   `pnpm everyapp ai default openrouter/anthropic/claude-sonnet-5.5`
-   (the provider id up to the first slash, the model after it; the model
-   is stored as that provider's chat model). `pnpm everyapp ai default
-   off` clears it. Each change queues the `ai.default_changed` event.
-   To change a provider's models without choosing it, or its embeddings
-   model: `pnpm everyapp ai model openrouter --chat <model> --embeddings
-   <model>` (`seed` puts the catalog's back; `ai.model_changed`).
+3. **Store the setting when it isn't the order's.** The first configured
+   provider of the order is the default by itself, with its catalog
+   model; nothing to store when it is OpenRouter and the person is happy
+   with its model. Otherwise: `pnpm everyapp ai default <provider>`
+   (`groq`), or with a model, `pnpm everyapp ai default
+   openrouter/anthropic/claude-sonnet-5.5` (the provider id up to the
+   first slash, the model after it). `pnpm everyapp ai default off`
+   clears it. Each change queues the `ai.default_changed` event.
+   Embeddings always use the provider's catalog model. The same setting
+   is Manage workspace → Usage → AI default in the browser.
 4. **Optionally put AI Gateway in front**: [ai-gateway.md](ai-gateway.md)
    (`pnpm everyapp ai gateway on`), for logs, caching and limits on
    every model call; it changes no app and no key.
@@ -125,11 +124,11 @@ Usage and in `pnpm everyapp workspace usage --json` (`byModel`).
 
 ## Rerun, rotate, remove
 
-- Rerunning any step is safe: `ai default` overwrites the choice, a key
+- Rerunning any step is safe: `ai default` overwrites the setting, a key
   set again replaces the old one on the next request.
 - Rotate a key as its provider's file says; the default resolves to the
   same provider.
-- Remove the choice with `pnpm everyapp ai default off`; remove a key
+- Remove the setting with `pnpm everyapp ai default off`; remove a key
   with `pnpm everyapp secret unset <NAME>`, after which the order moves
   to the next configured provider, or apps that need the default show
   "Needs setup" again.

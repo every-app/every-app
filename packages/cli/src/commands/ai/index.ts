@@ -1,7 +1,7 @@
 /**
- * `everyapp ai show|list|default|model|gateway on|off`: the Gateway's
- * default model provider and its models (docs/design/2026-10-model-providers.md), from the
- * terminal under the Cloudflare login. The reading and writing is
+ * `everyapp ai show|default|gateway on|off`: the workspace's default model
+ * (docs/design/2026-10-model-providers.md), from the terminal under the
+ * Cloudflare login. The reading and writing is
  * lib/gateway/aiDefault.ts; this file says what happened. The AI Gateway
  * switch creates a Cloudflare resource (lib/cf/aiGateway.ts, the Resource
  * provisioners thread's library) and records its id as a Gateway setting
@@ -13,7 +13,7 @@ import type { CfRunner } from "@/lib/cf/runner";
 import { ensureAiGateway, isValidAiGatewayId, type AiGateway } from "@/lib/cf/aiGateway";
 import { EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
-import { aiReport, parseAiDefaultArgument, setAiDefault, setAiModels, type AiReport } from "@/lib/gateway/aiDefault";
+import { aiReport, parseAiDefaultArgument, setAiDefault, type AiReport } from "@/lib/gateway/aiDefault";
 import { gatewayRegistry } from "@/lib/gateway/providers";
 import { openWorkspace, type Workspace } from "@/lib/gateway/workspace";
 import { CLI } from "@/lib/output/command";
@@ -43,19 +43,8 @@ export async function show(flags: GatewayCommandFlags): Promise<void> {
   await runCommand(flags, (out) => showDefault({ flags, out }));
 }
 
-export async function list(flags: GatewayCommandFlags): Promise<void> {
-  await runCommand(flags, (out) => listCandidates({ flags, out }));
-}
-
 export async function setDefault(flags: GatewayCommandFlags, choice: string): Promise<void> {
   await runCommand(flags, (out) => chooseDefault({ flags, out }, choice));
-}
-
-export async function setModel(
-  flags: GatewayCommandFlags & { chat?: string; embeddings?: string },
-  provider: string,
-): Promise<void> {
-  await runCommand(flags, (out) => chooseModels({ flags, out }, provider, { chat: flags.chat, embeddings: flags.embeddings }));
 }
 
 export async function gatewayOn(flags: GatewayCommandFlags & { id?: string }): Promise<void> {
@@ -95,7 +84,7 @@ function reportData(report: AiReport): Record<string, unknown> {
     label: resolution.label,
     model: resolution.model,
     ...(resolution.embeddingsModel ? { embeddingsModel: resolution.embeddingsModel } : {}),
-    seed: resolution.seed,
+    choice: report.choice,
     source: resolution.source,
     configured: resolution.configured,
     settings: resolution.settings,
@@ -111,21 +100,28 @@ function reportData(report: AiReport): Record<string, unknown> {
 /** "OpenRouter (anthropic/claude-haiku-5.5)". */
 const named = (resolution: Pick<AiDefaultResolution, "label" | "model">) => `${resolution.label} (${resolution.model})`;
 
-/** A model as the table shows it: dim when it is the catalog's seed. */
-const modelCell = (model: string | undefined, seed: string | undefined) =>
-  model === undefined ? chalk.dim("—") : model === seed ? `${model} ${chalk.dim("(seed)")}` : model;
+/** A model as the table shows it, a dash where there is none. */
+const modelCell = (model: string | undefined) => (model === undefined ? chalk.dim("—") : model);
 
 const CANDIDATE_HEADERS = ["Provider", "Name", "Key", "Setting", "Chat model", "Embeddings model", ""];
 
-/** One line per candidate: the id, its name, the key, set or not, and the models. */
-function candidateRows(candidates: readonly AiDefaultCandidate[], current: string): string[][] {
+/**
+ * One line per candidate: the id, its name, the key, set or not, and its
+ * models: the catalog's, but the default's own row shows the chat model it
+ * serves (the setting's, when it names one).
+ */
+function candidateRows(
+  candidates: readonly AiDefaultCandidate[],
+  resolution: Pick<AiDefaultResolution, "provider" | "model">,
+): string[][] {
+  const current = resolution.provider;
   return candidates.map((candidate) => [
     candidate.id === current ? chalk.bold(candidate.id) : candidate.id,
     candidate.label,
     candidate.configured ? chalk.green("set") : chalk.dim("not set"),
     candidate.settings.join(" "),
-    modelCell(candidate.model, candidate.seed.chat),
-    modelCell(candidate.embeddingsModel, candidate.seed.embeddings),
+    modelCell(candidate.id === current ? resolution.model : candidate.model),
+    modelCell(candidate.embeddingsModel),
     candidate.id === current ? chalk.green("← the default") : "",
   ]);
 }
@@ -159,7 +155,9 @@ export async function showDefault(options: AiOptions): Promise<void> {
     sourceSentence(report),
     ...(resolution.problem ? [chalk.yellow(`The stored choice can't serve: ${resolution.problem}.`)] : []),
     "",
-    ...formatTable(CANDIDATE_HEADERS, candidateRows(resolution.candidates, resolution.provider)),
+    ...formatTable(CANDIDATE_HEADERS, candidateRows(resolution.candidates, resolution)),
+    "",
+    `An app that takes the default says ai: { chat: true }; one that pins a provider lists it under providers. ${CLI} ai default <provider>[/<model>] chooses (the provider's catalog chat model when no model is given); off puts the order back.`,
   ];
   out.emit({
     type: "done",
@@ -168,27 +166,11 @@ export async function showDefault(options: AiOptions): Promise<void> {
   });
 }
 
-export async function listCandidates(options: AiOptions): Promise<void> {
-  const { out } = options;
-  const { gateway, ws, registry } = await connect(options);
-  const report = await aiReport(gateway.cf, gateway.names, ws, registry);
-  const { resolution } = report;
-  out.emit({
-    type: "done",
-    message: [
-      ...formatTable(CANDIDATE_HEADERS, candidateRows(resolution.candidates, resolution.provider)),
-      "",
-      `An app that pins a provider lists it under providers; one that takes the default says ai: { chat: true }. ${CLI} ai default <provider>[/<model>] chooses; ${CLI} ai model <provider> --chat <model> --embeddings <model> sets a provider's models (seed puts the catalog's back).`,
-    ].join("\n"),
-    data: { candidates: resolution.candidates, provider: resolution.provider, aiGateway: report.aiGateway },
-  });
-}
-
 export async function chooseDefault(options: AiOptions, argument: string): Promise<void> {
   const { out } = options;
   const choice = parseAiDefaultArgument(argument);
   const { gateway, ws, registry } = await connect(options);
-  out.emit({ type: "step", step: STEP, status: "start", message: "Setting the default model provider..." });
+  out.emit({ type: "step", step: STEP, status: "start", message: "Setting the default model..." });
   const change = await setAiDefault(ws, choice, registry);
   const report = await aiReport(gateway.cf, gateway.names, ws, registry);
   const { resolution } = report;
@@ -197,7 +179,7 @@ export async function chooseDefault(options: AiOptions, argument: string): Promi
     type: "step",
     step: STEP,
     status: "ok",
-    message: `${ws.organization.name}: the default model provider is ${says(choice)}`,
+    message: `${ws.organization.name}: the default model is ${says(choice)}`,
     data: { choice: choice === null ? null : formatAiDefaultChoice(choice), was: change.was === null ? null : formatAiDefaultChoice(change.was) },
   });
   const lines = [
@@ -214,54 +196,6 @@ export async function chooseDefault(options: AiOptions, argument: string): Promi
     );
   }
   out.emit({ type: "done", message: lines.join("\n"), data: reportData(report) });
-}
-
-/** `--chat`/`--embeddings` as typed: a model name, `seed` for null, absent left out. */
-function patchValue(value: string | undefined): string | null | undefined {
-  if (value === undefined) return undefined;
-  const trimmed = value.trim();
-  return trimmed === "seed" ? null : trimmed;
-}
-
-export async function chooseModels(
-  options: AiOptions,
-  providerArgument: string,
-  flags: { chat?: string; embeddings?: string },
-): Promise<void> {
-  const { out } = options;
-  const provider = providerArgument.trim();
-  const chat = patchValue(flags.chat);
-  const embeddings = patchValue(flags.embeddings);
-  if (chat === undefined && embeddings === undefined) {
-    throw new EveryAppError("AI_DEFAULT_INVALID", "Give --chat <model>, --embeddings <model>, or both (seed puts the catalog's back)", {
-      fix: `${CLI} ai model ${provider || "<provider>"} --chat <model>`,
-    });
-  }
-  const { gateway, ws } = await connect(options);
-  out.emit({ type: "step", step: STEP, status: "start", message: `Setting ${provider}'s default models...` });
-  const change = await setAiModels(ws, provider, {
-    ...(chat === undefined ? {} : { chat }),
-    ...(embeddings === undefined ? {} : { embeddings }),
-  });
-  const report = await aiReport(gateway.cf, gateway.names, ws);
-  const candidate = report.resolution.candidates.find((entry) => entry.id === provider);
-  out.emit({
-    type: "step",
-    step: STEP,
-    status: "ok",
-    message: `${ws.organization.name}: ${provider}'s default models are set`,
-    data: { provider, models: change.models, previous: change.previous },
-  });
-  const says = (value: string | null) => value ?? "the seed";
-  const lines = [
-    change.changed
-      ? `${ws.organization.name}: ${provider} serves chat ${says(change.models.chat)}, embeddings ${says(change.models.embeddings)} (was chat ${says(change.previous.chat)}, embeddings ${says(change.previous.embeddings)}).`
-      : `${ws.organization.name}: ${provider}'s models were set like that already. Nothing changed.`,
-    candidate
-      ? `Apps that take the default and name no model get ${candidate.model}${candidate.embeddingsModel ? ` and ${candidate.embeddingsModel} for embeddings` : ""} from ${candidate.label} within 30 seconds${report.resolution.provider === provider ? "" : ` once it is the default (now ${report.resolution.label})`}.`
-      : "",
-  ].filter(Boolean);
-  out.emit({ type: "done", message: lines.join("\n"), data: { ...reportData(report), change } });
 }
 
 export async function turnGatewayOn(options: AiOptions, id = DEFAULT_AI_GATEWAY_ID): Promise<void> {

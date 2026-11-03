@@ -119,7 +119,6 @@ export interface SettingsManifestLike {
   readonly secrets?: ReadonlyArray<string | SecretEntry>;
   readonly settings?: ReadonlyArray<SettingEntry>;
   readonly ai?: {
-    readonly routes?: readonly string[];
     /** The app needs the Gateway's default chat model (`/api/ai/default`): `true`, or an entry with its need. */
     readonly chat?: boolean | SettingNeedFields;
   };
@@ -134,7 +133,6 @@ export type SettingKind =
   | "secret"
   /** An app's plain setting (`settings`): a value on its Worker, not a key. */
   | "setting"
-  | "ai-routes"
   /** The Gateway's default model provider (`ai.chat`): one key of any provider in the order, or the operator's choice. */
   | "ai-default"
   /** A remote MCP app's credential (./remoteMcp.ts): one Gateway setting named by the row. */
@@ -150,8 +148,6 @@ export type SettingNeed =
 
 /** What `appSettings` may be told about the Gateway, for the default model provider. */
 export interface AppSettingsOptions {
-  /** The operator's stored default provider (`everyapp ai default`), or none. */
-  aiDefault?: string | null;
   /** What is set, to put the configured provider first; absent, the order decides. */
   isSet?: IsSet;
 }
@@ -159,9 +155,9 @@ export interface AppSettingsOptions {
 /** One thing the app needs set, as the manifest declares it. */
 export interface AppSetting {
   kind: SettingKind;
-  /** The provider id, capability id or secret name; "ai-routes" for the AI proxy's extra routes. */
+  /** The provider id, capability id or secret name. */
   id: string;
-  /** "OpenRouter", "DataForSEO", "MAIN_SECRET", "AI proxy routes". */
+  /** "OpenRouter", "DataForSEO", "MAIN_SECRET". */
   label: string;
   holder: SettingHolder;
   /** Every one of these must be set for the setting to count as set (or any one group of `alternatives`). */
@@ -223,7 +219,7 @@ export interface AnyOfGroup {
 export interface AppSettingsReport {
   /** No required setting is unset and every any-of group is met. */
   ready: boolean;
-  /** Every setting, in manifest order: providers, capabilities, the AI routes, secrets. */
+  /** Every setting, in manifest order: providers, capabilities, secrets. */
   settings: EvaluatedSetting[];
   groups: AnyOfGroup[];
   /** The settings that keep the app closed, in manifest order. */
@@ -518,8 +514,7 @@ function withNeed(
 
 /**
  * Every setting the manifest declares, in manifest order: its AI
- * providers, its capabilities, the AI proxy's extra routes when `ai.routes`
- * asks for any, then the app's own secrets. A provider or capability the
+ * providers, its capabilities, then the app's own secrets. A provider or capability the
  * gateway doesn't offer contributes nothing (the manifest validator refuses
  * it elsewhere); so does a capability with nothing to set (`members`),
  * which is always set. `lookup` is where ids are found: the catalog alone
@@ -538,7 +533,7 @@ export function appSettings(
     // ask for; with one configured, that provider's. `isSet` here only
     // orders the candidates; evaluateAppSettings decides what is set.
     const resolution = resolveAiDefault({
-      provider: options.aiDefault ?? null,
+      choice: null,
       isSet: options.isSet ?? (() => false),
       lookup,
     });
@@ -628,19 +623,6 @@ export function appSettings(
         },
       ),
     );
-  }
-  if (manifest.ai?.routes?.length) {
-    settings.push({
-      kind: "ai-routes",
-      id: "ai-routes",
-      label: "AI proxy routes",
-      holder: "gateway",
-      names: ["AI_PROXY_EXTRA_ROUTES"],
-      alsoReads: [],
-      need: { kind: "required" },
-      why: `Lets the app call ${manifest.ai.routes.join(", ")} through the AI proxy.`,
-      setup: "setup/openai.md",
-    });
   }
   const remote = remoteMcpOf(manifest);
   if (remote) {

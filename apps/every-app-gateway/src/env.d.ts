@@ -111,11 +111,6 @@ declare namespace Cloudflare {
     // ids and secrets, …) are typed from cloudflare.config.ts, which
     // declares CATALOG_GATEWAY_SETTINGS, generated from the catalog.
 
-    // OpenAI paths beyond inference that apps may opt into with their
-    // manifest's `ai.routes` (comma or space separated, e.g. "/v1/files").
-    // Unset: inference only. Set as a secret so deploys keep it.
-    AI_PROXY_EXTRA_ROUTES?: string;
-
     // Optional REST transport for email delivery outside deployed Workers.
     EMAIL_REST_API_TOKEN?: string;
 

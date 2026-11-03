@@ -884,14 +884,15 @@ export const AiPolicySchema = z
     /** Model ids the app may request from inference endpoints. Omitted: any. */
     models: z.array(z.string().min(1).max(200)).optional(),
     /**
-     * Provider paths the app needs beyond inference. Only honored within the
-     * gateway operator's allowlist (AI_PROXY_EXTRA_ROUTES), since the
-     * provider key is shared. Omitted: inference only.
+     * Provider paths the app needs beyond inference (OpenAI only, e.g.
+     * `/v1/files`, each covering its sub-paths). The manifest is the grant,
+     * as for capabilities: deploy, install and the browser install form show
+     * them. Omitted: inference only.
      */
     routes: z.array(AiRouteSchema).optional(),
     /**
-     * The app needs a chat model and takes whichever the Gateway's
-     * operator made the default (`/api/ai/default/…`, the SDK's `ai()`):
+     * The app needs a chat model and takes the workspace's default
+     * (`/api/ai/default/…`, `aiBaseUrl()` with `createGatewayFetch()`):
      * `true`, or an entry with its need (`why`, `optional`, `anyOf`). The
      * model allowlist above doesn't apply to the default route: the
      * operator chose the model. An app that needs one provider in

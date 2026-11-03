@@ -494,7 +494,7 @@ The threat model is [docs/threat-model.md](docs/threat-model.md) (the register o
 - [ ] **Any member reads the member directory** through Better Auth's open `list-members` and `get-organization` (B2): fine for four people; a decision for teams.
 - [x] **`everyapp://` was a wildcard-authority trusted origin and verify-email appended the session cookie to custom-scheme redirects** (B2, hosted only). Closed 2026-10-24 by #442: the Expo plugin, the native origin and the Access mobile handoff went with the mobile shell; the gateway's only trusted origin is its own URL.
 - [ ] **A first-party WebSocket 101 handshake passes through with `Set-Cookie` `Domain` intact** (B1; rebuild it as the third-party path does).
-- [ ] **`ai.models` doesn't check OpenRouter's `models` fallback list**; `AI_PROXY_EXTRA_ROUTES` opens every method and sub-path to every opted-in app (B4).
+- [ ] **`ai.models` doesn't check OpenRouter's `models` fallback list** (B4). (`AI_PROXY_EXTRA_ROUTES` is gone since 2026-11-02: `ai.routes` alone is the grant, an accepted risk in docs/threat-model.md.)
 - [ ] **Proxy-forwarding headers reach apps as sent** (`X-Forwarded-For` and friends; B1): strip or document `cf-connecting-ip` as the only address an app may trust.
 - [ ] **Personal tokens: `*` for 90 days by default, no narrower scope in the UI, revocable by the holder only** (B5; the teams roadmap's per-member scopes).
 - [ ] **Refresh-token replay has no reuse detection** (B5; the library offers none; a wrapper that records the last-used token id and revokes the grant on replay).

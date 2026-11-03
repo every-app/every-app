@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { ConfigurationError } from "../internal/index";
-import { ai, aiBaseUrl, providerBaseUrl, type AiClient } from "./ai";
+import { aiBaseUrl, providerBaseUrl } from "./ai";
 import { createGatewayFetch } from "./gatewayFetch";
 import { integrationFetch } from "./integrationFetch";
 
@@ -57,19 +57,16 @@ describe("{ optional: true }", () => {
     expect(
       createGatewayFetch({ for: FOR, env: unavailable, optional: true }),
     ).toBeNull();
-    expect(ai({ for: FOR, env: unavailable, optional: true })).toBeNull();
     expectTypeOf(
-      ai({ for: FOR, env: unavailable, optional: true }),
-    ).toEqualTypeOf<AiClient | null>();
-    const strict = () => ai({ for: FOR, env: unavailable });
-    expectTypeOf(strict).returns.toEqualTypeOf<AiClient>();
+      createGatewayFetch({ for: FOR, env: unavailable, optional: true }),
+    ).toEqualTypeOf<typeof fetch | null>();
     expect(
-      ai({
+      createGatewayFetch({
         for: FOR,
         env: { ...unavailable, OPENAI_API_KEY: "sk" },
         optional: true,
-      })?.baseURL,
-    ).toBe(aiBaseUrl());
+      }),
+    ).toBeTypeOf("function");
   });
 
   it("answers null for an integration without its settings", () => {

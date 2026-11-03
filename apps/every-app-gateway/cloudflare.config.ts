@@ -38,7 +38,6 @@ export const OPTIONAL_SECRETS = [
   // a host setting, an OAuth client's id and secret), generated from
   // packages/sdk/src/internal/capabilities.ts.
   ...CATALOG_GATEWAY_SETTINGS,
-  "AI_PROXY_EXTRA_ROUTES",
   // Email's providers (src/server/email/providers): Cloudflare's REST pair
   // (with CLOUDFLARE_ACCOUNT_ID below), Resend's key, and the choice.
   "EMAIL_REST_API_TOKEN",

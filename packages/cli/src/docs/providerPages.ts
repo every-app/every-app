@@ -254,7 +254,7 @@ function keySection(company: Company, [id, capability]: KeyEntry, heading: strin
   const check = isProxy
     ? "`everyapp secret list` lists `AI_GATEWAY_ID`, and the AI Gateway dashboard shows your apps' calls."
     : isAi
-      ? `\`everyapp ai list\` shows ${code(id)} with its key set.`
+      ? `\`everyapp ai show\` lists ${code(id)} with its key set.`
       : `\`everyapp provider show ${id}\` shows the key as set.`;
   out.push(`**Check it worked:** ${check}`, "");
   out.push(...costLines(capability).flatMap((line) => [line, ""]));

@@ -11,7 +11,7 @@
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
-import { hasAiDefault, hasAiModels } from "./aiDefault";
+import { hasAiDefault } from "./aiDefault";
 import { emptyOrgSettingsSql, hasCostCaps } from "./costCaps";
 import { operatorActor, queueEventFromCli } from "./events";
 import type { Workspace } from "./workspace";
@@ -88,7 +88,6 @@ ON CONFLICT (organization_id) DO UPDATE SET linked_dev = ?2, updated_at = ?3, up
             sql: `DELETE FROM org_settings WHERE organization_id = ? AND ${emptyOrgSettingsSql({
               cost: await hasCostCaps(ws.db),
               ai: await hasAiDefault(ws.db),
-              models: await hasAiModels(ws.db),
               linkedDev: true,
             })}`,
             params: [org],

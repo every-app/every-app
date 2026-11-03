@@ -396,7 +396,7 @@ describe("an ai row in the registry", () => {
     ).toMatchObject({ configured: true });
     expect(
       resolveAiDefault({
-        provider: "vendor-ai",
+        choice: { provider: "vendor-ai" },
         isSet,
         lookup: bound,
       }),

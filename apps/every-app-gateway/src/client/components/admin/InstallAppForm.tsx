@@ -287,6 +287,12 @@ export function InstallAppForm({
                     />
                   </Field>
                 ))}
+              {review.data.aiRoutes.length > 0 && (
+                <p className="text-sm">
+                  Uses OpenAI paths beyond inference, on this Gateway&apos;s
+                  OpenAI key: {review.data.aiRoutes.join(", ")}.
+                </p>
+              )}
               {!locked && review.data.providers.length > 0 && (
                 <Field>
                   {review.data.providers.map((provider) => (

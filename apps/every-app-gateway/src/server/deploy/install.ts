@@ -367,6 +367,9 @@ export function serveInstall(request: Request): Promise<Response> {
               ? { name: installed.name, status: installed.status }
               : null,
           resources: manifest.resources ?? {},
+          // OpenAI paths beyond inference on the Gateway's shared key: the
+          // manifest is their grant, so the person installing sees them.
+          aiRoutes: manifest.ai?.routes ?? [],
           fields,
           providers: bundled?.reports ?? [],
         },

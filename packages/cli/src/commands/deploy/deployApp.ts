@@ -432,9 +432,12 @@ async function deploySteps(
   }
   // Until the app has been live once, the end of the run says who can open
   // it; what the manifest opens to the internet, and whether its host
-  // answers /mcp, it says every time.
+  // answers /mcp, it says every time; so does the manifest's `ai.routes`
+  // (OpenAI paths beyond inference on the Gateway's shared key: the manifest
+  // is their grant, so the deploy shows them).
   const publicRoutes = publicRoutesOf(manifest);
   const mcp = mcpOf(manifest);
+  const aiRoutes = manifest.ai?.routes ?? [];
   out.emit({
     type: "step",
     step: "app.register",
@@ -452,6 +455,7 @@ async function deploySteps(
       hasOwner,
       publicRoutes,
       mcp,
+      ...(aiRoutes.length > 0 ? { aiRoutes } : {}),
       scope: plan.app.scope,
       organizationId: organization.id,
       organizationName: organization.name,

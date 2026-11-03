@@ -260,8 +260,6 @@ function devSettings(manifest: SettingsManifestLike, lookup: CapabilityLookup): 
         return lookup.get(setting.id)?.mode === "oauth_client"
           ? [{ ...setting, names: [`${providerSettingPrefix(setting.id)}ACCESS_TOKEN`], alsoReads: [] }]
           : [setting];
-      case "ai-routes":
-        return [];
       // The default model in dev: the first provider of the order whose
       // settings .dev.vars has (the SDK's fallback), so the names are the
       // first candidate's and any candidate's settings count.

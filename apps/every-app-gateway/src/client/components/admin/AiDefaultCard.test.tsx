@@ -30,7 +30,6 @@ function report(overrides: Partial<Resolution>): AiDefaultReport {
       ...overrides,
     } as Resolution,
     choice: null,
-    models: {},
     aiGateway: { on: false },
   };
 }
