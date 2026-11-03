@@ -51,7 +51,7 @@ import { RateLimitCounterRepository } from "./repositories/RateLimitCounterRepos
 import { UsageRepository } from "./repositories/UsageRepository";
 import { McpConnectionService } from "./services/McpConnectionService";
 
-/** Per connection: calls a minute, and a UTC day (docs/design/linked-dev.md §4.3; TODO "Linked dev" question 4). */
+/** Per connection: calls a minute, and a UTC day (docs/design/linked-dev.md §4.3). */
 export const LINKED_DEV_LIMITS = { perMinute: 120, perDay: 2_000 } as const;
 const APP_SLUG = /^[a-z]([a-z0-9-]*[a-z0-9])?$/;
 const WHOAMI = "whoami";

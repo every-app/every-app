@@ -94,4 +94,4 @@ The person passes Access's login in the browser at step 5; `/oauth/token` and `/
 - Custom URL schemes (`openzen://`) are refused; iOS uses a claimed https link.
 - A stolen access token is one app, one member, one hour; revoke from Settings.
 
-The full table is section 10 of `docs/design/native-sign-in.md`; the invariants are in the threat model ([/docs/agent/repo/threat-model](/docs/agent/repo/threat-model)).
+The full table is section 10 of `docs/design/native-sign-in.md`; the boundaries are on the security page ([/docs/agent/repo/threat-model](/docs/agent/repo/threat-model)).

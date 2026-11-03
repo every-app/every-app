@@ -79,7 +79,7 @@ const LISTEN_POLL_MS = 30_000;
  * the closes nobody schedules (a deploy, an isolate gone, an expired
  * token): the gateway surface, which rechecks its caller every poll, holds
  * 30 minutes (two scheduled closes an hour); the app-host surface, which
- * rechecks nothing between requests, keeps 10 (TODO.md, "MCP surface").
+ * rechecks nothing between requests, keeps 10.
  */
 export const GATEWAY_LISTEN_MAX_MS = 30 * 60_000;
 export const APP_LISTEN_MAX_MS = 10 * 60_000;

@@ -54,25 +54,17 @@ const SITE_URL = "https://everyapp.com";
  * Repository path → page under /docs/agent/repo, its one-line description
  * for llms.txt, a metaTitle or metaDescription where search results need a
  * shorter one, and for a document the code has moved past, a `note` the
- * page opens with (the source stays as its authors wrote it). Not here:
- * docs/threat-model-invariants.md, the register behind the threat model
- * (350 KB of tables that would swamp llms-full.txt); links to it from the
- * threat model become GitHub links.
+ * page opens with (the source stays as its authors wrote it). The security
+ * page keeps the `threat-model` slug, which vendored skills link to.
  */
 const DOCUMENTS = [
   {
-    from: "docs/security-model.md",
-    to: "security-model",
-    description:
-      "The platform's security rules: trust zones, deployment modes, what the perimeter enforces, what apps receive, hosted sign-up, MCP, secrets handling.",
-  },
-  {
-    from: "docs/threat-model.md",
+    from: "docs/security.md",
     to: "threat-model",
     metaDescription:
-      "EveryApp's threat model: assets, actors, trust boundaries, one tested invariant per boundary, what Cloudflare Access adds, what is out of scope, known gaps.",
+      "Every App's security page: who is trusted with what, the boundaries and the test that pins each invariant, what Cloudflare Access adds, the known gaps.",
     description:
-      "The threat model: assets, actors, trust boundaries, one testable invariant per boundary with the code that enforces it and the test that pins it, what Cloudflare Access adds, what is out of scope, known gaps.",
+      "Security: the one rule (a person's credential stops at the Gateway), who is trusted with what, each boundary's invariants and the test that pins each, what Cloudflare Access adds, what is out of scope, the top known gaps, how to report a problem.",
   },
   {
     from: "docs/capabilities.md",
@@ -137,7 +129,7 @@ const DOCUMENTS = [
   },
   {
     from: "docs/adr/ADR-0001-hosted-vs-self-hosted-topology.md",
-    note: "Historical (2026-03-02). Section 6's single-tenant hosted Workers were overruled on 2026-10-16: first-party apps share one Worker per app, third-party apps get one Worker per organization on Workers for Platforms (/docs/agent/repo/security-model and /docs/agent/repo/hosted-vision).",
+    note: "Historical (2026-03-02). Section 6's single-tenant hosted Workers were overruled on 2026-10-16: first-party apps share one Worker per app, third-party apps get one Worker per organization on Workers for Platforms (/docs/agent/repo/threat-model and /docs/agent/repo/hosted-vision).",
     to: "adr/0001-hosted-vs-self-hosted-topology",
     description:
       "Architecture decision: one codebase for the hosted and the self-hosted Gateway, and how the two differ.",

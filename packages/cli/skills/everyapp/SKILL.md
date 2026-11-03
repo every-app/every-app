@@ -127,5 +127,5 @@ everyapp.config.ts. Before a pull request that touches identity, public routes,
 tools, secrets or queries, review the changes against security-review.md beside
 this file (`/security-review` in Claude Code; any other agent reads git diff
 against it). Fix what it finds, or say in the pull request why a finding is a
-false positive. What the Gateway promises: docs/threat-model.md in the checkout
+false positive. What the Gateway promises: docs/security.md in the checkout
 (https://everyapp.com/docs/agent/repo/threat-model).

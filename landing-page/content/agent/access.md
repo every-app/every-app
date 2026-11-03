@@ -20,7 +20,7 @@ Every Access setting is a Worker secret on the Gateway (`everyapp secret set <NA
 
 Access sign-in exists only in `self_hosted` mode. `apps/every-app-gateway/src/server/platform-policy.ts` sets `accessSignIn: true` for `self_hosted` and `false` for `hosted` and `invalid`; where it is false the plugin is not registered, and `accessConfigFromEnv()` (`apps/every-app-gateway/src/auth/cloudflare-access/index.ts`) reads an empty configuration and, only when some `CLOUDFLARE_ACCESS_*` or `EMAIL_PASSWORD_SIGN_IN` value is set on the Worker anyway, logs one problem: "The Cloudflare Access settings and EMAIL_PASSWORD_SIGN_IN are ignored: this gateway's GATEWAY_DEPLOYMENT_MODE has no Access sign-in.". The CLI refuses `access on` and `access off` on a hosted Gateway with `ACCESS_HOSTED` (`This Gateway can't be put behind Cloudflare Access` / `Hosted Gateways ignore the Access settings.`); `access show` answers `hosted: true` and reads nothing from Access.
 
-The operator runbook is `docs/runbooks/cloudflare-access.md`, mirrored at [/docs/agent/repo/runbooks/cloudflare-access](/docs/agent/repo/runbooks/cloudflare-access). What Access adds to the platform's trust boundaries is in `docs/threat-model.md`, mirrored at [/docs/agent/repo/threat-model](/docs/agent/repo/threat-model).
+The operator runbook is `docs/runbooks/cloudflare-access.md`, mirrored at [/docs/agent/repo/runbooks/cloudflare-access](/docs/agent/repo/runbooks/cloudflare-access). What Access adds to the platform's trust boundaries, and what it doesn't, is in `docs/security.md` ("What Cloudflare Access adds, and what it doesn't"), mirrored at [/docs/agent/repo/threat-model](/docs/agent/repo/threat-model).
 
 ## The two Access applications
 
@@ -214,7 +214,7 @@ Logs to grep: `access.config_problem`, `access.jwks_fetch_failed`, `access.evalu
 ## Sources
 
 - `docs/runbooks/cloudflare-access.md`
-- `docs/security-model.md`
+- `docs/security.md`
 - `apps/every-app-gateway/src/server/access-evaluation.ts`
 - `apps/every-app-gateway/src/auth/cloudflare-access/config.ts`
 - `apps/every-app-gateway/src/auth/cloudflare-access/index.ts`

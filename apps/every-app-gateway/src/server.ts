@@ -174,7 +174,7 @@ const APPLE_CALLBACK_PATH = "/api/auth/callback/apple";
  * case-insensitively, `*` spanning segments. The health and MCP/OAuth
  * routes above are exact-case, so what they don't serve under these
  * prefixes (`/HEALTH`, `/MCP`) is a JSON 404 here, never the control
- * plane's shell (docs/threat-model.md, B6).
+ * plane's shell (docs/security.md, B6).
  */
 const ACCESS_BYPASSED_EXACT = [
   HEALTH_PATH,

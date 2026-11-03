@@ -5,7 +5,7 @@
  * to `/__everyapp/events` with an `events.deliver` system token bound to
  * the body; it hears its own organization only, only the families on the
  * allowlist, never its own events back; and it retries and dead-letters
- * like a webhook. Names are what docs/threat-model.md cites.
+ * like a webhook.
  */
 import {
   afterEach,

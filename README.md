@@ -74,7 +74,7 @@ Oh, nothing much. Just rebuilding every SaaS for agents.
 - Docs: [everyapp.com/docs](https://everyapp.com/docs) (for your agent: [everyapp.com/llms.txt](https://everyapp.com/llms.txt))
 - Join [Discord](https://discord.gg/c9uGs3cFXr) to chat
 - Local development and contributing: [CONTRIBUTING](.github/CONTRIBUTING.md)
-- Security holes: report them privately, not in a public issue ([how](docs/threat-model.md#reporting-a-problem)).
+- Security holes: report them privately, not in a public issue ([how](docs/security.md#reporting-a-problem)).
 
 ## License
 

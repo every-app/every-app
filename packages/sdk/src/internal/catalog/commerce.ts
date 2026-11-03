@@ -161,7 +161,7 @@ export const COMMERCE = {
     },
     tags: ["payments", "billing"],
   },
-  // Legacy admin custom apps only: Shopify no longer lets a store create one, and Dev Dashboard tokens expire daily (the hint says so; shipping it is Ben's call, TODO.md).
+  // Legacy admin custom apps only: Shopify no longer lets a store create one, and Dev Dashboard tokens expire daily (the hint says so; shipping it is Ben's call).
   shopify: {
     mode: "api_key",
     label: "Shopify",

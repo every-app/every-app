@@ -7,7 +7,7 @@
  * against the issuer's live role at the moment they are used (an invite
  * link opened, sign-up through it, Access or a sign-in provider accepting a
  * pending invitation for a verified email; Better Auth's /reset-password
- * consuming an admin's token). docs/threat-model.md gap 12.
+ * consuming an admin's token).
  *
  * Admin-minted reset tokens are Better Auth verification rows
  * (`reset-password:<token>`, value the user id) so the regular reset page

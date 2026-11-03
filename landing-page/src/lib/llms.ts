@@ -138,7 +138,7 @@ export async function llmsIndex(): Promise<string> {
 /**
  * `/llms-full.txt`: the user guides, then every agent docs page written
  * for agents, each set in its sidebar's order. The documents mirrored from
- * the repository (`repo/…`: the security model, the threat model, the
+ * the repository (`repo/…`: the security page, the capabilities, the
  * runbooks) are left out, since they run to megabytes and an agent fetches
  * the one it needs by its URL.
  */

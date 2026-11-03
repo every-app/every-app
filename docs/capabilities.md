@@ -406,8 +406,7 @@ each setting is set and bound; `provider show <id>` prints a spec;
 `provider remove <id>` removes a row. The spec's fields, the auth kinds,
 the rules, the commands and their codes are the agent docs page
 [/docs/agent/providers](https://everyapp.com/docs/agent/providers); the
-rules' invariants are the `providers.*` rows of the threat model's register
-(B4), and the design is docs/design/2026-10-provider-registry.md.
+boundary is B4 in `docs/security.md`, and the design is docs/design/2026-10-provider-registry.md.
 
 <a id="oauth-clients"></a>
 

@@ -406,7 +406,7 @@ Read the response body: the Gateway's answers are `{ "error": …, "reason"?: �
 ### A public route that is not public
 
 - Symptom: an anonymous request to a path the person meant to be public gets 401 (or a 302 to sign-in), or a webhook's POST gets 401.
-- Cause: routes are private unless `public` in `everyapp.config.ts` lists them; `methods` defaults to `GET` only; the path must canonicalize unambiguously (an encoded separator, double encoding, traversal, a backslash or control characters make it ambiguous: never public); `/__everyapp/*` and the RFC 9728 metadata paths are never public; a glob `*` is one segment, `**` crosses segments, `:name` one non-empty segment. The manifest the Gateway reads is the one recorded by the last deploy (`markDeployed`), so a manifest edit needs a deploy. A public POST that carries a cookie and fails the CSRF check isn't denied: it is served anonymously (the public marker), so a signed-in member can look logged out there. The boundary this enforces (every request reaches an app through the Gateway, and a route is private unless the deployed manifest declares it) is written up in [/docs/agent/repo/threat-model](/docs/agent/repo/threat-model) (assets, actors, trust boundaries, one testable invariant per boundary; mirrored from `docs/threat-model.md`).
+- Cause: routes are private unless `public` in `everyapp.config.ts` lists them; `methods` defaults to `GET` only; the path must canonicalize unambiguously (an encoded separator, double encoding, traversal, a backslash or control characters make it ambiguous: never public); `/__everyapp/*` and the RFC 9728 metadata paths are never public; a glob `*` is one segment, `**` crosses segments, `:name` one non-empty segment. The manifest the Gateway reads is the one recorded by the last deploy (`markDeployed`), so a manifest edit needs a deploy. A public POST that carries a cookie and fails the CSRF check isn't denied: it is served anonymously (the public marker), so a signed-in member can look logged out there. The boundary this enforces (every request reaches an app through the Gateway, and a route is private unless the deployed manifest declares it) is written up in [/docs/agent/repo/threat-model](/docs/agent/repo/threat-model) (mirrored from `docs/security.md`).
 - Confirm: `curl -s -o /dev/null -w '%{http_code}\n' https://<host>/<path>` expects 200 for a declared public GET; `curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<host>/__everyapp/tools/call` is 404 by design (`docs/TESTING.md`, section C).
 - Fix: add the route (path and `methods`) and deploy again; in the app, a public request arrives with `user` null and `x-everyapp-public` set. Source: `packages/perimeter/src/publicRoutes.ts`, `packages/perimeter/src/gateway.ts`.
 
@@ -518,8 +518,8 @@ What the launcher and Admin → Apps show for an app, from its registry row (`ap
 ### Tools not updating in Claude Code
 
 - Symptom: `defineTools()` was edited while `everyapp dev` runs, but Claude Code still lists the old tools at `http://<app-id>.localhost:8787/mcp`.
-- Cause: the dev ToolBus re-reads the app's catalog every 2 s, but hands its view no `refresh`, so for 2026-era clients it declares `listChanged: false` and holds no notification stream; only 2025-era clients get the session-hash notification (`TODO.md`, "let Claude Code see edited defineTools() without reconnecting").
-- Fix: reconnect the server in Claude Code (`/mcp`, or remove and `claude mcp add --transport http <name> http://<app-id>.localhost:8787/mcp` again). On a deployed Gateway, connected 2026-era clients get `notifications/tools/list_changed` within about 30 s. [MCP](/docs/agent/mcp). Source: `packages/toolbus/src/http.ts`, `TODO.md`.
+- Cause: the dev ToolBus re-reads the app's catalog every 2 s, but hands its view no `refresh`, so for 2026-era clients it declares `listChanged: false` and holds no notification stream; only 2025-era clients get the session-hash notification.
+- Fix: reconnect the server in Claude Code (`/mcp`, or remove and `claude mcp add --transport http <name> http://<app-id>.localhost:8787/mcp` again). On a deployed Gateway, connected 2026-era clients get `notifications/tools/list_changed` within about 30 s. [MCP](/docs/agent/mcp). Source: `packages/toolbus/src/http.ts`.
 
 ## MCP
 
@@ -535,14 +535,14 @@ What the launcher and Admin → Apps show for an app, from its registry row (`ap
 - Symptom: a request with `Authorization: Bearer epat_…` gets 401, or 403 `token_scope` / `no_app_access`.
 - Cause: a reserved `epat_` bearer fails closed and never falls back to a cookie. 401: the token is unknown, revoked or expired; its owner is no longer a member of its organization or is deactivated; it has a `provider:` scope; or it is a deploy key (`deploy` scope: a token for the Gateway's deploy API, made in Admin → Tokens; it opens no app). 403 `no_app_access`: a token bound to one app used on another's host, or the member lacks the app. 403 `token_scope`: a token without `*` on any private app route (an `mcp:read` token, one with other scopes; on a declared public route such a token is served anonymously, never 403). An app host serves no MCP: `https://<app-host>/mcp` is the app's own private route (usually 404), and a client pointed at it must connect `https://<gateway>/mcp` instead.
 - Confirm: the body's `error` and `reason`; the token under Admin → Tokens (kind, scopes, bound app).
-- Fix: a new token with the right scopes, or the Gateway's `/mcp` with OAuth. Source: `apps/every-app-gateway/src/perimeter/betterAuthAuthenticator.ts`, `packages/perimeter/src/gateway.ts`, `docs/security-model.md` ("Agent Tools (MCP)").
+- Fix: a new token with the right scopes, or the Gateway's `/mcp` with OAuth. Source: `apps/every-app-gateway/src/perimeter/betterAuthAuthenticator.ts`, `packages/perimeter/src/gateway.ts`, `docs/security.md`.
 
 ### Tools missing
 
 - Symptom: a tool the app defines isn't in `tools/list`, or a call answers `Unknown tool`; an app's tools are absent altogether.
 - Cause: write tools (a tool without a risk counts as write) are hidden from read-only connections and read-only tokens (`read_only_connection`); every tool is hidden when the organization is blocked (`org_blocked`, checked first); an app on an SDK from before tools were read or write has its `risk: "destructive"` tools skipped until it updates `@every-app/sdk`; hidden means absent from the list and `Unknown tool` on a call. The Gateway's `/mcp` serves only the active apps of the caller's organization they have access to, narrowed to the apps an OAuth connection chose or the one app a token is bound to; an app that needs setup (a required setting unset) serves no tools, and `everyapp_list_apps` names it with `needs setup: an admin runs pnpm everyapp configure <app>`; an MCP app that is on (`pnpm everyapp mcp on dataforseo`) adds its `dataforseo_<tool>` tools once `DATAFORSEO_API_KEY` is set. A catalog is taken when an app is activated, on first use, and when its host sees a new version; an app that defines no `defineTools()` catalog has none.
 - Confirm: call `everyapp_list_apps` and `everyapp_whoami`; check the tool's `risk` in the app's `tools.ts`; the connection's access (read-only or read & write) under **AI connections**; the member's app access in Admin → Apps.
-- Fix: grant the app, reconnect with write access, or change the tool's risk. Source: `packages/toolbus/src/policy.ts`, `apps/every-app-gateway/src/server/toolbus/gateway-mcp.ts`, `docs/security-model.md`.
+- Fix: grant the app, reconnect with write access, or change the tool's risk. Source: `packages/toolbus/src/policy.ts`, `apps/every-app-gateway/src/server/toolbus/gateway-mcp.ts`, `docs/security.md`.
 
 ### Behind Cloudflare Access
 
@@ -551,7 +551,7 @@ What the launcher and Admin → Apps show for an app, from its registry row (`ap
 
 ## Access
 
-`pnpm everyapp access on|off|show` (`packages/cli/src/commands/access/`, `packages/cli/src/lib/access/`) sets the outer ring up, takes it down and reports it; the entries below name it where it is the fix. [Cloudflare Access](/docs/agent/access) documents the command, [the user docs' Access page](/docs/access) is the person's view, `packages/cli/skills/everyapp/setup/access.md` (in an app, `node_modules/everyapp/skills/everyapp/setup/access.md`) is the step list for an agent, and `docs/runbooks/cloudflare-access.md` ([mirrored](/docs/agent/repo/runbooks/cloudflare-access)) is the runbook it automates. What the ring adds to the trust boundaries is in [/docs/agent/repo/threat-model](/docs/agent/repo/threat-model) (mirrored from `docs/threat-model.md`).
+`pnpm everyapp access on|off|show` (`packages/cli/src/commands/access/`, `packages/cli/src/lib/access/`) sets the outer ring up, takes it down and reports it; the entries below name it where it is the fix. [Cloudflare Access](/docs/agent/access) documents the command, [the user docs' Access page](/docs/access) is the person's view, `packages/cli/skills/everyapp/setup/access.md` (in an app, `node_modules/everyapp/skills/everyapp/setup/access.md`) is the step list for an agent, and `docs/runbooks/cloudflare-access.md` ([mirrored](/docs/agent/repo/runbooks/cloudflare-access)) is the runbook it automates. What the ring adds to the trust boundaries is in [/docs/agent/repo/threat-model](/docs/agent/repo/threat-model) (mirrored from `docs/security.md`).
 
 ### Locked out
 
@@ -734,6 +734,5 @@ From `docs/TESTING.md`, section C ([mirrored](/docs/agent/repo/testing)):
 - `docs/runbooks/email-sending-setup.md`
 - `docs/runbooks/hosted-install.md`
 - `docs/TESTING.md`
-- `docs/security-model.md`
+- `docs/security.md`
 - `docs/capabilities.md`
-- `TODO.md`

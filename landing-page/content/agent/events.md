@@ -713,11 +713,11 @@ Deliveries are not provider calls: not counted in Admin → Usage, not capped.
 - **Logs.** The Gateway logs delivery outcomes by id and code, never a body, a secret or an address.
 - **The app sink reaches the app's own Worker only**, over its binding, for its own organization's events, inside the allowlist (checked at deploy, at queue time and at each attempt), with an `events.deliver` token bound to the body; the perimeter refuses `/__everyapp/events` from outside.
 
-The invariants (`events.no-secrets-no-tool-io`, `events.signed-with-timestamp`, `events.target-rules`, `events.no-redirect-pinned-url`, `events.org-scoped`, `events.admin-only`, `events.app-emit-attributed-and-bounded`, `events.email-sink-members-only`, `events.retention`, `events.secret-shown-once`) are the threat model's boundary B9, with `events.emit-route-attributed-like-a-capability` in B4, once the threat-model PR (#647) lands ([/docs/agent/repo/threat-model](/docs/agent/repo/threat-model)).
+The rules above belong to boundary B9 on the security page, the emit route's attribution to B4 ([/docs/agent/repo/threat-model](/docs/agent/repo/threat-model)). Test names still carry the old register ids (`events.target-rules` and the like; the old register is in git history at `673bed8c8`).
 
 ## Open decisions
 
-From `docs/design/2026-10-events-out.md`, "Defaults for Ben", taken without him and listed in `TODO.md` ("Events out (2026-10-25)"):
+From `docs/design/2026-10-events-out.md`, "Defaults for Ben", taken without him:
 
 - The scheduler is D1 plus a per-minute cron, not a Durable Object or a Queue; a per-subscription Durable Object with alarms is the upgrade path, with the same tables.
 - The signing secret is stored as written in D1.

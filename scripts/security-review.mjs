@@ -5,7 +5,7 @@
  * Builds one prompt (the audit prompt of anthropics/claude-code-security-review
  * pinned at 0c6a49f1, scripts/security-review/audit-prompt.md; this
  * repository's boundaries, scan-instructions.md; its false-positive rules,
- * false-positives.md; a pointer to docs/threat-model.md; the diff), runs
+ * false-positives.md; a pointer to docs/security.md; the diff), runs
  * Claude Code over it non-interactively in restricted mode with read-only
  * tools confined to the checkout, parses the JSON block the model ends with,
  * prints the findings, and exits 1 while a high or medium one remains. No CI
@@ -195,7 +195,7 @@ ${diffSection}
 
 ${promptFile("audit-prompt.md")}
 
-EVERYAPP'S BOUNDARIES (what to look for in this repository; read docs/threat-model.md with the Read tool when a change touches one, it names each boundary's invariants and the code that holds them):
+EVERYAPP'S BOUNDARIES (what to look for in this repository; read docs/security.md with the Read tool when a change touches one: it names the actors, each boundary's invariants and the test that pins each):
 ${promptFile("scan-instructions.md")}
 
 FALSE-POSITIVE FILTERING: before reporting a finding, check it against every rule below as a second reviewer would, and drop it when a rule matches or your confidence is below 0.8.

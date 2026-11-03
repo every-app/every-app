@@ -28,6 +28,8 @@ An app made from a checkout is linked to that checkout's SDK and CLI, so its `pn
 
 - `pnpm types:check` and the tests for the packages you touched (`pnpm -C <package> exec vitest run`).
 - Docs live in `landing-page/content/docs`; after changing CLI commands or error codes run `pnpm -C packages/cli docs:update`.
-- Security problems: report them privately, not in a public issue ([how](../docs/threat-model.md#reporting-a-problem)).
+- A change to the perimeter, identity, Cloudflare Access, OAuth, tokens or secrets: run `pnpm security-review` first. The boundaries are in [docs/security.md](../docs/security.md).
+- Something a person can do in the Gateway's UI needs a CLI command and an MCP tool too (the parity matrix in `docs/design/2026-10-agent-parity.md`).
+- Security problems: report them privately, not in a public issue ([how](../docs/security.md#reporting-a-problem)).
 
 Questions: ask in [Discord](https://discord.gg/c9uGs3cFXr).

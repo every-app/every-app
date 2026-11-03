@@ -1,13 +1,13 @@
 ---
 title: "Sign-in providers: Continue with Google, Microsoft, GitHub, Apple, Cloudflare or SSO"
-description: "How a Gateway offers Continue with Google, Microsoft, GitHub, Apple, Cloudflare or any OpenID Connect issuer beside passwords: the catalog and every <ID>_SIGNIN_<FIELD> setting, the redirect URL, every everyapp signin command, flag, --json shape and code, who gets in and how existing accounts connect, Microsoft's tenant rule, Apple's POST and expiring secret, a private Cloudflare client versus Access's Sign in with Cloudflare, the generic OIDC issuer, Manage workspace → Sign-in, the read-only MCP tools, turning passwords off, and the threat model's rows."
+description: "How a Gateway offers Continue with Google, Microsoft, GitHub, Apple, Cloudflare or any OpenID Connect issuer beside passwords: the catalog and every <ID>_SIGNIN_<FIELD> setting, the redirect URL, every everyapp signin command, flag, --json shape and code, who gets in and how existing accounts connect, Microsoft's tenant rule, Apple's POST and expiring secret, a private Cloudflare client versus Access's Sign in with Cloudflare, the generic OIDC issuer, Manage workspace → Sign-in, the read-only MCP tools, turning passwords off, and the security boundary."
 metaTitle: "Sign-in providers: Google, GitHub, Apple, SSO"
 metaDescription: "How an EveryApp Gateway offers Continue with Google, Microsoft, GitHub, Apple, Cloudflare or any OIDC issuer: settings, redirect URL, everyapp signin."
 ---
 
 A sign-in provider is one more way to sign in to a Gateway: "Continue with Google" on the sign-in page, and the same for Microsoft, GitHub, Apple, Cloudflare and any OpenID Connect issuer (Okta, Entra ID as an issuer, Keycloak, Auth0, Authentik, Google Workspace as an issuer). It is not a second login system. Better Auth stays the system of record for users, sessions, organizations, roles, invitations, personal access tokens and the OAuth server MCP clients use; Better Auth's own endpoints run the flow, and a provider sign-in ends in an ordinary Better Auth session, so everything after it (the perimeter, the identity tokens apps get, app access, `/mcp` and its OAuth, personal tokens, deactivation) works as after a password. Passwords stay on unless `EMAIL_PASSWORD_SIGN_IN` turns them off. Providers register in both deployment modes, self-hosted and hosted.
 
-The person's page is [Sign in with Google, Microsoft, GitHub, Apple or your SSO](/docs/sign-in); the operator's runbook in the checkout is `docs/runbooks/sign-in-providers.md`; the security rules are the security model's "Sign-in providers" and the threat model's boundary B10 ([/docs/agent/repo/threat-model](/docs/agent/repo/threat-model)). Cloudflare Access is a different thing with its own settings and page: [Cloudflare Access](/docs/agent/access).
+The person's page is [Sign in with Google, Microsoft, GitHub, Apple or your SSO](/docs/sign-in); the operator's runbook in the checkout is `docs/runbooks/sign-in-providers.md`; the boundary is B10 on the security page ([/docs/agent/repo/threat-model](/docs/agent/repo/threat-model)). Cloudflare Access is a different thing with its own settings and page: [Cloudflare Access](/docs/agent/access).
 
 ## The model
 
@@ -69,7 +69,7 @@ Which Microsoft addresses count as verified depends on `MICROSOFT_SIGNIN_TENANT`
 - **Pinned to the operator's own directory** (recommended): register the app for "Accounts in this organizational directory only" and set the setting to the Directory (tenant) ID. A token counts when its `tid` is that tenant: the directory's addresses are trusted as Access trusts the operator's identity provider. A token from any other tenant counts as unverified.
 - **Any Microsoft account** (unset, `common`, `organizations` or `consumers`): any tenant's admin can put any address on their users (the "nOAuth" attack), so the Gateway needs the token's own word for the address: `xms_edov: true` (the optional claim "email domain owner verified"), `email_verified: true`, the email in `verified_primary_email`, or a personal Microsoft account (`tid` `9188040d-6c67-4c5b-b112-36a304b66dad`). Add the optional claims `email` and `xms_edov` to the ID token under the registration's Token configuration; without them every work or school sign-in is refused as `SIGNIN_EMAIL_NOT_VERIFIED`.
 
-The default is `common` with that rule rather than refusing to start without a tenant; requiring the tenant is the walk-back in TODO.md.
+The default is `common` with that rule rather than refusing to start without a tenant; requiring the tenant is the walk-back.
 
 ### Apple: the POST and the six-month secret
 
@@ -81,7 +81,7 @@ The client secret is a JWT the operator signs with the Services ID's Sign in wit
 
 Cloudflare dashboard → Manage Account → OAuth clients → Create client, which takes Super Administrator, Administrator or the OAuth Client Write role: authorization code, `client_secret_basic`, the redirect URL, and the scope User Details Read (`user-details.read`) as required.
 
-**Keep the client private** (the default). A private client can only be authorized by members of the operator's Cloudflare account, who joined it by accepting an invitation sent to their address: that is what makes the address trustworthy, since Cloudflare's `/user` reports no verified flag, and the Gateway marks it verified on that ground (`providers.ts`). Making a client public (any Cloudflare user; it needs a logo, a client URL and a DNS `TXT` verification) is permanent and would let anyone present an address they never verified; the Gateway can't tell the two kinds apart. So this is Continue with Cloudflare for the members of the operator's Cloudflare account; everyone else uses another provider, a password or Access's one-time PIN. Dropping the `cloudflare` entry, or requiring the Access identity provider instead, is the walk-back in TODO.md.
+**Keep the client private** (the default). A private client can only be authorized by members of the operator's Cloudflare account, who joined it by accepting an invitation sent to their address: that is what makes the address trustworthy, since Cloudflare's `/user` reports no verified flag, and the Gateway marks it verified on that ground (`providers.ts`). Making a client public (any Cloudflare user; it needs a logo, a client URL and a DNS `TXT` verification) is permanent and would let anyone present an address they never verified; the Gateway can't tell the two kinds apart. So this is Continue with Cloudflare for the members of the operator's Cloudflare account; everyone else uses another provider, a password or Access's one-time PIN. Dropping the `cloudflare` entry, or requiring the Access identity provider instead, is the walk-back (`TODO.md`'s history at `673bed8c8`, "Sign-in providers (2026-10-25)").
 
 #### Access's "Sign in with Cloudflare" versus the `cloudflare` provider
 
@@ -105,7 +105,7 @@ For Okta, Entra ID as an issuer, Keycloak, Auth0, Authentik, Google Workspace as
 
 - **Discovery is fetched when someone starts a sign-in**, never when the Gateway starts, with a 5-second timeout, and cached for an hour. The document must name the configured issuer and https endpoints; otherwise, or when the issuer is down, the sign-in answers `SIGNIN_PROVIDER_UNAVAILABLE`, nothing is cached and the next attempt tries again.
 - **The ID token is verified in full** before any claim is used: RS256 only (every major issuer's default), by the issuer's JWKS through the Access verifier's fail-closed key cache, issuer, audience equal to the client id, expiry, `sub`, and the nonce the sign-in started with. A userinfo answer counts only for the same `sub`.
-- **One issuer.** A second one would be `OIDC2_…`, not shipped (TODO.md). Cloudflare Access for SaaS is an OIDC issuer too but keeps its own settings (`CLOUDFLARE_ACCESS_OIDC_*`, [Cloudflare Access](/docs/agent/access)): use those for Access and `OIDC_SIGNIN_*` for everything else.
+- **One issuer.** A second one would be `OIDC2_…`, not shipped. Cloudflare Access for SaaS is an OIDC issuer too but keeps its own settings (`CLOUDFLARE_ACCESS_OIDC_*`, [Cloudflare Access](/docs/agent/access)): use those for Access and `OIDC_SIGNIN_*` for everything else.
 
 ## `everyapp signin`
 
@@ -230,7 +230,7 @@ The Gateway connector has two read-only tools for owners and admins (`minRole: "
 | `everyapp_signin_list` | `{}`                         | Every catalog provider with its status (`on`, `off`, `incomplete`: needs setup), its settings by name with whether each is set, the redirect URL, the command that sets it up and, when a value is malformed, the problem; also whether password sign-in is on (and whether `EMAIL_PASSWORD_SIGN_IN=false` waits for an owner to connect another way in), whether Cloudflare Access sign-in is on, whether Access is in front of the Gateway (`outerRing`), and who runs `signin add` (`self_hosted` or `hosted`). |
 | `everyapp_signin_show` | `{ id }`, one of the six ids | One provider as `signin show` gives it: status, each setting's name, what it holds and whether it is set, the redirect URL, the console and what to create there, the scopes, the email rule, the caveats, the setup guide, the command and, for one that needs setup, what is wrong.                                                                                                                                                                                                                              |
 
-Neither returns a setting's value. There is no `add` or `remove` twin, by design: the settings are Worker secrets the Gateway can't write to itself, and a tool that could would let a stolen agent token add a way in (threat model B10, `signin.tools.read-state-only`). An agent connected over MCP tells the person to run `pnpm everyapp signin add <id>` from the checkout. A Gateway-held Cloudflare API token would make write twins possible; that is the walk-back in TODO.md.
+Neither returns a setting's value. There is no `add` or `remove` twin, by design: the settings are Worker secrets the Gateway can't write to itself, and a tool that could would let a stolen agent token add a way in (security boundary B10). An agent connected over MCP tells the person to run `pnpm everyapp signin add <id>` from the checkout. A Gateway-held Cloudflare API token would make write twins possible; that is the walk-back (`TODO.md`'s history at `673bed8c8`, "Sign-in providers (2026-10-25)").
 
 ## Events and logs
 
@@ -240,11 +240,11 @@ Neither returns a setting's value. There is no `add` or `remove` twin, by design
 
 ## Security
 
-The rules are the security model's "Sign-in providers" ([/docs/agent/repo/security-model](/docs/agent/repo/security-model)); the boundary is the threat model's B10, "Sign-in provider → the Gateway", with 17 invariants: `signin.settings.secrets-only-family`, `signin.settings.all-or-off`, `signin.membership.nothing-before-claim`, `signin.membership.members-and-invitees-only`, `signin.membership.verified-email-only`, `signin.membership.deactivated-refused`, `signin.linking.untrusted-provider-rules`, `signin.account.keyed-by-subject`, `signin.flow.state-pkce-nonce`, `signin.oidc.id-token-verified`, `signin.oidc.discovery-names-issuer`, `signin.no-posted-id-token`, `signin.scopes.identity-only`, `signin.microsoft.verified-address-rule`, `signin.passwords-off.lockout-protection`, `signin.access-ring-unchanged`, `signin.tools.read-state-only`. Its known gaps: Google, Microsoft, GitHub and Apple have run against mocked endpoints only (the generic OIDC provider is the Gateway's own and tested in full); Apple's POST callback needs its bypass behind the outer ring; `signin add` and `signin remove` have no MCP twin.
+The boundary is B10, "Sign-in providers", on the security page ([/docs/agent/repo/threat-model](/docs/agent/repo/threat-model)). Its known gaps: Google, Microsoft, GitHub and Apple have run against mocked endpoints only (the generic OIDC provider is the Gateway's own and tested in full); Apple's POST callback needs its bypass behind the outer ring; `signin add` and `signin remove` have no MCP twin.
 
 ## Open decisions
 
-Taken as defaults during launch week and listed in `TODO.md` ("Sign-in providers (2026-10-25)"), each with its walk-back:
+Taken as defaults during launch week, each with its walk-back:
 
 - No auto-join by email domain for sign-in providers.
 - `signin add` and `signin remove` have no MCP twin.
@@ -268,5 +268,4 @@ Taken as defaults during launch week and listed in `TODO.md` ("Sign-in providers
 `apps/every-app-gateway/src/auth/sign-in-methods.ts`
 `apps/every-app-gateway/src/auth/sign-in-providers/sign-in-providers.sqlite.test.ts`
 `docs/runbooks/sign-in-providers.md`
-`docs/security-model.md`
-`docs/threat-model.md`
+`docs/security.md`

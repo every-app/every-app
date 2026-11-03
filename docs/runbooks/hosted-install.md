@@ -1,12 +1,12 @@
 # Hosted Install
 
-> The hosted tier is post-launch. The CLI's hosted-only surface (`setup --mode hosted`, `deploy --shared`, `register`, deploy-key deploys) was removed on 2026-10-24 and is restorable from commit `5ef30882`; the contract is `docs/hosted-vision.md`.
+> The hosted tier is post-launch. The CLI's hosted-only surface (`setup --mode hosted`, `deploy --shared`, `register`, deploy-key deploys) was removed on 2026-10-24 and is restorable from commit `5ef30882`; the contract is `docs/hosted-vision.md`. The hosted security contracts (hosted sign-up, shared apps, the dispatch tier and egress, per-host sessions, the deploy API and its response contract) are in `git show 673bed8c8:docs/security-model.md`; `docs/security.md` keeps their boundary, B8.
 
 The hosted Gateway (`app.everyapp.com`) is our own install of the same
 Gateway a customer self-hosts, with the hosted policy
 (`GATEWAY_DEPLOYMENT_MODE=hosted`, see
 `apps/every-app-gateway/src/server/platform-policy.ts` and
-`docs/security-model.md`, "Deployment Mode"):
+`docs/security.md`, "The system"):
 
 - anyone signs up, into an organization of their own, and verifies their
   email first;
@@ -191,7 +191,7 @@ otherwise; a call with neither is refused with 403.
 
 Customer code (forks of OpenSEO included) deploys through the Gateway's
 deploy API into a Workers for Platforms dispatch namespace, never into the
-account's own Workers (`docs/security-model.md`, "Hosted Deploy API").
+account's own Workers (`docs/security.md`, B8).
 **It stays off** until each of these is verified against a live namespace:
 limits and the `Outbound` default-deny on every dispatch, the deployer's
 binding allowlist and its read-back, identities minted for the Worker's
@@ -238,8 +238,7 @@ the install writes (`secret set` refuses it): the namespace must be in the
 Gateway's account.
 
 Third-party apps open on their own hosts, each with its own session handed
-over by the Gateway (`docs/security-model.md`, "Third-Party Hosts and
-Per-Host Sessions"). The CLI publishes only the Gateway's own Custom
+over by the Gateway (`docs/security.md`, B8). The CLI publishes only the Gateway's own Custom
 Domains, so the third-party domain is wired by hand, once:
 
 1. Add `everyapp.dev` as a zone in the Gateway's account.

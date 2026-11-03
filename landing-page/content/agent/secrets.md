@@ -263,7 +263,7 @@ One client per provider serves every organization and every app on the Gateway (
 | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET` (Gmail, Calendar, Drive, Search Console, Analytics and the other Google APIs) | `capabilities: { "google-workspace": { scopes, why } }` |
 | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` (Microsoft Graph; the `common` multi-tenant endpoints)                              | `capabilities: { "microsoft-365": { scopes, why } }`    |
 
-The developer consoles, API hosts and scope spelling of each provider are in [/docs/agent/repo/capabilities](/docs/agent/repo/capabilities), generated from `packages/sdk/src/internal/capabilities.ts`. The redirect URI is `https://<gateway>/connect/<id>/callback` for every provider. An OAuth provider added as a row (`pnpm everyapp provider add --oauth github-oauth`) holds its client in the row's own family, `<ID>_CLIENT_ID` and `<ID>_CLIENT_SECRET` (`GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`), routed by the rows as any registered provider's setting is and bound to the row's endpoints (`oauth.client-bound-to-endpoints`).
+The developer consoles, API hosts and scope spelling of each provider are in [/docs/agent/repo/capabilities](/docs/agent/repo/capabilities), generated from `packages/sdk/src/internal/capabilities.ts`. The redirect URI is `https://<gateway>/connect/<id>/callback` for every provider. An OAuth provider added as a row (`pnpm everyapp provider add --oauth github-oauth`) holds its client in the row's own family, `<ID>_CLIENT_ID` and `<ID>_CLIENT_SECRET` (`GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`), routed by the rows as any registered provider's setting is and bound to the row's endpoints.
 
 ### Email
 
@@ -526,14 +526,14 @@ An app on the dispatch tier (a third-party app the Gateway's own deploy API or a
 
 ## Security notes
 
-From `docs/security-model.md` ([/docs/agent/repo/security-model](/docs/agent/repo/security-model)):
+The rules:
 
 - Secret values reach `cf` only in private temp files (`0600`, removed afterwards) or the environment, never argv or output; `.everyapp/secrets.env` values never reach a Worker.
 - `secret set|unset` change the live Worker without a deploy; they take the Cloudflare login's authority and do not yet check the platform-admin rule of the hosted Gateway.
 - The Gateway's logs redact `cookie`, `authorization`, `set-cookie` and any token, secret, password or code field; capability logs name hosts, paths and status, never bodies or keys.
 - Cloudflare Access settings are Worker secrets only, never the admin UI (`everyapp access on|off` writes them as Worker secrets too). `CF_DEPLOY_TOKEN` on a hosted Gateway lets whoever reads the Gateway's secrets deploy into the namespace.
 
-The boundaries these rules follow (which Worker holds which key, what reaches an app's Worker, what only the Gateway brokers) are in `docs/threat-model.md` ([/docs/agent/repo/threat-model](/docs/agent/repo/threat-model)).
+The boundaries these rules follow (which Worker holds which key, what reaches an app's Worker, what only the Gateway brokers) are in `docs/security.md` ([/docs/agent/repo/threat-model](/docs/agent/repo/threat-model)).
 
 ## Sources
 
@@ -617,4 +617,4 @@ The boundaries these rules follow (which Worker holds which key, what reaches an
 - `docs/runbooks/key-rotation.md`
 - `docs/runbooks/gateway-app-installs.md`
 - `docs/runbooks/hosted-install.md`
-- `docs/security-model.md`
+- `docs/security.md`

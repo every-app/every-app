@@ -101,8 +101,9 @@ the tsup bundle does differently. Locally, from the checkout's root,
 `pnpm install` needs the network). The security review is not a workflow:
 `pnpm security-review` (`scripts/security-review.mjs`, the `security-review`
 skill in `.claude/skills/`) runs Anthropic's security review for Claude Code
-locally over the branch's diff, against `docs/threat-model.md`, before a
-pull request that touches a boundary; it is advisory (the diff enters the
+locally over the branch's diff, against `docs/security.md`, before a
+pull request that touches the perimeter, identity, Cloudflare Access, OAuth,
+tokens or secrets; it is advisory (the diff enters the
 prompt, so a stranger's branch gets a person's read first), and
 `packages/cli/src/lib/securityReview.test.ts` pins its exit codes, what the
 diff carries and the flags Claude Code gets, with a fake `claude` on PATH.
@@ -456,8 +457,8 @@ for a live account:
 pnpm -C apps/every-app-gateway build    # cf build && tsc --noEmit
 ```
 
-What only a live account can show is in [TODO.md](../TODO.md), "Check on
-the first live deploy", under the ports.
+What only a live account can show was listed in TODO.md, "Check on the
+first live deploy", under the ports (in its history at `673bed8c8`).
 
 ---
 

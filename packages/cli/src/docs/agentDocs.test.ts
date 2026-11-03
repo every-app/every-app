@@ -44,7 +44,7 @@ import {
   SIGN_IN_GATEWAY_SETTINGS,
   SIGN_IN_PROVIDER_IDS,
 } from "@every-app/sdk/internal";
-import { builtinToolKind, listBuiltinTools } from "@every-app/toolbus";
+import { listBuiltinTools } from "@every-app/toolbus";
 import { commandPaths } from "@/app";
 import { PROTECTED_RESOURCE_METADATA_PATH } from "@/lib/access/plan";
 import { NextCode } from "@/commands/status/next";
@@ -678,49 +678,5 @@ describe("the everyapp skill", () => {
       const unknown = [...new Set(page.match(/everyapp_[A-Za-z0-9_-]+/g) ?? [])].filter((name) => !BUILTIN_TOOLS.includes(name));
       expect(unknown, `${where} names a built-in tool the Gateway connector doesn't list: ${unknown.join(", ")}. Rename or remove it there.`).toEqual([]);
     }
-  });
-});
-
-describe("the threat model's invariant register", () => {
-  const register = readFileSync(
-    fileURLToPath(new URL("../../../../docs/threat-model-invariants.md", import.meta.url)),
-    "utf8",
-  );
-  const rowOf = (id: string) => register.split("\n").find((line) => line.startsWith(`| ${id} |`));
-  // The invariant text (the second cell), as whole names: a built-in whose name is a prefix of another's, or one named only in the Pinned-by cell, doesn't count.
-  const namedIn = (row: string) => new Set((row.split(" | ")[1] ?? "").split(/[^A-Za-z0-9_-]+/));
-
-  it("names the core built-ins in toolbus.builtins-readonly-reserved and the workspace tools in toolbus.workspace-tools-role-gated", () => {
-    // Split by the tool's kind: the view-answered built-ins and the wrappers
-    // are one row's subject, the host-run workspace tools another's.
-    for (const [id, kinds] of [
-      ["toolbus.builtins-readonly-reserved", ["answer", "wrapper"]],
-      ["toolbus.workspace-tools-role-gated", ["host"]],
-    ] as const) {
-      const row = rowOf(id);
-      expect(row, `docs/threat-model-invariants.md has no row ${id}`).toBeDefined();
-      const named = namedIn(row!);
-      const expected = BUILTIN_TOOLS.filter((name) => (kinds as readonly string[]).includes(builtinToolKind(name) ?? ""));
-      expect(expected.length, `no built-in of kind ${kinds.join("/")}`).toBeGreaterThan(0);
-      const missing = expected.filter((name) => !named.has(name));
-      expect(
-        missing,
-        `the row ${id} in docs/threat-model-invariants.md doesn't name ${BUILTINS_WHAT}: ${missing.join(", ")}. Name each in the row's invariant text (the second column).`,
-      ).toEqual([]);
-    }
-  });
-
-  it("names the provider tools in providers.tools-self-host-admin", () => {
-    const row = rowOf("providers.tools-self-host-admin");
-    expect(row, "docs/threat-model-invariants.md has no row providers.tools-self-host-admin").toBeDefined();
-    const named = namedIn(row!);
-    const expected = BUILTIN_TOOLS.filter((name) => name.startsWith("everyapp_provider_"));
-    expect(expected.length, "no provider tool among the built-ins").toBeGreaterThan(0);
-    const missing = expected.filter((name) => !named.has(name));
-    expect(missing, `the row providers.tools-self-host-admin in docs/threat-model-invariants.md doesn't name: ${missing.join(", ")}`).toEqual([]);
-  });
-
-  it("has the row that says no built-in returns a credential", () => {
-    expect(rowOf("toolbus.workspace-tools-no-credentials"), "docs/threat-model-invariants.md has no row toolbus.workspace-tools-no-credentials").toBeDefined();
   });
 });

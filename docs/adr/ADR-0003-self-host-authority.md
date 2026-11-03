@@ -41,9 +41,7 @@ is not built, and its deploy API is disabled by `GATEWAY_DEPLOYMENT_MODE`.
    browser (`POST /api/admin/apps/install`, with the account token
    `CF_DEPLOY_TOKEN`; `docs/runbooks/gateway-app-installs.md`), since
    2026-10-24 only for the install organization's owners and admins (the
-   token is the account's; `deploy.browser-install-install-org-only` in
-   `docs/threat-model-invariants.md`). Whether that second deploy
-   authority stays is open in TODO.md.
+   token is the account's; `docs/security.md`, known gap 1).
 4. Every deploy records its actor on the app row (`deployed_by_actor`): the
    Cloudflare login's email, or `api-token:<account id>` in CI.
 5. The hosted tier gets its own HTTP control plane and credentials (a
@@ -139,7 +137,7 @@ Negative, accepted for self-host:
 - Compromise or misuse of the Cloudflare credential carries account-wide
   blast radius, as ADR-0002 already stated.
 - This trust model is intentionally not valid for hosted multi-tenant
-  operation. See `docs/security-model.md` for the canonical boundary.
+  operation. See `docs/security.md` for the boundaries.
 
 ## Follow-ups
 

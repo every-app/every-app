@@ -79,7 +79,7 @@ async function listMembers(ctx: OrgContext) {
  * belongs to no other one). Their personal access tokens for this
  * organization are revoked in the same transaction, and the AI apps they
  * connected to it right after. (Deploying needs the Cloudflare login, which
- * the gateway can't revoke: see docs/security-model.md.)
+ * the gateway can't revoke: see docs/security.md.)
  *
  * Who may be removed is the member-management rule
  * (MembershipService.requireManageableMember): never yourself, and an

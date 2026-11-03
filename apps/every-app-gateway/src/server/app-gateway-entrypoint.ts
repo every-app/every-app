@@ -304,7 +304,7 @@ export async function handleAppGatewayRequest({
     // Only a first-party Worker (the operator's, or the platform's own on
     // the hosted gateway) reaches the platform's providers and capabilities.
     // A dispatch-tier Worker is a customer's code behind the hosted tier's
-    // trust boundary (docs/threat-model.md B8): refused before the route is
+    // trust boundary (docs/security.md B8): refused before the route is
     // even read, whatever its manifest declares.
     if (app.tier !== "service_binding") {
       throw new AppGatewayError(

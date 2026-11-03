@@ -140,7 +140,7 @@ https://everyapp.com/docs/agent/, each page also as Markdown at
 `errors.md#<code>`, the code lower-cased). They go live with the launch on
 2026-10-26; until then each page is in the checkout at
 `landing-page/content/agent/<page>.md`; `docs/runbooks/`,
-`docs/threat-model.md` and `pnpm everyapp <command> --help` stay the
+`docs/security.md` and `pnpm everyapp <command> --help` stay the
 deeper reference. An error code these files don't
 cover carries its own `data.fix` or `data.rerun`; it is raised in the
 command's file under `packages/cli/src/commands/` or its library under

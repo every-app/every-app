@@ -19,8 +19,8 @@
  * Nobody else: no account is made for a stranger, and nothing before the
  * gateway has been claimed with its setup link. An email the provider
  * doesn't vouch for signs nobody in and creates nothing. There is no
- * auto-join by email domain (Ben's call, TODO.md "Sign-in providers
- * (2026-10-25)"), and Cloudflare Access has none either.
+ * auto-join by email domain (Ben's call), and Cloudflare Access has none
+ * either.
  */
 import { APIError } from "better-auth/api";
 import { eq } from "drizzle-orm";

@@ -283,7 +283,7 @@ there but not the sessions and tokens they hold.
 
 ## What the gateway checks
 
-For the auditor: the register is `docs/threat-model.md`, B10. In short:
+For the auditor: the boundary is B10 in `docs/security.md`. In short:
 every flow runs through Better Auth's state and PKCE and redeems the code
 with the client secret; the generic OIDC ID token is verified in full
 (RS256 by the issuer's JWKS with a fail-closed cache, issuer, audience,

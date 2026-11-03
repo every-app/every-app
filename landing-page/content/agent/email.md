@@ -368,7 +368,7 @@ export default {
 };
 ```
 
-The handler has Cloudflare's signature, `email(message: ForwardableEmailMessage, env, ctx)` (`@cloudflare/workers-types`). It runs with no identity: anyone can mail the address, so the app treats the message as untrusted, and its Gateway calls (`sendEmail()`, `integrationFetch()`, `listMembers()`) pass `for: { background: true }` from an organization's own app (its `env.EVERY_APP_ORG_ID` is the only organization it may name, and the Gateway fills it in) or `for: { background: true, organizationId }` from a shared app's Worker (`env.EVERYAPP_SHARED === "1"`, no `EVERY_APP_ORG_ID`), which must supply the id itself: neither `ForwardableEmailMessage` nor the SDK carries one. The same holds for a cron. `everyapp dev --help` says the same: "email() gets no identity." The platform's trust boundaries are catalogued in `docs/threat-model.md` (assets, actors, trust boundaries, one testable invariant per boundary), mirrored at [/docs/agent/repo/threat-model](/docs/agent/repo/threat-model).
+The handler has Cloudflare's signature, `email(message: ForwardableEmailMessage, env, ctx)` (`@cloudflare/workers-types`). It runs with no identity: anyone can mail the address, so the app treats the message as untrusted, and its Gateway calls (`sendEmail()`, `integrationFetch()`, `listMembers()`) pass `for: { background: true }` from an organization's own app (its `env.EVERY_APP_ORG_ID` is the only organization it may name, and the Gateway fills it in) or `for: { background: true, organizationId }` from a shared app's Worker (`env.EVERYAPP_SHARED === "1"`, no `EVERY_APP_ORG_ID`), which must supply the id itself: neither `ForwardableEmailMessage` nor the SDK carries one. The same holds for a cron. `everyapp dev --help` says the same: "email() gets no identity." The platform's trust boundaries are catalogued in `docs/security.md`, mirrored at [/docs/agent/repo/threat-model](/docs/agent/repo/threat-model).
 
 ### The rules the CLI makes
 
@@ -437,7 +437,7 @@ Any `to` reaches the handler. The raw message needs `From`, `To`, `Subject` and 
 
 ## Open decisions
 
-From `TODO.md`, "Email configuration on the gateway (2026-10-19)", still open:
+Still open (from `TODO.md`'s history at `673bed8c8`, "Email configuration on the gateway (2026-10-19)"):
 
 - One list per installed app: a shared app has one sender list for every organization it serves (per-organization senders would need `GET /api/integrations/email` attributed before it answers).
 - A hosted Gateway refuses every app sender in v1.
@@ -502,4 +502,3 @@ From `TODO.md`, "Email configuration on the gateway (2026-10-19)", still open:
 `docs/runbooks/email-sending-setup.md`
 `docs/capabilities.md`
 `landing-page/content/docs/people.mdx`
-`TODO.md`

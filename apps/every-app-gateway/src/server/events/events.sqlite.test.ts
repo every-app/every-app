@@ -3,8 +3,7 @@
  * what a subscription gets, the delivery loop's outcomes and retries, the
  * signed webhook, the email sink, the sweep's claim, redelivery, the
  * target rules, retention, and each emit point in the gateway firing
- * once. The names are what docs/threat-model-invariants.md cites for
- * docs/design/2026-10-events-out.md section 12.
+ * once. The names follow docs/design/2026-10-events-out.md section 12.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TestDb } from "@/test/sqlite-db";

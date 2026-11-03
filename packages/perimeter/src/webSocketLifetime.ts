@@ -23,8 +23,8 @@
  * `everyapp dev` raw-pipes upgrades at the socket level
  * (`packages/cli/src/commands/dev/proxy.ts`) and enforces no lifetime.
  * Closing a socket the moment a member is removed needs a registry of open
- * relays (a Durable Object the gateway doesn't have yet): see TODO.md
- * "Platform shortcuts (2026-10-26)/L7 gateway-runtime".
+ * relays (a Durable Object the gateway doesn't have yet): an open
+ * question in TODO.md.
  */
 import { stripSetCookieDomains } from "./headers";
 

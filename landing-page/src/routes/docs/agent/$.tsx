@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useFumadocsLoader } from "fumadocs-core/source/client";
 import { DocsLayout } from "fumadocs-ui/layouts/docs";
 import {
@@ -17,9 +17,18 @@ import { buildPageSeo } from "@/lib/seo";
 // lands here from the user docs' "Docs for your coding agent" link; an
 // agent fetches the same pages as Markdown (`.md`, llms.txt). The page is
 // plain Markdown rendered on the server (src/lib/agent-docs.ts), not MDX.
+// Pages from earlier versions of the agent docs, by their old slug.
+const movedPages: Record<string, string> = {
+  "repo/security-model": "repo/threat-model",
+};
+
 export const Route = createFileRoute("/docs/agent/$")({
   loader: async ({ params }) => {
     const splat = params._splat?.replace(/\/+$/, "") ?? "";
+    const moved = movedPages[splat];
+    if (moved !== undefined) {
+      throw redirect({ href: `/docs/agent/${moved}`, statusCode: 301 });
+    }
     const slugs = splat ? splat.split("/") : [];
     return getAgentPage({ data: slugs });
   },

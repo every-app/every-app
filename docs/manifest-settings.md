@@ -8,8 +8,8 @@ its own repository. This is the reference the public docs page is written
 from. [docs/capabilities.md](capabilities.md) says what each capability is
 and how an app calls it; this document says how an app declares what it
 needs, how the gateway and the CLI tell whether it is set, and what happens
-while it isn't. TODO.md's "Secrets model (2026-10-24)" section holds every
-default the builders chose.
+while it isn't. TODO.md's "Secrets model (2026-10-24)" section held every
+default the builders chose (its history at `673bed8c8`).
 
 ## 1. A setting
 
@@ -687,7 +687,7 @@ The `todo` example app and Postiz were deleted from everyapp.team on 2026-10-24 
 
 ## 8. What this model leaves for later
 
-Listed with the decisions in TODO.md, "Secrets model (2026-10-24)": an app
+Listed with the decisions in TODO.md's history (`673bed8c8`), "Secrets model (2026-10-24)": an app
 self-reporting its present secret names so the column heals without the
 CLI; a provider status route so an app can pick among the set members of
 a group at run time (agentic-inbox moves to `anyOf` then); the hosted
