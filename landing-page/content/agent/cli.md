@@ -740,7 +740,8 @@ Put the app's production database back to before its last migrations
 
 Each deploy that migrates a database with data saves a restore point first (Time Travel).
 This restores the last one, after asking: the migrations are undone, and so is anything
-written to the database since. --gateway does the same for the Gateway's database.
+written to the database since. --gateway does the same for the Gateway's database, and
+runs on a Gateway behind this everyapp (after a failed Gateway migration).
 
 EXAMPLES
   $ everyapp db restore
@@ -870,7 +871,6 @@ Install or repair the Gateway.
 | `--name` | `<name>` | no |  | A second Gateway in the same Cloudflare account, by name (1 to 16 lowercase letters or digits): its Worker is every-app-gateway-<name> and its apps every-<name>--…; setup finds or installs that one only. Without it, the Gateway is every-app-gateway, as always |
 | `--release` | `<value>` | no |  | The Gateway release to deploy: a GitHub repository URL (its latest release) or release page, a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz (default: this checkout's build, or without a checkout, the published release for this everyapp version) |
 | `--force-dns` | switch | no |  | Publish new hostnames even where a DNS record answers them (one at a hostname is replaced) |
-| `--allow-downgrade` (hidden) | switch | no |  | Deploy this Gateway even though it is older than the live one (a deliberate rollback) |
 | `--redeploy` (hidden) | switch | no |  | Upload the Gateway even when it is up to date (after a change in the dashboard, such as a key rotation) |
 | `--no-access` | switch | no |  | Leave Cloudflare Access off (not recommended): by default setup puts it in front of the Gateway once the owner exists. Remembered, so a later unattended setup leaves it off too; everyapp access on turns it on |
 | `--team` | `<value>` | no |  | The Zero Trust team's name, when the Cloudflare account has none yet: people sign in at <name>.cloudflareaccess.com, and it can't be changed later (ignored once a team exists) |
@@ -939,7 +939,6 @@ Update the Gateway to a newer release.
 | `--gateway` | `<value>` | no |  | The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither) |
 | `--release` | `<value>` | no |  | The Gateway release to deploy: a GitHub repository URL (its latest release) or release page, a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz (default: this checkout's build, or without a checkout, the published release for this everyapp version) |
 | `--force-dns` | switch | no |  | Publish new hostnames even where a DNS record answers them (one at a hostname is replaced) |
-| `--allow-downgrade` (hidden) | switch | no |  | Deploy this Gateway even though it is older than the live one (a deliberate rollback) |
 | `--redeploy` (hidden) | switch | no |  | Upload the Gateway even when it is up to date (after a change in the dashboard, such as a key rotation) |
 | `--yes` | switch | no |  | Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp) |
 | `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
@@ -961,8 +960,9 @@ version (https://github.com/every-app/every-app, gateway-v<version>).
      the login's accounts (--account-id when there is one in more than one)
   2. Upgrades it (migrations first, with a restore point). When it runs that Gateway
      already, binds and publishes every registered app if the live Gateway doesn't, and
-     otherwise says it is up to date. A live Gateway newer than this one is refused (in a
-     checkout: git pull)
+     otherwise says it is up to date. A live Gateway newer than this one is replaced
+     with a warning (GATEWAY_DOWNGRADE): that is how a rollback goes; in a checkout, git pull
+     to go forward
 
 A checkout's Gateway is named by its version when it is that version's release (the
 gateway-v<version> tag), and by the checkout's commit otherwise.
@@ -2108,8 +2108,7 @@ may hold slashes); without a model, the provider's catalog model serves. Embeddi
 use the provider's catalog model. A provider whose key isn't set is accepted with a warning
 naming the key; one the default can't be (an API provider, an entry without an OpenAI-shaped
 chat route, AI Gateway) is refused (AI_DEFAULT_INVALID). The Gateway reads the change within
-30 seconds; a change queues ai.default_changed. Refused on a Gateway from before the setting
-(GATEWAY_PREDATES_AI_DEFAULT): run update first.
+30 seconds; a change queues ai.default_changed.
 
 Examples:
   everyapp ai default openrouter
@@ -3931,8 +3930,7 @@ without one it is uncapped. The cap counts the cost a provider reports (OpenRout
 DataForSEO); calls to other providers never move it. Past the cap that binds it, a
 provider tool answers a tool error naming it and an app's brokered call gets 429
 app_monthly_cap_exceeded until the next UTC month. Binds within seconds. --unlimited with
-dollars or off is refused (INVALID_VALUE); on a Gateway from before dollar caps, the
-command is refused (GATEWAY_PREDATES_COST_CAPS).
+dollars or off is refused (INVALID_VALUE).
 
 Examples:
   everyapp workspace app cap crm 20
@@ -3983,8 +3981,7 @@ provider tool answers a tool error naming the cap and an app's brokered call get
 app_monthly_cap_exceeded until the next UTC month. As in the Gateway, the workspace's
 first cap makes the built-in Cap alerts subscription, and a default set, raised or removed
 queues cap.raised (a lowered one queues cap.changed). The default model provider in the
-same row stays. Refused on a Gateway from before dollar caps (GATEWAY_PREDATES_COST_CAPS):
-run update first.
+same row stays.
 
 Examples:
   everyapp workspace cap default 20
@@ -4026,8 +4023,7 @@ provider answered, and allowed MCP tool calls from the audit trail. Every callab
 listed, with zeros in a month it made no call, its own cap in dollars, the cap that binds
 it and where it comes from (its own, or the workspace default), whether it is exempt
 (--unlimited) and whether it is paused this month; the workspace default cap comes with
-it. Nothing is changed. Refused on a Gateway from before dollar caps
-(GATEWAY_PREDATES_COST_CAPS): run update first.
+it. Nothing is changed.
 
 Example:
   everyapp workspace usage --month 2026-10 --json
@@ -4317,8 +4313,6 @@ stay in .dev.vars. Off by default: a Gateway that didn't turn it on refuses the
 sign-in and the route. Turning it off stops tokens already issued on their next call.
 The organization's owners and admins see and revoke their own links under Settings →
 Connections. Queues organization.linked_dev_changed in the write's own batch.
-Refused on a Gateway from before migration 0022 (GATEWAY_PREDATES_LINKED_DEV): run
-update first.
 
 Examples:
   everyapp workspace linked-dev on

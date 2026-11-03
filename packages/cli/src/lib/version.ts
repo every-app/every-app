@@ -41,3 +41,41 @@ const cliPackage = readCliPackage();
 export const cliName = cliPackage.name;
 /** This everyapp's version, as its package.json says now. */
 export const cliVersion = cliPackage.version;
+
+/**
+ * Semver order, prerelease included: 0.3.0-rc.9 < 0.3.0-rc.10 < 0.3.0.
+ * Negative when `a` is older. A leading `v` is ignored; build metadata
+ * (`+…`) doesn't order.
+ */
+export function compareVersions(a: string, b: string): number {
+  const parse = (version: string) => {
+    const [core = "", ...pre] = version.trim().replace(/^v/, "").split("+")[0]!.split("-");
+    return {
+      core: core.split(".").map((part) => Number.parseInt(part, 10) || 0),
+      pre: pre.length > 0 ? pre.join("-").split(".") : [],
+    };
+  };
+  const [left, right] = [parse(a), parse(b)];
+  for (let i = 0; i < Math.max(left.core.length, right.core.length, 3); i += 1) {
+    const difference = (left.core[i] ?? 0) - (right.core[i] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  // A release sorts after its prereleases.
+  if (left.pre.length === 0 || right.pre.length === 0) return right.pre.length - left.pre.length;
+  for (let i = 0; i < Math.max(left.pre.length, right.pre.length); i += 1) {
+    const [x, y] = [left.pre[i], right.pre[i]];
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    const [xNumeric, yNumeric] = [/^\d+$/.test(x), /^\d+$/.test(y)];
+    if (xNumeric && yNumeric) {
+      const difference = Number(x) - Number(y);
+      if (difference !== 0) return difference;
+    } else if (xNumeric !== yNumeric) {
+      // Numeric identifiers sort before alphanumeric ones.
+      return xNumeric ? -1 : 1;
+    } else if (x !== y) {
+      return x < y ? -1 : 1;
+    }
+  }
+  return 0;
+}

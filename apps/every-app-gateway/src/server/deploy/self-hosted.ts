@@ -5,7 +5,6 @@ import { gatewayNamesOf } from "@/server/gateway-name";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import {
   buildOutputProblems,
-  compareVersions,
   DEFAULT_WORKER,
   installApp,
   InstallationError,
@@ -32,7 +31,6 @@ import {
 } from "@every-app/sdk/internal";
 import { env } from "cloudflare:workers";
 import { eq, sql } from "drizzle-orm";
-import { version as gatewayVersion } from "../../../package.json";
 import type { DeployBundle } from "./bundle";
 import { createCloudflareRest } from "./cf-rest";
 import { CloudflareTransport } from "./cf-rest/client";
@@ -218,18 +216,6 @@ export function selfHostedBundleProblems(
     ),
   };
   const problems: string[] = [];
-  const releaseBytes = bundle.releaseFiles?.get("release.json");
-  const release = releaseBytes
-    ? (JSON.parse(new TextDecoder().decode(releaseBytes)) as {
-        minCli?: unknown;
-      })
-    : null;
-  if (typeof release?.minCli !== "string")
-    problems.push("the release has no minimum toolchain version");
-  else if (compareVersions(release.minCli, gatewayVersion) > 0)
-    problems.push(
-      `the release needs EveryApp ${release.minCli}; update this Gateway before installing`,
-    );
   if (
     manifest.migrations?.dialect === "postgresql" ||
     manifest.migrations?.engine === "prisma"

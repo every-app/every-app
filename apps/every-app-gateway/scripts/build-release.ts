@@ -17,8 +17,7 @@
  *
  * release.json's `version` is the Gateway package's, or `--version` (the
  * Gateway Release workflow passes the tag's, gateway-v0.3.0-rc.4 →
- * 0.3.0-rc.4). Its `minCli` and `minSdk` are the CLI's and the SDK's
- * versions in this workspace: a release is for the CLI it is built with.
+ * 0.3.0-rc.4): a release is for the CLI it is built with.
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -31,7 +30,6 @@ const GATEWAY_DIR = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const BUILD_OUTPUT_DIR = ".cloudflare/output";
 const TARBALL_NAME = "every-app-gateway-release.tar.gz";
 const PATCH_PLACEHOLDER = "__EVERYAPP_PATCH__";
-const REPO_ROOT = path.dirname(path.dirname(GATEWAY_DIR));
 /**
  * What the release is built from, from the repository's root: the CLI's
  * GATEWAY_SOURCES (packages/cli/src/lib/gateway/checkoutRelease.ts), whose
@@ -66,8 +64,6 @@ export interface ReleaseManifest {
   sha256: string;
   /** drizzle's journal, so a deploy can tell which migrations ran. */
   migrations: Array<{ tag: string; when: number }>;
-  minCli: string;
-  minSdk: string;
 }
 
 export interface StageReleaseOptions {
@@ -285,25 +281,6 @@ function packageVersion(name: string, fromDir: string): string {
     .version;
 }
 
-/**
- * The oldest everyapp CLI and SDK that deploy and talk to this release:
- * the workspace's own at this commit (packages/cli, packages/sdk).
- */
-export function minimumVersions(root: string): {
-  minCli: string;
-  minSdk: string;
-} {
-  const version = (dir: string) =>
-    (
-      JSON.parse(
-        fs.readFileSync(path.join(root, dir, "package.json"), "utf8"),
-      ) as {
-        version: string;
-      }
-    ).version;
-  return { minCli: version("packages/cli"), minSdk: version("packages/sdk") };
-}
-
 /** The value after `flag` in `args`, if any. */
 function argument(args: string[], flag: string): string | undefined {
   const at = args.indexOf(flag);
@@ -379,7 +356,6 @@ function main(): void {
         cfVersion: packageVersion("cf", GATEWAY_DIR),
         pluginVersion: packageVersion("@cloudflare/vite-plugin", GATEWAY_DIR),
         configVersion: packageVersion("@cloudflare/config", cfDir),
-        ...minimumVersions(REPO_ROOT),
       },
     });
     fs.rmSync(tarball, { force: true });

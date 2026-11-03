@@ -33,7 +33,7 @@ const ctx = {
 
 /** A Worker's env as everyAppWorker() deploys it: its name is the audience. */
 function workerEnv(workerName: string) {
-  return { EVERYAPP_AUDIENCE: workerName };
+  return { EVERYAPP_AUDIENCE: workerName, EVERYAPP_APP_ID: "todo" };
 }
 
 /** The service binding to a deployed fixture app Worker. */

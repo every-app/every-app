@@ -32,8 +32,7 @@
  *                redeployed only if it doesn't bind and publish exactly the
  *                apps its registry lists, or serves a version the row
  *                doesn't name (lib/gateway/reconcile.ts), or --redeploy. A
- *                Gateway behind the live one is refused (git pull), unless
- *                --allow-downgrade
+ *                Gateway behind the live one is deployed with a warning
  *    access      on a live self-hosted Gateway behind Cloudflare Access
  *                (told by the live Access applications, never a flag),
  *                both applications are brought in line with what this
@@ -90,7 +89,7 @@ import {
 import { preflightDomains } from "@/lib/domains/preflight";
 import { listZones, registerDomainUrl, zoneUrl } from "@/lib/domains/zones";
 import { ActionRequiredError, CancelledError, errorMessage, EveryAppError } from "@/lib/errors";
-import { candidate, isLiveRelease, refuseDowngrade } from "@/lib/gateway/apply";
+import { isLiveRelease } from "@/lib/gateway/apply";
 import { GatewayChange } from "@/lib/gateway/change";
 import { requestedGatewayUrl } from "@/lib/gateway/connect";
 import { discoverGateway, refuseUnchecked, requireGateway, type Discovery } from "@/lib/gateway/discover";
@@ -98,7 +97,6 @@ import { notDeployedByEveryapp, type InstallRecord } from "@/lib/gateway/install
 import type { DeploymentMode } from "@/lib/gateway/secretsFile";
 import { reconcileGateway, registryDrift } from "@/lib/gateway/reconcile";
 import {
-  refuseNewerThanCli,
   releaseName,
   type CandidateRelease,
   type GatewayRelease,
@@ -129,8 +127,6 @@ export interface SetupFlags {
   release?: string;
   "account-id"?: string;
   "force-dns"?: boolean;
-  /** Put a Gateway older than the live one back on purpose (hidden). */
-  "allow-downgrade"?: boolean;
   /** Upload the Gateway even when it is up to date (hidden; key rotation). */
   redeploy?: boolean;
   json?: boolean;
@@ -428,9 +424,6 @@ export async function installGateway({
 
   // What this run deploys, before anything is asked or created.
   const source = await deps.source();
-  if (source.minCli) {
-    refuseNewerThanCli({ version: source.version, minCli: source.minCli }, deps.cliVersion);
-  }
   if (!live) await checkPlan(cf, account.id, out);
 
   // Where the gateway lives, and nothing in the way of a new address.
@@ -807,8 +800,7 @@ function orList(items: readonly string[]): string {
  * The Gateway this run deploys (`source`, lib/gateway/checkoutRelease.ts), live:
  * installed, upgraded, or when it already runs these sources (told by the
  * install row's tree hash, before anything is built) or this very release,
- * repaired if its bindings or hostnames aren't the registry's. A Gateway
- * behind the live release is refused, unless --allow-downgrade.
+ * repaired if its bindings or hostnames aren't the registry's.
  */
 async function deployOrRepairGateway({
   cf,
@@ -841,7 +833,6 @@ async function deployOrRepairGateway({
 }): Promise<{ db: D1Database; release: string; outcome: GatewayOutcome }> {
   const gatewayUrl = `https://${target.domain}`;
   const live = install?.liveVersionId ? install : null;
-  const allowDowngrade = flags["allow-downgrade"] ?? false;
   const repair = (openRelease: () => Promise<GatewayRelease>) =>
     repairGateway({
       cf,
@@ -864,7 +855,6 @@ async function deployOrRepairGateway({
     ) {
       return repair(deps.openRelease);
     }
-    if (!allowDowngrade) refuseDowngrade(source, live, { allowDowngradeFlag: true });
   }
 
   const name = releaseName(source);
@@ -896,12 +886,8 @@ async function deployOrRepairGateway({
   const release = await deps.openRelease();
   try {
     const manifest = release.manifest;
-    refuseNewerThanCli(manifest, deps.cliVersion);
-    if (live && databaseId) {
-      if (isLiveRelease(release, live)) return await repair(async () => release);
-      if (!allowDowngrade) {
-        refuseDowngrade(candidate(release), live, { allowDowngradeFlag: true });
-      }
+    if (live && databaseId && isLiveRelease(release, live)) {
+      return await repair(async () => release);
     }
     const { result, db } = await deployGatewayRelease({
       cf,
@@ -915,8 +901,6 @@ async function deployOrRepairGateway({
       ...(updateOnly && databaseId ? { existing: { databaseId } } : {}),
       forceDns: flags["force-dns"],
       checkedDomains,
-      allowDowngrade,
-      allowDowngradeFlag: true,
       sleep: deps.seams?.sleep,
       leaseWaitMs: deps.seams?.leaseWaitMs,
       certificates: deps.seams?.certificates,

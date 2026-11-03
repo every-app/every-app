@@ -255,7 +255,11 @@ describe("ToolBus + real SDK app", () => {
     seenUsers.length = 0;
     const { serve } = harness({
       invokeApp: (_app, request) =>
-        app.fetch(request, { EVERYAPP_AUDIENCE: "every-beta-todo" }, ctx),
+        app.fetch(
+          request,
+          { EVERYAPP_AUDIENCE: "every-beta-todo", EVERYAPP_APP_ID: "todo" },
+          ctx,
+        ),
     });
     const refused = await rpcBody(
       await serve(

@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
 import { applyGateway } from "@/lib/gateway/apply";
 import { readInstall, writeInstall } from "@/lib/gateway/install";
+import { GATEWAY_SCHEMA } from "@/lib/gateway/schema";
 import { register } from "@/lib/gateway/registry";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
@@ -330,16 +331,15 @@ describe("provider add", () => {
     expect(done()!["message"]).toContain("set it again before the Gateway sends it");
   });
 
-  it("refuses on a Gateway from before the providers table, naming the update", async () => {
-    await db().run([{ sql: "DROP TABLE providers" }]);
+  it("refuses on a Gateway whose database is behind this everyapp, naming the update", async () => {
+    await db().run([{ sql: "DELETE FROM d1_migrations WHERE name = ?", params: [`${GATEWAY_SCHEMA}.sql`] }]);
     await expect(add(specDir(NORTHWIND))).rejects.toMatchObject({
       code: "GATEWAY_OUTDATED",
+      message: expect.stringMatching(/^The Gateway is older than this everyapp\n/),
       rerun: "pnpm everyapp update",
     });
-    // Its readers read no rows.
-    events = [];
-    await list();
-    expect(done()!["data"]["providers"].filter((provider: { source: string }) => provider.source === "row")).toEqual([]);
+    await expect(list()).rejects.toMatchObject({ code: "GATEWAY_OUTDATED" });
+    expect(await rows()).toEqual([]);
   });
 });
 

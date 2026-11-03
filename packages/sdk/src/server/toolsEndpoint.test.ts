@@ -648,7 +648,11 @@ describe("the request context and the organization pin on tool calls", () => {
         { v: 1, name: "list_todos", arguments: {}, callId: "call_2" },
         { [IDENTITY_HEADER]: token },
       ),
-      { EVERYAPP_AUDIENCE: WORKER, EVERY_APP_ORG_ID: "org_2" },
+      {
+        EVERYAPP_AUDIENCE: WORKER,
+        EVERYAPP_APP_ID: "todo",
+        EVERY_APP_ORG_ID: "org_2",
+      },
       ctx,
     );
     expect(refused.status).toBe(401);
@@ -665,7 +669,11 @@ describe("the request context and the organization pin on tool calls", () => {
         { v: 1, name: "list_todos", arguments: {}, callId: "call_2" },
         { [IDENTITY_HEADER]: token },
       ),
-      { EVERYAPP_AUDIENCE: WORKER, EVERY_APP_ORG_ID: "org_1" },
+      {
+        EVERYAPP_AUDIENCE: WORKER,
+        EVERYAPP_APP_ID: "todo",
+        EVERY_APP_ORG_ID: "org_1",
+      },
       ctx,
     );
     expect(allowed.status).toBe(200);

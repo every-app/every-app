@@ -79,7 +79,6 @@ const PUBLIC_ERROR_CODES = [
   "OAUTH_CLIENT_REQUIRED",
   "SEALING_UNAVAILABLE",
   "ADMIN_REQUIRED",
-  "GATEWAY_OUTDATED",
 ] as const;
 
 export type PublicErrorCode = (typeof PUBLIC_ERROR_CODES)[number];

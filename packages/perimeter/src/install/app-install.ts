@@ -353,13 +353,6 @@ export async function installApp<C>(
       ...new Set(workers.flatMap((worker) => boundR2Buckets(worker.config))),
     ].sort(),
     appId: manifest.id,
-    onAdopted: (name) =>
-      out.emit({
-        type: "progress",
-        step: "app.build",
-        message: `Adopted R2 bucket "${name}": an earlier deploy of this app made it before buckets were recorded.`,
-        data: { bucket: name, adopted: true },
-      }),
   });
   for (const name of createdBuckets)
     out.emit({

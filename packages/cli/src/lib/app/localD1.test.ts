@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { localD1Id } from "@every-app/sdk/cloudflare";
 import { CfOutputError } from "@/lib/cf/errors";
 import { FakeCf } from "@/lib/cf/fakeCf";
-import { applyLocalMigrations, legacyLocalStateNote } from "./localD1";
+import { applyLocalMigrations } from "./localD1";
 
 let cwd: string;
 
@@ -94,17 +94,5 @@ describe("applyLocalMigrations", () => {
         cf,
       }),
     ).rejects.toBeInstanceOf(CfOutputError);
-  });
-});
-
-describe("legacyLocalStateNote", () => {
-  it("explains a leftover .wrangler/state until .cloudflare/state exists", async () => {
-    expect(await legacyLocalStateNote(cwd)).toBeNull();
-
-    await fs.mkdir(path.join(cwd, ".wrangler", "state"), { recursive: true });
-    expect(await legacyLocalStateNote(cwd)).toMatch(/\.cloudflare\/state/);
-
-    await fs.mkdir(path.join(cwd, ".cloudflare", "state"), { recursive: true });
-    expect(await legacyLocalStateNote(cwd)).toBeNull();
   });
 });

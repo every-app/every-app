@@ -181,7 +181,9 @@ the file applies):
    does) and `fix` (a remedy that isn't a command). Only `error` and
    `warning` are something to fix; `info` (`GATEWAY_OUTDATED`: `pnpm
    everyapp update` updates the Gateway now; leave it unless the
-   person asks) and `settling` need nothing from you.
+   person asks) and `settling` need nothing from you. `GATEWAY_OUTDATED`
+   with `severity: "error"` is different: the other commands refuse the
+   Gateway until `pnpm everyapp update` runs, so run it first.
 2. `pnpm everyapp secret list <app id> --json`, from anywhere (the app's
    directory is no longer required): this file applies when its setting
    is in `data.app.setup.unmet` (each entry's `names`, `need.kind`,

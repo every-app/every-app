@@ -38,6 +38,7 @@ import {
 } from "@every-app/sdk/internal";
 import { gatewayRegistry } from "@/lib/gateway/providers";
 import { listApps, writeAppSecretNames, type RegisteredAppInfo } from "@/lib/gateway/registry";
+import { hasGatewaySchema } from "@/lib/gateway/schema";
 import { readOwnerOrganization } from "@/lib/gateway/setup-link";
 import type { EventSink } from "@/lib/output/events";
 import { existingGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
@@ -258,6 +259,9 @@ export async function reportStatus({
   const readCertificates = "error" in certificates ? null : certificates.value;
   const waiting = (readCertificates ?? []).filter((c) => !c.ready).map((c) => c.host);
   const source = await checkoutAgainst(install, checkout);
+  // What the other commands check first (requireGatewaySchema); a read that
+  // fails doesn't stop the rest of the report.
+  const schemaCurrent = await hasGatewaySchema(db).catch(() => null);
   const problems = problemsFor({
     install,
     desired,
@@ -272,6 +276,7 @@ export async function reportStatus({
     accessState,
     leases,
     checkout: source,
+    schemaCurrent,
     emailProblems: "error" in emailProblems ? emailProblems : emailProblems.value,
     settings: settings.unread,
     missingOrigins,

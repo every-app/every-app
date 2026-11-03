@@ -200,7 +200,7 @@ async function fetchPublishedRelease(
     type: "warning",
     code: "GATEWAY_RELEASE_LATEST",
     step: "gateway.release",
-    message: `There is no Gateway release for everyapp ${cliVersion} yet (${GATEWAY_RELEASE_REPO} has no ${tag})\nUsing the latest stable Gateway release instead. To take another: --release <url|file>.`,
+    message: `There is no Gateway release for everyapp ${cliVersion} yet (${GATEWAY_RELEASE_REPO} has no ${tag})\nUsing the latest stable Gateway release instead. If it is older than this everyapp, the other commands refuse it (GATEWAY_OUTDATED) until a newer one is deployed: --release <url|file>, or update again once ${tag} is out.`,
     data: { cliVersion, tag, repo: GATEWAY_RELEASE_REPO },
   });
   let latest: Awaited<ReturnType<typeof fetchGithubReleaseAsset>>;

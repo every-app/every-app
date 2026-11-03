@@ -20,13 +20,6 @@ export const updateCommand = buildCommand({
         optional: true,
       },
       "force-dns": forceDnsFlag,
-      "allow-downgrade": {
-        kind: "boolean",
-        brief:
-          "Deploy this Gateway even though it is older than the live one (a deliberate rollback)",
-        optional: true,
-        hidden: true,
-      },
       redeploy: {
         kind: "boolean",
         brief:
@@ -54,8 +47,9 @@ export const updateCommand = buildCommand({
       "     the login's accounts (--account-id when there is one in more than one)",
       "  2. Upgrades it (migrations first, with a restore point). When it runs that Gateway",
       "     already, binds and publishes every registered app if the live Gateway doesn't, and",
-      "     otherwise says it is up to date. A live Gateway newer than this one is refused (in a",
-      "     checkout: git pull)",
+      "     otherwise says it is up to date. A live Gateway newer than this one is replaced",
+      "     with a warning (GATEWAY_DOWNGRADE): that is how a rollback goes; in a checkout, git pull",
+      "     to go forward",
       "",
       "A checkout's Gateway is named by its version when it is that version's release (the",
       "gateway-v<version> tag), and by the checkout's commit otherwise.",

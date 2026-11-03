@@ -98,19 +98,18 @@ describe("settings manifest field", () => {
     );
   });
 
-  it("is tolerated by the lenient schema with unknown fields", () => {
+  it("reads a stored row's entries as stored, unknown fields kept", () => {
     expect(
-      validateManifest({ id: "mc", settings: [{ name: "A", future: 1 }] })
-        .settings,
-    ).toEqual([{ name: "A", future: 1 }]);
-    expect(() =>
-      validateManifest({ id: "mc", settings: [{ name: "not a name" }] }),
-    ).toThrow();
+      validateManifest({
+        id: "mc",
+        settings: [{ name: "A", why: "", future: 1 }],
+      }).settings,
+    ).toEqual([{ name: "A", why: "", future: 1 }]);
   });
 
   it("is refused for third-party apps", () => {
     expect(
-      manifestTierProblems({ settings: [{ name: "A" }] }, "dispatch"),
+      manifestTierProblems({ settings: [{ name: "A", why: "x" }] }, "dispatch"),
     ).toContain(
       "settings: third-party apps can't have settings of their own yet",
     );

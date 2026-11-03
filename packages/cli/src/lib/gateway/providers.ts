@@ -8,10 +8,6 @@
  * make (no registered app holds a row's setting as a secret of its own; a
  * row an app lists isn't removed without --force) and the I/O.
  *
- * A Gateway from before migration 0013 has no table: `add` and `remove`
- * refuse with the command that brings it up to date, and every reader
- * reads it as no rows.
- *
  * `add` and `remove` queue `provider.added` and `provider.removed` (the
  * outbox, events.ts) in the batch that writes the row, on the install
  * organization, whose Gateway the registry is, as the operator: only when
@@ -47,52 +43,13 @@ import { installOrganization, listApps, text, type Deployer } from "./registry";
 /** What the host rule needs of the install: the Gateway's host and its apps' base domain. */
 type ProviderInstall = Pick<InstallRecord, "gatewayHost" | "appBaseDomain">;
 
-const knownTables = new WeakMap<D1Database, Map<string, Promise<boolean>>>();
-
-/** Whether the Gateway's D1 has `table`. Asked of each database once per table. */
-function hasTable(db: D1Database, table: string): Promise<boolean> {
-  let tables = knownTables.get(db);
-  if (!tables) {
-    tables = new Map();
-    knownTables.set(db, tables);
-  }
-  let known = tables.get(table);
-  if (!known) {
-    known = db
-      .run([
-        { sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", params: [table] },
-      ])
-      .then(([rows = []]) => rows.length > 0);
-    tables.set(table, known);
-  }
-  return known;
-}
-
-/**
- * Whether the Gateway's D1 has the `providers` table (migration 0013,
- * 2026-10-25). Asked of each database once.
- */
-function hasProvidersTable(db: D1Database): Promise<boolean> {
-  return hasTable(db, "providers");
-}
-
-/**
- * Whether the Gateway's D1 has the OAuth tables (`oauth_clients`,
- * `provider_connections`; migration 0016, 2026-10-25). A Gateway without
- * them has no uploaded clients and no connections.
- */
-function hasOAuthTables(db: D1Database): Promise<boolean> {
-  return hasTable(db, "provider_connections");
-}
-
 /** A stored row as the registry reads it, with the spec's text as stored. */
 interface StoredProviderRow extends ProviderRow {
   spec: string;
 }
 
-/** Every `providers` row, in the order they were added; none on a Gateway without the table. */
+/** Every `providers` row, in the order they were added. */
 async function readProviderRows(db: D1Database): Promise<StoredProviderRow[]> {
-  if (!(await hasProvidersTable(db))) return [];
   const [rows = []] = await db.run([
     {
       sql: "SELECT id, spec, added_by, added_at, bound_to FROM providers ORDER BY added_at, id",
@@ -143,15 +100,6 @@ export function providerRowsNaming(
     .filter((row) => capabilitySettings(row.capability).some((name) => names.includes(name)));
 }
 
-/** `add` and `remove` on a Gateway whose D1 predates the table. */
-function outdated(): EveryAppError {
-  return new EveryAppError(
-    "GATEWAY_OUTDATED",
-    "This Gateway predates the provider registry\nIts database has no providers table until the Gateway is updated. Nothing was changed.",
-    { rerun: `${CLI} update`, rerunNote: "then run this again" },
-  );
-}
-
 /** The ids `everyapp` and the catalog's, which no row may take. */
 function isBuiltinId(id: string): boolean {
   return id === "everyapp" || (CAPABILITY_IDS as readonly string[]).includes(id);
@@ -195,7 +143,6 @@ export async function addProvider(db: D1Database, input: AddProviderInput): Prom
     );
   }
   const { id, capability } = parsed;
-  if (!(await hasProvidersTable(db))) throw outdated();
   const rows = await readProviderRows(db);
   const others = registryOf(
     rows.filter((row) => row.id !== id),
@@ -317,7 +264,6 @@ export async function removeProvider(
       rerunNote: "shows which are registered",
     });
   }
-  if (!(await hasProvidersTable(db))) throw outdated();
   const row = (await readProviderRows(db)).find((each) => each.id === id);
   if (!row) {
     throw new EveryAppError("PROVIDER_NOT_FOUND", `No provider ${id} is registered on this Gateway`, {
@@ -353,18 +299,13 @@ export async function removeProvider(
   // An OAuth provider's connections and uploaded client go with the row:
   // tokens for a provider the Gateway no longer serves open nothing, and a
   // row added again under the id must not inherit them.
-  const oauth = await hasOAuthTables(db);
   const results = await db.run([
     ...event,
-    ...(oauth
-      ? [
-          { sql: "DELETE FROM provider_connections WHERE provider_id = ? RETURNING id", params: [id] },
-          { sql: "DELETE FROM oauth_clients WHERE provider_id = ? RETURNING provider_id", params: [id] },
-        ]
-      : []),
+    { sql: "DELETE FROM provider_connections WHERE provider_id = ? RETURNING id", params: [id] },
+    { sql: "DELETE FROM oauth_clients WHERE provider_id = ? RETURNING provider_id", params: [id] },
     { sql: "DELETE FROM providers WHERE id = ?", params: [id] },
   ]);
-  const deleted = oauth ? results.slice(event.length, event.length + 2) : [];
+  const deleted = results.slice(event.length, event.length + 2);
   return {
     id,
     name,
@@ -454,9 +395,8 @@ export interface UploadedClient {
   addedAt: number | null;
 }
 
-/** Every client uploaded in the UI (`oauth_clients`), by provider id; none on a Gateway without the table. */
+/** Every client uploaded in the UI (`oauth_clients`), by provider id. */
 export async function readUploadedClients(db: D1Database): Promise<Map<string, UploadedClient>> {
-  if (!(await hasOAuthTables(db))) return new Map();
   const [rows = []] = await db.run([
     {
       sql: "SELECT provider_id, client_id, client_secret_enc IS NOT NULL AS has_secret, added_by, added_at FROM oauth_clients",
@@ -539,9 +479,8 @@ function safeStringArray(value: unknown): string[] {
   }
 }
 
-/** The connections `filter` names, newest first; none on a Gateway without the table. */
+/** The connections `filter` names, newest first. */
 export async function listConnections(db: D1Database, filter: ConnectionFilter = {}): Promise<ProviderConnection[]> {
-  if (!(await hasOAuthTables(db))) return [];
   const where = connectionWhere(filter);
   const [rows = []] = await db.run([
     {
@@ -575,7 +514,6 @@ ORDER BY c.created_at DESC, c.id`,
 
 /** The connections of each provider, by id: what `provider list` and `provider show` count. */
 export async function countConnections(db: D1Database): Promise<Map<string, number>> {
-  if (!(await hasOAuthTables(db))) return new Map();
   const [rows = []] = await db.run([
     { sql: "SELECT provider_id, count(*) AS n FROM provider_connections GROUP BY provider_id" },
   ]);

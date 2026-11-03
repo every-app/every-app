@@ -28,8 +28,6 @@ interface ReleaseOptions {
   version?: string;
   /** Two builds of one version differ by it. */
   builtAt?: string;
-  /** The oldest everyapp that may deploy it. */
-  minCli?: string;
   /** Appended after the real migrations, e.g. one that fails. */
   extraMigration?: { file: string; sql: string };
 }
@@ -60,7 +58,6 @@ export async function buildGatewayRelease(options: ReleaseOptions = {}): Promise
 async function packGatewayRelease({
   version = "0.2.0",
   builtAt = "2026-10-12T00:00:00.000Z",
-  minCli = "0.3.0",
   extraMigration,
 }: ReleaseOptions): Promise<string> {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "gateway-release-"));
@@ -99,8 +96,6 @@ async function packGatewayRelease({
       cfVersion: "1.0.0-beta.14",
       pluginVersion: "2.0.0-beta.sha-91c870c02",
       configVersion: "0.24.1",
-      minCli,
-      minSdk: "0.3.0",
     },
   });
   const tarball = path.join(work, "every-app-gateway-release.tar.gz");

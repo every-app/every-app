@@ -165,16 +165,3 @@ export function devRegistryEnv(cwd: string): Record<string, string> {
     MINIFLARE_REGISTRY_PATH: registry,
   };
 }
-
-/**
- * Apps started under Wrangler kept local data in `.wrangler/state`. Explain,
- * once there is no new state yet, why the old local data isn't there.
- */
-export async function legacyLocalStateNote(
-  cwd: string,
-): Promise<string | null> {
-  const legacy = await directoryExists(path.join(cwd, ".wrangler", "state"));
-  const current = await directoryExists(path.join(cwd, LOCAL_STATE_DIR));
-  if (!legacy || current) return null;
-  return "Local data now lives in .cloudflare/state\nRows in the old .wrangler/state database weren't copied over.";
-}

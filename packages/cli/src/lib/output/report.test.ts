@@ -99,14 +99,14 @@ describe("reportFailure", () => {
         authorize: true,
       });
     }
-    // A refused downgrade says which: `git pull`, or setup's flag.
+    // An error may set its own takeover rerun.
     const { event } = report(
-      new EveryAppError("DOWNGRADE_REFUSED", "Behind.", {
-        rerun: `${CLI} setup --allow-downgrade`,
+      new EveryAppError("SOME_TAKEOVER", "Taken.", {
+        rerun: `${CLI} setup --some-flag`,
         authorize: true,
       }),
     );
-    expect(event["data"]).toEqual({ rerun: `${CLI} setup --allow-downgrade`, authorize: true });
+    expect(event["data"]).toEqual({ rerun: `${CLI} setup --some-flag`, authorize: true });
   });
 
   it("carries what else an error says for a script", () => {

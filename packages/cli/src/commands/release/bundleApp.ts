@@ -13,6 +13,7 @@ import { helperWorkerName, sentinelDeployTarget } from "@every-app/sdk/cloudflar
 import { buildApp } from "@/lib/app/buildApp";
 import { prepareAppBuildOutput } from "@/lib/app/policy";
 import { packAppRelease } from "@/lib/app/release";
+import { warnSdkVersion } from "@/lib/app/sdkVersion";
 import { resolveCfBinary } from "@/lib/cf/bin";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import type { EveryAppCliManifest } from "@/lib/manifest";
@@ -49,6 +50,7 @@ export async function bundleApp({
     });
     out.emit({ type: "step", step: "app.install", status: "ok" });
   }
+  warnSdkVersion(cwd, out);
   out.emit({ type: "step", step: "app.build", status: "start", message: "Building..." });
   await buildApp({ cwd, cf: createCf(), buildCommand: manifest.build, verbose });
   const sentinel = sentinelDeployTarget(manifest);

@@ -1,7 +1,7 @@
 import path from "node:path";
 import chalk from "chalk";
 import { queueNameFor, vectorizeNameFor } from "@every-app/perimeter/manifest";
-import { gatewayFor, refuseGatewayNewerThanCli, type ReconcileSeams } from "@/commands/appGateway";
+import { gatewayFor, type ReconcileSeams } from "@/commands/appGateway";
 import { removeEmailRoutes } from "@/lib/app/emailRoutes";
 import {
   describeResource,
@@ -131,7 +131,6 @@ export async function removeApp({
   const { cf, db: registry } = connection;
   // The live Gateway again, without the app's binding: refused before the
   // registry changes when it can't be had (GATEWAY_RELEASE_UNAVAILABLE).
-  refuseGatewayNewerThanCli(connection.install);
   const newGateway = gatewayFor(reconcile, connection.install, out);
   await newGateway.source();
   out.emit({

@@ -37,8 +37,7 @@ export enum ReportCode {
  * Errors whose way on is a flag that takes something over (replaces a DNS
  * record, deletes data, skips a confirmation): their rerun carries the flag
  * and `authorize`, so an agent shows the error and asks before using it,
- * never retries with it on its own. (DOWNGRADE_REFUSED sets its own: only
- * `setup` takes --allow-downgrade; elsewhere the way on is `git pull`.)
+ * never retries with it on its own.
  */
 const TAKEOVER_FLAGS: Readonly<Record<string, string>> = {
   DNS_RECORD_CONFLICT: "--force-dns",

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { compareVersions, hashReleaseTree, openRelease, refuseNewerThanCli } from "./release";
+import { hashReleaseTree, openRelease } from "./release";
 
 // The gateway's own release builder, loaded by path: it is another package.
 const BUILDER = "../../../../../apps/every-app-gateway/scripts/build-release.ts";
@@ -67,8 +67,6 @@ beforeEach(async () => {
       cfVersion: "1.0.0-beta.14",
       pluginVersion: "2.0.0-beta.sha-91c870c02",
       configVersion: "0.24.1",
-      minCli: "0.3.0",
-      minSdk: "0.3.0",
     },
   });
   tarball = path.join(work, "every-app-gateway-release.tar.gz");
@@ -226,27 +224,5 @@ describe("openRelease", () => {
     await expect(openRelease(tarball)).rejects.toMatchObject({
       code: "RELEASE_INVALID",
     });
-  });
-});
-
-describe("refuseNewerThanCli", () => {
-  it("refuses a release that needs a newer everyapp, and says to update it", () => {
-    expect(() => refuseNewerThanCli({ version: "0.4.0", minCli: "0.3.0" }, "0.3.0")).not.toThrow();
-    expect(() => refuseNewerThanCli({ version: "0.4.0", minCli: "0.4.0" }, "0.3.0")).toThrow(
-      expect.objectContaining({
-        code: "CLI_TOO_OLD",
-        message: expect.stringContaining("needs everyapp 0.4.0 or newer (this is 0.3.0)"),
-        fix: "update everyapp (in a checkout: git pull), then run this again",
-      }),
-    );
-  });
-});
-
-describe("compareVersions", () => {
-  it("orders dotted versions numerically", () => {
-    expect(compareVersions("0.10.0", "0.9.1")).toBeGreaterThan(0);
-    expect(compareVersions("0.2.0", "0.2.0")).toBe(0);
-    expect(compareVersions("0.2.0-beta.1", "0.2.0")).toBe(0);
-    expect(compareVersions("1.0.0", "1.0.1")).toBeLessThan(0);
   });
 });

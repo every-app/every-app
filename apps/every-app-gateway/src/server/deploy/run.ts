@@ -29,7 +29,6 @@ import { logEvent } from "@every-app/perimeter";
 import { InstallationError } from "@every-app/perimeter/install";
 import {
   ManifestError,
-  validateManifest,
   validateManifestStrict,
   type Manifest,
 } from "@every-app/perimeter/manifest";
@@ -111,10 +110,7 @@ export function parseManifest(
 ): Manifest {
   let manifest: Manifest;
   try {
-    manifest =
-      platformPolicy(env).mode === "self_hosted"
-        ? validateManifestStrict(raw, { capabilities: lookup })
-        : validateManifest(raw);
+    manifest = validateManifestStrict(raw, { capabilities: lookup });
   } catch (error) {
     throw new DeployError(
       "INVALID_MANIFEST",

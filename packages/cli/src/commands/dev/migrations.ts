@@ -8,7 +8,7 @@ import { errorMessage, EveryAppError } from "@/lib/errors";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import { thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
-import { localMigrationsApplied, warnLegacyLocalState } from "../localMigrations";
+import { localMigrationsApplied } from "../localMigrations";
 
 const STEP = "dev.migrations";
 
@@ -32,7 +32,6 @@ export async function applyDevMigrations({
   out,
   skip,
 }: ApplyDevMigrationsOptions): Promise<void> {
-  await warnLegacyLocalState(cwd, out);
   if (skip) {
     out.emit({ type: "step", step: STEP, status: "skip", data: { reason: LocalMigrationsSkipped.Flag } });
     return;

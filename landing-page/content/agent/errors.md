@@ -239,14 +239,6 @@ Source: `packages/cli/src/commands/deploy/deployApp.ts` (`checkCapabilitiesOffer
 
 Also for an id under `providers` the Gateway doesn't offer as a model provider: `<app> lists <ids> under providers, which <host> doesn't offer as a model provider` / the catalog's `ai` entries and the registered `ai` rows it offers; `data.fix` names `provider add <spec.json>` with `mode: "ai"`.
 
-### CLI_TOO_OLD
-
-A release's `release.json` names a `minCli` newer than this everyapp (`compareVersions`: dotted parts compared numerically, a leading `v` and prerelease suffixes ignored), so it is refused before anything changes. Headline: `<what> needs everyapp <minCli> or newer (this is <cliVersion>)`, where `<what>` is `Gateway <version>` for a Gateway release and `<appId> <version>` for an app release; `data.minCli`, `data.cliVersion`. Raised by `setup` and `update` (the source's `minCli` before anything is asked, then the opened release), by the Gateway rebind that `deploy` and `delete` run (`lib/gateway/reconcile.ts`), and by `install <source>` opening an app release (`lib/app/release.ts`; app releases are packed with `minCli: "0.3.0"`).
-
-**Fix:** `fix`: `update everyapp (in a checkout: git pull), then run this again`. No rerun; not retryable.
-
-Source: `packages/cli/src/lib/gateway/release.ts` (`refuseNewerThanCli`), called from `packages/cli/src/commands/setup/runSetup.ts`, `packages/cli/src/lib/gateway/reconcile.ts`, `packages/cli/src/lib/app/release.ts`.
-
 ### CLOUDFLARE_LOGIN_FAILED
 
 cf's login didn't leave cf logged in. Raised anywhere a command logs in (`login`, `setup`, and every Gateway command through `lib/gateway/connect.ts`), in two situations:
@@ -389,14 +381,6 @@ Source: `packages/cli/src/commands/setup/deployGateway.ts` (`gatewayTarget`).
 **Fix:** with one zone: `fix`: `add --domain apps.<zone>, or another name under <zone>`, `rerun`: this same command with `--domain apps.<zone>` appended (`--json` included when the run had it: run it as it is), `rerunNote`: `or another name under <zone>`. With several zones: `fix`: `add --domain apps.<first zone>, or another name under <zone a>, <zone b> or <zone c>`, no `rerun`, and `data.choices`: one `{ label: <zone>, rerun }` per zone (the shape of `choose_account`), so the agent runs one choice's `rerun` as it is (built the same way), or asks the person which. Not retryable.
 
 Source: `packages/cli/src/commands/setup/runSetup.ts` (`pickDomain`).
-
-### DOWNGRADE_REFUSED
-
-The Gateway this run would deploy is older than the live one. Order is not the version: a release is placed by the `when` of its newest migration, then by when its sources were last committed (`compareReleaseOrder`); the same release (same `sha256`) or a build of the same sources (same tree hash) is never a downgrade. Headline: `This checkout's Gateway (<version>) is older than the live one (<liveVersion>)`, or with equal versions `This checkout's Gateway (<version> from <Mon D>) is older than the live one (from <Mon D>)` (every Gateway deploy builds its release from the checkout, `lib/gateway/checkoutRelease.ts`); `data.live`, `data.candidate`. Raised by `setup` and `update` (which take `--allow-downgrade`, a hidden flag): `fix`: `git pull, then run setup again`; `rerun`: this same command with `--allow-downgrade`, with `authorize: true` set by the error itself (`DOWNGRADE_REFUSED` isn't in `TAKEOVER_FLAGS`; only these two commands take the flag). `deploy` and `delete` never raise it: their rebind deploys the live release itself ([`GATEWAY_RELEASE_UNAVAILABLE`](#gateway_release_unavailable) when it can't be had).
-
-**Fix:** as above: `git pull`, then the same command; a deliberate rollback is `setup --allow-downgrade`, after asking. Not retryable.
-
-Source: `packages/cli/src/lib/gateway/apply.ts` (`downgradeRefused`, `refuseDowngrade`), called from `packages/cli/src/commands/setup/runSetup.ts`.
 
 ### DRIZZLE_KIT_MISSING
 
@@ -675,35 +659,21 @@ Source: `packages/cli/src/lib/gateway/install.ts`, `packages/cli/src/lib/gateway
 
 ### GATEWAY_OUTDATED
 
-An `events` command (every one but `events types`) against a Gateway whose D1 predates migration `0012_events` (2026-10-25): it has no `events`, `event_subscriptions` or `event_deliveries` table (`hasEventsTables`, one `PRAGMA table_info(events)` per run). Also `workspace audit` against a Gateway whose D1 predates migration `0015_audit_actor`: its `events` table has no `actor_kind` and `actor_id` columns (`hasAuditColumns`, the same PRAGMA). Headline then: `The Gateway predates the audit log`, then `Its events table has no actor columns until the Gateway is updated to a release that has them.` Raised after connecting, before anything is read or written. The commands that only queue an event alongside their own change (`deploy`, `install`, `delete`, `access on|off`, `mcp on|off`, `configure`, `secret set|unset`) never raise it: on such a Gateway they queue nothing and go on. Headline: `The Gateway predates events`, then `Its database has no event tables until the Gateway is updated to a release that has them.`
+The Gateway is older than this everyapp: its database doesn't have the newest Gateway migration this everyapp was built with (`GATEWAY_SCHEMA`, the newest tag in `apps/every-app-gateway/drizzle/meta/_journal.json`; looked up in `d1_migrations`, the table `cf d1 migrations apply` keeps). Every command that connects to a Gateway checks it once, right after finding the Gateway and before reading or writing anything (`connectToGateway`): `deploy`, `delete`, `install`, `workspace …`, `ai …`, `provider …`, `mcp …`, `secret …`, `configure`, `email …`, `access …`, `db query` and the rest. `setup`, `update`, `status` and `db restore` don't: `update` is how the Gateway catches up, `status` reports it (a fix of severity `error`, [below](#what-status-reports-as-fixes)), and `db restore --gateway` is how a failed Gateway migration is undone (that migration has no `d1_migrations` row). CLI and Gateway are one release, and the CLI reads and writes the Gateway's tables directly, so there is no other version check. A Gateway newer than this everyapp is fine (Gateway migrations only add). Headline: `The Gateway is older than this everyapp`, then `Its database doesn't have migration <tag> yet, which this everyapp reads and writes.`; `data.needs` is the tag.
+
+The `events` commands raise it too, with their own headlines (`The Gateway predates events`, `The Gateway predates the audit log`), when the event tables or the audit log's columns are missing (`requireEventsTables`, `requireAuditColumns`).
 
 **Fix:** `rerun`: `pnpm everyapp update` (`rerunNote` `then run this again`), which applies the Gateway's migrations. Not retryable.
 
-Source: `packages/cli/src/lib/gateway/events.ts` (`requireEventsTables`, `requireAuditColumns`).
+Source: `packages/cli/src/lib/gateway/schema.ts` (`requireGatewaySchema`), called from `packages/cli/src/lib/gateway/connect.ts`; `packages/cli/src/lib/gateway/events.ts`.
 
-### GATEWAY_PREDATES_AI_DEFAULT
+### GATEWAY_UPDATED
 
-`ai default` against a Gateway whose D1 predates migration `0017_ai_default_and_usage_models` (2026-10-25): `org_settings` has no `ai_default` column, so there is nowhere to store the choice (`ai show` reads it as no choice meanwhile). Also against one that predates the one-setting migration (`0027_ai_default_one_setting`, 2026-11-02): `org_settings` still has `ai_models`, and that Gateway reads only the provider from the setting, so a model would not take effect. Headline: `The Gateway predates the one default-model setting`.
+A rebind (`deploy` binding an app, `delete`, a Gateway setting through `secret set`) waited for the Gateway's lease while an `update` made a newer Gateway live, so the release it holds is older than the live one. A rebind never changes the Gateway's code, so it stops before uploading. Headline: `The Gateway was updated to <version> while this waited`, then `Nothing changed; run it again to deploy against the Gateway that is live now.`; `data.live`, `data.candidate`.
 
-**Fix:** `rerun`: `pnpm everyapp update` (`rerunNote` `then run this again`), which applies the Gateway's migrations. Not retryable.
+**Fix:** run the same command again (`retryable`): it takes the release that is live now.
 
-Source: `packages/cli/src/lib/gateway/aiDefault.ts` (`setAiDefault`).
-
-### GATEWAY_PREDATES_COST_CAPS
-
-`workspace app cap`, `workspace cap default` and `workspace usage` against a Gateway whose D1 predates migration `0018_cost_caps` (2026-10-25): it has no `org_app_settings.monthly_cost_cap_micros` or `org_settings.default_monthly_cost_cap_micros` column (`hasCostCaps`, one batch of two `PRAGMA table_info` per run). Raised after connecting, before anything is written. Headline: `The Gateway predates dollar caps`, then `Its database has no monthly cap in dollars, and no workspace default or no-cap override, until the Gateway is updated to a release that has them.`
-
-**Fix:** `rerun`: `pnpm everyapp update` (`rerunNote` `then run this again`), which applies the Gateway's migrations. Not retryable.
-
-Source: `packages/cli/src/lib/gateway/costCaps.ts` (`requireCostCaps`).
-
-### GATEWAY_PREDATES_LINKED_DEV
-
-`workspace linked-dev on|off|show` against a Gateway whose D1 predates migration `0022_linked_dev` (2026-10-28): `org_settings` has no `linked_dev` column (`hasLinkedDev`, one `PRAGMA table_info` per run). Raised after connecting, before anything is written. Headline: `The Gateway predates linked dev`, then `Its database has no linked dev switch until the Gateway is updated to a release that has it.`
-
-**Fix:** `rerun`: `pnpm everyapp update` (`rerunNote` `then run this again`). Not retryable.
-
-Source: `packages/cli/src/lib/gateway/linkedDev.ts` (`requireLinkedDev`).
+Source: `packages/cli/src/lib/gateway/apply.ts` (`checkDowngrade`).
 
 ### GATEWAY_URL_MISMATCH
 
@@ -1331,7 +1301,7 @@ Source: `packages/cli/src/lib/release/github.ts`
 
 ### RELEASE_UNSUPPORTED
 
-A release's `release.json` names a `buildOutputVersion` other than `v0`, the only Build Output format this CLI deploys. Gateway and app releases alike. Message `<Gateway|App> release <version> needs a newer everyapp`. (A release whose `minCli` is newer than this CLI is `CLI_TOO_OLD`.)
+A release's `release.json` names a `buildOutputVersion` other than `v0`, the only Build Output format this CLI deploys. Gateway and app releases alike. Message `<Gateway|App> release <version> needs a newer everyapp`.
 
 **Fix:** `data.fix`: `update everyapp (in a checkout: git pull), then run this again`; `data.buildOutputVersion` is the release's, `data.supported` is `v0`. No rerun, not retryable.
 
@@ -2680,13 +2650,19 @@ Source: `packages/cli/src/commands/setup/deployGateway.ts`
 
 A rebind (`deploy` binding a new app or one whose Worker the install row doesn't list, `delete`) needs the live Gateway's own release again, and it can't be had: deploying or deleting an app never changes the Gateway's code, so the run stops before anything is registered, removed or uploaded. Raised before the registry changes (`deploy`, after `app.deploy`; `delete`, before `app.delete`), or by step `gateway.release` when the download fails. A checkout-built Gateway, and a row from before origins were recorded (`release_origin` null, every Gateway installed before 2026-10-26), is had from this checkout's build cache for the row's tree hash, or built again when this checkout's Gateway sources hash to that tree (the same sources are no upgrade); otherwise refused. The reasons (`data.why`): installed before everyapp recorded where a Gateway comes from (and this checkout neither holds its build nor has its sources); this checkout's Gateway sources aren't the live ones and its cache doesn't hold that build; built from a checkout while this everyapp isn't running from one; the file it was installed from is gone; its GitHub release or URL can't be downloaded any more; its sources changed while it built; or the release at its tag or URL isn't the live one any more (its SHA-256 changed: an asset replaced). Message `The live Gateway <version> (from <origin>) can't be fetched again: <why>` then `Deploying or deleting an app never changes the Gateway's code, so nothing has changed. Update the Gateway first.`; `data.live`, `data.origin`, `data.why`.
 
-**Fix:** `rerun`: `pnpm everyapp update`, `rerunNote`: `then run this again`. `update` deploys what `setup` would (the published release for this everyapp, this checkout's build, or `--release`) under the downgrade guard, and records where it came from, so the next rebind can take it again: one `update` (or `setup`) is needed once on every Gateway installed before origins were recorded, unless the deploying checkout has its exact sources. Not retryable as is.
+**Fix:** `rerun`: `pnpm everyapp update`, `rerunNote`: `then run this again`. `update` deploys what `setup` would (the published release for this everyapp, this checkout's build, or `--release`), and records where it came from, so the next rebind can take it again: one `update` (or `setup`) is needed once on every Gateway installed before origins were recorded, unless the deploying checkout has its exact sources. Not retryable as is.
 
 Source: `packages/cli/src/lib/gateway/liveRelease.ts` (`unavailable`), called through `gatewayFor` in `packages/cli/src/commands/appGateway.ts`.
 
+### GATEWAY_DOWNGRADE
+
+`setup` or `update`: the Gateway this run deploys is older than the live one, and it is deployed anyway (a rollback is a deploy of the older release; `db restore` puts its database back). Older is by the release's newest migration, then by when its sources were last committed; the same release (same `sha256`) or a build of the same sources (same tree hash) is never older. Message `This checkout's Gateway (<version>) is older than the live one (<live version>)` (or `The Gateway from <origin> …`; the live version is left out when it is the same), then `Deploying it anyway. To go forward again, git pull and run pnpm everyapp update.` (`update everyapp` outside a checkout); `data.live`, `data.candidate`.
+
+Source: `packages/cli/src/lib/gateway/apply.ts` (`checkDowngrade`)
+
 ### GATEWAY_RELEASE_LATEST
 
-`setup` or `update` outside a checkout, step `gateway.release`: `https://github.com/every-app/every-app` has no release tagged `gateway-v<this everyapp's version>` yet, so the newest stable Gateway release is taken instead. Message `There is no Gateway release for everyapp <version> yet (<repo> has no <tag>)` then `Using the latest stable Gateway release instead. To take another: --release <url|file>.`; `data.cliVersion`, `data.tag`, `data.repo`.
+`setup` or `update` outside a checkout, step `gateway.release`: `https://github.com/every-app/every-app` has no release tagged `gateway-v<this everyapp's version>` yet, so the newest stable Gateway release is taken instead. Message `There is no Gateway release for everyapp <version> yet (<repo> has no <tag>)` then `Using the latest stable Gateway release instead. If it is older than this everyapp, the other commands refuse it (GATEWAY_OUTDATED) until a newer one is deployed: --release <url|file>, or update again once <tag> is out.`; `data.cliVersion`, `data.tag`, `data.repo`.
 
 Source: `packages/cli/src/lib/gateway/source.ts`
 
@@ -2707,12 +2683,6 @@ Source: `packages/perimeter/src/install/app-install.ts`
 A run holding a lease (the Gateway's, an app's, a database's) couldn't renew it in the Gateway's D1: `Can't reach Cloudflare to keep hold of <target> (<for> so far)` / `<reason>. Another run can take over in <time> if this continues.` (the reason is `The database didn't answer within <heartbeat timeout>` on a timeout). When renewal has failed for more than half the lease's TTL, or another holder took it: `This run lost its hold on <target>` / `Its hold expired, and another run may have started. It stops before its next change.`; the next lease check then fails with `LEASE_LOST` (above). Nothing to do but let the network recover.
 
 Source: `packages/cli/src/lib/gateway/lease.ts`
-
-### LEGACY_LOCAL_STATE
-
-`db migrate` and `dev`: the app has `.wrangler/state` (where Wrangler kept local data) and no `.cloudflare/state` yet: `Local data now lives in .cloudflare/state` / `Rows in the old .wrangler/state database weren't copied over.` Informational.
-
-Source: `packages/cli/src/commands/localMigrations.ts`, `packages/cli/src/lib/app/localD1.ts`
 
 ### LINKED_DEV_REVOKE_FAILED
 
@@ -2804,6 +2774,12 @@ Source: `packages/cli/src/commands/delete/index.ts`
 
 Source: `packages/perimeter/src/install/app-install.ts`
 
+### SDK_VERSION_MISMATCH
+
+`deploy` (from source) and `release`, after dependencies are installed: the app's installed `@every-app/sdk` isn't the version it should pin: this everyapp's, or when everyapp runs from a checkout (whose `package.json` says the next release, `0.3.0`), the newest published one (`PUBLISHED_VERSION`). They are published together (`pnpm publish:rc`). Only a warning, because an app re-pins at the next npm publish and may deploy with a newer CLI meanwhile. Message `This app's @every-app/sdk is <sdk>, older|newer than this everyapp (<version>)` (`the published everyapp` from a checkout) then `They are released together: pin both to one version (pnpm add @every-app/sdk@<version> everyapp@<version>).`; `data.sdkVersion`, `data.cliVersion`, `data.pin`. Versions compare as semver, prerelease included (`0.3.0-rc.9` < `0.3.0-rc.10` < `0.3.0`). No warning when the app has no SDK installed, or its SDK is this everyapp's own version (a `link:` to the checkout).
+
+Source: `packages/cli/src/lib/app/sdkVersion.ts`
+
 ### SCHEMA_CHECK_SKIPPED
 
 `deploy`, step `app.schema`: the drift check (`SCHEMA_CHECK_FAILED` above) couldn't run: `Can't check the schema against the migrations: drizzle-kit isn't installed` (`data.fix`: `add drizzle-kit to devDependencies`); `… : no drizzle.config.ts` (with the detail `An app that writes its SQL by hand sets migrations.engine to "d1-sql".`); or, when `migrations.config` names the file, `… : no <value> (migrations.config)`, where `<value>` is `migrations.config`'s value.
@@ -2883,17 +2859,17 @@ Four warnings share their code with an error or a `status` fix and are documente
 
 ### CHECKOUT_BEHIND
 
-Warning. `This checkout is behind the live Gateway`, `This checkout has <version>; <live> is live.` (when they differ), `Deploys from here are refused until it catches up.` (`DOWNGRADE_REFUSED` above). Run: `git pull`.
+Warning. `This checkout is behind the live Gateway`, `This checkout has <version>; <live> is live.` (when they differ), `An update from here puts the older Gateway back.` ([`GATEWAY_DOWNGRADE`](#gateway_downgrade)). Run: `git pull`.
 
 Source: `packages/cli/src/commands/status/problems.ts`
 
 ### GATEWAY_OUTDATED
 
-Info. The install row's tree hash isn't this checkout's Gateway sources' and the Gateway has been uploaded: `Your every-app folder has a newer Gateway than the one online` / `Run update to take it; deploying an app never changes the Gateway.` Run: `pnpm everyapp update`, `note`: `updates it now`. Not a problem to fix: it is listed after the others and doesn't count in the summary.
+Error, when the uploaded Gateway's database lacks the newest Gateway migration this everyapp was built with (the same lookup as [`GATEWAY_OUTDATED`](#gateway_outdated), the error, which every other command raises until `update` runs): `The Gateway is older than this everyapp` / `Its database doesn't have migration <tag> yet, so the other commands refuse it until update runs.` Run: `pnpm everyapp update`, `note`: `updates it now`.
 
-Also an error: `provider add` and `provider remove` on a Gateway whose database predates the `providers` table (migration 0013): `This Gateway predates the provider registry`, nothing changed, `data.rerun` `pnpm everyapp update`, `data.rerunNote` `then run this again`. Every other reader treats such a Gateway as having no registered providers.
+Info otherwise, when the install row's tree hash isn't this checkout's Gateway sources' and the Gateway has been uploaded (and the checkout isn't behind): `Your every-app folder has a newer Gateway than the one online` / `Run update to take it; deploying an app never changes the Gateway.` Run: `pnpm everyapp update`, `note`: `updates it now`. Not a problem to fix: the schema is current, so every command works; it is listed after the others and doesn't count in the summary.
 
-Source: `packages/cli/src/commands/status/problems.ts`, `packages/cli/src/lib/gateway/providers.ts`
+Source: `packages/cli/src/commands/status/problems.ts`
 
 ### NO_OWNER
 

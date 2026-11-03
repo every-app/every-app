@@ -1098,16 +1098,6 @@ describe("deploy", () => {
     expect(versionBound).not.toBe(versionBefore);
   });
 
-  it("refuses a Gateway newer than this everyapp, before anything happens", async () => {
-    account.database("every-app-gateway").sqlite.exec(`UPDATE _everyapp_install SET release_version = '9.0.0'`);
-    await expect(deploy()).rejects.toMatchObject({
-      code: "CLI_TOO_OLD",
-      message: expect.stringMatching(/^Gateway 9\.0\.0 needs everyapp 9\.0\.0 or newer/),
-    });
-    expect(appRow("todo")).toBeUndefined();
-    await expect(remove("todo")).rejects.toMatchObject({ code: "CLI_TOO_OLD" });
-  });
-
   it("refuses a --gateway that isn't the one in the Cloudflare account, before anything happens", async () => {
     await expect(deploy(TODO, { gateway: "https://other.example.net" })).rejects.toMatchObject({
       code: "GATEWAY_URL_MISMATCH",

@@ -6,6 +6,7 @@
  */
 import { EveryAppError } from "@/lib/errors";
 import { thisCommand } from "@/lib/output/command";
+import { compareVersions } from "@/lib/version";
 
 export const MIN_NODE_VERSION = "22.18.0";
 
@@ -58,19 +59,4 @@ export function unsupportedRuntime(
     );
   }
   return null;
-}
-
-function compareVersions(a: string, b: string): number {
-  const parse = (version: string) =>
-    version
-      .replace(/^v/, "")
-      .split(/[.-]/)
-      .slice(0, 3)
-      .map((part) => Number.parseInt(part, 10) || 0);
-  const [left, right] = [parse(a), parse(b)];
-  for (let i = 0; i < 3; i += 1) {
-    const difference = (left[i] ?? 0) - (right[i] ?? 0);
-    if (difference !== 0) return difference;
-  }
-  return 0;
 }

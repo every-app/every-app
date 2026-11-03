@@ -91,6 +91,9 @@ export async function restoreDatabase({
     alwaysAsk: true,
     login: { json, out, step: "db.login" },
     createCf,
+    // A restore undoes a failed or unwanted migration, so the database may
+    // be behind this everyapp: never refuse it for that.
+    checkSchema: false,
   });
   const target = appId
     ? appRestoreTarget((await readApp(db, appId)).workerName)

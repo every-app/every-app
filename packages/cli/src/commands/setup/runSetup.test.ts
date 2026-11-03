@@ -569,33 +569,26 @@ describe("everyapp setup", () => {
     expect([...account.databases.values()].map((entry) => entry.name)).not.toContain("every-app-gateway");
   });
 
-  it("refuses a checkout behind the live Gateway, offering --allow-downgrade for an agent to ask about", async () => {
+  it("deploys a checkout behind the live Gateway, saying so (GATEWAY_DOWNGRADE)", async () => {
     const newer = await buildGatewayRelease({ builtAt: "2026-10-13T00:00:00.000Z" });
     await setup(
       { domain: GW },
       { openRelease: () => openRelease(newer), source: () => releaseSource(newer) },
     );
+    const deploys = account.deploys.length;
     events = [];
 
     const { exitCode } = await setup();
 
-    expect(exitCode).toBe(1);
-    expect(events.at(-1)).toMatchObject({
-      type: "error",
-      code: "DOWNGRADE_REFUSED",
-      message: "This checkout's Gateway (0.2.0 from Oct 12) is older than the live one (from Oct 13)",
-      data: {
-        fix: "git pull, then run setup again",
-        rerun: expect.stringContaining("--allow-downgrade"),
-        authorize: true,
-      },
-    });
-    const deploys = account.deploys.length;
-
-    // Asked for: the older Gateway goes back.
-    events = [];
-    const rolledBack = await setup({ "allow-downgrade": true });
-    expect(rolledBack.exitCode).toBe(0);
+    expect(exitCode).toBe(0);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "warning",
+        code: "GATEWAY_DOWNGRADE",
+        // This test's release opens from a file; a checkout's says "This checkout's Gateway".
+        message: expect.stringMatching(/^The Gateway from \/.+\.tar\.gz \(0\.2\.0\) is older than the live one\n/),
+      }),
+    );
     expect(account.deploys).toHaveLength(deploys + 1);
     const older = await releaseSource(tarball);
     await expect(readInstall(gatewayD1())).resolves.toMatchObject({
@@ -660,23 +653,7 @@ describe("everyapp setup", () => {
       expect(account.deploys).toHaveLength(1);
     });
 
-    it("refuses a release that needs a newer everyapp, before anything is deployed", async () => {
-      const needsNewer = await buildGatewayRelease({ version: "0.4.0", minCli: "0.4.0" });
-
-      const { exitCode } = await setup({ domain: GW, release: needsNewer }, published(fetch, needsNewer));
-
-      expect(exitCode).toBe(1);
-      expect(events.at(-1)).toMatchObject({
-        type: "error",
-        code: "CLI_TOO_OLD",
-        message: "Gateway 0.4.0 needs everyapp 0.4.0 or newer (this is 0.3.0)",
-      });
-      // Before anything is asked or created.
-      expect(account.deploys).toHaveLength(0);
-      expect(account.databases.size).toBe(0);
-    });
-
-    it("refuses a release older than the live Gateway, by its release.json, whichever source each came from", async () => {
+    it("warns of a release older than the live Gateway, by its release.json, whichever source each came from", async () => {
       const newer = await buildGatewayRelease({ builtAt: "2026-10-13T00:00:00.000Z" });
       await setup({ domain: GW, release: newer }, published(fetch, newer));
       const deploys = account.deploys.length;
@@ -688,18 +665,17 @@ describe("everyapp setup", () => {
       });
       const { exitCode } = await setup({}, published(github.fetch));
 
-      expect(exitCode).toBe(1);
-      expect(events.at(-1)).toMatchObject({
-        type: "error",
-        code: "DOWNGRADE_REFUSED",
-        message: "The Gateway from every-app/every-app release gateway-v0.3.0 (0.2.0 from Oct 12) is older than the live one (from Oct 13)",
-        data: {
-          fix: "update everyapp (npm install -g everyapp@latest) and run setup again, or pass --release a newer Gateway release",
-          rerun: expect.stringContaining("--allow-downgrade"),
-          authorize: true,
-        },
-      });
-      expect(account.deploys).toHaveLength(deploys);
+      expect(exitCode).toBe(0);
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: "warning",
+          code: "GATEWAY_DOWNGRADE",
+          message: expect.stringMatching(
+            /^The Gateway from every-app\/every-app release gateway-v0\.3\.0 \(0\.2\.0\) is older than the live one\n/,
+          ),
+        }),
+      );
+      expect(account.deploys).toHaveLength(deploys + 1);
     });
   });
 

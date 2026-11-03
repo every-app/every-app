@@ -234,7 +234,7 @@ function bundle(): DeployBundle {
       ["audit", of(helper, "export default { audit: true };")],
     ]),
     releaseFiles: new Map([
-      ["release.json", encode({ minCli: "0.3.0" })],
+      ["release.json", encode({ schema: 1, kind: "app" })],
       [
         ".cloudflare/output/v0/config.json",
         encode({

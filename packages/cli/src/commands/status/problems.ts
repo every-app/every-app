@@ -13,6 +13,7 @@ import { hasDrift } from "@/lib/access/plan";
 import type { AccessState } from "@/lib/access/settings";
 import { describeUnmetSettings } from "@/lib/app/settings";
 import type { DesiredState } from "@/lib/gateway/desiredState";
+import { GATEWAY_SCHEMA } from "@/lib/gateway/schema";
 import type { InstallRecord } from "@/lib/gateway/install";
 import { describeLeaseHolder, type LeaseHolder } from "@/lib/gateway/lease";
 import type { GatewayOwner } from "@/lib/gateway/setup-link";
@@ -187,6 +188,7 @@ export function problemsFor({
   accessState,
   leases,
   checkout,
+  schemaCurrent,
   emailProblems,
   settings,
   missingOrigins,
@@ -207,6 +209,8 @@ export function problemsFor({
   accessState: AccessState | null;
   leases: LeaseHolder[];
   checkout: CheckoutState;
+  /** The Gateway's database has GATEWAY_SCHEMA; null when it couldn't be read. */
+  schemaCurrent: boolean | null;
   emailProblems: EmailRouteProblem[] | Unread;
   /** Why the Workers' secrets couldn't be listed, when they couldn't. */
   settings: Unread | null;
@@ -223,13 +227,28 @@ export function problemsFor({
       headline: "This checkout is behind the live Gateway",
       detail: [
         ...(version && version !== live ? [`This checkout has ${version}; ${live} is live.`] : []),
-        "Deploys from here are refused until it catches up.",
+        "An update from here puts the older Gateway back.",
       ],
       run: command`${"git pull"}`,
     });
-  } else if (checkout.upToDate === false && install.liveVersionId !== null) {
-    // Good to know, not a problem: nothing is broken, and the next deploy
-    // that rebinds the Gateway brings the update anyway.
+  }
+  if (schemaCurrent === false && install.liveVersionId !== null) {
+    // The other commands refuse this Gateway (requireGatewaySchema) until
+    // update applies the migration they need.
+    problems.push({
+      code: ProblemCode.GatewayOutdated,
+      severity: Severity.Error,
+      headline: "The Gateway is older than this everyapp",
+      detail: [
+        `Its database doesn't have migration ${GATEWAY_SCHEMA} yet, so the other commands refuse it until update runs.`,
+      ],
+      run: command`${UPDATE}`,
+      runNote: "updates it now",
+    });
+  } else if (!checkout.behind && checkout.upToDate === false && install.liveVersionId !== null) {
+    // Good to know, not a problem: the live Gateway has every migration this
+    // everyapp needs, so every command works. Only update brings the rest
+    // (a rebind redeploys the live release, not this checkout's).
     problems.push({
       code: ProblemCode.GatewayOutdated,
       severity: Severity.Info,

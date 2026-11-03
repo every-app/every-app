@@ -205,7 +205,15 @@ describe("bundleProblems", () => {
         WORKER,
         {
           ...MANIFEST,
-          resources: { ...MANIFEST.resources, sendEmail: [{ name: "EMAIL" }] },
+          resources: {
+            ...MANIFEST.resources,
+            sendEmail: [
+              {
+                name: "EMAIL",
+                allowedSenderAddresses: ["noreply@example.com"],
+              },
+            ],
+          },
         },
         LIMITS,
         false,

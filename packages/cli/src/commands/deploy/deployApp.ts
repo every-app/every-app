@@ -63,7 +63,6 @@ import {
   awaitLive,
   bindIfNeeded,
   gatewayFor,
-  refuseGatewayNewerThanCli,
   registerFromManifest,
   type ReconcileSeams,
 } from "@/commands/appGateway";
@@ -137,6 +136,7 @@ import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal, type Confirm } from "@/lib/output/prompt";
 import { listed } from "@/lib/output/text";
 import { installDependencies } from "@/lib/package-manager";
+import { warnSdkVersion } from "@/lib/app/sdkVersion";
 import { readBundledProviderSpecs, releasedProviderSpecs } from "@/lib/app/bundledProviders";
 import { registerBundledProviders } from "./steps/bundledProviders";
 
@@ -369,7 +369,6 @@ async function deploySteps(
   // The Gateway a rebind deploys: the live one again. A deploy that will
   // bind the app refuses before anything is registered when it can't be
   // had (GATEWAY_RELEASE_UNAVAILABLE); a redeploy of a bound app needs none.
-  refuseGatewayNewerThanCli(install);
   const gateway = gatewayFor(options.reconcile, install, out, options.verbose);
   if (!registered || !install.liveAppWorkers.includes(registered.workerName)) await gateway.source();
   const identityKey = install.jwtPublicKey;
@@ -512,6 +511,7 @@ async function deploySteps(
                 });
                 out.emit({ type: "step", step: "app.install", status: "ok" });
               }
+              warnSdkVersion(cwd, out);
               out.emit({ type: "step", step: "app.build", status: "start", message: "Building..." });
               await buildApp({
                 cwd,

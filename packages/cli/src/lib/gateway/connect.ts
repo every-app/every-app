@@ -27,6 +27,7 @@ import {
 } from "./discover";
 import { notDeployedByEveryapp, type InstallRecord } from "./install";
 import { deployerFor, type Deployer } from "./registry";
+import { requireGatewaySchema } from "./schema";
 
 interface GatewayConnection {
   /** cf, pinned to the Gateway's account. */
@@ -221,7 +222,11 @@ interface ExistingGatewayOptions {
   createCf?: CreateCf;
 }
 
-/** The Gateway an app command acts on, installed and live. */
+/**
+ * The Gateway an app command acts on, installed, live, and with this
+ * everyapp's schema (GATEWAY_OUTDATED otherwise: `update` first; not
+ * checked with `checkSchema: false`).
+ */
 export async function connectToGateway({
   gateway,
   accountId,
@@ -230,6 +235,7 @@ export async function connectToGateway({
   createCf = defaultCreateCf,
   onNoGateway,
   login,
+  checkSchema = true,
 }: {
   /** The URL `--gateway` or EVERYAPP_GATEWAY_URL names (requestedGatewayUrl). */
   gateway?: string;
@@ -254,6 +260,12 @@ export async function connectToGateway({
    * exists is never installed a second time.
    */
   onNoGateway?: (found: { whoami: CfWhoami; discovery: Discovery }) => Promise<Discovery>;
+  /**
+   * Refuse a Gateway behind this everyapp (GATEWAY_OUTDATED). Off for
+   * `db restore`: it is how a failed Gateway migration is undone, and that
+   * migration has no `d1_migrations` row.
+   */
+  checkSchema?: boolean;
 }): Promise<GatewayConnection> {
   // --gateway: a URL picks by host, a name by name ("" is the default Gateway).
   const byUrl = gateway !== undefined && gateway.includes("://");
@@ -283,6 +295,7 @@ export async function connectToGateway({
   }
   const found = requireInstall(requireGateway(discovery, whoami, host));
   checkGatewayUrl(found, byUrl ? gateway : undefined);
+  if (checkSchema) await requireGatewaySchema(found.db);
   return {
     cf: found.cf,
     accountId: found.account.id,

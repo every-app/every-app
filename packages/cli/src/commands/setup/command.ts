@@ -40,13 +40,6 @@ export const setupCommand = buildCommand({
         optional: true,
       },
       "force-dns": forceDnsFlag,
-      "allow-downgrade": {
-        kind: "boolean",
-        brief:
-          "Deploy this Gateway even though it is older than the live one (a deliberate rollback)",
-        optional: true,
-        hidden: true,
-      },
       redeploy: {
         kind: "boolean",
         brief:

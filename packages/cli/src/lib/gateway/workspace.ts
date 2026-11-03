@@ -38,9 +38,7 @@ import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
 import { listed } from "@/lib/output/text";
-import { hasAiDefault } from "./aiDefault";
-import { hasLinkedDev } from "./linkedDev";
-import { costCapMicros, emptyOrgSettingsSql, microsToUsd, requireCostCaps } from "./costCaps";
+import { costCapMicros, EMPTY_ORG_SETTINGS_SQL, microsToUsd } from "./costCaps";
 import {
   capAlertsStatement,
   operatorActor,
@@ -1676,9 +1674,7 @@ interface AppCapChange {
  * app ends higher or gone, judged on the effective cap before and after
  * (its own, else the default): a cap set under the default is no raise,
  * `unlimited` under a default is a removal, `off` under a default raises
- * to it; `cap.changed` for any other change. Neither on a Gateway from
- * before the event tables. Refused on a Gateway from before dollar caps
- * (migration 0018, GATEWAY_PREDATES_COST_CAPS).
+ * to it; `cap.changed` for any other change.
  */
 export async function setMonthlyCap(
   ws: Workspace,
@@ -1694,7 +1690,6 @@ export async function setMonthlyCap(
   if (!unlimited && costCap === undefined) {
     throw new EveryAppError("INVALID_CAP", "Missing the cap\nGive dollars, off, or --unlimited.");
   }
-  await requireCostCaps(ws.db);
   const org = ws.organization.id;
   const [rows = [], defaults = []] = await ws.db.run([
     {
@@ -1764,13 +1759,10 @@ interface DefaultCapChange {
  * null for an API token. In the write's own batch: a cap set makes the
  * Cap alerts subscription when the organization has none, and a default
  * first set, raised or removed queues `cap.raised` with no app and
- * `source: "default"`, or `cap.changed` for a lowered one. Refused on a
- * Gateway from before dollar caps (migration 0018,
- * GATEWAY_PREDATES_COST_CAPS).
+ * `source: "default"`, or `cap.changed` for a lowered one.
  */
 export async function setDefaultMonthlyCap(ws: Workspace, costUsd: number | null): Promise<DefaultCapChange> {
   const costCap = costCapMicros(costUsd) ?? null;
-  await requireCostCaps(ws.db);
   const org = ws.organization.id;
   const [rows = []] = await ws.db.run([
     {
@@ -1796,12 +1788,7 @@ ON CONFLICT (organization_id) DO UPDATE SET default_monthly_cost_cap_micros = ?2
     },
     // Only a clear can empty the row.
     ...(costCap === null
-      ? [
-          {
-            sql: `DELETE FROM org_settings WHERE organization_id = ? AND ${emptyOrgSettingsSql({ cost: true, ai: await hasAiDefault(ws.db), linkedDev: await hasLinkedDev(ws.db) })}`,
-            params: [org],
-          },
-        ]
+      ? [{ sql: `DELETE FROM org_settings WHERE organization_id = ? AND ${EMPTY_ORG_SETTINGS_SQL}`, params: [org] }]
       : []),
   ];
   const results = await ws.db.run([...write, ...(capAlerts ? [capAlerts] : []), ...event]);
@@ -1903,12 +1890,10 @@ const UNCAPPED: Pick<
  * whether it is paused this month, zeros in a month it made no call), per
  * member (a '' row for the apps' own calls; a former member by id) and per
  * provider or capability, with the organization's default cap. Allowed
- * MCP tool calls come from the audit trail. Refused on a Gateway from
- * before dollar caps (GATEWAY_PREDATES_COST_CAPS).
+ * MCP tool calls come from the audit trail.
  */
 export async function usage(ws: Workspace, month: string): Promise<UsageSummary> {
   if (!MONTH.test(month)) throw new EveryAppError("INVALID_MONTH", `--month ${month} isn't a month: use YYYY-MM`);
-  await requireCostCaps(ws.db);
   const org = ws.organization.id;
   const from = `${month}-01`;
   const to = `${addMonths(month, 1)}-01`;

@@ -56,9 +56,13 @@ Cloudflare is still making its HTTPS certificate. Give it up to ten minutes.
 
 In the app's folder, run `pnpm run db:generate`, then deploy again.
 
+## The Gateway is older than this everyapp
+
+Your everyapp is newer than your Gateway. Run `everyapp update`, then try again.
+
 ## The Gateway from … is older than the live one
 
-Someone updated your Gateway with a newer everyapp. Run `npm install -g everyapp@latest`, then try again.
+Someone updated your Gateway with a newer everyapp, and this one put the older Gateway back. Run `npm install -g everyapp@latest`, then `everyapp update`.
 
 ## everyapp needs Node.js 22.18.0 or newer
 

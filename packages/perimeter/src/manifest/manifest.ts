@@ -88,11 +88,9 @@ export const BearerRoutesSchema = z.object({
 });
 export type BearerRoutes = z.infer<typeof BearerRoutesSchema>;
 
-// NOTE: the gateway validates manifests sent by DEPLOYED CLIs, which may be
-// newer than this code. The base schemas here validate every field the perimeter
-// relies on (id, public routes) but deliberately tolerate unknown keys
-// (`passthrough`, not `strict`) so an additive manifest change in the CLI
-// never bricks app registration until the gateway is redeployed.
+// One schema: the strict one an author's everyapp.config.ts and every
+// registration are checked against. A stored row is read with
+// {@link ManifestSchema}, derived from it ({@link loosen}).
 /**
  * A Durable Object or Workflow class: its binding name, the class, and the
  * helper Worker that defines it (`workers`), when not the app's own.
@@ -181,7 +179,6 @@ export const VECTORIZE_DIMENSIONS = { min: 32, max: 1536 } as const;
  * app's Worker in the account (`<worker>--<binding>`,
  * {@link vectorizeNameFor}): either `dimensions` and `metric`, or a
  * `preset` (one form only; the strict schema says which is missing).
- * Tolerant here: values a newer CLI accepts don't brick registration.
  */
 const VectorizeResourceSchema = z.object({
   name: z.string(),
@@ -243,75 +240,6 @@ const AnalyticsEngineResourceSchema = z.object({
  * namespace is named after the app's Worker ({@link artifactsNamespaceFor}).
  */
 const ArtifactsResourceSchema = z.object({ name: z.string() });
-
-export const ResourcesSchema = z
-  .object({
-    d1: z.array(z.string()).optional(),
-    kv: z.array(z.string()).optional(),
-    /** Durable Objects exported by the worker (binding name + class). */
-    durableObjects: z.array(ClassResourceSchema).optional(),
-    /**
-     * Workflows the worker defines (binding name + class). Each is named
-     * after the app's Worker in the account, `<worker>--<binding>`.
-     */
-    workflows: z.array(ClassResourceSchema).optional(),
-    /** Hyperdrive configs to a Postgres database the app owns. */
-    hyperdrive: z.array(HyperdriveResourceSchema).optional(),
-    /**
-     * R2 buckets, by binding, which every one of the app's Workers binds:
-     * `R2` is named after the app's Worker, any other binding
-     * `<worker>--<binding>` ({@link bucketNameFor}).
-     */
-    r2: z.array(z.string()).optional(),
-    /** Cloudflare Queues, by binding, with their consumers. */
-    queues: z.array(QueueResourceSchema).optional(),
-    /**
-     * Workers AI, by binding (`["AI"]`), which every one of the app's
-     * Workers binds: account-wide inference billed to the account, nothing
-     * to create. The Gateway's `workers-ai` provider is the brokered path.
-     */
-    ai: z.array(z.string()).optional(),
-    /**
-     * Browser Rendering, by binding (`["BROWSER"]`), which every one of the
-     * app's Workers binds: a headless Chrome the account runs, nothing to
-     * create (Workers Paid).
-     */
-    browser: z.array(z.string()).optional(),
-    /**
-     * Cloudflare Images, by binding (`["IMAGES"]`), which every one of the
-     * app's Workers binds: resizing, transforming and reading images in the
-     * Worker, nothing to create.
-     */
-    images: z.array(z.string()).optional(),
-    /** Vectorize indexes, by binding, which every one of the app's Workers binds. */
-    vectorize: z.array(VectorizeResourceSchema).optional(),
-    /** AI Gateways of the app's own, by binding ({@link aiGatewayIdFor}). */
-    aiGateway: z.array(AiGatewayResourceSchema).optional(),
-    /** Cloudflare `send_email` bindings, by binding, with the addresses each may use. */
-    sendEmail: z.array(SendEmailResourceSchema).optional(),
-    /**
-     * Secrets Store secrets, by binding (`[{ name: "STRIPE_KEY" }]`), which
-     * every one of the app's Workers binds (`await env.STRIPE_KEY.get()`):
-     * each a secret in the account's store, named `<worker>--<binding>`.
-     */
-    secretsStore: z.array(SecretsStoreResourceSchema).optional(),
-    /**
-     * Analytics Engine datasets, by binding, which every one of the app's
-     * Workers writes to: nothing to create (a dataset exists once written
-     * to), nothing to delete (Cloudflare has none; data expires after 90
-     * days).
-     */
-    analyticsEngine: z.array(AnalyticsEngineResourceSchema).optional(),
-    /**
-     * Cloudflare Artifacts, by binding (`[{ name: "MEMORY" }]`), which every
-     * one of the app's Workers binds: git repos in the namespace
-     * `<worker>--<binding>`, nothing to create (Artifacts makes the
-     * namespace with its first repo). `delete --purge` deletes its repos.
-     */
-    artifacts: z.array(ArtifactsResourceSchema).optional(),
-  })
-  .passthrough();
-export type Resources = z.infer<typeof ResourcesSchema>;
 
 const CompatibilityDateSchema = z
   .string()
@@ -460,8 +388,7 @@ const SettingNeedFieldsSchema = {
 } satisfies Record<Exclude<keyof SettingNeedFields, "setup">, z.ZodTypeAny>;
 
 /** One `providers` entry: a provider id, or the id with its need. */
-const ProviderEntrySchema = z.object({ id: ProviderNameSchema }).passthrough();
-const ProviderEntrySchemaStrict = z
+const ProviderEntrySchema = z
   .object({ id: ProviderNameSchema, ...SettingNeedFieldsSchema })
   .strict();
 
@@ -483,24 +410,17 @@ const noDuplicateProviders = (
   });
 };
 
-export const ProvidersSchema = z
+const ProvidersSchema = z
   .array(z.union([ProviderNameSchema, ProviderEntrySchema]))
   .superRefine(noDuplicateProviders);
 
-const ProvidersSchemaStrict = z
-  .array(z.union([ProviderNameSchema, ProviderEntrySchemaStrict]))
-  .superRefine(noDuplicateProviders);
-
-/** A secret's name as a stored manifest may hold it (the strict rules are below). */
-const SecretNameSchema = z
-  .string()
-  .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "a secret's name is an identifier")
-  .max(64);
-
 /**
  * One capability an app asks for (docs/capabilities.md), as a stored
- * manifest holds it: what registration reads, tolerant so a newer CLI's
- * manifest never bricks a row. An API-key provider or a gateway service
+ * manifest holds it. The strict form is {@link capabilityEntrySchema}; a
+ * stored row's `capabilities` are read with this one instead of a loosened
+ * strict one, because the strict form checks each entry against the
+ * catalog in a refinement, and a stored `scopes` that doesn't parse must
+ * read as undeclared, never as a grant. An API-key provider or a gateway service
  * is listed with `access`; an OAuth provider with `scopes`, the
  * provider's own scope strings (docs/design/2026-11-oauth-simplify.md).
  * Approval is of the app: every call it makes may use the capability,
@@ -664,11 +584,8 @@ export function capabilityEntrySchema(
 /** One authored capability entry, whichever capability it is for. */
 export type CapabilityEntry = z.infer<typeof CapabilityEntryBaseSchema>;
 
-const CapabilitiesSchema = z
-  .record(z.string(), CapabilityRequestSchema)
-  .superRefine((capabilities, ctx) => {
-    for (const id of Object.keys(capabilities)) addProviderNameIssue(id, ctx);
-  }, everyKey);
+/** `capabilities` as a stored row's reader takes them ({@link CapabilityRequestSchema}). */
+const StoredCapabilitiesSchema = z.record(z.string(), CapabilityRequestSchema);
 
 /**
  * The entry of an API-key provider this validator can't look up (one
@@ -794,15 +711,9 @@ const INBOUND_MOVED = `inbound is true (the Worker exports an email() handler) o
  * Mail the app receives through its `email()` handler: `inbound: true`
  * declares the handler; the addresses are the installation's
  * (`apps.email_inbound`, set with `everyapp email set --inbound`, which
- * routes them). Registration passes the field through; a row written
- * before the move holds an address list here and reads as undeclared, so
- * the gateway keeps routing the app until its next deploy.
+ * routes them).
  */
 const EmailSchema = z
-  .object({ inbound: z.boolean().optional().catch(undefined) })
-  .passthrough();
-
-const EmailSchemaStrict = z
   .object({
     /** True when the Worker exports `email()` beside `everyApp()`'s `fetch`; `everyapp email set --inbound` routes addresses to it. */
     inbound: z.boolean({ error: INBOUND_MOVED }).optional(),
@@ -820,7 +731,7 @@ export const DISPATCH_INBOUND_PROBLEM =
  */
 const WorkerLimitsSchema = z
   .object({ cpuMs: z.number().int().min(1).max(300_000).optional() })
-  .passthrough();
+  .strict();
 
 /**
  * The database the app's code talks to, which its Workers read as
@@ -839,7 +750,7 @@ const DatabaseSchema = z
       )
       .optional(),
   })
-  .passthrough();
+  .strict();
 
 /** A helper Worker's short name: kebab-case, so `<worker>--<name>` stays one name. */
 const HelperWorkerNameSchema = z
@@ -857,11 +768,13 @@ const HelperWorkerNameSchema = z
  * `binding` (a service binding to its default export) or the Durable
  * Objects and Workflows it defines.
  */
-const HelperWorkerSchema = z.object({
-  name: HelperWorkerNameSchema,
-  binding: z.string().optional(),
-  limits: WorkerLimitsSchema.optional(),
-});
+const HelperWorkerSchema = z
+  .object({
+    name: HelperWorkerNameSchema,
+    binding: z.string().optional(),
+    limits: WorkerLimitsSchema.optional(),
+  })
+  .strict();
 
 export const AppAccessSchema = z.enum(["everyone", "admins"]);
 export type AppAccess = z.infer<typeof AppAccessSchema>;
@@ -876,10 +789,9 @@ const AiRouteSchema = z
   );
 
 /** `ai.chat` as an entry: the need fields alone (the Gateway's default has no id). */
-const AiChatEntrySchema = z.object({ ...SettingNeedFieldsSchema });
-const AiChatEntrySchemaStrict = AiChatEntrySchema.strict();
+const AiChatEntrySchema = z.object({ ...SettingNeedFieldsSchema }).strict();
 
-export const AiPolicySchema = z
+const AiPolicySchema = z
   .object({
     /** Model ids the app may request from inference endpoints. Omitted: any. */
     models: z.array(z.string().min(1).max(200)).optional(),
@@ -900,15 +812,6 @@ export const AiPolicySchema = z
      */
     chat: z.union([z.boolean(), AiChatEntrySchema]).optional(),
   })
-  .passthrough();
-
-/** The strict form: the `chat` entry takes the need fields and nothing else. */
-const AiPolicySchemaStrict = z
-  .object({
-    models: z.array(z.string().min(1).max(200)).optional(),
-    routes: z.array(AiRouteSchema).optional(),
-    chat: z.union([z.boolean(), AiChatEntrySchemaStrict]).optional(),
-  })
   .strict();
 export type AiPolicy = z.infer<typeof AiPolicySchema>;
 
@@ -921,20 +824,11 @@ const EVENTS_SHAPE =
 /**
  * The Gateway events the app receives (the `app` event sink): the deploy
  * makes one subscription for the app's own organization, delivered over the
- * service binding. The shape only: the strict schema (the deploy's) checks
- * the patterns against the families an app may read.
+ * service binding. Only the families an app may read are accepted
+ * (`appSinkPatternProblem`), anything else (`*`, `token.*`, `cap.reached`,
+ * `member.password_reset`) is refused.
  */
-export const EventsSchema = z
-  .object({ subscribe: z.array(z.string()), why: z.string() })
-  .passthrough();
-export type EventsPolicy = z.infer<typeof EventsSchema>;
-
-/**
- * {@link EventsSchema} as the deploy checks it: only the families an app
- * may read are accepted (`appSinkPatternProblem`), anything else (`*`,
- * `token.*`, `cap.reached`, `member.password_reset`) is refused.
- */
-const EventsSchemaStrict = z
+const EventsSchema = z
   .object(
     {
       subscribe: z
@@ -962,129 +856,91 @@ const EventsSchemaStrict = z
     },
   )
   .strict();
+export type EventsPolicy = z.infer<typeof EventsSchema>;
 
-export const ManifestSchema = z
-  .object({
-    /** Stable app id, kebab-case. Used in the app hostname's first DNS label. */
-    id: z
-      .string()
-      .min(1)
-      .regex(
-        /^[a-z]([a-z0-9-]*[a-z0-9])?$/,
-        "id must be kebab-case (lowercase, digits, hyphens)",
-      ),
-    name: z.string().min(1).optional(),
-    description: z.string().optional(),
-    /**
-     * The app's launcher icon: the path of an SVG the app serves (e.g.
-     * "/everyapp-icon.svg" from its public directory), which the gateway's
-     * app library shows instead of the app's favicon. The app draws the
-     * whole tile; the library only rounds its corners. Unset: the favicon.
-     */
-    icon: z
-      .string()
-      .regex(
-        /^(\/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)*\/[A-Za-z0-9_~-][A-Za-z0-9._~-]*\.svg$/,
-        'icon must be the path of an SVG the app serves, such as "/everyapp-icon.svg"',
-      )
-      .optional(),
-    /** Optional Cloudflare Workers compatibility date override. */
-    compatibilityDate: CompatibilityDateSchema.optional(),
-    /** Cloudflare resources the worker binds. Provisioned by the CLI. */
-    resources: ResourcesSchema.optional(),
-    /** Helper Workers deployed beside the app's Worker. Default: none. */
-    workers: z.array(HelperWorkerSchema.passthrough()).optional(),
-    /** The database the app's code talks to (DATABASE_PROVIDER). */
-    database: DatabaseSchema.optional(),
-    /** Cloudflare's limits for the app's own Worker (`workers` set theirs). */
-    limits: WorkerLimitsSchema.optional(),
-    /** Routes reachable without an authenticated session. Default: none. */
-    public: z.array(PublicRouteSchema).optional(),
-    /**
-     * Static files of the Worker's asset bundle anyone may fetch (favicons,
-     * a web manifest, built `/assets/**`): path globs with `public[].path`'s
-     * syntax and safety rules, GET and HEAD only. The gateway forwards a
-     * match with no identity and no public marker, so the asset server
-     * answers it and the Worker, behind `everyApp()`, refuses it. Default:
-     * none.
-     */
-    publicAssets: z
-      .array(z.string())
-      .max(
-        MAX_PUBLIC_ASSETS,
-        `publicAssets: at most ${MAX_PUBLIC_ASSETS} patterns; use a glob such as "/icons/**"`,
-      )
-      .optional(),
-    /**
-     * Routes a bearer client reaches with its token only ("Sign in with
-     * Every App", docs/design/native-sign-in.md §7): see
-     * {@link BearerRoutesSchema}. Default: none.
-     */
-    bearerRoutes: BearerRoutesSchema.optional(),
-    /** Provider APIs this app may call through the gateway. Default: none. */
-    providers: ProvidersSchema.optional(),
-    /**
-     * Third-party APIs the gateway calls for this app with keys or OAuth
-     * clients it holds, e.g. `dataforseo: { access: "read" }` or
-     * `"google-workspace": { scopes: ["gmail.modify"], why }`. Default: none.
-     */
-    capabilities: CapabilitiesSchema.optional(),
-    /**
-     * The app's own secrets (an API key it calls out with), which
-     * `everyapp secret set <NAME>` sets on its Workers: each by name, or as
-     * `{ name, why, docs, optional, anyOf }`. Default: none.
-     */
-    secrets: z
-      .array(
-        z.union([
-          SecretNameSchema,
-          z.object({ name: SecretNameSchema }).passthrough(),
-        ]),
-      )
-      .max(100)
-      .optional(),
-    /**
-     * The app's plain settings: values that aren't secrets and differ per
-     * install (a PostHog host, a region), set like its secrets with
-     * `everyapp configure <app>` and read from `env`: each
-     * `{ name, why, type?, values?, default?, optional?, docs? }`.
-     * Default: none.
-     */
-    settings: z
-      .array(z.object({ name: SecretNameSchema }).passthrough())
-      .max(100)
-      .optional(),
-    /** Limits on what the app may do through the gateway's AI proxy. */
-    ai: AiPolicySchema.optional(),
-    /**
-     * Mail the app's `email()` handler receives: `inbound: true` declares
-     * the handler; `everyapp email set --inbound` routes addresses to it.
-     */
-    email: EmailSchema.optional(),
-    /**
-     * Who can open the app once it is first registered. "admins" (the
-     * default): the organization's owners and admins, who open every app;
-     * "everyone": the app is available to everyone, future members
-     * included. Redeploys never change access; admins manage it in the
-     * gateway UI afterwards.
-     */
-    access: AppAccessSchema.optional(),
-    /** Shell command that builds the app for production. Default: `cf build`. */
-    build: z.string().min(1).optional(),
-    /** Shell command that starts the app dev server for `everyapp dev`. Default: `cf dev`. */
-    dev: z.string().min(1).optional(),
-    /** Dependency install command; false skips install; omitted auto-detects. */
-    install: InstallSchema.optional(),
-    /** Database migration strategy for the app's D1 database. */
-    migrations: MigrationsSchema.optional(),
-    /**
-     * The Gateway events the app receives: see {@link EventsSchema}. Left
-     * out (the default), none.
-     */
-    events: EventsSchema.optional(),
-  })
-  .passthrough();
-export type Manifest = z.infer<typeof ManifestSchema>;
+/** The manifest's fields that take no lookup; {@link manifestSchemaStrict} adds the rest. */
+const MANIFEST_FIELDS = {
+  /** Stable app id, kebab-case. Used in the app hostname's first DNS label. */
+  id: z
+    .string()
+    .min(1)
+    .regex(
+      /^[a-z]([a-z0-9-]*[a-z0-9])?$/,
+      "id must be kebab-case (lowercase, digits, hyphens)",
+    ),
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  /**
+   * The app's launcher icon: the path of an SVG the app serves (e.g.
+   * "/everyapp-icon.svg" from its public directory), which the gateway's
+   * app library shows instead of the app's favicon. The app draws the
+   * whole tile; the library only rounds its corners. Unset: the favicon.
+   */
+  icon: z
+    .string()
+    .regex(
+      /^(\/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)*\/[A-Za-z0-9_~-][A-Za-z0-9._~-]*\.svg$/,
+      'icon must be the path of an SVG the app serves, such as "/everyapp-icon.svg"',
+    )
+    .optional(),
+  /** Optional Cloudflare Workers compatibility date override. */
+  compatibilityDate: CompatibilityDateSchema.optional(),
+  /** The database the app's code talks to (DATABASE_PROVIDER). */
+  database: DatabaseSchema.optional(),
+  /** Cloudflare's limits for the app's own Worker (`workers` set theirs). */
+  limits: WorkerLimitsSchema.optional(),
+  /**
+   * Static files of the Worker's asset bundle anyone may fetch (favicons,
+   * a web manifest, built `/assets/**`): path globs with `public[].path`'s
+   * syntax and safety rules, GET and HEAD only. The gateway forwards a
+   * match with no identity and no public marker, so the asset server
+   * answers it and the Worker, behind `everyApp()`, refuses it. Default:
+   * none.
+   */
+  publicAssets: z
+    .array(z.string())
+    .max(
+      MAX_PUBLIC_ASSETS,
+      `publicAssets: at most ${MAX_PUBLIC_ASSETS} patterns; use a glob such as "/icons/**"`,
+    )
+    .optional(),
+  /**
+   * Routes a bearer client reaches with its token only ("Sign in with
+   * Every App", docs/design/native-sign-in.md §7): see
+   * {@link BearerRoutesSchema}. Default: none.
+   */
+  bearerRoutes: BearerRoutesSchema.strict().optional(),
+  /** Provider APIs this app may call through the gateway. Default: none. */
+  providers: ProvidersSchema.optional(),
+  /** Limits on what the app may do through the gateway's AI proxy. */
+  ai: AiPolicySchema.optional(),
+  /**
+   * Mail the app's `email()` handler receives: `inbound: true` declares
+   * the handler; `everyapp email set --inbound` routes addresses to it.
+   */
+  email: EmailSchema.optional(),
+  /**
+   * Who can open the app once it is first registered. "admins" (the
+   * default): the organization's owners and admins, who open every app;
+   * "everyone": the app is available to everyone, future members
+   * included. Redeploys never change access; admins manage it in the
+   * gateway UI afterwards.
+   */
+  access: AppAccessSchema.optional(),
+  /** Shell command that builds the app for production. Default: `cf build`. */
+  build: z.string().min(1).optional(),
+  /** Shell command that starts the app dev server for `everyapp dev`. Default: `cf dev`. */
+  dev: z.string().min(1).optional(),
+  /** Dependency install command; false skips install; omitted auto-detects. */
+  install: InstallSchema.optional(),
+  /** Database migration strategy for the app's D1 database. */
+  migrations: MigrationsSchema.optional(),
+  /**
+   * The Gateway events the app receives: see {@link EventsSchema}. Left
+   * out (the default), none.
+   */
+  events: EventsSchema.optional(),
+};
 
 export const PublicRouteSchemaStrict = PublicRouteSchema.strict();
 /** A D1, KV, R2 or Workflow binding: the name the Worker reads from `env`. */
@@ -1176,6 +1032,7 @@ function registeredSettingOwner(
 function appSecretsSchemaStrict(lookup?: CapabilityLookup) {
   return z
     .array(z.union([BindingNameSchema, SecretEntrySchemaStrict]))
+    .max(100)
     .superRefine((entries, ctx) => {
       const seen = new Set<string>();
       entries.forEach((entry, index) => {
@@ -1396,86 +1253,142 @@ const SendEmailResourceSchemaStrict = SendEmailResourceSchema.extend({
     },
   );
 
-export const ResourcesSchemaStrict = ResourcesSchema.extend({
-  d1: z.array(BindingNameSchema).optional(),
-  kv: z.array(BindingNameSchema).optional(),
-  r2: z.array(BindingNameSchema).optional(),
-  ai: z.array(BindingNameSchema).optional(),
-  browser: z.array(BindingNameSchema).optional(),
-  images: z.array(BindingNameSchema).optional(),
-  analyticsEngine: z
-    .array(
-      AnalyticsEngineResourceSchema.extend({
-        // A Worker name is at most 63 characters, so the default dataset,
-        // `<worker>--<binding>`, fits Cloudflare's 128 with one this long.
-        name: BindingNameSchema.max(
-          63,
-          `Analytics Engine binding names are at most 63 characters, so the dataset named after the Worker fits Cloudflare's ${MAX_DATASET_NAME_LENGTH}`,
-        ),
-        dataset: z
-          .string()
-          .regex(
-            new RegExp(`^[A-Za-z0-9_-]{1,${MAX_DATASET_NAME_LENGTH}}$`),
-            `dataset names are letters, digits, dashes and underscores, at most ${MAX_DATASET_NAME_LENGTH} characters (Cloudflare's rule)`,
-          )
-          .optional(),
-      }).strict(),
-    )
-    .optional(),
-  artifacts: z
-    .array(
-      ArtifactsResourceSchema.extend({
-        name: BindingNameSchema.refine(
-          (name) => !name.endsWith("_"),
-          "an Artifacts binding can't end with _ (its namespace's name would end with a hyphen, which Cloudflare refuses)",
-        ),
-      }).strict(),
-    )
-    .optional(),
-  durableObjects: z.array(ClassResourceSchema.strict()).optional(),
-  workflows: z
-    .array(ClassResourceSchema.extend({ name: BindingNameSchema }).strict())
-    .optional(),
-  hyperdrive: z
-    .array(
-      HyperdriveResourceSchema.extend({ name: BindingNameSchema }).strict(),
-    )
-    .optional(),
-  queues: z
-    .array(
-      QueueResourceSchema.extend({
-        name: QueueBindingNameSchema,
-        consumer: z
-          .union([
-            z.literal(true),
-            QueueConsumerSchema.extend({
-              maxBatchSize: z.number().int().positive().optional(),
-              maxBatchTimeout: z.number().nonnegative().optional(),
-              maxRetries: z.number().int().nonnegative().optional(),
-              maxConcurrency: z.number().int().positive().nullable().optional(),
-              retryDelay: z.number().int().nonnegative().optional(),
-              visibilityTimeoutMs: z.number().int().nonnegative().optional(),
-            }).strict(),
-          ])
-          .optional(),
-      }).strict(),
-    )
-    .optional(),
-  vectorize: z.array(VectorizeResourceSchemaStrict).optional(),
-  aiGateway: z
-    .array(
-      AiGatewayResourceSchema.extend({
-        name: AiGatewayBindingNameSchema,
-      }).strict(),
-    )
-    .optional(),
-  sendEmail: z.array(SendEmailResourceSchemaStrict).optional(),
-  secretsStore: z
-    .array(
-      SecretsStoreResourceSchema.extend({ name: BindingNameSchema }).strict(),
-    )
-    .optional(),
-}).strict();
+/** Cloudflare resources the app's Workers bind, which the deploy provisions. */
+export const ResourcesSchemaStrict = z
+  .object({
+    d1: z.array(BindingNameSchema).optional(),
+    kv: z.array(BindingNameSchema).optional(),
+    /**
+     * R2 buckets, by binding, which every one of the app's Workers binds:
+     * `R2` is named after the app's Worker, any other binding
+     * `<worker>--<binding>` ({@link bucketNameFor}).
+     */
+    r2: z.array(BindingNameSchema).optional(),
+    /**
+     * Workers AI, by binding (`["AI"]`), which every one of the app's
+     * Workers binds: account-wide inference billed to the account, nothing
+     * to create. The Gateway's `workers-ai` provider is the brokered path.
+     */
+    ai: z.array(BindingNameSchema).optional(),
+    /**
+     * Browser Rendering, by binding (`["BROWSER"]`), which every one of the
+     * app's Workers binds: a headless Chrome the account runs, nothing to
+     * create (Workers Paid).
+     */
+    browser: z.array(BindingNameSchema).optional(),
+    /**
+     * Cloudflare Images, by binding (`["IMAGES"]`), which every one of the
+     * app's Workers binds: resizing, transforming and reading images in the
+     * Worker, nothing to create.
+     */
+    images: z.array(BindingNameSchema).optional(),
+    /**
+     * Analytics Engine datasets, by binding, which every one of the app's
+     * Workers writes to: nothing to create (a dataset exists once written
+     * to), nothing to delete (Cloudflare has none; data expires after 90
+     * days).
+     */
+    analyticsEngine: z
+      .array(
+        AnalyticsEngineResourceSchema.extend({
+          // A Worker name is at most 63 characters, so the default dataset,
+          // `<worker>--<binding>`, fits Cloudflare's 128 with one this long.
+          name: BindingNameSchema.max(
+            63,
+            `Analytics Engine binding names are at most 63 characters, so the dataset named after the Worker fits Cloudflare's ${MAX_DATASET_NAME_LENGTH}`,
+          ),
+          dataset: z
+            .string()
+            .regex(
+              new RegExp(`^[A-Za-z0-9_-]{1,${MAX_DATASET_NAME_LENGTH}}$`),
+              `dataset names are letters, digits, dashes and underscores, at most ${MAX_DATASET_NAME_LENGTH} characters (Cloudflare's rule)`,
+            )
+            .optional(),
+        }).strict(),
+      )
+      .optional(),
+    /**
+     * Cloudflare Artifacts, by binding (`[{ name: "MEMORY" }]`), which every
+     * one of the app's Workers binds: git repos in the namespace
+     * `<worker>--<binding>`, nothing to create (Artifacts makes the
+     * namespace with its first repo). `delete --purge` deletes its repos.
+     */
+    artifacts: z
+      .array(
+        ArtifactsResourceSchema.extend({
+          name: BindingNameSchema.refine(
+            (name) => !name.endsWith("_"),
+            "an Artifacts binding can't end with _ (its namespace's name would end with a hyphen, which Cloudflare refuses)",
+          ),
+        }).strict(),
+      )
+      .optional(),
+    /** Durable Objects exported by the worker (binding name + class). */
+    durableObjects: z.array(ClassResourceSchema.strict()).optional(),
+    /**
+     * Workflows the worker defines (binding name + class). Each is named
+     * after the app's Worker in the account, `<worker>--<binding>`.
+     */
+    workflows: z
+      .array(ClassResourceSchema.extend({ name: BindingNameSchema }).strict())
+      .optional(),
+    /** Hyperdrive configs to a Postgres database the app owns. */
+    hyperdrive: z
+      .array(
+        HyperdriveResourceSchema.extend({ name: BindingNameSchema }).strict(),
+      )
+      .optional(),
+    /** Cloudflare Queues, by binding, with their consumers. */
+    queues: z
+      .array(
+        QueueResourceSchema.extend({
+          name: QueueBindingNameSchema,
+          consumer: z
+            .union([
+              z.literal(true),
+              QueueConsumerSchema.extend({
+                maxBatchSize: z.number().int().positive().optional(),
+                maxBatchTimeout: z.number().nonnegative().optional(),
+                maxRetries: z.number().int().nonnegative().optional(),
+                maxConcurrency: z
+                  .number()
+                  .int()
+                  .positive()
+                  .nullable()
+                  .optional(),
+                retryDelay: z.number().int().nonnegative().optional(),
+                visibilityTimeoutMs: z.number().int().nonnegative().optional(),
+              }).strict(),
+            ])
+            .optional(),
+        }).strict(),
+      )
+      .optional(),
+    /** Vectorize indexes, by binding, which every one of the app's Workers binds. */
+    vectorize: z.array(VectorizeResourceSchemaStrict).optional(),
+    /** AI Gateways of the app's own, by binding ({@link aiGatewayIdFor}). */
+    aiGateway: z
+      .array(
+        AiGatewayResourceSchema.extend({
+          name: AiGatewayBindingNameSchema,
+        }).strict(),
+      )
+      .optional(),
+    /** Cloudflare `send_email` bindings, by binding, with the addresses each may use. */
+    sendEmail: z.array(SendEmailResourceSchemaStrict).optional(),
+    /**
+     * Secrets Store secrets, by binding (`[{ name: "STRIPE_KEY" }]`), which
+     * every one of the app's Workers binds (`await env.STRIPE_KEY.get()`):
+     * each a secret in the account's store, named `<worker>--<binding>`.
+     */
+    secretsStore: z
+      .array(
+        SecretsStoreResourceSchema.extend({ name: BindingNameSchema }).strict(),
+      )
+      .optional(),
+  })
+  .strict();
+export type Resources = z.infer<typeof ResourcesSchemaStrict>;
 /** How the strict validator looks capability ids up ({@link validateManifestStrict}). */
 export interface StrictManifestOptions {
   /** Where capability ids are found: the catalog alone by default, or a gateway's registry. */
@@ -1493,38 +1406,124 @@ function manifestSchemaStrict(options: StrictManifestOptions = {}) {
           options.capabilities ?? CATALOG,
           options.unknownCapabilities ?? "refuse",
         );
-  return ManifestSchema.extend({
-    resources: ResourcesSchemaStrict.optional(),
-    providers: ProvidersSchemaStrict.optional(),
-    workers: z
-      .array(
-        HelperWorkerSchema.extend({
-          binding: BindingNameSchema.optional(),
-          limits: WorkerLimitsSchema.strict().optional(),
-        }).strict(),
-      )
-      .optional(),
-    public: z.array(PublicRouteSchemaStrict).optional(),
-    ai: AiPolicySchemaStrict.optional(),
-    capabilities: capabilities.optional(),
-    secrets: (options.capabilities
-      ? appSecretsSchemaStrict(options.capabilities)
-      : AppSecretsSchemaStrict
-    ).optional(),
-    settings: (options.capabilities
-      ? appSettingsSchemaStrict(options.capabilities)
-      : AppSettingsSchemaStrict
-    ).optional(),
-    email: EmailSchemaStrict.optional(),
-    database: DatabaseSchema.strict().optional(),
-    limits: WorkerLimitsSchema.strict().optional(),
-    bearerRoutes: BearerRoutesSchema.strict().optional(),
-    events: EventsSchemaStrict.optional(),
-  }).strict();
+  return z
+    .object({
+      ...MANIFEST_FIELDS,
+      /** Cloudflare resources the worker binds. Provisioned by the CLI. */
+      resources: ResourcesSchemaStrict.optional(),
+      /** Helper Workers deployed beside the app's Worker. Default: none. */
+      workers: z
+        .array(
+          HelperWorkerSchema.extend({
+            binding: BindingNameSchema.optional(),
+          }).strict(),
+        )
+        .optional(),
+      /** Routes reachable without an authenticated session. Default: none. */
+      public: z.array(PublicRouteSchemaStrict).optional(),
+      /**
+       * Third-party APIs the gateway calls for this app with keys or OAuth
+       * clients it holds, e.g. `dataforseo: { access: "read" }` or
+       * `"google-workspace": { scopes: ["gmail.modify"], why }`. Default: none.
+       */
+      capabilities: capabilities.optional(),
+      /**
+       * The app's own secrets (an API key it calls out with), which
+       * `everyapp secret set <NAME>` sets on its Workers: each by name, or as
+       * `{ name, why, docs, optional, anyOf, setup }`. Default: none.
+       */
+      secrets: (options.capabilities
+        ? appSecretsSchemaStrict(options.capabilities)
+        : AppSecretsSchemaStrict
+      ).optional(),
+      /**
+       * The app's plain settings: values that aren't secrets and differ per
+       * install (a PostHog host, a region), set like its secrets with
+       * `everyapp configure <app>` and read from `env`: each
+       * `{ name, why, type?, values?, default?, optional?, docs? }`.
+       * Default: none.
+       */
+      settings: (options.capabilities
+        ? appSettingsSchemaStrict(options.capabilities)
+        : AppSettingsSchemaStrict
+      ).optional(),
+    })
+    .strict();
 }
 
 export const ManifestSchemaStrict = manifestSchemaStrict();
 export type EveryAppManifest = z.infer<typeof ManifestSchemaStrict>;
+
+/**
+ * A stored manifest as a row's reader takes it: what the strict schema
+ * says, with unknown keys kept and value rules left out ({@link loosen}),
+ * so a row registered by another everyapp still routes. Its
+ * `capabilities` read as {@link CapabilityRequestSchema} does, never
+ * loosened: what they grant is read exactly. `email.inbound` that isn't a
+ * boolean (the address list rows held before 2026-10-19) reads as
+ * undeclared, so such a row still routes.
+ */
+export const ManifestSchema = loosen(
+  ManifestSchemaStrict.omit({ capabilities: true, email: true }),
+).extend({
+  capabilities: StoredCapabilitiesSchema.optional(),
+  email: z
+    .object({ inbound: z.boolean().optional().catch(undefined) })
+    .catchall(z.unknown())
+    .optional(),
+});
+export type Manifest = z.infer<typeof ManifestSchema>;
+
+/**
+ * `schema` with every object open to unknown keys, every enum taking any
+ * string, and every refinement and value rule (`.min`, `.regex`,
+ * `.refine`) left out: the types and shapes alone. Derives the stored
+ * rows' reader from the strict schema.
+ */
+function loosen<T extends z.ZodType>(schema: T): T {
+  const node = schema as unknown as z.core.$ZodType;
+  const def = node._zod.def as z.core.$ZodTypeDef & Record<string, unknown>;
+  const clone = (patch: Record<string, unknown>) =>
+    (schema as unknown as { clone(def: unknown): T }).clone({
+      ...def,
+      ...patch,
+      checks: [],
+    });
+  switch (def.type) {
+    case "object": {
+      const shape = def["shape"] as Record<string, z.ZodType>;
+      return clone({
+        shape: Object.fromEntries(
+          Object.entries(shape).map(([key, child]) => [key, loosen(child)]),
+        ),
+        catchall: z.unknown(),
+      });
+    }
+    case "array":
+      return clone({ element: loosen(def["element"] as z.ZodType) });
+    case "optional":
+    case "nullable":
+    case "default":
+    case "prefault":
+    case "catch":
+    case "readonly":
+    case "nonoptional":
+      return clone({ innerType: loosen(def["innerType"] as z.ZodType) });
+    case "union":
+      return clone({ options: (def["options"] as z.ZodType[]).map(loosen) });
+    case "record":
+      return clone({ valueType: loosen(def["valueType"] as z.ZodType) });
+    case "pipe":
+      return clone({
+        in: loosen(def["in"] as z.ZodType),
+        out: loosen(def["out"] as z.ZodType),
+      });
+    case "enum":
+      return z.string() as unknown as T;
+    default:
+      return clone({});
+  }
+}
 
 /** Reserved internal namespace. Nothing under it may ever be public. */
 export const EVERYAPP_INTERNAL_PREFIX = "/__everyapp";
@@ -1561,9 +1560,11 @@ function describeIssues(issues: readonly z.core.$ZodIssue[]): string {
 }
 
 /**
- * Parse and strictly validate a manifest object. Throws {@link ManifestError}
- * on any problem. This is the one place catch-all / internal-prefix public
- * routes are rejected as hard errors (not warnings).
+ * Read a stored manifest (an `apps` row's) with {@link ManifestSchema}, and
+ * still refuse what the perimeter must never serve: a catch-all or
+ * internal-prefix public route, an unsafe public asset or bearer route.
+ * Throws {@link ManifestError}. What is written is checked with
+ * {@link validateManifestStrict}.
  */
 export function validateManifest(input: unknown): Manifest {
   const parsed = ManifestSchema.safeParse(input);
@@ -1644,10 +1645,9 @@ function assertPublicAssetsSkipMcp(manifest: EveryAppManifest): void {
 }
 
 /**
- * Parse and strictly validate an authored manifest. This is the CLI-facing
- * author-time linter: unknown top-level/resource/public-route keys fail here,
- * while gateway registration uses {@link validateManifest} and remains
- * tolerant of additive fields from newer CLIs.
+ * Parse and strictly validate a manifest: an author's everyapp.config.ts,
+ * and every registration. Unknown keys and every value rule fail here; a
+ * stored row is read with {@link validateManifest}.
  */
 export function validateManifestStrict(
   input: unknown,

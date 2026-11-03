@@ -141,8 +141,6 @@ export async function deployGatewayRelease({
 } & Pick<
   ApplyGatewayOptions,
   | "forceDns"
-  | "allowDowngrade"
-  | "allowDowngradeFlag"
   | "confirm"
   | "sleep"
   | "leaseWaitMs"

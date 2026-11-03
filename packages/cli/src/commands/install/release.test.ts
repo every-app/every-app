@@ -194,7 +194,6 @@ describe("everyapp release", () => {
       buildOutputVersion: "v0",
       sha256: result.sha256,
       migrations: [{ tag: "0000_init", when: 1000 }],
-      minCli: "0.3.0",
       cliVersion: expect.any(String),
     });
     // Its migrations are the release's migrations/.
@@ -380,12 +379,8 @@ describe("everyapp install <release>", () => {
     });
   });
 
-  it("refuses a release that needs a newer everyapp, or a Gateway's", async () => {
+  it("refuses a Gateway's release, and opening an app's as a Gateway's", async () => {
     const { tarball } = await bundle();
-    await expect(open(tarball, { version: "0.2.0" })).rejects.toMatchObject({
-      code: "CLI_TOO_OLD",
-      message: expect.stringContaining("todo 1.4.0 needs everyapp 0.3.0 or newer (this is 0.2.0)"),
-    });
     await expect(openAppRelease(gatewayTarball)).rejects.toMatchObject({
       code: "RELEASE_INVALID",
       message: expect.stringContaining("is a gateway release, not an app release"),

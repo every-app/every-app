@@ -8,41 +8,13 @@
  * caps and the default model are, with an `organization.linked_dev_changed`
  * event in the write's own batch.
  */
-import type { D1Database, D1Statement } from "@/lib/cf/d1";
-import { EveryAppError } from "@/lib/errors";
-import { CLI } from "@/lib/output/command";
-import { hasAiDefault } from "./aiDefault";
-import { emptyOrgSettingsSql, hasCostCaps } from "./costCaps";
+import type { D1Statement } from "@/lib/cf/d1";
+import { EMPTY_ORG_SETTINGS_SQL } from "./costCaps";
 import { operatorActor, queueEventFromCli } from "./events";
 import type { Workspace } from "./workspace";
 
-const linkedDevColumns = new WeakMap<D1Database, Promise<boolean>>();
-
-/** Whether the Gateway's `org_settings` has `linked_dev` (migration 0022). */
-export function hasLinkedDev(db: D1Database): Promise<boolean> {
-  let known = linkedDevColumns.get(db);
-  if (!known) {
-    known = db
-      .run([{ sql: "PRAGMA table_info(org_settings)" }])
-      .then(([rows = []]) => rows.some((row) => row["name"] === "linked_dev"));
-    linkedDevColumns.set(db, known);
-  }
-  return known;
-}
-
-/** GATEWAY_PREDATES_LINKED_DEV on a Gateway from before the column. */
-async function requireLinkedDev(db: D1Database): Promise<void> {
-  if (await hasLinkedDev(db)) return;
-  throw new EveryAppError(
-    "GATEWAY_PREDATES_LINKED_DEV",
-    "The Gateway predates linked dev\nIts database has no linked dev switch until the Gateway is updated to a release that has it.",
-    { rerun: `${CLI} update`, rerunNote: "then run this again" },
-  );
-}
-
 /** Whether linked dev is on for the workspace's organization. */
 export async function readLinkedDev(ws: Workspace): Promise<boolean> {
-  await requireLinkedDev(ws.db);
   const [rows = []] = await ws.db.run([
     {
       sql: "SELECT linked_dev FROM org_settings WHERE organization_id = ?",
@@ -84,14 +56,7 @@ ON CONFLICT (organization_id) DO UPDATE SET linked_dev = ?2, updated_at = ?3, up
     ...(on
       ? []
       : [
-          {
-            sql: `DELETE FROM org_settings WHERE organization_id = ? AND ${emptyOrgSettingsSql({
-              cost: await hasCostCaps(ws.db),
-              ai: await hasAiDefault(ws.db),
-              linkedDev: true,
-            })}`,
-            params: [org],
-          },
+          { sql: `DELETE FROM org_settings WHERE organization_id = ? AND ${EMPTY_ORG_SETTINGS_SQL}`, params: [org] },
         ]),
   ];
   await ws.db.run([...write, ...event]);

@@ -80,9 +80,6 @@ describe("validateManifest", () => {
       ["2openai"],
       ["openai", "openai"],
     ]) {
-      expect(() => validateManifest({ id: "todo", providers })).toThrow(
-        ManifestError,
-      );
       expect(() => validateManifestStrict({ id: "todo", providers })).toThrow(
         ManifestError,
       );
@@ -108,14 +105,20 @@ describe("validateManifest", () => {
 
   it("rejects malformed compatibility dates", () => {
     expect(() =>
-      validateManifest({ id: "todo", compatibilityDate: "2026/06/01" }),
+      validateManifestStrict({ id: "todo", compatibilityDate: "2026/06/01" }),
     ).toThrow(ManifestError);
   });
 
   it("rejects non-kebab ids", () => {
-    expect(() => validateManifest({ id: "Todo_App" })).toThrow(ManifestError);
-    expect(() => validateManifest({ id: "-todo" })).toThrow(ManifestError);
-    expect(() => validateManifest({ id: "todo-" })).toThrow(ManifestError);
+    expect(() => validateManifestStrict({ id: "Todo_App" })).toThrow(
+      ManifestError,
+    );
+    expect(() => validateManifestStrict({ id: "-todo" })).toThrow(
+      ManifestError,
+    );
+    expect(() => validateManifestStrict({ id: "todo-" })).toThrow(
+      ManifestError,
+    );
   });
 
   it("tolerates unknown keys from a newer CLI (forward compatibility)", () => {
@@ -289,11 +292,11 @@ describe("access and ai manifest fields", () => {
   });
 
   it("rejects unknown access levels and non-API AI routes", () => {
-    expect(() => validateManifest({ id: "a", access: "public" })).toThrow(
+    expect(() => validateManifestStrict({ id: "a", access: "public" })).toThrow(
       ManifestError,
     );
     expect(() =>
-      validateManifest({ id: "a", ai: { routes: ["/v1/../admin"] } }),
+      validateManifestStrict({ id: "a", ai: { routes: ["/v1/../admin"] } }),
     ).toThrow(ManifestError);
     expect(() =>
       validateManifestStrict({ id: "a", ai: { routez: ["/v1/files"] } }),
@@ -932,7 +935,7 @@ describe("secrets manifest field", () => {
     ).toEqual(["GITHUB_TOKEN"]);
   });
 
-  it("stays tolerant at registration, within bounds", () => {
+  it("reads a stored row's names as stored; the name rules are the strict schema's", () => {
     expect(
       validateManifest({
         id: "repolens",
@@ -940,8 +943,8 @@ describe("secrets manifest field", () => {
       }).secrets,
     ).toEqual(["OPENAI_API_KEY", "GATEWAY_URL", "DB"]);
     expect(() =>
-      validateManifest({ id: "repolens", secrets: ["not a name"] }),
-    ).toThrow(/secrets\.0: a secret's name is an identifier/);
+      validateManifestStrict({ id: "repolens", secrets: ["not a name"] }),
+    ).toThrow(/secrets\.0: binding names must be JavaScript identifiers/);
   });
 
   it("is refused for third-party apps on the dispatch tier", () => {
@@ -1071,7 +1074,7 @@ describe("each setting's need (optional, anyOf, why, docs)", () => {
       }),
     ).toThrow(/providers\.1: duplicate provider/);
     expect(() =>
-      validateManifest({
+      validateManifestStrict({
         id: "inbox",
         providers: [{ id: "openai" }, "openai"],
       }),
@@ -1503,7 +1506,7 @@ describe("Workers AI (resources.ai)", () => {
     );
   });
 
-  it("stays tolerant of entries at registration", () => {
+  it("reads a stored row's entries as stored", () => {
     expect(
       validateManifest({ id: "assistant", resources: { ai: ["workers-ai"] } })
         .resources?.ai,
@@ -1522,7 +1525,7 @@ describe("Workers AI (resources.ai)", () => {
 });
 
 describe("Vectorize indexes (resources.vectorize)", () => {
-  const sized = { name: "VECTORS", dimensions: 768, metric: "cosine" };
+  const sized = { name: "VECTORS", dimensions: 768, metric: "cosine" as const };
   const preset = { name: "DOCS", preset: "@cf/baai/bge-small-en-v1.5" };
 
   it("takes { name, dimensions, metric } or { name, preset }", () => {
@@ -1613,7 +1616,7 @@ describe("Vectorize indexes (resources.vectorize)", () => {
     ).toThrow(/secrets: VECTORS is one of the app's bindings/);
   });
 
-  it("stays tolerant of entries a newer CLI writes, at registration", () => {
+  it("reads a stored row's entries a newer everyapp wrote", () => {
     const newer = {
       id: "notes",
       resources: { vectorize: [{ name: "VECTORS", preset: "@cf/new-model" }] },
@@ -1900,13 +1903,14 @@ describe("Email sending bindings (resources.sendEmail)", () => {
     ).toThrow(/secrets: EMAIL is one of the app's bindings/);
   });
 
-  it("stays tolerant of the lists at registration, a missing sender list included", () => {
+  it("reads a stored row's lists as stored, the value rules left to the strict schema", () => {
     const loose = {
       id: "notifier",
       resources: {
         sendEmail: [
           {
             name: "send-email",
+            allowedSenderAddresses: [],
             destinationAddress: "ops",
             allowedDestinationAddresses: [],
           },
@@ -1981,13 +1985,13 @@ describe("Secrets Store secrets (resources.secretsStore)", () => {
     );
   });
 
-  it("stays tolerant of entries at registration", () => {
+  it("reads a stored row's entries as stored", () => {
     expect(
       validateManifest({
         id: "shop",
         resources: { secretsStore: [{ name: "stripe-key", more: 1 }] },
       }).resources?.secretsStore,
-    ).toEqual([{ name: "stripe-key" }]);
+    ).toEqual([{ name: "stripe-key", more: 1 }]);
   });
 
   it("names the secret after the app's Worker, as the teardown's every- scan finds it", () => {
@@ -2028,6 +2032,13 @@ describe("email.inbound manifest field", () => {
     ).toEqual({ inbound: true, later: 1 });
   });
 
+  it("reads a stored row's address list from before 2026-10-19 as undeclared, so the row still routes", () => {
+    expect(
+      validateManifest({ id: "inbox", email: { inbound: ["*@example.com"] } })
+        .email,
+    ).toEqual({});
+  });
+
   it.each([
     ["an address list", ["*@example.com"]],
     ["a string", "yes"],
@@ -2037,15 +2048,6 @@ describe("email.inbound manifest field", () => {
     ).toThrow(
       /email\.inbound: inbound is true .* `everyapp email set --inbound <address>`/,
     );
-  });
-
-  it("reads an old row's address list as undeclared at registration", () => {
-    const email = validateManifest({
-      id: "inbox",
-      email: { inbound: ["*@example.com"], later: 1 },
-    }).email;
-    expect(email?.inbound).toBeUndefined();
-    expect(email).toEqual({ inbound: undefined, later: 1 });
   });
 
   it("refuses unknown email keys when authored", () => {
@@ -2061,18 +2063,6 @@ describe("email.inbound manifest field", () => {
     ]);
     expect(
       manifestTierProblems({ email: { inbound: false } }, "dispatch"),
-    ).toEqual([]);
-    // An old row's address list is not a declaration.
-    expect(
-      manifestTierProblems(
-        {
-          email: validateManifest({
-            id: "x",
-            email: { inbound: ["a@b.example"] },
-          }).email,
-        },
-        "dispatch",
-      ),
     ).toEqual([]);
   });
 });
@@ -2101,20 +2091,17 @@ describe("what a problem reads as", () => {
     ],
   ] as const;
 
-  it.each(both)(
-    "%s reads a malformed capability id as the provider-name rule, at its path",
-    (_name, validate, prefix) => {
-      const message = problem(validate, {
-        id: "a",
-        capabilities: { OpenAI: { access: "read", why: "x" } },
-      });
-      expect(message).toBe(
-        `${prefix}capabilities.OpenAI: provider must start with a lowercase letter and contain only lowercase letters, digits, and hyphens`,
-      );
-      expect(message).not.toMatch(/Invalid key in record/);
-      expect(message).not.toMatch(/OpenAI\.OpenAI/);
-    },
-  );
+  it("reads a malformed capability id as the provider-name rule, at its path", () => {
+    const message = problem(validateManifestStrict, {
+      id: "a",
+      capabilities: { OpenAI: { access: "read", why: "x" } },
+    });
+    expect(message).toBe(
+      "Invalid everyapp.config: capabilities.OpenAI: provider must start with a lowercase letter and contain only lowercase letters, digits, and hyphens",
+    );
+    expect(message).not.toMatch(/Invalid key in record/);
+    expect(message).not.toMatch(/OpenAI\.OpenAI/);
+  });
 
   it("reports a malformed id and its siblings' problems in one pass", () => {
     const message = problem(validateManifestStrict, {
@@ -2133,17 +2120,14 @@ describe("what a problem reads as", () => {
           'capabilities.email: Unrecognized key: "retired"',
         ].join("; "),
     );
-    // At registration a sibling's wrong access level doesn't hide the id.
+    // A stored row: a wrong access level is still refused.
     expect(
       problem(validateManifest, {
         id: "a",
-        capabilities: {
-          OpenAI: { access: "read" },
-          dataforseo: { access: "nope" },
-        },
+        capabilities: { dataforseo: { access: "nope" } },
       }),
     ).toBe(
-      'Invalid manifest: capabilities.dataforseo.access: Invalid option: expected one of "read"|"write"; capabilities.OpenAI: provider must start with a lowercase letter and contain only lowercase letters, digits, and hyphens',
+      'Invalid manifest: capabilities.dataforseo.access: Invalid option: expected one of "read"|"write"',
     );
   });
 
@@ -2221,7 +2205,7 @@ describe("Browser Rendering (resources.browser)", () => {
     );
   });
 
-  it("stays tolerant of entries at registration", () => {
+  it("reads a stored row's entries as stored", () => {
     expect(
       validateManifest({
         id: "crawler",
@@ -2281,7 +2265,7 @@ describe("Images (resources.images)", () => {
     );
   });
 
-  it("stays tolerant of entries at registration", () => {
+  it("reads a stored row's entries as stored", () => {
     expect(
       validateManifest({
         id: "gallery",
@@ -2417,13 +2401,13 @@ describe("AI Gateways (resources.aiGateway)", () => {
     ]);
   });
 
-  it("doesn't refuse a gateway setting it doesn't know at registration", () => {
+  it("reads a stored row's setting it doesn't know as stored", () => {
     expect(
       validateManifest({
         id: "notes",
         resources: { aiGateway: [{ name: "AI_GATEWAY", guardrails: true }] },
       }).resources?.aiGateway,
-    ).toEqual([{ name: "AI_GATEWAY" }]);
+    ).toEqual([{ name: "AI_GATEWAY", guardrails: true }]);
   });
 });
 
@@ -2504,13 +2488,13 @@ describe("Analytics Engine (resources.analyticsEngine)", () => {
     );
   });
 
-  it("stays tolerant of entries at registration", () => {
+  it("reads a stored row's entries as stored", () => {
     expect(
       validateManifest({
         id: "shop",
         resources: { analyticsEngine: [{ name: "page-views", retention: 90 }] },
       }).resources?.analyticsEngine,
-    ).toEqual([{ name: "page-views" }]);
+    ).toEqual([{ name: "page-views", retention: 90 }]);
   });
 
   it("is refused on the dispatch tier", () => {
@@ -2613,10 +2597,13 @@ describe("bearerRoutes manifest field", () => {
   it("needs at least one path and a why, and nothing else", () => {
     const why = "The Mac app calls the API with its token.";
     expect(() =>
-      validateManifest({ id: "open-zen", bearerRoutes: { paths: [], why } }),
+      validateManifestStrict({
+        id: "open-zen",
+        bearerRoutes: { paths: [], why },
+      }),
     ).toThrow(/at least one path/);
     expect(() =>
-      validateManifest({
+      validateManifestStrict({
         id: "open-zen",
         bearerRoutes: { paths: ["/api/**"], why: " " },
       }),

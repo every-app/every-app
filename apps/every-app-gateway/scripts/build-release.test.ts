@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { hashTree, minimumVersions, stageRelease } from "./build-release.ts";
+import { hashTree, stageRelease } from "./build-release.ts";
 
 const BUILD = {
   version: "0.2.0",
@@ -11,8 +11,6 @@ const BUILD = {
   cfVersion: "1.0.0-beta.14",
   pluginVersion: "2.0.0-beta.sha-91c870c02",
   configVersion: "0.24.1",
-  minCli: "0.3.0",
-  minSdk: "0.3.0",
 };
 
 /** The production gateway worker.config.json `cf build` writes, trimmed. */
@@ -192,29 +190,5 @@ describe("stageRelease", () => {
     expect(() => stageRelease({ gatewayDir, stageDir, build: BUILD })).toThrow(
       /\.dev\.vars[\s\S]*key\.pem/,
     );
-  });
-});
-
-describe("minimumVersions", () => {
-  it("is the CLI's and the SDK's versions in the workspace at this commit", () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "every-app-root-"));
-    try {
-      for (const [dir, version] of [
-        ["packages/cli", "0.3.0"],
-        ["packages/sdk", "0.3.1"],
-      ]) {
-        fs.mkdirSync(path.join(root, dir!), { recursive: true });
-        fs.writeFileSync(
-          path.join(root, dir!, "package.json"),
-          JSON.stringify({ version }),
-        );
-      }
-      expect(minimumVersions(root)).toEqual({
-        minCli: "0.3.0",
-        minSdk: "0.3.1",
-      });
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
   });
 });

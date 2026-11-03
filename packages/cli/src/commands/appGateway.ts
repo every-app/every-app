@@ -11,7 +11,7 @@ import { readInstall, type InstallRecord } from "@/lib/gateway/install";
 import { liveGatewaySource } from "@/lib/gateway/liveRelease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import { register, type Deployer } from "@/lib/gateway/registry";
-import { refuseNewerThanCli, type CandidateRelease, type GatewayRelease } from "@/lib/gateway/release";
+import type { CandidateRelease, GatewayRelease } from "@/lib/gateway/release";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
 import { cliVersion } from "@/lib/version";
@@ -48,17 +48,6 @@ export function gatewayFor(
     openRelease: seams?.openRelease ?? gateway.open,
     source: seams?.source ?? gateway.describe,
   };
-}
-
-/**
- * App commands write the Gateway's registry with this CLI's rules, so none
- * runs against a Gateway newer than this everyapp: a Gateway release and
- * the CLI that may deploy it share a version (its `minCli` is the CLI's at
- * the same commit). Checked before anything changes; `update` alone moves
- * the Gateway, and never past this CLI without saying so.
- */
-export function refuseGatewayNewerThanCli(install: Pick<InstallRecord, "releaseVersion">): void {
-  refuseNewerThanCli({ version: install.releaseVersion, minCli: install.releaseVersion }, cliVersion);
 }
 
 /** Register the app its manifest describes, one label below the Gateway's base. */

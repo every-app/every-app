@@ -759,22 +759,20 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
         },
       },
     };
-    for (const [manifest, sentence] of [
-      [withoutScopes, "without scopes: { scopes: [...], why }"],
-      [notAList, "without scopes: { scopes: [...], why }"],
-    ] as const) {
+    // The strict manifest schema refuses both before anything else runs.
+    for (const manifest of [withoutScopes, notAList]) {
       const registered = await api(`/api/v1/orgs/${acme}/apps`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ appId: "todo", manifest }),
       });
-      expect(registered.status).toBe(422);
+      expect(registered.status).toBe(400);
       const body = (await registered.json()) as {
         error: string;
         message: string;
       };
-      expect(body.error).toBe("BUNDLE_REFUSED");
-      expect(body.message).toContain(sentence);
+      expect(body.error).toBe("INVALID_MANIFEST");
+      expect(body.message).toContain("needs scopes");
     }
     expect(await row()).toBeUndefined();
     expect(await db.select().from(deployJobs)).toEqual([]);
@@ -782,8 +780,8 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
     expect((await register()).status).toBe(201);
     for (const manifest of [withoutScopes, notAList]) {
       const upload_ = await deploy(upload(builtWorker(), manifest));
-      expect(upload_.status).toBe(422);
-      expect(await upload_.json()).toMatchObject({ error: "BUNDLE_REFUSED" });
+      expect(upload_.status).toBe(400);
+      expect(await upload_.json()).toMatchObject({ error: "INVALID_MANIFEST" });
     }
     expect(script()).toBeUndefined();
     expect(await db.select().from(deployJobs)).toEqual([]);

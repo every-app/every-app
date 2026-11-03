@@ -112,7 +112,6 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
   ADMIN_REQUIRED: "Only an owner or admin can do that.",
   PROVIDER_HOSTED:
     "On a hosted gateway the platform's operator manages providers and their clients.",
-  GATEWAY_OUTDATED: "This Gateway needs an update first.",
 };
 
 /**
@@ -144,7 +143,6 @@ const RULE_MESSAGE_CODES: ReadonlySet<string> = new Set<PublicErrorCode>([
   "OAUTH_CLIENT_REQUIRED",
   "SEALING_UNAVAILABLE",
   "PROVIDER_HOSTED",
-  "GATEWAY_OUTDATED",
 ]);
 
 /** A rule's fragment as a sentence: a capital first, a full stop last. */

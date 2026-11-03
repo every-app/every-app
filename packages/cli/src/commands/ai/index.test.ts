@@ -186,14 +186,6 @@ describe("ai default", () => {
     expect(rows("SELECT * FROM org_settings")).toEqual([]);
     expect(aiEvents()).toEqual([]);
   });
-
-  it("refuses on a Gateway that still keeps a model per provider (before migration 0027)", async () => {
-    sqlite().sqlite.prepare("ALTER TABLE org_settings ADD COLUMN ai_models text").run();
-    await expect(chooseDefault(opts(), "openrouter/anthropic/claude-sonnet-5.5")).rejects.toMatchObject({
-      code: "GATEWAY_PREDATES_AI_DEFAULT",
-    });
-    expect(rows("SELECT * FROM org_settings")).toEqual([]);
-  });
 });
 
 describe("ai gateway on and off", () => {

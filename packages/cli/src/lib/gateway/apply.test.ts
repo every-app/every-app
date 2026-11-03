@@ -447,40 +447,21 @@ describe("applyGateway", () => {
     ).resolves.toEqual(before);
   });
 
-  it("refuses an older build of the same version, unless asked", async () => {
+  it("deploys an older build of the same version, saying so", async () => {
     const newer = await laterBuild();
     try {
       await deployGateway({ release: newer });
+      events.length = 0;
       // An older checkout's release: same version, from before.
-      const refused = await deployGateway({ reason: "upgrade" }).catch(
-        (error: unknown) => error,
+      await deployGateway({ reason: "upgrade" });
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: "warning",
+          code: "GATEWAY_DOWNGRADE",
+          // A release opened from a file, not a checkout's build.
+          message: expect.stringMatching(/^The Gateway from \/.+\.tar\.gz \(0\.2\.0\) is older than the live one\n/),
+        }),
       );
-      expect(refused).toMatchObject({
-        code: "DOWNGRADE_REFUSED",
-        // A release opened from a file, not a checkout's build.
-        message: expect.stringMatching(
-          /^The Gateway from \/.+\.tar\.gz \(0\.2\.0 from Oct 12\) is older than the live one \(from Oct 13\)$/,
-        ),
-        fix: "update everyapp: npm install -g everyapp@latest",
-        rerun: expect.stringMatching(/^pnpm everyapp/),
-        authorize: false,
-      });
-      // Only setup offers the rollback.
-      expect((refused as Error).message).not.toContain("--allow-downgrade");
-      expect((refused as { rerun: string }).rerun).not.toContain("--allow-downgrade");
-      expect(account.deploys).toHaveLength(1);
-
-      const offered = await deployGateway({
-        reason: "upgrade",
-        allowDowngradeFlag: true,
-      }).catch((error: unknown) => error);
-      expect(offered).toMatchObject({
-        code: "DOWNGRADE_REFUSED",
-        rerun: expect.stringContaining("--allow-downgrade"),
-        authorize: true,
-      });
-
-      await deployGateway({ reason: "upgrade", allowDowngrade: true });
       expect((await readInstall(gatewayD1()))!.releaseSha256).toBe(release.manifest.sha256);
     } finally {
       await newer.cleanup();
@@ -557,7 +538,7 @@ describe("applyGateway", () => {
     }
   });
 
-  it("checks the release again once it holds the lease", async () => {
+  it("checks the release again once it holds the lease, and says it puts an older one back", async () => {
     await deployGateway();
     const newer = await laterBuild();
     try {
@@ -575,8 +556,9 @@ describe("applyGateway", () => {
         },
       });
 
-      await expect(waiting).rejects.toMatchObject({ code: "DOWNGRADE_REFUSED" });
-      expect(account.gatewayRelease()?.sha256).toBe(newer.manifest.sha256);
+      await waiting;
+      expect(events).toContainEqual(expect.objectContaining({ code: "GATEWAY_DOWNGRADE" }));
+      expect(account.gatewayRelease()?.sha256).toBe(release.manifest.sha256);
     } finally {
       await newer.cleanup();
     }
@@ -1113,7 +1095,7 @@ describe("reconcileGateway", () => {
             await deployGateway({ reason: "upgrade", release: newer });
           },
         }),
-      ).rejects.toMatchObject({ code: "DOWNGRADE_REFUSED" });
+      ).rejects.toMatchObject({ code: "GATEWAY_UPDATED", retryable: true });
 
       expect(upgraded).toBe(true);
       expect(account.gatewayRelease()?.sha256).toBe(newer.manifest.sha256);
@@ -1154,7 +1136,7 @@ describe("reconcileGateway", () => {
 
     await expect(
       reconcile({ force: true, openRelease: () => openRelease(older) }),
-    ).rejects.toMatchObject({ code: "DOWNGRADE_REFUSED" });
+    ).rejects.toMatchObject({ code: "GATEWAY_UPDATED" });
 
     expect(opened()).toEqual(before);
   });

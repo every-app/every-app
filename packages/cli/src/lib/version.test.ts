@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { cliVersion, readCliPackage } from "./version";
+import { cliVersion, compareVersions, readCliPackage } from "./version";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -36,5 +36,25 @@ describe("the CLI's version", () => {
     fs.mkdirSync(path.join(root, "dist", "inner"), { recursive: true });
     fs.writeFileSync(path.join(root, "dist", "package.json"), JSON.stringify({ type: "module" }));
     expect(readCliPackage(pathToFileURL(path.join(root, "dist", "inner", "x.js")).href).version).toBe("1.2.3");
+  });
+});
+
+describe("compareVersions", () => {
+  it("orders dotted versions numerically", () => {
+    expect(compareVersions("0.10.0", "0.9.1")).toBeGreaterThan(0);
+    expect(compareVersions("0.2.0", "v0.2.0")).toBe(0);
+    expect(compareVersions("1.0.0", "1.0.1")).toBeLessThan(0);
+    expect(compareVersions("22.18.0", "22.9.0")).toBeGreaterThan(0);
+  });
+
+  it("orders prereleases: rc.9 before rc.10, every rc before the release", () => {
+    expect(compareVersions("0.3.0-rc.9", "0.3.0-rc.10")).toBeLessThan(0);
+    expect(compareVersions("0.3.0-rc.10", "0.3.0-rc.10")).toBe(0);
+    expect(compareVersions("0.3.0-rc.10", "0.3.0")).toBeLessThan(0);
+    expect(compareVersions("0.3.0", "0.3.0-rc.1")).toBeGreaterThan(0);
+    expect(compareVersions("0.3.1-rc.1", "0.3.0")).toBeGreaterThan(0);
+    expect(compareVersions("0.3.0-beta.2", "0.3.0-rc.1")).toBeLessThan(0);
+    expect(compareVersions("0.3.0-rc", "0.3.0-rc.1")).toBeLessThan(0);
+    expect(compareVersions("0.3.0-rc.1+abc", "0.3.0-rc.1")).toBe(0);
   });
 });

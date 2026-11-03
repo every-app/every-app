@@ -35,7 +35,9 @@ const MANIFEST = {
     ],
   },
   workers: [{ name: "audit", binding: "AUDIT_ENGINE" }],
-  settings: [{ name: "THEME", default: "dark" }],
+  settings: [
+    { name: "THEME", why: "The app's color scheme.", default: "dark" },
+  ],
 } as const;
 
 function sqliteDb(): InstallationDatabase {
@@ -216,7 +218,7 @@ describe("installApp", () => {
     expect(steps.filter((step) => /migrate|upload/.test(step))).toEqual([]);
   });
 
-  it("says which R2 buckets it created and which it adopted", async () => {
+  it("says which R2 buckets it created", async () => {
     const events: unknown[] = [];
     const { input, ports } = setup({}, () => {
       const output = buildOutput();
@@ -228,9 +230,8 @@ describe("installApp", () => {
       return output;
     });
     ports.out = { emit: (event) => void events.push(event) };
-    ports.resources.ensureAppBuckets = async ({ names, onAdopted }) => {
+    ports.resources.ensureAppBuckets = async ({ names }) => {
       steps.push(`buckets ${names.join(" ")}`);
-      onAdopted?.(`${WORKER}--cache`);
       return [WORKER];
     };
     await installApp(input, ports);
@@ -240,12 +241,6 @@ describe("installApp", () => {
         (event) => (event as { step?: string }).step === "app.build",
       ),
     ).toEqual([
-      {
-        type: "progress",
-        step: "app.build",
-        message: `Adopted R2 bucket "${WORKER}--cache": an earlier deploy of this app made it before buckets were recorded.`,
-        data: { bucket: `${WORKER}--cache`, adopted: true },
-      },
       {
         type: "progress",
         step: "app.build",

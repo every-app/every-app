@@ -29,7 +29,7 @@ import { CLI, thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { runCommand } from "@/lib/output/run";
 import type { GatewayCommandFlags } from "../flags";
-import { localMigrationsApplied, warnLegacyLocalState } from "../localMigrations";
+import { localMigrationsApplied } from "../localMigrations";
 import { formatQueryResults, readsOnly, type Database } from "./queryOutput";
 
 interface MigrateCommandFlags {
@@ -64,8 +64,6 @@ export async function migrateLocal({
   cf = createCfRunner(),
 }: MigrateLocalOptions): Promise<void> {
   const manifest = await loadEveryAppManifest(cwd);
-  await warnLegacyLocalState(cwd, out);
-
   let result: Awaited<ReturnType<typeof applyLocalMigrations>>;
   try {
     result = await applyLocalMigrations({

@@ -20,6 +20,7 @@ import { reconcileGateway } from "@/lib/gateway/reconcile";
 import { markDeployed, readApp, register, writeAppEmail } from "@/lib/gateway/registry";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
+import { GATEWAY_SCHEMA } from "@/lib/gateway/schema";
 import { mintSetupLink } from "@/lib/gateway/setup-link";
 import { createHumanSink, createNdjsonSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
@@ -797,7 +798,8 @@ describe("everyapp status", () => {
     expect(await shown()).toMatch(/\nRelease +0\.2\.0 · matches this checkout\n/);
 
     // Committed since: good to know, with the command that updates it now
-    // (never setup, which is for installing); the next rebind brings it anyway.
+    // (never setup, which is for installing). The schema is current, so
+    // nothing refuses meanwhile.
     const newer = await at("tree-2", Date.parse("2026-10-20T00:00:00Z"));
     expect(newer["data"]["upToDate"]).toBe(false);
     expect(newer["data"]["fixes"]).toContainEqual({
@@ -828,7 +830,7 @@ describe("everyapp status", () => {
     const report = await shown();
     expect(report).toMatch(/\nRelease +0\.2\.0 · this checkout is behind\n/);
     expect(report).toContain(
-      "! This checkout is behind the live Gateway\n  This checkout has 0.1.0; 0.2.0 is live.\n  Deploys from here are refused until it catches up.\n  Run: git pull",
+      "! This checkout is behind the live Gateway\n  This checkout has 0.1.0; 0.2.0 is live.\n  An update from here puts the older Gateway back.\n  Run: git pull",
     );
 
     // Without a tree hash, it can't say.
@@ -877,6 +879,36 @@ describe("everyapp status", () => {
     expect(changed["data"]["fixes"]).toContainEqual(
       expect.objectContaining({ code: "GATEWAY_CHANGED", run: "pnpm everyapp setup", note: "redeploys 0.2.0, asking first" }),
     );
+  });
+
+  it("counts a Gateway behind this everyapp's schema as a problem: the other commands refuse it until update", async () => {
+    new GatewayWorker(account).claim(
+      (await mintSetupLink({ db: db(), gatewayUrl: "https://example.com" })).url,
+    );
+    account.database("every-app-gateway").sqlite.exec(
+      "UPDATE _everyapp_install SET source_tree_sha256 = 'tree-1'",
+    );
+    const source = await releaseSource(tarball);
+    checkout = async () => ({
+      ...source,
+      treeSha256: "tree-2",
+      order: { ...source.order, committedAt: Date.parse("2026-10-20T00:00:00Z") },
+    });
+    await db().run([{ sql: "DELETE FROM d1_migrations WHERE name = ?", params: [`${GATEWAY_SCHEMA}.sql`] }]);
+
+    const done = await status();
+
+    expect(done["message"]).toBe("Gateway https://example.com: 0 apps live, 1 problem to fix");
+    // One item, the error: not the "newer Gateway to take" note as well.
+    expect(done["data"]["fixes"]).toEqual([
+      {
+        code: "GATEWAY_OUTDATED",
+        severity: "error",
+        message: `The Gateway is older than this everyapp\nIts database doesn't have migration ${GATEWAY_SCHEMA} yet, so the other commands refuse it until update runs.`,
+        run: "pnpm everyapp update",
+        note: "updates it now",
+      },
+    ]);
   });
 
   it("says whether Cloudflare Access is in front, and whether it is in step with this Gateway", async () => {

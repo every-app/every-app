@@ -13,6 +13,7 @@ import { connectToGateway } from "./connect";
 import { discoverGateway, refuseUnchecked, requireGateway } from "./discover";
 import { writeInstall } from "./install";
 import { forgetThisRunsPickForTests } from "./pick";
+import { GATEWAY_SCHEMA } from "./schema";
 
 /** A Cloudflare account, with or without a Gateway in it. */
 interface TestAccount {
@@ -40,9 +41,13 @@ async function account(
   return entry;
 }
 
-/** A Gateway in the account: its D1 (`every-app-gateway`, or a named one's) and its install row. */
+/** A Gateway in the account: its D1 (`every-app-gateway`, or a named one's), migrated, and its install row. */
 async function addGateway(entry: TestAccount, database: string, gatewayHost: string): Promise<void> {
   const { uuid } = entry.cloudflare.createDatabase(database);
+  await cfD1Database(entry.cloudflare.cf, uuid).run([
+    { sql: "CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE)" },
+    { sql: "INSERT INTO d1_migrations (name) VALUES (?)", params: [`${GATEWAY_SCHEMA}.sql`] },
+  ]);
   await writeInstall(cfD1Database(entry.cloudflare.cf, uuid), {
     accountId: entry.id,
     zoneId: "zone-1",

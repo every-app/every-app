@@ -296,7 +296,7 @@ describe("everyApp", () => {
 
   it("returns 500 when EVERYAPP_AUDIENCE is unset outside dev", async () => {
     // The app id alone never stands in for the audience in a deployed
-    // Worker, with or without a manifest naming it.
+    // Worker.
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const app = everyApp(async () => new Response("ok"), {
       publicKeys: [publicPem],

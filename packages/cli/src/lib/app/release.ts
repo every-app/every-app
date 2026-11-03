@@ -18,12 +18,11 @@
  * reader, apps/every-app-gateway/src/server/deploy/release.ts, computes
  * it the same way). Packing refuses local state and a
  * Build Output that isn't a production build; opening checks what
- * `extractRelease` checks, then the manifest and the CLI version.
+ * `extractRelease` checks, then the manifest.
  */
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { z } from "zod";
 import { ManifestError, validateManifestStrict } from "@every-app/perimeter/manifest";
@@ -36,7 +35,6 @@ import {
   BaseReleaseSchema,
   extractRelease,
   hashReleaseTree,
-  refuseNewerThanCli,
   type ReleaseOrigin,
 } from "@/lib/gateway/release";
 import {
@@ -48,6 +46,7 @@ import {
 import type { EventSink } from "@/lib/output/events";
 import { fetchReleaseTarball, githubRepository, isUrl } from "@/lib/release/fetch";
 import { readBundledProviderSpecs } from "./bundledProviders";
+import { appSdkVersion } from "./sdkVersion";
 import { isProductionBuild } from "./buildOutput";
 
 /** The asset an app's GitHub release carries. */
@@ -56,21 +55,8 @@ export const APP_RELEASE_TARBALL = "everyapp-release.tar.gz";
 const RELEASE_MIGRATIONS_DIR = "migrations";
 const BUILD_OUTPUT_DIR = path.join(".cloudflare", "output");
 const BUILD_OUTPUT_VERSION = "v0";
-/** The oldest everyapp and SDK that can deploy and run what this CLI packs. */
-const MIN_CLI_VERSION = "0.3.0";
-const MIN_SDK_VERSION = "0.3.0";
 /** Never staged: what macOS leaves beside files. Tar readers see them as files. */
 const OS_LITTER = /^(\.DS_Store|\._.*)$/;
-
-/** The app's own @every-app/sdk version, when it has one installed. */
-function appSdkVersion(cwd: string): string | null {
-  try {
-    const require = createRequire(path.join(cwd, "package.json"));
-    return (require("@every-app/sdk/package.json") as { version?: string }).version ?? null;
-  } catch {
-    return null;
-  }
-}
 
 const AppReleaseSchema = BaseReleaseSchema.extend({
   kind: z.literal("app"),
@@ -270,8 +256,6 @@ export async function packAppRelease({
       buildOutputVersion: BUILD_OUTPUT_VERSION,
       sha256: await hashReleaseTree(stageDir),
       migrations: hasMigrations ? await readJournal(path.join(stageDir, RELEASE_MIGRATIONS_DIR)) : [],
-      minCli: MIN_CLI_VERSION,
-      minSdk: MIN_SDK_VERSION,
       ...(providers.length > 0 ? { providers } : {}),
       // Its migrations, wherever the app keeps them, are migrations/ here.
       manifest: (manifest.migrations || hasMigrations
@@ -293,19 +277,15 @@ export async function packAppRelease({
 
 /**
  * Open an app release and check it: what every release must be
- * (`extractRelease`), an everyapp new enough for it, and a manifest that
- * is valid, the app's, and keeps its migrations in the release.
+ * (`extractRelease`), and a manifest that is valid, the app's, and keeps
+ * its migrations in the release.
  */
 export async function openAppRelease(
   tarball: string,
-  {
-    origin = { kind: "file", path: tarball },
-    version = cliVersion,
-  }: { origin?: ReleaseOrigin; version?: string } = {},
+  { origin = { kind: "file", path: tarball } }: { origin?: ReleaseOrigin } = {},
 ): Promise<AppRelease> {
   const { dir, manifest: release, cleanup } = await extractRelease(tarball, "app", AppReleaseSchema);
   try {
-    refuseNewerThanCli(release, version, `${release.appId} ${release.version}`);
     let manifest: EveryAppCliManifest;
     try {
       // The ids it lists are checked against the Gateway when it is deployed.
@@ -345,7 +325,7 @@ export async function openAppRelease(
  */
 export async function fetchAppRelease(
   source: string,
-  { out, fetch: fetchImpl, version }: { out: EventSink; fetch?: typeof fetch; version?: string },
+  { out, fetch: fetchImpl }: { out: EventSink; fetch?: typeof fetch },
 ): Promise<AppRelease> {
   const repo = isUrl(source) ? githubRepository(source) : null;
   let fetched;
@@ -369,7 +349,7 @@ export async function fetchAppRelease(
     throw error;
   }
   try {
-    const opened = await openAppRelease(fetched.tarball, { origin: fetched.origin, version });
+    const opened = await openAppRelease(fetched.tarball, { origin: fetched.origin });
     return {
       ...opened,
       cleanup: async () => {

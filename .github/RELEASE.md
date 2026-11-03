@@ -26,8 +26,13 @@ places, in this order (`packages/cli/src/lib/gateway/source.ts`):
    is none yet, the newest stable one (`/releases/latest`), said so.
 
 A downloaded release lands in a private temp dir and is checked against
-the SHA-256 its own `release.json` records before anything is deployed;
-its `minCli` refuses a CLI older than the one it was built with.
+the SHA-256 its own `release.json` records before anything is deployed.
+The CLI, the SDK and the Gateway are one release: every other command
+refuses a Gateway whose database is older than the CLI's
+(`GATEWAY_OUTDATED`; `update` brings it up), and an app's deploy warns
+when its `@every-app/sdk` isn't the CLI's version
+(`SDK_VERSION_MISMATCH`). After a publish, re-pin each first-party app
+to the new version exactly.
 
 ### Publishing a Gateway release
 
@@ -38,8 +43,7 @@ GitHub Release of the repository it runs in. It runs on a push of a
 `gateway-v<version>` tag, or by hand with the tag's name. The tag's
 version is the CLI version it goes with: `gateway-v0.3.0-rc.4` is the
 Gateway for `everyapp@0.3.0-rc.4`, and `release.json` says `version:
-0.3.0-rc.4`, with `minCli` and `minSdk` the CLI's and the SDK's versions
-at that commit. A version with a prerelease suffix is published as a
+0.3.0-rc.4`. A version with a prerelease suffix is published as a
 GitHub prerelease, so `/releases/latest` stays the newest stable one.
 
 The CLI downloads anonymously from `github.com/every-app/every-app`, so

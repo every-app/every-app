@@ -7,8 +7,7 @@
  * `/mcp`, Admin → Apps) takes the registry {@link gatewayProviders} returns,
  * so a registered provider is one wherever a catalog entry is.
  *
- * Fails closed to the catalog: a gateway whose D1 predates migration 0013
- * (the table isn't there yet) or a read that fails serves the catalog
+ * Fails closed to the catalog: a read that fails serves the catalog
  * alone, logged once per isolate, never a half-read set of rows. A row the
  * rules refuse (`providerRegistry` says why) is logged by id and reason,
  * never by its text.

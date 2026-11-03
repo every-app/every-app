@@ -133,8 +133,6 @@ export function releaseFiles(input: ReleaseInput): Map<string, Uint8Array> {
     buildOutputVersion: "v0",
     sha256: hashFiles(files),
     migrations: [],
-    minCli: "0.3.0",
-    minSdk: "0.3.0",
     manifest: input.manifest,
     ...input.release,
   };

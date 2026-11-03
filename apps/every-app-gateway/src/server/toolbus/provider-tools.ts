@@ -99,26 +99,6 @@ function capabilityIdsOf(manifest: Record<string, unknown> | null): string[] {
     : [];
 }
 
-/**
- * The rows read, or the reason they can't be: a gateway whose database
- * predates migration 0010 has no table, and the tools say so rather than
- * answering on the catalog alone.
- */
-async function rowsOrOutdated(): Promise<
-  { rows: ProviderRow[] } | { error: JsonObject }
-> {
-  try {
-    return { rows: await ProviderRepository.all() };
-  } catch {
-    return {
-      error: refuse(
-        "GATEWAY_OUTDATED",
-        "this Gateway's database has no providers table yet; its operator runs: everyapp update",
-      ),
-    };
-  }
-}
-
 /** Where the key goes, without the setting's name (the settings list has it). */
 function authSummary(auth: ApiKeyAuth): JsonObject {
   switch (auth.kind) {
@@ -378,15 +358,14 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
       );
     }
     const { id, capability } = parsed;
-    const read = await rowsOrOutdated();
-    if ("error" in read) return read.error;
-    if (read.rows.some((row) => row.id === id)) {
+    const rows = await ProviderRepository.all();
+    if (rows.some((row) => row.id === id)) {
       return refuse(
         "PROVIDER_EXISTS",
         `${id} is registered on this Gateway already; this tool never replaces a row (from the terminal: everyapp provider add --replace, after which its key must be set again)`,
       );
     }
-    const others = registryFromRows(read.rows);
+    const others = registryFromRows(rows);
     const refusal = checkProviderRow(id, capability, {
       rowSettings: new Set(
         others.rows().flatMap((row) => capabilitySettings(row.capability)),
@@ -483,16 +462,15 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
         `${id} is built in; only a provider registered on this Gateway can be removed`,
       );
     }
-    const read = await rowsOrOutdated();
-    if ("error" in read) return read.error;
-    const row = read.rows.find((each) => each.id === id);
+    const rows = await ProviderRepository.all();
+    const row = rows.find((each) => each.id === id);
     if (!row) {
       return refuse(
         "PROVIDER_NOT_FOUND",
         `no provider ${id} is registered on this Gateway`,
       );
     }
-    const registered = registryFromRows(read.rows)
+    const registered = registryFromRows(rows)
       .rows()
       .find((each) => each.id === id);
     const settings = registered

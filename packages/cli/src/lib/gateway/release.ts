@@ -8,13 +8,11 @@
 import { privateTempDir } from "@/lib/cf/privateDir";
 import { EveryAppError } from "@/lib/errors";
 import { isNotFoundError } from "@/lib/file-operations";
-import { compareVersions } from "@every-app/perimeter/install";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-export { compareVersions } from "@every-app/perimeter/install";
 
 export const RELEASE_TARBALL = "every-app-gateway-release.tar.gz";
 /**
@@ -54,8 +52,6 @@ export const BaseReleaseSchema = z.looseObject({
   buildOutputVersion: z.string(),
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
   migrations: z.array(z.object({ tag: z.string(), when: z.number() })),
-  minCli: z.string(),
-  minSdk: z.string(),
 });
 
 const ReleaseManifestSchema = BaseReleaseSchema.extend({
@@ -105,8 +101,6 @@ export interface CandidateRelease extends ReleaseSource {
   version: string;
   /** Its SHA-256, once it is built. */
   sha256?: string;
-  /** The oldest everyapp that deploys it, once a release says. */
-  minCli?: string;
   /**
    * The checkout's commit, when the Gateway it builds isn't exactly its
    * version's release (checkoutRelease.ts `unreleasedCommit`).
@@ -441,28 +435,6 @@ function releaseOrder(
     committedAt:
       Date.parse(manifest.committedAt ?? "") || Date.parse(manifest.builtAt) || 0,
   };
-}
-
-/**
- * A release that needs a newer everyapp than this one to deploy it is
- * refused before anything changes.
- */
-export function refuseNewerThanCli(
-  manifest: Pick<ReleaseManifest, "version" | "minCli">,
-  cliVersion: string,
-  /** What the release is, as the message names it. */
-  what = `Gateway ${manifest.version}`,
-): void {
-  if (compareVersions(manifest.minCli, cliVersion) > 0) {
-    throw new EveryAppError(
-      "CLI_TOO_OLD",
-      `${what} needs everyapp ${manifest.minCli} or newer (this is ${cliVersion})`,
-      {
-        fix: "update everyapp (in a checkout: git pull), then run this again",
-        data: { minCli: manifest.minCli, cliVersion },
-      },
-    );
-  }
 }
 
 /** `when` of the newest migration in a drizzle journal. */

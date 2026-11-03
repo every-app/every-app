@@ -1590,28 +1590,6 @@ describe("workspace cap default and workspace app cap --unlimited", () => {
   });
 });
 
-describe("a Gateway from before the dollar caps (migration 0018)", () => {
-  // The live Gateway's D1 until `update` runs its migrations.
-  beforeEach(() => {
-    sqlite().sqlite.exec(
-      "ALTER TABLE org_app_settings DROP COLUMN monthly_cost_cap_micros; ALTER TABLE org_settings DROP COLUMN default_monthly_cost_cap_micros",
-    );
-  });
-
-  it("refuses app cap, cap default and usage with GATEWAY_PREDATES_COST_CAPS, nothing written", async () => {
-    await expect(setCap(opts(), "crm", 20)).rejects.toMatchObject({
-      code: "GATEWAY_PREDATES_COST_CAPS",
-      message: expect.stringContaining("The Gateway predates dollar caps"),
-      rerun: expect.stringContaining("everyapp update"),
-    });
-    await expect(setCap(opts(), "crm", undefined, true)).rejects.toMatchObject({ code: "GATEWAY_PREDATES_COST_CAPS" });
-    await expect(setDefaultCap(opts(), 20)).rejects.toMatchObject({ code: "GATEWAY_PREDATES_COST_CAPS" });
-    await expect(reportUsage(opts({ month: "2026-10" }))).rejects.toMatchObject({ code: "GATEWAY_PREDATES_COST_CAPS" });
-    expect(rows("SELECT app_row_id FROM org_app_settings WHERE app_row_id = 'app-crm'")).toEqual([]);
-    expect(rows("SELECT organization_id FROM org_settings")).toEqual([]);
-  });
-});
-
 describe("the event bus: every workspace write is one event, the operator its actor (the audit log's coverage)", () => {
   const OPERATOR = { kind: "operator", id: "dev@example.com", email: "dev@example.com" };
   const queued = () =>

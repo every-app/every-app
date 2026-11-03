@@ -33,6 +33,7 @@ import {
   RESOURCE_SEPARATOR,
   resourceNameFor,
   validateManifest,
+  validateManifestStrict,
   type Manifest,
 } from "../manifest/manifest";
 
@@ -240,10 +241,14 @@ export function appNames(input: AppNamesInput): {
   return { workerName, hostname };
 }
 
+/**
+ * A manifest a registration writes: strict, as the CLI checked it (a
+ * provider the Gateway registered is checked against its registry there).
+ */
 function validateRegistryManifest(raw: unknown, appSlug: string): Manifest {
   let manifest: Manifest;
   try {
-    manifest = validateManifest(raw);
+    manifest = validateManifestStrict(raw, { unknownCapabilities: "accept" });
   } catch (error) {
     throw new RegistrationError({
       status: 400,

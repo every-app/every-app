@@ -29,4 +29,3 @@ export * from "./resource-settings";
 export { createResourceProvisioner } from "./resources";
 export * from "./restore-points";
 export * from "./secrets";
-export { compareVersions } from "./version";

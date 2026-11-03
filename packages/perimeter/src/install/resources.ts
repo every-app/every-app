@@ -24,7 +24,6 @@ import {
   describeResource,
   forgetOwnedResources,
   readOwnedResources,
-  readResourcesOfKind,
   recordOwnedResource,
   RESOURCE_LABELS,
   type OwnedResource,
@@ -936,21 +935,13 @@ Creating ${missing.length === 1 ? "the secret" : "each secret"} in the store "${
   }
 
   /**
-   * Buckets, including legacy build-declared buckets, require recorded
-   * ownership. Deploys before 0.3.0-rc.9 made buckets without recording
-   * them, so an unrecorded bucket is adopted when it can only be one of
-   * those: its name is exactly the app's assigned bucket name (the
-   * registration's, or the Worker's own when the manifest declares none),
-   * an earlier deploy on this Gateway uploaded the app's Worker (its
-   * record has a version), and no other app
-   * records the bucket. Anything else stays RESOURCE_NAME_TAKEN.
+   * Buckets, build-declared ones included, require recorded ownership: an
+   * unrecorded bucket under the app's name is RESOURCE_NAME_TAKEN.
    */
   async function ensureAppBuckets(
     options: ProvisionOptions & {
       names: readonly string[];
       appId: string;
-      /** Said for each unrecorded bucket adopted as the app's. */
-      onAdopted?: (name: string) => void;
     },
   ): Promise<string[]> {
     if (!options.names.length) return [];
@@ -958,10 +949,6 @@ Creating ${missing.length === 1 ? "the secret" : "each secret"} in the store "${
     const owned = await readOwnedResources(options.gatewayDb, workerName);
     const created: string[] = [];
     for (const name of [...new Set(options.names)].sort()) {
-      if (await adoptLegacyBucket(options, owned, name)) {
-        options.onAdopted?.(name);
-        continue;
-      }
       try {
         await provisionOne({
           ...options,
@@ -991,41 +978,6 @@ Creating ${missing.length === 1 ? "the secret" : "each secret"} in the store "${
       }
     }
     return created;
-  }
-
-  /** Record an unrecorded bucket an earlier deploy of this app made; false when it can't be that. */
-  async function adoptLegacyBucket(
-    { cf, gatewayDb, registration }: ProvisionOptions,
-    owned: readonly OwnedResource[],
-    name: string,
-  ): Promise<boolean> {
-    const { workerName } = registration;
-    const assigned = Object.values(registration.resources.r2 ?? {});
-    const isAssigned = assigned.length
-      ? assigned.includes(name)
-      : name === workerName;
-    if (!isAssigned) return false;
-    if (owned.some((entry) => entry.kind === "r2" && entry.name === name))
-      return false;
-    // An earlier deploy uploaded the app's Worker: a first deploy has
-    // claimed it by now too, but recorded no version yet.
-    if (
-      !owned.some(
-        (entry) =>
-          entry.kind === "worker" && entry.binding === "" && entry.versionId,
-      )
-    )
-      return false;
-    if (!(await findR2Bucket(cf, name))) return false;
-    const recorded = await readResourcesOfKind(gatewayDb, "r2");
-    if (recorded.some((entry) => entry.name === name)) return false;
-    await recordOwnedResource(gatewayDb, workerName, {
-      kind: "r2",
-      binding: name,
-      name,
-      resourceId: name,
-    });
-    return true;
   }
 
   return { claimAppWorker, provisionAppResources, ensureAppBuckets };

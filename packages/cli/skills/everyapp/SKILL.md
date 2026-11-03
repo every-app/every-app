@@ -86,7 +86,7 @@ provider registered on one Gateway has none: `everyapp provider show <id>`.
 
 ## Ask first
 
-- Never add --purge, --force-dns, --allow-delete-*, --allow-downgrade or --yes
+- Never add --purge, --force-dns, --allow-delete-* or --yes
   to delete, --yes to a production write (CONFIRMATION_REQUIRED), or
   --enable-email-routing, unless the user said so. `db restore` only when asked.
 - Teardown deletes everything EveryApp made in one account: only on a dedicated

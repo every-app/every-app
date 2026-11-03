@@ -14,11 +14,7 @@
  *
  * `setAiDefault` queues `ai.default_changed` in the batch that writes the
  * row, only when the setting changed, and never deletes a row that still
- * holds a cap (the defaults share `org_settings`). A Gateway from before
- * migration 0017 has no `ai_default` column: `ai default` refuses with
- * the command that brings it up to date, and so does one from before
- * migration 0027 (it still keeps a model per provider in `ai_models`);
- * `ai show` reads a missing column as no setting.
+ * holds a cap (the defaults share `org_settings`).
  */
 import {
   aiDefaultChoiceProblem,
@@ -36,33 +32,12 @@ import type { CfRunner } from "@/lib/cf/runner";
 import { listGatewaySecretNames } from "@/lib/app/settings";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
-import { emptyOrgSettingsSql, hasCostCaps } from "./costCaps";
-import { hasLinkedDev } from "./linkedDev";
+import { EMPTY_ORG_SETTINGS_SQL } from "./costCaps";
 import { operatorActor, queueEventFromCli } from "./events";
 import type { Workspace } from "./workspace";
 
-const orgSettingsColumns = new WeakMap<D1Database, Promise<string[]>>();
-
-/** The columns of the Gateway's `org_settings`, asked of each database once. */
-function columnsOf(db: D1Database): Promise<string[]> {
-  let known = orgSettingsColumns.get(db);
-  if (!known) {
-    known = db
-      .run([{ sql: "PRAGMA table_info(org_settings)" }])
-      .then(([rows = []]) => rows.map((row) => String(row["name"])));
-    orgSettingsColumns.set(db, known);
-  }
-  return known;
-}
-
-/** Whether the Gateway's `org_settings` has `ai_default` (migration 0017, 2026-10-25). */
-export async function hasAiDefault(db: D1Database): Promise<boolean> {
-  return (await columnsOf(db)).includes("ai_default");
-}
-
-/** The organization's setting, or null (also on a Gateway without the column). */
+/** The organization's setting, or null. */
 async function readAiDefault(db: D1Database, organizationId: string): Promise<AiDefaultChoice | null> {
-  if (!(await hasAiDefault(db))) return null;
   const [rows = []] = await db.run([
     {
       sql: "SELECT ai_default FROM org_settings WHERE organization_id = ?",
@@ -110,17 +85,6 @@ export async function setAiDefault(
       });
     }
   }
-  // Before migration 0017 there is no setting; before 0027 the Gateway still
-  // reads the model from `ai_models` and only the provider from the setting,
-  // so a write would report success and not take effect.
-  const columns = await columnsOf(ws.db);
-  if (!columns.includes("ai_default") || columns.includes("ai_models")) {
-    throw new EveryAppError(
-      "GATEWAY_PREDATES_AI_DEFAULT",
-      "The Gateway predates the one default-model setting\nIts database has no single ai_default setting until the Gateway is updated to a release that has it.",
-      { rerun: `${CLI} update`, rerunNote: "then run this again" },
-    );
-  }
   const org = ws.organization.id;
   const was = await readAiDefault(ws.db, org);
   const changed = choiceText(was) !== choiceText(choice);
@@ -140,12 +104,8 @@ VALUES (?1, ?2, ?3, ?4)
 ON CONFLICT (organization_id) DO UPDATE SET ai_default = ?2, updated_at = ?3, updated_by = ?4`,
       params: [org, choiceText(choice), ws.now, ws.operator.userId],
     },
-    // A row with no default of any kind needs no row (the dollar cap's
-    // column counts on a Gateway that has it).
-    {
-      sql: `DELETE FROM org_settings WHERE organization_id = ? AND ${emptyOrgSettingsSql({ cost: await hasCostCaps(ws.db), ai: true, linkedDev: await hasLinkedDev(ws.db) })}`,
-      params: [org],
-    },
+    // A row with no default of any kind needs no row.
+    { sql: `DELETE FROM org_settings WHERE organization_id = ? AND ${EMPTY_ORG_SETTINGS_SQL}`, params: [org] },
     ...event,
   ]);
   return { choice, was, changed };

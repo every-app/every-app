@@ -6,8 +6,8 @@
  *
  * Under the `gateway` deploy lease, in this order:
  *
- *   1. check the release isn't older than the live one, which the install
- *      row names;
+ *   1. warn when the release is older than the live one, which the install
+ *      row names (GATEWAY_DOWNGRADE);
  *   2. a new install's row (or one whose first upload never finished),
  *      with nothing live yet, so a run that stops before its first upload
  *      resumes from it without --domain;
@@ -41,9 +41,7 @@
  *
  * Nothing is asked of the gateway over HTTPS: what cf deployed and the
  * install row are the record. The caller waits for the new hostnames'
- * certificates once the lease is free (`newHosts`). Under the lease,
- * nothing replaces the release the install row names with an older one
- * unless asked to.
+ * certificates once the lease is free (`newHosts`).
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -64,7 +62,7 @@ import {
   restorePointNote,
 } from "@/lib/migrations/remote";
 import { GATEWAY_RESTORE_TARGET } from "./restorePoints";
-import { CLI, thisCommand } from "@/lib/output/command";
+import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { plural } from "@/lib/output/text";
 import {
@@ -128,10 +126,6 @@ export interface ApplyGatewayOptions {
   deploymentMode?: DeploymentMode;
   /** The gateway lease the caller holds (a reconcile picks its release under it). */
   heldLease?: Lease;
-  /** Deploy a release older than the one the install record names. */
-  allowDowngrade?: boolean;
-  /** The command takes --allow-downgrade (setup): a refusal offers it. */
-  allowDowngradeFlag?: boolean;
   sleep?: (ms: number) => Promise<void>;
   /** How long to wait for another deploy's lease. */
   leaseWaitMs?: number;
@@ -164,7 +158,6 @@ export function candidate(release: GatewayRelease): CandidateRelease {
     ...release.source,
     version: release.manifest.version,
     sha256: release.manifest.sha256,
-    minCli: release.manifest.minCli,
   };
 }
 
@@ -203,60 +196,36 @@ export function olderThanInstalled(
   return compareReleaseOrder(release.order, install.releaseOrder) < 0;
 }
 
-/** Throw DOWNGRADE_REFUSED when `release` is older than the live Gateway. */
-export function refuseDowngrade(
-  release: CandidateRelease,
-  install: InstallRecord,
-  options: { allowDowngradeFlag?: boolean } = {},
-): void {
-  if (olderThanInstalled(release, install)) {
-    throw downgradeRefused(release, install, options);
-  }
-}
-
 /**
- * This checkout is behind the live Gateway: `git pull`, then the same
- * command; a release is: a newer one, or a checkout at least as new. Only
- * `setup` puts an older Gateway back on purpose, with --allow-downgrade
- * (`allowDowngradeFlag`), which an agent asks about first.
+ * A release older than the live one. A rebind (`reconcile`) never changes
+ * the Gateway's code, so one that waited for the lease while an upgrade
+ * went live is refused (GATEWAY_UPDATED; run it again and it takes the new
+ * release). `setup` and `update` deploy it, saying so (GATEWAY_DOWNGRADE):
+ * a rollback is a deploy of the older release, and `db restore` for its
+ * database.
  */
-function downgradeRefused(
+function checkDowngrade(
+  out: EventSink,
+  reason: ApplyReason,
   release: CandidateRelease,
   install: InstallRecord,
-  { allowDowngradeFlag = false }: { allowDowngradeFlag?: boolean } = {},
-): EveryAppError {
-  // The versions alone, unless they are the same: then when each is from.
-  const sameVersion = release.version === install.releaseVersion;
-  const from = (order: { committedAt: number }) =>
-    new Date(order.committedAt).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      timeZone: "UTC",
-    });
-  const checkout = release.origin.kind === "checkout";
-  const what = checkout
-    ? "This checkout's Gateway"
-    : `The Gateway from ${describeOrigin(release.origin)}`;
-  const message = sameVersion
-    ? `${what} (${release.version} from ${from(release.order)}) is older than the live one (from ${from(install.releaseOrder)})`
-    : `${what} (${release.version}) is older than the live one (${install.releaseVersion})`;
-  const data = { live: install.releaseVersion, candidate: release.version };
-  // Only setup puts an older Gateway back, and only when asked to.
-  if (allowDowngradeFlag) {
-    return new EveryAppError("DOWNGRADE_REFUSED", message, {
-      fix: checkout
-        ? "git pull, then run setup again"
-        : "update everyapp (npm install -g everyapp@latest) and run setup again, or pass --release a newer Gateway release",
-      rerun: thisCommand(["--allow-downgrade"]),
-      authorize: true,
-      data,
-    });
+): void {
+  if (!olderThanInstalled(release, install)) return;
+  if (reason === "reconcile") {
+    throw new EveryAppError(
+      "GATEWAY_UPDATED",
+      `The Gateway was updated to ${install.releaseVersion} while this waited\nNothing changed; run it again to deploy against the Gateway that is live now.`,
+      { retryable: true, data: { live: install.releaseVersion, candidate: release.version } },
+    );
   }
-  return new EveryAppError("DOWNGRADE_REFUSED", message, {
-    fix: checkout ? "git pull" : "update everyapp: npm install -g everyapp@latest",
-    rerun: thisCommand(),
-    rerunNote: "after that",
-    data,
+  const checkout = release.origin.kind === "checkout";
+  const what = checkout ? "This checkout's Gateway" : `The Gateway from ${describeOrigin(release.origin)}`;
+  const live = release.version === install.releaseVersion ? "" : ` (${install.releaseVersion})`;
+  out.emit({
+    type: "warning",
+    code: "GATEWAY_DOWNGRADE",
+    message: `${what} (${release.version}) is older than the live one${live}\nDeploying it anyway. To go forward again, ${checkout ? "git pull" : "update everyapp"} and run ${CLI} update.`,
+    data: { live: install.releaseVersion, candidate: release.version },
   });
 }
 
@@ -323,11 +292,7 @@ export async function applyGateway(
     // Only now is the install record the last deploy's for sure: another
     // upgrade may have finished while this one waited for the lease.
     const install = await readInstall(db);
-    if (install && !options.allowDowngrade) {
-      refuseDowngrade(candidate(release), install, {
-        allowDowngradeFlag: options.allowDowngradeFlag,
-      });
-    }
+    if (install?.liveVersionId) checkDowngrade(options.out, reason, candidate(release), install);
     // A Worker holding the row's hostname while the row names no version:
     // this install's own upload, from a run that stopped after it. Skipping
     // assertReplaceable's question isn't a silent takeover: one edited in

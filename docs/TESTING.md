@@ -885,7 +885,7 @@ put live, which stays the truth, so the next Gateway deploy or rebind puts
 the checkout's Gateway back (and, since the Worker then serves a version
 everyapp didn't record, an unattended one may stop for a terminal). For a
 lasting rollback, check out the good commit and run
-`pnpm everyapp setup --allow-downgrade`.
+`pnpm everyapp update` (it warns `GATEWAY_DOWNGRADE` and deploys it).
 
 Sub-apps are unaffected by a rollback (their workers and the registry are
 unchanged); only the perimeter reverts. Because identity tokens live ≤120s,
