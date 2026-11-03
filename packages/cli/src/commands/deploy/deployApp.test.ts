@@ -305,7 +305,6 @@ describe("deploy", () => {
         hostname: "todo.example.com",
         existingApp: false,
         defaultAccess: false,
-        deployerAccess: false,
         organizationName: "Acme",
         firstDeploy: true,
         hasOwner: false,
@@ -360,10 +359,10 @@ describe("deploy", () => {
     expect(deployDone(result).data).toMatchObject({ url: "https://todo.example.com", publicRoutes: routes, mcp: null });
   });
 
-  it("gives the deployer access once the gateway has an owner and they are a verified member", async () => {
+  it("grants nobody once the gateway has an owner, the deployer included: owners and admins open every app", async () => {
     await deploy();
     // The owner claims the gateway: they adopt the organization todo is in,
-    // and get todo, which nobody had access to.
+    // and open todo through their role.
     const link = await mintSetupLink({ db: registry(), gatewayUrl: GATEWAY_URL });
     const { userId: ownerId, organizationId: claimed } = worker.claim(link.url, {
       email: "owner@example.com",
@@ -386,10 +385,11 @@ describe("deploy", () => {
           appId,
         )
         .map((row) => row["user_id"]);
-    expect(granted("todo")).toEqual([ownerId]);
-    expect(granted("chef").sort()).toEqual(["dev", ownerId].sort());
+    expect(ownerId).toBeTruthy();
+    expect(granted("todo")).toEqual([]);
+    expect(granted("chef")).toEqual([]);
     expect(events.find((event) => event["step"] === "app.register")).toMatchObject({
-      data: { deployerAccess: true, organizationName: "Owner" },
+      data: { defaultAccess: false, hasOwner: true, organizationName: "Owner" },
     });
   });
 

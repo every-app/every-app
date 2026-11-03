@@ -111,7 +111,7 @@ function seedListing(appSlug: string): void {
 }
 
 describe("addRemoteMcpApp", () => {
-  it("writes a provider row with the remote block, active at once, granted to the adder, owners and admins", async () => {
+  it("writes a provider row with the remote block, active at once, granting nobody (owners and admins open it)", async () => {
     const first = await add({ url: "https://deepwiki.com/mcp", auth: { kind: "none" } });
     const organization = first.organization.id;
     addUser("ben", organization);
@@ -121,7 +121,6 @@ describe("addRemoteMcpApp", () => {
 
     const added = await add();
     expect(added.plan.kind).toBe("new");
-    expect(added.actorGranted).toBe(true);
     expect(added.hasOwner).toBe(true);
     expect(row("treg")).toMatchObject({
       tier: "provider",
@@ -142,7 +141,7 @@ describe("addRemoteMcpApp", () => {
         rev: 1,
       },
     });
-    expect(grantees("treg")).toEqual(["admin", "ben", "owner"]);
+    expect(grantees("treg")).toEqual([]);
   });
 
   it("refuses what the registry refuses, writing nothing", async () => {
@@ -190,7 +189,7 @@ describe("addRemoteMcpApp", () => {
     expect(manifestOf("treg").remote.url).toBe("https://treg.to/v2/mcp");
     expect(sqlite.all("SELECT * FROM remote_mcp_tools WHERE app_row_id = ?", plan.app.id)).toEqual([]);
     expect(sqlite.all("SELECT * FROM app_tool_catalogs WHERE app_row_id = ?", plan.app.id)).toEqual([]);
-    expect(grantees("treg")).toEqual(["ben"]);
+    expect(grantees("treg")).toEqual([]);
   });
 });
 

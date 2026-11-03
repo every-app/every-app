@@ -1160,7 +1160,7 @@ describe("everyapp status", () => {
     gatewayWorker().secrets["OPENROUTER_API_KEY"] = "sk-or";
     sqlite
       .prepare(
-        "INSERT INTO apps (id, organization_id, app_slug, name, description, tier, manifest, status, is_default, created_at, updated_at, scope) VALUES ('app_dataforseo', ?, 'dataforseo', 'DataForSEO', 'SEO data', 'provider', '{}', 'active', 0, ?, ?, 'org')",
+        "INSERT INTO apps (id, organization_id, app_slug, name, description, tier, manifest, status, everyone, created_at, updated_at, scope) VALUES ('app_dataforseo', ?, 'dataforseo', 'DataForSEO', 'SEO data', 'provider', '{}', 'active', 0, ?, ?, 'org')",
       )
       .run(organizationId, Date.now(), Date.now());
     const connected = await status();

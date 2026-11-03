@@ -250,7 +250,7 @@ function listedApp(app: {
   status: string;
   scope: string;
   tier: string;
-  isDefault: boolean | null;
+  everyone: boolean | null;
   createdAt: Date;
   updatedAt: Date;
 }) {
@@ -263,7 +263,7 @@ function listedApp(app: {
     status: app.status,
     scope: app.scope,
     tier: app.tier,
-    everyone: app.isDefault === true,
+    everyone: app.everyone === true,
     createdAt: app.createdAt,
     updatedAt: app.updatedAt,
   };
@@ -767,7 +767,7 @@ const HANDLERS: Record<string, Handler> = {
       ...(text(args["description"]) !== undefined
         ? { description: text(args["description"]) }
         : {}),
-      ...(typeof everyone === "boolean" ? { isDefault: everyone } : {}),
+      ...(typeof everyone === "boolean" ? { everyone } : {}),
     });
     const updated = await AppRepository.findById(app.id, ctx.orgId);
     return { app: listedApp(updated ?? app) };
@@ -775,8 +775,14 @@ const HANDLERS: Record<string, Handler> = {
 
   async workspace_app_access(ctx, args) {
     const app = await resolveApp(ctx, requireText(args, "app"));
-    const { users } = await AppAccessService.getAccessStateForApp(ctx, app.id);
-    return { app: { id: app.id, appId: app.appSlug, name: app.name }, users };
+    const { everyone, users } = await AppAccessService.getAccessStateForApp(
+      ctx,
+      app.id,
+    );
+    return {
+      app: { id: app.id, appId: app.appSlug, name: app.name, everyone },
+      users,
+    };
   },
 
   async workspace_app_access_set(ctx, args) {

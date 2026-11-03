@@ -52,6 +52,7 @@ import {
   userAppAccess,
   users,
 } from "@/db/schema";
+import { accessToAppInItsOrganization } from "@/server/repositories/effective-access";
 import { clearOrgContextCacheForTests } from "@/server/organization/orgContext";
 import { InvitationService } from "@/server/services/InvitationService";
 import { SetupService } from "@/server/services/SetupService";
@@ -219,17 +220,27 @@ async function seedDefaultApp(organizationId: string): Promise<string> {
     appSlug: "handbook",
     name: "Handbook",
     description: "Available to everyone",
-    isDefault: true,
+    everyone: true,
   });
   return id;
 }
 
+/**
+ * The app rows a user opens (effective-access.ts). Nobody is granted an app
+ * available to everyone: it opens for every member, joining included.
+ */
 async function grantedAppsOf(userId: string): Promise<string[]> {
-  const grants = await db
-    .select()
-    .from(userAppAccess)
-    .where(eq(userAppAccess.userId, userId));
-  return grants.map((grant) => grant.appRowId);
+  const opened = await db
+    .select({ id: apps.id })
+    .from(apps)
+    .where(accessToAppInItsOrganization(userId));
+  expect(
+    await db
+      .select()
+      .from(userAppAccess)
+      .where(eq(userAppAccess.userId, userId)),
+  ).toEqual([]);
+  return opened.map((app) => app.id);
 }
 
 async function inviteAs(
@@ -390,7 +401,7 @@ describe("Continue with SSO (a generic OIDC issuer)", () => {
     useEnv(MOCK_SIGN_IN_ENV.oidc);
   });
 
-  it("signs an invited person in, accepting the invitation with its role and default apps", async () => {
+  it("signs an invited person in, accepting the invitation with its role and the apps available to everyone", async () => {
     const owner = await claimGateway();
     const appRowId = await seedDefaultApp(owner.organizationId);
     const invitation = await inviteAs(owner, "jo@acme.com", "admin");

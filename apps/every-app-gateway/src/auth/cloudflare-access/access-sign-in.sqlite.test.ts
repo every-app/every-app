@@ -52,6 +52,7 @@ import {
   users,
 } from "@/db/schema";
 import { peekInvitation } from "@/server/invitation-token";
+import { accessToAppInItsOrganization } from "@/server/repositories/effective-access";
 import { UserRepository } from "@/server/repositories/UserRepository";
 import { AdminService } from "@/server/services/AdminService";
 import { clearOrgContextCacheForTests } from "@/server/organization/orgContext";
@@ -251,18 +252,27 @@ async function seedDefaultApp(organizationId: string): Promise<string> {
     appSlug: "handbook",
     name: "Handbook",
     description: "Available to everyone",
-    isDefault: true,
+    everyone: true,
   });
   return id;
 }
 
-/** The app rows a user has been granted. */
+/**
+ * The app rows a user opens (effective-access.ts). Nobody is granted an app
+ * available to everyone: it opens for every member, joining included.
+ */
 async function grantedAppsOf(userId: string): Promise<string[]> {
-  const grants = await db
-    .select()
-    .from(userAppAccess)
-    .where(eq(userAppAccess.userId, userId));
-  return grants.map((grant) => grant.appRowId);
+  const opened = await db
+    .select({ id: apps.id })
+    .from(apps)
+    .where(accessToAppInItsOrganization(userId));
+  expect(
+    await db
+      .select()
+      .from(userAppAccess)
+      .where(eq(userAppAccess.userId, userId)),
+  ).toEqual([]);
+  return opened.map((app) => app.id);
 }
 
 async function inviteAs(
@@ -397,7 +407,7 @@ describe("outer ring: Access in front of the gateway (SQLite)", () => {
     expect(fresh.has("better-auth.session_token")).toBe(true);
   });
 
-  it("makes an invited person a member, with the invited role and the default apps", async () => {
+  it("makes an invited person a member, with the invited role and the apps available to everyone", async () => {
     const owner = await claimGateway();
     const appId = await seedDefaultApp(owner.organizationId);
     await inviteAs(owner, "bob@partner.example", "admin");

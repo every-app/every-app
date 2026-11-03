@@ -32,7 +32,6 @@ import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
 import { actorOf } from "@/server/events/subjects";
 import { forgetOrgContext } from "@/server/organization/orgContext";
-import { AppAccessService } from "@/server/services/AppAccessService";
 import { isUserBanned } from "@/server/user-ban";
 import {
   acceptPendingInvitations,
@@ -172,8 +171,8 @@ export async function ensureAccessMembership(
 
   const route = autoJoinRoute(email, mode, config);
   if (!route) refuse("NOT_INVITED");
-  // A plain member with the organization's default apps, like someone who
-  // accepted an invitation; other apps stay private until an admin grants
+  // A plain member, like someone who accepted an invitation: they open the
+  // apps available to everyone; others stay private until an admin grants
   // them.
   await db.insert(members).values({
     id: crypto.randomUUID(),
@@ -182,7 +181,6 @@ export async function ensureAccessMembership(
     role: "member",
     createdAt: new Date(),
   });
-  await AppAccessService.grantDefaultAppsToUser(user.id, ownerOrganizationId);
   forgetOrgContext(user.id);
   logEvent("access.member_joined", {
     organizationId: ownerOrganizationId,

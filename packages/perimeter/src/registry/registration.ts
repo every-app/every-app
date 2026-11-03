@@ -42,7 +42,7 @@ export const DELETED_APP_STATUS = "deleted";
 /**
  * An `apps` row as the rules read and write it: its columns in camelCase
  * (`app_slug` is `appSlug`, `deployed_by_actor` is `deployedByActor`), with
- * `deployed_at` in epoch milliseconds and `is_default` as a boolean.
+ * `deployed_at` in epoch milliseconds and `everyone` as a boolean.
  */
 export interface AppRow {
   id: string;
@@ -63,7 +63,12 @@ export interface AppRow {
   versionId: string | null;
   deployedAt: number | null;
   deployedByActor: string | null;
-  isDefault: boolean;
+  /**
+   * "Available to everyone": every member of the organization opens it.
+   * Owners and admins open every app; anyone else needs this, a person
+   * grant (`user_app_access`) or a group's.
+   */
+  everyone: boolean;
 }
 
 /** The row holding a hostname or Worker name, tombstones included. */
@@ -71,15 +76,6 @@ export type AppNameOwner = Pick<
   AppRow,
   "organizationId" | "appSlug" | "hostname" | "workerName"
 >;
-
-/** A `user_app_access` row to insert. */
-export interface AccessGrant {
-  id: string;
-  organizationId: string;
-  userId: string;
-  appRowId: string;
-  grantedBy: null;
-}
 
 /** The D1 databases, KV namespaces and R2 buckets for an app's bindings, by binding. */
 export type AppResources = {
@@ -353,19 +349,6 @@ function assertDistinctResources(resources: AppResources): void {
   }
 }
 
-function isOwnerOrAdmin(role: string | null): boolean {
-  return (role ?? "")
-    .split(",")
-    .some((item) => ["owner", "admin"].includes(item.trim()));
-}
-
-export interface OrganizationMember {
-  /** The user's id. */
-  id: string;
-  /** `members.role`: one role, or several comma-separated. */
-  role: string | null;
-}
-
 export interface RegistrationInput {
   organizationId: string;
   isInstallOrganization: boolean;
@@ -397,10 +380,6 @@ export interface RegistrationInput {
   hostnameOwner: AppNameOwner | null;
   /** The row holding {@link appNames}' Worker name, tombstones included. */
   workerNameOwner: AppNameOwner | null;
-  /** The organization's members, for a new app's initial access. */
-  members: readonly OrganizationMember[];
-  /** The member deploying, when the deployer is one. */
-  deployerUserId: string | null;
   /** The Gateway's name (manifest/gatewayNames.ts): null or absent for the default Gateway. */
   gatewayName?: string | null;
 }
@@ -408,15 +387,12 @@ export interface RegistrationInput {
 export interface RegistrationPlan {
   /**
    * `new`: insert `app`. `revived`: a deleted app's own organization deploys
-   * it again; update its tombstone to `app`. Both start `pending` and insert
-   * `grants`. `existing`: update `app`'s name and description; nothing else
+   * it again; update its tombstone to `app`. Both start `pending`. `existing`: update `app`'s name and description; nothing else
    * changes until the new code is uploaded ({@link markDeployedUpdate}).
    */
   kind: "new" | "revived" | "existing";
   /** The whole row as it is to be written. */
   app: AppRow;
-  /** The `user_app_access` rows to insert with it (none for `existing`). */
-  grants: AccessGrant[];
   resources: AppResources;
   /** The manifest of the code deployed before, to compare against. */
   previousManifest: Manifest | null;
@@ -425,40 +401,14 @@ export interface RegistrationPlan {
 }
 
 /**
- * Who gets a newly registered app. Apps are private by default: the deployer
- * and the org's owners and admins, nobody added later. A manifest with
- * `access: "everyone"` grants every member and every future member instead
- * (`is_default`). Redeploys never change access; admins manage it in the
- * gateway UI. Before the gateway has an owner there is nobody to grant; the
- * setup claim gives the first owner every app nobody has access to.
+ * Whether a newly registered app is available to everyone: a manifest with
+ * `access: "everyone"`. Otherwise only the organization's owners and admins
+ * open it, until an admin grants others. Redeploys never change it; admins
+ * do, in the Gateway. A shared app is nobody's to grant: every member of
+ * every organization opens it.
  */
-function initialAccess(
-  input: RegistrationInput,
-  scope: AppScope,
-  manifest: Manifest,
-  appRowId: string,
-): { isDefault: boolean; grants: AccessGrant[] } {
-  // Membership of any active organization opens a shared app: nobody is
-  // granted it, and it is no organization's default.
-  if (scope === "shared") return { isDefault: false, grants: [] };
-  const everyone = manifest.access === "everyone";
-  return {
-    isDefault: everyone,
-    grants: input.members
-      .filter(
-        (member) =>
-          everyone ||
-          member.id === input.deployerUserId ||
-          isOwnerOrAdmin(member.role),
-      )
-      .map((member) => ({
-        id: crypto.randomUUID(),
-        organizationId: input.organizationId,
-        userId: member.id,
-        appRowId,
-        grantedBy: null,
-      })),
-  };
+function initialEveryone(scope: AppScope, manifest: Manifest): boolean {
+  return scope !== "shared" && manifest.access === "everyone";
 }
 
 /**
@@ -572,24 +522,21 @@ export function planRegistration(input: RegistrationInput): RegistrationPlan {
     return {
       kind: "existing",
       app: { ...existingApp, ...common },
-      grants: [],
       ...previous,
     };
   }
 
   const appRowId = existingApp?.id ?? crypto.randomUUID();
-  const { isDefault, grants } = initialAccess(input, scope, manifest, appRowId);
   const started = {
     ...common,
     manifest: JSON.stringify(manifest),
     status: "pending",
-    isDefault,
+    everyone: initialEveryone(scope, manifest),
   };
   return existingApp
     ? {
         kind: "revived",
         app: { ...existingApp, ...started },
-        grants,
         ...previous,
       }
     : {
@@ -604,7 +551,6 @@ export function planRegistration(input: RegistrationInput): RegistrationPlan {
           deployedByActor: null,
           ...started,
         },
-        grants,
         ...previous,
       };
 }
@@ -684,7 +630,7 @@ export function markDeployedUpdate(
  */
 export function deleteUpdate(app: Pick<AppRow, "status">): {
   status: typeof DELETED_APP_STATUS;
-  isDefault: false;
+  everyone: false;
   emailSenders: null;
   emailInbound: null;
   secretNames: null;
@@ -692,7 +638,7 @@ export function deleteUpdate(app: Pick<AppRow, "status">): {
   if (app.status === DELETED_APP_STATUS) return null;
   return {
     status: DELETED_APP_STATUS,
-    isDefault: false,
+    everyone: false,
     emailSenders: null,
     emailInbound: null,
     secretNames: null,

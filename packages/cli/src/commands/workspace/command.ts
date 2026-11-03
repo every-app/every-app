@@ -391,7 +391,7 @@ const appSetCommand = buildCommand({
         kind: "enum",
         values: ["on", "off"],
         optional: true,
-        brief: "Available to everyone: on grants every member now and every future member on joining; off keeps existing access",
+        brief: "Available to everyone: on, every member opens it, new members too; off, only owners, admins and those granted it",
       },
       ...workspaceFlags,
     },
@@ -418,9 +418,11 @@ const appAccessCommand = buildCommand({
   docs: {
     brief: "Who can open an app; --add, --remove or --set change the direct grants",
     fullDescription: [
-      "Without a change flag, lists every member with whether they hold a direct grant and which",
-      "groups open the app for them. A change touches direct grants only; what a group grants",
-      "stays (workspace group apps). A shared app's access can't be changed.",
+      "Without a change flag, lists every member with whether they hold a direct grant, whether",
+      "their role opens it (owners and admins open every app) and which groups open it for them.",
+      "A change touches direct grants only; what a group grants stays (workspace group apps), and",
+      "so does \"available to everyone\" (workspace app set --everyone). A shared app's access",
+      "can't be changed.",
       "",
       "Examples:",
       `  ${CLI} workspace app access crm`,

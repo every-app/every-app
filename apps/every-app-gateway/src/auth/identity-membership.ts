@@ -13,7 +13,6 @@ import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
 import { actorOf } from "@/server/events/subjects";
 import { invitationIssuerStillAuthorized } from "@/server/issuer-revocation";
-import { AppAccessService } from "@/server/services/AppAccessService";
 
 /** Which way in accepted the invitation, for the log and the event bus. */
 interface IdentityJoinVia {
@@ -55,7 +54,7 @@ export function pendingInvitationsFor(email: string) {
 
 /**
  * Accept every pending invitation for this verified email, as the accept
- * page would: the invited role, and the organization's default apps. Each
+ * page would: the invited role (they open the apps available to everyone). Each
  * invitation is claimed by flipping its status first, so two sign-ins at
  * once can't both use it. Returns how many were accepted.
  */
@@ -88,10 +87,6 @@ export async function acceptPendingInvitations(
       role: invitation.role ?? "member",
       createdAt: new Date(),
     });
-    await AppAccessService.grantDefaultAppsToUser(
-      user.id,
-      invitation.organizationId,
-    );
     logEvent("invitation.accepted", {
       organizationId: invitation.organizationId,
       userId: user.id,

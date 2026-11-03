@@ -169,33 +169,29 @@ function seed(): void {
     exec("INSERT INTO members (id, organization_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)", id!, org!, user!, role!, NOW - 7 * HOUR);
   }
   exec(
-    `INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, is_default)
+    `INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, everyone)
 VALUES ('app-crm', ?, 'crm', 'CRM', 'Contacts and deals', 'crm.example.com', 'every-acme-crm', 'service_binding', 'org', '{"id":"crm","providers":["openai"]}', 'active', 0)`,
     ORG,
   );
   exec(
-    `INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, is_default)
+    `INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, everyone)
 VALUES ('app-todo', ?, 'todo', 'Todo', 'Tasks', 'todo.example.com', 'every-acme-todo', 'service_binding', 'org', '{"id":"todo"}', 'active', 1)`,
     ORG,
   );
   exec(
-    `INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, is_default)
+    `INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, everyone)
 VALUES ('app-shared', ?, 'shared', 'Shared', 'Everyone has it', 'shared.example.com', 'every-acme-shared', 'service_binding', 'shared', '{"id":"shared"}', 'active', 0)`,
     ORG,
   );
   exec(
-    `INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, is_default)
+    `INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, everyone)
 VALUES ('app-gone', ?, 'gone', 'Gone', 'A tombstone', NULL, NULL, 'service_binding', 'org', '{"id":"gone"}', 'deleted', 0)`,
     ORG,
   );
-  // Direct grants: the owner and Mia open crm; everyone has todo.
+  // Direct grants: the owner and Mia hold crm; todo is available to everyone (no rows).
   for (const [id, user, app] of [
     ["ua-1", "u-owner", "app-crm"],
     ["ua-2", "u-mia", "app-crm"],
-    ["ua-3", "u-owner", "app-todo"],
-    ["ua-4", "u-admin", "app-todo"],
-    ["ua-5", "u-mia", "app-todo"],
-    ["ua-6", "u-sam", "app-todo"],
   ]) {
     exec("INSERT INTO user_app_access (id, user_id, app_row_id, organization_id) VALUES (?, ?, ?, ?)", id!, user!, app!, ORG);
   }
@@ -725,8 +721,11 @@ describe("workspace groups", () => {
     expect(rows("SELECT id FROM groups WHERE id = 'grp_sales'")).toEqual([]);
     expect(rows("SELECT user_id FROM group_members WHERE group_id = 'grp_sales'")).toEqual([]);
     expect(rows("SELECT app_row_id FROM group_app_access WHERE group_id = 'grp_sales'")).toEqual([]);
-    // Sam's direct grants stay.
-    expect(rows("SELECT app_row_id FROM user_app_access WHERE user_id = 'u-sam'")).toEqual([{ app_row_id: "app-todo" }]);
+    // Direct grants stay.
+    expect(rows("SELECT user_id FROM user_app_access WHERE app_row_id = 'app-crm' ORDER BY user_id")).toEqual([
+      { user_id: "u-mia" },
+      { user_id: "u-owner" },
+    ]);
   });
 
   it("members: lists who is in it; --add, --remove and --set change it, members of the organization only", async () => {
@@ -778,8 +777,10 @@ describe("workspace apps", () => {
   it("lists every app with who can open it and what it needs set (the Gateway's setting names)", async () => {
     await listApps(opts());
     expect(data()["apps"].map((app: any) => [app.appId, app.everyone, app.accessCount, app.scope])).toEqual([
-      ["crm", false, 3, "org"],
-      ["shared", false, 0, "shared"],
+      // crm: the owner and the admin by role, Mia by a grant, Sam through Sales.
+      ["crm", false, 4, "org"],
+      // A shared app's count is its organization's owners and admins.
+      ["shared", false, 2, "shared"],
       ["todo", true, 4, "org"],
     ]);
     // crm lists openai: OPENAI_API_KEY isn't on the Gateway yet, and `configure crm` is what asks for it.
@@ -795,7 +796,7 @@ describe("workspace apps", () => {
     expect(data()["next"]).toBeUndefined();
   });
 
-  it("set changes the name and description, and --everyone on grants every member now", async () => {
+  it("set changes the name and description, and --everyone on opens it to every member without writing a grant", async () => {
     await expect(updateApp(opts(), "crm")).rejects.toMatchObject({ code: "NOTHING_TO_SET" });
     // A blank name is refused, never silently kept (the parser refuses it first on the command line).
     await expect(updateApp(opts({ name: "   " }), "crm")).rejects.toMatchObject({
@@ -806,31 +807,44 @@ describe("workspace apps", () => {
     expect(rows("SELECT name FROM apps WHERE id = 'app-crm'")).toEqual([{ name: "CRM" }]);
     expect(() => lib.appName("  ")).toThrow("not empty");
     await updateApp(opts({ name: "Open CRM", description: "Deals", everyone: "on" }), "crm");
-    expect(data()).toMatchObject({ app: { appId: "crm", name: "Open CRM", description: "Deals", everyone: true, accessCount: 4 }, granted: 2 });
-    expect(rows("SELECT name, description, is_default FROM apps WHERE id = 'app-crm'")).toEqual([{ name: "Open CRM", description: "Deals", is_default: 1 }]);
-    expect(rows("SELECT user_id, granted_by FROM user_app_access WHERE app_row_id = 'app-crm' ORDER BY user_id")).toEqual([
-      { user_id: "u-admin", granted_by: "u-owner" },
-      { user_id: "u-mia", granted_by: null },
-      { user_id: "u-owner", granted_by: null },
-      { user_id: "u-sam", granted_by: "u-owner" },
+    expect(data()).toMatchObject({ app: { appId: "crm", name: "Open CRM", description: "Deals", everyone: true, accessCount: 4 } });
+    expect(data()).not.toHaveProperty("granted");
+    expect(rows("SELECT name, description, everyone FROM apps WHERE id = 'app-crm'")).toEqual([{ name: "Open CRM", description: "Deals", everyone: 1 }]);
+    expect(rows("SELECT user_id FROM user_app_access WHERE app_row_id = 'app-crm' ORDER BY user_id")).toEqual([
+      { user_id: "u-mia" },
+      { user_id: "u-owner" },
     ]);
-    // Off keeps the grants.
+    // OAuth connections in the app: Mia's, Sam's (Sales holds crm) and the owner's.
+    for (const user of ["u-mia", "u-sam", "u-owner"]) {
+      sqlite()
+        .sqlite.prepare(
+          "INSERT INTO provider_connections (id, organization_id, provider_id, user_id, app_row_id, scopes, access_token_enc, status, created_at, updated_at) VALUES (?, ?, 'google', ?, 'app-crm', '[]', 'enc', 'active', ?, ?)",
+        )
+        .run(`pc-${user}`, ORG, user, NOW, NOW);
+    }
+    const connections = () => rows("SELECT user_id FROM provider_connections ORDER BY user_id").map((row: any) => row.user_id);
+    // Off: only the other ways in still open it. Mia's grant goes (the flag
+    // still lets her in, so her connection stays), then the flag, and her
+    // connection with it.
+    await appAccessCommand(opts({ remove: ["mia@acme.com"] }), "crm");
+    expect(connections()).toEqual(["u-mia", "u-owner", "u-sam"]);
     events = [];
     await updateApp(opts({ everyone: "off" }), "app-crm");
-    expect(data()["app"]).toMatchObject({ everyone: false, accessCount: 4 });
+    expect(data()["app"]).toMatchObject({ everyone: false, accessCount: 3 });
+    expect(connections()).toEqual(["u-owner", "u-sam"]);
     await expect(updateApp(opts({ everyone: "on" }), "shared")).rejects.toMatchObject({ code: "SHARED_APP_ACCESS" });
     await expect(updateApp(opts({ name: "x" }), "gone")).rejects.toMatchObject({ code: "APP_NOT_FOUND", rerun: "pnpm everyapp workspace apps" });
   });
 
   it("access lists direct grants and groups; --add, --remove and --set change the direct grants only", async () => {
     await appAccessCommand(opts(), "crm");
-    expect(data()["users"].map((user: any) => [user.email, user.direct, user.viaGroups])).toEqual([
-      ["ada@acme.com", false, []],
-      ["dev@example.com", true, []],
-      ["mia@acme.com", true, []],
-      ["sam@acme.com", false, ["Sales"]],
+    expect(data()["users"].map((user: any) => [user.email, user.direct, user.admin, user.viaGroups])).toEqual([
+      ["ada@acme.com", false, true, []],
+      ["dev@example.com", true, true, []],
+      ["mia@acme.com", true, false, []],
+      ["sam@acme.com", false, false, ["Sales"]],
     ]);
-    expect(done()!["message"]).toBe("3 members of 4 can open crm.");
+    expect(done()!["message"]).toBe("4 members of 4 can open crm.");
 
     events = [];
     await appAccessCommand(opts({ set: ["ada@acme.com", "sam@acme.com"] }), "crm");
@@ -1217,7 +1231,6 @@ describe("an API-token operator", () => {
     await lib.setAppAccess(ws, await lib.findApp(ws, "crm"), { add: ["ada@acme.com"] });
     expect(rows("SELECT granted_by FROM user_app_access WHERE app_row_id = 'app-crm' AND user_id = 'u-admin'")).toEqual([{ granted_by: null }]);
     await lib.updateApp(ws, "crm", { everyone: true });
-    expect(rows("SELECT granted_by FROM user_app_access WHERE app_row_id = 'app-crm' AND user_id = 'u-sam'")).toEqual([{ granted_by: null }]);
     await lib.setMonthlyCap(ws, "crm", { costUsd: 10 });
     expect(rows("SELECT updated_by FROM org_app_settings WHERE app_row_id = 'app-crm'")).toEqual([{ updated_by: null }]);
     await lib.setDefaultMonthlyCap(ws, 10);
@@ -1699,7 +1712,7 @@ describe("the event bus: every workspace write is one event, the operator its ac
     ]);
   });
 
-  it("app.renamed, and app.access_changed for the direct grants and for 'available to everyone' (everyone it granted named), on the app's row", async () => {
+  it("app.renamed, and app.access_changed for the direct grants and for 'available to everyone' (granting nobody), on the app's row", async () => {
     await updateApp(opts({ name: "Open CRM" }), "crm");
     await updateApp(opts({ description: "Deals" }), "crm");
     await appAccessCommand(opts({ add: ["ada@acme.com"], remove: ["mia@acme.com"] }), "crm");
@@ -1707,13 +1720,12 @@ describe("the event bus: every workspace write is one event, the operator its ac
     await updateApp(opts({ everyone: "on" }), "crm");
     await updateApp(opts({ everyone: "off" }), "crm");
     const app = { ...CRM, name: "Open CRM" };
-    const DEV = { id: "u-owner", email: "dev@example.com", name: "Dev" };
     expect(queued()).toEqual([
       { type: "app.renamed", actor: OPERATOR, data: { app, previousName: "CRM" }, appRowId: "app-crm" },
       { type: "app.renamed", actor: OPERATOR, data: { app, description: "Deals" }, appRowId: "app-crm" },
       { type: "app.access_changed", actor: OPERATOR, data: { app, granted: [ADA], revoked: [MIA], grantedCount: 1, revokedCount: 1 }, appRowId: "app-crm" },
-      // Everyone, by address: Ada and the owner held a grant already, so the Gateway's insert skipped them, but the event names everyone it covers.
-      { type: "app.access_changed", actor: OPERATOR, data: { app, granted: [ADA, DEV, MIA, SAM], revoked: [], grantedCount: 4, revokedCount: 0, everyone: true }, appRowId: "app-crm" },
+      // The flag: nobody is granted anything.
+      { type: "app.access_changed", actor: OPERATOR, data: { app, granted: [], revoked: [], grantedCount: 0, revokedCount: 0, everyone: true }, appRowId: "app-crm" },
       { type: "app.access_changed", actor: OPERATOR, data: { app, granted: [], revoked: [], grantedCount: 0, revokedCount: 0, everyone: false }, appRowId: "app-crm" },
     ]);
   });

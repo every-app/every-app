@@ -510,8 +510,6 @@ describe("the gateway /mcp and a provider app an admin could turn on", () => {
       organizationId,
       id: "dataforseo",
       existingApp: null,
-      members: [{ id: ownerId, role: "owner" }],
-      actorUserId: ownerId,
       actor: "owner@example.com",
       now: Date.now(),
     });
@@ -520,12 +518,7 @@ describe("the gateway /mcp and a provider app an admin could turn on", () => {
       deployedAt:
         plan.app.deployedAt === null ? null : new Date(plan.app.deployedAt),
     };
-    await db.batch([
-      db.insert(apps).values(row),
-      ...plan.grants.map((grant) =>
-        db.insert(userAppAccess).values(grant).onConflictDoNothing(),
-      ),
-    ]);
+    await db.batch([db.insert(apps).values(row)]);
   }
 
   it("names it to the install organization's owners and admins while its key is set, and to nobody else", async () => {
@@ -603,14 +596,15 @@ describe("the gateway /mcp and a provider app an admin could turn on", () => {
     hoisted.env["DATAFORSEO_API_KEY"] = "api-login@example.com:s3cret";
     await turnOn();
 
-    // An admin added after `mcp on`: no grant, so no catalog in their view.
+    // An admin added after `mcp on` opens it through the role, and is never
+    // told to turn on what is on.
     const adminId = await seedMember(db, { organizationId, role: "admin" });
     const admin = caller({
       userId: adminId,
       email: "admin@example.com",
       orgRole: "admin",
     });
-    expect(await toolNames(admin)).not.toContain("dataforseo_keyword_overview");
+    expect(await toolNames(admin)).toContain("dataforseo_keyword_overview");
     expect(await instructions(admin)).not.toContain(
       "is off and its key is set",
     );

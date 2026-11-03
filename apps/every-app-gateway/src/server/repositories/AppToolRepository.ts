@@ -203,7 +203,7 @@ type VisibilityScope = {
 
 /**
  * The active apps a caller reaches: their organization's they have access
- * to (directly or through a group, {@link accessToApp}) and the shared
+ * to ({@link accessToApp}) and the shared
  * apps, narrowed to the scope's choice.
  */
 function reachableApps(scope: VisibilityScope): SQL[] {

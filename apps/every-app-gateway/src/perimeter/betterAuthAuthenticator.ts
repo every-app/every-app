@@ -6,14 +6,14 @@
  * orgId/orgRole claims); `hasAppAccess` enforces perimeter policy, always
  * in an active (not suspended) organization:
  *
- *  - an organization's own app: a member of it with the app installed for
- *    them (a user_app_access row). A browser session acting under another
+ *  - an organization's own app: a member of it who opens the app
+ *    (effective-access.ts: available to everyone, an owner or admin role,
+ *    a person's grant or a group's). A browser session acting under another
  *    of the person's organizations is let in as their membership in the
  *    app's (the JWT carries that organization); a personal access token
  *    only ever acts in its own;
  *  - a shared app (first-party, on the hosted gateway): any live member of
- *    any organization, acting under the session's own, with no
- *    user_app_access row.
+ *    any organization, acting under the session's own, with no grant.
  *
  * Three credentials open an app host: the Better Auth session cookie, a
  * personal access token (`epat_`), and, since "Sign in with Every App"

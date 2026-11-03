@@ -108,7 +108,7 @@ export async function registryCall<T>(call: () => Promise<T>): Promise<T> {
 
 /** The `apps` columns every read takes; `secret_names` came with migration 0004. */
 const APP_COLUMNS_BEFORE_SECRET_NAMES =
-  "id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, version_id, deployed_at, deployed_by_actor, is_default, email_senders, email_inbound";
+  "id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, version_id, deployed_at, deployed_by_actor, everyone, email_senders, email_inbound";
 const APP_COLUMNS = `${APP_COLUMNS_BEFORE_SECRET_NAMES}, secret_names`;
 
 const secretNamesColumns = new WeakMap<D1Database, Promise<boolean>>();
@@ -167,7 +167,7 @@ export function toAppRow(row: D1Row): StoredAppRow {
     versionId: text(row["version_id"]),
     deployedAt: row["deployed_at"] == null ? null : Number(row["deployed_at"]),
     deployedByActor: text(row["deployed_by_actor"]),
-    isDefault: Boolean(Number(row["is_default"])),
+    everyone: Boolean(Number(row["everyone"])),
     emailSenders: text(row["email_senders"]),
     emailInbound: text(row["email_inbound"]),
     secretNames: text(row["secret_names"]),
@@ -323,14 +323,12 @@ interface Registration {
   organization: Organization;
   /** The gateway has an owner. */
   hasOwner: boolean;
-  /** The deployer is a member of the organization, granted the new app. */
-  deployerGranted: boolean;
 }
 
 /**
  * Register an app, or a redeploy of one, in the install's organization: a
  * new app (or a deleted one of its own coming back) is `pending` with the
- * names the rules assign it and its initial access; a redeploy keeps its
+ * names the rules assign it; a redeploy keeps its
  * names, status and live manifest, and updates its name and description.
  */
 export function register(
@@ -406,8 +404,6 @@ async function registerApp(
     existingApp,
     hostnameOwner: toNameOwner(hostnameOwners[0]),
     workerNameOwner: toNameOwner(workerNameOwners[0]),
-    members: orgMembers,
-    deployerUserId,
   });
   // The scope the plan resolved: a redeploy that didn't ask keeps the row's.
   if (plan.app.scope === "shared") {
@@ -435,18 +431,11 @@ async function registerApp(
     );
   }
   await db.run(registrationWrites(plan, now, { secretNames: await hasSecretNamesColumn(db) }));
-  return {
-    plan,
-    organization,
-    hasOwner,
-    deployerGranted:
-      deployerUserId !== null &&
-      plan.grants.some((grant) => grant.userId === deployerUserId),
-  };
+  return { plan, organization, hasOwner };
 }
 
 /** An organization's members, then the user with the deployer's verified email. */
-export function memberQueries(organizationId: string, email: string | null): D1Statement[] {
+function memberQueries(organizationId: string, email: string | null): D1Statement[] {
   return [
     {
       sql: "SELECT user_id, role FROM members WHERE organization_id = ?",
@@ -459,7 +448,7 @@ export function memberQueries(organizationId: string, email: string | null): D1S
   ];
 }
 
-export function toMembers(rows: D1Row[]): Array<{ id: string; role: string | null }> {
+function toMembers(rows: D1Row[]): Array<{ id: string; role: string | null }> {
   return rows.map((member) => ({ id: String(member["user_id"]), role: text(member["role"]) }));
 }
 
@@ -512,17 +501,12 @@ function registrationWrites(
       },
     ];
   }
-  const grants = plan.grants.map((grant) => ({
-    sql: `INSERT INTO user_app_access (id, user_id, app_row_id, organization_id, granted_by)
-VALUES (?, ?, ?, ?, NULL) ON CONFLICT DO NOTHING`,
-    params: [grant.id, grant.userId, grant.appRowId, grant.organizationId],
-  }));
   if (plan.kind === "new") {
     return [
       {
         sql: `INSERT INTO apps (id, organization_id, app_slug, name, description, hostname,
   worker_name, tier, manifest, status, version_id, deployed_at, deployed_by_actor,
-  is_default, created_at, updated_at, scope)
+  everyone, created_at, updated_at, scope)
 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?15, ?16)`,
         params: [
           app.id,
@@ -538,12 +522,11 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?15, ?
           app.versionId,
           app.deployedAt,
           app.deployedByActor,
-          app.isDefault ? 1 : 0,
+          app.everyone ? 1 : 0,
           now,
           app.scope,
         ],
       },
-      ...grants,
     ];
   }
   // A tombstone of this organization's comes back: as new, with nothing
@@ -551,7 +534,7 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?15, ?
   return [
     {
       sql: `UPDATE apps SET name = ?, description = ?, hostname = ?, worker_name = ?,
-  manifest = ?, status = ?, is_default = ?, updated_at = ?
+  manifest = ?, status = ?, everyone = ?, updated_at = ?
 WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
       params: [
         app.name,
@@ -560,13 +543,12 @@ WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
         app.workerName,
         app.manifest,
         app.status,
-        app.isDefault ? 1 : 0,
+        app.everyone ? 1 : 0,
         now,
         app.id,
       ],
     },
     ...withoutAppData(app, now, columns),
-    ...grants,
   ];
 }
 
@@ -1110,8 +1092,8 @@ export async function deleteApp(
   if (update) {
     await db.run([
       {
-        sql: "UPDATE apps SET status = ?, is_default = ?, updated_at = ? WHERE id = ?",
-        params: [update.status, update.isDefault ? 1 : 0, now, app.id],
+        sql: "UPDATE apps SET status = ?, everyone = ?, updated_at = ? WHERE id = ?",
+        params: [update.status, update.everyone ? 1 : 0, now, app.id],
       },
       ...withoutAppData(app, now, { secretNames: await hasSecretNamesColumn(db) }),
       ...(await removeAppSubscription(db, app)),

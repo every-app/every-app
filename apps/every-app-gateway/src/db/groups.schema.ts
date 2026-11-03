@@ -13,9 +13,9 @@ import { organizations, users } from "./auth.schema";
 
 /**
  * Groups: named sets of an organization's members that apps are granted
- * to as one. A member opens an organization's own app when they hold a
- * `user_app_access` row for it or belong to a group holding a
- * `group_app_access` row for it (AppAccessRepository.effectiveAccess).
+ * to as one. A member opens an organization's own app through a group
+ * holding a `group_app_access` row for it, besides the other ways
+ * (server/repositories/effective-access.ts).
  * Shared apps are never granted to groups: they are everyone's already.
  */
 export const groups = sqliteTable(

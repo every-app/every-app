@@ -2261,7 +2261,7 @@ USAGE
 The Gateway serves the server's tools on its own /mcp under <id>_<tool> names, holding the
 server's credential itself: every call is attributed to the member, audited, counted and
 capped like an app's, and read tools are told apart from write tools (a read-only
-connection sees only the read ones). You, the owners and the admins get it at once; an
+connection sees only the read ones). The owners and the admins can use it at once; an
 admin grants others in Admin → Apps → Manage access. Nothing is deployed.
 
 The credential is a Gateway setting named <ID>_MCP_TOKEN (--secret picks another name
@@ -2371,7 +2371,7 @@ deploy: the Gateway serves its tools on its /mcp under <id>_<tool> names, with i
 and counts and audits every call like an app's. It appears in Admin → Apps and under MCP
 apps on the home page.
 
-A built-in's first on adds it: you, the owners and the admins get it at once, and an
+A built-in's first on adds it: the owners and the admins can use it at once, and an
 admin grants other members with Manage access. On after off serves it again at once,
 with everyone's access kept. The key is a Gateway setting the tools need (mcp list names
 it):
@@ -3849,7 +3849,7 @@ Change an app's name, description or whether everyone can open it.
 | --- | --- | --- | --- | --- |
 | `--name` | `<name>` | no |  | The name the app library shows (1 to 255 characters) |
 | `--description` | `<text>` | no |  | The description under it |
-| `--everyone` | `on`, `off` | no |  | Available to everyone: on grants every member now and every future member on joining; off keeps existing access |
+| `--everyone` | `on`, `off` | no |  | Available to everyone: on, every member opens it, new members too; off, only owners, admins and those granted it |
 | `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
 | `--gateway` | `<value>` | no |  | The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither) |
 | `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
@@ -3871,7 +3871,7 @@ Examples:
 FLAGS
      [--name]                  The name the app library shows (1 to 255 characters)
      [--description]           The description under it
-     [--everyone]              Available to everyone: on grants every member now and every future member on joining; off keeps existing access                                                                                                                                                                  [on|off]
+     [--everyone]              Available to everyone: on, every member opens it, new members too; off, only owners, admins and those granted it                                                                                                                                                                 [on|off]
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
      [--gateway]               The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)
      [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
@@ -3908,9 +3908,11 @@ USAGE
   everyapp workspace app access [--add email]... [--remove email]... [--set email]... [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <app>
   everyapp workspace app access --help
 
-Without a change flag, lists every member with whether they hold a direct grant and which
-groups open the app for them. A change touches direct grants only; what a group grants
-stays (workspace group apps). A shared app's access can't be changed.
+Without a change flag, lists every member with whether they hold a direct grant, whether
+their role opens it (owners and admins open every app) and which groups open it for them.
+A change touches direct grants only; what a group grants stays (workspace group apps), and
+so does "available to everyone" (workspace app set --everyone). A shared app's access
+can't be changed.
 
 Examples:
   everyapp workspace app access crm

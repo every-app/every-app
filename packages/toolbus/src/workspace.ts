@@ -448,7 +448,7 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "workspace_apps",
     title: "List apps",
     description:
-      "List every app of the organization (and the shared apps on a hosted Gateway): row id, manifest id, name, description, status, whether everyone can open it, how many members have direct access, and what it still needs before it opens (setup). Owners and admins.",
+      "List every app of the organization (and the shared apps on a hosted Gateway): row id, manifest id, name, description, status, whether it is available to everyone, how many members can open it (accessCount), and what it still needs before it opens (setup). Owners and admins.",
     inputSchema: NO_INPUT,
   },
   {
@@ -456,7 +456,7 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "workspace_app_set",
     title: "Edit an app",
     description:
-      "Change an app's name, description, or whether it is available to everyone (every current and future member gets access; turning it off keeps existing access). A field left out keeps its value. Owners and admins.",
+      "Change an app's name, description, or whether it is available to everyone (every current and future member opens it; off, only owners, admins and the members and groups granted it do). A field left out keeps its value. Owners and admins.",
     inputSchema: objectWith(
       {
         app: APP,
@@ -485,7 +485,7 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "workspace_app_access",
     title: "Who can open an app",
     description:
-      "List every member of the organization with whether they hold direct access to the app, and the groups that grant it to them. Owners and admins.",
+      "Whether the app is available to everyone (`app.everyone`), and every member of the organization with whether they hold a direct grant (`hasAccess`), whether their role opens it (`admin`: owners and admins open every app), and the groups that grant it to them (`viaGroups`). Owners and admins.",
     inputSchema: objectWith({ app: APP }, ["app"]),
   },
   {
@@ -493,7 +493,7 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "workspace_app_access_set",
     title: "Set who can open an app",
     description:
-      "Set which members hold direct access to an app: give `users` (the full list) or `add` and/or `remove` (changes to the current list). Access a group grants is not touched here; your own access is never revoked. Owners and admins.",
+      'Set which members hold direct access to an app: give `users` (the full list) or `add` and/or `remove` (changes to the current list). Access through a group, an owner or admin role, or "available to everyone" is not touched here. Owners and admins.',
     inputSchema: membersChange({ app: APP }, "members with direct access"),
   },
   {

@@ -16,8 +16,6 @@ const mocks = vi.hoisted(() => ({
   createOrganization: vi.fn(),
   findAwaitingOwner: vi.fn(),
   adoptForOwner: vi.fn(),
-  grantDefaultAppsToUser: vi.fn(),
-  grantUnclaimedAppsToOwner: vi.fn(),
 }));
 
 const workerEnv = vi.hoisted(() => ({
@@ -66,13 +64,6 @@ vi.mock("../repositories/OrganizationRepository", () => ({
   },
 }));
 
-vi.mock("./AppAccessService", () => ({
-  AppAccessService: {
-    grantDefaultAppsToUser: mocks.grantDefaultAppsToUser,
-    grantUnclaimedAppsToOwner: mocks.grantUnclaimedAppsToOwner,
-  },
-}));
-
 import { hashSetupToken } from "../setup-token";
 import { SetupError, SetupService } from "./SetupService";
 
@@ -107,8 +98,6 @@ describe("SetupService.claimOwner", () => {
     mocks.createOrganization.mockResolvedValue({ id: "org-1" });
     mocks.findAwaitingOwner.mockResolvedValue(null);
     mocks.adoptForOwner.mockResolvedValue(undefined);
-    mocks.grantDefaultAppsToUser.mockResolvedValue(undefined);
-    mocks.grantUnclaimedAppsToOwner.mockResolvedValue(undefined);
   });
 
   it("creates the owner, their organization and consumes the link", async () => {
@@ -133,10 +122,6 @@ describe("SetupService.claimOwner", () => {
       },
     });
     expect(mocks.adoptForOwner).not.toHaveBeenCalled();
-    expect(mocks.grantUnclaimedAppsToOwner).toHaveBeenCalledWith(
-      "user-1",
-      "org-1",
-    );
     expect(mocks.consume).toHaveBeenCalledWith("link-1", "user-1");
     expect(mocks.releaseOwnerBootstrap).not.toHaveBeenCalled();
     // Self-hosted accounts never need a verified email.
@@ -156,14 +141,7 @@ describe("SetupService.claimOwner", () => {
       userId: "user-1",
       name: "Ada Owner",
     });
-    // Their initial access found no members: the owner gets them all.
-    expect(mocks.grantUnclaimedAppsToOwner).toHaveBeenCalledWith(
-      "user-1",
-      "org-ci",
-    );
-    expect(
-      mocks.grantUnclaimedAppsToOwner.mock.invocationCallOrder[0],
-    ).toBeGreaterThan(mocks.adoptForOwner.mock.invocationCallOrder[0]!);
+    // Nobody is granted the apps: the owner's role opens them all.
   });
 
   it("keeps an adopted organization and its apps when the claim rolls back", async () => {
@@ -289,14 +267,13 @@ describe("SetupService.claimOwner", () => {
   });
 
   it("rolls back and leaves the link usable when a step fails", async () => {
-    mocks.grantDefaultAppsToUser.mockRejectedValue(new Error("grant failed"));
+    mocks.consume.mockRejectedValue(new Error("consume failed"));
 
-    await expect(claim()).rejects.toThrow("grant failed");
+    await expect(claim()).rejects.toThrow("consume failed");
 
     expect(mocks.deleteOrganization).toHaveBeenCalledWith("org-1");
     expect(mocks.deleteById).toHaveBeenCalledWith("user-1");
     expect(mocks.releaseOwnerBootstrap).toHaveBeenCalledOnce();
-    expect(mocks.consume).not.toHaveBeenCalled();
   });
 
   it("rolls back if the link was consumed by another claim", async () => {

@@ -79,7 +79,6 @@ describe("user management (SQLite)", () => {
       name: "Todo",
       description: "Todos",
       manifest: { id: "todo", ...manifest },
-      deployerUserId: deployer,
     });
     return { appId: app.id };
   }
@@ -97,52 +96,92 @@ describe("user management (SQLite)", () => {
   });
 
   describe("apps are private by default", () => {
-    it("a newly deployed app is invisible to plain members until granted", async () => {
+    it("a newly deployed app opens for owners and admins only until granted", async () => {
       const { appId } = await registerTodo();
 
       expect(await visibleTo(member)).toEqual([]);
       expect(await visibleTo(owner)).toEqual(["todo"]);
       expect(await visibleTo(admin)).toEqual(["todo"]);
-      expect(await visibleTo(deployer)).toEqual(["todo"]);
+      // Registration grants nobody, the member who deployed it included.
+      expect(await visibleTo(deployer)).toEqual([]);
+      expect(await db.select().from(userAppAccess)).toEqual([]);
 
       // A member who joins later doesn't get it either.
       const newcomer = await seedMember(db, { organizationId: org });
-      await AppAccessService.grantDefaultAppsToUser(newcomer, org);
       expect(await visibleTo(newcomer)).toEqual([]);
 
       // An admin grants it explicitly.
       await AppAccessService.updateAccessForApp(ctx(admin, "admin"), appId, [
-        owner,
-        admin,
-        deployer,
         member,
       ]);
       expect(await visibleTo(member)).toEqual(["todo"]);
+      expect(await visibleTo(deployer)).toEqual([]);
     });
 
-    it('access: "everyone" opens a new app to every member', async () => {
+    it('access: "everyone" opens a new app to every member, with no rows', async () => {
       await registerTodo({ access: "everyone" });
 
       expect(await visibleTo(member)).toEqual(["todo"]);
       const newcomer = await seedMember(db, { organizationId: org });
-      await AppAccessService.grantDefaultAppsToUser(newcomer, org);
       expect(await visibleTo(newcomer)).toEqual(["todo"]);
+      expect(await db.select().from(userAppAccess)).toEqual([]);
     });
 
-    it('"Available to everyone" grants every current and future member', async () => {
+    it('"Available to everyone" opens it to every current and future member; off closes it to anyone without another way in', async () => {
       const { appId } = await registerTodo();
+      await AppAccessService.updateAccessForApp(ctx(admin, "admin"), appId, [
+        deployer,
+      ]);
 
       await AppService.update(ctx(admin, "admin"), {
         id: appId,
         name: "Todo",
         description: "Todos",
-        isDefault: true,
+        everyone: true,
       });
 
       expect(await visibleTo(member)).toEqual(["todo"]);
       const newcomer = await seedMember(db, { organizationId: org });
-      await AppAccessService.grantDefaultAppsToUser(newcomer, org);
       expect(await visibleTo(newcomer)).toEqual(["todo"]);
+      const state = await AppAccessService.getAccessStateForApp(
+        ctx(admin, "admin"),
+        appId,
+      );
+      expect(state.everyone).toBe(true);
+
+      await AppService.update(ctx(admin, "admin"), {
+        id: appId,
+        everyone: false,
+      });
+      expect(await visibleTo(member)).toEqual([]);
+      expect(await visibleTo(newcomer)).toEqual([]);
+      // The person's grant and the roles still open it.
+      expect(await visibleTo(deployer)).toEqual(["todo"]);
+      expect(await visibleTo(admin)).toEqual(["todo"]);
+    });
+
+    it("an admin opens every app through the role, and loses that when demoted", async () => {
+      const { appId } = await registerTodo();
+      const promoted = await seedMember(db, {
+        organizationId: org,
+        role: "admin",
+      });
+      expect(await visibleTo(promoted)).toEqual(["todo"]);
+      const state = await AppAccessService.getAccessStateForApp(
+        ctx(owner, "owner"),
+        appId,
+      );
+      expect(state.users.find((u) => u.id === promoted)).toMatchObject({
+        hasAccess: false,
+        admin: true,
+      });
+
+      await MembershipService.changeRole(
+        ctx(owner, "owner"),
+        promoted,
+        "member",
+      );
+      expect(await visibleTo(promoted)).toEqual([]);
     });
   });
 

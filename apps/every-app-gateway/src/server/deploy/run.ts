@@ -151,7 +151,6 @@ export function registerApp(deployer: Deployer, manifest: Manifest) {
     name: manifest.name ?? manifest.id,
     description: manifest.description ?? manifest.id,
     manifest,
-    deployerUserId: deployer.userId,
     // As set, so one overlapping the gateway's own domain is refused
     // (registry.ts) rather than silently left unused.
     configuredThirdPartyDomain: env.THIRD_PARTY_DOMAIN ?? null,

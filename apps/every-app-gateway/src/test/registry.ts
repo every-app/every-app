@@ -37,7 +37,7 @@ function toAppRow(row: StoredApp): AppRow {
     versionId: row.versionId,
     deployedAt: row.deployedAt?.getTime() ?? null,
     deployedByActor: row.deployedByActor,
-    isDefault: row.isDefault,
+    everyone: row.everyone,
   };
 }
 
@@ -103,6 +103,11 @@ export async function registerApp(
     manifest?: unknown;
     name?: string;
     description?: string;
+    /**
+     * A test convenience, not a rule: a person's grant to the new app for
+     * this user (owners and admins open it anyway). Registration grants
+     * nobody.
+     */
     deployerUserId?: string | null;
     appBaseDomain?: string;
     isInstallOrganization?: boolean;
@@ -143,11 +148,6 @@ export async function registerApp(
     .select()
     .from(apps)
     .where(eq(apps.workerName, names.workerName));
-  const orgMembers = await db
-    .select({ id: members.userId, role: members.role })
-    .from(members)
-    .where(eq(members.organizationId, organizationId));
-
   const plan = planRegistration({
     organizationId,
     isInstallOrganization,
@@ -161,8 +161,6 @@ export async function registerApp(
     existingApp,
     hostnameOwner: hostnameOwner ? toAppRow(hostnameOwner) : null,
     workerNameOwner: workerNameOwner ? toAppRow(workerNameOwner) : null,
-    members: orgMembers,
-    deployerUserId: input.deployerUserId ?? null,
   });
 
   const row = fromAppRow(plan.app);
@@ -171,9 +169,19 @@ export async function registerApp(
       .insert(apps)
       .values(row)
       .onConflictDoUpdate({ target: apps.id, set: row }),
-    ...plan.grants.map((grant) =>
-      db.insert(userAppAccess).values(grant).onConflictDoNothing(),
-    ),
+    ...(input.deployerUserId && plan.kind !== "existing"
+      ? [
+          db
+            .insert(userAppAccess)
+            .values({
+              id: crypto.randomUUID(),
+              organizationId,
+              userId: input.deployerUserId,
+              appRowId: plan.app.id,
+            })
+            .onConflictDoNothing(),
+        ]
+      : []),
   ]);
   return plan;
 }

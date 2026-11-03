@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 /**
  * The Manage access dialog rendered for real: what it says and what it
- * saves when a group grants someone the app, the admin included.
+ * saves when someone opens the app another way (an owner or admin role, a
+ * group, "Available to everyone").
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -10,16 +11,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppWithAccessCount, UserAccessState } from "@/types/app";
 
 const mocks = vi.hoisted(() => ({
-  currentUserId: "admin",
+  everyone: false,
   users: [] as UserAccessState[],
   updateAppAccess: vi.fn(async () => ({ granted: 0, revoked: 0 })),
   refetch: vi.fn(async () => undefined),
 }));
-vi.mock("@/client/hooks/useSession", () => ({
-  useSession: () => ({ data: { user: { id: mocks.currentUserId } } }),
-}));
 vi.mock("@/serverFunctions/apps", () => ({
-  getAppAccessState: async () => ({ users: mocks.users }),
+  getAppAccessState: async () => ({
+    everyone: mocks.everyone,
+    users: mocks.users,
+  }),
   updateAppAccess: mocks.updateAppAccess,
 }));
 vi.mock("@/client/tanstack-db", () => ({
@@ -36,7 +37,9 @@ const APP = {
 
 function user(
   id: string,
-  state: Partial<Pick<UserAccessState, "hasAccess" | "viaGroups">> = {},
+  state: Partial<
+    Pick<UserAccessState, "hasAccess" | "admin" | "viaGroups">
+  > = {},
 ): UserAccessState {
   return {
     id,
@@ -45,6 +48,7 @@ function user(
     role: "member",
     status: "active",
     hasAccess: false,
+    admin: false,
     viaGroups: [],
     ...state,
   };
@@ -59,6 +63,7 @@ let container: HTMLElement;
 
 async function render(users: UserAccessState[], app: AppWithAccessCount = APP) {
   mocks.users = users;
+  mocks.everyone = app.everyone ?? false;
   await act(async () =>
     root.render(
       <QueryClientProvider
@@ -118,7 +123,7 @@ function checkboxState(name: string): { checked: boolean; disabled: boolean } {
 
 function footer(): string {
   return (
-    /(\d+ of \d+ users? will have access(?: \(\d+ through groups\))?)/.exec(
+    /(\d+ of \d+ users? will have access(?: \(\d+ without a grant\))?)/.exec(
       document.body.textContent ?? "",
     )?.[1] ?? ""
   );
@@ -156,39 +161,47 @@ afterEach(() => {
 });
 
 describe("Revoke all", () => {
-  it("keeps the admin's own direct grant and nobody else's", async () => {
+  it("revokes every grant; an admin keeps the app through their role", async () => {
     await render([
-      user("admin", { hasAccess: true }),
+      user("admin", { admin: true, hasAccess: true }),
       user("alice", { hasAccess: true }),
       user("bob"),
     ]);
     expect(footer()).toBe("2 of 3 users will have access");
+    expect(row("Admin").textContent).toContain("Admin");
 
     await press(button("Revoke all"));
-    expect(footer()).toBe("1 of 3 users will have access");
+    expect(footer()).toBe("1 of 3 users will have access (1 without a grant)");
     expect(row("Alice").textContent).toContain("Revoking");
-    expect(await save()).toEqual(["admin"]);
+    expect(row("Admin").textContent).toContain("Direct grant removed");
+    expect(await save()).toEqual([]);
   });
 
-  it("never gives an admin a group lets in a direct grant", async () => {
+  it("never gives someone a group lets in a direct grant", async () => {
     await render([
-      user("admin", { viaGroups: ["Sales"] }),
+      user("carol", { viaGroups: ["Sales"] }),
       user("alice", { hasAccess: true }),
     ]);
-    expect(footer()).toBe("2 of 2 users will have access (1 through groups)");
-    expect(checkboxState("Admin")).toEqual({ checked: true, disabled: true });
+    expect(footer()).toBe("2 of 2 users will have access (1 without a grant)");
+    expect(checkboxState("Carol")).toEqual({ checked: true, disabled: true });
 
     await press(button("Revoke all"));
-    // The admin stays in through Sales, once, and is not granted directly.
-    expect(footer()).toBe("1 of 2 users will have access (1 through groups)");
+    // Carol stays in through Sales, once, and is not granted directly.
+    expect(footer()).toBe("1 of 2 users will have access (1 without a grant)");
     expect(await save()).toEqual([]);
   });
 });
 
-describe("a user granted directly and through a group", () => {
+describe("a user who opens the app another way", () => {
+  it("shows an admin with no grant as checked and not editable", async () => {
+    await render([user("admin", { admin: true }), user("bob")]);
+    expect(checkboxState("Admin")).toEqual({ checked: true, disabled: true });
+    expect(footer()).toBe("1 of 2 users will have access (1 without a grant)");
+  });
+
   it("keeps access when the direct grant is unchecked, and says so", async () => {
     await render([
-      user("admin", { hasAccess: true }),
+      user("alice", { hasAccess: true }),
       user("owner", { hasAccess: true, viaGroups: ["Sales"] }),
       user("bob"),
     ]);
@@ -204,38 +217,48 @@ describe("a user granted directly and through a group", () => {
     expect(owner.querySelector("label")?.className).not.toContain(
       "bg-destructive",
     );
-    expect(document.body.textContent).toContain("1 kept through groups");
+    expect(document.body.textContent).toContain("1 kept another way");
     expect(document.body.textContent).not.toContain("losing access");
-    expect(footer()).toBe("2 of 3 users will have access (1 through groups)");
-    expect(await save()).toEqual(["admin"]);
+    expect(footer()).toBe("2 of 3 users will have access (1 without a grant)");
+    expect(await save()).toEqual(["alice"]);
   });
 });
 
 describe("an app available to everyone", () => {
   const LINE =
-    "Available to everyone: people who join later get access too. Unchecking someone here takes theirs away.";
+    "Available to everyone: every member opens it, people who join later too. The people checked here keep it if that is turned off.";
 
-  it("says the flag is an auto-grant, and unchecking still revokes", async () => {
-    await render(
-      [user("admin", { hasAccess: true }), user("alice", { hasAccess: true })],
-      { ...APP, isDefault: true },
-    );
+  it("says so, and everyone keeps it whatever the grants", async () => {
+    await render([user("alice", { hasAccess: true }), user("bob")], {
+      ...APP,
+      everyone: true,
+    });
     // The dialog's description, so it is announced on open.
     const dialog = document.body.querySelector('[role="dialog"]')!;
     const description = document.getElementById(
       dialog.getAttribute("aria-describedby") ?? "",
     );
     expect(description?.textContent).toBe(LINE);
+    expect(footer()).toBe("2 of 2 users will have access (1 without a grant)");
+    // Bob opens it through the flag, and his box is his grant: editable.
+    expect(checkboxState("Bob")).toEqual({ checked: false, disabled: false });
+    expect(row("Bob").textContent).toContain("Has access");
 
-    // The grants stay the truth: the flag bypasses nothing.
+    // Alice's grant goes, and she keeps the app; Bob gets one to keep it
+    // when the flag goes off.
     await press(checkboxInput("Alice"));
-    expect(row("Alice").textContent).toContain("Revoking");
-    expect(footer()).toBe("1 of 2 users will have access");
-    expect(await save()).toEqual(["admin"]);
+    expect(row("Alice").textContent).toContain("Direct grant removed");
+    await press(checkboxInput("Bob"));
+    expect(checkboxState("Bob")).toEqual({ checked: true, disabled: false });
+    expect(footer()).toBe("2 of 2 users will have access (1 without a grant)");
+    expect(await save()).toEqual(["bob"]);
   });
 
-  it("says nothing of the flag when it is off", async () => {
-    await render([user("admin", { hasAccess: true })]);
+  it("says who opens it when the flag is off", async () => {
+    await render([user("alice", { hasAccess: true })]);
     expect(document.body.textContent).not.toContain("Available to everyone");
+    expect(document.body.textContent).toContain(
+      "Owners and admins open every app.",
+    );
   });
 });

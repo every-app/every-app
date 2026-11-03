@@ -35,7 +35,7 @@ function app(overrides: Partial<UserAccessApp> = {}): UserAccessApp {
     hostname: "seo.apps.example.com",
     tier: "service_binding",
     status: "active",
-    isDefault: true,
+    everyone: true,
     createdAt: new Date(0),
     updatedAt: new Date(0),
     grantedAt: new Date(0),
@@ -191,7 +191,7 @@ const MCP = app({
   description: "SEO data for your agent.",
   hostname: null,
   tier: "provider",
-  isDefault: false,
+  everyone: false,
 });
 const useButton = () =>
   container.querySelector<HTMLButtonElement>(

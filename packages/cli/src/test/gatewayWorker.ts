@@ -152,18 +152,6 @@ export class GatewayWorker {
         "INSERT INTO members (id, organization_id, user_id, role, created_at) VALUES (?, ?, ?, 'owner', ?)",
       )
       .run(`member-${randomUUID()}`, organizationId, userId, now);
-    // The apps nobody has access to: their initial access found no one.
-    for (const app of this.db.all(
-      `SELECT id FROM apps a WHERE a.organization_id = ? AND a.status != 'deleted'
-         AND NOT EXISTS (SELECT 1 FROM user_app_access u WHERE u.app_row_id = a.id)`,
-      organizationId,
-    )) {
-      this.db.sqlite
-        .prepare(
-          "INSERT INTO user_app_access (id, user_id, app_row_id, organization_id) VALUES (?, ?, ?, ?)",
-        )
-        .run(randomUUID(), userId, String(app["id"]), organizationId);
-    }
     this.db.sqlite
       .prepare("UPDATE owner_setup_tokens SET consumed_at = ?, consumed_by = ? WHERE id = ?")
       .run(now, userId, String(link["id"]));

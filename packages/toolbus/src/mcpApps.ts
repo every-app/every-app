@@ -88,7 +88,7 @@ export const MCP_APP_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "mcp_add",
     title: "Add an MCP server",
     description:
-      "Add a remote MCP server by its URL as an MCP app: the Gateway serves its tools on /mcp as `<id>_<tool>` to whoever has access (you, the owners and the admins to start). For a server with no credential the Gateway lists its tools at once and the answer says how many. For one with a credential the answer names the Gateway setting that holds it and the command the operator runs in a terminal to set it; the credential itself is never passed here and never returned. Refused for a URL on this Gateway's own domains or a private address, an id in use, or a credential name another server uses. Owners and admins.",
+      "Add a remote MCP server by its URL as an MCP app: the Gateway serves its tools on /mcp as `<id>_<tool>` to whoever has access (the owners and the admins to start). For a server with no credential the Gateway lists its tools at once and the answer says how many. For one with a credential the answer names the Gateway setting that holds it and the command the operator runs in a terminal to set it; the credential itself is never passed here and never returned. Refused for a URL on this Gateway's own domains or a private address, an id in use, or a credential name another server uses. Owners and admins.",
     inputSchema: closed(
       {
         url: text(

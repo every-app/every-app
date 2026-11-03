@@ -8,8 +8,8 @@
  * return in one batch.
  *
  * A provider app is the install organization's: its first `on` creates the
- * row `active` at once (nothing to upload or bind) and grants it to the
- * person turning it on and the organization's owners and admins; `on`
+ * row `active` at once (nothing to upload or bind), open to the
+ * organization's owners and admins (an admin grants others); `on`
  * after `mcp off` (status `disabled`) serves it again with everything kept;
  * `on` after `mcp remove` (a tombstone) brings it back as new. Off and
  * remove are lib/gateway/remoteMcpApps.ts's, the same for both kinds of MCP
@@ -30,11 +30,8 @@ import {
   appColumns,
   hasSecretNamesColumn,
   ensureInstallOrganization,
-  memberQueries,
   registryCall,
-  text,
   toAppRow,
-  toMembers,
   withoutAppData,
   type Deployer,
   type Organization,
@@ -58,8 +55,6 @@ interface ProviderAppOn {
   organization: Organization;
   /** The gateway has an owner. */
   hasOwner: boolean;
-  /** The person turning it on is a member and was granted it (or had it). */
-  actorGranted: boolean;
 }
 
 /** What turning a provider app on writes, in one batch. */
@@ -78,17 +73,12 @@ function onWrites(
       },
     ];
   }
-  const grants = plan.grants.map((grant) => ({
-    sql: `INSERT INTO user_app_access (id, user_id, app_row_id, organization_id, granted_by)
-VALUES (?, ?, ?, ?, NULL) ON CONFLICT DO NOTHING`,
-    params: [grant.id, grant.userId, grant.appRowId, grant.organizationId],
-  }));
   if (plan.kind === "new") {
     return [
       {
         sql: `INSERT INTO apps (id, organization_id, app_slug, name, description, hostname,
   worker_name, tier, manifest, status, version_id, deployed_at, deployed_by_actor,
-  is_default, created_at, updated_at, scope)
+  everyone, created_at, updated_at, scope)
 VALUES (?1, ?2, ?3, ?4, ?5, NULL, NULL, ?6, ?7, ?8, NULL, ?9, ?10, 0, ?11, ?11, ?12)`,
         params: [
           app.id,
@@ -105,13 +95,12 @@ VALUES (?1, ?2, ?3, ?4, ?5, NULL, NULL, ?6, ?7, ?8, NULL, ?9, ?10, 0, ?11, ?11, 
           app.scope,
         ],
       },
-      ...grants,
     ];
   }
   // Its own tombstone comes back: as new, with nothing of the old access.
   return [
     {
-      sql: `UPDATE apps SET name = ?, description = ?, manifest = ?, status = ?, is_default = 0,
+      sql: `UPDATE apps SET name = ?, description = ?, manifest = ?, status = ?, everyone = 0,
   deployed_at = ?, deployed_by_actor = ?, updated_at = ?
 WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
       params: [
@@ -126,7 +115,6 @@ WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
       ],
     },
     ...withoutAppData(app, now, columns),
-    ...grants,
   ];
 }
 
@@ -148,21 +136,17 @@ export function turnProviderAppOn(
       input.organizationName,
       now,
     );
-    const [existing = [], members = [], actors = []] = await db.run([
+    const [existing = []] = await db.run([
       {
         sql: `SELECT ${await appColumns(db)} FROM apps WHERE organization_id = ? AND app_slug = ?`,
         params: [organization.id, id],
       },
-      ...memberQueries(organization.id, input.deployer.email),
     ]);
     const existingApp = existing[0] ? toAppRow(existing[0]) : null;
-    const actorUserId = text(actors[0]?.["id"]);
     const plan = planProviderAppOn({
       organizationId: organization.id,
       id,
       existingApp,
-      members: toMembers(members),
-      actorUserId,
       actor: input.deployer.actor,
       now,
     });
@@ -186,20 +170,6 @@ export function turnProviderAppOn(
             now,
           });
     await db.run([...onWrites(plan, now, { secretNames: await hasSecretNamesColumn(db) }), ...event]);
-    const actorGranted =
-      actorUserId !== null &&
-      (plan.grants.some((grant) => grant.userId === actorUserId) ||
-        (plan.kind === "existing" && (await hasAccess(db, plan.app.id, actorUserId))));
-    return { plan, was, organization, hasOwner, actorGranted };
+    return { plan, was, organization, hasOwner };
   });
-}
-
-async function hasAccess(db: D1Database, appRowId: string, userId: string): Promise<boolean> {
-  const [rows = []] = await db.run([
-    {
-      sql: "SELECT 1 AS granted FROM user_app_access WHERE app_row_id = ? AND user_id = ? LIMIT 1",
-      params: [appRowId, userId],
-    },
-  ]);
-  return rows.length > 0;
 }

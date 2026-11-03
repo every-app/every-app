@@ -12,8 +12,8 @@
  * one URL, the auth kind and the credential's setting NAME, the risk
  * default, the per-tool overrides and a revision. The same id as a
  * deployed app's or a built-in provider's is refused, tombstones included.
- * Who gets the app follows a deployed app's rule: the person adding it, the
- * owners and the admins; an admin grants others.
+ * Who opens the app follows a deployed app's rule: the owners and the
+ * admins; an admin grants others or makes it available to everyone.
  *
  * `on` and `off` are the status, for both kinds of MCP app: `active`
  * serves, `disabled` keeps everything (access, tokens, the snapshot) and
@@ -43,9 +43,7 @@ import {
   DELETED_APP_STATUS,
   deleteUpdate,
   RegistrationError,
-  type AccessGrant,
   type AppRow,
-  type OrganizationMember,
 } from "./registration";
 
 export interface RemoteMcpAddInput {
@@ -79,27 +77,17 @@ export interface RemoteMcpAddInput {
    * id, since both would list under the same tool prefix.
    */
   sharedApp?: (id: string) => AppRow | null;
-  members: readonly OrganizationMember[];
-  /** The member adding it, when the registrar is one. */
-  actorUserId: string | null;
   /** Who added it, as the row records it (`deployed_by_actor`). */
   actor: string | null;
   now: number;
 }
 
 export interface RemoteMcpAddPlan {
-  /** `new`: insert `app` and `grants`. `revived`: the id's own tombstone comes back as new. */
+  /** `new`: insert `app`. `revived`: the id's own tombstone comes back as new. */
   kind: "new" | "revived";
   id: string;
   app: AppRow;
-  grants: AccessGrant[];
   remote: RemoteMcpBlock;
-}
-
-function isOwnerOrAdmin(role: string | null): boolean {
-  return (role ?? "")
-    .split(",")
-    .some((item) => ["owner", "admin"].includes(item.trim()));
 }
 
 function refuse(
@@ -186,7 +174,7 @@ function assertRemoteRow(id: string, existingApp: AppRow): void {
 
 /**
  * Register a remote MCP server: what to write, from the input and the
- * organization's row for the id (if any) and its members. Refuses a URL
+ * organization's row for the id (if any). Refuses a URL
  * the rules refuse (`REMOTE_MCP_URL_REFUSED`), a bad id, auth block or
  * risk (`REMOTE_MCP_INVALID`), an id in use (`APP_TIER_MISMATCH` for a
  * deployed app's or the built-in's; `REMOTE_MCP_EXISTS` for a remote app
@@ -286,21 +274,9 @@ export function planRemoteMcpAppAdd(
     versionId: null,
     deployedAt: input.now,
     deployedByActor: input.actor,
-    isDefault: false,
+    everyone: false,
   };
-  const grants: AccessGrant[] = input.members
-    .filter(
-      (member) =>
-        member.id === input.actorUserId || isOwnerOrAdmin(member.role),
-    )
-    .map((member) => ({
-      id: crypto.randomUUID(),
-      organizationId: input.organizationId,
-      userId: member.id,
-      appRowId: rowId,
-      grantedBy: null,
-    }));
-  return { kind: existingApp ? "revived" : "new", id, app, grants, remote };
+  return { kind: existingApp ? "revived" : "new", id, app, remote };
 }
 
 export interface RemoteMcpChange {

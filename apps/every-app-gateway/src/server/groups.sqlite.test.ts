@@ -277,9 +277,13 @@ describe("groups with app grants (SQLite)", () => {
       // Before: the member has nothing.
       expect(await perimeterOpens(todo)).toBe(false);
       expect(await launcher(member)).toEqual([]);
-      expect(await capabilityLists(todo)).toEqual(["owner@acme.test"]);
+      // Owners and admins open every app through their role.
+      expect(await capabilityLists(todo)).toEqual([
+        "admin@acme.test",
+        "owner@acme.test",
+      ]);
       expect(await mcpCatalogs(member)).toEqual([]);
-      expect(await accessCount(todo.rowId)).toBe(1);
+      expect(await accessCount(todo.rowId)).toBe(2);
 
       const { id: sales } = await GroupService.createGroup(asOwner(), {
         name: "Sales",
@@ -299,15 +303,16 @@ describe("groups with app grants (SQLite)", () => {
       ]);
       // The members capability, through the AppGateway entrypoint.
       expect(await capabilityLists(todo)).toEqual([
+        "admin@acme.test",
         "member@acme.test",
         "owner@acme.test",
       ]);
       // The MCP catalogs a connection serves.
       expect(await mcpCatalogs(member)).toEqual(["todo"]);
-      expect(await mcpCatalogs(admin)).toEqual([]);
+      expect(await mcpCatalogs(admin)).toEqual(["todo"]);
       // The access count: distinct people, the owner counted once.
-      expect(await accessCount(todo.rowId)).toBe(2);
-      expect(await accessCount(crmRowId)).toBe(1);
+      expect(await accessCount(todo.rowId)).toBe(3);
+      expect(await accessCount(crmRowId)).toBe(2);
       // The admin modal: a group grant is shown, never a checked box.
       const { users } = await AppAccessService.getAccessStateForApp(
         asOwner(),
@@ -323,26 +328,9 @@ describe("groups with app grants (SQLite)", () => {
       });
       expect(users.find((u) => u.id === admin)).toMatchObject({
         hasAccess: false,
+        admin: true,
         viaGroups: [],
       });
-    });
-
-    it("counts an app with only a group grant as claimed", async () => {
-      const { id } = await GroupService.createGroup(asOwner(), {
-        name: "Ops",
-      });
-      // Nobody holds crm directly any more.
-      await AppAccessService.updateAccessForApp(
-        ctx(admin, "admin"),
-        crmRowId,
-        [],
-      );
-      expect(await AppRepository.findAllWithoutAccess(org)).toEqual([
-        { id: crmRowId },
-      ]);
-      await GroupService.setGroupMembers(asOwner(), id, [member]);
-      await GroupService.setGroupApps(asOwner(), id, [crmRowId]);
-      expect(await AppRepository.findAllWithoutAccess(org)).toEqual([]);
     });
 
     it("saving the direct list never touches what a group grants", async () => {
@@ -404,7 +392,10 @@ describe("groups with app grants (SQLite)", () => {
       await GroupService.deleteGroup(asOwner(), id);
       expect(await perimeterOpens(todo)).toBe(false);
       expect(await launcher(member)).toEqual([]);
-      expect(await capabilityLists(todo)).toEqual(["owner@acme.test"]);
+      expect(await capabilityLists(todo)).toEqual([
+        "admin@acme.test",
+        "owner@acme.test",
+      ]);
       expect(await db.select().from(groupMembers)).toEqual([]);
       expect(await db.select().from(groupAppAccess)).toEqual([]);
     });

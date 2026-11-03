@@ -222,7 +222,7 @@ MCP apps: everyapp mcp on dataforseo --json   offers a data provider's
          it (the key stays; before 2026-10-25 off deleted it). The credential
          never goes through the chat (setup/README.md's three ways). provider
          on|off still run mcp on|off through launch week; provider list is the
-         API providers' list. You, owners and admins get it;
+         API providers' list. Owners and admins can use it;
          others are granted in Admin → Apps → Manage access. An owner or admin
          caps an app's provider-reported cost in dollars per month in Admin →
          Usage (off by default; only OpenRouter and DataForSEO report a

@@ -490,11 +490,6 @@ describe("an admin managing MCP apps over /mcp", () => {
       organizationId,
       id: "dataforseo",
       existingApp: null,
-      members: [
-        { id: ownerId, role: "owner" },
-        { id: adminId, role: "admin" },
-      ],
-      actorUserId: ownerId,
       actor: "owner@example.com",
       now: Date.now(),
     });
@@ -502,9 +497,6 @@ describe("an admin managing MCP apps over /mcp", () => {
       ...plan.app,
       deployedAt: new Date(plan.app.deployedAt ?? Date.now()),
     });
-    for (const grant of plan.grants) {
-      await db.insert(userAppAccess).values(grant);
-    }
     expect(await listedApps()).toEqual([
       {
         id: "dataforseo",
@@ -725,11 +717,6 @@ describe("an admin managing MCP apps over /mcp", () => {
     ).toMatchObject({ id: "open", status: "off", changed: true });
     expect(await openTools$(admin())).toEqual([]);
     expect((await listedApps())[0]).toMatchObject({ status: "off", tools: 3 });
-    const grants = await db
-      .select()
-      .from(userAppAccess)
-      .where(eq(userAppAccess.userId, adminId));
-    expect(grants.length).toBeGreaterThan(0);
 
     expect(
       await data("everyapp_mcp_on", { app: "open" }, admin()),

@@ -205,11 +205,11 @@ export interface WorkspaceApp {
   scope: string;
   tier: string;
   hostname: string | null;
-  /** "Available to everyone": every member now and on joining. */
+  /** "Available to everyone": every member opens it, whoever joins later too. */
   everyone: boolean;
   manifest: string | null;
   secretNames: string | null;
-  /** Distinct members who can open it, directly or through a group. */
+  /** Members who can open it, any way ({@link OPENS_APP}). */
   accessCount: number;
 }
 
@@ -221,13 +221,42 @@ const GROUP_NAME_MAX = 60;
 const APP_NAME_MAX = 255;
 /** D1 binds at most 100 parameters per statement. */
 const IDS_PER_STATEMENT = 90;
-const ROWS_PER_INSERT = 19;
 
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 
 /** SQL: the role column names `owner` (the stored role may be a comma list). */
 const isOwnerSql = (column: string) =>
   `((',' || replace(${column}, ' ', '') || ',') LIKE '%,owner,%')`;
+
+/** SQL: the role column names `owner` or `admin`. */
+const isOwnerOrAdminSql = (column: string) =>
+  `(${isOwnerSql(column)} OR (',' || replace(${column}, ' ', '') || ',') LIKE '%,admin,%')`;
+
+/**
+ * SQL: member row `mm` opens app row `a` of its organization, the
+ * Gateway's one rule (server/repositories/effective-access.ts): the app is
+ * available to everyone, the member is an owner or admin, or holds a
+ * person's grant or a group's.
+ */
+const OPENS_APP = `(a.everyone = 1 OR ${isOwnerOrAdminSql("mm.role")}
+  OR EXISTS (SELECT 1 FROM user_app_access ua WHERE ua.app_row_id = a.id AND ua.organization_id = a.organization_id AND ua.user_id = mm.user_id)
+  OR EXISTS (SELECT 1 FROM group_app_access ga JOIN group_members gm ON gm.group_id = ga.group_id
+    WHERE ga.app_row_id = a.id AND ga.organization_id = a.organization_id AND gm.organization_id = a.organization_id AND gm.user_id = mm.user_id))`;
+
+/**
+ * Remove the OAuth provider connections in one of the organization's own
+ * apps whose person no longer opens it (the Gateway's
+ * ProviderConnectionRepository.pruneWithoutAccess, for one app). Run it
+ * after the write that took access away, in the same batch.
+ */
+function pruneConnectionsWithoutAccess(organizationId: string, appRowId: string): D1Statement {
+  return {
+    sql: `DELETE FROM provider_connections WHERE organization_id = ?1 AND app_row_id = ?2
+AND NOT EXISTS (SELECT 1 FROM members mm JOIN apps a ON a.id = ?2 AND a.organization_id = ?1 AND a.scope = 'org'
+  WHERE mm.organization_id = ?1 AND mm.user_id = provider_connections.user_id AND ${OPENS_APP})`,
+    params: [organizationId, appRowId],
+  };
+}
 
 /**
  * SQL: the member row's `column` (user `?1`) isn't the last owner who can
@@ -331,7 +360,7 @@ function toApp(row: D1Row): WorkspaceApp {
     scope: String(row["scope"]),
     tier: String(row["tier"]),
     hostname: text(row["hostname"]),
-    everyone: Number(row["is_default"] ?? 0) === 1,
+    everyone: Number(row["everyone"] ?? 0) === 1,
     manifest: text(row["manifest"]),
     secretNames: text(row["secret_names"]),
     accessCount: number(row["access_count"]),
@@ -341,13 +370,8 @@ function toApp(row: D1Row): WorkspaceApp {
 const MEMBER_COLUMNS =
   "u.id, u.name, u.email, m.role, u.banned, u.ban_expires, u.created_at";
 
-const APP_COLUMNS = `a.id, a.app_slug, a.name, a.description, a.status, a.scope, a.tier, a.hostname, a.is_default, a.manifest, a.secret_names,
-  (SELECT COUNT(DISTINCT g.user_id) FROM (
-     SELECT ua.user_id FROM user_app_access ua WHERE ua.app_row_id = a.id AND ua.organization_id = a.organization_id
-     UNION ALL
-     SELECT gm.user_id FROM group_app_access ga JOIN group_members gm ON gm.group_id = ga.group_id
-       WHERE ga.app_row_id = a.id AND ga.organization_id = a.organization_id AND gm.organization_id = a.organization_id
-   ) g JOIN members mm ON mm.user_id = g.user_id AND mm.organization_id = a.organization_id) AS access_count`;
+const APP_COLUMNS = `a.id, a.app_slug, a.name, a.description, a.status, a.scope, a.tier, a.hostname, a.everyone, a.manifest, a.secret_names,
+  (SELECT COUNT(*) FROM members mm WHERE mm.organization_id = a.organization_id AND ${OPENS_APP}) AS access_count`;
 
 const toOrganization = (row: D1Row): Organization => ({
   id: String(row["id"]),
@@ -1424,16 +1448,16 @@ export function appName(name: string): string {
 }
 
 /**
- * Update an app's catalog entry (AppService.update). Turning "available to
- * everyone" on grants every current member now (and every future member on
- * joining); turning it off keeps existing access. A shared app opens for
- * everyone already and is never an organization's default.
+ * Update an app's catalog entry (AppService.update). "Available to
+ * everyone" on: every member opens it, whoever joins later too; off: only
+ * owners, admins and the people and groups granted it do. A shared app
+ * opens for everyone already and is never an organization's default.
  */
 export async function updateApp(
   ws: Workspace,
   identifier: string,
   update: AppUpdate,
-): Promise<{ app: WorkspaceApp; granted: number }> {
+): Promise<{ app: WorkspaceApp }> {
   const app = await findApp(ws, identifier);
   if (update.name === undefined && update.description === undefined && update.everyone === undefined) {
     throw new EveryAppError("NOTHING_TO_SET", "Nothing to set: give --name, --description or --everyone on|off");
@@ -1442,36 +1466,13 @@ export async function updateApp(
   const name = update.name === undefined ? app.name : appName(update.name);
   const description = update.description === undefined ? app.description : update.description.trim();
   const everyone = update.everyone ?? app.everyone;
-  const grants: D1Statement[] = [];
   const subject = { id: app.appSlug, rowId: app.id, name };
   const events: D1Statement[] = [];
-  if (everyone && !app.everyone) {
-    const [members = []] = await ws.db.run([
-      {
-        sql: "SELECT u.id, u.email, u.name FROM members m JOIN users u ON u.id = m.user_id WHERE m.organization_id = ? ORDER BY u.email",
-        params: [ws.organization.id],
-      },
-    ]);
-    for (const batch of chunks(members, ROWS_PER_INSERT)) {
-      grants.push({
-        sql: `INSERT INTO user_app_access (id, user_id, app_row_id, organization_id, granted_by) VALUES ${batch.map(() => "(?, ?, ?, ?, ?)").join(", ")} ON CONFLICT DO NOTHING RETURNING id`,
-        params: batch.flatMap((member) => [randomUUID(), String(member["id"]), app.id, ws.organization.id, ws.operator.userId]),
-      });
-    }
-    // Everyone it granted (the first 50 by address, the count exact), as the Gateway's own event lists them.
-    const granted = members.map((member) => eventUser({ id: String(member["id"]), email: String(member["email"]), name: text(member["name"]) }));
+  if (everyone !== app.everyone) {
     events.push(
       ...(await queueEvent(ws, {
         type: "app.access_changed",
-        data: { app: subject, granted: granted.slice(0, EVENT_LIST_MAX), revoked: [], grantedCount: granted.length, revokedCount: 0, everyone: true },
-        appRowId: app.id,
-      })),
-    );
-  } else if (update.everyone === false && app.everyone) {
-    events.push(
-      ...(await queueEvent(ws, {
-        type: "app.access_changed",
-        data: { app: subject, granted: [], revoked: [], grantedCount: 0, revokedCount: 0, everyone: false },
+        data: { app: subject, granted: [], revoked: [], grantedCount: 0, revokedCount: 0, everyone },
         appRowId: app.id,
       })),
     );
@@ -1489,23 +1490,25 @@ export async function updateApp(
       })),
     );
   }
-  const results = await ws.db.run([
+  await ws.db.run([
     {
-      sql: `UPDATE apps SET name = ?3, description = ?4, is_default = ?5, updated_at = ?6
+      sql: `UPDATE apps SET name = ?3, description = ?4, everyone = ?5, updated_at = ?6
 WHERE id = ?1 AND organization_id = ?2 AND status != '${DELETED_APP_STATUS}'`,
       params: [app.id, ws.organization.id, name, description, everyone ? 1 : 0, ws.now],
     },
-    ...grants,
+    // Off: whoever has no other way in loses the app, and their connections in it.
+    ...(app.everyone && !everyone ? [pruneConnectionsWithoutAccess(ws.organization.id, app.id)] : []),
     ...events,
   ]);
-  const granted = results.slice(1, 1 + grants.length);
-  return { app: await findApp(ws, app.id), granted: granted.reduce((count, rows) => count + rows.length, 0) };
+  return { app: await findApp(ws, app.id) };
 }
 
 /** A member and their access to one app (AppAccessService.getAccessStateForApp). */
 export type AppAccessState = WorkspaceMember & {
   /** A direct grant, which `app access --add/--remove/--set` edits. */
   direct: boolean;
+  /** Their role opens it: owners and admins open every app. */
+  admin: boolean;
   /** The groups that open it for them, by name. */
   viaGroups: string[];
 };
@@ -1516,6 +1519,7 @@ export async function appAccess(ws: Workspace, app: WorkspaceApp): Promise<AppAc
     {
       sql: `SELECT ${MEMBER_COLUMNS},
   (ua.id IS NOT NULL) AS direct,
+  ${isOwnerOrAdminSql("m.role")} AS admin,
   (SELECT group_concat(g.name, char(31)) FROM group_app_access ga
      JOIN group_members gm ON gm.group_id = ga.group_id AND gm.user_id = u.id
      JOIN groups g ON g.id = ga.group_id
@@ -1529,6 +1533,7 @@ WHERE m.organization_id = ?1 ORDER BY u.email`,
   return rows.map((row) => ({
     ...toMember(row, ws.now),
     direct: Number(row["direct"]) === 1,
+    admin: Number(row["admin"]) === 1,
     viaGroups: text(row["via_groups"])?.split("\u001f").sort() ?? [],
   }));
 }
@@ -1572,6 +1577,7 @@ SELECT ?1, ?2, ?3, ?4, ?5, ?6 WHERE EXISTS (SELECT 1 FROM members WHERE user_id 
 ON CONFLICT DO NOTHING`,
       params: [randomUUID(), userId, app.id, ws.organization.id, ws.now, ws.operator.userId],
     })),
+    ...(plan.remove.length > 0 ? [pruneConnectionsWithoutAccess(ws.organization.id, app.id)] : []),
     ...(plan.add.length > 0 || plan.remove.length > 0
       ? await queueEvent(ws, {
           type: "app.access_changed",

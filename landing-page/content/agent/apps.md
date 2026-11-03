@@ -15,13 +15,13 @@ Five open source apps run behind a Gateway as the person's own: four the README,
 
 A Gateway setting is held once for every app: `OPENROUTER_API_KEY` serves OpenSEO, OpenCRM and OpenMail at once, `CONTEXT_API_KEY` serves OpenSEO and OpenCRM, `EMAIL_FROM` serves OpenAnalytics and OpenMail. The setup skill has a file per key with where it comes from and a smoke check: `setup/openrouter.md`, `setup/dataforseo.md`, `setup/context.md`, `setup/email.md`, `setup/google.md`, `setup/microsoft-365.md`, `setup/slack.md`.
 
-| id          | Name          | Repository                                  | R2  | Who opens it after the install                                |
-| ----------- | ------------- | ------------------------------------------- | --- | ------------------------------------------------------------- |
-| `openseo`   | OpenSEO       | https://github.com/every-app/open-seo       | yes | every member (`access: "everyone"`)                           |
-| `crm`       | OpenCRM       | https://github.com/every-app/open-crm       | yes | every member                                                  |
-| `analytics` | OpenAnalytics | https://github.com/every-app/open-analytics | no  | every member                                                  |
-| `openmail`  | OpenMail      | https://github.com/every-app/open-mail      | yes | every member; owners and admins manage mailboxes              |
-| `repolens`  | RepoLens      | private today, no public address yet        | no  | the deployer, owners and admins; grant others in Admin → Apps |
+| id          | Name          | Repository                                  | R2  | Who opens it after the install                   |
+| ----------- | ------------- | ------------------------------------------- | --- | ------------------------------------------------ |
+| `openseo`   | OpenSEO       | https://github.com/every-app/open-seo       | yes | every member (`access: "everyone"`)              |
+| `crm`       | OpenCRM       | https://github.com/every-app/open-crm       | yes | every member                                     |
+| `analytics` | OpenAnalytics | https://github.com/every-app/open-analytics | no  | every member                                     |
+| `openmail`  | OpenMail      | https://github.com/every-app/open-mail      | yes | every member; owners and admins manage mailboxes |
+| `repolens`  | RepoLens      | private today, no public address yet        | no  | owners and admins; grant others in Admin → Apps  |
 
 ## OpenSEO (`openseo`)
 
@@ -113,7 +113,7 @@ The repository is private at the time of writing, so there is no URL to `install
 | -------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `GITHUB_TOKEN` | app     | required | Reads the repositories RepoLens tracks: a classic token with the repo scope, or a fine-grained token with Administration, Contents and Metadata read (traffic needs Administration). |
 
-Resources: D1 `DB`. Migrations: drizzle, `drizzle/`. No R2. A cron `17 */6 * * *` captures every six hours. Public route: `GET /badge/*/*.svg` (cached an hour; works for tracked private repositories too). No `access` in the manifest, so a fresh install opens to the deployer, owners and admins; `workspace app access` or Admin → Apps grants the rest. Tools: `repolens_list_repos`, `repolens_get_repo_stats`, `repolens_track_repo`, `repolens_capture_now`.
+Resources: D1 `DB`. Migrations: drizzle, `drizzle/`. No R2. A cron `17 */6 * * *` captures every six hours. Public route: `GET /badge/*/*.svg` (cached an hour; works for tracked private repositories too). No `access` in the manifest, so a fresh install opens to owners and admins; `workspace app access` or Admin → Apps grants the rest. Tools: `repolens_list_repos`, `repolens_get_repo_stats`, `repolens_track_repo`, `repolens_capture_now`.
 
 ## Not here
 

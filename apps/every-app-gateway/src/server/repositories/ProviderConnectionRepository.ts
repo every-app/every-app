@@ -1,17 +1,7 @@
-import {
-  and,
-  asc,
-  eq,
-  inArray,
-  isNull,
-  lt,
-  notExists,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lt, not, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { apps, providerConnections } from "@/db/schema";
-import { effectiveAccess } from "./effective-access";
+import { accessToApp } from "./effective-access";
 import { open, seal, type SealingEnv } from "@/server/secrets/sealed";
 
 /**
@@ -390,11 +380,11 @@ async function removeForMemberApp(input: {
 
 /**
  * Remove the connections in an organization's own apps whose person no
- * longer opens the app (a direct grant revoked, a group changed or
- * deleted); the count. Shared apps have no grants, so theirs stay.
+ * longer opens the app (a grant revoked, a group changed or deleted,
+ * "Available to everyone" turned off); the count. Shared apps have no
+ * grants, so theirs stay.
  */
 async function pruneWithoutAccess(organizationId: string): Promise<number> {
-  const access = effectiveAccess(organizationId);
   const removed = await db
     .delete(providerConnections)
     .where(
@@ -409,17 +399,7 @@ async function pruneWithoutAccess(organizationId: string): Promise<number> {
               and(
                 eq(apps.organizationId, organizationId),
                 eq(apps.scope, "org"),
-              ),
-            ),
-        ),
-        notExists(
-          db
-            .select({ one: sql`1` })
-            .from(access)
-            .where(
-              and(
-                eq(access.userId, providerConnections.userId),
-                eq(access.appRowId, providerConnections.appRowId),
+                not(accessToApp(providerConnections.userId, organizationId)),
               ),
             ),
         ),

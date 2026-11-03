@@ -39,6 +39,7 @@ import {
   userAppAccess,
   users,
 } from "@/db/schema";
+import { AppAccessRepository } from "@/server/repositories/AppAccessRepository";
 import { SetupService } from "@/server/services/SetupService";
 import { registerApp } from "@/test/registry";
 import { createTestDb, seedOrganization } from "@/test/sqlite-db";
@@ -59,7 +60,10 @@ function post(path: string, body: unknown, cookie?: string): Request {
   });
 }
 
-async function rowCount(db: TestDb, table: typeof users | typeof members) {
+async function rowCount(
+  db: TestDb,
+  table: typeof users | typeof members | typeof userAppAccess,
+) {
   const [row] = await db.select({ value: count() }).from(table);
   return row?.value ?? 0;
 }
@@ -203,7 +207,6 @@ describe("Better Auth lockdown (SQLite)", () => {
       .update(apps)
       .set({ status: "deleted" })
       .where(eq(apps.id, gone.app.id));
-    expect([todo, notes].map((plan) => plan.grants)).toEqual([[], []]);
     const organizationsBefore = await db.select().from(organizations);
 
     await claimAndSignIn(db);
@@ -223,11 +226,10 @@ describe("Better Auth lockdown (SQLite)", () => {
       .from(organizations)
       .where(eq(organizations.id, ci));
     expect(adopted?.name).toBe("Owner");
-    const granted = await db
-      .select({ appRowId: userAppAccess.appRowId })
-      .from(userAppAccess)
-      .where(eq(userAppAccess.userId, owner!.id));
-    expect(granted.map((grant) => grant.appRowId).sort()).toEqual(
+    // Nobody is granted anything: the owner's role opens every live app.
+    expect(await rowCount(db, userAppAccess)).toBe(0);
+    const opened = await AppAccessRepository.findAllByUserId(owner!.id, ci);
+    expect(opened.map((access) => access.appRowId).sort()).toEqual(
       [todo.app.id, notes.app.id].sort(),
     );
   });

@@ -72,7 +72,7 @@ function registerApp(appSlug: string, overrides: Partial<RegisterInput> = {}) {
 
 const app = (appSlug: string) =>
   sqlite.all(
-    "SELECT organization_id, app_slug, hostname, worker_name, status, manifest, version_id, deployed_at, deployed_by_actor, is_default, email_senders, email_inbound, secret_names FROM apps WHERE app_slug = ?",
+    "SELECT organization_id, app_slug, hostname, worker_name, status, manifest, version_id, deployed_at, deployed_by_actor, everyone, email_senders, email_inbound, secret_names FROM apps WHERE app_slug = ?",
     appSlug,
   )[0];
 const grantees = (appSlug: string) =>
@@ -127,14 +127,13 @@ describe("register", () => {
     ]);
     expect(first).toMatchObject({
       hasOwner: false,
-      deployerGranted: false,
-      plan: { kind: "new", grants: [] },
+      plan: { kind: "new" },
     });
     expect(app("todo")).toMatchObject({
       hostname: `todo.${BASE}`,
       worker_name: "every-acme-todo",
       status: "pending",
-      is_default: 0,
+      everyone: 0,
       version_id: null,
       deployed_by_actor: null,
     });
@@ -148,7 +147,7 @@ describe("register", () => {
     expect(sqlite.all("SELECT COUNT(*) AS n FROM organizations")).toEqual([{ n: 1 }]);
   });
 
-  it("registers into the owner's organization once there is one, granting the deployer, owners and admins", async () => {
+  it("registers into the owner's organization once there is one, granting nobody (owners and admins open it)", async () => {
     // An older organization nobody owns, and the owner's.
     addOrganization("org-old", "old", 1);
     addOrganization("org-1", "acme", 2);
@@ -161,7 +160,6 @@ describe("register", () => {
 
     expect(registered).toMatchObject({
       hasOwner: true,
-      deployerGranted: true,
       organization: { id: "org-1", slug: "acme" },
     });
     expect(app("todo")).toMatchObject({
@@ -169,22 +167,14 @@ describe("register", () => {
       hostname: `todo.${BASE}`,
       worker_name: "every-acme-todo",
     });
-    expect(grantees("todo")).toEqual(["admin", "dev", "owner"]);
+    // Nobody is granted it, the member who deployed it included.
+    expect(grantees("todo")).toEqual([]);
+    expect(app("todo")).toMatchObject({ everyone: 0 });
 
-    // An unverified account with the login's email gets nothing for it.
-    sqlite.sqlite.exec("UPDATE users SET email_verified = 0 WHERE id = 'dev'");
-    await expect(registerApp("chef")).resolves.toMatchObject({ deployerGranted: false });
-    expect(grantees("chef")).toEqual(["admin", "owner"]);
-
-    // An API token is nobody's account.
-    sqlite.sqlite.exec("UPDATE users SET email_verified = 1 WHERE id = 'dev'");
-    await registerApp("notes", { deployer: { actor: "api-token:acct", email: null } });
-    expect(grantees("notes")).toEqual(["admin", "owner"]);
-
-    // `access: "everyone"`: every member, and members to come.
+    // `access: "everyone"`: the flag, still no rows.
     await registerApp("board", { manifest: { id: "board", access: "everyone" } });
-    expect(grantees("board")).toEqual(["admin", "dev", "member", "owner"]);
-    expect(app("board")).toMatchObject({ is_default: 1 });
+    expect(grantees("board")).toEqual([]);
+    expect(app("board")).toMatchObject({ everyone: 1 });
   });
 
   it("keeps a redeployed app's names, status and access, and updates its name", async () => {
@@ -206,11 +196,10 @@ describe("register", () => {
 
     expect(again.plan).toMatchObject({
       kind: "existing",
-      grants: [],
       versionId: "v1",
       previousManifest: { id: "todo" },
     });
-    expect(app("todo")).toMatchObject({ status: "active", is_default: 0, version_id: "v1" });
+    expect(app("todo")).toMatchObject({ status: "active", everyone: 0, version_id: "v1" });
     expect(sqlite.all("SELECT name FROM apps")).toEqual([{ name: "Todos" }]);
     expect(grantees("todo")).toEqual([]);
   });
@@ -413,7 +402,7 @@ describe("deleteApp", () => {
     });
     expect(app("todo")).toMatchObject({
       status: "deleted",
-      is_default: 0,
+      everyone: 0,
       email_senders: null,
       email_inbound: null,
     });
@@ -456,8 +445,8 @@ describe("deleteApp", () => {
       email_inbound: null,
     });
     expect({ ...appData(), access: [] }).toEqual(nothing);
-    // Its initial access, granted again: the owner, and nobody from before.
-    expect(grantees("todo")).toEqual(["owner"]);
+    // Nobody from before keeps a grant.
+    expect(grantees("todo")).toEqual([]);
   });
 });
 

@@ -373,7 +373,17 @@ describe("shared apps across organizations (SQLite)", () => {
         org_role: "member",
       });
 
-      // Without the app installed for her there, it is still refused.
+      // Without the app open to her there (a member now, her grant gone),
+      // it is still refused.
+      await db
+        .update(members)
+        .set({ role: "member" })
+        .where(
+          and(
+            eq(members.userId, alice.userId),
+            eq(members.organizationId, acme),
+          ),
+        );
       await db
         .delete(userAppAccess)
         .where(
@@ -616,10 +626,10 @@ describe("listings of shared apps (SQLite)", () => {
     await AppService.update(platformAdmin, {
       id: rows.openseo,
       name: "OpenSEO",
-      isDefault: false,
+      everyone: false,
     });
     await expect(
-      AppService.update(platformAdmin, { id: rows.openseo, isDefault: true }),
+      AppService.update(platformAdmin, { id: rows.openseo, everyone: true }),
     ).rejects.toMatchObject({ code: "SHARED_APP_ACCESS" });
     await expect(
       AppAccessService.updateAccessForApp(platformAdmin, rows.openseo, [

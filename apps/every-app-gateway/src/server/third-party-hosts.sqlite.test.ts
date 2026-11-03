@@ -240,7 +240,6 @@ async function deployDispatchApp(slug: "todo" | "notes") {
     name: slug,
     description: slug,
     manifest: { id: slug, name: slug },
-    deployerUserId: alice.userId,
     configuredThirdPartyDomain:
       (hoisted.env["THIRD_PARTY_DOMAIN"] as string | undefined) ?? null,
     appBaseDomain: BASE,
@@ -676,10 +675,17 @@ describe("third-party hosts with per-host sessions (SQLite)", () => {
     expect(signedOut.status).toBe(200);
     expect((await open()).status).toBe(401);
 
-    // Losing the app.
+    // Losing the app: no longer an owner (owners and admins open every
+    // app), and her grant gone.
     const again = await hostSession(await signIn(alice.email));
     const reopen = () => get(`https://${TODO_HOST}/`, { cookie: again });
     expect((await reopen()).status).toBe(200);
+    await db
+      .update(members)
+      .set({ role: "member" })
+      .where(
+        and(eq(members.userId, alice.userId), eq(members.organizationId, acme)),
+      );
     await db
       .delete(userAppAccess)
       .where(

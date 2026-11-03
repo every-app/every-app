@@ -23,13 +23,7 @@ import {
   type RegistrationPlan,
 } from "@every-app/perimeter/registry";
 import { db } from "@/db";
-import {
-  apps,
-  members,
-  organizationKeys,
-  organizations,
-  userAppAccess,
-} from "@/db/schema";
+import { apps, organizationKeys, organizations } from "@/db/schema";
 import { installOrganizationId } from "./gateway-app-installs";
 import { DeployError } from "./errors";
 
@@ -58,7 +52,7 @@ export function toAppRow(row: StoredApp): AppRow {
     versionId: row.versionId,
     deployedAt: row.deployedAt?.getTime() ?? null,
     deployedByActor: row.deployedByActor,
-    isDefault: row.isDefault,
+    everyone: row.everyone,
   };
 }
 
@@ -130,7 +124,6 @@ interface RegisterDispatchAppInput {
   name: string;
   description: string;
   manifest: unknown;
-  deployerUserId: string;
   /** THIRD_PARTY_DOMAIN as set: one on, under or above appBaseDomain is refused. */
   configuredThirdPartyDomain: string | null;
   /** The gateway's own APP_BASE_DOMAIN (appBaseDomain(env)). */
@@ -165,8 +158,9 @@ function assertOwnDomain(domain: string, appBase: string | null): void {
 
 /**
  * Register a third-party app, or the next deploy of one: a new app is
- * `pending` and granted to the deployer and the organization's owners and
- * admins (or everyone, with `access: "everyone"`); a registered one keeps
+ * `pending` and opens for the organization's owners and admins (and the
+ * deployer is one), or for everyone with `access: "everyone"`; a
+ * registered one keeps
  * its names, status and live manifest, takes the manifest's name and
  * description, and gains its hostname once the gateway has a third-party
  * domain.
@@ -220,10 +214,6 @@ async function register(
     const [row] = await db.select().from(apps).where(eq(column, value));
     return row ? toAppRow(row) : null;
   };
-  const orgMembers = await db
-    .select({ id: members.userId, role: members.role })
-    .from(members)
-    .where(eq(members.organizationId, organizationId));
   const plan = planRegistration({
     organizationId,
     isInstallOrganization,
@@ -239,8 +229,6 @@ async function register(
     existingApp,
     hostnameOwner: domain ? await owner(apps.hostname, names.hostname) : null,
     workerNameOwner: await owner(apps.workerName, names.workerName),
-    members: orgMembers,
-    deployerUserId: input.deployerUserId,
   });
   const hostname = domain ? plan.app.hostname : (existingApp?.hostname ?? null);
   const app = { ...plan.app, hostname };
@@ -251,36 +239,26 @@ async function register(
     updatedAt: now,
   };
   if (plan.kind === "new") {
-    await db.batch([
-      db.insert(apps).values({ ...row, createdAt: now }),
-      ...plan.grants.map((grant) =>
-        db.insert(userAppAccess).values(grant).onConflictDoNothing(),
-      ),
-    ]);
+    await db.insert(apps).values({ ...row, createdAt: now });
   } else if (plan.kind === "revived") {
     // The delete took its access, tokens, tools, AI connections and caps
     // (AppRepository.tombstone); it comes back as new.
-    await db.batch([
-      db
-        .update(apps)
-        .set({
-          name: app.name,
-          description: app.description,
-          hostname: app.hostname,
-          workerName: app.workerName,
-          manifest: app.manifest,
-          emailSenders: null,
-          emailInbound: null,
-          secretNames: null,
-          status: app.status,
-          isDefault: app.isDefault,
-          updatedAt: now,
-        })
-        .where(and(eq(apps.id, app.id), eq(apps.status, "deleted"))),
-      ...plan.grants.map((grant) =>
-        db.insert(userAppAccess).values(grant).onConflictDoNothing(),
-      ),
-    ]);
+    await db
+      .update(apps)
+      .set({
+        name: app.name,
+        description: app.description,
+        hostname: app.hostname,
+        workerName: app.workerName,
+        manifest: app.manifest,
+        emailSenders: null,
+        emailInbound: null,
+        secretNames: null,
+        status: app.status,
+        everyone: app.everyone,
+        updatedAt: now,
+      })
+      .where(and(eq(apps.id, app.id), eq(apps.status, "deleted")));
   } else {
     await db
       .update(apps)

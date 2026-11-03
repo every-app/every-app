@@ -42,7 +42,6 @@ import { appBaseDomain } from "@/server/app-hosts";
 import { AppAccessRepository } from "@/server/repositories/AppAccessRepository";
 import { UserRepository } from "@/server/repositories/UserRepository";
 import { hasAnyOwnerMembership } from "@/server/organization/owner-membership";
-import { AppAccessService } from "@/server/services/AppAccessService";
 import { chooseSessionOrganization } from "@/server/organization/orgContext";
 import { createPersonalOrganization } from "@/server/organization/personal-organization";
 import { describePolicy, platformPolicy } from "@/server/platform-policy";
@@ -233,13 +232,6 @@ async function givePersonalOrganization(
       message: "Your account couldn't be created. Please try again.",
     });
   }
-}
-
-async function grantDefaultAppsForMembership(
-  userId: string,
-  organizationId: string,
-): Promise<void> {
-  await AppAccessService.grantDefaultAppsToUser(userId, organizationId);
 }
 
 /**
@@ -500,7 +492,6 @@ export function createAuth() {
         schema: organizationSchema,
         organizationHooks: {
           afterAcceptInvitation: async ({ user, member, organization }) => {
-            await grantDefaultAppsForMembership(user.id, organization.id);
             const joined = {
               id: user.id,
               email: user.email,
@@ -517,9 +508,6 @@ export function createAuth() {
             });
           },
           afterAddMember: async ({ user, member, organization }) => {
-            // Keep both hooks: members can join via invitation acceptance or
-            // direct add-member paths, and each path should receive defaults.
-            await grantDefaultAppsForMembership(user.id, organization.id);
             // An owner's membership is the organization being created (the
             // setup claim announces its owner itself; a personal
             // organization's is not news); anyone else was added.

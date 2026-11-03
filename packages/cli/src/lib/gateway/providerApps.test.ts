@@ -38,7 +38,7 @@ const db = () => cfD1Database(cf, DB_ID);
 
 const row = (appSlug: string) =>
   sqlite.all(
-    "SELECT id, organization_id, hostname, worker_name, tier, scope, status, manifest, deployed_at, deployed_by_actor, is_default FROM apps WHERE app_slug = ?",
+    "SELECT id, organization_id, hostname, worker_name, tier, scope, status, manifest, deployed_at, deployed_by_actor, everyone FROM apps WHERE app_slug = ?",
     appSlug,
   )[0];
 const grantees = (appSlug: string) =>
@@ -75,7 +75,6 @@ describe("turnProviderAppOn", () => {
     const result = await on();
     expect(result.plan.kind).toBe("new");
     expect(result.hasOwner).toBe(false);
-    expect(result.actorGranted).toBe(false);
     expect(result.organization.name).toBe("Acme");
     expect(row("dataforseo")).toMatchObject({
       organization_id: result.organization.id,
@@ -86,7 +85,7 @@ describe("turnProviderAppOn", () => {
       status: "active",
       deployed_at: NOW,
       deployed_by_actor: "ben@example.com",
-      is_default: 0,
+      everyone: 0,
     });
     expect(JSON.parse(String(row("dataforseo")!["manifest"]))).toMatchObject({
       id: "dataforseo",
@@ -95,7 +94,7 @@ describe("turnProviderAppOn", () => {
     expect(grantees("dataforseo")).toEqual([]);
   });
 
-  it("grants the person turning it on, the owners and the admins, nobody else", async () => {
+  it("grants nobody, the person turning it on included (owners and admins open it)", async () => {
     const { organization } = await on();
     addUser("ben", { organization: organization.id, role: "member" });
     addUser("owner", { organization: organization.id, role: "owner" });
@@ -107,8 +106,7 @@ describe("turnProviderAppOn", () => {
     expect(result.plan.kind).toBe("revived");
     expect(result.was).toBe("revived");
     expect(result.hasOwner).toBe(true);
-    expect(result.actorGranted).toBe(true);
-    expect(grantees("dataforseo")).toEqual(["admin", "ben", "owner"]);
+    expect(grantees("dataforseo")).toEqual([]);
     expect(row("dataforseo")).toMatchObject({ status: "active", deployed_at: NOW + 2 });
   });
 
@@ -125,7 +123,6 @@ describe("turnProviderAppOn", () => {
     const again = await on("dataforseo", BEN, NOW + 5);
     expect(again.plan.kind).toBe("existing");
     expect(again.was).toBe("existing");
-    expect(again.actorGranted).toBe(true);
     expect(again.plan.app.id).toBe(plan.app.id);
     expect(grantees("dataforseo")).toEqual(["ben"]);
     expect(sqlite.all("SELECT name FROM apps WHERE id = ?", plan.app.id)[0]!["name"]).toBe("DataForSEO");

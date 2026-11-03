@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * Editable catalog metadata for an app. Apps themselves are registered by
  * `everyapp deploy` (which owns appId, hostname, worker name, and manifest);
- * the admin UI only edits presentation and default-grant behavior.
+ * the admin UI only edits presentation and "Available to everyone".
  */
 const baseAppSchema = z.object({
   name: z.string().min(1, "Name is required").max(255, "Name too long"),
@@ -11,7 +11,8 @@ const baseAppSchema = z.object({
     .string()
     .min(1, "Description is required")
     .max(1000, "Description too long"),
-  isDefault: z.boolean().optional(),
+  /** "Available to everyone": every member opens it. */
+  everyone: z.boolean().optional(),
 });
 
 /**

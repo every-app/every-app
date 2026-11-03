@@ -12,7 +12,6 @@ import { eq } from "drizzle-orm";
 import { logEvent } from "@every-app/perimeter";
 import { db } from "@/db";
 import { members, organizations } from "@/db/schema";
-import { AppAccessService } from "@/server/services/AppAccessService";
 import { personalOrganizationName, slugify } from "./organization-name";
 import { personalOrganizationMetadata } from "./personal-marker";
 
@@ -58,13 +57,6 @@ export async function createPersonalOrganization(user: {
       createdAt: now,
     }),
   ]);
-  try {
-    await AppAccessService.grantDefaultAppsToUser(user.id, organizationId);
-  } catch (error) {
-    // The membership and any grants go with the organization (cascade).
-    await db.delete(organizations).where(eq(organizations.id, organizationId));
-    throw error;
-  }
   logEvent("organization.personal_created", {
     organizationId,
     userId: user.id,

@@ -1042,7 +1042,7 @@ describe("an admin administering the workspace over /mcp", () => {
         appId: "crm",
         name: "CRM",
         everyone: false,
-        // The deploy granted its first access (test/registry.ts).
+        // Owners and admins open it by role (test/registry.ts grants nobody else).
         accessCount: expect.any(Number),
         readOnly: false,
         status: "active",
@@ -1060,32 +1060,33 @@ describe("an admin administering the workspace over /mcp", () => {
     ).toMatchObject({
       app: { id: crmRowId, description: "Customers and deals", everyone: true },
     });
-    // Everyone: every current member was granted.
+    // Everyone: the flag, with nobody granted anything.
     const access = await data(
       "everyapp_workspace_app_access",
       { app: crmRowId },
       admin(),
     );
+    expect(access["app"]).toMatchObject({ everyone: true });
     expect(
-      (access["users"] as { hasAccess: boolean }[]).every(
-        (user) => user.hasAccess,
+      (access["users"] as { id: string; hasAccess: boolean }[]).find(
+        (user) => user.id === memberId,
       ),
-    ).toBe(true);
-    expect(
-      await data(
-        "everyapp_workspace_app_access_set",
-        { app: "crm", remove: ["member@example.com"] },
-        admin(),
-      ),
-    ).toMatchObject({ app: { appId: "crm" }, granted: 0, revoked: 1 });
+    ).toMatchObject({ hasAccess: false });
     expect(
       await data(
         "everyapp_workspace_app_access_set",
         { app: "crm", users: [memberId] },
         owner(),
       ),
-      // The acting owner keeps their own access: only the admin's is revoked.
-    ).toMatchObject({ granted: 1, revoked: 1 });
+      // The owner's own grant goes too: their role still opens the app.
+    ).toMatchObject({ app: { appId: "crm" }, granted: 1, revoked: 1 });
+    expect(
+      await data(
+        "everyapp_workspace_app_access_set",
+        { app: "crm", remove: ["member@example.com"] },
+        admin(),
+      ),
+    ).toMatchObject({ granted: 0, revoked: 1 });
 
     expect(
       await data(

@@ -119,9 +119,10 @@ function AppNameCell({
 }
 
 /**
- * The grants are what the gateway checks, so the count is the truth;
- * "Available to everyone" is an auto-grant to each member as they join,
- * said under it. Nobody is granted a shared app: every organization has it.
+ * How many members open the app now (effective-access.ts: everyone, a
+ * role, a person's grant or a group's); "Available to everyone" is said
+ * under it, since it covers people who join later too. Nobody is granted a
+ * shared app: every organization has it.
  *
  * The hint is its own block line rather than a flex column, so the cell
  * takes the alignment of what holds it: left in the table's column, right
@@ -147,7 +148,7 @@ function WhoCanOpenCell({
         aria-label={`Manage access to ${app.name}`}
         onClick={() => onManageAccess(app)}
       />
-      {app.isDefault ? (
+      {app.everyone ? (
         <span className="block text-xs text-muted-foreground">
           + everyone who joins
         </span>

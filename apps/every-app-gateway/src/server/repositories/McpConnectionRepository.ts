@@ -387,7 +387,7 @@ async function findActiveAppByHostname(hostname: string) {
 /**
  * What a user may connect an AI app to: their memberships (with the
  * organization's name and status), in each the active apps they have
- * access to (directly or through a group, the one rule every access site
+ * access to (effective-access.ts, the one rule every access site
  * reads), and the active shared apps, which any organization's members
  * may use on the hosted gateway; each with whether the app has tools to
  * serve.

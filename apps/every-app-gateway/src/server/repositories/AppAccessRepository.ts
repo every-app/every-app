@@ -5,19 +5,11 @@ import { DELETED_APP_STATUS } from "@every-app/perimeter/registry";
 import { manifestIcon } from "./AppRepository";
 import { accessToApp, effectiveAccess } from "./effective-access";
 
-// Types for repository operations
-type CreateAccess = {
-  id: string;
-  organizationId: string;
-  userId: string;
-  appRowId: string;
-  grantedBy?: string | null;
-};
-
 /**
  * The apps a user opens in an organization (the launcher), with how:
- * `via` names the group for a grant that comes through one, null for a
- * direct grant. A user granted an app both ways gets it once, as direct.
+ * `via` names the group when a group is their only way in, null otherwise
+ * (available to everyone, their role, or a person's grant). An app open to
+ * them several ways is listed once.
  * The registry columns the settings model reads (tier, manifest, recorded
  * secret names, version) come along for the service to evaluate the
  * app's setup; it keeps them server-side.
@@ -41,7 +33,7 @@ async function findAllByUserId(userId: string, organizationId: string) {
         scope: apps.scope,
         status: apps.status,
         icon: manifestIcon,
-        isDefault: apps.isDefault,
+        everyone: apps.everyone,
         createdAt: apps.createdAt,
         updatedAt: apps.updatedAt,
         manifest: apps.manifest,
@@ -59,7 +51,7 @@ async function findAllByUserId(userId: string, organizationId: string) {
     )
     .leftJoin(groups, eq(groups.id, access.groupId))
     .where(and(eq(access.userId, userId), ne(apps.status, DELETED_APP_STATUS)))
-    // Direct grants first, then the oldest group grant.
+    // Every other way in first, then the oldest group grant.
     .orderBy(
       asc(apps.name),
       sql`${access.groupId} IS NOT NULL`,
@@ -86,9 +78,10 @@ async function findAllByUserId(userId: string, organizationId: string) {
 
 /**
  * Everyone who opens an app (the admin modal): one row per member with
- * any grant, saying whether they hold a direct one (`direct`, what the
- * modal's checkbox edits) and the names of the groups that grant it
- * (`viaGroups`).
+ * any way in, saying whether they hold a person's grant (`direct`, what
+ * the modal's checkbox edits), whether their role opens it (`admin`), and
+ * the names of the groups that grant it (`viaGroups`). When the app is
+ * available to everyone, every member has a row.
  */
 async function findAllByAppRowId(appRowId: string, organizationId: string) {
   const access = effectiveAccess(organizationId);
@@ -98,6 +91,7 @@ async function findAllByAppRowId(appRowId: string, organizationId: string) {
       grantedAt: access.grantedAt,
       groupId: access.groupId,
       groupName: groups.name,
+      via: access.via,
       user: {
         id: users.id,
         name: users.name,
@@ -126,6 +120,7 @@ async function findAllByAppRowId(appRowId: string, organizationId: string) {
       appRowId: string;
       grantedAt: Date;
       direct: boolean;
+      admin: boolean;
       viaGroups: string[];
       user: (typeof rows)[number]["user"];
     }
@@ -136,14 +131,17 @@ async function findAllByAppRowId(appRowId: string, organizationId: string) {
       appRowId,
       grantedAt: row.grantedAt,
       direct: false,
+      admin: false,
       viaGroups: [],
       user: row.user,
     };
-    if (row.groupId) {
+    if (row.via === "group") {
       if (row.groupName) entry.viaGroups.push(row.groupName);
-    } else {
+    } else if (row.via === "direct") {
       entry.direct = true;
       entry.grantedAt = row.grantedAt;
+    } else if (row.via === "admin") {
+      entry.admin = true;
     }
     byUser.set(row.userId, entry);
   }
@@ -152,8 +150,8 @@ async function findAllByAppRowId(appRowId: string, organizationId: string) {
 
 /**
  * Whether a user opens an app of the organization, by its routing slug:
- * the perimeter's check. Never a deleted app's tombstone, whatever grants
- * are left on it.
+ * the perimeter's check (effective-access.ts). Never a deleted app's
+ * tombstone, whatever grants are left on it.
  */
 async function hasAccessByUserAndAppSlug(
   userId: string,
@@ -177,20 +175,7 @@ async function hasAccessByUserAndAppSlug(
 }
 
 /**
- * Grant access to an app for a user.
- */
-async function create(data: CreateAccess) {
-  await db.insert(userAppAccess).values({
-    id: data.id,
-    organizationId: data.organizationId,
-    userId: data.userId,
-    appRowId: data.appRowId,
-    grantedBy: data.grantedBy,
-  });
-}
-
-/**
- * Grant access to multiple users for an app.
+ * Give people a person's grant to an app (Manage access).
  * Uses onConflictDoNothing so re-granting existing access is a no-op.
  */
 async function createMany(
@@ -266,7 +251,6 @@ export const AppAccessRepository = {
   findAllByUserId,
   findAllByAppRowId,
   hasAccessByUserAndAppSlug,
-  create,
   createMany,
   deleteByAppRowAndUsers,
   deleteByOrganizationAndUser,

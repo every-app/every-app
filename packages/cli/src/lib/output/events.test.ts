@@ -318,7 +318,7 @@ describe("createHumanSink", () => {
       "Added to the Gateway ✓",
       "",
       "Live          https://todo.apps.example.com",
-      "Who can open  Private to you, owners and admins · change it at https://apps.example.com/admin/apps",
+      "Who can open  Private to owners and admins · change it at https://apps.example.com/admin/apps",
     ]);
     expect(problems()).toEqual([]);
     expect(sink.exitCode).toBe(0);
@@ -336,7 +336,6 @@ describe("createHumanSink", () => {
         existingApp: false,
         firstDeploy: true,
         defaultAccess: false,
-        deployerAccess: false,
         hasOwner: false,
         organizationName: "Example Inc",
         gatewayUrl: "https://apps.example.com",

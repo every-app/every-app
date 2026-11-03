@@ -206,11 +206,6 @@ async function turnOnDataForSeo(): Promise<string> {
     organizationId: acme,
     id: "dataforseo",
     existingApp: null,
-    members: [
-      { id: owner, role: "owner" },
-      { id: admin, role: "admin" },
-    ],
-    actorUserId: owner,
     actor: "ben@example.com",
     now: Date.now(),
   });
@@ -218,9 +213,6 @@ async function turnOnDataForSeo(): Promise<string> {
     ...plan.app,
     deployedAt: new Date(plan.app.deployedAt ?? Date.now()),
   });
-  for (const grant of plan.grants) {
-    await db.insert(userAppAccess).values(grant);
-  }
   return plan.app.id;
 }
 
@@ -301,7 +293,7 @@ afterEach(async () => {
 });
 
 describe("adding a remote MCP server", () => {
-  it("lets an admin add a server with no credential: the rules' row, access for them and the owners, and its tools listed in the request", async () => {
+  it("lets an admin add a server with no credential: the rules' row, open to the owners and admins, and its tools listed in the request", async () => {
     const added = await McpAppService.add(
       as(admin, "admin"),
       { url: TREG, auth: { kind: "none" } },
@@ -337,8 +329,8 @@ describe("adding a remote MCP server", () => {
       tools: {},
       rev: 1,
     });
-    // The person adding it, the owners and the admins; not the members.
-    expect(await grantees(added.rowId)).toEqual([owner, admin].sort());
+    // Nobody is granted it: owners and admins open it by their role.
+    expect(await grantees(added.rowId)).toEqual([]);
   });
 
   it("answers the command that sets a credentialed server's credential, and lists nothing until it is set", async () => {
@@ -543,7 +535,7 @@ describe("adding a remote MCP server", () => {
     );
     expect(again).toMatchObject({ kind: "revived", rowId: first.rowId });
     expect((await row(first.rowId)).status).toBe("active");
-    expect(await grantees(first.rowId)).toEqual([owner, admin].sort());
+    expect(await grantees(first.rowId)).toEqual([]);
   });
 
   it("refuses the built-in's id", async () => {
@@ -643,7 +635,7 @@ describe("turning an MCP app off and on", () => {
         McpAppService.setStatus(as(admin, "admin"), { id, status: "disabled" }),
       ).resolves.toEqual({ status: "disabled", changed: true });
       expect((await row(id)).status).toBe("disabled");
-      expect(await grantees(id)).toEqual([owner, admin].sort());
+      expect(await grantees(id)).toEqual([]);
       // Off already: nothing changes.
       await expect(
         McpAppService.setStatus(as(admin, "admin"), { id, status: "disabled" }),

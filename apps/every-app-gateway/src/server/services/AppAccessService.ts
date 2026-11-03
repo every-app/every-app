@@ -15,8 +15,9 @@ import { platformPolicy } from "@/server/platform-policy";
 import { listedAppSetup } from "./listedAppSetup";
 
 /**
- * Get all apps a user has access to: the organization's own they have
- * installed (directly or through a group, `via`), and on the hosted
+ * Get all apps a user has access to: the organization's own they open
+ * (effective-access.ts; `via` names a group that is their only way in),
+ * and on the hosted
  * gateway the shared apps, which every member of every organization may
  * open. Each carries its `setup`: what it still needs set before it
  * opens, with the command for an app of the reader's own organization (a
@@ -54,7 +55,7 @@ async function getAppsForUser(ctx: OrgContext) {
           scope: app.scope,
           status: app.status,
           icon: app.icon,
-          isDefault: app.isDefault,
+          everyone: app.everyone,
           createdAt: app.createdAt,
           updatedAt: app.updatedAt,
           tier: app.tier,
@@ -115,9 +116,11 @@ function assertNotShared(app: { scope: string }): void {
 }
 
 /**
- * Get access state for all users for a specific app: every member, whether
- * they hold a direct grant (`hasAccess`, what the modal edits) and the
- * groups that grant it to them (`viaGroups`).
+ * Get access state for all users for a specific app: whether it is
+ * available to everyone (`everyone`), and every member, whether they hold
+ * a person's grant (`hasAccess`, what the modal edits), whether their role
+ * opens it (`admin`: owners and admins open every app) and the groups that
+ * grant it to them (`viaGroups`).
  */
 async function getAccessStateForApp(ctx: OrgContext, appRowId: string) {
   const app = await AppRepository.findById(appRowId, ctx.orgId);
@@ -130,6 +133,7 @@ async function getAccessStateForApp(ctx: OrgContext, appRowId: string) {
   const access = new Map(accessRecords.map((r) => [r.userId, r]));
 
   return {
+    everyone: app?.everyone ?? false,
     users: allUsers.map((user) => ({
       id: user.id,
       name: user.name,
@@ -137,16 +141,16 @@ async function getAccessStateForApp(ctx: OrgContext, appRowId: string) {
       role: user.role,
       status: user.status,
       hasAccess: access.get(user.id)?.direct ?? false,
+      admin: access.get(user.id)?.admin ?? false,
       viaGroups: access.get(user.id)?.viaGroups ?? [],
     })),
   };
 }
 
 /**
- * Update direct access for multiple users for an app.
- * Takes the full list of user IDs who should hold a direct grant; what a
- * group grants is never touched here (Admin -> Groups manages that).
- * Prevents owners from revoking their own access.
+ * Update the person grants to an app: the full list of user IDs who should
+ * hold one. What a group grants is never touched here (Admin -> Groups
+ * manages that), nor what a role or "Available to everyone" opens.
  */
 async function updateAccessForApp(
   ctx: OrgContext,
@@ -181,20 +185,9 @@ async function updateAccessForApp(
     (id) => !currentUserIds.has(id),
   );
 
-  // Find users to revoke (in current but not in new list).
-  // For dashboard-driven changes, preserve the acting user's access so they
-  // cannot lock themselves out mid-session.
-  const toRevoke = [...currentUserIds].filter((id) => {
-    if (newUserIds.has(id)) {
-      return false;
-    }
-
-    if (id === ctx.userId) {
-      return false;
-    }
-
-    return true;
-  });
+  // Find users to revoke (in current but not in new list). The admin
+  // acting keeps the app whatever their own grant: their role opens it.
+  const toRevoke = [...currentUserIds].filter((id) => !newUserIds.has(id));
 
   // Grant access to new users
   if (toGrant.length > 0) {
@@ -215,8 +208,8 @@ async function updateAccessForApp(
       toRevoke,
       ctx.orgId,
     );
-    // Their OAuth connections in the app go too, unless a group still
-    // gives them the app.
+    // Their OAuth connections in the app go too, unless another way in
+    // still gives them the app.
     await ProviderConnectionRepository.pruneWithoutAccess(ctx.orgId);
   }
 
@@ -246,57 +239,8 @@ async function updateAccessForApp(
   };
 }
 
-/**
- * Grant default apps to a new user.
- * Called when a user completes signup.
- */
-async function grantDefaultAppsToUser(userId: string, organizationId?: string) {
-  if (!organizationId) {
-    return;
-  }
-
-  const defaultApps = await AppRepository.findAllDefault(organizationId);
-
-  if (defaultApps.length === 0) {
-    return;
-  }
-
-  const accessRecords = defaultApps.map((app) => ({
-    id: crypto.randomUUID(),
-    organizationId,
-    userId,
-    appRowId: app.id,
-    grantedBy: null,
-  }));
-
-  await AppAccessRepository.createMany(accessRecords);
-}
-
-/**
- * Give the gateway's first owner every app of their organization that
- * nobody has access to: apps deployed before anyone existed, whose initial
- * access found no members to grant.
- */
-async function grantUnclaimedAppsToOwner(
-  userId: string,
-  organizationId: string,
-) {
-  const unclaimed = await AppRepository.findAllWithoutAccess(organizationId);
-  await AppAccessRepository.createMany(
-    unclaimed.map((app) => ({
-      id: crypto.randomUUID(),
-      organizationId,
-      userId,
-      appRowId: app.id,
-      grantedBy: null,
-    })),
-  );
-}
-
 export const AppAccessService = {
   getAppsForUser,
   getAccessStateForApp,
   updateAccessForApp,
-  grantDefaultAppsToUser,
-  grantUnclaimedAppsToOwner,
 } as const;

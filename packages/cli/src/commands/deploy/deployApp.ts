@@ -415,7 +415,7 @@ async function deploySteps(
   }
 
   // 2. Register: the rules name everything.
-  const { plan, organization, hasOwner, deployerGranted } = await registerFromManifest(
+  const { plan, organization, hasOwner } = await registerFromManifest(
     registry,
     { manifest, install, names, deployer, accountName },
   );
@@ -450,8 +450,7 @@ async function deploySteps(
       status: plan.app.status,
       existingApp: !isNew,
       firstDeploy,
-      defaultAccess: plan.app.isDefault,
-      deployerAccess: deployerGranted,
+      defaultAccess: plan.app.everyone,
       hasOwner,
       publicRoutes,
       mcp,

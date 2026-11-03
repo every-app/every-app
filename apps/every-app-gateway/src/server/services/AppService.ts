@@ -2,8 +2,7 @@ import { env } from "cloudflare:workers";
 import { isRemoteMcpRow } from "@every-app/perimeter/registry";
 import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import { AppRepository } from "../repositories/AppRepository";
-import { AppAccessRepository } from "../repositories/AppAccessRepository";
-import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
+import { ProviderConnectionRepository } from "../repositories/ProviderConnectionRepository";
 import { DrizzleAppRegistry } from "@/perimeter/drizzleAppRegistry";
 import { activateBindingApps } from "@/server/app-activation";
 import { PublicError } from "@/server/errors";
@@ -24,7 +23,7 @@ type UpdateAppInput = {
   id: string;
   name?: string;
   description?: string;
-  isDefault?: boolean;
+  everyone?: boolean;
 };
 
 /**
@@ -69,7 +68,7 @@ async function getAllWithAccessCounts(ctx: OrgContext) {
       versionId: app.versionId,
       status: app.status,
       deployedByActor: app.deployedByActor,
-      isDefault: app.isDefault,
+      everyone: app.everyone,
       createdAt: app.createdAt,
       updatedAt: app.updatedAt,
       accessCount: 0,
@@ -97,10 +96,9 @@ async function getAllWithAccessCounts(ctx: OrgContext) {
 }
 
 /**
- * Update an app's catalog metadata. `isDefault` is "Available to everyone":
- * turning it on grants every current member now and every future member on
- * joining; turning it off keeps existing access (remove people with Manage
- * Access).
+ * Update an app's catalog metadata. `everyone` is "Available to everyone":
+ * on, every member opens it, whoever joins later too; off, only owners,
+ * admins and the people and groups granted it in Manage access do.
  */
 async function update(ctx: OrgContext, data: UpdateAppInput) {
   const existingApp = await AppRepository.findById(data.id, ctx.orgId);
@@ -108,7 +106,7 @@ async function update(ctx: OrgContext, data: UpdateAppInput) {
     throw new PublicError("APP_NOT_FOUND", "App not found");
   }
   // A shared app is no organization's default: it opens for everyone.
-  if (existingApp.scope === "shared" && data.isDefault) {
+  if (existingApp.scope === "shared" && data.everyone) {
     throw new PublicError(
       "SHARED_APP_ACCESS",
       "Every member of every organization can open a shared app; its access can't be changed.",
@@ -119,7 +117,7 @@ async function update(ctx: OrgContext, data: UpdateAppInput) {
     organizationId: ctx.orgId,
     name: data.name,
     description: data.description,
-    isDefault: data.isDefault,
+    everyone: data.everyone,
   });
   const subject = {
     id: existingApp.appSlug,
@@ -142,33 +140,11 @@ async function update(ctx: OrgContext, data: UpdateAppInput) {
     }));
   }
 
-  if (data.isDefault && !existingApp.isDefault) {
-    const orgMembers =
-      await OrganizationMembersRepository.listMembersForOrganization(ctx.orgId);
-    await AppAccessRepository.createMany(
-      orgMembers.map((member) => ({
-        id: crypto.randomUUID(),
-        organizationId: ctx.orgId,
-        userId: member.id,
-        appRowId: existingApp.id,
-        grantedBy: ctx.userId,
-      })),
-    );
-    await emit(async () => ({
-      organizationId: ctx.orgId,
-      actor: await actorFor(ctx),
-      ...catalogue.appAccessChanged({
-        app: subject,
-        granted: orgMembers.map((member) => ({
-          id: member.id,
-          email: member.email,
-          name: member.name || null,
-        })),
-        revoked: [],
-        everyone: true,
-      }),
-    }));
-  } else if (data.isDefault === false && existingApp.isDefault) {
+  if (data.everyone !== undefined && data.everyone !== existingApp.everyone) {
+    // Off: the OAuth connections of whoever no longer opens it go.
+    if (!data.everyone) {
+      await ProviderConnectionRepository.pruneWithoutAccess(ctx.orgId);
+    }
     await emit(async () => ({
       organizationId: ctx.orgId,
       actor: await actorFor(ctx),
@@ -176,7 +152,7 @@ async function update(ctx: OrgContext, data: UpdateAppInput) {
         app: subject,
         granted: [],
         revoked: [],
-        everyone: false,
+        everyone: data.everyone,
       }),
     }));
   }

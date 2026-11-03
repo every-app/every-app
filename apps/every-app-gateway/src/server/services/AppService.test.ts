@@ -38,7 +38,7 @@ function row(appSlug: string, manifest: string | null) {
     emailInbound: null,
     status: "active",
     deployedByActor: null,
-    isDefault: false,
+    everyone: false,
     createdAt: new Date(0),
     updatedAt: new Date(0),
   };

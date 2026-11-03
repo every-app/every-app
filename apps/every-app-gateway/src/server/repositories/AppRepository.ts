@@ -25,12 +25,10 @@ import {
   inArray,
   isNull,
   ne,
-  not,
-  notExists,
   or,
   sql,
 } from "drizzle-orm";
-import { anyAccessToApp, effectiveAccess } from "./effective-access";
+import { effectiveAccess } from "./effective-access";
 
 const notDeleted = ne(apps.status, DELETED_APP_STATUS);
 
@@ -46,7 +44,7 @@ type UpdateApp = {
   organizationId: string;
   name?: string;
   description?: string;
-  isDefault?: boolean;
+  everyone?: boolean;
 };
 
 /**
@@ -74,7 +72,7 @@ async function findSlugsAndManifests(organizationId: string) {
 
 /**
  * Find all apps with access counts in a single query: how many distinct
- * members open each, directly or through a group. The version comes
+ * members open each, any way (effective-access.ts). The version comes
  * along for the setup evaluation's cache key; the service keeps it
  * server-side.
  */
@@ -98,7 +96,7 @@ async function findAllWithAccessCounts(organizationId: string) {
       versionId: apps.versionId,
       status: apps.status,
       deployedByActor: apps.deployedByActor,
-      isDefault: apps.isDefault,
+      everyone: apps.everyone,
       createdAt: apps.createdAt,
       updatedAt: apps.updatedAt,
       accessCount: countDistinct(access.userId),
@@ -171,38 +169,6 @@ async function findByAppSlug(appSlug: string, organizationId: string) {
       eq(apps.organizationId, organizationId),
     ),
   });
-}
-
-/**
- * Find all apps marked as default.
- */
-async function findAllDefault(organizationId: string) {
-  return db.query.apps.findMany({
-    where: and(
-      eq(apps.organizationId, organizationId),
-      eq(apps.isDefault, true),
-      notDeleted,
-    ),
-  });
-}
-
-/**
- * The organization's apps nobody has access to, directly or through a
- * group: registered while it had no members, before the gateway had an
- * owner. Shared apps are nobody's to grant.
- */
-async function findAllWithoutAccess(organizationId: string) {
-  return db
-    .select({ id: apps.id })
-    .from(apps)
-    .where(
-      and(
-        eq(apps.organizationId, organizationId),
-        notDeleted,
-        ne(apps.scope, "shared"),
-        not(anyAccessToApp(organizationId)),
-      ),
-    );
 }
 
 /**
@@ -444,8 +410,6 @@ export const AppRepository = {
   findById,
   findCallableById,
   findByAppSlug,
-  findAllDefault,
-  findAllWithoutAccess,
   update,
   activate,
   findBinding,

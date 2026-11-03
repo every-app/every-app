@@ -62,11 +62,9 @@ import {
   ensureInstallOrganization,
   hasSecretNamesColumn,
   installOrganization,
-  memberQueries,
   registryCall,
   text,
   toAppRow,
-  toMembers,
   withoutAppData,
   type Deployer,
   type Organization,
@@ -297,28 +295,21 @@ interface RemoteMcpAdded {
   organization: Organization;
   /** The Gateway has an owner. */
   hasOwner: boolean;
-  /** The person adding it is a member and was granted it. */
-  actorGranted: boolean;
 }
 
-/** What adding a remote MCP app writes, in one batch (the row, its grants; a revived one's leftovers cleared). */
+/** What adding a remote MCP app writes, in one batch (the row; a revived one's leftovers cleared). */
 function addWrites(
   plan: RemoteMcpAddPlan,
   now: number,
   columns: { secretNames: boolean; remoteTools: boolean },
 ): D1Statement[] {
   const { app } = plan;
-  const grants = plan.grants.map((grant) => ({
-    sql: `INSERT INTO user_app_access (id, user_id, app_row_id, organization_id, granted_by)
-VALUES (?, ?, ?, ?, NULL) ON CONFLICT DO NOTHING`,
-    params: [grant.id, grant.userId, grant.appRowId, grant.organizationId],
-  }));
   if (plan.kind === "new") {
     return [
       {
         sql: `INSERT INTO apps (id, organization_id, app_slug, name, description, hostname,
   worker_name, tier, manifest, status, version_id, deployed_at, deployed_by_actor,
-  is_default, created_at, updated_at, scope)
+  everyone, created_at, updated_at, scope)
 VALUES (?1, ?2, ?3, ?4, ?5, NULL, NULL, ?6, ?7, ?8, NULL, ?9, ?10, 0, ?11, ?11, ?12)`,
         params: [
           app.id,
@@ -335,14 +326,13 @@ VALUES (?1, ?2, ?3, ?4, ?5, NULL, NULL, ?6, ?7, ?8, NULL, ?9, ?10, 0, ?11, ?11, 
           app.scope,
         ],
       },
-      ...grants,
     ];
   }
   // Its own tombstone comes back as new: nothing of the old access, tokens,
   // snapshot or listing is kept.
   return [
     {
-      sql: `UPDATE apps SET name = ?, description = ?, manifest = ?, status = ?, is_default = 0,
+      sql: `UPDATE apps SET name = ?, description = ?, manifest = ?, status = ?, everyone = 0,
   deployed_at = ?, deployed_by_actor = ?, updated_at = ?
 WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
       params: [
@@ -358,7 +348,6 @@ WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
     },
     ...withoutAppData(app, now, { secretNames: columns.secretNames }),
     ...(columns.remoteTools ? [remoteToolsDelete(app)] : []),
-    ...grants,
   ];
 }
 
@@ -373,8 +362,8 @@ function remoteToolsDelete(
 
 /**
  * Register a remote MCP server in the install organization (created when
- * the Gateway has none yet): the row `active` at once, granted to the
- * person adding it and the owners and admins, or its own tombstone revived
+ * the Gateway has none yet): the row `active` at once, granted to nobody
+ * (owners and admins open it by their role), or its own tombstone revived
  * as new. The registry's refusals (REMOTE_MCP_URL_REFUSED,
  * REMOTE_MCP_INVALID, REMOTE_MCP_EXISTS, REMOTE_MCP_SECRET_TAKEN,
  * APP_TIER_MISMATCH) write nothing.
@@ -393,16 +382,14 @@ export function addRemoteMcpApp(
       input.organizationName,
       now,
     );
-    const [existing = [], members = [], actors = []] = await db.run([
+    const [existing = []] = await db.run([
       {
         sql: `SELECT ${await appColumns(db)} FROM apps WHERE organization_id = ? AND app_slug = ?`,
         params: [organization.id, id],
       },
-      ...memberQueries(organization.id, input.deployer.email),
     ]);
     const existingApp = existing[0] ? toAppRow(existing[0]) : null;
     const origins = await credentialOrigins(db);
-    const actorUserId = text(actors[0]?.["id"]);
     const plan = planRemoteMcpAppAdd({
       organizationId: organization.id,
       url,
@@ -422,8 +409,6 @@ export function addRemoteMcpApp(
         const origin = new URL(url).origin;
         return used.find((each) => each !== origin) ?? used[0] ?? null;
       },
-      members: toMembers(members),
-      actorUserId,
       actor: input.deployer.actor,
       now,
     });
@@ -451,14 +436,7 @@ export function addRemoteMcpApp(
       }),
       ...added,
     ]);
-    return {
-      plan,
-      organization,
-      hasOwner,
-      actorGranted:
-        actorUserId !== null &&
-        plan.grants.some((grant) => grant.userId === actorUserId),
-    };
+    return { plan, organization, hasOwner };
   });
 }
 
@@ -532,8 +510,8 @@ export function removeMcpApp(
     const tables = await remoteMcpTables(db);
     await db.run([
       {
-        sql: "UPDATE apps SET status = ?, is_default = ?, updated_at = ? WHERE id = ?",
-        params: [update.status, update.isDefault ? 1 : 0, now, app.id],
+        sql: "UPDATE apps SET status = ?, everyone = ?, updated_at = ? WHERE id = ?",
+        params: [update.status, update.everyone ? 1 : 0, now, app.id],
       },
       ...withoutAppData(app, now, {
         secretNames: await hasSecretNamesColumn(db),

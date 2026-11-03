@@ -22,7 +22,7 @@ function app(overrides: Partial<UserAccessApp>): UserAccessApp {
     hostname: "inbox.apps.example.com",
     tier: "service_binding",
     status: "active",
-    isDefault: true,
+    everyone: true,
     createdAt: new Date(0),
     updatedAt: new Date(0),
     grantedAt: new Date(0),

@@ -18,13 +18,6 @@ const ENV = {
   appBaseDomain: "apps.example.com",
 };
 
-const members = [
-  { id: "owner", role: "owner" },
-  { id: "admin", role: "admin" },
-  { id: "member", role: "member" },
-  { id: "actor", role: "member" },
-];
-
 function input(overrides: Partial<RemoteMcpAddInput> = {}): RemoteMcpAddInput {
   return {
     organizationId: "org-1",
@@ -32,8 +25,6 @@ function input(overrides: Partial<RemoteMcpAddInput> = {}): RemoteMcpAddInput {
     auth: { kind: "bearer" },
     env: ENV,
     existingApp: () => null,
-    members,
-    actorUserId: "actor",
     actor: "ben@example.com",
     now: NOW,
     ...overrides,
@@ -60,7 +51,7 @@ const deployedRow: AppRow = {
   versionId: "v1",
   deployedAt: NOW - 1000,
   deployedByActor: "someone@example.com",
-  isDefault: false,
+  everyone: false,
 };
 
 describe("planRemoteMcpAppAdd", () => {
@@ -80,7 +71,7 @@ describe("planRemoteMcpAppAdd", () => {
       versionId: null,
       deployedAt: NOW,
       deployedByActor: "ben@example.com",
-      isDefault: false,
+      everyone: false,
     });
     expect(remoteMcpOf(JSON.parse(plan.app.manifest!))).toEqual({
       url: "https://treg.to/mcp/",
@@ -89,11 +80,7 @@ describe("planRemoteMcpAppAdd", () => {
       tools: {},
       rev: 1,
     });
-    expect(plan.grants.map((grant) => grant.userId).sort()).toEqual([
-      "actor",
-      "admin",
-      "owner",
-    ]);
+    expect(plan).not.toHaveProperty("grants");
     expect(isRemoteMcpRow(plan.app)).toBe(true);
     expect(remoteMcpBlockOf(plan.app)).toEqual(plan.remote);
   });
@@ -240,7 +227,6 @@ describe("planRemoteMcpAppAdd", () => {
     expect(plan.app.id).toBe("row-1");
     expect(plan.app.status).toBe("active");
     expect(plan.app.name).toBe("Treg");
-    expect(plan.grants).toHaveLength(3);
   });
 
   it("refuses the id of a shared app every organization sees", () => {
@@ -420,8 +406,6 @@ describe("mcpAppStatusUpdate and mcpAppRemoveUpdate", () => {
       organizationId: "org-1",
       id: "dataforseo",
       existingApp: null,
-      members,
-      actorUserId: "actor",
       actor: "ben@example.com",
       now: NOW,
     }).app;
@@ -433,8 +417,6 @@ describe("mcpAppStatusUpdate and mcpAppRemoveUpdate", () => {
       organizationId: "org-1",
       id: "dataforseo",
       existingApp: { ...builtIn, status: "disabled" },
-      members,
-      actorUserId: "actor",
       actor: "ben@example.com",
       now: NOW,
     });
@@ -454,7 +436,7 @@ describe("mcpAppStatusUpdate and mcpAppRemoveUpdate", () => {
   it("removes an MCP app of either kind as a tombstone and never a deployed app", () => {
     expect(mcpAppRemoveUpdate(remoteRow())).toEqual({
       status: "deleted",
-      isDefault: false,
+      everyone: false,
       emailSenders: null,
       emailInbound: null,
       secretNames: null,

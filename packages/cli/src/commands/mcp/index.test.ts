@@ -327,7 +327,6 @@ describe("mcp add", () => {
         probe: { outcome: "reachable", era: "2026-07-28", tools: 2, server: "treg" },
         key: { name: "TREG_MCP_TOKEN", set: false, bound: false, boundOrigin: null },
         mcp: { url: "https://example.com/mcp", toolPrefix: "treg_" },
-        granted: [],
         next: [
           { command: "pnpm everyapp secret set TREG_MCP_TOKEN", note: "treg's credential" },
           { command: "pnpm everyapp mcp show treg", note: "its tools, once the Gateway lists them" },

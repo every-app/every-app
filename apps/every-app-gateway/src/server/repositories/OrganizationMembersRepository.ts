@@ -99,9 +99,10 @@ export function wouldLeaveNoLiveOwner(
 /**
  * The members of an active organization who can open one of its apps now,
  * by the rule the perimeter applies when they visit it
- * (betterAuthAuthenticator.ts hasAppAccess): not deactivated, and granted
- * an organization's own app, directly or through a group
- * (effective-access.ts); a shared app opens for every member. The members
+ * (betterAuthAuthenticator.ts hasAppAccess): not deactivated, and opening
+ * an organization's own app (effective-access.ts: available to everyone,
+ * an owner or admin role, a person's grant or a group's); a shared app
+ * opens for every member. The members
  * capability lists them for the app.
  */
 async function listAppMembers({

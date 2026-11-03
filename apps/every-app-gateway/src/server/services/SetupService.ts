@@ -21,7 +21,6 @@ import {
   digestsEqual,
   hashSetupToken,
 } from "../setup-token";
-import { AppAccessService } from "./AppAccessService";
 
 type SetupErrorCode =
   | "SETUP_UNAVAILABLE"
@@ -204,15 +203,6 @@ async function claimOwner(input: ClaimOwnerInput) {
       organizationId = organization.id;
     }
 
-    // Their initial access found nobody to grant: the owner gets them.
-    await AppAccessService.grantUnclaimedAppsToOwner(
-      result.user.id,
-      organizationId,
-    );
-    await AppAccessService.grantDefaultAppsToUser(
-      result.user.id,
-      organizationId,
-    );
     if (!(await OwnerSetupTokenRepository.consume(link.id, result.user.id))) {
       throw new SetupError("INVALID_OR_EXPIRED_SETUP_LINK");
     }

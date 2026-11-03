@@ -573,9 +573,7 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
           ? `Members of every organization ${chalk.dim("(shared app)")}`
           : data["defaultAccess"] === true
             ? `Everyone${organization ? ` in ${organization}` : ""} ${change}`
-            : data["deployerAccess"] === false
-              ? `Private to owners and admins ${change}`
-              : `Private to you, owners and admins ${change}`;
+            : `Private to owners and admins ${change}`;
       const noOwner =
         data["hasOwner"] === false
           ? `\n  ${chalk.dim(`The Gateway has no owner yet; its first owner gets the app (${CLI} setup).`)}`

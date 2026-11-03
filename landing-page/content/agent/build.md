@@ -89,7 +89,8 @@ becomes something else, not on the first feature.
    in the signed identity (`user.orgId`), every member sees the organization's
    rows, and owners and admins (`isAdmin(user)`) manage. An app for the whole
    organization also says so in the manifest: `access: "everyone"` (the
-   default, `admins`, opens it to the deployer, owners and admins alone).
+   default, `admins`, opens it to owners and admins until an admin grants
+   others).
    Never an allowlist of users of your own: the Gateway decides who may open
    the app.
 3. Routes are private unless listed under `public` in `everyapp.config.ts`. A

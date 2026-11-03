@@ -7,9 +7,9 @@
 import { and, eq } from "drizzle-orm";
 import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import { db } from "@/db";
-import { members, users } from "@/db/schema";
+import { apps, members, users } from "@/db/schema";
 import { AppRepository } from "@/server/repositories/AppRepository";
-import { effectiveAccess } from "@/server/repositories/effective-access";
+import { accessToApp } from "@/server/repositories/effective-access";
 import { isUserBanned } from "@/server/user-ban";
 
 /** The app a connect is for, as the flow needs it. */
@@ -37,7 +37,8 @@ function parseManifest(text: string | null): Record<string, unknown> | null {
 
 /**
  * Whether the member is in the organization, not deactivated, and opens
- * the organization's app `appRowId` (a direct or group grant).
+ * the organization's app `appRowId` (effective-access.ts: available to
+ * everyone, an owner or admin role, a person's grant or a group's).
  */
 export async function memberMayUseApp(input: {
   organizationId: string;
@@ -57,15 +58,17 @@ export async function memberMayUseApp(input: {
     )
     .limit(1);
   if (!row || isUserBanned(row, input.now)) return false;
-  const access = effectiveAccess(input.organizationId);
-  const [grant] = await db
-    .select({ appRowId: access.appRowId })
-    .from(access)
+  const [opens] = await db
+    .select({ id: apps.id })
+    .from(apps)
     .where(
-      and(eq(access.userId, input.userId), eq(access.appRowId, input.appRowId)),
+      and(
+        eq(apps.id, input.appRowId),
+        accessToApp(input.userId, input.organizationId),
+      ),
     )
     .limit(1);
-  return Boolean(grant);
+  return Boolean(opens);
 }
 
 /**

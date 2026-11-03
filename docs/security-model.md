@@ -258,14 +258,17 @@ does, once, in
   new connection. The status is cached per isolate for up to 30 seconds,
   like memberships.
 - An organization's own app (`scope = 'org'`, every app on a self-hosted
-  gateway) opens for a member of that organization with the app installed
-  for them: a `user_app_access` row, or membership in a group holding a
-  `group_app_access` row (one union in
+  gateway) opens for a member of that organization when the app is
+  available to everyone (`apps.everyone`), the member is an owner or
+  admin there, or they hold a `user_app_access` row or belong to a group
+  holding a `group_app_access` row (one rule in
   `apps/every-app-gateway/src/server/repositories/effective-access.ts`,
   read by the perimeter, the launcher, the members capability, the MCP
-  catalogs and the consent page; removing a member ends both kinds of
-  grant in one batch, and a group never holds another organization's
-  user or app, nor a shared app). A browser session acting under
+  catalogs, the consent page and OAuth's "may use the app" check;
+  removing a member ends both kinds of grant in one batch, demoting an
+  admin ends what the role opened, and a group never holds another
+  organization's user or app, nor a shared app). A tombstone opens for
+  nobody. A browser session acting under
   another of the person's organizations is let in as their membership in
   the app's organization: the JWT carries the app's organization and their
   role there, never the session's. A personal access token only ever acts
@@ -274,7 +277,7 @@ does, once, in
   is a registry row of the platform organization (the install organization,
   "EveryApp"), at `<appId>.<APP_BASE_DOMAIN>`, on a service binding, one
   Worker for every organization. Any live member of any active
-  organization opens it, with no `user_app_access` row, acting under their
+  organization opens it, with no grant, acting under their
   session's organization: the JWT carries that organization, and the app
   scopes its data by it. Only `platformPolicy(env).sharedApps` (hosted)
   honours the scope: elsewhere a shared row opens for nobody. Shared apps
@@ -400,8 +403,9 @@ in the gateway's Cloudflare account **is** operator authority.
   reserved and malformed app ids, the Worker name `every-<orgKey>-<appId>`
   (never one of the gateway's own names, at most 63 characters), D1 and KV
   names derived from it, the hostname, takeover checks against existing
-  rows (a deleted app's tombstone keeps its names), and initial access (the
-  deployer, owners and admins; everyone with `access: "everyone"`). The
+  rows (a deleted app's tombstone keeps its names), and whether a new app is
+  available to everyone (`access: "everyone"`; otherwise only owners and
+  admins open it, and registration grants nobody). The
   gateway still validates the manifest it reads from a row and treats an
   unknown status as disabled; a row whose `tier` isn't `service_binding` or
   `dispatch`, or whose `scope` isn't `org` or `shared`, is never routed (a
@@ -547,8 +551,8 @@ credential is involved, and the perimeter never sees git traffic.
   it is claimed with the one-time setup link the CLI mints into D1 with the
   operator's Cloudflare login. Apps may be deployed before then (a CI-first
   install): the claim makes the first owner the owner of the organization
-  they were deployed to and gives them every app in it nobody has access
-  to. Members cannot create organizations (a hosted sign-up's personal
+  they were deployed to, and the owner role opens every app in it.
+  Members cannot create organizations (a hosted sign-up's personal
   organization is the gateway's doing, above). On a gateway whose deployment
   mode is invalid the claim is refused (`SETUP_UNAVAILABLE`).
 - Invite links carry their own random secret (only its SHA-256 is stored);
@@ -712,8 +716,8 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   someone else's address is never handed over.
 - Membership stays the gateway's: members (never deactivated ones), pending
   invitations for the verified email (accepted), operator-listed auto-join
-  domains (members with the apps available to everyone, as an invitation
-  gives), and through the outer ring only, anyone Access admits if the
+  domains (members, who open the apps available to everyone, as an
+  invitation gives), and through the outer ring only, anyone Access admits if the
   operator opts in. Nothing happens before the gateway is claimed. Removing
   someone from the Access policy is not offboarding (tokens and AI
   connections don't pass through Access): deactivation is, and for people
@@ -760,7 +764,7 @@ the session is the same as after a password.
   creates nothing.
 - Who gets in is the invitation flow's rule: an existing member (never a
   deactivated one), or a pending invitation for that exact email, accepted
-  with its role and the organization's default apps; on the hosted
+  with its role (opening the apps available to everyone); on the hosted
   gateway's open sign-up, anyone with a verified email, with a personal
   organization as the sign-up form gives. Nothing before the setup claim:
   the first owner is still made by `everyapp setup`. No auto-join by email

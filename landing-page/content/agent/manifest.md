@@ -795,12 +795,12 @@ Strict schema: `{ inbound?: boolean }` and nothing else; a non-boolean (an addre
 
 ## access
 
-`access` is `everyone` or `admins` and decides who can open the app when it is first registered (`initialAccess()` in `packages/perimeter/src/registry/registration.ts`):
+`access` is `everyone` or `admins` and decides who can open the app when it is first registered (`initialEveryone()` in `packages/perimeter/src/registry/registration.ts`). Registration grants nobody: owners and admins open every app of their organization through their role.
 
-- `admins` (the default): the deployer and the organization's owners and admins get grants; nobody added later.
-- `everyone`: every member, and the app becomes the organization's default (`is_default`), so future members get it too.
+- `admins` (the default): the organization's owners and admins; an admin grants others (a person or a group) in the Gateway.
+- `everyone`: the app is available to everyone (`apps.everyone`): every member opens it, people who join later too.
 
-A redeploy of an existing app writes no grants (`kind: "existing"`); admins manage access in the Gateway UI afterwards. A deleted app registered again (`kind: "revived"`) is granted anew. A shared-scope app grants nobody: membership of any active organization opens it. Before the Gateway has an owner there is nobody to grant; the setup claim gives the first owner every app nobody has access to.
+A redeploy of an existing app changes neither (`kind: "existing"`); admins manage access in the Gateway UI afterwards. A deleted app registered again (`kind: "revived"`) starts from its manifest again, with no grants from before. A shared-scope app is nobody's to grant: membership of any active organization opens it. Before the Gateway has an owner nobody opens the app; the first owner does as soon as they claim it.
 
 ## serverFnGuard and serverFnBase
 

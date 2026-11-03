@@ -38,7 +38,7 @@ export function EditAppModal({ app, onClose }: EditAppModalProps) {
   const defaultValues: EditAppFormData = {
     name: app.name,
     description: app.description,
-    isDefault: app.isDefault,
+    everyone: app.everyone,
   };
 
   const form = useAppForm({
@@ -52,7 +52,7 @@ export function EditAppModal({ app, onClose }: EditAppModalProps) {
         adminAppsCollection.update(app.id, (draft) => {
           draft.name = value.name;
           draft.description = value.description;
-          draft.isDefault = value.isDefault ?? false;
+          draft.everyone = value.everyone ?? false;
           draft.updatedAt = new Date();
         });
         onClose();
@@ -150,11 +150,11 @@ export function EditAppModal({ app, onClose }: EditAppModalProps) {
             ) : (
               <>
                 <Separator />
-                <form.AppField name="isDefault">
+                <form.AppField name="everyone">
                   {(field) => (
                     <field.SwitchField
                       label="Available to everyone"
-                      description="Grants every current member, and everyone who joins later. Turning it off keeps the people who already have access."
+                      description="Every member opens it, and everyone who joins later. Off: owners, admins and the people and groups granted it in Manage access."
                     />
                   )}
                 </form.AppField>

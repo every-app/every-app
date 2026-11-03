@@ -1104,9 +1104,10 @@ export const ManifestSchema = z
     email: EmailSchema.optional(),
     /**
      * Who can open the app once it is first registered. "admins" (the
-     * default) grants the deployer and the organization's owners and admins;
-     * "everyone" grants every member, including future ones. Redeploys never
-     * change access; admins manage it in the gateway UI afterwards.
+     * default): the organization's owners and admins, who open every app;
+     * "everyone": the app is available to everyone, future members
+     * included. Redeploys never change access; admins manage it in the
+     * gateway UI afterwards.
      */
     access: AppAccessSchema.optional(),
     /**

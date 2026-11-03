@@ -59,7 +59,6 @@ import {
   McpAppRepository,
   registryRow,
 } from "@/server/repositories/McpAppRepository";
-import { OrganizationMembersRepository } from "@/server/repositories/OrganizationMembersRepository";
 import {
   logToolSync,
   syncAppTools,
@@ -318,9 +317,8 @@ function authInput(
 }
 
 /**
- * Register a remote MCP server for the organization: the row and the
- * grants the rules plan (the person adding it, the owners and the admins),
- * then, for a server that takes no credential, its tools listed within the
+ * Register a remote MCP server for the organization: the row only (owners
+ * and admins open it by their role; an admin grants anyone else), then, for a server that takes no credential, its tools listed within the
  * request so the answer can say how many.
  */
 async function add(
@@ -333,9 +331,8 @@ async function add(
   // The id the rules will settle on, so its row (a tombstone included) is
   // read before they run: they read rows, they don't fetch them.
   const wanted = input.id ?? remoteMcpIdFromUrl(url);
-  const [existing, members, secretUsedAt] = await Promise.all([
+  const [existing, secretUsedAt] = await Promise.all([
     wanted ? AppRepository.findByAppSlug(wanted, ctx.orgId) : undefined,
-    OrganizationMembersRepository.listMembersForOrganization(ctx.orgId),
     credentialUse(ctx.orgId),
   ]);
   let plan;
@@ -352,15 +349,13 @@ async function add(
       existingApp: (id) =>
         existing && existing.appSlug === id ? registryRow(existing) : null,
       secretUsedAt,
-      members: members.map((member) => ({ id: member.id, role: member.role })),
-      actorUserId: ctx.userId,
       actor,
       now: Date.now(),
     });
   } catch (error) {
     throw asPublicError(error);
   }
-  await McpAppRepository.writeRemoteApp(plan.app, plan.grants);
+  await McpAppRepository.writeRemoteApp(plan.app);
   // A revived tombstone is added again, as a new one is.
   await announce(ctx, plan.app, (subject) =>
     catalogue.mcpAppAdded({ ...subject, kind: "remote" }),

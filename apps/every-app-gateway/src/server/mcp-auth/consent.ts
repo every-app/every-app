@@ -370,8 +370,8 @@ export async function buildConsentContext(
 /**
  * The app an app resource names, and the organizations the person may
  * sign a native app into it in: those of their active memberships where
- * they can open the app (`consentChoices`: a `user_app_access` row or a
- * group's, or a shared app; never a suspended organization, never a
+ * they can open the app (`consentChoices`: effective-access.ts, or a
+ * shared app; never a suspended organization, never a
  * deactivated member). A person who can't open the app in the browser
  * can't grant it (`consent.choices-validated-before-spend`), and the page
  * says so. Null app: the host is not an active first-party app any more

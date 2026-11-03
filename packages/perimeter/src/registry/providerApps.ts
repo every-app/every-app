@@ -14,10 +14,9 @@
  * the organization's is refused (APP_TIER_MISMATCH), tombstones included:
  * the deployed app keeps its names.
  *
- * Who gets a provider app when it is turned on follows a deployed app's
- * rule: the person turning it on and the organization's owners and admins,
- * nobody else until an admin grants them (Manage access). It is never an
- * organization's default.
+ * Who opens a provider app follows a deployed app's rule: the
+ * organization's owners and admins, nobody else until an admin grants them
+ * (Manage access) or makes it available to everyone.
  */
 import {
   isProviderAppId,
@@ -31,9 +30,7 @@ import {
   DELETED_APP_STATUS,
   deleteUpdate,
   RegistrationError,
-  type AccessGrant,
   type AppRow,
-  type OrganizationMember,
 } from "./registration";
 
 export interface ProviderAppInput {
@@ -42,10 +39,6 @@ export interface ProviderAppInput {
   id: string;
   /** The organization's row for this id, tombstones included. */
   existingApp: AppRow | null;
-  /** The organization's members, for the app's initial access. */
-  members: readonly OrganizationMember[];
-  /** The member turning it on, when the operator is one. */
-  actorUserId: string | null;
   /** Who turned it on, as the row records it (`deployed_by_actor`). */
   actor: string | null;
   now: number;
@@ -53,21 +46,13 @@ export interface ProviderAppInput {
 
 export interface ProviderAppPlan {
   /**
-   * `new`: insert `app` and `grants`. `revived`: a tombstone of this
-   * organization's comes back as `app` with `grants`, nothing of the old
-   * access kept. `existing`: the app has a live row (on, or off with
+   * `new`: insert `app`. `revived`: a tombstone of this organization's
+   * comes back as `app`, nothing of the old access kept. `existing`: the app has a live row (on, or off with
    * `mcp off`); update its name, description and status (`active`) and
    * nothing else.
    */
   kind: "new" | "revived" | "existing";
   app: AppRow;
-  grants: AccessGrant[];
-}
-
-function isOwnerOrAdmin(role: string | null): boolean {
-  return (role ?? "")
-    .split(",")
-    .some((item) => ["owner", "admin"].includes(item.trim()));
 }
 
 /** The id as an MCP app's, or the refusal naming the ones there are. */
@@ -92,7 +77,7 @@ function assertProviderRow(id: string, existingApp: AppRow): void {
 
 /**
  * Turn a provider app on: what to write, from the organization's row for
- * the id (if any) and its members.
+ * the id (if any).
  */
 export function planProviderAppOn(input: ProviderAppInput): ProviderAppPlan {
   const id = providerAppId(input.id);
@@ -118,7 +103,6 @@ export function planProviderAppOn(input: ProviderAppInput): ProviderAppPlan {
         manifest: JSON.stringify(providerAppManifest(id)),
         status: "active",
       },
-      grants: [],
     };
   }
   const rowId = existingApp?.id ?? crypto.randomUUID();
@@ -137,21 +121,9 @@ export function planProviderAppOn(input: ProviderAppInput): ProviderAppPlan {
     versionId: null,
     deployedAt: input.now,
     deployedByActor: input.actor,
-    isDefault: false,
+    everyone: false,
   };
-  const grants: AccessGrant[] = input.members
-    .filter(
-      (member) =>
-        member.id === input.actorUserId || isOwnerOrAdmin(member.role),
-    )
-    .map((member) => ({
-      id: crypto.randomUUID(),
-      organizationId: input.organizationId,
-      userId: member.id,
-      appRowId: rowId,
-      grantedBy: null,
-    }));
-  return { kind: existingApp ? "revived" : "new", app, grants };
+  return { kind: existingApp ? "revived" : "new", app };
 }
 
 /**

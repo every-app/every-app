@@ -445,7 +445,7 @@ describe("app lifecycle (SQLite)", () => {
     const [row] = await db.select().from(apps);
     expect(row).toMatchObject({
       status: "deleted",
-      isDefault: false,
+      everyone: false,
       emailSenders: null,
       emailInbound: null,
     });

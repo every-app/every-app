@@ -75,9 +75,11 @@ export const apps = sqliteTable(
     versionId: text("version_id"),
     deployedAt: integer("deployed_at", { mode: "timestamp_ms" }),
     deployedByActor: text("deployed_by_actor"),
-    isDefault: integer("is_default", { mode: "boolean" })
-      .default(false)
-      .notNull(), // Auto-grant to new users within organization
+    // "Available to everyone": every member of the organization opens it.
+    // Who opens an app is computed (server/repositories/effective-access.ts):
+    // this flag, or an owner or admin role, or a person's grant
+    // (`user_app_access`), or a group's (`group_app_access`).
+    everyone: integer("everyone", { mode: "boolean" }).default(false).notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
@@ -100,7 +102,9 @@ export const apps = sqliteTable(
 );
 
 /**
- * Junction table for user app access - controls which users can access which apps
+ * A person's grant to one app: someone who isn't an owner or admin opens an
+ * app that isn't available to everyone with one of these, or through a
+ * group (groups.schema.ts).
  */
 export const userAppAccess = sqliteTable(
   "user_app_access",

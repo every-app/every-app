@@ -117,10 +117,6 @@ vi.mock("@/server/organization/owner-membership", () => ({
   hasAnyOwnerMembership: vi.fn(),
 }));
 
-vi.mock("@/server/services/AppAccessService", () => ({
-  AppAccessService: { grantDefaultAppsToUser: vi.fn() },
-}));
-
 // Reset mail is within its daily budget here (the budgets have their own
 // tests in sendEmail.test.ts).
 vi.mock("@/server/repositories/RateLimitCounterRepository", () => ({

@@ -165,12 +165,10 @@ function finish(out: EventSink, lines: readonly string[], data: Record<string, u
 }
 
 /** Who can use a newly added app, in a sentence. */
-function accessLine(actorGranted: boolean, hasOwner: boolean): string {
-  const who = actorGranted
-    ? "You, the owners and the admins can use it"
-    : hasOwner
-      ? "The owners and the admins can use it"
-      : "The owner gets it when they claim the Gateway";
+function accessLine(hasOwner: boolean): string {
+  const who = hasOwner
+    ? "The owners and the admins can use it"
+    : "The owner gets it when they claim the Gateway";
   return `${who}; an admin grants others in Admin → Apps → Manage access.`;
 }
 
@@ -416,7 +414,7 @@ export async function addServer(options: McpOptions<AddFlags>, url: string): Pro
             : `${key.name} is set, but for ${key.boundOrigin}: ${CLI} secret set ${key.name}`;
   const lines = [
     `${app.name} is on for ${organization.name}${plan.kind === "revived" ? " (added again, from scratch)" : ""}.`,
-    accessLine(added.actorGranted, added.hasOwner),
+    accessLine(added.hasOwner),
     `Its tools are on ${mcp.url} as ${mcp.toolPrefix}<tool>; the Gateway lists them on first use.`,
     keyLine,
   ];
@@ -436,7 +434,6 @@ export async function addServer(options: McpOptions<AddFlags>, url: string): Pro
     probe,
     key,
     mcp,
-    granted: plan.grants.map((grant) => grant.userId),
     next,
   });
 }
@@ -478,7 +475,6 @@ export async function turnOn(options: McpOptions, id: string): Promise<void> {
   let was: string;
   let organization: { id: string; name: string };
   let accessText: string | null = null;
-  let granted: string[] = [];
   if (ref.kind === "builtin") {
     const result = await turnProviderAppOn(gateway.db, {
       id,
@@ -488,8 +484,7 @@ export async function turnOn(options: McpOptions, id: string): Promise<void> {
     });
     was = result.was;
     organization = result.organization;
-    granted = result.plan.grants.map((grant) => grant.userId);
-    if (was === "new" || was === "revived") accessText = accessLine(result.actorGranted, result.hasOwner);
+    if (was === "new" || was === "revived") accessText = accessLine(result.hasOwner);
   } else {
     const app = liveRemote(ref);
     const { changed } = await setMcpAppStatus(gateway.db, app, "active", gateway.deployer, options.now?.());
@@ -532,7 +527,6 @@ export async function turnOn(options: McpOptions, id: string): Promise<void> {
     organization: { id: organization.id, name: organization.name },
     key,
     mcp,
-    granted,
     ...(key && !key.set
       ? { next: [{ command: `${CLI} secret set ${key.name}`, note: ref.kind === "builtin" ? "the provider's key" : `${name}'s credential` }] }
       : {}),

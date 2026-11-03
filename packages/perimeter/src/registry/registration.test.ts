@@ -25,8 +25,6 @@ const input: RegistrationInput = {
   existingApp: null,
   hostnameOwner: null,
   workerNameOwner: null,
-  members: [],
-  deployerUserId: null,
 };
 
 const registeredTodo: AppRow = {
@@ -44,7 +42,7 @@ const registeredTodo: AppRow = {
   versionId: "version-1",
   deployedAt: 1_700_000_000_000,
   deployedByActor: "ops@example.com",
-  isDefault: false,
+  everyone: false,
 };
 
 /** What `fn` throws (it must throw). */
@@ -81,9 +79,8 @@ describe("planRegistration", () => {
         versionId: null,
         deployedAt: null,
         deployedByActor: null,
-        isDefault: false,
+        everyone: false,
       },
-      grants: [],
       resources: {
         d1: { DB: "every-acme-todo" },
         kv: { KV: "every-acme-todo", CACHE: "every-acme-todo--cache" },
@@ -104,59 +101,18 @@ describe("planRegistration", () => {
     });
   });
 
-  it("makes a new app private: the deployer, owners and admins only", () => {
-    const plan = planRegistration({
-      ...input,
-      members: [
-        { id: "owner-1", role: "owner" },
-        { id: "admin-1", role: "admin" },
-        { id: "deployer-1", role: "member" },
-        { id: "member-1", role: "member" },
-        { id: "both-1", role: "member, admin" },
-      ],
-      deployerUserId: "deployer-1",
-    });
-
-    expect(plan.app.isDefault).toBe(false);
-    expect(plan.grants).toEqual(
-      ["owner-1", "admin-1", "deployer-1", "both-1"].map((userId) => ({
-        id: expect.any(String),
-        organizationId: "org-1",
-        userId,
-        appRowId: plan.app.id,
-        grantedBy: null,
-      })),
-    );
+  it("makes a new app private: owners and admins only, nobody granted", () => {
+    const plan = planRegistration(input);
+    expect(plan.app.everyone).toBe(false);
+    expect(plan).not.toHaveProperty("grants");
   });
 
-  it("grants nobody outside the organization, the deployer included", () => {
-    const plan = planRegistration({
-      ...input,
-      members: [{ id: "owner-1", role: "owner" }],
-      deployerUserId: "outsider-1",
-    });
-    expect(plan.grants.map((grant) => grant.userId)).toEqual(["owner-1"]);
-  });
-
-  it('grants every member and future members with access: "everyone"', () => {
+  it('makes a new app available to everyone with access: "everyone"', () => {
     const plan = planRegistration({
       ...input,
       manifest: { id: "todo", access: "everyone" },
-      members: [
-        { id: "owner-1", role: "owner" },
-        { id: "member-1", role: "member" },
-      ],
     });
-
-    expect(plan.app.isDefault).toBe(true);
-    expect(plan.grants.map((grant) => grant.userId)).toEqual([
-      "owner-1",
-      "member-1",
-    ]);
-  });
-
-  it("registers an app before the gateway has any member, granting nobody", () => {
-    expect(planRegistration(input).grants).toEqual([]);
+    expect(plan.app.everyone).toBe(true);
   });
 
   it("keeps a registered app's names, status and live manifest on redeploy", () => {
@@ -169,13 +125,11 @@ describe("planRegistration", () => {
       existingApp: registeredTodo,
       hostnameOwner: registeredTodo,
       workerNameOwner: registeredTodo,
-      members: [{ id: "owner-1", role: "owner" }],
     });
 
     expect(plan).toEqual({
       kind: "existing",
       app: { ...registeredTodo, name: "Todo", description: "A todo app" },
-      grants: [],
       resources: {
         d1: { DB: "every-acme-todo" },
         kv: { KV: "every-acme-todo", CACHE: "every-acme-todo--cache" },
@@ -187,13 +141,12 @@ describe("planRegistration", () => {
   });
 
   it("restores a deleted app on redeploy by its own organization", () => {
-    const tombstone = { ...registeredTodo, status: "deleted", isDefault: true };
+    const tombstone = { ...registeredTodo, status: "deleted", everyone: true };
     const plan = planRegistration({
       ...input,
       existingApp: tombstone,
       hostnameOwner: tombstone,
       workerNameOwner: tombstone,
-      members: [{ id: "owner-1", role: "owner" }],
     });
 
     expect(plan).toMatchObject({
@@ -204,9 +157,8 @@ describe("planRegistration", () => {
         workerName: "every-acme-todo",
         hostname: "todo-acme.apps.example.com",
         manifest: JSON.stringify(MANIFEST),
-        isDefault: false,
+        everyone: false,
       },
-      grants: [{ userId: "owner-1", appRowId: "app-row-1" }],
     });
   });
 
@@ -376,14 +328,9 @@ describe("shared apps", () => {
   const platform = forApp("openseo", {
     isInstallOrganization: true,
     scope: "shared",
-    members: [
-      { id: "owner", role: "owner" },
-      { id: "member", role: "member" },
-    ],
-    deployerUserId: "owner",
   });
 
-  it("registers a shared app in the platform organization, granting nobody", () => {
+  it("registers a shared app in the platform organization, nobody's default", () => {
     const plan = planRegistration(platform);
     expect(plan.kind).toBe("new");
     expect(plan.app).toMatchObject({
@@ -391,10 +338,9 @@ describe("shared apps", () => {
       hostname: "openseo.apps.example.com",
       workerName: "every-acme-openseo",
       tier: "service_binding",
-      isDefault: false,
+      everyone: false,
       status: "pending",
     });
-    expect(plan.grants).toEqual([]);
   });
 
   it("registers an organization's own app with scope org by default", () => {
@@ -460,13 +406,10 @@ describe("shared apps", () => {
       ...input,
       isInstallOrganization: true,
       existingApp: { ...shared, status: "deleted" },
-      members: [{ id: "owner", role: "owner" }],
-      deployerUserId: "owner",
     });
     expect(revived).toMatchObject({
       kind: "revived",
-      app: { scope: "shared", isDefault: false },
-      grants: [],
+      app: { scope: "shared", everyone: false },
     });
 
     // Only from the platform organization, still.
@@ -661,7 +604,7 @@ describe("deleteUpdate", () => {
   it("tombstones an app once", () => {
     expect(deleteUpdate(registeredTodo)).toEqual({
       status: "deleted",
-      isDefault: false,
+      everyone: false,
       emailSenders: null,
       emailInbound: null,
       secretNames: null,

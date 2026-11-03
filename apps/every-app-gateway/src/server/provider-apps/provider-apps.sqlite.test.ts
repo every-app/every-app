@@ -251,11 +251,6 @@ async function turnOn(actorUserId: string): Promise<string> {
           deployedAt: existing.deployedAt?.getTime() ?? null,
         }
       : null,
-    members: members.map((member) => ({
-      id: member.userId,
-      role: member.role,
-    })),
-    actorUserId,
     actor: "ben@example.com",
     now: Date.now(),
   });
@@ -269,9 +264,6 @@ async function turnOn(actorUserId: string): Promise<string> {
       .insert(apps)
       .values(row)
       .onConflictDoUpdate({ target: apps.id, set: row }),
-    ...plan.grants.map((grant) =>
-      db.insert(userAppAccess).values(grant).onConflictDoNothing(),
-    ),
   ]);
   return plan.app.id;
 }

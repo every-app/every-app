@@ -326,11 +326,6 @@ async function addTreg(overrides: { risk?: string } = {}): Promise<string> {
     ...(overrides.risk ? { risk: overrides.risk } : {}),
     env: { gatewayUrl: GATEWAY, appBaseDomain: "apps.example.com" },
     existingApp: () => null,
-    members: members.map((member) => ({
-      id: member.userId,
-      role: member.role,
-    })),
-    actorUserId: ownerId,
     actor: "ben@example.com",
     now: Date.now(),
   });
@@ -340,9 +335,6 @@ async function addTreg(overrides: { risk?: string } = {}): Promise<string> {
       .insert(apps)
       .values(row)
       .onConflictDoUpdate({ target: apps.id, set: row }),
-    ...plan.grants.map((grant) =>
-      db.insert(userAppAccess).values(grant).onConflictDoNothing(),
-    ),
   ]);
   return plan.app.id;
 }

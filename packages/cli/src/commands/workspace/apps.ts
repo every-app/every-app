@@ -157,25 +157,25 @@ export async function updateApp(
   const { out, flags } = options;
   const { ws } = await connect(options);
   out.emit({ type: "step", step: STEP, status: "start", message: `Updating ${identifier}...` });
-  const { app, granted } = await workspace.updateApp(ws, identifier, {
+  const { app } = await workspace.updateApp(ws, identifier, {
     name: flags.name,
     description: flags.description,
     everyone: flags.everyone === undefined ? undefined : flags.everyone === "on",
   });
-  out.emit({ type: "step", step: STEP, status: "ok", message: `Updated ${app.appSlug}`, data: { appRowId: app.id, granted } });
+  out.emit({ type: "step", step: STEP, status: "ok", message: `Updated ${app.appSlug}`, data: { appRowId: app.id } });
   const lines = [
     `${app.appSlug} is "${app.name}"${app.description ? `: ${app.description}` : ""}.`,
     app.scope === "shared"
       ? "A shared app: every member of every organization can open it."
       : app.everyone
-        ? `Available to everyone in ${ws.organization.name}${granted > 0 ? ` (${plural(granted, "member")} granted now)` : ""}; new members get it on joining.`
-        : `Private: ${plural(app.accessCount, "member")} can open it (workspace app access ${app.appSlug}).`,
+        ? `Available to everyone in ${ws.organization.name}: every member opens it, new members too.`
+        : `Private: ${plural(app.accessCount, "member")} can open it, owners and admins included (workspace app access ${app.appSlug}).`,
   ];
   out.emit({
     type: "done",
     message: lines.join("\n"),
     display: [lines[0], chalk.dim(lines[1]!)].join("\n"),
-    data: { organization: ws.organization, app: appData(app), granted },
+    data: { organization: ws.organization, app: appData(app) },
   });
 }
 
@@ -203,7 +203,8 @@ export async function appAccessCommand(
   } else {
     users = await workspace.appAccess(ws, app);
   }
-  const canOpen = users.filter((user) => user.direct || user.viaGroups.length > 0);
+  // The Gateway's one rule (effective-access.ts): everyone, a role, a grant or a group.
+  const canOpen = users.filter((user) => app.everyone || user.admin || user.direct || user.viaGroups.length > 0);
   const table = formatTable(
     ["EMAIL", "ROLE", "STATUS", "DIRECT", "VIA GROUPS"],
     users.map((user) => [
@@ -224,7 +225,7 @@ export async function appAccessCommand(
     data: {
       organization: ws.organization,
       app: appData({ ...app, accessCount: canOpen.length }),
-      users: users.map((user) => ({ ...memberData(user), direct: user.direct, viaGroups: user.viaGroups })),
+      users: users.map((user) => ({ ...memberData(user), direct: user.direct, admin: user.admin, viaGroups: user.viaGroups })),
       ...(change ? { granted: granted.map(memberData), revoked: revoked.map(memberData) } : {}),
     },
   });

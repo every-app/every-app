@@ -362,7 +362,7 @@ async function main() {
         "Keyword research, rank tracking, site audits and AI visibility for your sites.",
       hostname: "openseo.apps.example.com",
       status: "active",
-      isDefault: true,
+      everyone: true,
       manifest: manifest("openseo", {
         providers: ["openrouter"],
         capabilities: {
@@ -378,7 +378,7 @@ async function main() {
       description: "A shared inbox that drafts replies for you.",
       hostname: "inbox.apps.example.com",
       status: "active",
-      isDefault: true,
+      everyone: true,
       manifest: manifest("inbox", {
         capabilities: {
           email: { access: "write", why: "Sends and receives mail." },
@@ -396,7 +396,7 @@ async function main() {
       description: "Contacts, deals and notes.",
       hostname: "crm.apps.example.com",
       status: "active",
-      isDefault: false,
+      everyone: false,
       deployedBy: "api-token:0123456789abcdef",
     },
     {
@@ -406,7 +406,7 @@ async function main() {
       description: "Privacy-friendly web analytics.",
       hostname: "analytics.apps.example.com",
       status: "binding",
-      isDefault: true,
+      everyone: true,
     },
     {
       id: appId("todo"),
@@ -415,7 +415,7 @@ async function main() {
       description: "The starter app.",
       hostname: null,
       status: "pending",
-      isDefault: false,
+      everyone: false,
     },
     {
       id: appId("reports"),
@@ -424,7 +424,7 @@ async function main() {
       description: "Old reports, kept for reference.",
       hostname: "reports.apps.example.com",
       status: "disabled",
-      isDefault: false,
+      everyone: false,
     },
     {
       id: appId("long"),
@@ -434,7 +434,7 @@ async function main() {
         "This description is also long, on purpose, so that the card has to clamp it after two lines and the list view has to truncate it with an ellipsis instead of pushing the row taller than its neighbours or wrapping under the actions.",
       hostname: "very-long-app-name.apps.example.com",
       status: "active",
-      isDefault: true,
+      everyone: true,
     },
     {
       // Needs setup for a secret of its own: the CLI recorded the Worker's
@@ -446,7 +446,7 @@ async function main() {
       description: "Long-form research reports drafted by an agent.",
       hostname: "research.apps.example.com",
       status: "active",
-      isDefault: true,
+      everyone: false,
       manifest: manifest("research", {
         providers: [
           { id: "openrouter", anyOf: "AI model" },
@@ -481,7 +481,7 @@ async function main() {
       description: "A tombstone: never listed.",
       hostname: null,
       status: "deleted",
-      isDefault: false,
+      everyone: false,
     },
   ];
   if (args.many) {
@@ -493,14 +493,14 @@ async function main() {
         description: `Internal tool number ${index}.`,
         hostname: `tool-${index}.apps.example.com`,
         status: "active",
-        isDefault: true,
+        everyone: true,
       });
     }
   }
   for (const [index, app] of apps.entries()) {
     const createdAt = ago((apps.length - index) * DAY);
     await run(
-      "INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, email_senders, email_inbound, secret_names, status, version_id, deployed_at, deployed_by_actor, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'service_binding', 'org', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, email_senders, email_inbound, secret_names, status, version_id, deployed_at, deployed_by_actor, everyone, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'service_binding', 'org', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         app.id,
         orgA,
@@ -517,7 +517,7 @@ async function main() {
         app.hostname ? `seed-version-${app.slug}` : null,
         app.hostname ? createdAt : null,
         app.deployedBy ?? null,
-        app.isDefault ? 1 : 0,
+        app.everyone ? 1 : 0,
         createdAt,
         createdAt + HOUR,
       ],
@@ -525,7 +525,7 @@ async function main() {
   }
   // Northwind's own app, for the switcher and the consent page.
   await run(
-    "INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, version_id, deployed_at, is_default, created_at, updated_at) VALUES (?, ?, 'wiki', 'Northwind Wiki', 'Internal documentation.', 'wiki.apps.example.com', 'every-northwind-wiki', 'service_binding', 'org', ?, 'active', 'seed-version-wiki', ?, 1, ?, ?)",
+    "INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, version_id, deployed_at, everyone, created_at, updated_at) VALUES (?, ?, 'wiki', 'Northwind Wiki', 'Internal documentation.', 'wiki.apps.example.com', 'every-northwind-wiki', 'service_binding', 'org', ?, 'active', 'seed-version-wiki', ?, 1, ?, ?)",
     [
       appId("wiki"),
       orgB,
@@ -538,8 +538,8 @@ async function main() {
 
   // The DataForSEO provider app, as `everyapp provider on dataforseo`
   // writes it (@every-app/sdk/internal providerApps.ts, hardcoded here):
-  // tier "provider", no hostname or Worker, active from the start, never
-  // the organization's default; owners and admins get it. It reads "AI
+  // tier "provider", no hostname or Worker, active from the start, not
+  // available to everyone; owners and admins open it by their role. It reads "AI
   // tools" once DATAFORSEO_API_KEY is set on the gateway, "Needs setup"
   // until then.
   const providerManifest = {
@@ -555,7 +555,7 @@ async function main() {
     },
   };
   await run(
-    "INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, version_id, deployed_at, deployed_by_actor, is_default, created_at, updated_at) VALUES (?, ?, 'dataforseo', 'DataForSEO', ?, NULL, NULL, 'provider', 'org', ?, 'active', NULL, ?, 'ben@example.com', 0, ?, ?)",
+    "INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, version_id, deployed_at, deployed_by_actor, everyone, created_at, updated_at) VALUES (?, ?, 'dataforseo', 'DataForSEO', ?, NULL, NULL, 'provider', 'org', ?, 'active', NULL, ?, 'ben@example.com', 0, ?, ?)",
     [
       appId("provider-dataforseo"),
       orgA,
@@ -567,18 +567,13 @@ async function main() {
     ],
   );
 
-  // A tombstone keeps no grants (AppRepository.tombstone).
-  const live = apps
-    .filter((app) => app.status !== "deleted")
-    .map((app) => app.id)
-    .concat(appId("provider-dataforseo"));
+  // Person grants, on apps that aren't available to everyone (those open
+  // to every member through apps.everyone, and owners and admins open every
+  // app by their role, so neither needs a row). Morgan also holds the CRM
+  // through Sales; Sam holds the provider app only directly.
   const grants = [
-    [ownerId, orgA, live],
-    ["seed-user-admin", orgA, live],
-    ["seed-user-member", orgA, [appId("openseo"), appId("inbox")]],
-    ["seed-user-long", orgA, [appId("openseo")]],
-    [ownerId, orgB, [appId("wiki")]],
-    ["seed-user-admin", orgB, [appId("wiki")]],
+    ["seed-user-member", orgA, [appId("crm"), appId("todo")]],
+    ["seed-user-plain", orgA, [appId("provider-dataforseo")]],
   ];
   for (const [userId, organizationId, appIds] of grants) {
     for (const app of appIds) {

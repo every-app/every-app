@@ -83,7 +83,13 @@ vi.mock("@tanstack/react-start/server-entry", () => ({
 import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { everyApp, getEveryAppUser } from "@every-app/sdk/server";
-import { events, mcpConnections, members, usageDaily } from "@/db/schema";
+import {
+  events,
+  mcpConnections,
+  members,
+  usageDaily,
+  userAppAccess,
+} from "@/db/schema";
 import server, { clearHostnameCacheForTests } from "@/server";
 import { LINKED_DEV_LIMITS } from "@/server/linked-dev";
 import { McpConnectionService } from "@/server/services/McpConnectionService";
@@ -616,10 +622,7 @@ describe("consent", () => {
     ).resolves.toMatchObject({ tokens: { scope: "*" } });
 
     // Give the member the app, as an owner would: still no.
-    const { AppAccessRepository } = await import(
-      "@/server/repositories/AppAccessRepository"
-    );
-    await AppAccessRepository.create({
+    await db.insert(userAppAccess).values({
       id: "access-member-todo",
       organizationId: orgId,
       userId: memberId,
@@ -648,22 +651,6 @@ describe("consent", () => {
     });
     expect(decision.status).toBe(403);
     expect(await db.select().from(mcpConnections)).toHaveLength(1);
-  });
-
-  it("refuses an owner who can't open the app", async () => {
-    const client = await registerCli();
-    const { AppAccessRepository } = await import(
-      "@/server/repositories/AppAccessRepository"
-    );
-    await AppAccessRepository.deleteByOrganizationAndUser(orgId, ownerId);
-    const browser = new Browser(ownerId);
-    const { context } = await openConsent(
-      browser,
-      client.client_id,
-      loopback(49152),
-      todoDev,
-    );
-    expect(context).toMatchObject({ ok: false });
   });
 });
 
@@ -826,7 +813,7 @@ describe("the endpoint", () => {
     expect(await eventTypes()).toContain("connection.revoked");
   });
 
-  it("stops when the member is demoted, when linked dev is turned off, and when their app access goes (`dev.per-request-recheck`)", async () => {
+  it("stops when the member is demoted and when linked dev is turned off (`dev.per-request-recheck`)", async () => {
     await db
       .update(members)
       .set({ role: "member" })
@@ -850,14 +837,6 @@ describe("the endpoint", () => {
       updatedBy: ownerId,
     });
     expect((await devCall("todo", "/whoami", token)).status).toBe(200);
-
-    const { AppAccessRepository } = await import(
-      "@/server/repositories/AppAccessRepository"
-    );
-    await AppAccessRepository.deleteByOrganizationAndUser(orgId, ownerId);
-    const lost = await devCall("todo", "/whoami", token);
-    expect(lost.status).toBe(403);
-    expect(await lost.json()).toMatchObject({ error: "app_access_revoked" });
 
     // With linked dev off, a refresh fails too (and the library revokes the
     // grant with it), so the CLI signs in again rather than retrying.

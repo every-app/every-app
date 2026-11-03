@@ -2834,13 +2834,13 @@ describe("the event bus (SQLite)", () => {
       });
     });
 
-    it("app.access_changed with who was granted and revoked, and app.renamed; 'available to everyone' names everyone it granted", async () => {
+    it("app.access_changed with who was granted and revoked, and app.renamed; 'available to everyone' says so and grants nobody", async () => {
       const app = await anApp();
       await AppAccessService.updateAccessForApp(asOwner(), app.id, [member]);
       await AppAccessService.updateAccessForApp(asOwner(), app.id, [member]); // unchanged
       await AppAccessService.updateAccessForApp(asOwner(), app.id, []);
       await AppService.update(asOwner(), { id: app.id, name: "Contacts" });
-      await AppService.update(asOwner(), { id: app.id, isDefault: true });
+      await AppService.update(asOwner(), { id: app.id, everyone: true });
       const all = await emitted();
       expect(all.map((e) => e.type)).toEqual([
         "app.access_changed",
@@ -2848,13 +2848,13 @@ describe("the event bus (SQLite)", () => {
         "app.renamed",
         "app.access_changed",
       ]);
-      // registerApp granted the admin: setting the list to Cy alone revokes Bo.
+      // Registration grants nobody (owners and admins open every app).
       expect(all[0]!.data).toMatchObject({
         app: { id: "crm", rowId: app.id },
         granted: [{ id: member, email: "cy@acme.example" }],
-        revoked: [{ email: "bo@acme.example" }],
+        revoked: [],
         grantedCount: 1,
-        revokedCount: 1,
+        revokedCount: 0,
       });
       expect(all[1]!.data).toMatchObject({
         granted: [],
@@ -2864,7 +2864,7 @@ describe("the event bus (SQLite)", () => {
         app: { id: "crm", rowId: app.id, name: "Contacts" },
         previousName: "CRM",
       });
-      expect(all[3]!.data).toMatchObject({ everyone: true, grantedCount: 3 });
+      expect(all[3]!.data).toMatchObject({ everyone: true, grantedCount: 0 });
       expect(all[3]!.actor).toEqual(adaActor());
     });
 

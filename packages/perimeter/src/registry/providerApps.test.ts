@@ -14,13 +14,6 @@ const input: ProviderAppInput = {
   organizationId: "org-1",
   id: "dataforseo",
   existingApp: null,
-  members: [
-    { id: "owner", role: "owner" },
-    { id: "admin", role: "admin" },
-    { id: "member", role: "member" },
-    { id: "actor", role: "member" },
-  ],
-  actorUserId: "actor",
   actor: "ben@example.com",
   now: NOW,
 };
@@ -40,7 +33,7 @@ const onRow: AppRow = {
   versionId: null,
   deployedAt: NOW - 1000,
   deployedByActor: "someone@example.com",
-  isDefault: false,
+  everyone: false,
 };
 
 const deployedRow: AppRow = {
@@ -63,7 +56,7 @@ describe("providerAppId", () => {
 });
 
 describe("planProviderAppOn", () => {
-  it("writes a new active row with no Worker, the generated manifest, and access for the actor, owners and admins", () => {
+  it("writes a new active row with no Worker, the generated manifest, open to owners and admins", () => {
     const plan = planProviderAppOn(input);
     expect(plan.kind).toBe("new");
     expect(plan.app).toMatchObject({
@@ -78,7 +71,7 @@ describe("planProviderAppOn", () => {
       versionId: null,
       deployedAt: NOW,
       deployedByActor: "ben@example.com",
-      isDefault: false,
+      everyone: false,
     });
     expect(JSON.parse(plan.app.manifest!)).toEqual({
       id: "dataforseo",
@@ -91,14 +84,7 @@ describe("planProviderAppOn", () => {
         },
       },
     });
-    expect(plan.grants.map((grant) => grant.userId).sort()).toEqual([
-      "actor",
-      "admin",
-      "owner",
-    ]);
-    expect(plan.grants.every((grant) => grant.appRowId === plan.app.id)).toBe(
-      true,
-    );
+    expect(plan).not.toHaveProperty("grants");
   });
 
   it("keeps an app that is on, updating only its name and description", () => {
@@ -110,10 +96,9 @@ describe("planProviderAppOn", () => {
       status: "active",
       deployedByActor: "someone@example.com",
     });
-    expect(plan.grants).toEqual([]);
   });
 
-  it("revives its own tombstone as new, under the same row id, with fresh access", () => {
+  it("revives its own tombstone as new, under the same row id", () => {
     const plan = planProviderAppOn({
       ...input,
       existingApp: { ...onRow, status: "deleted" },
@@ -124,7 +109,6 @@ describe("planProviderAppOn", () => {
       status: "active",
       deployedByActor: "ben@example.com",
     });
-    expect(plan.grants).toHaveLength(3);
   });
 
   it("refuses the id of a deployed app, tombstones included", () => {
@@ -157,7 +141,7 @@ describe("providerAppOffUpdate", () => {
   it("tombstones an MCP app that is on", () => {
     expect(providerAppOffUpdate("dataforseo", onRow)).toEqual({
       status: "deleted",
-      isDefault: false,
+      everyone: false,
       emailSenders: null,
       emailInbound: null,
       secretNames: null,
@@ -188,8 +172,6 @@ describe("planRegistration against an MCP app's row", () => {
         existingApp: onRow,
         hostnameOwner: null,
         workerNameOwner: null,
-        members: [],
-        deployerUserId: null,
       }),
     ).toThrow(
       expect.objectContaining({
