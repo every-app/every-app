@@ -63,11 +63,19 @@ settings (how an application recreated by hand, with a new AUD tag, is
 picked up). `pnpm everyapp access show` reports what is there;
 `pnpm everyapp access off` removes the settings, then the applications.
 
+### When it runs again by itself
+
+While Access is on, `deploy` and `delete` run the same recipe when they
+changed an app's public routes, and `update` runs it every time (the
+Gateway's own bypass list included). A login that can't edit Zero Trust
+leaves the command successful with one warning, `ACCESS_UPDATE_FAILED`:
+run `pnpm everyapp access on`. A browser install (the Gateway's install
+engine) can't edit Access; it logs `access.rerun_needed` instead.
+
 ### When to run it again
 
-- After deploying an app whose public routes changed: `deploy` says so
-  (`ACCESS_RERUN_NEEDED`). A deploy never touches Access.
-- After a Gateway release whose notes say the Gateway's bypass list changed.
+- After `ACCESS_UPDATE_FAILED`, or a browser install that changed an app's
+  public routes.
 - After changing Access by hand in the dashboard.
 
 Never for an invitation: invite people in the Gateway and they can sign in
@@ -208,7 +216,8 @@ cover the same ground: `src/auth/cloudflare-access/*.test.ts` and
   as X, but this account is Y"). Use **Not you? Sign out of Access** (or
   `/cdn-cgi/access/logout`) and sign in as Y; if the person is X, invite X.
 - **An app's webhook or public page gets Access's login.** Its public routes
-  changed since the last `access on`: run it again.
+  changed without Access being updated (`ACCESS_UPDATE_FAILED`, or a browser
+  install): run `pnpm everyapp access on`.
 - **Apps keep sending people back to the sign-in page.** Their hosts'
   application isn't one the Gateway knows: `pnpm everyapp access on` writes
   its AUD to `CLOUDFLARE_ACCESS_APPS_AUD`.

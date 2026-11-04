@@ -21,8 +21,6 @@ Cloudflare Access answered instead of the Gateway; whoever opens the link signs 
 Nobody has claimed the Gateway yet, and Access lets in only its members and invitees, so nobody could open the setup link. Claim the Gateway first, then run `everyapp access on`.
 ### ACCESS_PERMISSION_MISSING
 The Cloudflare login can't manage Access. Use a login or token with Access: Apps and Policies (edit) and Access: Organizations, Identity Providers, and Groups (edit).
-### ACCESS_RERUN_NEEDED
-Warning: a deploy changed the app's public routes, or a delete removed an app that had some, while Access is on. A deploy never changes Access, so run `everyapp access on` again to bring its bypassed paths up to date.
 ### ACCESS_ROUTE_NOT_EXPRESSIBLE
 A public route has no Access path form, so it stays behind Access.
 ### ACCESS_SETUP_FAILED
@@ -37,6 +35,8 @@ Cloudflare didn't create the Zero Trust team; team names are global. Pick anothe
 The account has no Zero Trust team and nobody can be asked for a name. Ask the person, then add `--team <name>` (the sign-in page becomes `<name>.cloudflareaccess.com` for good).
 ### ACCESS_TOO_MANY_PUBLIC_ROUTES
 More public paths on one host than Access takes; the rest stay behind Access.
+### ACCESS_UPDATE_FAILED
+Warning: a `deploy`, `delete` or `update` couldn't bring Cloudflare Access up to date (often a login that can't edit Zero Trust). The command itself succeeded; `data.cause` is the error's code. Run `everyapp access on`.
 ### ACCOUNT_NOT_ACCESSIBLE
 `--account-id` (or `CLOUDFLARE_ACCOUNT_ID`) isn't an account this login can use. Pass one the message lists, or `everyapp login` as someone else.
 ### ACCOUNT_REQUIRED

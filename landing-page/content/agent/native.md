@@ -12,7 +12,7 @@ A native app (a Mac recorder, a phone client) signs the person in through the Ga
 public: [{ path: "/api/**", bearer: true }],
 ```
 
-A bearer route takes a token on every method (so no `methods`) and refuses the session cookie, so keep the web UI's calls elsewhere. Behind Cloudflare Access, `access on` lets these paths and `/.well-known/oauth-protected-resource` through Access on the app's host; run it again after deploying a new bearer route (`deploy` warns `ACCESS_RERUN_NEEDED`). In the handler a native caller is an ordinary member with `channel: "api"`, `actor.sub` `oauth:<connection id>` and `scopes: ["*"]`.
+A bearer route takes a token on every method (so no `methods`) and refuses the session cookie, so keep the web UI's calls elsewhere. Behind Cloudflare Access, `access on` lets these paths and `/.well-known/oauth-protected-resource` through Access on the app's host; `deploy` updates Access when it adds a bearer route. In the handler a native caller is an ordinary member with `channel: "api"`, `actor.sub` `oauth:<connection id>` and `scopes: ["*"]`.
 
 ## The client contract
 

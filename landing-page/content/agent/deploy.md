@@ -25,7 +25,7 @@ Each is a `step` event ([json](/docs/agent/json)):
 12. `app.upload`: `cf deploy --prebuilt` for each Worker. A Worker changed outside everyapp needs a person's confirmation at a terminal (`rerun_interactive`).
 13. `app.bind`: the Gateway is redeployed with a binding to a new app and its hostname, only when something changed.
 14. `app.live`: waits until the app answers (`--no-wait` skips; a new certificate can take minutes). Behind Access it reads the app's row while the Gateway's per-minute cron makes it live.
-15. `app.access`: a deploy never changes Cloudflare Access. When this one changed the app's public routes while Access is on, it warns `ACCESS_RERUN_NEEDED`: run `everyapp access on`.
+15. `app.access`: when this deploy changed the app's public routes while Cloudflare Access is on, `access on`'s recipe runs again (`ok`, "Cloudflare Access updated for <app>'s public routes"). If that fails, the deploy still succeeds with `ACCESS_UPDATE_FAILED`: run `everyapp access on`. Otherwise nothing.
 
 The end says the URL, who can open the app and its public routes. A required setting that's unset ends with the warning `APP_NEEDS_SETUP`: run `everyapp configure <app>`.
 
@@ -51,7 +51,7 @@ Only owners and admins install, from a sign-in in the last 10 minutes. The appro
 
 ## `everyapp delete [<app>]`
 
-Takes the app off the Gateway: it can't be opened, and the Gateway drops its binding and hostname. Its Worker and data are kept (crons, Workflows and mail routes keep running) unless `--purge`, which deletes the Worker and every resource the app recorded, after the person types the app's id. Deleting an app that had public routes, behind Access, warns `ACCESS_RERUN_NEEDED`: its paths stay let through until `everyapp access on` runs again. Resources the app didn't record are kept (`RESOURCES_KEPT`). Unattended, it needs `--yes`, so ask first. The app's id stays reserved, so deploying it again brings it back with the same names.
+Takes the app off the Gateway: it can't be opened, and the Gateway drops its binding and hostname. Its Worker and data are kept (crons, Workflows and mail routes keep running) unless `--purge`, which deletes the Worker and every resource the app recorded, after the person types the app's id. Deleting an app that had public routes, behind Access, takes them out of Access (`app.access`; `ACCESS_UPDATE_FAILED` if that fails: run `everyapp access on`). Resources the app didn't record are kept (`RESOURCES_KEPT`). Unattended, it needs `--yes`, so ask first. The app's id stays reserved, so deploying it again brings it back with the same names.
 
 ## `everyapp db`
 

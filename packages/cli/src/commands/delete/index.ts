@@ -33,7 +33,8 @@ import { CancelledError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { readInstall } from "@/lib/gateway/install";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
-import { publicSurfaceKey, warnIfAccessNeedsRerun } from "@/lib/access/settings";
+import { publicSurfaceKey } from "@/lib/access/settings";
+import { updateAccessIfOn } from "@/commands/access";
 import {
   deleteApp as deleteFromRegistry,
   type RegisteredAppInfo,
@@ -170,17 +171,19 @@ export async function removeApp({
       alreadyDeleted: deleted.alreadyDeleted && !stillServed,
     },
   });
-  // A delete never changes Cloudflare Access either: the app's bypass
-  // destination stays until `access on` runs again. Said when it had one.
-  if (!deleted.alreadyDeleted) {
-    await warnIfAccessNeedsRerun(
-      { cf, out, worker: connection.names.worker },
+  // Behind Cloudflare Access, the app's public routes stop being let
+  // through: `access on`'s recipe again, when it had any.
+  if (!deleted.alreadyDeleted && publicSurfaceKey(deleted.manifest as Parameters<typeof publicSurfaceKey>[0]) !== publicSurfaceKey(null)) {
+    await updateAccessIfOn(
       {
-        appId,
-        previous: deleted.manifest as Parameters<typeof publicSurfaceKey>[0],
-        next: null,
-        message: `Cloudflare Access still lets ${appId}'s public routes through on ${deleted.hostname}\nUntil ${CLI} access on runs again, an app deployed there later gets them without a sign-in.`,
+        cf,
+        out,
+        accountId: connection.accountId,
+        gatewayUrl: connection.gatewayUrl,
+        worker: connection.names.worker,
+        hosted: connection.install.deploymentMode === "hosted",
       },
+      { what: `${appId}'s public routes`, data: { appId } },
     );
   }
 

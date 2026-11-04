@@ -1291,6 +1291,25 @@ describe("everyapp setup", () => {
     const again = await setup({ json: false, domain: GW, yes: true }, { interactive: true, prompts });
     expect(again.result).toMatchObject({ accessOn: null });
     expect(asked).toBe(1);
+
+    // `update` with Access on runs `access on`'s recipe again: the Gateway's
+    // own bypass paths, lost by hand here, are let through again.
+    const gatewayBypass = () =>
+      (
+        [...zt.applications.values()].find((app) =>
+          (app["destinations"] as Array<{ uri: string }>).some((d) => d.uri === GW),
+        )!["destinations"] as Array<{ overrides: unknown[] }>
+      )[0]!;
+    const bypass = gatewayBypass().overrides;
+    expect(bypass.length).toBeGreaterThan(0);
+    gatewayBypass().overrides = [];
+    events.length = 0;
+    await runGatewayDeploy({ json: true, yes: true }, out, deps());
+    expect(gatewayBypass().overrides).toEqual(bypass);
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "step", step: "app.access", status: "ok", message: expect.stringContaining("Cloudflare Access updated") }),
+    );
+    expect(events.filter((event) => event.type === "warning")).toEqual([]);
   });
 
   it("turns Access on unattended with no question; with no team it stops for --team, and a failure fails the run", async () => {

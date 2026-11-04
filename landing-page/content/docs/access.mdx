@@ -39,7 +39,7 @@ Enter `false`. It can't lock you out: nothing changes until an owner has signed 
 
 ## When to run it again
 
-Run `everyapp access on` again after you deploy an app with new public routes (the deploy tells you), or after you change Access by hand in the Cloudflare dashboard. It only changes what differs.
+Deploys keep Access up to date: an app's new public routes are let through by themselves. Run `everyapp access on` again if a deploy warns that it couldn't update Access, or after you change Access by hand in the Cloudflare dashboard. It only changes what differs.
 
 ## Check it, or turn it off
 

@@ -4,7 +4,8 @@
  * both sign-in methods (a Cloudflare account, a PIN), the policy that asks
  * the Gateway who is a member, two applications and the Gateway's
  * settings; a rerun that changes nothing; the apps' public routes, which
- * only `on` writes; what the command leaves alone; and the way back.
+ * deploy and delete keep current by running the same recipe; what the
+ * command leaves alone; and the way back.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -443,7 +444,11 @@ describe("access on, from nothing", () => {
 });
 
 describe("access on and the apps' public routes", { timeout: 30_000 }, () => {
-  it("lets every served app's public and bearer routes through, and a deploy never touches Access", async () => {
+  const accessSteps = () => events.filter((event) => event["type"] === "step" && event["step"] === "app.access");
+  const accessWarnings = () => events.filter((event) => event["type"] === "warning" && String(event["code"]).startsWith("ACCESS_"));
+  const zeroTrustCalls = () => account.cf.calls.filter((call) => call.args[0] === "zero-trust");
+
+  it("lets every served app's public and bearer routes through; a redeploy with the same routes calls nothing in Zero Trust", async () => {
     await seedPeople();
     await deploy(appDir(CRM), CRM);
 
@@ -459,60 +464,75 @@ describe("access on and the apps' public routes", { timeout: 30_000 }, () => {
       "/health",
     ]);
 
-    // A redeploy with the same routes says nothing and calls nothing in Zero Trust.
     events = [];
     account.cf.calls.length = 0;
     await deploy(appDir(TODO), TODO);
-    expect(warnings("ACCESS_RERUN_NEEDED")).toEqual([]);
-    expect(account.cf.calls.filter((call) => call.args[0] === "zero-trust")).toEqual([]);
+    expect(accessSteps()).toEqual([]);
+    expect(zeroTrustCalls()).toEqual([]);
   });
 
-  it("says to run access on again when a deploy changed an app's public routes, and on lets them through", async () => {
+  it("lets a deploy's new public routes through by itself while Access is on, with one line and no warning", async () => {
     await seedPeople();
     await on({ team: "acme" });
     events = [];
-    account.cf.calls.length = 0;
 
     await deploy(appDir(CRM), CRM);
 
-    expect(warnings("ACCESS_RERUN_NEEDED")).toEqual([
-      expect.objectContaining({ step: "app.access", data: { appId: "crm", rerun: expect.stringContaining("access on") } }),
-    ]);
-    expect(account.cf.calls.filter((call) => call.args[0] === "zero-trust")).toEqual([]);
-    expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`]);
-
-    await on();
     expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`, `crm.${HOST}`]);
+    expect(accessSteps()).toContainEqual(
+      expect.objectContaining({ status: "ok", message: "Cloudflare Access updated for crm's public routes", data: { appId: "crm", changed: true } }),
+    );
+    expect(accessWarnings()).toEqual([]);
   });
 
-  it("says to run access on again when a deleted app had public routes, and on takes them back", async () => {
+  it("takes a deleted app's public routes back out by itself; an app without any goes quietly", async () => {
     await seedPeople();
     await deploy(appDir(CRM), CRM);
     await deploy(appDir(TODO), TODO);
     await on({ team: "acme" });
     expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`, `crm.${HOST}`]);
 
-    // An app without public routes goes quietly.
     events = [];
+    account.cf.calls.length = 0;
     await remove("todo");
-    expect(warnings("ACCESS_RERUN_NEEDED")).toEqual([]);
+    expect(accessSteps()).toEqual([]);
+    expect(zeroTrustCalls()).toEqual([]);
 
     events = [];
-    account.cf.calls.length = 0;
     await remove("crm");
-    expect(warnings("ACCESS_RERUN_NEEDED")).toEqual([
-      expect.objectContaining({ step: "app.access", data: { appId: "crm", rerun: expect.stringContaining("access on") } }),
-    ]);
-    expect(account.cf.calls.filter((call) => call.args[0] === "zero-trust")).toEqual([]);
-
-    await on();
     expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`]);
+    expect(accessSteps()).toContainEqual(expect.objectContaining({ status: "ok", data: { appId: "crm", changed: true } }));
   });
 
-  it("says nothing about Access on a deploy while Access is off", async () => {
+  it("does nothing about Access on a deploy while Access is off", async () => {
     await seedPeople();
     await deploy(appDir(CRM), CRM);
-    expect(warnings("ACCESS_RERUN_NEEDED")).toEqual([]);
+    expect(accessSteps()).toEqual([]);
+    expect(zeroTrustCalls()).toEqual([]);
+  });
+
+  it("still deploys when Access can't be edited, with one warning naming access on", async () => {
+    await seedPeople();
+    await on({ team: "acme" });
+    events = [];
+    account.cf.override(["zero-trust", "organization", "get"], {
+      exitCode: 1,
+      stderr: "┌ APIError\n│ [10000] Authentication error\n└\n",
+    });
+
+    await deploy(appDir(CRM), CRM);
+
+    expect(error()).toBeUndefined();
+    expect(await readApp(db(), "crm")).toMatchObject({ status: "active" });
+    expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`]);
+    expect(accessWarnings()).toEqual([
+      expect.objectContaining({
+        code: "ACCESS_UPDATE_FAILED",
+        step: "app.access",
+        message: expect.stringContaining("Cloudflare Access wasn't updated for crm's public routes"),
+        data: expect.objectContaining({ appId: "crm", rerun: expect.stringContaining("access on") }),
+      }),
+    ]);
   });
 });
 

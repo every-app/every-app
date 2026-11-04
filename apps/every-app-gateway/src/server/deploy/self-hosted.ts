@@ -469,9 +469,10 @@ async function installSelfHosted(input: {
     actor: input.actor,
   });
   await input.deployer.publishBoundApp(deployed, input.gatewayUrl, renew);
-  // A deploy never touches Cloudflare Access: `everyapp access on` lets an
-  // app's public routes through (packages/perimeter/src/install/
-  // access-plan.ts). Said in the logs when this install changed them.
+  // A browser install never touches Cloudflare Access (the Gateway holds no
+  // Access-editing token; the CLI's deploy runs `access on`'s recipe itself,
+  // packages/perimeter/src/install/access-plan.ts). Said in the logs when
+  // this install changed the app's public routes.
   if (
     env.CLOUDFLARE_ACCESS_TEAM_DOMAIN &&
     publicSurfaceKey(manifest) !== publicSurfaceKey(previous)

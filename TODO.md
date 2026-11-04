@@ -40,7 +40,7 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
   - apps declare the events they emit in the manifest;
   - drop `app.ready`, `app.needs_setup` (with `apps.setup_state`), `tool.error` and `connection.used`.
 - [ ] **OAuth clients: one store, but which?** Lean: the sealed D1 store, written from the browser, CLI or MCP. Drop the Worker-secret path. See the audit doc, "Queued: OAuth providers in one shape".
-- [ ] **Public routes and Access (#959).** A deploy that changes an app's public routes warns `ACCESS_RERUN_NEEDED`, and `access on` writes the new bypass paths. Fine, or a fixed public path prefix? A prefix breaks embedded snippets like Analytics' `/collect`.
+- [ ] **Public routes and Access (#959).** A CLI deploy that changes an app's public routes runs `access on`'s recipe by itself; a browser install only logs `access.rerun_needed`. Fine, or a fixed public path prefix? A prefix breaks embedded snippets like Analytics' `/collect`.
 - [ ] **Admins open every app (#947).** Owners and admins now open every app through their role, so an admin can't be left out of one app. Fine?
 - [ ] **`ai.routes` on a hosted Gateway (#945).** The manifest is the whole grant now. On a shared OpenAI key, an app naming OpenAI routes could reach other organizations' files and batches. Lean: refuse `ai.routes` when the Gateway is hosted.
 - [ ] **CLI admin acts as you (#954).**

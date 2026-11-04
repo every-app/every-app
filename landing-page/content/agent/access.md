@@ -20,7 +20,7 @@ One fixed recipe, safe to run again any time. It changes only what differs and l
 
 It needs a login with Access: Apps and Policies and Access: Organizations, Identity Providers, and Groups (edit) (`ACCESS_PERMISSION_MISSING`).
 
-Run it again after a deploy that changed an app's public routes (the deploy ends with `ACCESS_RERUN_NEEDED`; a deploy never changes Access), after deleting an app that had public routes, and after changing Access by hand. Never for an invitation.
+While Access is on, `deploy` and `delete` run this recipe themselves when they changed an app's public routes, and `update` runs it every time. If that fails (a login that can't edit Zero Trust), the command still succeeds and warns `ACCESS_UPDATE_FAILED`: run `everyapp access on`. Run it again yourself after that warning, after a browser install that changed public routes, and after changing Access by hand. Never for an invitation.
 
 `everyapp access off` removes the three settings, then the two applications (asks; `--yes`); the team and the policy stay, and an unattended `setup` won't turn it back on. `everyapp access show` reports the team, whether the policy asks the Gateway, the sign-in methods, the applications and which settings the Worker has, without changing anything. `everyapp status` shows Access on or off.
 
@@ -71,6 +71,6 @@ Access can also be just a sign-in button ("Continue with Company SSO") through a
 - Passwords off and Access down: `everyapp secret set EMAIL_PASSWORD_SIGN_IN` with `true`.
 - `ACCESS_REQUIRED` on a page, or apps sending people back to sign in: an application was recreated (a new AUD tag). Run `everyapp access on`, which writes the settings again.
 - Nobody gets past Access ("You don't have access" after the PIN): the policy asks the Gateway, so it must answer. Check `/health`, that the person is a member or invited, and the Worker's logs for `access.evaluated` or `access.evaluation_refused`; `everyapp access show` says whether the policy still asks the Gateway, `access on` puts it back.
-- An app's webhook or public page gets Access's login: its public routes changed since the last `access on`. Run it again.
+- An app's webhook or public page gets Access's login: its public routes changed without Access being updated (`ACCESS_UPDATE_FAILED`, or a browser install). Run `everyapp access on`.
 - AI clients get an HTML login page: a path isn't let through. `everyapp access on` puts the bypasses back.
 - WebSockets answer 403: the application is attached to the Worker; use hostname destinations (as `access on` does).

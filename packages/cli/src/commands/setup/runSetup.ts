@@ -57,7 +57,7 @@
  */
 import { cliVersion as packageVersion } from "@/lib/version";
 import { gatewayNameProblem, gatewayNames, type GatewayNames } from "@every-app/perimeter/manifest";
-import { turnAccessOn } from "../access";
+import { turnAccessOn, updateAccessIfOn } from "../access";
 import { readAccessOffChoice, writeAccessOffChoice, type AccessOffReason } from "@/lib/access/record";
 import { ACCESS_SETTINGS } from "@/lib/access/settings";
 import { roughly } from "@/lib/output/time";
@@ -512,6 +512,14 @@ export async function installGateway({
       deps,
     };
     accessOn = await accessFromSetup(context, asking);
+  }
+  // `update` with Access on: `access on`'s recipe again, so the Gateway's
+  // own paths and every app's public routes stay let through.
+  if (updateOnly) {
+    await updateAccessIfOn(
+      { cf, out, accountId: account.id, gatewayUrl, worker: gatewayNamesHere.worker, hosted: mode === "hosted" },
+      { what: "the Gateway and its apps' public routes" },
+    );
   }
 
   return {

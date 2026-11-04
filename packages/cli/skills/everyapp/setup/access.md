@@ -65,7 +65,7 @@ plan.
 
 1. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true (claimed means an owner exists; `on` refuses before that with `ACCESS_NOBODY_ALLOWED`); `data.mode` is `self_hosted` (a hosted Gateway refuses `on`: `ACCESS_HOSTED`); `data.gatewayUrl` gives `<gateway host>`. `data.access` is `{ on }`: `on` true means the Worker holds all three settings, so Access is on already, go to Verify. `data.access` null means a hosted Gateway, no Worker yet, or that cf couldn't read the settings (`ACCESS_UNKNOWN` in `data.fixes`). Not installed or no owner: [gateway.md](gateway.md) first. `action_required cloudflare_login` with `waiting: true`: show `data.url` and `data.code`, keep reading. Several accounts: add `--account-id <account id>` to every command.
 2. `pnpm everyapp access show --json` (changes nothing): `data.team` null means the account has no Zero Trust team and `on` will need `--team`.
-3. Apps with public routes (a tracking script, a webhook): `on` reads them from the deployed manifests, so deploy such apps first, or rerun `access on` after. `status --json` lists each app's as `data.apps[].publicRoutes`.
+3. Apps with public routes (a tracking script, a webhook): `on` reads them from the deployed manifests, and later deploys keep them current. `status --json` lists each app's as `data.apps[].publicRoutes`.
 
 ## Steps
 
@@ -84,7 +84,7 @@ plan.
    echo false | pnpm everyapp secret set EMAIL_PASSWORD_SIGN_IN --json
    ```
    The Gateway applies it only once an owner has signed in through Access, so it can't lock the owner out; `echo true | ...` turns passwords back on.
-5. **Later:** inviting someone needs nothing in Access: invite them in the Gateway, with the address Access will see, and they can sign in at once. Taking someone off is Deactivate in the Gateway (**Manage workspace → Users → ⋯ → Deactivate**), which ends their sessions, tokens and AI connections; Access turns them away at their next Access sign-in. After a deploy that changes an app's public routes, `deploy` warns `ACCESS_RERUN_NEEDED`: run `pnpm everyapp access on --json` again.
+5. **Later:** inviting someone needs nothing in Access: invite them in the Gateway, with the address Access will see, and they can sign in at once. Taking someone off is Deactivate in the Gateway (**Manage workspace → Users → ⋯ → Deactivate**), which ends their sessions, tokens and AI connections; Access turns them away at their next Access sign-in. A deploy that changes an app's public routes updates Access itself (`app.access`); if it warns `ACCESS_UPDATE_FAILED`, run `pnpm everyapp access on --json`.
 
 ## Verify
 
@@ -112,7 +112,7 @@ plan.
 | `ACCESS_HOSTED` | a hosted Gateway ignores Access | not available there |
 | warning `ACCESS_ROUTE_NOT_EXPRESSIBLE`, `ACCESS_TOO_MANY_PUBLIC_ROUTES` | a public or bearer route stays behind Access: no Access pattern for it, or past 25 per host | people signed in to Access still reach it; the app's author merges routes under one prefix |
 | warning `ACCESS_APP_OUTSIDE_BASE` | the app's host isn't one label under `<app base domain>`, so Access isn't in front of it | the person moves the app under the base domain |
-| warning `ACCESS_RERUN_NEEDED` after a deploy | the app's public routes changed; Access doesn't let the new ones through yet | `pnpm everyapp access on --json` |
+| warning `ACCESS_UPDATE_FAILED` after a deploy, delete or update | the command succeeded, but Access wasn't updated (`data.cause`; often a login that can't edit Zero Trust) | `pnpm everyapp access on --json` |
 | `ACCESS_UNKNOWN` in `status --json`'s `data.fixes` | cf couldn't read the Gateway Worker's secret names | run `status` again |
 | Access's page: "That account does not have access." | the Gateway answered no: not a member, not invited, or deactivated | invite them in the Gateway with that address |
 | the page said "A code has been emailed to you", no code arrives | mistyped address, or a mail gateway blocks the mail | check the address; ask the person's mail admin |
@@ -126,7 +126,7 @@ plan.
 
 ## Rerun, rotate, remove
 
-- Rerun: `pnpm everyapp access on --json` any time; it changes only what differs in Access and writes the three settings again (one new Worker version). Run it after a deploy that changed an app's public routes, after a Gateway release whose notes say the Gateway's bypass list changed, and after a change by hand. Never needed for an invitation.
+- Rerun: `pnpm everyapp access on --json` any time; it changes only what differs in Access and writes the three settings again (one new Worker version). `deploy`, `delete` and `update` run it themselves while Access is on; run it after `ACCESS_UPDATE_FAILED` and after a change by hand. Never needed for an invitation.
 - Rotate: nothing here is a secret. To end every Access session: dashboard **Zero Trust → Access controls → Applications → Configure → Revoke existing tokens**, or, when the person asks, `cf zero-trust access applications revoke-tokens <id>` for both ids in `access show --json`.
 - Remove: `pnpm everyapp access off --json` (asks; `--yes` only when the person said so). The choice is remembered: a later unattended `setup` leaves Access off, with the warning `ACCESS_SETUP_SKIPPED`, until `access on` runs again. It removes the three settings first, then deletes the two applications; the team, its sign-in methods and the policy stay.
 

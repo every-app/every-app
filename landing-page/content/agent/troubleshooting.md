@@ -42,7 +42,7 @@ First run `everyapp status --json` and work through `data.fixes` ([status](/docs
 
 - **401 from an app**: read the body. The Gateway's own answers are `{ "error", "reason" }`. `unauthenticated` from the app itself after a key rotation means apps must be redeployed with the new key (`IDENTITY_KEY_UNKNOWN`).
 - **403 `no_app_access`**: the person can't open the app. Grant it in Admin → Apps, or `everyapp workspace app access <app> --add <email>`.
-- **A route meant to be public gets 401 or a redirect**: it isn't in the manifest's `public` (or the method isn't); add it and deploy. Behind Access, then run `everyapp access on` (the deploy says `ACCESS_RERUN_NEEDED`).
+- **A route meant to be public gets 401 or a redirect**: it isn't in the manifest's `public` (or the method isn't); add it and deploy. Behind Access, the deploy updates Access; after `ACCESS_UPDATE_FAILED`, run `everyapp access on`.
 - **403 `csrf_denied`**: a state-changing request from another origin, or a script without `Origin`. **403 `server_fn_denied`**: a server function called by a navigation or from another site.
 - **An AI or capability call refused**: read `x-everyapp-error`. `*_not_configured` means set the key (`everyapp configure <app>`); `capability_not_requested` or `provider_not_allowed` means add it to the manifest and deploy; `integration_not_connected` means the person connects in the app; `app_monthly_cap_exceeded` means the app is paused at its cap (raise it in Manage workspace → Usage).
 - **Email not sent**: see the codes on [email](/docs/agent/email). Not received: `everyapp email show` and `status` (`EMAIL_ROUTE_*`).

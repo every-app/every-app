@@ -755,6 +755,8 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
             : [],
       };
     },
+    // Access kept current after a deploy, delete or update: one ticked line.
+    "app.access": saidByMessage,
     "secrets.app": saidByMessage,
     // Before a registered provider's key is asked for: who registered it and where it goes.
     "secrets.provider": (event) =>

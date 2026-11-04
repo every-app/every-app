@@ -70,7 +70,8 @@ import { setupDeps, type SetupDeps } from "@/commands/setup/runSetup";
 import { checkSchemaDrift } from "./steps/checkSchemaDrift";
 import { offerGateway } from "./steps/offerGateway";
 import { LiveWaitVerb, type LiveWaitSeams } from "./steps/waitForLive";
-import { warnIfAccessNeedsRerun } from "@/lib/access/settings";
+import { publicSurfaceKey } from "@/lib/access/settings";
+import { updateAccessIfOn } from "@/commands/access";
 import { buildApp } from "@/lib/app/buildApp";
 import {
   MISSING_CLOUDFLARE_CONFIG,
@@ -654,17 +655,14 @@ async function deploySteps(
           },
     );
   }
-  // A deploy never changes Cloudflare Access: `access on` lets public
-  // routes through. Said when this deploy changed them and Access is on.
-  await warnIfAccessNeedsRerun(
-    { cf, out, worker: names.worker },
-    {
-      appId: manifest.id,
-      previous: plan.previousManifest,
-      next: manifest,
-      message: `Cloudflare Access doesn't know ${manifest.id}'s new public routes yet\nUntil ${CLI} access on runs again, they need an Access sign-in.`,
-    },
-  );
+  // Behind Cloudflare Access, new or removed public routes are let through
+  // by `access on`'s recipe, run again here only when this deploy changed them.
+  if (publicSurfaceKey(plan.previousManifest) !== publicSurfaceKey(manifest)) {
+    await updateAccessIfOn(
+      { cf, out, accountId, gatewayUrl, worker: names.worker, hosted: install.deploymentMode === "hosted" },
+      { what: `${manifest.id}'s public routes`, data: { appId: manifest.id } },
+    );
+  }
   if (outsideBase) {
     out.emit({
       type: "warning",

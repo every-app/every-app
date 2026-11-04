@@ -36,7 +36,7 @@ For unattended runs (CI), set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`
 4. **Resume** by running the same command again. Setup picks up where it stopped and does nothing once everything is there.
 5. **Show the result**: `done.data` has `gatewayUrl`, `adminUrl`, `owner` and `next`. Tell the person the address and that they're signed in.
 
-After the owner exists, setup turns **Cloudflare Access** on by default: a second sign-in at Cloudflare in front of the Gateway and every app. Recommend keeping it. `--no-access` (or `everyapp access off`) leaves it off. Access asks the Gateway who is a member, so invitations need nothing in Access; run `everyapp access on` again after a deploy that changed an app's public routes (`ACCESS_RERUN_NEEDED`). [access](/docs/agent/access)
+After the owner exists, setup turns **Cloudflare Access** on by default: a second sign-in at Cloudflare in front of the Gateway and every app. Recommend keeping it. `--no-access` (or `everyapp access off`) leaves it off. Access asks the Gateway who is a member, so invitations need nothing in Access; deploys keep apps' public routes let through. [access](/docs/agent/access)
 
 Then offer, one at a time: an AI key (`everyapp provider add openrouter`), email (`everyapp secret set EMAIL_FROM EMAIL_FROM_NAME` after onboarding the domain to Email Sending; guide `setup/email.md`), inviting people, connecting their AI client to `https://<gateway>/mcp`, and a first app. `everyapp status --json` lists what's left in `data.next`.
 

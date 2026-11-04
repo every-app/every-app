@@ -20,8 +20,9 @@
  *     every served app's public routes let through;
  *  5. the Gateway's three settings, in one new version of the Worker.
  *
- * Nothing else changes Access: a deploy that adds public routes says to
- * run `on` again. `off` is the reverse: the settings go first, so the
+ * While Access is on, `deploy` and `delete` run the same recipe, unattended,
+ * when they changed an app's public routes, and `update` after every run
+ * (`updateAccessIfOn`). `off` is the reverse: the settings go first, so the
  * Gateway stops requiring Access at once; then the two applications.
  *
  * Either way, once the Gateway's settings are written, `access.changed`
@@ -75,8 +76,8 @@ import {
   splitDestinations,
 } from "@/lib/access/plan";
 import { clearAccessOffChoice, writeAccessOffChoice } from "@/lib/access/record";
-import { ACCESS_SETTINGS } from "@/lib/access/settings";
-import { EveryAppError } from "@/lib/errors";
+import { ACCESS_SETTINGS, accessStateOf } from "@/lib/access/settings";
+import { errorMessage, EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import type { InstallRecord } from "@/lib/gateway/install";
 import { operatorActor, queueEventFromCli } from "@/lib/gateway/events";
@@ -333,7 +334,7 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
   ];
   const notes = [
     `People sign in to Access with ${methods}, and get in when they are a member or invited here: invite someone in Manage workspace → Users and they can sign in at once.`,
-    `MCP clients and personal access tokens keep working: the Gateway's /mcp, the OAuth endpoints, /health and ${plural(appsWithSurface, "app")}'s public routes are let through without a login. After deploying an app with new public routes, run ${CLI} access on again.`,
+    `MCP clients and personal access tokens keep working: the Gateway's /mcp, the OAuth endpoints, /health and ${plural(appsWithSurface, "app")}'s public routes are let through without a login; deploy keeps them current.`,
   ];
   out.emit({
     type: "done",
@@ -356,6 +357,79 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
       settings: { names: [...ACCESS_SETTINGS] },
       signIn: { url: `https://${gatewayHost}` },
     },
+  });
+}
+
+/**
+ * After a deploy, delete or update: when Cloudflare Access is on for this
+ * Gateway (its three settings on the Worker, as `status` reads it), `on`'s
+ * recipe again, unattended and with no prompts, so new or removed public
+ * routes are let through without anyone running `access on`. Access off, a
+ * hosted Gateway, or settings that can't be listed: nothing, no output.
+ * One ticked line when it ran; when it fails (a login that can't edit Zero
+ * Trust), the command still succeeds, with one warning that names the rerun.
+ */
+export async function updateAccessIfOn(
+  {
+    cf,
+    out,
+    accountId,
+    gatewayUrl,
+    worker,
+    hosted,
+  }: { cf: CfRunner; out: EventSink; accountId: string; gatewayUrl: string; worker: string; hosted: boolean },
+  { what, data }: { what: string; data?: Record<string, unknown> },
+): Promise<void> {
+  if (hosted) return;
+  const names = await listWorkerSecrets(cf, worker).catch(() => null);
+  if (!names || !accessStateOf(names).on) return;
+  const step = "app.access";
+  out.emit({ type: "step", step, status: "start", message: "Updating Cloudflare Access..." });
+  // The recipe's own lines stay inside: its warnings come through, its summary is read.
+  let summary: Record<string, unknown> | undefined;
+  const inner: EventSink = {
+    emit(event) {
+      if (event.type === "warning") out.emit(event);
+      else if (event.type === "done") summary = event.data;
+    },
+    get exitCode() {
+      return out.exitCode;
+    },
+    get verbose() {
+      return out.verbose;
+    },
+  };
+  try {
+    await turnAccessOn({
+      // json: never a prompt (a Gateway version changed by hand is refused, not asked about).
+      flags: { json: true, "account-id": accountId, gateway: gatewayUrl },
+      out: inner,
+      interactive: false,
+      createCf: () => cf,
+    });
+  } catch (error) {
+    out.emit({ type: "step", step, status: "skip" });
+    out.emit({
+      type: "warning",
+      code: "ACCESS_UPDATE_FAILED",
+      step,
+      message: `Cloudflare Access wasn't updated for ${what}\n${errorMessage(error).split("\n")[0]}`,
+      data: { ...data, cause: error instanceof EveryAppError ? error.code : null, rerun: `${CLI} access on` },
+    });
+    return;
+  }
+  const outcomes = summary as
+    | { policy?: { outcome?: string }; applications?: { gateway?: { outcome?: string }; apps?: { outcome?: string } } }
+    | undefined;
+  const changed = [outcomes?.policy, outcomes?.applications?.gateway, outcomes?.applications?.apps].some(
+    (part) => part?.outcome !== "unchanged",
+  );
+  out.emit({
+    type: "step",
+    step,
+    status: "ok",
+    message: changed ? `Cloudflare Access updated for ${what}` : "Cloudflare Access is up to date",
+    data: { ...data, changed },
   });
 }
 
