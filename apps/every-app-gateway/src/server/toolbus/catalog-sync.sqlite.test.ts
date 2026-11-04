@@ -294,7 +294,8 @@ describe("catalog sync", () => {
     expect(result).toMatchObject({
       status: "ok",
       toolCount: 3,
-      sdkVersion: "0.3.0",
+      // The SDK the test app runs reports its own version.
+      sdkVersion: expect.stringMatching(/^\d+\.\d+\.\d+/),
       warnings: [],
     });
     expect(appRequests).toHaveLength(1);

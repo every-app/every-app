@@ -41,6 +41,7 @@ import { POSTIZ_MIGRATIONS_DIR, postiz, postizConfig } from "@/test/fixtures/man
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
+import { withoutCliVersion } from "@/test/version";
 import { deployApp } from "./deployApp";
 
 const TODO: EveryAppCliManifest = {
@@ -200,12 +201,12 @@ async function ledger(workerName: string): Promise<string[]> {
  * Random UUIDs (the registry's rows, organizations, access grants), each
  * numbered by first appearance; the fake account's own ids start with
  * zeros and stay. The app's temp directory and the test home become
- * stable names.
+ * stable names, and this everyapp's version `<version>`.
  */
 function normalizer(): (text: string) => string {
   const uuids = new Map<string, string>();
   return (text) =>
-    text
+    withoutCliVersion(text)
       .replaceAll(appDir, "<app>")
       .replaceAll(home, "<home>")
       // The private directory each gateway reconcile unpacks its release in

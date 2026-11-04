@@ -36,8 +36,11 @@ import {
 } from "../internal/index.js";
 import type { ExecutionContextLike } from "./everyApp.js";
 
-/** Reported with every catalog; must match package.json. */
-export const SDK_VERSION = "0.3.0";
+/**
+ * Reported with every catalog; must match package.json (a test checks).
+ * scripts/publish-rc.mjs sets both for the build it publishes.
+ */
+export const SDK_VERSION = "0.3.0-rc.13";
 
 const JSON_SCHEMA_TARGET = "draft-2020-12";
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";

@@ -31,6 +31,7 @@ import { mintSetupLink } from "@/lib/gateway/setup-link";
 import { handleInterrupt, resetInterruptsForTests } from "@/lib/interrupt";
 import { LeasePurpose, readLease } from "@/lib/gateway/lease";
 import { holdLease } from "@/test/holdLease";
+import { withoutCliVersion } from "@/test/version";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { EveryAppCliManifest } from "@/lib/manifest";
@@ -1259,7 +1260,7 @@ describe("deploy of an app without helper Workers", () => {
       [appDir, "<app>"],
       [os.tmpdir(), "<tmp>"],
     ];
-    let text = JSON.stringify(value);
+    let text = withoutCliVersion(JSON.stringify(value));
     for (const [from, to] of replacements) text = text.split(from).join(to);
     text = text
       .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "<uuid>")
@@ -1319,7 +1320,7 @@ describe("deploy of an app without helper Workers", () => {
           "d1 migrations list <uuid> --dir <app>/drizzle",
           "d1 migrations apply <uuid> --dir <app>/drizzle",
           "workers deployments list --worker every-acme-todo --per-page 10",
-          "deploy --prebuilt --no-provision --mode production --message everyapp 0.3.0 todo --secrets-file /fake-cf-files/secrets.json",
+          "deploy --prebuilt --no-provision --mode production --message everyapp <version> todo --secrets-file /fake-cf-files/secrets.json",
           "workers deployments list --worker every-acme-todo --per-page 10",
           "workers secrets list --worker every-acme-todo",
           "workers deployments list --worker every-app-gateway --per-page 10",
@@ -1327,7 +1328,7 @@ describe("deploy of an app without helper Workers", () => {
           "dns records list -z zone-1 --name-exact todo.example.com --per-page 100",
           "dns records list -z zone-1 --name-exact *.example.com --per-page 100",
           "workers deployments list --worker every-app-gateway --per-page 10",
-          "deploy --prebuilt --no-provision --mode production --message everyapp 0.3.0 gateway 0.2.0 (reconcile)",
+          "deploy --prebuilt --no-provision --mode production --message everyapp <version> gateway 0.2.0 (reconcile)",
           "workers deployments list --worker every-app-gateway --per-page 10",
         ],
         "owned": [
@@ -1362,7 +1363,7 @@ describe("deploy of an app without helper Workers", () => {
               "--mode",
               "production",
               "--message",
-              "everyapp 0.3.0 todo",
+              "everyapp <version> todo",
               "--secrets-file",
               "/fake-cf-files/secrets.json",
             ],

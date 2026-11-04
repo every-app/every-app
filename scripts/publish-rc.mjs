@@ -10,7 +10,8 @@
  * 2. Sets the version in packages/sdk and packages/cli package.json and
  *    drops `"private": true` from both, and sets PUBLISHED_VERSION
  *    (packages/cli/src/lib/app/publishedVersions.ts), the version
- *    `everyapp create` pins new apps at, so the published CLI pins itself.
+ *    `everyapp create` pins new apps at, so the published CLI pins itself,
+ *    and the SDK's SDK_VERSION (packages/sdk/src/server/tools.ts).
  * 3. Builds the SDK, then the CLI (which packs starter/ into the package).
  * 4. Runs the built CLI's `--version` and stops unless it says this version.
  * 5. Publishes the SDK, then the CLI, under the dist-tag `next`
@@ -35,6 +36,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PUBLISHED_VERSIONS = path.join(ROOT, "packages/cli/src/lib/app/publishedVersions.ts");
+const SDK_VERSION_FILE = path.join(ROOT, "packages/sdk/src/server/tools.ts");
 const PACKAGES = [
   { dir: "packages/sdk", name: "@every-app/sdk" },
   { dir: "packages/cli", name: "everyapp" },
@@ -98,6 +100,14 @@ try {
     delete pkg.private;
     fs.writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
   }
+  // The SDK reports its version with every catalog (SDK_VERSION).
+  const sdkVersionText = fs.readFileSync(SDK_VERSION_FILE, "utf8");
+  originals.set(SDK_VERSION_FILE, sdkVersionText);
+  const stamped = sdkVersionText.replace(/export const SDK_VERSION = "[^"]*";/, `export const SDK_VERSION = "${version}";`);
+  if (!stamped.includes(`SDK_VERSION = "${version}"`)) {
+    throw new Error(`couldn't find SDK_VERSION in ${path.relative(ROOT, SDK_VERSION_FILE)}`);
+  }
+  fs.writeFileSync(SDK_VERSION_FILE, stamped);
 
   // 3. Built after the version is set.
   run("pnpm", ["-C", "packages/sdk", "build"]);

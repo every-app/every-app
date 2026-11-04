@@ -14,7 +14,7 @@ import {
 } from "../internal";
 import { RequestContextError, currentUser } from "./context";
 import { everyApp } from "./everyApp";
-import { ToolError, defineTools, type ToolContext } from "./tools";
+import { SDK_VERSION, ToolError, defineTools, type ToolContext } from "./tools";
 
 const ISSUER = "https://home.example.com";
 // TODO(integration): PR 2 types ctx as the runtime ExecutionContext.
@@ -170,7 +170,7 @@ describe("POST /__everyapp/tools/list", () => {
     const body = (await response.json()) as ToolsListResponseV1;
     expect(body).toMatchObject({
       v: 1,
-      sdk: "0.3.0",
+      sdk: SDK_VERSION,
       instructions: "Never guess ids.",
     });
     expect(body.hash).toMatch(/^sha256:/);

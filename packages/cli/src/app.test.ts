@@ -242,6 +242,6 @@ describe("help", () => {
   });
 
   it("names the tool with its version", () => {
-    expect(versionLine()).toMatch(/^everyapp \d+\.\d+\.\d+\n$/);
+    expect(versionLine()).toMatch(/^everyapp \d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?\n$/);
   });
 });
