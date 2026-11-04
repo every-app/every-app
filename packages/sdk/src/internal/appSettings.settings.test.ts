@@ -119,3 +119,25 @@ describe("settingValueProblem and settingValueTakes", () => {
     expect(settingValueTakes({ type: "text" })).toBe("any text");
   });
 });
+
+describe("a stored manifest from before features", () => {
+  it("still reads `optional: true` as optional, so a Gateway update never blocks a deployed app", () => {
+    const stored = {
+      secrets: [
+        { name: "ERASURE_SECRET", optional: true },
+        { name: "MAIN_SECRET" },
+      ],
+      settings: [{ name: "OPENROUTER_MODEL", optional: true }],
+      capabilities: { email: { access: "write", optional: true } },
+    } as unknown as Parameters<typeof appSettings>[0];
+    const needs = Object.fromEntries(
+      appSettings(stored).map((setting) => [setting.id, setting.need.kind]),
+    );
+    expect(needs).toMatchObject({
+      ERASURE_SECRET: "optional",
+      MAIN_SECRET: "required",
+      OPENROUTER_MODEL: "optional",
+    });
+    if ("email" in needs) expect(needs["email"]).toBe("optional");
+  });
+});

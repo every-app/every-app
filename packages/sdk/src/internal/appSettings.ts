@@ -633,6 +633,35 @@ function withNeed(
   };
 }
 
+/**
+ * A stored manifest from before features (deployed before 0.3.0-rc.14) marks a
+ * value `optional: true`. The strict schema refuses that key now, but a stored
+ * row keeps it until the app is redeployed, so it still reads as optional:
+ * updating the Gateway never puts a working app into Needs setup.
+ */
+function storedOptional(
+  need: { need: SettingNeed; feature?: string },
+  raw: unknown,
+): { need: SettingNeed; feature?: string } {
+  if (need.feature !== undefined || need.need.kind === "optional") return need;
+  const optional =
+    raw !== null &&
+    typeof raw === "object" &&
+    (raw as Record<string, unknown>)["optional"] === true;
+  return optional ? { need: { kind: "optional" } } : need;
+}
+
+/** The raw entry named `name` in a stored list (`secrets`, `settings`, `providers`). */
+function rawEntry(list: unknown, name: string, key: "name" | "id"): unknown {
+  if (!Array.isArray(list)) return undefined;
+  return list.find(
+    (entry) =>
+      entry !== null &&
+      typeof entry === "object" &&
+      (entry as Record<string, unknown>)[key] === name,
+  );
+}
+
 /** An app's own value's need: its feature's (required, or optional), or required at the top level. */
 function ownNeedOf(
   features: readonly FeatureEntry[],
@@ -702,7 +731,7 @@ export function appSettings(
             .filter((names) => names.length > 0),
         },
         chat === true ? undefined : needFields(chat),
-        { need: { kind: "required" } },
+        storedOptional({ need: { kind: "required" } }, chat),
         {
           ...(provider?.mode === "ai" ? { docs: provider.docs } : {}),
           setup: "setup/ai.md",
@@ -722,7 +751,10 @@ export function appSettings(
     const capability = lookup.get(entry.id);
     if (capability?.mode !== "ai") continue;
     const names = providerNames(capability);
-    const need = gatewayNeedOf(features, "providers", entry.id);
+    const need = storedOptional(
+      gatewayNeedOf(features, "providers", entry.id),
+      rawEntry(manifest.providers, entry.id, "id"),
+    );
     if (
       defaultNames &&
       need.need.kind === "optional" &&
@@ -767,7 +799,7 @@ export function appSettings(
           alsoReads,
         },
         needFields(entry),
-        gatewayNeedOf(features, "capabilities", id),
+        storedOptional(gatewayNeedOf(features, "capabilities", id), entry),
         {
           docs: capabilityDocs(capability),
           setup: capability.setup,
@@ -809,14 +841,20 @@ export function appSettings(
             alsoReads: [],
           },
           entry,
-          ownNeedOf(features, entry.feature),
+          storedOptional(
+            ownNeedOf(features, entry.feature),
+            rawEntry(manifest.secrets, entry.name, "name"),
+          ),
         ),
         entry,
       ),
     );
   }
   for (const entry of settingEntries(manifest)) {
-    const own = ownNeedOf(features, entry.feature);
+    const own = storedOptional(
+      ownNeedOf(features, entry.feature),
+      rawEntry(manifest.settings, entry.name, "name"),
+    );
     settings.push({
       ...withOwnValue(
         withNeed(
