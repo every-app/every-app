@@ -22,9 +22,9 @@
  * and sets everything in one go, each name where it
  * belongs, through the secret command's machinery (leases, the
  * replaceable-version check, one Worker version per destination, the
- * app's secret names recorded). An app that is ready gets a menu to
- * change one setting at a time instead. It ends by saying whether the app
- * is ready, or what it still needs, and records that on the app's row
+ * app's secret names recorded). An app that is ready asks nothing: it
+ * prints the table and the `secret set` that changes a value. It ends by
+ * saying whether the app is ready, or what it still needs, and records that on the app's row
  * (`apps.setup_state`, with `app.needs_setup` or `app.ready` on a change).
  *
  * A script or a coding agent can't answer a prompt, so values also come
@@ -65,7 +65,6 @@ import {
   listGatewaySecretNames,
   namesToSet,
   renderSettingsTable,
-  settingStatus,
   settingsRows,
 } from "@/lib/app/settings";
 import type { CfRunner } from "@/lib/cf/runner";
@@ -80,7 +79,6 @@ import {
   askSecret,
   askText,
   canPromptInTerminal,
-  choose,
   confirmAtTerminal,
   tellPerson,
 } from "@/lib/output/prompt";
@@ -113,12 +111,6 @@ export interface Prompter {
   ): Promise<string>;
   /** Yes or No, No by default. */
   confirm(question: string, context?: string[]): Promise<boolean>;
-  /** One of the choices; the answer echoes its label. */
-  choose<T>(
-    question: string,
-    choices: ReadonlyArray<{ label: string; hint?: string; value: T }>,
-    context?: string[],
-  ): Promise<T>;
 }
 
 /** The prompts at a terminal (lib/output/prompt.ts). */
@@ -130,7 +122,6 @@ const terminalPrompter: Prompter = {
       validate: (value) => (optional && !value.trim() ? null : validate(value)),
     }),
   confirm: confirmAtTerminal,
-  choose: (question, choices, context) => choose(question, choices, { context }),
 };
 
 /** What the handler takes from the command line, and the seams tests use. */
@@ -583,9 +574,8 @@ function generatedFor(
  * The prompts, for what the script's sources didn't cover: each required
  * top-level setting, then each required feature (its intro, then its
  * values), then "Set up <name>?" for each optional feature that's off
- * ("Finish setting up <name>?" for one that's incomplete). An app that was
- * ready and took nothing new: a menu to change one setting at a time,
- * until "No, done".
+ * ("Finish setting up <name>?" for one that's incomplete). Nothing else:
+ * a set value is changed on purpose, with `secret set`.
  */
 async function askFor(
   target: Target,
@@ -623,48 +613,18 @@ async function askFor(
     each.values.some((setting) => !setting.names.every(have)) ||
     each.feature.settings.some((setting) => setting.holder === "gateway" && setting.set === false);
 
-  const needed = plan.required.length > 0 || plan.features.some((each) => each.feature.required && pending(each));
   for (const setting of plan.required) await ask(setting, false);
   for (const each of plan.features) {
     if (each.feature.required && pending(each)) await walk(each, false);
   }
-  let offered = false;
   for (const each of plan.features) {
     if (each.feature.required || each.feature.state === "ready" || each.values.length === 0) continue;
-    offered = true;
     const question =
       each.feature.state === "incomplete" ? `Finish setting up ${each.feature.name}?` : `Set up ${each.feature.name}?`;
     if (await prompter.confirm(question, each.feature.why ? [each.feature.why] : [])) await walk(each, true);
   }
-  if (needed || (offered && Object.keys(typed).length > 0)) return typed;
-
-  // Ready: everything required is set; change one, or leave.
-  const changeable = state.report.settings.filter(
-    (setting) => setting.names.length > 0 && (setting.holder === "gateway" || target.deployed !== null),
-  );
-  if (changeable.length === 0) return typed;
-  for (;;) {
-    const chosen = await prompter.choose<EvaluatedSetting | null>(
-      `Everything ${target.appId} needs is set. Change one?`,
-      [
-        ...changeable.map((setting) => ({
-          label: setting.names.join(" + "),
-          hint: `${setting.label !== setting.names.join("+") ? `${setting.label} · ` : ""}${settingStatus(setting)}`,
-          value: setting,
-        })),
-        { label: "No, done", value: null },
-      ],
-    );
-    if (!chosen) return typed;
-    for (const name of chosen.names) {
-      const value = await askValue(name, chosen, prompter, {
-        optional: true,
-        context: name === chosen.names[0],
-        urls: target.urls,
-      });
-      if (value) typed[name] = value;
-    }
-  }
+  // A ready app asks nothing more: changing a set value is `secret set`, which finish names.
+  return typed;
 }
 
 /**
@@ -766,6 +726,10 @@ function finish(
   } else {
     message = `${changed}${appId} is ready`;
     display = chalk.green(`${appId} is ready.`);
+    // Nothing asked or set: how a set value is changed, on purpose.
+    if (set.length === 0 && after.report.settings.some((setting) => setting.names.length > 0)) {
+      display = `${chalk.green(`${appId} is ready. Everything it needs is set.`)}\n${chalk.dim(`To change a value: ${CLI} secret set <NAME> --app ${appId} (a Gateway setting changes for every app).`)}`;
+    }
   }
   if (set.length > 0) display = `${display}\n${chalk.dim("Live now. No deploy needed.")}`;
   // An optional feature half set up never blocks, but doesn't work either.

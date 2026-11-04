@@ -2,13 +2,14 @@
  * `everyapp configure [app]` end to end, in a fake Cloudflare account with
  * a deployed gateway and apps (as secret/index.test.ts): the prompts a
  * person answers (required settings, then which member of an any-of
- * group, then the optional ones), the menu when everything is set, the
+ * group, then the optional ones), nothing asked when everything is set, the
  * sources a script uses (NAME=value lines on stdin, --from-env), what is
  * refused before anything is written, and what the run says at the end.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { oauthPreset, providerBindingKey } from "@every-app/sdk/internal";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
@@ -20,7 +21,8 @@ import { readApp } from "@/lib/gateway/registry";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { EveryAppCliManifest } from "@/lib/manifest";
-import { createNdjsonSink } from "@/lib/output/events";
+import { CLI } from "@/lib/output/command";
+import { createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
@@ -67,7 +69,23 @@ let home: string;
 let events: Array<Record<string, any>>;
 const dirs: string[] = [];
 
-const out = () => createNdjsonSink((line) => events.push(JSON.parse(line)));
+/** The done event's `display`, which --json leaves out: what a person reads. */
+let shown: string | undefined;
+const out = (): EventSink => {
+  const sink = createNdjsonSink((line) => events.push(JSON.parse(line)));
+  return {
+    emit: (event) => {
+      if (event.type === "done") shown = event.display;
+      sink.emit(event);
+    },
+    get exitCode() {
+      return sink.exitCode;
+    },
+    get verbose() {
+      return sink.verbose;
+    },
+  };
+};
 const flags = { json: true };
 const seams = { sleep: async () => undefined, leaseWaitMs: 0 };
 const db = () =>
@@ -164,14 +182,11 @@ interface Script {
   values?: Record<string, string>;
   /** The answer to "Set the optional settings too?" (default No). */
   optional?: boolean;
-  /** For each choice prompt in order: the label to pick. */
-  picks?: string[];
 }
 
 function scripted(
   script: Script,
 ): Prompter & { asked: string[]; questions: Array<Record<string, unknown>>; told: string[] } {
-  const picks = [...(script.picks ?? [])];
   const asked: string[] = [];
   const questions: Array<Record<string, unknown>> = [];
   const told: string[] = [];
@@ -198,13 +213,6 @@ function scripted(
     confirm: async (question, context) => {
       questions.push({ kind: "confirm", question, context });
       return script.optional ?? false;
-    },
-    choose: async (question, choices) => {
-      questions.push({ kind: "choose", question, choices: choices.map((choice) => choice.label) });
-      const label = picks.shift();
-      const chosen = choices.find((choice) => choice.label === label);
-      if (!chosen) throw new Error(`no choice ${label} for "${question}": ${choices.map((choice) => choice.label).join(", ")}`);
-      return chosen.value;
     },
   };
 }
@@ -321,49 +329,6 @@ describe("configure at a terminal", () => {
     ).toEqual(["Set OPENROUTER_API_KEY and DATAFORSEO_API_KEY on the Gateway", "Set TOKEN_ENCRYPTION_KEY on crm"]);
   });
 
-  it("changes any setting from the menu once ready, skipping a name left blank, and checks a plain setting as typed", async () => {
-    const dir = appDir(CRM);
-    const workerName = await deploy(dir, CRM);
-    gateway().secrets["DATAFORSEO_API_KEY"] = "set";
-    gateway().secrets["OPENROUTER_API_KEY"] = "set";
-    secretsOf(workerName)["TOKEN_ENCRYPTION_KEY"] = "set";
-
-    // Ready already, the GitHub feature declined: the menu. Pick the email
-    // sender (two names, one menu entry; the name left blank is skipped),
-    // then the GitHub token, then leave.
-    const run = configureAt(dir, {
-      values: { EMAIL_FROM: "Acme <hello@example.com>", GITHUB_TOKEN: "ghp_x" },
-      picks: ["EMAIL_FROM + EMAIL_FROM_NAME", "GITHUB_TOKEN", "No, done"],
-    });
-    await run;
-
-    expect(run.prompter.questions[0]).toMatchObject({ kind: "confirm", question: "Set up GitHub?" });
-    expect(run.prompter.questions[1]).toMatchObject({
-      kind: "choose",
-      question: "Everything crm needs is set. Change one?",
-      choices: ["OPENROUTER_API_KEY", "DATAFORSEO_API_KEY", "CONTEXT_API_KEY", "EMAIL_FROM + EMAIL_FROM_NAME", "TOKEN_ENCRYPTION_KEY", "GITHUB_TOKEN", "No, done"],
-    });
-    // A plain setting is asked visibly, with what it takes above it.
-    expect(run.prompter.questions[2]).toMatchObject({
-      kind: "text",
-      question: "EMAIL_FROM (Enter to skip)",
-      optional: true,
-      context: expect.arrayContaining([expect.stringMatching(/^Takes an address/)]),
-    });
-    expect(run.prompter.questions[3]).toMatchObject({
-      kind: "text",
-      question: "EMAIL_FROM_NAME (Enter to skip)",
-      optional: true,
-    });
-    expect(gateway().secrets["EMAIL_FROM"]).toBe("Acme <hello@example.com>");
-    expect(gateway().secrets["EMAIL_FROM_NAME"]).toBeUndefined();
-    expect(secretsOf(workerName)["GITHUB_TOKEN"]).toBe("ghp_x");
-    expect(done()).toMatchObject({
-      message: "Set EMAIL_FROM and GITHUB_TOKEN. crm is ready",
-      data: { set: ["EMAIL_FROM", "GITHUB_TOKEN"] },
-    });
-  });
-
   it("walks an optional feature once the person says yes: its intro, then each value with its how", async () => {
     const dir = appDir(CRM);
     const workerName = await deploy(dir, CRM);
@@ -387,26 +352,36 @@ describe("configure at a terminal", () => {
     expect(done()!["data"]["set"]).toEqual(["DATAFORSEO_API_KEY", "TOKEN_ENCRYPTION_KEY", "GITHUB_TOKEN"]);
   });
 
-  it("says what is set, nothing changed, when the person leaves the menu at once", async () => {
+  it("asks nothing once ready: shows what is set, names secret set for a change, and writes nothing", async () => {
     await deploy(appDir(NOTES), NOTES);
     const dir = appDir(CRM);
     const workerName = await deploy(dir, CRM);
     gateway().secrets["DATAFORSEO_API_KEY"] = "set";
     gateway().secrets["OPENROUTER_API_KEY"] = "set";
     secretsOf(workerName)["TOKEN_ENCRYPTION_KEY"] = "set";
+    gateway().secrets["EMAIL_FROM"] = "Acme <hello@example.com>";
     const versions = account.cf.calls.length;
 
-    await configureAt(emptyDir(), { picks: ["No, done"] }, { appId: "crm" });
+    const run = configureAt(emptyDir(), { values: { OPENROUTER_API_KEY: "would replace it" } }, { appId: "crm" });
+    await run;
+    // The optional feature that's off is still offered; then nothing more.
+    expect(run.prompter.questions).toEqual([expect.objectContaining({ kind: "confirm", question: "Set up GitHub?" })]);
+    expect(run.prompter.told.join("\n")).toContain("OPENROUTER_API_KEY");
+    expect(gateway().secrets["OPENROUTER_API_KEY"]).toBe("set");
     expect(done()).toMatchObject({ message: "crm is ready", data: { set: [] } });
     expect(done()!["data"]).not.toHaveProperty("changed");
+    expect(done()!["data"]).not.toHaveProperty("next");
+    expect(stripVTControlCharacters(shown ?? "")).toBe(
+      `crm is ready. Everything it needs is set.\nTo change a value: ${CLI} secret set <NAME> --app crm (a Gateway setting changes for every app).`,
+    );
     // Nothing was written: no secrets bulk call.
     expect(account.cf.calls.slice(versions).map((call) => call.args.slice(0, 3).join(" "))).not.toContain("workers secrets bulk");
 
-    // An app that declares nothing: ready, no menu.
+    // An app that declares nothing: ready, nothing asked.
     events = [];
-    const run = configureAt(emptyDir(), {}, { appId: "notes" });
-    await run;
-    expect(run.prompter.questions).toEqual([]);
+    const notes = configureAt(emptyDir(), {}, { appId: "notes" });
+    await notes;
+    expect(notes.prompter.questions).toEqual([]);
     expect(done()).toMatchObject({ message: "notes is ready" });
   });
 

@@ -291,9 +291,9 @@ value with its `how`; a `generate` secret is made and shown once when its
 `how` says where to paste it; a `file` prompt takes a path), then "Set up
 <name>?" for each optional feature that's off ("Finish setting up <name>?"
 for one that's incomplete; No by default; Yes asks each value with "(Enter
-to skip)"). An app that is ready gets a menu,
-"Everything <app> needs is set. Change one?", listing every setting with
-its status and "No, done". Everything is applied in one go at the end
+to skip)"). An app that is ready asks nothing: it shows the table, says
+everything is set and that `secret set <NAME> --app <app>` changes a
+value, and exits. Everything is applied in one go at the end
 (one new Worker version per destination, the Gateway's first), through
 the same machinery as `secret set`: leases, the replaceable-version
 check, the app's secret names recorded. Ctrl-C at a prompt: "Cancelled.
