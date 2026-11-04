@@ -415,8 +415,6 @@ The release uses a Build Output this CLI doesn't deploy. Update everyapp.
 Warning: `mcp add` checked the key with one `tools/list` and the server refused it. Check the key and where it goes (`--auth`, `--header`, `--param`), then `everyapp secret set <ID>_MCP_TOKEN` again.
 ### REMOTE_MCP_EXISTS
 An MCP app with that id exists. Remove it first, or change it in place with `everyapp mcp tool`.
-### REMOTE_MCP_GATEWAY_OUTDATED
-The Gateway predates remote MCP apps. Run `everyapp update`.
 ### REMOTE_MCP_INVALID
 `mcp add` got flags or a server answer a remote MCP app can't use (the message says which). Fix and rerun.
 ### REMOTE_MCP_NEEDS_CREDENTIAL

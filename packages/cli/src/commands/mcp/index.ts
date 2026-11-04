@@ -85,7 +85,6 @@ import {
   readMcpAppDetail,
   readRemoteMcpAddContext,
   refreshMcpAppTools,
-  remoteMcpTables,
   remoteProblemOf,
   remoteUrlOf,
   removedRemoteApp,
@@ -379,18 +378,6 @@ function probeWarnings(out: EventSink, id: string, url: string, none: boolean, p
   }
 }
 
-/** The Gateway's D1 predates migration 0011: the app is written, but served only after an update. */
-async function warnIfOutdated(out: EventSink, connection: Connection, step: string): Promise<void> {
-  if ((await remoteMcpTables(connection.db)).tools) return;
-  out.emit({
-    type: "warning",
-    code: "REMOTE_MCP_GATEWAY_OUTDATED",
-    step,
-    message: "This Gateway predates MCP apps by URL\nIt serves a remote MCP server's tools once it is updated to this checkout.",
-    data: { rerun: `${CLI} update` },
-  });
-}
-
 /** The words of a static credential's placement: "bearer token", "header X-Api-Key", … */
 function staticLabel(kind: RemoteMcpStaticKind, flags: AddFlags): string {
   switch (kind) {
@@ -657,7 +644,6 @@ export async function addServer(options: McpOptions<AddFlags>, url: string): Pro
     message: `${app.name} is on for ${organization.name}`,
     data: { id, was: plan.kind, ...(ownRow ? { provider: { id: ownRow.id, action: ownRow.action } } : {}) },
   });
-  await warnIfOutdated(out, gateway, "mcp.add");
 
   const host = new URL(remote.url).hostname;
   const mcp = { url: `${gateway.gatewayUrl}/mcp`, toolPrefix: `${id}_` };

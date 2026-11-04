@@ -101,8 +101,11 @@ const CREATE_LEASE_TABLE = `CREATE TABLE IF NOT EXISTS _everyapp_deploy_lease (
 )`;
 
 /**
- * The columns added since the table was first created: a table an older
- * everyapp created gets them in place, and its rows read with them null.
+ * The columns added since the table was first created: a table without
+ * them gets them in place, and its rows read with them null. The Gateway's
+ * own install lease (server/deploy/gateway-app-installs.ts) creates the
+ * table with the first five columns only, so a Gateway whose first lease
+ * was an install from Admin has none of these.
  */
 const ADDED_COLUMNS = ["app", "deployer", "machine"] as const;
 

@@ -20,12 +20,10 @@
  * client is a Gateway setting `secret set` sets and binds to the row's
  * hosts (`providers.bound_to`), and an OAuth provider's connections are
  * `provider_connections`. `remote_mcp_tools` is what the Gateway last
- * listed, tool by tool; a Gateway whose D1 predates migration 0011 has no
- * such table until `everyapp update`: reads treat it as empty and writes
- * leave it alone.
+ * listed, tool by tool.
  *
  * Each change queues its event in the batch that writes it (the outbox,
- * ./events.ts; nothing on a Gateway from before migration 0012):
+ * ./events.ts):
  * `mcp_app.added` for a remote app added or revived (a built-in's is
  * providerApps.ts's), `mcp_app.enabled` and `mcp_app.disabled` for `on` and
  * `off`, `mcp_app.removed` for the tombstone, with the app and its kind.
@@ -68,10 +66,9 @@ import { operatorActor, queueEventFromCli, type EventApp } from "./events";
 import type { InstallRecord } from "./install";
 import { gatewayRegistry, listConnections, readUploadedClients } from "./providers";
 import {
-  appColumns,
+  APP_COLUMNS,
   asEveryAppError,
   ensureInstallOrganization,
-  hasSecretNamesColumn,
   installOrganization,
   registryCall,
   text,
@@ -83,32 +80,6 @@ import {
 } from "./registry";
 
 type D1Row = Record<string, unknown>;
-
-/** Which of migration 0011's tables this Gateway's D1 has. */
-interface RemoteMcpTables {
-  /** `remote_mcp_tools`: what each remote server listed, tool by tool. */
-  tools: boolean;
-}
-
-const remoteTables = new WeakMap<D1Database, Promise<RemoteMcpTables>>();
-
-/**
- * Whether the Gateway's D1 has `remote_mcp_tools` (migration 0011,
- * 2026-10-25). A Gateway from before it serves no remote MCP app until
- * `update` runs its migrations; until then reads find nothing and writes
- * skip it, so the other commands keep working against it. Asked of each
- * database once.
- */
-export function remoteMcpTables(db: D1Database): Promise<RemoteMcpTables> {
-  let known = remoteTables.get(db);
-  if (!known) {
-    known = db
-      .run([{ sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'remote_mcp_tools'" }])
-      .then(([rows = []]) => ({ tools: rows.length > 0 }));
-    remoteTables.set(db, known);
-  }
-  return known;
-}
 
 /** An MCP app of either kind, by id, in the install organization. */
 export interface McpAppRef {
@@ -153,7 +124,7 @@ async function rowFor(
 ): Promise<StoredAppRow | null> {
   const [rows = []] = await db.run([
     {
-      sql: `SELECT ${await appColumns(db)} FROM apps WHERE organization_id = ? AND app_slug = ?`,
+      sql: `SELECT ${APP_COLUMNS} FROM apps WHERE organization_id = ? AND app_slug = ?`,
       params: [organizationId, id],
     },
   ]);
@@ -167,7 +138,7 @@ async function remoteIds(
 ): Promise<string[]> {
   const [rows = []] = await db.run([
     {
-      sql: `SELECT ${await appColumns(db)} FROM apps WHERE organization_id = ? AND tier = ? AND status != '${DELETED_APP_STATUS}' ORDER BY app_slug`,
+      sql: `SELECT ${APP_COLUMNS} FROM apps WHERE organization_id = ? AND tier = ? AND status != '${DELETED_APP_STATUS}' ORDER BY app_slug`,
       params: [organizationId, PROVIDER_APP_TIER],
     },
   ]);
@@ -301,7 +272,7 @@ export function readRemoteMcpAddContext(
     const { organization, hasOwner } = await ensureInstallOrganization(db, input.organizationName, now);
     const [existing = []] = await db.run([
       {
-        sql: `SELECT ${await appColumns(db)} FROM apps WHERE organization_id = ? AND app_slug = ?`,
+        sql: `SELECT ${APP_COLUMNS} FROM apps WHERE organization_id = ? AND app_slug = ?`,
         params: [organization.id, id],
       },
     ]);
@@ -345,11 +316,7 @@ export function planRemoteMcpAdd(
 }
 
 /** What adding a remote MCP app writes, in one batch (the row; a revived one's leftovers cleared). */
-function addWrites(
-  plan: RemoteMcpAddPlan,
-  now: number,
-  columns: { secretNames: boolean; remoteTools: boolean },
-): D1Statement[] {
+function addWrites(plan: RemoteMcpAddPlan, now: number): D1Statement[] {
   const { app } = plan;
   if (plan.kind === "new") {
     return [
@@ -393,8 +360,8 @@ WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
         app.id,
       ],
     },
-    ...withoutAppData(app, now, { secretNames: columns.secretNames }),
-    ...(columns.remoteTools ? [remoteToolsDelete(app)] : []),
+    ...withoutAppData(app, now),
+    remoteToolsDelete(app),
   ];
 }
 
@@ -421,7 +388,6 @@ export function writeRemoteMcpAdd(
   return registryCall(async () => {
     const now = input.now ?? Date.now();
     const { organization } = context;
-    const tables = await remoteMcpTables(db);
     const added = await queueEventFromCli(db, {
       organizationId: organization.id,
       type: "mcp_app.added",
@@ -440,10 +406,7 @@ export function writeRemoteMcpAdd(
     });
     await db.run([
       ...(input.providerWrites ?? []),
-      ...addWrites(plan, now, {
-        secretNames: await hasSecretNamesColumn(db),
-        remoteTools: tables.tools,
-      }),
+      ...addWrites(plan, now),
       ...added,
     ]);
     return {
@@ -539,16 +502,13 @@ export function removeMcpApp(
   return registryCall(async () => {
     const update = mcpAppRemoveUpdate(app);
     if (!app || !update) return { removed: false };
-    const tables = await remoteMcpTables(db);
     await db.run([
       {
         sql: "UPDATE apps SET status = ?, everyone = ?, updated_at = ? WHERE id = ?",
         params: [update.status, update.everyone ? 1 : 0, now, app.id],
       },
-      ...withoutAppData(app, now, {
-        secretNames: await hasSecretNamesColumn(db),
-      }),
-      ...(tables.tools ? [remoteToolsDelete(app)] : []),
+      ...withoutAppData(app, now),
+      remoteToolsDelete(app),
       ...(await queueEventFromCli(db, {
         organizationId: app.organizationId,
         type: "mcp_app.removed",
@@ -756,7 +716,7 @@ export async function listMcpApps(db: D1Database): Promise<McpAppEntry[]> {
   if (found) {
     const [apps = [], catalogs = []] = await db.run([
       {
-        sql: `SELECT ${await appColumns(db)} FROM apps WHERE organization_id = ? AND tier = ? AND status != '${DELETED_APP_STATUS}' ORDER BY app_slug`,
+        sql: `SELECT ${APP_COLUMNS} FROM apps WHERE organization_id = ? AND tier = ? AND status != '${DELETED_APP_STATUS}' ORDER BY app_slug`,
         params: [found.organization.id, PROVIDER_APP_TIER],
       },
       {
@@ -851,8 +811,6 @@ interface McpAppDetail {
   remoteTools: RemoteToolEntry[];
   /** The catalog's tools (`app_tools`), for a built-in. */
   catalogTools: CatalogToolEntry[];
-  /** Whether the Gateway's D1 has `remote_mcp_tools` (migration 0011). */
-  listingKnown: boolean;
 }
 
 /** The hints a stored `risk_hint` stands for, in `remoteToolRisk`'s terms. */
@@ -915,7 +873,6 @@ export async function readMcpAppDetail(
   remote: RemoteMcpBlock | null,
 ): Promise<McpAppDetail> {
   const scoped = [ref.app.id, ref.app.organizationId];
-  const tables = await remoteMcpTables(db);
   const [catalog = [], tools = [], listed = []] = await db.run([
     {
       sql: "SELECT status, tool_count, fetched_at, last_error FROM app_tool_catalogs WHERE app_row_id = ? AND organization_id = ?",
@@ -925,7 +882,7 @@ export async function readMcpAppDetail(
       sql: "SELECT name, title, risk FROM app_tools WHERE app_row_id = ? AND organization_id = ? ORDER BY name",
       params: scoped,
     },
-    ...(tables.tools && remote
+    ...(remote
       ? [
           {
             sql: `SELECT upstream_name, local_name, title, risk_hint, listed, problem, listed_at FROM remote_mcp_tools
@@ -948,7 +905,6 @@ WHERE app_row_id = ? AND organization_id = ? ORDER BY upstream_name`,
       title: text(tool["title"]),
       risk: String(tool["risk"]),
     })),
-    listingKnown: tables.tools,
   };
 }
 
@@ -992,16 +948,13 @@ export function setRemoteMcpTool(
   deployer?: Deployer,
 ): Promise<RemoteToolChanged> {
   return registryCall(async () => {
-    const tables = await remoteMcpTables(db);
     const [matches = []] = await db.run([
-      tables.tools
-        ? {
-            sql: `SELECT upstream_name, local_name FROM remote_mcp_tools
+      {
+        sql: `SELECT upstream_name, local_name FROM remote_mcp_tools
 WHERE app_row_id = ?1 AND (upstream_name = ?2 OR local_name = ?2 OR ?3 || local_name = ?2)
 ORDER BY (upstream_name = ?2) DESC, upstream_name LIMIT 1`,
-            params: [ref.app.id, tool, `${ref.id}_`],
-          }
-        : { sql: "SELECT 1 WHERE 0" },
+        params: [ref.app.id, tool, `${ref.id}_`],
+      },
     ]);
     const match = matches[0];
     const serverName = match ? String(match["upstream_name"]) : tool;

@@ -30,7 +30,6 @@ import {
   readMcpAppDetail,
   refreshMcpAppTools,
   remoteMcpProviderUses,
-  remoteMcpTables,
   removeMcpApp,
   resolveMcpApp,
   setMcpAppStatus,
@@ -349,7 +348,6 @@ describe("readMcpAppDetail", () => {
     const remote = manifestOf("treg").remote;
     const detail = await readMcpAppDetail(db(), { ...ref, app: ref.app! }, remote);
     expect(detail.snapshot).toMatchObject({ status: "ok", toolCount: 2 });
-    expect(detail.listingKnown).toBe(true);
     expect(detail.remoteTools).toEqual([
       {
         name: "treg_delete_everything",
@@ -470,13 +468,6 @@ describe("listMcpApps, credentialState and mcpAppState", () => {
     await add();
     await add({ url: "https://deepwiki.com/mcp", auth: { kind: "none" } });
     expect(await remoteMcpProviderUses(db())).toEqual(new Map([["treg-mcp", ["treg"]]]));
-  });
-
-  it("works on a Gateway whose D1 predates migration 0011's listing", async () => {
-    sqlite.sqlite.exec("DROP TABLE remote_mcp_tools;");
-    expect(await remoteMcpTables(db())).toEqual({ tools: false });
-    await add();
-    expect(await removeMcpApp(db(), (await resolveMcpApp(db(), "treg")).app, BEN)).toEqual({ removed: true });
   });
 });
 

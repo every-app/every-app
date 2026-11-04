@@ -106,37 +106,9 @@ export async function registryCall<T>(call: () => Promise<T>): Promise<T> {
   }
 }
 
-/** The `apps` columns every read takes; `secret_names` came with migration 0004. */
-const APP_COLUMNS_BEFORE_SECRET_NAMES =
-  "id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, version_id, deployed_at, deployed_by_actor, everyone, email_senders, email_inbound";
-const APP_COLUMNS = `${APP_COLUMNS_BEFORE_SECRET_NAMES}, secret_names`;
-
-const secretNamesColumns = new WeakMap<D1Database, Promise<boolean>>();
-
-/**
- * Whether the Gateway's D1 has `apps.secret_names` (migration 0004,
- * 2026-10-24). A Gateway from before it lacks the column until `update`
- * runs its migrations. Until then the registry reads every app's recorded
- * names as never recorded (null, which never blocks) and leaves them
- * unwritten, so `status` and `secret list` still run against the older
- * Gateway (and status says to update) instead of failing on "no such
- * column: secret_names". Asked of each database once.
- */
-export function hasSecretNamesColumn(db: D1Database): Promise<boolean> {
-  let known = secretNamesColumns.get(db);
-  if (!known) {
-    known = db
-      .run([{ sql: "PRAGMA table_info(apps)" }])
-      .then(([rows = []]) => rows.some((row) => row["name"] === "secret_names"));
-    secretNamesColumns.set(db, known);
-  }
-  return known;
-}
-
-/** The columns to select: all, or those before `secret_names` on a Gateway that predates it. */
-export async function appColumns(db: D1Database): Promise<string> {
-  return (await hasSecretNamesColumn(db)) ? APP_COLUMNS : APP_COLUMNS_BEFORE_SECRET_NAMES;
-}
+/** The `apps` columns every read takes. */
+export const APP_COLUMNS =
+  "id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, version_id, deployed_at, deployed_by_actor, everyone, email_senders, email_inbound, secret_names";
 
 export const text = (value: unknown): string | null =>
   value === null || value === undefined ? null : String(value);
@@ -356,7 +328,7 @@ async function registerApp(
         params: [organization.id],
       },
       {
-        sql: `SELECT ${await appColumns(db)} FROM apps WHERE organization_id = ? AND app_slug = ?`,
+        sql: `SELECT ${APP_COLUMNS} FROM apps WHERE organization_id = ? AND app_slug = ?`,
         params: [organization.id, input.appSlug],
       },
       ...memberQueries(organization.id, input.deployer.email),
@@ -430,7 +402,7 @@ async function registerApp(
       },
     );
   }
-  await db.run(registrationWrites(plan, now, { secretNames: await hasSecretNamesColumn(db) }));
+  await db.run(registrationWrites(plan, now));
   return { plan, organization, hasOwner };
 }
 
@@ -487,11 +459,7 @@ enum SharedAppAction {
 }
 
 /** What a registration writes, in one batch. */
-function registrationWrites(
-  plan: RegistrationPlan,
-  now: number,
-  columns: { secretNames: boolean },
-): D1Statement[] {
+function registrationWrites(plan: RegistrationPlan, now: number): D1Statement[] {
   const { app } = plan;
   if (plan.kind === "existing") {
     return [
@@ -548,7 +516,7 @@ WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
         app.id,
       ],
     },
-    ...withoutAppData(app, now, columns),
+    ...withoutAppData(app, now),
   ];
 }
 
@@ -564,13 +532,11 @@ WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
 export function withoutAppData(
   app: Pick<AppRow, "id" | "organizationId">,
   now: number,
-  /** `secretNames: false` on a Gateway whose D1 predates the column (`hasSecretNamesColumn`). */
-  { secretNames = true }: { secretNames?: boolean } = {},
 ): D1Statement[] {
   const scoped = [app.id, app.organizationId];
   return [
     {
-      sql: `UPDATE apps SET email_senders = NULL, email_inbound = NULL${secretNames ? ", secret_names = NULL" : ""} WHERE id = ? AND organization_id = ?`,
+      sql: "UPDATE apps SET email_senders = NULL, email_inbound = NULL, secret_names = NULL WHERE id = ? AND organization_id = ?",
       params: scoped,
     },
     {
@@ -608,7 +574,7 @@ WHERE app_row_id = ?2 AND organization_id = ?3 AND revoked_at IS NULL`,
 /** An app's row by id, or null. */
 export async function readAppById(db: D1Database, id: string): Promise<StoredAppRow | null> {
   const [rows = []] = await db.run([
-    { sql: `SELECT ${await appColumns(db)} FROM apps WHERE id = ?`, params: [id] },
+    { sql: `SELECT ${APP_COLUMNS} FROM apps WHERE id = ?`, params: [id] },
   ]);
   return rows[0] ? toAppRow(rows[0]) : null;
 }
@@ -691,7 +657,6 @@ export function markDeployed(
   },
 ): Promise<string> {
   return registryCall(async () => {
-    const names = await hasSecretNamesColumn(db);
     for (let attempt = 1; ; attempt += 1) {
       const app = await readAppById(db, appRowId);
       if (!app) {
@@ -713,7 +678,7 @@ export function markDeployed(
       const [changed = []] = await db.run([
         {
           sql: `UPDATE apps SET manifest = ?, version_id = ?, deployed_at = ?, deployed_by_actor = ?,
-  status = ?, updated_at = ?${names ? ", secret_names = COALESCE(?, secret_names)" : ""}
+  status = ?, updated_at = ?, secret_names = COALESCE(?, secret_names)
 WHERE id = ? AND status = ? RETURNING status`,
           params: [
             update.manifest,
@@ -722,7 +687,7 @@ WHERE id = ? AND status = ? RETURNING status`,
             update.deployedByActor,
             update.status,
             update.deployedAt,
-            ...(names ? [deployed.secretNames ? storedSecretNames(deployed.secretNames) : null] : []),
+            deployed.secretNames ? storedSecretNames(deployed.secretNames) : null,
             appRowId,
             app.status,
           ],
@@ -847,7 +812,7 @@ async function findAppIn(
   if (!found) return null;
   const [rows = []] = await db.run([
     {
-      sql: `SELECT ${await appColumns(db)} FROM apps WHERE organization_id = ? AND app_slug = ?`,
+      sql: `SELECT ${APP_COLUMNS} FROM apps WHERE organization_id = ? AND app_slug = ?`,
       params: [found.organization.id, appSlug],
     },
   ]);
@@ -979,8 +944,6 @@ export async function writeAppSecretNames(
   names: readonly string[],
   now = Date.now(),
 ): Promise<void> {
-  // A Gateway from before the column has nowhere to keep them: `update` adds it.
-  if (!(await hasSecretNamesColumn(db))) return;
   await db.run([
     {
       sql: `UPDATE apps SET secret_names = ?, updated_at = ?
@@ -1011,7 +974,7 @@ export async function listApps(db: D1Database): Promise<
 > {
   const [rows = []] = await db.run([
     {
-      sql: `SELECT ${await appColumns(db)} FROM apps WHERE status != '${DELETED_APP_STATUS}' ORDER BY app_slug, organization_id`,
+      sql: `SELECT ${APP_COLUMNS} FROM apps WHERE status != '${DELETED_APP_STATUS}' ORDER BY app_slug, organization_id`,
     },
   ]);
   return rows.map(toAppRow).map((app) => ({
@@ -1092,7 +1055,7 @@ export async function deleteApp(
         sql: "UPDATE apps SET status = ?, everyone = ?, updated_at = ? WHERE id = ?",
         params: [update.status, update.everyone ? 1 : 0, now, app.id],
       },
-      ...withoutAppData(app, now, { secretNames: await hasSecretNamesColumn(db) }),
+      ...withoutAppData(app, now),
       ...removeAppSubscription(app),
       ...(await queueEventFromCli(db, {
         organizationId: app.organizationId,

@@ -38,13 +38,18 @@ const CREATE_INSTALL_TABLE = `CREATE TABLE IF NOT EXISTS _everyapp_install (
   updated_at INTEGER NOT NULL,
   updated_by TEXT,
   jwt_public_key TEXT,
-  deployment_mode TEXT
+  deployment_mode TEXT,
+  release_origin TEXT,
+  release_git_sha TEXT
 )`;
 
 /**
  * Columns added after the table's first shape, which CREATE TABLE IF NOT
  * EXISTS can't add: SQLite has no ADD COLUMN IF NOT EXISTS, so a write
- * looks them up first.
+ * looks them up first. This stays although the version check made the
+ * schema probes elsewhere dead: `update` writes this row without that
+ * check (its job is to bring an outdated Gateway up to date), and the table
+ * is the CLI's own, not a migration's.
  */
 const ADDED_COLUMNS = ["release_origin", "release_git_sha"] as const;
 

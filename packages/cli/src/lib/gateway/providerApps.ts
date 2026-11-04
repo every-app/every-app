@@ -27,8 +27,7 @@ import {
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { operatorActor, queueEventFromCli } from "./events";
 import {
-  appColumns,
-  hasSecretNamesColumn,
+  APP_COLUMNS,
   ensureInstallOrganization,
   registryCall,
   toAppRow,
@@ -58,11 +57,7 @@ interface ProviderAppOn {
 }
 
 /** What turning a provider app on writes, in one batch. */
-function onWrites(
-  plan: ProviderAppPlan,
-  now: number,
-  columns: { secretNames: boolean },
-): D1Statement[] {
+function onWrites(plan: ProviderAppPlan, now: number): D1Statement[] {
   const { app } = plan;
   if (plan.kind === "existing") {
     // On already, or off: served again, with the registry's name and description.
@@ -114,7 +109,7 @@ WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
         app.id,
       ],
     },
-    ...withoutAppData(app, now, columns),
+    ...withoutAppData(app, now),
   ];
 }
 
@@ -138,7 +133,7 @@ export function turnProviderAppOn(
     );
     const [existing = []] = await db.run([
       {
-        sql: `SELECT ${await appColumns(db)} FROM apps WHERE organization_id = ? AND app_slug = ?`,
+        sql: `SELECT ${APP_COLUMNS} FROM apps WHERE organization_id = ? AND app_slug = ?`,
         params: [organization.id, id],
       },
     ]);
@@ -169,7 +164,7 @@ export function turnProviderAppOn(
             },
             now,
           });
-    await db.run([...onWrites(plan, now, { secretNames: await hasSecretNamesColumn(db) }), ...event]);
+    await db.run([...onWrites(plan, now), ...event]);
     return { plan, was, organization, hasOwner };
   });
 }
