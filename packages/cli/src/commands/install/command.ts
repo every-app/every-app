@@ -29,6 +29,12 @@ export const installCommand = buildCommand({
           "Don't wait for the app to go live (a new hostname's certificate included); the Gateway makes it live within a minute, or on its first visit",
         optional: true,
       },
+      "dry-run": {
+        kind: "boolean",
+        brief:
+          "Download and check the release, as an install would before deploying, and deploy nothing: no Gateway and no Cloudflare login",
+        optional: true,
+      },
       yes: {
         kind: "boolean",
         brief:
@@ -60,6 +66,7 @@ export const installCommand = buildCommand({
       `apps.<zone> (what ${CLI} setup does, owner link included), then installs the app; otherwise`,
       "it stops with action_required install_gateway and the setup command to run.",
       "--gateway <url> (or EVERYAPP_GATEWAY_URL) names the Gateway when your login sees several.",
+      "--dry-run says whether this everyapp would install the release, and installs nothing.",
       "With --json, each step is an NDJSON event.",
     ].join("\n"),
   },

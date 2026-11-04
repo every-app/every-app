@@ -14,6 +14,11 @@
  *    and the SDK's SDK_VERSION (packages/sdk/src/server/tools.ts).
  * 3. Builds the SDK, then the CLI (which packs starter/ into the package).
  * 4. Runs the built CLI's `--version` and stops unless it says this version.
+ * 4b. Asks the built CLI whether it would install each public app's latest
+ *    release (`everyapp install <repo> --dry-run`, the apps listed in
+ *    landing-page/content/agent/apps.md). It only warns: the apps can't pin
+ *    this version before it is published. The ones it refuses need a new
+ *    release (pin this version, push to the public repository) right after.
  * 5. Publishes the SDK, then the CLI, under the dist-tag `next`
  *    (npm asks for web authentication, once per package).
  * 6. Puts both package.json files back as git has them, whatever happened.
@@ -76,6 +81,39 @@ for (const { name } of PACKAGES) {
   }
 }
 
+/**
+ * The public apps' repositories (landing-page/content/agent/apps.md's
+ * table), each run through the built CLI's `install --dry-run`. Returns
+ * the ones it refuses, with why.
+ */
+function checkPublicApps() {
+  const table = fs.readFileSync(path.join(ROOT, "landing-page/content/agent/apps.md"), "utf8");
+  const repos = [...table.matchAll(/\| (https:\/\/github\.com\/[\w.-]+\/[\w.-]+) \|/g)].map((m) => m[1]);
+  if (repos.length === 0) throw new Error("found no app repositories in landing-page/content/agent/apps.md");
+  const failed = [];
+  for (const repo of repos) {
+    const result = spawnSync(
+      process.execPath,
+      [path.join(ROOT, "packages/cli/bin/everyapp.js"), "install", repo, "--dry-run", "--json"],
+      { cwd: ROOT, encoding: "utf8" },
+    );
+    const last = result.stdout.trim().split("\n").at(-1) ?? "";
+    let event = null;
+    try {
+      event = JSON.parse(last);
+    } catch {}
+    if (event?.type === "done") {
+      console.log(`  ok       ${repo}`);
+    } else {
+      const why = event?.message ?? (result.stderr.trim() || `exit ${result.status}`);
+      console.log(`  refused  ${repo}`);
+      failed.push({ repo, why });
+    }
+  }
+  return failed;
+}
+
+let refused = [];
 const originals = new Map();
 const publishedVersionsText = fs.readFileSync(PUBLISHED_VERSIONS, "utf8");
 let published = false;
@@ -126,6 +164,9 @@ try {
   }
   console.log(`\nThe built CLI says: ${said}`);
 
+  // 4b. Would this CLI install the public apps' latest releases?
+  refused = checkPublicApps();
+
   // 5. SDK first: the CLI's new apps depend on it.
   for (const { dir } of PACKAGES) {
     run("pnpm", ["publish", "--tag", "next", "--access", "public", "--no-git-checks"], path.join(ROOT, dir));
@@ -169,3 +210,15 @@ The Gateway Release workflow publishes it in about three minutes:
 
   gh run watch -R every-app/every-app
 `);
+
+if (refused.length > 0) {
+  console.log(`
+Warning: everyapp ${version} won't install these apps' latest releases:
+${refused.map(({ repo, why }) => `
+  ${repo}
+    ${why}`).join("\n")}
+
+Release each again: pin ${version} in the app (pnpm pack-for-app <app> --npm ${version}),
+merge, and push its main to the public repository, whose release workflow publishes it.
+`);
+}

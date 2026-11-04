@@ -1,4 +1,4 @@
-import { fetchAppRelease } from "@/lib/app/release";
+import { fetchAppRelease, type AppRelease } from "@/lib/app/release";
 import { requestedGatewayUrl } from "@/lib/gateway/connect";
 import { CLI } from "@/lib/output/command";
 import { CancelledError } from "@/lib/errors";
@@ -8,6 +8,17 @@ import { configure } from "../configure";
 import { deployApp } from "../deploy/deployApp";
 import { deployDone } from "../deploy";
 import type { AppDeployFlags } from "../flags";
+
+/** What `install --dry-run` reports: the release this everyapp would install. */
+function releaseChecked(release: AppRelease, source: string) {
+  return {
+    dryRun: true,
+    app: release.manifest.id,
+    version: release.release.version,
+    builtWith: release.release.cliVersion,
+    next: [{ command: `${CLI} install ${source}`, note: "installs it" }],
+  };
+}
 
 /**
  * `everyapp install <source>`: the app release `source` names (a GitHub
@@ -20,11 +31,25 @@ import type { AppDeployFlags } from "../flags";
  * an app that needs setup (a key, or one of its plain `settings`) is
  * offered `configure` right after, which asks for each.
  */
-export async function install(flags: AppDeployFlags, source: string): Promise<void> {
+export async function install(flags: AppDeployFlags & { "dry-run"?: boolean }, source: string): Promise<void> {
   let needsSetup: string | null = null;
   await runCommand(flags, async (out) => {
-    const gateway = requestedGatewayUrl(flags.gateway);
     const release = await fetchAppRelease(source, { out });
+    if (flags["dry-run"]) {
+      // Fetched and checked as an install would: nothing deployed.
+      try {
+        const { manifest, release: built } = release;
+        out.emit({
+          type: "done",
+          message: `This everyapp would install ${manifest.id} ${built.version} (built with everyapp ${built.cliVersion}).`,
+          data: releaseChecked(release, source),
+        });
+      } finally {
+        await release.cleanup();
+      }
+      return;
+    }
+    const gateway = requestedGatewayUrl(flags.gateway);
     try {
       const result = await deployApp({
         cwd: process.cwd(),

@@ -139,6 +139,12 @@ the pushed branch is the repository's default.
   (`release.json`, `.cloudflare/output/v0/`, `migrations/`) are what
   `extractRelease` checks. `pnpm everyapp install ./everyapp-release.tar.gz`
   from an EveryApp checkout installs a downloaded asset without GitHub.
+- `everyapp install` fetches the **public** repository's latest release, so
+  a fix merged in the private repository reaches people only once its main
+  is pushed to the public one (by hand, a fast-forward), whose release
+  workflow then publishes. `pnpm everyapp install <public repo url>
+  --dry-run` says whether this CLI would install what is out there;
+  `pnpm publish:rc` runs it on every public app.
 - Downloads from GitHub are anonymous, so a private repository's releases
   answer 404 (`NO_RELEASE`) even to its own members: the URL form only works
   once the repository is public. Until then, download the asset with

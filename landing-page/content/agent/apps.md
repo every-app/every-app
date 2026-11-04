@@ -7,7 +7,7 @@ These apps run behind a Gateway as the person's own. The user page for each is u
 
 ## Installing one
 
-1. `everyapp install <repository URL> --json`, from any directory. It deploys the repository's latest release and registers the app under its id. `R2_NOT_ENABLED`: the person enables R2 once in the Cloudflare dashboard, then rerun. `NO_RELEASE`: the repository publishes no release; clone it and `everyapp deploy` from its directory.
+1. `everyapp install <repository URL> --json`, from any directory. It deploys the repository's latest release and registers the app under its id. `R2_NOT_ENABLED`: the person enables R2 once in the Cloudflare dashboard, then rerun. `NO_RELEASE`: the repository publishes no release; clone it and `everyapp deploy` from its directory. `RELEASE_INVALID` naming an older everyapp: the app needs a new release; tell the person, or clone it and `everyapp deploy`.
 2. `everyapp configure <id>`: asks for every setting the app's manifest declares that isn't set, Gateway keys and the app's own, each where it belongs. `everyapp secret list <id>` shows exactly what the deployed manifest declares and what's set. [secrets](/docs/agent/secrets)
 3. `everyapp status --json`: the app leaves **Needs setup** once its required settings are set.
 4. To update, run the same `install` again. The deploy saves a restore point before migrating.

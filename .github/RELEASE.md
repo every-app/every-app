@@ -57,7 +57,11 @@ Publishing is one script, then the tag:
    moves `latest`, and prints the next commands. It also sets
    `PUBLISHED_VERSION` (`packages/cli/src/lib/app/publishedVersions.ts`), the
    version `everyapp create` pins new apps at, before building; commit that
-   one-line change afterwards.
+   one-line change afterwards. Before publishing, it runs the built CLI's
+   `install <repo> --dry-run` on each public app's latest release (the table
+   in `landing-page/content/agent/apps.md`) and, at the end, warns about the
+   ones it refuses: re-release each right after (pin the version, push the
+   app to its public repository).
 2. Push that commit to the public repository, then tag it there:
    `git tag gateway-v<version> <commit> && git push public gateway-v<version>`.
    The workflow publishes the release in a few minutes.

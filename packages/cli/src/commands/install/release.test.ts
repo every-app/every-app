@@ -379,6 +379,39 @@ describe("everyapp install <release>", () => {
     });
   });
 
+  it("tells the person installing that a release this everyapp refuses needs a new release", async () => {
+    const { tarball } = await bundle();
+    // An older everyapp's release, with a field this one refuses.
+    const staged = fs.mkdtempSync(path.join(os.tmpdir(), "stale-release-"));
+    execFileSync("tar", ["-xzf", tarball, "-C", staged]);
+    const file = path.join(staged, "release.json");
+    const json = JSON.parse(fs.readFileSync(file, "utf8"));
+    json.cliVersion = "0.3.0-rc.3";
+    json.manifest.capabilities = {
+      "google-workspace": { access: "write", scopes: ["gmail.readonly"], why: "Mail." },
+    };
+    fs.writeFileSync(file, JSON.stringify(json));
+    const stale = path.join(staged, "..", `${path.basename(staged)}.tar.gz`);
+    execFileSync("tar", ["-czf", stale, "-C", staged, "."]);
+    const github = fakeGithubReleases({
+      "acme/todo": [{ tag: "v1.4.0", assets: { "everyapp-release.tar.gz": stale } }],
+    });
+
+    const refused = await fetchAppRelease("https://github.com/acme/todo", { out: out(), fetch: github.fetch }).catch(
+      (error: unknown) => error,
+    );
+    expect(refused).toMatchObject({
+      code: "RELEASE_INVALID",
+      message: expect.stringMatching(
+        /^acme\/todo v1\.4\.0 \(built with everyapp 0\.3\.0-rc\.3\) is refused by this everyapp \(.+\): .*Remove access/,
+      ),
+      fix: "the app needs a new release: ask the maintainers of https://github.com/acme/todo, or clone it and run pnpm everyapp deploy from its directory",
+      data: { builtWith: "0.3.0-rc.3" },
+    });
+    fs.rmSync(staged, { recursive: true, force: true });
+    fs.rmSync(stale, { force: true });
+  });
+
   it("refuses a Gateway's release, and opening an app's as a Gateway's", async () => {
     const { tarball } = await bundle();
     await expect(openAppRelease(gatewayTarball)).rejects.toMatchObject({

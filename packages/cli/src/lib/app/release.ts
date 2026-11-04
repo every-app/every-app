@@ -292,10 +292,7 @@ export async function openAppRelease(
       manifest = validateManifestStrict(release.manifest, LOCAL_MANIFEST_OPTIONS);
     } catch (error) {
       if (!(error instanceof ManifestError)) throw error;
-      throw new EveryAppError(
-        "RELEASE_INVALID",
-        `${tarball} carries a manifest this everyapp refuses: ${error.message}`,
-      );
+      throw refusedManifest(release, origin, tarball, error);
     }
     if (manifest.id !== release.appId) {
       throw new EveryAppError(
@@ -315,6 +312,31 @@ export async function openAppRelease(
     await cleanup();
     throw error;
   }
+}
+
+/**
+ * A manifest this CLI refuses, said to the person installing: they can't
+ * change the release, its publisher can. Usually it predates a rule this
+ * everyapp enforces, and a release built with this one passes.
+ */
+function refusedManifest(
+  release: AppReleaseManifest,
+  origin: ReleaseOrigin,
+  tarball: string,
+  error: ManifestError,
+): EveryAppError {
+  const named = origin.kind === "github" ? `${origin.repo} ${origin.tag}` : tarball;
+  return new EveryAppError(
+    "RELEASE_INVALID",
+    `${named} (built with everyapp ${release.cliVersion}) is refused by this everyapp (${cliVersion}): ${error.message}`,
+    {
+      fix:
+        origin.kind === "github"
+          ? `the app needs a new release: ask the maintainers of https://github.com/${origin.repo}, or clone it and run ${CLI} deploy from its directory`
+          : `the app needs a new release, built with everyapp ${cliVersion}`,
+      data: { builtWith: release.cliVersion, cliVersion },
+    },
+  );
 }
 
 /**

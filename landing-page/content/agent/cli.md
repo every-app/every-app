@@ -282,7 +282,7 @@ Installs an app release on your Gateway with no checkout of the app, as everyapp
 
 A repository without a release is never built from its URL: clone it, run pnpm install in it, then everyapp deploy from its directory. Postgres migrations need the app's source, so their releases are refused.
 
-No Gateway in any account the login sees, and none named? At a terminal it offers to install one at apps.<zone> (what everyapp setup does, owner link included), then installs the app; otherwise it stops with action_required install_gateway and the setup command to run. --gateway <url> (or EVERYAPP_GATEWAY_URL) names the Gateway when your login sees several. With --json, each step is an NDJSON event.
+No Gateway in any account the login sees, and none named? At a terminal it offers to install one at apps.<zone> (what everyapp setup does, owner link included), then installs the app; otherwise it stops with action_required install_gateway and the setup command to run. --gateway <url> (or EVERYAPP_GATEWAY_URL) names the Gateway when your login sees several. --dry-run says whether this everyapp would install the release, and installs nothing. With --json, each step is an NDJSON event.
 
 - `<source>`: The app release to install: a GitHub repository URL (its latest release), a release tarball's URL, or a downloaded everyapp-release.tar.gz
 - `--allow-delete-durable-object-data`: Deploy even though Durable Object classes were removed, deleting their data
@@ -291,6 +291,7 @@ No Gateway in any account the login sees, and none named? At a terminal it offer
 - `--enable-email-routing`: Turn on Email Routing for the domains the app's inbound addresses (everyapp email set --inbound) name that don't route mail yet (locks their MX and SPF records to Cloudflare)
 - `--register-providers`: Register the providers the app bundles, which tell the Gateway where to send their keys (--yes doesn't)
 - `--no-wait`: Don't wait for the app to go live (a new hostname's certificate included); the Gateway makes it live within a minute, or on its first visit
+- `--dry-run`: Download and check the release, as an install would before deploying, and deploy nothing: no Gateway and no Cloudflare login
 - `--yes`: With no Gateway yet, install one at apps.<zone> without asking (never registers the providers the app bundles, cf's questions, or the one before replacing a Worker changed outside everyapp)
 
 ### `everyapp deploy-token add`
