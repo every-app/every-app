@@ -186,14 +186,17 @@ const ACCESS_BYPASSED_EXACT = [
 
 /**
  * `/linked-dev/*` too: bearer-only, checks its own credential
- * (server/linked-dev.ts); and `/access-evaluation/*`, which Access itself
- * calls (server/access-evaluation.ts).
+ * (server/linked-dev.ts); `/access-evaluation/*`, which Access itself
+ * calls (server/access-evaluation.ts); and `/oauth-clients/*`, the client
+ * metadata documents remote MCP servers' authorization servers fetch
+ * (server/remote-mcp/clientMetadata.ts).
  */
 const ACCESS_BYPASSED_PREFIXES = [
   "/mcp/",
   "/.well-known/",
   "/linked-dev/",
   ACCESS_EVALUATION_PREFIX,
+  "/oauth-clients/",
 ];
 
 function isAccessBypassedPath(pathname: string): boolean {
@@ -262,6 +265,13 @@ async function serveGatewayHost(request: Request): Promise<Response> {
     // services for one app, on a bearer of its own; never a cookie.
     const { serveLinkedDevRoute } = await import("./server/linked-dev");
     const served = await serveLinkedDevRoute(request);
+    if (served) return served;
+  }
+  if (pathname.startsWith("/oauth-clients/")) {
+    const { serveClientMetadata } = await import(
+      "./server/remote-mcp/clientMetadata"
+    );
+    const served = serveClientMetadata(request);
     if (served) return served;
   }
   if (pathname.startsWith(ACCESS_EVALUATION_PREFIX)) {

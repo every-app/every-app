@@ -82,6 +82,12 @@ export interface RemoteMcpAddInput {
   providerSettings?: CapabilitySettings;
   /** An OAuth provider's scopes the connect asks for (discovery's; none: the server decides). */
   scopes?: readonly string[] | null;
+  /**
+   * The rules checked before the server is looked at, for a credential
+   * that may turn out to be the app's own OAuth row: a host whose key the
+   * Gateway holds is let through here, and the plan with the row decides.
+   */
+  mayBeOwnOAuth?: boolean;
   risk?: string | null;
   /** The Gateway's environment the URL is checked against. */
   env: RemoteMcpUrlEnv;
@@ -262,17 +268,32 @@ export function planRemoteMcpAppAdd(
   const idProblem = remoteMcpIdProblem(id);
   if (idProblem) refuse("REMOTE_MCP_INVALID", idProblem);
   const auth = authFor(id, input.auth);
-  // The reserved-host rule gives way only to a provider of the registry
-  // the app names, never to the app's own row (which names whatever host
-  // the URL has).
+  // The reserved-host rule gives way to a provider of the registry the
+  // app names, and to the app's own OAuth row: that row sends each
+  // member's own token, never the key the Gateway holds for the host. An
+  // own static row (whatever host the URL has) never.
+  const ownRowId = remoteMcpProviderId(id);
   const named =
-    auth.kind === "provider" && auth.provider !== remoteMcpProviderId(id)
+    auth.kind === "provider"
       ? input.lookupProvider?.(auth.provider)
       : undefined;
+  const ownOAuth =
+    auth.kind === "provider" &&
+    auth.provider === ownRowId &&
+    named?.mode === "oauth_client";
+  let urlHost = "";
+  try {
+    urlHost = new URL(url).hostname.toLowerCase().replace(/\.$/, "");
+  } catch {
+    // remoteMcpUrlProblem says why.
+  }
   const urlProblem = remoteMcpUrlProblem(url, input.env, {
-    providerHosts: named
-      ? (remoteMcpProviderHosts(named, input.providerSettings) ?? [])
-      : [],
+    providerHosts:
+      (auth.kind === "none" && input.mayBeOwnOAuth) || ownOAuth
+        ? [urlHost]
+        : named && auth.kind === "provider" && auth.provider !== ownRowId
+          ? (remoteMcpProviderHosts(named, input.providerSettings) ?? [])
+          : [],
   });
   if (urlProblem) refuse("REMOTE_MCP_URL_REFUSED", urlProblem);
   let provider: { id: string; capability: Capability } | null = null;

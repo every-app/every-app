@@ -613,6 +613,11 @@ describe("mcp add with OAuth", () => {
     });
     expect(gatewayWorker().secrets["O_MCP_CLIENT_ID"]).toBe("cid-1");
     expect(gatewayWorker().secrets["O_MCP_CLIENT_SECRET"]).toBe("csecret-1");
+    // The app's capability entry lists the scopes discovery found: what the connect asks for.
+    const [app] = await query("SELECT manifest FROM apps WHERE app_slug = 'o'");
+    expect(JSON.parse(String(app!["manifest"])).capabilities).toEqual({
+      "o-mcp": { scopes: ["mcp"], why: expect.any(String) },
+    });
     const connect = "https://example.com/connect/o-mcp?app=o&return=/?mcp=o";
     expect(opened).toEqual([connect]);
     expect(done()).toMatchObject({
@@ -675,6 +680,63 @@ describe("mcp add with OAuth", () => {
     expect(gatewayWorker().secrets["O_MCP_CLIENT_ID"]).toBe("pasted-id");
     expect(gatewayWorker().secrets["O_MCP_CLIENT_SECRET"]).toBe("pasted-secret");
     expect(done()!["data"]).toMatchObject({ oauth: { issuer: ISSUER, registered: "pasted" } });
+  });
+
+  it("gives a server that takes client metadata documents (CIMD) and registers none the Gateway's document URL as a public client", async () => {
+    const { registration_endpoint: _, ...noRegistration } = AS;
+    const server = oauthServer({
+      ...noRegistration,
+      client_id_metadata_document_supported: true,
+      token_endpoint_auth_methods_supported: ["none", "client_secret_post"],
+    });
+    await addServer(options<AddFlags>({ flags: { ...flags, name: "o" }, fetch: server.fetcher }), O_MCP);
+    expect(events.find((event) => event["type"] === "error")).toBeUndefined();
+    expect(server.calls.some((call) => call.url === `${ISSUER}/register`)).toBe(false);
+    expect(gatewayWorker().secrets["O_MCP_CLIENT_ID"]).toBe("https://example.com/oauth-clients/o-mcp");
+    expect(gatewayWorker().secrets["O_MCP_CLIENT_SECRET"]).toBeUndefined();
+    const [row] = await query("SELECT spec FROM providers");
+    const spec = JSON.parse(String(row!["spec"]));
+    expect(spec.auth).toMatchObject({ clientId: "O_MCP_CLIENT_ID", inject: "form", pkce: true });
+    expect(spec.auth.clientSecret).toBeUndefined();
+    expect(done()!["data"]).toMatchObject({ oauth: { issuer: ISSUER, registered: "cimd" } });
+  });
+
+  it("lets an OAuth server on a host the Gateway holds a key for (ElevenLabs') use its own row; a static credential there stays refused", async () => {
+    const url = "https://api.elevenlabs.io/v1/mcp";
+    const issuer = "https://api.us.elevenlabs.io";
+    const server = routes({
+      [url]: () =>
+        new Response("", {
+          status: 401,
+          headers: { "www-authenticate": `Bearer resource_metadata="https://api.elevenlabs.io/.well-known/oauth-protected-resource"` },
+        }),
+      "https://api.elevenlabs.io/.well-known/oauth-protected-resource": {
+        resource: url,
+        authorization_servers: [issuer],
+        scopes_supported: ["text_to_speech", "convai_read"],
+      },
+      [`${issuer}/.well-known/oauth-authorization-server`]: {
+        issuer,
+        authorization_endpoint: "https://elevenlabs.io/app/oauth/authorize",
+        token_endpoint: `${issuer}/v1/oauth/token`,
+        code_challenge_methods_supported: ["S256"],
+        token_endpoint_auth_methods_supported: ["none", "client_secret_post", "private_key_jwt"],
+        client_id_metadata_document_supported: true,
+      },
+    });
+    await addServer(options<AddFlags>({ flags: { ...flags, name: "elevenlabs-mcp-app" }, fetch: server.fetcher }), url);
+    expect(events.find((event) => event["type"] === "error")).toBeUndefined();
+    expect(done()!["data"]).toMatchObject({
+      auth: { kind: "provider", provider: "elevenlabs-mcp-app-mcp" },
+      oauth: { issuer, registered: "cimd" },
+    });
+    expect(gatewayWorker().secrets["ELEVENLABS_MCP_APP_MCP_CLIENT_ID"]).toBe(
+      "https://example.com/oauth-clients/elevenlabs-mcp-app-mcp",
+    );
+
+    await expect(
+      addServer(options<AddFlags>({ flags: { ...flags, name: "eleven-key", auth: "bearer" }, fetch: listsTools() }), url),
+    ).rejects.toMatchObject({ code: "REMOTE_MCP_URL_REFUSED" });
   });
 
   it("refuses REMOTE_MCP_OAUTH_DISCOVERY when the server's metadata can't be found, writing nothing", async () => {

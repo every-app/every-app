@@ -55,11 +55,12 @@ import {
   mcpOAuthProviderSpec,
   mcpStaticProviderSpec,
   PROVIDER_APP_TIER,
-  registerMcpClient,
+  obtainMcpClient,
   remoteMcpAuthLabel,
   remoteMcpIdFromUrl,
   remoteMcpProviderHosts,
   remoteMcpProviderId,
+  remoteMcpClientMetadataUrl,
   remoteMcpRedirectUri,
   remoteToolEnabled,
   remoteToolRisk,
@@ -352,7 +353,7 @@ interface OAuthClientChoice {
   clientId: string;
   clientSecret: string | null;
   inject: "form" | "basic";
-  registered: "dcr" | "pasted";
+  registered: "dcr" | "cimd" | "pasted";
 }
 
 /**
@@ -403,10 +404,11 @@ async function oauthClientFor(
       },
     };
   }
-  const registration = await registerMcpClient({
+  const registration = await obtainMcpClient({
     discovery,
     redirectUri,
     clientName: `EveryApp (${name})`.slice(0, 100),
+    documentUrl: remoteMcpClientMetadataUrl(gatewayUrl(), appId),
     fetch: fetcher,
   });
   if (!registration.ok) {
@@ -421,7 +423,7 @@ async function oauthClientFor(
       clientId: registration.clientId,
       clientSecret: registration.clientSecret ?? null,
       inject: registration.inject,
-      registered: "dcr",
+      registered: registration.via ?? "dcr",
     },
   };
 }
@@ -533,7 +535,9 @@ async function add(
   const ownKinds = credentialKind !== "none" && credentialKind !== "provider";
   // Every rule but the credential's first (the id, the URL, an id in use),
   // so nothing is fetched or written for a server the rules refuse.
-  if (ownKinds) plan({ auth: { kind: "none" } });
+  if (ownKinds) {
+    plan({ auth: { kind: "none" }, mayBeOwnOAuth: credentialKind === "oauth" });
+  }
 
   let added: RemoteMcpAddPlan;
   let providerRow: RemoteMcpProviderRowPlan | null = null;

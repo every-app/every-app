@@ -41,7 +41,7 @@ const ACCESS_SETTINGS = ["CLOUDFLARE_ACCESS_TEAM_DOMAIN", "CLOUDFLARE_ACCESS_APP
 /** The reusable Access policy `on` keeps, as the real command names it (declared up here: dispatch() runs before the functions below). */
 const ACCESS_POLICY_NAME = "Every App gateway members";
 /** The Gateway paths Access lets through (packages/perimeter/src/install/access-plan.ts GATEWAY_BYPASS_PATHS). /oauth/authorize and the consent page stay behind Access. */
-const ACCESS_GATEWAY_PUBLIC = ["/mcp", "/mcp/*", "/oauth/token", "/oauth/register", "/linked-dev/*", "/.well-known/*", "/health", "/api/auth/callback/apple", "/access-evaluation/*"];
+const ACCESS_GATEWAY_PUBLIC = ["/mcp", "/mcp/*", "/oauth/token", "/oauth/register", "/linked-dev/*", "/.well-known/*", "/health", "/api/auth/callback/apple", "/access-evaluation/*", "/oauth-clients/*"];
 /** The cf the real setup reports in setup.toolchain. */
 const FAKE_CF_VERSION = "1.0.0-beta.14";
 /** How long a fake setup waits for the owner link to be claimed (the real one: 15 minutes). */

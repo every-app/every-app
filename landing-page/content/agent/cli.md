@@ -655,7 +655,7 @@ The Gateway serves the server's tools on its own /mcp under <id>_<tool> names, h
 
 add looks at the URL once from this machine before writing anything. A server that answers without a credential is added with none. One whose 401 names its OAuth metadata is added with OAuth. One that asks for a credential otherwise is refused (REMOTE_MCP_NEEDS_CREDENTIAL) until you say how it authenticates; --force adds it anyway.
 
-The credential is a provider: the app's own <id>-mcp row, written beside it, or --provider <id> for one the Gateway has (its host must be the URL's). --auth bearer|header|query|basic: a static value, <ID>_MCP_TOKEN. At a terminal add offers to set it (hidden input); --from-env VAR sets it from a variable; later: everyapp secret set TREG_MCP_TOKEN Once set, add checks it with one tools/list from here. The Gateway sends it only to the URL's host. --auth oauth: the Gateway signs in to the server. add discovers its authorization server and registers a client with it; for a server that registers none, register one with the redirect URI add prints and give --client-id (--client-secret-from-env). Each member then connects their own account, at the connect page add prints and opens (--no-open: print only).
+The credential is a provider: the app's own <id>-mcp row, written beside it, or --provider <id> for one the Gateway has (its host must be the URL's). --auth bearer|header|query|basic: a static value, <ID>_MCP_TOKEN. At a terminal add offers to set it (hidden input); --from-env VAR sets it from a variable; later: everyapp secret set TREG_MCP_TOKEN Once set, add checks it with one tools/list from here. The Gateway sends it only to the URL's host. --auth oauth: the Gateway signs in to the server. add discovers its authorization server and registers a client with it, or, where the server takes client metadata documents instead, gives it the URL of the Gateway's own; for a server that takes neither, register one with the redirect URI add prints and give --client-id (--client-secret-from-env). Each member then connects their own account, at the connect page add prints and opens (--no-open: print only).
 
 The Gateway follows no redirects.
 
@@ -664,6 +664,7 @@ everyapp mcp add https://mcp.deepwiki.com/mcp
 everyapp mcp add https://treg.to/mcp/ --auth bearer
 everyapp mcp add https://api.example.org/mcp --name example --auth header --header X-Api-Key --risk read
 everyapp mcp add https://mcp.linear.app/mcp
+everyapp mcp add https://api.elevenlabs.io/v1/mcp
 ```
 
 - `<url>`: The server's MCP address (https://, the one URL the Gateway ever sends its credential to)

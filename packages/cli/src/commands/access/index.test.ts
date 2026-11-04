@@ -305,6 +305,7 @@ describe("access on, from nothing", () => {
       "/health",
       "/api/auth/callback/apple",
       "/access-evaluation/*",
+      "/oauth-clients/*",
     ]);
     expect(uris(apps)).toEqual([`*.${HOST}`]);
     expect(overrides(apps, `*.${HOST}`)).toEqual([]);

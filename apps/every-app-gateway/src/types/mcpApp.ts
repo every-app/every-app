@@ -155,7 +155,7 @@ export interface AddedRemoteMcpApp {
    */
   connectPath: string | null;
   /** For a server added with OAuth: its authorization server, and how the client came. */
-  oauth: { issuer: string; registered: "dcr" | "pasted" } | null;
+  oauth: { issuer: string; registered: "dcr" | "cimd" | "pasted" } | null;
   /**
    * The tools listed within the request, for a server with no credential;
    * null when no listing finished (the Gateway lists them on first use).

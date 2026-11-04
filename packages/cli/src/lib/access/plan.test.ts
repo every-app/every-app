@@ -148,6 +148,7 @@ describe("gatewayDestination", () => {
       "/health",
       "/api/auth/callback/apple",
       "/access-evaluation/*",
+      "/oauth-clients/*",
     ]);
     expect(gatewayDestination("Apps.Acme.com").uri).toBe("apps.acme.com");
   });

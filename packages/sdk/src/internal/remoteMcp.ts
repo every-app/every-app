@@ -226,6 +226,31 @@ export function remoteMcpRedirectUri(
   return `${origin}/connect/${remoteMcpProviderId(appId)}/callback`;
 }
 
+/** Where the Gateway serves its OAuth client metadata documents (public, bypassed behind Access). */
+export const REMOTE_MCP_CLIENT_METADATA_PREFIX = "/oauth-clients/";
+
+/**
+ * The Gateway's client id at a server that takes OAuth client ID metadata
+ * documents (CIMD) instead of registration: the URL of the document that
+ * describes the client, `<gateway origin>/oauth-clients/<appId>-mcp`.
+ * Null for a Gateway that isn't on https (a local one): an authorization
+ * server fetches the document, and only from https.
+ */
+export function remoteMcpClientMetadataUrl(
+  gatewayUrl: string,
+  appId: string,
+): string | null {
+  let origin: string;
+  try {
+    const parsed = new URL(gatewayUrl);
+    if (parsed.protocol !== "https:") return null;
+    origin = parsed.origin;
+  } catch {
+    return null;
+  }
+  return `${origin}${REMOTE_MCP_CLIENT_METADATA_PREFIX}${remoteMcpProviderId(appId)}`;
+}
+
 /**
  * The hosts a provider sends its credential to, the hosts an MCP URL
  * using it must be on: an API-key provider's `hosts` (and its host

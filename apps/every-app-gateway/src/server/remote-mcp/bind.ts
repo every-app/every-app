@@ -384,7 +384,8 @@ export async function credentialFor(
  * Why a row's URL is refused by this Gateway's rules, checked before
  * anything is read or fetched; null when it isn't. A reserved host (one
  * whose key the Gateway holds for apps) is allowed only for an app that
- * names that host's provider, never for the app's own row.
+ * names that host's provider, or whose own row is OAuth (each member's
+ * own token goes, never the Gateway's key); never for an own static row.
  */
 export async function urlRefusal(
   block: RemoteMcpBlock,
@@ -392,15 +393,13 @@ export async function urlRefusal(
   deps: Pick<CredentialDeps, "providers"> = {},
 ): Promise<string | null> {
   let providerHosts: string[] = [];
-  if (
-    block.auth.kind === "provider" &&
-    !isRemoteMcpProviderIdOf(block.auth.provider, appSlug)
-  ) {
+  if (block.auth.kind === "provider") {
     const registry = await (deps.providers ?? gatewayProviders)();
     const named = registry.get(block.auth.provider);
-    providerHosts = named
-      ? (remoteMcpProviderHosts(named, settings()) ?? [])
-      : [];
+    const own = isRemoteMcpProviderIdOf(block.auth.provider, appSlug);
+    if (named && (!own || named.mode === "oauth_client")) {
+      providerHosts = remoteMcpProviderHosts(named, settings()) ?? [];
+    }
   }
   const problem = remoteMcpUrlProblem(
     block.url,

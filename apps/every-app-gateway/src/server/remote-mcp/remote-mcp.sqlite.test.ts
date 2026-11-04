@@ -64,6 +64,7 @@ import {
   mcpOAuthProviderSpec,
   mcpStaticProviderSpec,
   mintIdentityJwt,
+  parseProviderSpec,
   TOOLS_CALL_PATH,
   TOOLS_PROTOCOL_VERSION,
   type RemoteMcpStaticKind,
@@ -1193,6 +1194,77 @@ describe("a remote MCP app whose credential is an OAuth provider", () => {
       `Treg rejected the connection (401). Reconnect your Treg MCP server account to use this tool: ${CONNECT}`,
     );
     expect(JSON.stringify(call)).not.toContain(OWNER_TOKEN);
+  });
+
+  it("serves the app's client metadata document (CIMD) publicly, the same for any well-formed id, so it says nothing about which apps exist", async () => {
+    const { serveClientMetadata } = await import("./clientMetadata");
+    const doc = `${GATEWAY}/oauth-clients/treg-mcp`;
+    const served = serveClientMetadata(new Request(doc));
+    expect(served?.status).toBe(200);
+    expect(await served!.json()).toEqual({
+      client_id: doc,
+      client_name: "Every App (gateway.example.com)",
+      client_uri: GATEWAY,
+      redirect_uris: [`${GATEWAY}/connect/treg-mcp/callback`],
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none",
+    });
+    expect(
+      serveClientMetadata(new Request(`${GATEWAY}/oauth-clients/nope-mcp`))
+        ?.status,
+    ).toBe(200);
+    for (const path of ["treg", "github", "TREG-mcp", "treg-mcp/x", ""]) {
+      const missing = serveClientMetadata(
+        new Request(`${GATEWAY}/oauth-clients/${path}`),
+      );
+      expect(missing?.status, path).toBe(404);
+    }
+    const post = serveClientMetadata(new Request(doc, { method: "POST" }));
+    expect(post?.status).toBe(405);
+    expect(
+      serveClientMetadata(new Request(`${GATEWAY}/connect/treg-mcp`)),
+    ).toBeNull();
+  });
+
+  it("lets an app's own OAuth row reach a host the Gateway holds a key for, and never its own static row", async () => {
+    const { urlRefusal } = await import("./bind");
+    const url = "https://api.elevenlabs.io/v1/mcp";
+    const own = (credential: "oauth" | "bearer") => {
+      const built =
+        credential === "oauth"
+          ? mcpOAuthProviderSpec({
+              appId: "eleven",
+              name: "ElevenLabs",
+              url,
+              discovery: { ...TREG_DISCOVERY, resource: url },
+              client: { hasSecret: false, inject: "form" },
+            })
+          : mcpStaticProviderSpec({
+              appId: "eleven",
+              name: "ElevenLabs",
+              url,
+              kind: "bearer",
+            });
+      if (!built.ok) throw new Error(built.problem);
+      const parsed = parseProviderSpec(built.spec);
+      if (!parsed.ok) throw new Error("spec");
+      const capability = parsed.capability;
+      return {
+        providers: async () =>
+          ({
+            get: (id: string) => (id === "eleven-mcp" ? capability : undefined),
+          }) as never,
+      };
+    };
+    const block = {
+      url,
+      auth: { kind: "provider" as const, provider: "eleven-mcp" },
+    } as never;
+    expect(await urlRefusal(block, "eleven", own("oauth"))).toBeNull();
+    expect(await urlRefusal(block, "eleven", own("bearer"))).toMatch(
+      /holds a key for/,
+    );
   });
 });
 

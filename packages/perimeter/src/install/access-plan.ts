@@ -61,7 +61,9 @@ export const ACCESS_EVALUATION_PATHS = {
  * uptime monitor can't sign in; the route reads no session), Apple's
  * sign-in POST (a cross-site POST that only redirects to the same URL as
  * a GET, which Access checks as usual: docs/runbooks/sign-in-providers.md,
- * "Apple"), and the membership question Access asks. Everything else on
+ * "Apple"), the membership question Access asks, and the OAuth client
+ * metadata documents a remote MCP server's authorization server fetches
+ * (`/oauth-clients/*`, public by design: no secret in them). Everything else on
  * the host, `/oauth/authorize`, the consent page and every other sign-in
  * callback included, is a page for people and stays behind Access.
  */
@@ -77,6 +79,7 @@ export const GATEWAY_BYPASS_PATHS: readonly string[] = [
   "/health",
   "/api/auth/callback/apple",
   "/access-evaluation/*",
+  "/oauth-clients/*",
 ];
 
 interface AccessOverride {

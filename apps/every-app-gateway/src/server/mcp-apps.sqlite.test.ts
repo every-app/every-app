@@ -802,6 +802,70 @@ describe("adding a remote MCP server", () => {
     expect(client).toMatchObject({ clientId: "pasted" });
   });
 
+  it("adds ElevenLabs' hosted server, which takes client metadata documents and registers none, on a host the Gateway holds a key for", async () => {
+    const url = "https://api.elevenlabs.io/v1/mcp";
+    const issuer = "https://api.us.elevenlabs.io";
+    const fetched: string[] = [];
+    setMcpOAuthFetchForTests(async (input) => {
+      fetched.push(input);
+      if (input.includes("oauth-protected-resource")) {
+        return Response.json({
+          resource: url,
+          authorization_servers: [issuer],
+          scopes_supported: ["text_to_speech", "convai_read"],
+        });
+      }
+      if (input === `${issuer}/.well-known/oauth-authorization-server`) {
+        return Response.json({
+          issuer,
+          authorization_endpoint: "https://elevenlabs.io/app/oauth/authorize",
+          token_endpoint: `${issuer}/v1/oauth/token`,
+          code_challenge_methods_supported: ["S256"],
+          token_endpoint_auth_methods_supported: [
+            "none",
+            "client_secret_post",
+            "private_key_jwt",
+          ],
+          client_id_metadata_document_supported: true,
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const added = await McpAppService.add(
+      as(admin, "admin"),
+      {
+        url,
+        id: "elevenlabs-mcp",
+        name: "ElevenLabs",
+        auth: { kind: "oauth" },
+      },
+      null,
+    );
+    expect(added).toMatchObject({
+      provider: "elevenlabs-mcp-mcp",
+      oauth: { issuer, registered: "cimd" },
+    });
+    // Nothing was registered: the client id is the document's URL.
+    expect(fetched.some((each) => each.includes("register"))).toBe(false);
+    const [client] = await db.select().from(oauthClients);
+    expect(client).toMatchObject({
+      providerId: "elevenlabs-mcp-mcp",
+      clientId: `${GATEWAY}/oauth-clients/elevenlabs-mcp-mcp`,
+    });
+    const [row] = await db.select().from(providers);
+    const auth = JSON.parse(row!.spec).auth;
+    expect(auth).toMatchObject({ inject: "form", pkce: true, resource: url });
+    expect(auth.clientSecret).toBeUndefined();
+    // A static key of its own on that host stays refused.
+    await expect(
+      McpAppService.add(
+        as(admin, "admin"),
+        { url, id: "eleven-key", auth: { kind: "bearer" } },
+        null,
+      ),
+    ).rejects.toMatchObject({ code: "REMOTE_MCP_URL_REFUSED" });
+  });
+
   it("refuses an OAuth server whose metadata can't be read", async () => {
     setMcpOAuthFetchForTests(async () => new Response("nope", { status: 404 }));
     await expect(

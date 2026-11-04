@@ -87,17 +87,17 @@ What built-ins give that remote apps don't, and so when to write a pack: `cost` 
 
 ## ElevenLabs, now and later
 
-- Its hosted server (`https://api.elevenlabs.io/v1/mcp`) takes only OAuth: an `xi-api-key` gets 401 "OAuth bearer token required for the hosted MCP" (checked 2026-11-03). Its authorization server (`api.us.elevenlabs.io`) has no DCR, only CIMD (`client_id_metadata_document_supported`), which #938 doesn't build. Its local server with `compose_music` is archived and stdio, so the Gateway can't relay it. Whether the hosted one has music is unconfirmed.
-- Today `mcp add https://api.elevenlabs.io/v1/mcp` is refused: the catalog holds a key for that host. Adding it needs CIMD and that host claim lifted for an OAuth server.
+- Its hosted server (`https://api.elevenlabs.io/v1/mcp`) takes only OAuth: an `xi-api-key` gets 401 "OAuth bearer token required for the hosted MCP" (checked 2026-11-03). Its authorization server (`api.us.elevenlabs.io`) has no DCR, only CIMD (`client_id_metadata_document_supported`). Its local server with `compose_music` is archived and stdio, so the Gateway can't relay it. Whether the hosted one has music is unconfirmed.
+- `mcp add https://api.elevenlabs.io/v1/mcp` adds it with OAuth (#969): the Gateway's client id is the URL of a document it serves, `/oauth-clients/<id>-mcp` (public behind Access: a public client whose one redirect URI is the Gateway's callback, no secret). The catalog's key for that host doesn't stop it: an app's own OAuth row sends each member's token, never the Gateway's key. An own static key there stays refused.
 - **Interim, if Ben registers it as a provider app**: a built-in pack `elevenlabs` over the existing `ELEVENLABS_API_KEY` entry. Tools: `compose_music` (`POST /v1/music`), `text_to_speech`, `sound_effects`, `list_voices`. Each audio answer goes to R2 and returns a link (needs the files phase first). As a built-in pack it is metered, but per-call cost isn't in the answer, so no cap would bind it (caps are dollars only since #948).
-- **Later**: once CIMD is built, add it with OAuth; if the hosted server gains music, drop the pack.
+- **Later**: if the hosted server gains music, drop the pack.
 
 ## Decisions (Ben, 2026-11-02)
 
 1. Per-member OAuth by default, the organization's account opt-in: yes, built; the organization account was removed in the rebase onto #942.
 2. Fold `_MCP_TOKEN` into provider rows, breaking existing remote apps: yes, done (migration 0031; an old row reads "remove and add again").
 3. A Gateway files bucket: not for now (above).
-4. ElevenLabs: try `--provider elevenlabs`, else `--auth oauth`; no pack yet. Tried 2026-11-03: the key header is refused and OAuth needs CIMD (above).
+4. ElevenLabs: try `--provider elevenlabs`, else `--auth oauth`; no pack yet. Tried 2026-11-03: the key header is refused; OAuth by CIMD (above).
 5. Members adding MCP apps for themselves: no, owners and admins only.
 
 ## Phased plan
@@ -106,7 +106,7 @@ What built-ins give that remote apps don't, and so when to write a pack: `cost` 
 | --- | --- | --- |
 | 1 | Remote MCP apps not metered; Usage says "Not metered"; `APP_NOT_METERED`. Docs drift fixed. | Built, #938 |
 | 2 | Credential = provider reference; `--auth query`; `--provider <id>` with the reserved-host exception; static auth writes `<id>-mcp`; `_MCP_TOKEN` and `remote_mcp_credentials` dropped. | Built, #938 |
-| 3 | Upstream OAuth: discovery, DCR, pasted client, `resource`, `iss`, per-member connections, connect links in tool errors. | Built, #938; CIMD and step-up not built |
+| 3 | Upstream OAuth: discovery, DCR, pasted client, `resource`, `iss`, per-member connections, connect links in tool errors. | Built, #938; CIMD #969; step-up not built |
 | 4 | Files: R2 bucket, signed `/files/*`, `resource_link` helper. | Deferred |
 | 5 | ElevenLabs pack on phase 4; remote oversize spooling. | Open |
 

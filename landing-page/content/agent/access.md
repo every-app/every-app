@@ -30,7 +30,7 @@ Because the policy is External Evaluation, checked at Access sign-in rather than
 
 Only machine endpoints that check their own credentials:
 
-- On the Gateway's host: `/mcp`, `/mcp/*`, `/oauth/token`, `/oauth/register`, `/.well-known/*` (OAuth discovery), `/health`, `/linked-dev/*` (linked dev), `/access-evaluation/*` (Access's own membership call) and `/api/auth/callback/apple`.
+- On the Gateway's host: `/mcp`, `/mcp/*`, `/oauth/token`, `/oauth/register`, `/.well-known/*` (OAuth discovery), `/health`, `/linked-dev/*` (linked dev), `/access-evaluation/*` (Access's own membership call), `/oauth-clients/*` (remote MCP servers' OAuth reads the Gateway's client document) and `/api/auth/callback/apple`.
 - On an app's host: its manifest's `public` routes, and its bearer routes (`public` entries with `bearer: true`) with `/.well-known/oauth-protected-resource` (`PROTECTED_RESOURCE_METADATA_PATH`; [native](/docs/agent/native)). An app host serves no MCP.
 
 Access allows 25 paths per host; extra public routes stay behind Access (`ACCESS_TOO_MANY_PUBLIC_ROUTES`). Everything else, `/oauth/authorize` and the consent pages included, stays behind Access.

@@ -255,6 +255,10 @@ export interface RemoteMcpAddInput {
   auth: unknown;
   /** The provider registry as the Gateway resolves it, the app's own row included when it is about to be written. */
   lookupProvider?: (providerId: string) => Capability | undefined;
+  /** An OAuth row's scopes, from discovery: what the app's capability entry lists and the connect asks for. */
+  scopes?: readonly string[] | null;
+  /** Before the server is looked at, for a credential that may be the app's own OAuth row (the registry's `mayBeOwnOAuth`). */
+  mayBeOwnOAuth?: boolean;
   risk?: string;
   /** What the URL is checked against: the Gateway's own address and app domain. */
   env: RemoteMcpUrlEnv;
@@ -324,6 +328,8 @@ export function planRemoteMcpAdd(
       description: input.description,
       auth: input.auth,
       ...(input.lookupProvider ? { lookupProvider: input.lookupProvider } : {}),
+      ...(input.scopes ? { scopes: input.scopes } : {}),
+      ...(input.mayBeOwnOAuth ? { mayBeOwnOAuth: true } : {}),
       risk: input.risk,
       env: input.env,
       existingApp: (slug) => {

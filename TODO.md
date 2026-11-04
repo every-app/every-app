@@ -53,7 +53,7 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
 ## Waiting on Ben
 
 - [ ] **The remote MCP apps live check** (#938): add an OAuth server with DCR (Linear's), connect two members, call, refresh, disconnect. A live test, on a test Gateway.
-- [ ] **ElevenLabs' hosted MCP needs CIMD.** It takes only OAuth, and its authorization server offers CIMD but no DCR. Build CIMD, and let an OAuth `mcp add` past the catalog's `elevenlabs` host claim?
+- [ ] **The ElevenLabs live check** (#969): after `update` (which adds the `/oauth-clients/*` Access bypass), `mcp add https://api.elevenlabs.io/v1/mcp`, connect, call one tool. A live test.
 - [ ] **Remote MCP apps on everyapp.team are added again after #938.** Migration 0031 drops `remote_mcp_credentials`; an old app reads "registered before provider credentials" until `mcp remove`, then `mcp add`.
 - [ ] **The OAuth-simplify live check** (#942): two apps on one Google client get tokens with different scopes, each connection holding only its own app's scopes. A live test, run on a test Gateway.
 - [ ] **The apps move to provider scope names** in `everyapp.config.ts` (OpenMail, OpenSEO, OpenCRM; CHANGELOG.md has the before and after) and redeploy; migration 0025 drops existing connections, so people connect again in each app. The rollout steps for everyapp.team are in #943.

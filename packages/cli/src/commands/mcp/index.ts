@@ -44,13 +44,14 @@ import {
   mcpStaticProviderSpec,
   PROVIDER_APPS,
   providerAppKeySetting,
-  registerMcpClient,
+  obtainMcpClient,
   remoteMcpAuthLabel,
   remoteMcpClientIdSetting,
   remoteMcpClientSecretSetting,
   remoteMcpIdFromUrl,
   remoteMcpProviderId,
   remoteMcpProviderOf,
+  remoteMcpClientMetadataUrl,
   remoteMcpRedirectUri,
   remoteMcpTokenSetting,
   type Capability,
@@ -434,7 +435,7 @@ function needsCredential(url: string, probe: RemoteMcpProbe): EveryAppError {
 
 /** The OAuth client the app's row uses: given, registered now, or the one it had. */
 interface OAuthClient {
-  registered: "dcr" | "pasted" | "existing";
+  registered: "dcr" | "cimd" | "pasted" | "existing";
   clientId: string | null;
   clientSecret: string | null;
   hasSecret: boolean;
@@ -483,7 +484,13 @@ export async function addServer(options: McpOptions<AddFlags>, url: string): Pro
     ? { kind: "provider" as const, provider: asked.provider }
     : null;
   if (named) checkProvider(url, named, lookup);
-  const firstPlan = planRemoteMcpAdd(context, { ...base, auth: named ?? { kind: "none" }, lookupProvider: lookup });
+  const firstPlan = planRemoteMcpAdd(context, {
+    ...base,
+    auth: named ?? { kind: "none" },
+    lookupProvider: lookup,
+    // auto may find OAuth: the plan with the app's own row decides a reserved host.
+    mayBeOwnOAuth: !named && (asked.kind === "auto" || asked.kind === "oauth"),
+  });
   const id = firstPlan.id;
   const appName = firstPlan.app.name;
 
@@ -577,10 +584,11 @@ export async function addServer(options: McpOptions<AddFlags>, url: string): Pro
         rowPlan = kept.plan;
       } else {
         out.emit({ type: "step", step: "mcp.oauth.client", status: "start", message: `Registering a client with ${discovery.issuer}...` });
-        const registered = await registerMcpClient({
+        const registered = await obtainMcpClient({
           discovery,
           redirectUri,
           clientName: `Every App (${gateway.gatewayUrl.replace(/^https?:\/\//, "")})`,
+          documentUrl: remoteMcpClientMetadataUrl(gateway.gatewayUrl, id),
           fetch: fetcher,
         });
         if (!registered.ok) {
@@ -601,14 +609,22 @@ export async function addServer(options: McpOptions<AddFlags>, url: string): Pro
           );
         }
         client = {
-          registered: "dcr",
+          registered: registered.via ?? "dcr",
           clientId: registered.clientId,
           clientSecret: registered.clientSecret ?? null,
           hasSecret: Boolean(registered.clientSecret),
           inject: registered.inject,
         };
         rowPlan = await planRow(specFor(client.hasSecret, client.inject));
-        out.emit({ type: "step", step: "mcp.oauth.client", status: "ok", message: `Registered a client with ${discovery.issuer}` });
+        out.emit({
+          type: "step",
+          step: "mcp.oauth.client",
+          status: "ok",
+          message:
+            registered.via === "cimd"
+              ? `${discovery.issuer} reads the Gateway's client document at ${registered.clientId}`
+              : `Registered a client with ${discovery.issuer}`,
+        });
       }
     }
   }

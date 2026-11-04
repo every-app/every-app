@@ -121,6 +121,7 @@ Gateway to listed provider ids.
 | `/health`                                                | Gateway host                                            | Uptime monitors                                           |
 | `/api/auth/callback/apple`                               | Gateway host                                            | Apple's cross-site POST, which only redirects to a GET    |
 | `/access-evaluation/*`                                   | Gateway host                                            | Access's own call asking who is a member, and its key     |
+| `/oauth-clients/*`                                       | Gateway host                                            | Remote MCP servers' OAuth fetching the Gateway's client document |
 | each app's `public` routes                               | that app's host                                         | Webhooks, tracking scripts, share pages                   |
 | bearer routes (`bearer: true`), `/.well-known/oauth-protected-resource` | that app's host                          | Native apps' calls with a Gateway token; no cookie taken  |
 

@@ -85,8 +85,10 @@ What Access does not cover, so the Gateway's own checks are the only line:
   `appDestination` in `packages/perimeter/src/install/access-plan.ts`). On
   the Gateway's host: `/mcp`, `/mcp/*`, `/oauth/token`, `/oauth/register`,
   `/linked-dev/*`, `/.well-known/*`, `/health`, Apple's sign-in POST
-  (`/api/auth/callback/apple`) and Access's own membership question
-  (`/access-evaluation/*`). On an app's host: its bearer routes and
+  (`/api/auth/callback/apple`), Access's own membership question
+  (`/access-evaluation/*`) and the OAuth client metadata documents of
+  remote MCP apps (`/oauth-clients/*`: public by design, a redirect URI
+  back to the Gateway and no secret). On an app's host: its bearer routes and
   `/.well-known/oauth-protected-resource` when it has any, and its public
   routes; an app host serves no MCP. Personal access tokens and OAuth
   tokens go through these paths,
@@ -138,6 +140,8 @@ per package (`pnpm -C <package> exec vitest run <file>`, the Gateway with
 | B4 | A person's OAuth token is used only from the app it was connected in, for no more scopes than that app lists. An MCP app's own row (`<id>-mcp`) keeps what its server grants: the token goes to that server alone | `apps/every-app-gateway/src/server/oauth/spec-flow.sqlite.test.ts` :: refuses a token carrying scopes beyond what the app asked |
 | B4 | A remote MCP app's key or OAuth client is a provider row (`<id>-mcp`) bound to the server's host; a key set for another spec of the row is sent nowhere | `apps/every-app-gateway/src/server/remote-mcp/remote-mcp.sqlite.test.ts` :: sends nothing with a key set for another spec of its row |
 | B4 | An OAuth MCP server is called with each member's own connection, made in the app | `apps/every-app-gateway/src/server/remote-mcp/remote-mcp.sqlite.test.ts` :: calls with each member's own connection |
+| B4 | The Gateway's client metadata document (`/oauth-clients/<id>-mcp`, public) is a public client whose one redirect URI is its own callback, the same for any well-formed id and read from no row | `apps/every-app-gateway/src/server/remote-mcp/remote-mcp.sqlite.test.ts` :: serves the app's client metadata document |
+| B4 | A host the Gateway holds a key for takes a remote app only with that provider or the app's own OAuth row; never an own static key | `apps/every-app-gateway/src/server/remote-mcp/remote-mcp.sqlite.test.ts` :: lets an app's own OAuth row reach a host the Gateway holds a key for |
 | B5 AI client → `/mcp` | Write tools are hidden from read-only callers | `packages/toolbus/src/policy.test.ts` :: hides write tools from read-only callers |
 | B5 | Consent is a same-origin form POST from the signed-in person, spent once | `apps/every-app-gateway/src/server/mcp-auth/gateway-mcp.e2e.sqlite.test.ts` :: refuses a decision from another site, another browser, or twice |
 | B5 | A revoked connection stops on its next request and its next refresh | `apps/every-app-gateway/src/server/mcp-auth/gateway-mcp.e2e.sqlite.test.ts` :: stops a revoked connection at once, and its refresh |

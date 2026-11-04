@@ -14,6 +14,13 @@
  * registration request, which carries none either (RFC 7591's open
  * registration).
  *
+ * A client: the one the server registers for this Gateway (RFC 7591 DCR),
+ * else, for a server that registers none but takes OAuth client ID
+ * metadata documents (CIMD, `client_id_metadata_document_supported`), the
+ * URL of the document the Gateway serves about itself as the client id: a
+ * public client (PKCE, no secret) whose one redirect URI is the Gateway's
+ * callback for that app.
+ *
  * Discovery (RFC 9728, then RFC 8414 / OpenID discovery):
  *  1. the protected resource metadata: `resourceMetadataUrl` (the 401's
  *     `resource_metadata`) when given, else
@@ -152,6 +159,8 @@ export interface McpOAuthDiscovery {
   tokenEndpointAuthMethods: string[];
   /** Whether the server had protected resource metadata (false: the 2025-03-26 fallback). */
   resourceMetadata: boolean;
+  /** Whether the authorization server takes a client metadata document's URL as a client id (CIMD). */
+  clientIdMetadataDocument?: boolean;
 }
 
 export type McpOAuthDiscoveryResult =
@@ -552,6 +561,9 @@ export async function discoverMcpOAuth(input: {
       tokenEndpointAuthMethods:
         authMethods.length > 0 ? authMethods : ["client_secret_basic"],
       resourceMetadata: resourceMetadata !== null,
+      ...(metadata["client_id_metadata_document_supported"] === true
+        ? { clientIdMetadataDocument: true }
+        : {}),
     },
   };
 }
@@ -665,6 +677,70 @@ export async function registerMcpClient(input: {
     ...(clientSecret === undefined ? {} : { clientSecret }),
     inject: authMethod === "client_secret_basic" ? "basic" : "form",
     authMethod,
+  };
+}
+
+/**
+ * The client metadata document the Gateway serves at `clientId` (CIMD):
+ * a public client (`token_endpoint_auth_method: none`, so PKCE is its
+ * proof) with the Gateway's callback for the app as its one redirect URI.
+ */
+export function mcpClientMetadataDocument(input: {
+  clientId: string;
+  redirectUri: string;
+  clientName: string;
+  clientUri: string;
+}): Record<string, unknown> {
+  return {
+    client_id: input.clientId,
+    client_name: input.clientName.slice(0, 100),
+    client_uri: input.clientUri,
+    redirect_uris: [input.redirectUri],
+    grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"],
+    token_endpoint_auth_method: "none",
+  };
+}
+
+/**
+ * A client for the Gateway at the server: the one it registers (RFC 7591),
+ * else, when it registers none, the Gateway's client metadata document's
+ * URL (`documentUrl`, null for a Gateway not on https) where the server
+ * takes CIMD and public clients. `unsupported` when neither can be had: a
+ * client must be registered by hand and pasted.
+ */
+export async function obtainMcpClient(input: {
+  discovery: McpOAuthDiscovery;
+  redirectUri: string;
+  clientName: string;
+  documentUrl: string | null;
+  fetch: McpOAuthFetch;
+}): Promise<McpClientRegistration & { via?: "dcr" | "cimd" }> {
+  const { discovery } = input;
+  if (discovery.registrationEndpoint || !discovery.clientIdMetadataDocument) {
+    const registered = await registerMcpClient(input);
+    return registered.ok ? { ...registered, via: "dcr" } : registered;
+  }
+  if (!input.documentUrl) {
+    return {
+      ok: false,
+      unsupported: true,
+      problem: `${discovery.issuer} takes clients by metadata document only, which the Gateway serves on https alone; register a client with it and give its id`,
+    };
+  }
+  if (!discovery.tokenEndpointAuthMethods.includes("none")) {
+    return {
+      ok: false,
+      unsupported: true,
+      problem: `${discovery.issuer} takes clients by metadata document but no public clients (token_endpoint_auth_methods_supported has no "none"); register a client with it and give its id`,
+    };
+  }
+  return {
+    ok: true,
+    clientId: input.documentUrl,
+    inject: "form",
+    authMethod: "none",
+    via: "cimd",
   };
 }
 

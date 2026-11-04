@@ -4,7 +4,9 @@ import {
   MCP_OAUTH_MAX_BODY,
   chooseTokenEndpointAuthMethod,
   discoverMcpOAuth,
+  mcpClientMetadataDocument,
   mcpOAuthProviderSpec,
+  obtainMcpClient,
   mcpStaticProviderSpec,
   parseWwwAuthenticate,
   registerMcpClient,
@@ -14,6 +16,7 @@ import {
 import { oauthSpecOf } from "./oauthSpec.js";
 import { providerBindingKey, providerRegistry } from "./providerRegistry.js";
 import { parseProviderSpec } from "./providerSpec.js";
+import { remoteMcpClientMetadataUrl } from "./remoteMcp.js";
 
 type Route =
   | Record<string, unknown>
@@ -499,6 +502,128 @@ describe("registerMcpClient", () => {
         JSON.stringify(route),
       ).toMatchObject({ ok: false });
     }
+  });
+});
+
+describe("obtainMcpClient (DCR, else a client metadata document)", () => {
+  const DOC = "https://apps.example.com/oauth-clients/acme-mcp";
+  const { registrationEndpoint: _, ...noDcr } = discovery;
+  const cimd: McpOAuthDiscovery = {
+    ...noDcr,
+    clientIdMetadataDocument: true,
+    tokenEndpointAuthMethods: ["none", "client_secret_post"],
+  };
+
+  it("registers when the server offers registration, even where it takes documents too", async () => {
+    const { fetch, calls } = fakeFetch({
+      [`${ISSUER}/register`]: {
+        client_id: "c-1",
+        token_endpoint_auth_method: "none",
+      },
+    });
+    const result = await obtainMcpClient({
+      discovery: {
+        ...discovery,
+        clientIdMetadataDocument: true,
+        tokenEndpointAuthMethods: ["none"],
+      },
+      redirectUri: REDIRECT,
+      clientName: "x",
+      documentUrl: DOC,
+      fetch,
+    });
+    expect(result).toMatchObject({ ok: true, clientId: "c-1", via: "dcr" });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("gives the document's URL as a public client's id where the server takes documents and registers none, fetching nothing", async () => {
+    const { fetch, calls } = fakeFetch({});
+    expect(
+      await obtainMcpClient({
+        discovery: cimd,
+        redirectUri: REDIRECT,
+        clientName: "x",
+        documentUrl: DOC,
+        fetch,
+      }),
+    ).toEqual({
+      ok: true,
+      clientId: DOC,
+      inject: "form",
+      authMethod: "none",
+      via: "cimd",
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it("is unsupported without registration or documents, off https, or without public clients", async () => {
+    const fetch = fakeFetch({}).fetch;
+    const cases: Array<
+      [string, { discovery: McpOAuthDiscovery; documentUrl: string | null }]
+    > = [
+      ["neither", { discovery: noDcr, documentUrl: DOC }],
+      ["no https document", { discovery: cimd, documentUrl: null }],
+      [
+        "no public clients",
+        {
+          discovery: { ...cimd, tokenEndpointAuthMethods: ["private_key_jwt"] },
+          documentUrl: DOC,
+        },
+      ],
+    ];
+    for (const [what, input] of cases) {
+      expect(
+        await obtainMcpClient({
+          ...input,
+          redirectUri: REDIRECT,
+          clientName: "x",
+          fetch,
+        }),
+        what,
+      ).toMatchObject({ ok: false, unsupported: true });
+    }
+  });
+
+  it("reads client_id_metadata_document_supported in discovery", async () => {
+    const { registration_endpoint: _r, ...noRegistration } = AS;
+    const { fetch } = fakeFetch({
+      [`https://mcp.example.com/.well-known/oauth-protected-resource/mcp`]: PRM,
+      [`${ISSUER}/.well-known/oauth-authorization-server`]: {
+        ...noRegistration,
+        client_id_metadata_document_supported: true,
+      },
+    });
+    const found = await discoverMcpOAuth({ url: MCP, fetch });
+    expect(found).toMatchObject({
+      ok: true,
+      discovery: { clientIdMetadataDocument: true },
+    });
+    expect(found.ok && found.discovery.registrationEndpoint).toBeFalsy();
+  });
+
+  it("describes a public client whose one redirect URI is the Gateway's callback, at an https URL only", () => {
+    expect(
+      remoteMcpClientMetadataUrl("https://apps.example.com/", "acme"),
+    ).toBe(DOC);
+    expect(
+      remoteMcpClientMetadataUrl("http://localhost:8787", "acme"),
+    ).toBeNull();
+    expect(
+      mcpClientMetadataDocument({
+        clientId: DOC,
+        redirectUri: REDIRECT,
+        clientName: "Every App (apps.example.com)",
+        clientUri: "https://apps.example.com",
+      }),
+    ).toEqual({
+      client_id: DOC,
+      client_name: "Every App (apps.example.com)",
+      client_uri: "https://apps.example.com",
+      redirect_uris: [REDIRECT],
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none",
+    });
   });
 });
 

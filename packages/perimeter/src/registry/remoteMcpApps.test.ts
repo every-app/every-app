@@ -217,7 +217,7 @@ describe("planRemoteMcpAppAdd", () => {
         }),
       ),
     ).toThrow(expect.objectContaining({ code: "REMOTE_MCP_URL_REFUSED" }));
-    // The app's own row never opens a reserved host.
+    // The app's own static row never opens a reserved host.
     expect(() =>
       planRemoteMcpAppAdd(
         input({
@@ -227,6 +227,41 @@ describe("planRemoteMcpAppAdd", () => {
         }),
       ),
     ).toThrow(expect.objectContaining({ code: "REMOTE_MCP_URL_REFUSED" }));
+    // Its own OAuth row does: each member's own token goes, never the
+    // Gateway's key. Before the server is looked at, a credential that may
+    // be OAuth passes, and the plan with the row decides.
+    const elevenOAuth = specCapability(
+      mcpOAuthProviderSpec({
+        appId: "treg",
+        name: "ElevenLabs",
+        url: "https://api.elevenlabs.io/v1/mcp",
+        discovery: {
+          ...discovery,
+          resource: "https://api.elevenlabs.io/v1/mcp",
+        },
+        client: { hasSecret: false, inject: "form" },
+      }),
+    );
+    expect(
+      planRemoteMcpAppAdd(
+        input({
+          url: "https://api.elevenlabs.io/v1/mcp",
+          id: "treg",
+          auth: { kind: "provider" },
+          lookupProvider: lookup(elevenOAuth),
+        }),
+      ).remote.auth,
+    ).toEqual({ kind: "provider", provider: "treg-mcp" });
+    expect(
+      planRemoteMcpAppAdd(
+        input({
+          url: "https://api.elevenlabs.io/v1/mcp",
+          id: "treg",
+          auth: { kind: "none" },
+          mayBeOwnOAuth: true,
+        }),
+      ).id,
+    ).toBe("treg");
     // A provider whose hosts don't include the URL's.
     expect(() =>
       planRemoteMcpAppAdd(
