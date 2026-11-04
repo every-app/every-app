@@ -43,11 +43,7 @@ import { userAppsCollection } from "@/client/tanstack-db";
 
 /** What the "MCP apps" section says once, so its cards need only a chip. */
 const MCP_APPS_HINT =
-  "Your agent uses these through this Gateway's MCP address. Nothing to open.";
-
-// An outline button on the card surface (white in light mode), so it stands
-// out from the page and the empty state's background.
-const cardButtonClass = "bg-card hover:bg-card/80 dark:bg-card";
+  "Your AI agent uses these for you, so there's nothing to open here.";
 
 const searchSchema = z.object({
   pwa: z
@@ -193,7 +189,6 @@ function App() {
   const manageAppsButton = (
     <Button
       variant="outline"
-      className={cardButtonClass}
       nativeButton={false}
       render={<Link to="/admin/apps" />}
     >
@@ -327,11 +322,7 @@ function App() {
                     title="No apps found"
                     description="Try another app name or description."
                     action={
-                      <Button
-                        variant="outline"
-                        className={cardButtonClass}
-                        onClick={() => setSearch("")}
-                      >
+                      <Button variant="outline" onClick={() => setSearch("")}>
                         Clear search
                       </Button>
                     }

@@ -155,11 +155,8 @@ async function press(element: HTMLElement) {
 const dialog = () => document.body.querySelector('[role="dialog"]');
 
 describe("Manage workspace → Sign-in", () => {
-  it("leads with what the page is, and lists passwords and every provider with its status", async () => {
+  it("lists passwords and every provider with its status", async () => {
     await render();
-    expect(body()).toContain(
-      "People can sign in with these beside their password. Settings are Worker secrets, set from a terminal: nothing here changes them.",
-    );
     expect(body()).toContain("Password");
     expect(rowOf("Google").textContent).toContain("On");
     expect(rowOf("GitHub").textContent).toContain("Needs setup");

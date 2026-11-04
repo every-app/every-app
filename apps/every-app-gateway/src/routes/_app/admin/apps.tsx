@@ -11,7 +11,10 @@ import {
 import { AppSetupDialog } from "@/client/components/AppSetupDialog";
 import { ErrorState } from "@/client/components/ErrorState";
 import { McpAppDialog } from "@/client/components/McpAppDialog";
-import { SectionHeader } from "@/client/components/PageHeader";
+import {
+  SettingsSection,
+  SettingsTab,
+} from "@/client/components/SettingsLayout";
 import { AppsTable } from "@/client/components/admin/AppsTable";
 import { EditAppModal } from "@/client/components/admin/EditAppModal";
 import { DeleteAppModal } from "@/client/components/admin/DeleteAppModal";
@@ -120,49 +123,50 @@ function AppsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <SectionHeader
+    <SettingsTab>
+      <SettingsSection
         title="Apps"
         action={
-          <div className="flex items-center gap-2">
+          <>
             {canInstall ? (
               <Button nativeButton={false} render={<Link to="/install" />}>
-                <Download />
+                <Download data-icon="inline-start" />
                 Install app
               </Button>
             ) : null}
+            {/* One primary action on the page: this one, unless Install is. */}
             <Button
-              variant="outline"
+              variant={canInstall ? "outline" : "default"}
               aria-haspopup="dialog"
               onClick={() => setAddingApp(true)}
             >
-              <Plus />
+              <Plus data-icon="inline-start" />
               {FIRST_SCREEN.addApp.button}
             </Button>
-          </div>
+          </>
         }
-      />
-
-      <AppsTable
-        apps={apps}
-        isLoading={isLoading}
-        error={
-          isError ? (
-            <ErrorState
-              message="Couldn't load apps."
-              onRetry={() => void adminAppsCollection.utils.refetch()}
-            />
-          ) : undefined
-        }
-        onSetup={openSetup}
-        onUseMcp={setMcpApp}
-        onManageAccess={setAccessApp}
-        onEdit={setEditingApp}
-        onDelete={setDeletingApp}
-        onToggleMcpStatus={toggleMcpStatus}
-        onAddApp={() => setAddingApp(true)}
-        isAdmin={isAdmin}
-      />
+      >
+        <AppsTable
+          apps={apps}
+          isLoading={isLoading}
+          error={
+            isError ? (
+              <ErrorState
+                message="Couldn't load apps."
+                onRetry={() => void adminAppsCollection.utils.refetch()}
+              />
+            ) : undefined
+          }
+          onSetup={openSetup}
+          onUseMcp={setMcpApp}
+          onManageAccess={setAccessApp}
+          onEdit={setEditingApp}
+          onDelete={setDeletingApp}
+          onToggleMcpStatus={toggleMcpStatus}
+          onAddApp={() => setAddingApp(true)}
+          isAdmin={isAdmin}
+        />
+      </SettingsSection>
 
       {addingApp ? (
         <AddAppDialog
@@ -221,6 +225,6 @@ function AppsPage() {
           onClose={() => setAccessApp(null)}
         />
       ) : null}
-    </div>
+    </SettingsTab>
   );
 }

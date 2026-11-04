@@ -1,3 +1,4 @@
+import { SettingsSummary } from "@/client/components/SettingsLayout";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import { Skeleton } from "@/client/components/ui/skeleton";
@@ -31,48 +32,50 @@ export function AiDefaultCard({
 }) {
   const resolution = report?.resolution;
   return (
-    <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 rounded-lg border border-border px-4 py-3 text-sm">
-      <div className="min-w-0 flex-1 space-y-1">
-        <p className="font-medium">AI default</p>
-        {resolution ? (
+    <SettingsSummary
+      label="AI default"
+      value={
+        resolution ? (
           <>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="break-all">
-                {resolution.label} · {resolution.model}
-              </span>
-              {resolution.configured ? null : (
-                <Badge variant="warning">
-                  Not configured · {resolution.settings.join(", ")}
-                </Badge>
-              )}
-              {resolution.via === "ai-gateway" ? (
-                <Badge variant="info">Through Cloudflare AI Gateway</Badge>
-              ) : null}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {aiDefaultSourceSentence(resolution)}
-            </p>
-            {resolution.problem ? (
-              <p className="text-xs text-destructive">{resolution.problem}</p>
+            <span className="break-all">
+              {resolution.label} · {resolution.model}
+            </span>
+            {resolution.configured ? null : (
+              <Badge variant="warning">
+                Not configured · {resolution.settings.join(", ")}
+              </Badge>
+            )}
+            {resolution.via === "ai-gateway" ? (
+              <Badge variant="info">Through Cloudflare AI Gateway</Badge>
             ) : null}
           </>
         ) : (
+          <Skeleton className="my-1 h-4 w-56" />
+        )
+      }
+      detail={
+        resolution ? (
           <>
-            <Skeleton className="h-4 w-56" />
-            <Skeleton className="h-3 w-40" />
+            <p>{aiDefaultSourceSentence(resolution)}</p>
+            {resolution.problem ? (
+              <p className="text-destructive">{resolution.problem}</p>
+            ) : null}
           </>
-        )}
-      </div>
-      <Button
-        variant="ghost"
-        size="xs"
-        className="-mr-2"
-        aria-label="Change the AI default"
-        disabled={!report}
-        onClick={onChange}
-      >
-        Change
-      </Button>
-    </div>
+        ) : (
+          <Skeleton className="h-3 w-40" />
+        )
+      }
+      action={
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label="Change the AI default"
+          disabled={!report}
+          onClick={onChange}
+        >
+          Change
+        </Button>
+      }
+    />
   );
 }

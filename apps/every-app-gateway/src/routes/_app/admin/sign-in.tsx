@@ -1,10 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Info } from "lucide-react";
 import { SignInProviderSetupDialog } from "@/client/components/admin/SignInProviderSetupDialog";
 import { ErrorState } from "@/client/components/ErrorState";
-import { SectionHeader } from "@/client/components/PageHeader";
+import {
+  SettingsList,
+  SettingsListSkeleton,
+  SettingsRow,
+  SettingsSection,
+  SettingsTab,
+} from "@/client/components/SettingsLayout";
 import {
   Alert,
   AlertDescription,
@@ -12,11 +18,9 @@ import {
 } from "@/client/components/ui/alert";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
-import { Skeleton } from "@/client/components/ui/skeleton";
 import {
   OUTER_RING_BANNER,
   OUTER_RING_DETAIL,
-  SIGN_IN_LEAD,
   passwordSignInView,
   signInStatusView,
   type ListedSignInProvider,
@@ -65,74 +69,76 @@ function SignInPage() {
     listing?.providers.filter((provider) => !folded.includes(provider)) ?? [];
 
   return (
-    <div className="space-y-6">
-      <SectionHeader title="Sign-in" hint={SIGN_IN_LEAD} />
+    <SettingsTab>
+      <SettingsSection title="Sign-in">
+        {outerRing ? (
+          <Alert variant="info" role="note">
+            <Info />
+            <AlertTitle>{OUTER_RING_BANNER.title}</AlertTitle>
+            <AlertDescription>{OUTER_RING_BANNER.description}</AlertDescription>
+          </Alert>
+        ) : null}
 
-      {outerRing ? (
-        <Alert variant="info" role="note">
-          <Info />
-          <AlertTitle>{OUTER_RING_BANNER.title}</AlertTitle>
-          <AlertDescription>{OUTER_RING_BANNER.description}</AlertDescription>
-        </Alert>
-      ) : null}
-
-      {query.isError ? (
-        <ErrorState
-          message="Couldn't load the sign-in providers."
-          onRetry={() => void query.refetch()}
-          isRetrying={query.isFetching}
-        />
-      ) : !listing ? (
-        <div className="space-y-2" aria-busy>
-          {Array.from({ length: 4 }, (_, index) => (
-            <Skeleton key={index} className="h-12 w-full" />
-          ))}
-        </div>
-      ) : (
-        <ul
-          className="divide-y divide-border rounded-lg border border-border"
-          aria-label="Ways to sign in"
-        >
-          {outerRing ? (
-            <Row
-              name="Cloudflare Access"
-              detail={
-                <>
-                  {OUTER_RING_DETAIL}{" "}
-                  <span className="font-mono">pnpm everyapp access on</span>
-                </>
-              }
-              status={<span>On</span>}
-            />
-          ) : null}
-          <PasswordRow password={listing.password} outerRing={outerRing} />
-          {listing.access.on && listing.access.label ? (
-            <Row
-              name={`Cloudflare Access (${listing.access.label})`}
-              detail={
-                <>
-                  Set with{" "}
-                  <span className="font-mono">pnpm everyapp access on</span>
-                </>
-              }
-              status={<span>On</span>}
-            />
-          ) : null}
-          {listed.map((provider) => (
-            <ProviderRow
-              key={provider.id}
-              provider={provider}
-              onOpen={() => setOpen(provider)}
-            />
-          ))}
-          {folded.length > 0 ? (
-            <FoldedProvidersRow
-              providers={folded}
-              onShow={() => setShowAll(true)}
-            />
-          ) : null}
-        </ul>
-      )}
+        {query.isError ? (
+          <ErrorState
+            message="Couldn't load the sign-in providers."
+            onRetry={() => void query.refetch()}
+            isRetrying={query.isFetching}
+          />
+        ) : !listing ? (
+          <SettingsListSkeleton rows={4} />
+        ) : (
+          <SettingsList label="Ways to sign in">
+            {outerRing ? (
+              <SettingsRow
+                name="Cloudflare Access"
+                detail={
+                  <>
+                    {OUTER_RING_DETAIL}{" "}
+                    <span className="font-mono">pnpm everyapp access on</span>
+                  </>
+                }
+                status={<span>On</span>}
+              />
+            ) : null}
+            <PasswordRow password={listing.password} outerRing={outerRing} />
+            {listing.access.on && listing.access.label ? (
+              <SettingsRow
+                name={`Cloudflare Access (${listing.access.label})`}
+                detail={
+                  <>
+                    Set with{" "}
+                    <span className="font-mono">pnpm everyapp access on</span>
+                  </>
+                }
+                status={<span>On</span>}
+              />
+            ) : null}
+            {listed.map((provider) => (
+              <ProviderRow
+                key={provider.id}
+                provider={provider}
+                onOpen={() => setOpen(provider)}
+              />
+            ))}
+            {folded.length > 0 ? (
+              <SettingsRow
+                name="Sign-in providers"
+                detail={`${folded.map((provider) => provider.label).join(", ")}: off, for running without Access.`}
+                action={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowAll(true)}
+                  >
+                    Show sign-in providers
+                  </Button>
+                }
+              />
+            ) : null}
+          </SettingsList>
+        )}
+      </SettingsSection>
 
       {shown ? (
         <SignInProviderSetupDialog
@@ -143,68 +149,7 @@ function SignInPage() {
           onClose={() => setOpen(null)}
         />
       ) : null}
-    </div>
-  );
-}
-
-function Row({
-  name,
-  detail,
-  status,
-  action,
-}: {
-  name: ReactNode;
-  detail?: ReactNode;
-  status: ReactNode;
-  action?: ReactNode;
-}) {
-  return (
-    <li className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0 space-y-0.5">
-        <p className="text-sm font-medium">{name}</p>
-        {detail ? (
-          <p className="text-xs text-muted-foreground">{detail}</p>
-        ) : null}
-      </div>
-      <div className="flex shrink-0 items-center gap-3 text-sm">
-        {status}
-        {action}
-      </div>
-    </li>
-  );
-}
-
-/**
- * Behind the outer ring, the providers that are off, folded into one
- * dashed row that names them; showing them lists each as without Access.
- */
-function FoldedProvidersRow({
-  providers,
-  onShow,
-}: {
-  providers: ListedSignInProvider[];
-  onShow: () => void;
-}) {
-  return (
-    <li className="p-2">
-      <div className="flex flex-col gap-2 rounded-md border border-dashed border-foreground/20 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 space-y-0.5">
-          <p className="text-sm font-medium">Sign-in providers</p>
-          <p className="text-xs text-muted-foreground">
-            {providers.map((provider) => provider.label).join(", ")}: off, for
-            running without Access.
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="shrink-0"
-          onClick={onShow}
-        >
-          Show sign-in providers
-        </Button>
-      </div>
-    </li>
+    </SettingsTab>
   );
 }
 
@@ -217,7 +162,7 @@ function PasswordRow({
 }) {
   const view = passwordSignInView(password, { outerRing });
   return (
-    <Row
+    <SettingsRow
       name="Password"
       detail={view.note}
       status={
@@ -240,7 +185,7 @@ function ProviderRow({
   const name = `Continue with ${provider.label}`;
   if (provider.status === "incomplete") {
     return (
-      <Row
+      <SettingsRow
         name={name}
         detail={provider.problem}
         status={
@@ -257,7 +202,7 @@ function ProviderRow({
     );
   }
   return (
-    <Row
+    <SettingsRow
       name={name}
       status={
         <span

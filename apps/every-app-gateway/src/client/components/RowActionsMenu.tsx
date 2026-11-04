@@ -18,8 +18,16 @@ export function RowActionsMenu({
 }) {
   return (
     <DropdownMenu>
+      {/* Pulled out by its inset, so the dots sit on the row's right edge. */}
       <DropdownMenuTrigger
-        render={<Button variant="ghost" size="icon-xs" aria-label={label} />}
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="-mr-1.5"
+            aria-label={label}
+          />
+        }
       >
         <MoreHorizontal />
       </DropdownMenuTrigger>

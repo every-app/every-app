@@ -8,7 +8,10 @@ import { GroupDialog } from "@/client/components/admin/GroupDialog";
 import { GroupsTable } from "@/client/components/admin/GroupsTable";
 import { ConfirmDialog } from "@/client/components/ConfirmDialog";
 import { ErrorState } from "@/client/components/ErrorState";
-import { SectionHeader } from "@/client/components/PageHeader";
+import {
+  SettingsSection,
+  SettingsTab,
+} from "@/client/components/SettingsLayout";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import { getServerErrorMessage } from "@/client/errors";
@@ -76,26 +79,26 @@ function GroupsPage() {
   );
 
   return (
-    <div className="space-y-6">
-      <SectionHeader title="Groups" action={createAction} />
-
-      <GroupsTable
-        groups={groups}
-        isLoading={groupsQuery.isLoading}
-        error={
-          groupsQuery.isError ? (
-            <ErrorState
-              message="Couldn't load groups."
-              onRetry={() => void groupsQuery.refetch()}
-            />
-          ) : undefined
-        }
-        createAction={createAction}
-        onManageMembers={setMembersOf}
-        onManageApps={setAppsOf}
-        onEdit={setEditing}
-        onDelete={setDeleting}
-      />
+    <SettingsTab>
+      <SettingsSection title="Groups" action={createAction}>
+        <GroupsTable
+          groups={groups}
+          isLoading={groupsQuery.isLoading}
+          error={
+            groupsQuery.isError ? (
+              <ErrorState
+                message="Couldn't load groups."
+                onRetry={() => void groupsQuery.refetch()}
+              />
+            ) : undefined
+          }
+          createAction={createAction}
+          onManageMembers={setMembersOf}
+          onManageApps={setAppsOf}
+          onEdit={setEditing}
+          onDelete={setDeleting}
+        />
+      </SettingsSection>
 
       {creating || editing ? (
         <GroupDialog
@@ -159,7 +162,7 @@ function GroupsPage() {
           onSaved={refresh}
         />
       ) : null}
-    </div>
+    </SettingsTab>
   );
 }
 

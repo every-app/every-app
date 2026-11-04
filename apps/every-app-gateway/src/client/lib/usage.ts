@@ -27,12 +27,13 @@ export function formatCount(value: number): string {
 
 /**
  * A provider cost kept in USD millionths, as dollars: four decimals under
- * a dollar ($0.0025), two from there ($12.34), and a plain $0.00 for none.
+ * a cent ($0.0025), so a small cost isn't $0.00; two from there ($0.11,
+ * $12.34), so a column's decimals line up; and a plain $0.00 for none.
  */
 export function formatCostMicros(micros: number): string {
   if (micros === 0) return "$0.00";
   const dollars = micros / 1_000_000;
-  return `$${dollars.toFixed(dollars < 1 ? 4 : 2)}`;
+  return `$${dollars.toFixed(dollars < 0.01 ? 4 : 2)}`;
 }
 
 const dollars = new Intl.NumberFormat("en-US", {

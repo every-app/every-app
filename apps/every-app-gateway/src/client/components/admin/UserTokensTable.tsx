@@ -3,7 +3,11 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Unplug } from "lucide-react";
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
-import { DateCell, dateSortValue } from "@/client/components/table/DateCell";
+import {
+  DATE_CELL,
+  DateCell,
+  dateSortValue,
+} from "@/client/components/table/DateCell";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
 import { DropdownMenuItem } from "@/client/components/ui/dropdown-menu";
 import { tokenAccessOf, type TokenAccess } from "@/server/user-pat-scopes";
@@ -91,10 +95,7 @@ export function UserTokensTable({
         header: ({ column }) => (
           <SortableHeader column={column} label="Created" />
         ),
-        meta: {
-          label: "Created",
-          cellClassName: "text-xs text-muted-foreground",
-        },
+        meta: { label: "Created", cellClassName: DATE_CELL },
         cell: ({ row }) => <DateCell value={row.original.createdAt} />,
       },
       {
@@ -104,10 +105,7 @@ export function UserTokensTable({
         header: ({ column }) => (
           <SortableHeader column={column} label="Expires" />
         ),
-        meta: {
-          label: "Expires",
-          cellClassName: "text-xs text-muted-foreground",
-        },
+        meta: { label: "Expires", cellClassName: DATE_CELL },
         cell: ({ row }) => <DateCell value={row.original.expiresAt} />,
       },
       {
@@ -116,10 +114,7 @@ export function UserTokensTable({
         header: ({ column }) => (
           <SortableHeader column={column} label="Last used" />
         ),
-        meta: {
-          label: "Last used",
-          cellClassName: "text-xs text-muted-foreground",
-        },
+        meta: { label: "Last used", cellClassName: DATE_CELL },
         cell: ({ row }) => <DateCell value={row.original.lastUsedAt} />,
       },
       {

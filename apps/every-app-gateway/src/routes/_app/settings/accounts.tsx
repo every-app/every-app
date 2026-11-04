@@ -55,11 +55,10 @@ function AccountsPage() {
 
   return (
     <Page>
-      <PageHeader title="Connected accounts" />
-      <p className="text-sm text-muted-foreground">
-        Connect accounts inside each app. An app never sees the token;
-        disconnecting stops it at once.
-      </p>
+      <PageHeader
+        title="Connected accounts"
+        description="Accounts you've connected inside your apps, such as Gmail."
+      />
 
       {connectionsQuery.isError ? (
         <ErrorState
@@ -75,7 +74,7 @@ function AccountsPage() {
         </div>
       ) : connections.length === 0 ? (
         <p className="rounded-lg border border-border px-4 py-6 text-center text-sm text-muted-foreground">
-          No connected accounts yet.
+          No connected accounts yet. Connect one inside an app.
         </p>
       ) : (
         <ul

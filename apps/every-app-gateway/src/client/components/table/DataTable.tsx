@@ -112,6 +112,12 @@ const ACTIONS_COLUMN = "actions";
 /** Skeleton rows (or cards) while the first page loads. */
 const SKELETON_ROWS = 8;
 
+/**
+ * Room for a name and a line under it (52px): a row with one line is the same
+ * height as one with two, so a table doesn't stagger. A `SettingsRow` matches.
+ */
+const ROW_HEIGHT = "h-13";
+
 /** The highlight of a clickable row whose details are open. */
 const CLICKABLE_ROW =
   "cursor-pointer data-active:bg-primary/5 data-active:shadow-[inset_2px_0_0_var(--color-primary)]";
@@ -162,10 +168,7 @@ function DataTableCard<TData>({
           {renderCell(primary)}
         </div>
         {actions ? (
-          <div
-            data-slot="data-table-card-actions"
-            className="-my-1 -mr-2 shrink-0"
-          >
+          <div data-slot="data-table-card-actions" className="-my-1 shrink-0">
             {renderCell(actions)}
           </div>
         ) : null}
@@ -306,7 +309,7 @@ export function DataTable<TData>({
         <TableBody>
           {isLoading
             ? Array.from({ length: SKELETON_ROWS }, (_, index) => (
-                <TableRow key={index} aria-hidden>
+                <TableRow key={index} aria-hidden className={ROW_HEIGHT}>
                   {columns.map((column) => (
                     <TableCell key={column.id}>
                       <Skeleton
@@ -323,7 +326,10 @@ export function DataTable<TData>({
                   key={row.id}
                   data-state={row.getIsSelected() ? "selected" : undefined}
                   data-active={row.id === activeRowId ? "" : undefined}
-                  className={onRowClick ? CLICKABLE_ROW : undefined}
+                  className={cn(
+                    ROW_HEIGHT,
+                    onRowClick ? CLICKABLE_ROW : undefined,
+                  )}
                   onClick={
                     onRowClick ? (event) => onRowClick(row, event) : undefined
                   }

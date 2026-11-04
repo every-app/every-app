@@ -6,7 +6,7 @@ import {
   DataTableSearch,
   DataTableToolbar,
 } from "@/client/components/table/DataTableToolbar";
-import { DateCell } from "@/client/components/table/DateCell";
+import { DATE_CELL, DateCell } from "@/client/components/table/DateCell";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
@@ -103,13 +103,23 @@ function AppNameCell({
             ? ` · agents call ${app.appId}_<tool>`
             : null}
       </p>
-      {/* Who deployed it, in plain words; its mail addresses and
-          integrations are the Edit app dialog's, in full. */}
+    </>
+  );
+}
+
+/**
+ * When it last changed, and who deployed it in plain words; its mail
+ * addresses and integrations are the Edit app dialog's, in full.
+ */
+function UpdatedCell({ app }: { app: AppWithAccessCount }) {
+  return (
+    <>
+      <DateCell value={app.updatedAt} />
       {app.deployedByActor ? (
-        <p className="truncate text-xs text-muted-foreground">
+        <p className="truncate text-xs">
           {/* An MCP app has no deploy: the operator turned it on, or
               someone added the remote server. */}
-          {mcp
+          {isMcpApp(app)
             ? `${isRemoteMcpApp(app) ? "Added" : "Turned on"} by ${app.deployedByActor}`
             : deployedBy(app.deployedByActor)}
         </p>
@@ -222,11 +232,8 @@ function buildColumns({
         <SortableHeader column={column} label="Updated" />
       ),
       sortingFn: "datetime",
-      cell: ({ row }) => <DateCell value={row.original.updatedAt} />,
-      meta: {
-        label: "Updated",
-        cellClassName: "text-xs text-muted-foreground",
-      },
+      cell: ({ row }) => <UpdatedCell app={row.original} />,
+      meta: { label: "Updated", cellClassName: `${DATE_CELL} max-w-[240px]` },
     },
     {
       id: "actions",

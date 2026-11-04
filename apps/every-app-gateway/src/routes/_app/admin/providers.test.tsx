@@ -369,7 +369,7 @@ describe("the grouped list", () => {
     await render();
     expect(group("Set up")).toBeNull();
     expect(group("Needed by an app")).toBeNull();
-    expect(body()).toContain("Nothing is set up yet.");
+    expect(body()).toContain("Nothing is set up yet");
     expect(body()).toContain("1 more built in: APIs");
     await showAll();
     expect(

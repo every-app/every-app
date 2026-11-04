@@ -3,7 +3,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import type { VariantProps } from "class-variance-authority";
 import { cn } from "cn";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
-import { DateCell } from "@/client/components/table/DateCell";
+import { DATE_CELL, DateCell } from "@/client/components/table/DateCell";
 import { Badge, type badgeVariants } from "@/client/components/ui/badge";
 import {
   Tooltip,
@@ -49,7 +49,7 @@ const RISK_VARIANTS: Record<string, BadgeVariant> = {
 };
 
 const OUTCOMES: Record<string, { label: string; className: string }> = {
-  ok: { label: "OK", className: "text-foreground" },
+  ok: { label: "OK", className: "text-muted-foreground" },
   tool_error: { label: "Tool error", className: "text-destructive" },
   invalid_arguments: {
     label: "Invalid arguments",
@@ -192,12 +192,13 @@ function ToolCell({ tool }: { tool: ToolCallRow["tool"] }) {
 
 function DecisionCell({ call }: { call: ToolCallRow }) {
   const allowed = call.decision === "allowed";
-  const badge = (
-    <Badge variant={allowed ? "success" : "destructive"}>
-      {allowed ? "Allowed" : "Blocked"}
-    </Badge>
+  // The usual state is plain text; only an exception is a chip.
+  const decision = allowed ? (
+    <span className="text-muted-foreground">Allowed</span>
+  ) : (
+    <Badge variant="destructive">Blocked</Badge>
   );
-  if (!call.reason) return badge;
+  if (!call.reason) return decision;
   const reason = reasonLabel(call.reason);
   return (
     <Tooltip>
@@ -206,7 +207,7 @@ function DecisionCell({ call }: { call: ToolCallRow }) {
         aria-label={`${allowed ? "Allowed" : "Blocked"}: ${reason}`}
         className="cursor-help rounded-4xl"
       >
-        {badge}
+        {decision}
       </TooltipTrigger>
       <TooltipContent>{reason}</TooltipContent>
     </Tooltip>
@@ -233,7 +234,7 @@ const columns: ColumnDef<ToolCallRow>[] = [
   {
     id: "when",
     header: "When",
-    meta: { cellClassName: "whitespace-nowrap text-xs text-muted-foreground" },
+    meta: { cellClassName: DATE_CELL },
     cell: ({ row }) => <DateCell value={row.original.createdAt} withTime />,
   },
   {
@@ -270,8 +271,7 @@ const columns: ColumnDef<ToolCallRow>[] = [
     header: "Duration",
     meta: {
       headerClassName: "text-right",
-      cellClassName:
-        "whitespace-nowrap text-right text-xs tabular-nums text-muted-foreground",
+      cellClassName: `${DATE_CELL} text-right`,
     },
     cell: ({ row }) => formatDuration(row.original.durationMs),
   },

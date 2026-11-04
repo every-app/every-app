@@ -11,10 +11,6 @@ import type {
 
 export type { ListedSignInProvider };
 
-/** The page's lead, under its heading. */
-export const SIGN_IN_LEAD =
-  "People can sign in with these beside their password. Settings are Worker secrets, set from a terminal: nothing here changes them.";
-
 /** What a provider's row shows: the status and the button beside it. */
 export function signInStatusView(provider: ListedSignInProvider): {
   label: "On" | "Needs setup" | "Off";

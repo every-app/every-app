@@ -3,7 +3,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { auditSubjectLabel } from "@every-app/sdk/internal";
 import { cn } from "cn";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
-import { DateCell } from "@/client/components/table/DateCell";
+import { DATE_CELL, DateCell } from "@/client/components/table/DateCell";
 import { Badge } from "@/client/components/ui/badge";
 import type { AuditRow } from "@/types/audit";
 
@@ -119,7 +119,7 @@ const columns: ColumnDef<AuditRow>[] = [
   {
     id: "when",
     header: "When",
-    meta: { cellClassName: "whitespace-nowrap text-xs text-muted-foreground" },
+    meta: { cellClassName: DATE_CELL },
     cell: ({ row }) => <DateCell value={row.original.time} withTime />,
   },
   {
@@ -131,7 +131,7 @@ const columns: ColumnDef<AuditRow>[] = [
   {
     id: "what",
     header: "What",
-    meta: { cellClassName: "max-w-[360px]" },
+    meta: { cellClassName: "max-w-[340px]" },
     cell: ({ row }) => <WhatCell event={row.original} />,
   },
   {

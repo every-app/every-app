@@ -119,7 +119,6 @@ function button(label: string): HTMLButtonElement | undefined {
 describe("Connected accounts", () => {
   it("lists each connection with its provider, account, app and scopes, and no way to connect here", async () => {
     await render();
-    expect(body()).toContain("Connect accounts inside each app.");
     expect(body()).toContain("In OpenMail · gmail.modify, gmail.send");
     expect(body()).toContain("In OpenSEO · webmasters.readonly");
     expect(body()).toContain("ada@acme.com");

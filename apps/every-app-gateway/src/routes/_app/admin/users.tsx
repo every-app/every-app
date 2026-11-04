@@ -22,7 +22,10 @@ import {
 import { InviteUserModal } from "@/client/components/admin/InviteUserModal";
 import { UsersTable } from "@/client/components/admin/UsersTable";
 import { ErrorState } from "@/client/components/ErrorState";
-import { SectionHeader } from "@/client/components/PageHeader";
+import {
+  SettingsSection,
+  SettingsTab,
+} from "@/client/components/SettingsLayout";
 import { Button } from "@/client/components/ui/button";
 import { getServerErrorMessage } from "@/client/errors";
 import { useSession } from "@/client/hooks/useSession";
@@ -164,21 +167,22 @@ function UsersPage() {
   });
 
   return (
-    <div className="space-y-6">
-      <SectionHeader
+    <SettingsTab>
+      <SettingsSection
         title="Users"
         // Email is off on every new install: a note, not an alarm.
         hint={
           emailConfigured ? undefined : (
             <>
-              Invitations and password resets are links you share.{" "}
+              Invitations and password resets are links you share until you{" "}
               <a
                 href="https://everyapp.com/docs/people#send-email"
                 target="_blank"
                 rel="noreferrer"
               >
-                Set up email
+                set up email
               </a>
+              .
             </>
           )
         }
@@ -188,50 +192,52 @@ function UsersPage() {
             Invite user
           </Button>
         }
-      />
-
-      <UsersTable
-        users={users}
-        isLoading={isLoading && users.length === 0}
-        error={
-          isError ? (
-            <ErrorState
-              message="Couldn't load users."
-              onRetry={() => void adminUsersCollection.utils.refetch()}
-            />
-          ) : undefined
-        }
-        emailConfigured={emailConfigured}
-        onSendPasswordResetEmail={(userId) =>
-          sendPasswordResetEmailMutation.mutate(userId)
-        }
-        onCreatePasswordResetLink={(userId) => resetLinkMutation.mutate(userId)}
-        onCopyInvitationLink={(invitationId) =>
-          invitationLinkMutation.mutate(invitationId)
-        }
-        onDelete={handleDeleteUser}
-        onCancelInvitation={(invitationId) =>
-          cancelInvitationMutation.mutate(invitationId)
-        }
-        onChangeRole={(userId, role) =>
-          changeRoleMutation.mutate({ userId, role })
-        }
-        onDeactivate={(userId) => deactivateMutation.mutate(userId)}
-        onReactivate={(userId) => reactivateMutation.mutate(userId)}
-        isPending={
-          sendPasswordResetEmailMutation.isPending ||
-          resetLinkMutation.isPending ||
-          invitationLinkMutation.isPending ||
-          cancelInvitationMutation.isPending ||
-          changeRoleMutation.isPending ||
-          deactivateMutation.isPending ||
-          reactivateMutation.isPending
-        }
-        canManageInvitations={canManageInvitations}
-        isOwner={isOwner}
-        ownerCount={ownerCount}
-        currentUserId={session?.user.id}
-      />
+      >
+        <UsersTable
+          users={users}
+          isLoading={isLoading && users.length === 0}
+          error={
+            isError ? (
+              <ErrorState
+                message="Couldn't load users."
+                onRetry={() => void adminUsersCollection.utils.refetch()}
+              />
+            ) : undefined
+          }
+          emailConfigured={emailConfigured}
+          onSendPasswordResetEmail={(userId) =>
+            sendPasswordResetEmailMutation.mutate(userId)
+          }
+          onCreatePasswordResetLink={(userId) =>
+            resetLinkMutation.mutate(userId)
+          }
+          onCopyInvitationLink={(invitationId) =>
+            invitationLinkMutation.mutate(invitationId)
+          }
+          onDelete={handleDeleteUser}
+          onCancelInvitation={(invitationId) =>
+            cancelInvitationMutation.mutate(invitationId)
+          }
+          onChangeRole={(userId, role) =>
+            changeRoleMutation.mutate({ userId, role })
+          }
+          onDeactivate={(userId) => deactivateMutation.mutate(userId)}
+          onReactivate={(userId) => reactivateMutation.mutate(userId)}
+          isPending={
+            sendPasswordResetEmailMutation.isPending ||
+            resetLinkMutation.isPending ||
+            invitationLinkMutation.isPending ||
+            cancelInvitationMutation.isPending ||
+            changeRoleMutation.isPending ||
+            deactivateMutation.isPending ||
+            reactivateMutation.isPending
+          }
+          canManageInvitations={canManageInvitations}
+          isOwner={isOwner}
+          ownerCount={ownerCount}
+          currentUserId={session?.user.id}
+        />
+      </SettingsSection>
 
       {showInviteModal ? (
         <InviteUserModal
@@ -248,6 +254,6 @@ function UsersPage() {
         link={revealedLink}
         onClose={() => setRevealedLink(null)}
       />
-    </div>
+    </SettingsTab>
   );
 }

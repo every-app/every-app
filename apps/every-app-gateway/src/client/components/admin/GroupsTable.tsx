@@ -1,7 +1,11 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
-import { DateCell, dateSortValue } from "@/client/components/table/DateCell";
+import {
+  DATE_CELL,
+  DateCell,
+  dateSortValue,
+} from "@/client/components/table/DateCell";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
 import type { AdminGroup } from "@/types/group";
 import { CountCell } from "./CountCell";
@@ -102,7 +106,7 @@ const columns: ColumnDef<AdminGroup>[] = [
     id: "createdAt",
     accessorFn: (group) => dateSortValue(group.createdAt, 0),
     header: ({ column }) => <SortableHeader column={column} label="Created" />,
-    meta: { label: "Created", cellClassName: "text-xs text-muted-foreground" },
+    meta: { label: "Created", cellClassName: DATE_CELL },
     cell: ({ row }) => <DateCell value={row.original.createdAt} />,
   },
   {

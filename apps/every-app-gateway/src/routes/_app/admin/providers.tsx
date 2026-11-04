@@ -8,11 +8,26 @@ import { AddOAuthProviderDialog } from "@/client/components/admin/AddOAuthProvid
 import { ReplaceOAuthClientDialog } from "@/client/components/admin/ReplaceOAuthClientDialog";
 import { CodeBlock } from "@/client/components/CodeBlock";
 import { ConfirmDialog } from "@/client/components/ConfirmDialog";
+import { EmptyState } from "@/client/components/EmptyState";
 import { ErrorState } from "@/client/components/ErrorState";
-import { SectionHeader } from "@/client/components/PageHeader";
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
+import {
+  SettingsList,
+  SettingsListSkeleton,
+  SettingsRow,
+  SettingsSection,
+  SettingsTab,
+} from "@/client/components/SettingsLayout";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
-import { DateCell, dateSortValue } from "@/client/components/table/DateCell";
+import {
+  DataTableSearch,
+  DataTableToolbar,
+} from "@/client/components/table/DataTableToolbar";
+import {
+  DATE_CELL,
+  DateCell,
+  dateSortValue,
+} from "@/client/components/table/DateCell";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
@@ -25,8 +40,6 @@ import {
   DialogTitle,
 } from "@/client/components/ui/dialog";
 import { DropdownMenuItem } from "@/client/components/ui/dropdown-menu";
-import { Input } from "@/client/components/ui/input";
-import { Skeleton } from "@/client/components/ui/skeleton";
 import { getRuleErrorMessage } from "@/client/errors";
 import { clientSourceLabel, scopesText } from "@/client/lib/oauthProviders";
 import { getAiDefault } from "@/serverFunctions/ai";
@@ -124,12 +137,10 @@ class ProviderBoundary extends Component<
 
 function BrokenProviderRow({ provider }: { provider: Provider }) {
   return (
-    <li className="px-4 py-3">
-      <p className="truncate text-sm font-medium">{provider.name}</p>
-      <p className="text-xs text-muted-foreground">
-        Couldn't show this provider. Reload the page to try again.
-      </p>
-    </li>
+    <SettingsRow
+      name={provider.name}
+      detail="Couldn't show this provider. Reload the page to try again."
+    />
   );
 }
 
@@ -140,9 +151,9 @@ function needLabel(provider: Provider): string {
 
 function ProviderStatus({ provider }: { provider: Provider }) {
   return provider.configured ? (
-    <Badge variant="success">Ready</Badge>
+    <span>Ready</span>
   ) : (
-    <span className="text-xs text-muted-foreground">Not set</span>
+    <span className="text-muted-foreground">Not set</span>
   );
 }
 
@@ -208,31 +219,6 @@ function providerDetail(
   return parts.join(" · ");
 }
 
-function ProviderRow({
-  provider,
-  detail,
-  status,
-  action,
-}: {
-  provider: Provider;
-  detail: string;
-  status: ReactNode;
-  action: ReactNode;
-}) {
-  return (
-    <li className="flex items-center justify-between gap-3 px-4 py-3">
-      <div className="min-w-0 space-y-0.5">
-        <p className="truncate text-sm font-medium">{provider.name}</p>
-        <p className="truncate text-xs text-muted-foreground">{detail}</p>
-      </div>
-      <div className="flex shrink-0 items-center gap-2 text-sm">
-        {status}
-        {action}
-      </div>
-    </li>
-  );
-}
-
 function ProviderGroup({
   title,
   count,
@@ -243,17 +229,17 @@ function ProviderGroup({
   children: ReactNode;
 }) {
   return (
-    <div className="space-y-2">
-      <h3 className="text-sm font-medium">
-        {title} <span className="text-muted-foreground">· {count}</span>
-      </h3>
-      <ul
-        className="divide-y divide-border rounded-lg border border-border"
-        aria-label={title}
-      >
-        {children}
-      </ul>
-    </div>
+    <SettingsSection
+      level={3}
+      title={
+        <>
+          {title}{" "}
+          <span className="font-normal text-muted-foreground">· {count}</span>
+        </>
+      }
+    >
+      <SettingsList label={title}>{children}</SettingsList>
+    </SettingsSection>
   );
 }
 
@@ -379,7 +365,7 @@ function providerColumns(
       id: "status",
       accessorFn: (provider) => (provider.configured ? 0 : 1),
       header: ({ column }) => <SortableHeader column={column} label="Status" />,
-      meta: { label: "Status" },
+      meta: { label: "Status", cellClassName: "whitespace-nowrap" },
       cell: ({ row: { original: provider } }) => (
         <ProviderStatus provider={provider} />
       ),
@@ -387,7 +373,7 @@ function providerColumns(
     {
       accessorKey: "source",
       header: ({ column }) => <SortableHeader column={column} label="Source" />,
-      meta: { label: "Source", cellClassName: "text-xs text-muted-foreground" },
+      meta: { label: "Source", cellClassName: "text-muted-foreground" },
       cell: ({ row: { original: provider } }) =>
         provider.source === "catalog" ? "Built in" : "Registered here",
     },
@@ -454,18 +440,19 @@ function connectionColumns({
       accessorFn: (connection) => connection.userEmail ?? connection.userId,
       header: ({ column }) => <SortableHeader column={column} label="Who" />,
       meta: { label: "Who", cellClassName: "max-w-[240px]" },
-      cell: ({ row: { original: connection } }) => (
-        <>
-          <p className="truncate font-medium">
-            {connection.userEmail ?? connection.userId}
-          </p>
-          {connection.label ? (
-            <p className="truncate text-xs text-muted-foreground">
-              {connection.label}
-            </p>
-          ) : null}
-        </>
-      ),
+      cell: ({ row: { original: connection } }) => {
+        const who = connection.userEmail ?? connection.userId;
+        return (
+          <>
+            <p className="truncate font-medium">{who}</p>
+            {connection.label && connection.label !== who ? (
+              <p className="truncate text-xs text-muted-foreground">
+                {connection.label}
+              </p>
+            ) : null}
+          </>
+        );
+      },
     },
     {
       accessorKey: "providerName",
@@ -496,7 +483,7 @@ function connectionColumns({
         connection.status === "expired" ? (
           <Badge variant="warning">Reconnect in the app</Badge>
         ) : (
-          <Badge variant="success">Connected</Badge>
+          <span className="text-muted-foreground">Connected</span>
         ),
     },
     {
@@ -505,10 +492,7 @@ function connectionColumns({
       header: ({ column }) => (
         <SortableHeader column={column} label="Last used" />
       ),
-      meta: {
-        label: "Last used",
-        cellClassName: "text-xs text-muted-foreground",
-      },
+      meta: { label: "Last used", cellClassName: DATE_CELL },
       cell: ({ row: { original: connection } }) => (
         <DateCell value={connection.lastUsedAt} />
       ),
@@ -684,18 +668,17 @@ function ProvidersPage() {
   };
 
   return (
-    <div className="space-y-8">
-      <section className="space-y-4">
-        <SectionHeader
-          title="Providers"
-          hint="Keys and OAuth clients the Gateway holds for your apps. Never shown back."
-          action={
-            <Button onClick={() => setAdding(true)}>
-              <Plus />
-              Add OAuth provider
-            </Button>
-          }
-        />
+    <SettingsTab>
+      <SettingsSection
+        title="Providers"
+        hint="Set up the outside services your apps use, like OpenAI or Google."
+        action={
+          <Button onClick={() => setAdding(true)}>
+            <Plus data-icon="inline-start" />
+            Add OAuth provider
+          </Button>
+        }
+      >
         {providersQuery.isError ? (
           <ErrorState
             message="Couldn't load the providers."
@@ -703,13 +686,9 @@ function ProvidersPage() {
             isRetrying={providersQuery.isFetching}
           />
         ) : !providersQuery.data ? (
-          <div className="space-y-2" aria-busy>
-            {Array.from({ length: 3 }, (_, index) => (
-              <Skeleton key={index} className="h-12 w-full" />
-            ))}
-          </div>
+          <SettingsListSkeleton rows={3} />
         ) : (
-          <>
+          <div className="space-y-6">
             {groups.setUp.length > 0 ? (
               <ProviderGroup title="Set up" count={groups.setUp.length}>
                 {groups.setUp.map((provider) => (
@@ -717,12 +696,12 @@ function ProvidersPage() {
                     key={provider.id}
                     fallback={<BrokenProviderRow provider={provider} />}
                   >
-                    <ProviderRow
-                      provider={provider}
+                    <SettingsRow
+                      name={provider.name}
                       detail={providerDetail(provider, { aiDefault })}
                       status={
                         provider.configured ? (
-                          <Badge variant="success">Ready</Badge>
+                          <ProviderStatus provider={provider} />
                         ) : (
                           <Badge variant="warning">{needLabel(provider)}</Badge>
                         )
@@ -735,10 +714,11 @@ function ProvidersPage() {
                 ))}
               </ProviderGroup>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                Nothing is set up yet. Set a key from the terminal, or add an
-                OAuth provider.
-              </p>
+              <EmptyState
+                size="sm"
+                title="Nothing is set up yet"
+                description="Set a key from the terminal, or add an OAuth provider."
+              />
             )}
 
             {groups.needed.length > 0 ? (
@@ -751,8 +731,8 @@ function ProvidersPage() {
                     key={provider.id}
                     fallback={<BrokenProviderRow provider={provider} />}
                   >
-                    <ProviderRow
-                      provider={provider}
+                    <SettingsRow
+                      name={provider.name}
                       detail={providerDetail(provider, {
                         aiDefault,
                         needing: true,
@@ -780,24 +760,7 @@ function ProvidersPage() {
             ) : null}
 
             {showAll ? (
-              <div
-                className="space-y-3"
-                role="region"
-                aria-label="All providers"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <Input
-                    type="search"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search providers"
-                    aria-label="Search providers"
-                    className="max-w-xs"
-                  />
-                  <Button variant="ghost" onClick={() => setShowAll(false)}>
-                    Hide
-                  </Button>
-                </div>
+              <div role="region" aria-label="All providers">
                 <ProviderBoundary
                   fallback={
                     <p className="text-sm text-muted-foreground">
@@ -808,6 +771,25 @@ function ProvidersPage() {
                   <DataTable
                     table={providersTable}
                     isLoading={false}
+                    toolbar={
+                      <DataTableToolbar
+                        actions={
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setShowAll(false)}
+                          >
+                            Hide
+                          </Button>
+                        }
+                      >
+                        <DataTableSearch
+                          label="Search providers"
+                          value={search}
+                          onChange={setSearch}
+                        />
+                      </DataTableToolbar>
+                    }
                     empty={{
                       title: "No providers match",
                       description: "Try another name or id.",
@@ -816,7 +798,7 @@ function ProvidersPage() {
                 </ProviderBoundary>
               </div>
             ) : (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border px-4 py-3">
+              <div className="flex min-h-13 flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-border px-4 py-2">
                 <p className="text-sm text-muted-foreground">
                   {groups.rest.length} more built in
                   {groups.rest.length > 0
@@ -832,15 +814,14 @@ function ProvidersPage() {
                 </Button>
               </div>
             )}
-          </>
+          </div>
         )}
-      </section>
+      </SettingsSection>
 
-      <section className="space-y-4">
-        <SectionHeader
-          title="Connections"
-          hint="Every account connected in this workspace, each one person's in one app. Disconnecting removes the tokens here and, where the provider allows, revokes them."
-        />
+      <SettingsSection
+        title="Connections"
+        hint="Personal accounts, like Gmail, that people have connected inside an app."
+      >
         <DataTable
           table={connectionsTable}
           isLoading={connectionsQuery.isLoading}
@@ -858,7 +839,7 @@ function ProvidersPage() {
             description: "People connect accounts inside each app.",
           }}
         />
-      </section>
+      </SettingsSection>
 
       {adding ? (
         <AddOAuthProviderDialog
@@ -951,6 +932,6 @@ function ProvidersPage() {
           connect it again there.
         </ConfirmDialog>
       ) : null}
-    </div>
+    </SettingsTab>
   );
 }

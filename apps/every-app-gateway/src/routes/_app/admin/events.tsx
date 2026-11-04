@@ -16,15 +16,14 @@ import { EventSecretRevealDialog } from "@/client/components/admin/EventSecretRe
 import { EventSubscriptionsTable } from "@/client/components/admin/EventSubscriptionsTable";
 import { ConfirmDialog } from "@/client/components/ConfirmDialog";
 import { ErrorState } from "@/client/components/ErrorState";
-import { SectionHeader } from "@/client/components/PageHeader";
+import {
+  SettingsSection,
+  SettingsTab,
+} from "@/client/components/SettingsLayout";
 import { Button } from "@/client/components/ui/button";
 import { getServerErrorMessage } from "@/client/errors";
 import { useActiveOrganization } from "@/client/hooks/useActiveOrganization";
-import {
-  EVENTS_DOCS_URL,
-  deliveryState,
-  describeDeliveryError,
-} from "@/client/lib/events";
+import { deliveryState, describeDeliveryError } from "@/client/lib/events";
 import {
   createEventSubscription,
   deleteEventSubscription,
@@ -198,58 +197,49 @@ function EventsPage() {
   );
 
   return (
-    <div className="space-y-6">
-      {/* The buttons go under the heading on a phone, so neither squeezes
-          the other. */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <SectionHeader
-          title="Events"
-          hint={
+    <SettingsTab>
+      <SettingsSection
+        title="Events"
+        hint="Send a webhook or email when something happens in this workspace."
+        action={
+          subscriptions.length > 0 ? (
             <>
-              Signed webhooks and emails for what happens in this workspace.{" "}
-              <a href={EVENTS_DOCS_URL} target="_blank" rel="noreferrer">
-                How it works
-              </a>
+              <Button
+                variant="outline"
+                onClick={() => setDeliveries({ subscription: null })}
+              >
+                <List data-icon="inline-start" />
+                Deliveries
+              </Button>
+              {addAction}
             </>
-          }
-        />
-        {subscriptions.length > 0 ? (
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setDeliveries({ subscription: null })}
-            >
-              <List data-icon="inline-start" />
-              Deliveries
-            </Button>
-            {addAction}
-          </div>
-        ) : null}
-      </div>
-
-      <EventSubscriptionsTable
-        subscriptions={subscriptions}
-        isLoading={subscriptionsQuery.isLoading}
-        error={
-          subscriptionsQuery.isError ? (
-            <ErrorState
-              message="Couldn't load the event subscriptions."
-              onRetry={() => void subscriptionsQuery.refetch()}
-              isRetrying={subscriptionsQuery.isFetching}
-            />
           ) : null
         }
-        addAction={addAction}
-        togglingId={togglingId}
-        testingId={test.isPending ? (test.variables?.id ?? null) : null}
-        onToggle={(subscription, enabled) =>
-          toggle.mutate({ subscription, enabled })
-        }
-        onTest={(subscription) => test.mutate(subscription)}
-        onDeliveries={(subscription) => setDeliveries({ subscription })}
-        onEdit={setEditing}
-        onRemove={setRemoving}
-      />
+      >
+        <EventSubscriptionsTable
+          subscriptions={subscriptions}
+          isLoading={subscriptionsQuery.isLoading}
+          error={
+            subscriptionsQuery.isError ? (
+              <ErrorState
+                message="Couldn't load the event subscriptions."
+                onRetry={() => void subscriptionsQuery.refetch()}
+                isRetrying={subscriptionsQuery.isFetching}
+              />
+            ) : null
+          }
+          addAction={addAction}
+          togglingId={togglingId}
+          testingId={test.isPending ? (test.variables?.id ?? null) : null}
+          onToggle={(subscription, enabled) =>
+            toggle.mutate({ subscription, enabled })
+          }
+          onTest={(subscription) => test.mutate(subscription)}
+          onDeliveries={(subscription) => setDeliveries({ subscription })}
+          onEdit={setEditing}
+          onRemove={setRemoving}
+        />
+      </SettingsSection>
 
       {adding ? (
         <AddEventSubscriptionDialog
@@ -300,6 +290,6 @@ function EventsPage() {
           onClose={() => setDeliveries(null)}
         />
       ) : null}
-    </div>
+    </SettingsTab>
   );
 }

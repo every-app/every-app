@@ -18,7 +18,11 @@ import {
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
 import { domainCoversRedirect } from "@/client/components/oauth/clientSite";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
-import { DateCell, dateSortValue } from "@/client/components/table/DateCell";
+import {
+  DATE_CELL,
+  DateCell,
+  dateSortValue,
+} from "@/client/components/table/DateCell";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
 import { Badge } from "@/client/components/ui/badge";
 import { DropdownMenuItem } from "@/client/components/ui/dropdown-menu";
@@ -81,7 +85,7 @@ function createdAtColumn(label: string): ColumnDef<Connection> {
   return {
     accessorKey: "createdAt",
     header: ({ column }) => <SortableHeader column={column} label={label} />,
-    meta: { label, cellClassName: "text-xs text-muted-foreground" },
+    meta: { label, cellClassName: DATE_CELL },
     cell: ({ row: { original: connection } }) => (
       <DateCell value={connection.createdAt} />
     ),
@@ -93,10 +97,7 @@ const lastUsedColumn: ColumnDef<Connection> = {
   // Never used sorts as the oldest.
   accessorFn: (connection) => dateSortValue(connection.lastUsedAt, 0),
   header: ({ column }) => <SortableHeader column={column} label="Last used" />,
-  meta: {
-    label: "Last used",
-    cellClassName: "text-xs text-muted-foreground",
-  },
+  meta: { label: "Last used", cellClassName: DATE_CELL },
   cell: ({ row: { original: connection } }) => (
     <DateCell value={connection.lastUsedAt} />
   ),
@@ -316,7 +317,7 @@ function ConnectionsPage() {
         <section aria-label="Apps on your devices" className="space-y-3">
           <SectionHeader
             title="Apps on your devices"
-            hint="Desktop and phone apps you signed in to one app with, and everyapp dev linked to an app from your computer. Each can do there what you can."
+            hint="Desktop and phone apps you've signed in to, and local projects linked with everyapp dev."
           />
           <DataTable
             table={devicesTable}

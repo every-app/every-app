@@ -73,11 +73,11 @@ function useSubscriptionActions() {
 /** How many event chips a row shows before "+N more". */
 const CHIPS_SHOWN = 3;
 
+/** The usual state is plain text; only an exception is a chip. */
 const STATUS_BADGES: Record<
-  EventLastDeliveryStatus,
-  { label: string; variant: "success" | "warning" | "destructive" }
+  Exclude<EventLastDeliveryStatus, "delivered">,
+  { label: string; variant: "warning" | "destructive" }
 > = {
-  delivered: { label: "Delivered", variant: "success" },
   failed: { label: "Failed", variant: "warning" },
   dead: { label: "Dead", variant: "destructive" },
 };
@@ -143,30 +143,35 @@ function LastDeliveryCell({
   if (!subscription.lastDeliveryAt || !status) {
     return <span className="text-muted-foreground">Nothing sent yet</span>;
   }
-  const badge = STATUS_BADGES[status];
   return (
     <span className="flex flex-col items-end gap-0.5 md:items-start">
       <span className="flex items-center gap-2">
-        <Badge variant={badge.variant}>{badge.label}</Badge>
-        <span className="text-xs text-muted-foreground">
-          <DateCell value={subscription.lastDeliveryAt} withTime />
-        </span>
+        {status === "delivered" ? (
+          <span className="text-muted-foreground">Delivered</span>
+        ) : (
+          <Badge variant={STATUS_BADGES[status].variant}>
+            {STATUS_BADGES[status].label}
+          </Badge>
+        )}
+        {subscription.consecutiveFailures > 0 ? (
+          // How many attempts in a row failed, in the warning colour; the
+          // count opens the deliveries, where each one says why.
+          <span className="flex items-center gap-1 text-xs whitespace-nowrap text-warning-foreground dark:text-warning">
+            <TriangleAlert className="size-3 shrink-0" aria-hidden />
+            <CountCell
+              count={subscription.consecutiveFailures}
+              noun="failure"
+              aria-label={`Show the deliveries of ${subscription.name}`}
+              onClick={() => onDeliveries(subscription)}
+              className="text-xs text-inherit hover:text-inherit"
+            />
+            <span>in a row</span>
+          </span>
+        ) : null}
       </span>
-      {subscription.consecutiveFailures > 0 ? (
-        // How many attempts in a row failed, in the warning colour; the
-        // count opens the deliveries, where each one says why.
-        <span className="flex items-center gap-1 text-xs text-warning-foreground dark:text-warning">
-          <TriangleAlert className="size-3 shrink-0" aria-hidden />
-          <CountCell
-            count={subscription.consecutiveFailures}
-            noun="failure"
-            aria-label={`Show the deliveries of ${subscription.name}`}
-            onClick={() => onDeliveries(subscription)}
-            className="text-xs text-inherit hover:text-inherit"
-          />
-          <span>in a row</span>
-        </span>
-      ) : null}
+      <span className="text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+        <DateCell value={subscription.lastDeliveryAt} withTime />
+      </span>
     </span>
   );
 }
@@ -174,12 +179,15 @@ function LastDeliveryCell({
 function EnabledCell({ subscription }: { subscription: EventSubscription }) {
   const { onToggle, togglingId } = useSubscriptionActions();
   return (
-    <Switch
-      checked={subscription.enabled}
-      disabled={togglingId === subscription.id}
-      aria-label={`Send events to ${subscription.name}`}
-      onCheckedChange={(checked) => onToggle(subscription, checked)}
-    />
+    // A flex box, so the switch centers on the row instead of its text baseline.
+    <div className="flex">
+      <Switch
+        checked={subscription.enabled}
+        disabled={togglingId === subscription.id}
+        aria-label={`Send events to ${subscription.name}`}
+        onCheckedChange={(checked) => onToggle(subscription, checked)}
+      />
+    </div>
   );
 }
 
@@ -231,7 +239,7 @@ const columns: ColumnDef<EventSubscription>[] = [
   {
     id: "target",
     header: "Target",
-    meta: { cellClassName: "max-w-[280px]" },
+    meta: { cellClassName: "max-w-[240px]" },
     cell: ({ row }) => <TargetCell subscription={row.original} />,
   },
   {

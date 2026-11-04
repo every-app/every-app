@@ -29,6 +29,8 @@ interface UsageTableProps<TRow> {
 }
 
 const NUMERIC = "text-right tabular-nums";
+/** One width for every number column, so the tables on the page keep one rhythm. */
+const NUMERIC_HEAD = `w-28 ${NUMERIC}`;
 
 function Count({ value }: { value: number }) {
   return (
@@ -61,7 +63,7 @@ function providerColumns<TRow extends UsageTotals>(): ColumnDef<TRow>[] {
       ),
       meta: {
         label: "Provider calls",
-        headerClassName: NUMERIC,
+        headerClassName: NUMERIC_HEAD,
         cellClassName: NUMERIC,
       },
       cell: ({ row }) => <Count value={row.original.calls} />,
@@ -73,7 +75,7 @@ function providerColumns<TRow extends UsageTotals>(): ColumnDef<TRow>[] {
       ),
       meta: {
         label: "Failures",
-        headerClassName: NUMERIC,
+        headerClassName: NUMERIC_HEAD,
         cellClassName: NUMERIC,
       },
       cell: ({ row }) => <Failures value={row.original.failures} />,
@@ -85,7 +87,7 @@ function providerColumns<TRow extends UsageTotals>(): ColumnDef<TRow>[] {
       ),
       meta: {
         label: "Tokens in",
-        headerClassName: NUMERIC,
+        headerClassName: NUMERIC_HEAD,
         cellClassName: NUMERIC,
       },
       cell: ({ row }) => <Count value={row.original.inputTokens} />,
@@ -97,7 +99,7 @@ function providerColumns<TRow extends UsageTotals>(): ColumnDef<TRow>[] {
       ),
       meta: {
         label: "Tokens out",
-        headerClassName: NUMERIC,
+        headerClassName: NUMERIC_HEAD,
         cellClassName: NUMERIC,
       },
       cell: ({ row }) => <Count value={row.original.outputTokens} />,
@@ -105,11 +107,15 @@ function providerColumns<TRow extends UsageTotals>(): ColumnDef<TRow>[] {
     {
       accessorKey: "costMicros",
       header: ({ column }) => (
-        <SortableHeader column={column} label="Provider cost" />
+        <SortableHeader
+          column={column}
+          label="Provider cost"
+          helpText="Shown only when the provider reports its cost."
+        />
       ),
       meta: {
         label: "Provider cost",
-        headerClassName: NUMERIC,
+        headerClassName: NUMERIC_HEAD,
         cellClassName: NUMERIC,
       },
       cell: ({ row }) => <Cost micros={row.original.costMicros} />,
@@ -127,7 +133,7 @@ function toolCallsColumn<
     ),
     meta: {
       label: "Agent tool calls",
-      headerClassName: NUMERIC,
+      headerClassName: NUMERIC_HEAD,
       cellClassName: NUMERIC,
     },
     cell: ({ row }) => <Count value={row.original.toolCalls} />,
@@ -169,8 +175,8 @@ function MonthlyCapCell({
   const button = (label: string, verb = label) => (
     <Button
       variant="ghost"
-      size="xs"
-      className="-mr-2"
+      size="sm"
+      className="-mr-2.5"
       aria-label={`${verb} monthly cap for ${row.name ?? row.appRowId}`}
       onClick={() => onSetCap(row)}
     >
@@ -370,9 +376,7 @@ const targetColumns: ColumnDef<UsageTargetRow>[] = [
         <>
           <div className="flex items-center gap-2">
             <span className="font-medium">{label}</span>
-            <Badge variant={kind === "ai" ? "info" : "secondary"}>
-              {KIND_LABELS[kind] ?? kind}
-            </Badge>
+            <Badge variant="secondary">{KIND_LABELS[kind] ?? kind}</Badge>
           </div>
           {label !== target ? (
             <p className="truncate text-xs text-muted-foreground">{target}</p>

@@ -9,8 +9,14 @@ import { auditActorLabel } from "@every-app/sdk/internal";
 import { toast } from "sonner";
 import { z } from "zod";
 import { ErrorState } from "@/client/components/ErrorState";
-import { SectionHeader } from "@/client/components/PageHeader";
-import { SegmentedToggle } from "@/client/components/SegmentedToggle";
+import {
+  SegmentedToggle,
+  SegmentedToggleSize,
+} from "@/client/components/SegmentedToggle";
+import {
+  SettingsSection,
+  SettingsTab,
+} from "@/client/components/SettingsLayout";
 import { AuditTable } from "@/client/components/admin/AuditTable";
 import { ToolCallsTable } from "@/client/components/admin/ToolCallsTable";
 import { DataTableToolbar } from "@/client/components/table/DataTableToolbar";
@@ -96,7 +102,11 @@ function FilterSelect<T extends string>({
         if (picked) onChange(picked.value);
       }}
     >
-      <SelectTrigger size="sm" aria-label={label}>
+      <SelectTrigger
+        size="sm"
+        className="border-border bg-card data-[size=sm]:h-8 data-[size=sm]:rounded-lg"
+        aria-label={label}
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -134,29 +144,26 @@ function ActivityPage() {
     });
 
   return (
-    <div className="space-y-6">
-      <SectionHeader
+    <SettingsTab>
+      <SettingsSection
         title={view === "audit" ? "Audit log" : "Agent activity"}
-        hint={
-          view === "audit"
-            ? "What happened in the workspace and who did it, kept 90 days. Never an event's data."
-            : "Arguments and results are never stored."
-        }
         action={
           <SegmentedToggle
+            size={SegmentedToggleSize.Toolbar}
             items={VIEW_ITEMS}
             value={view}
             onChange={setView}
             showLabels
           />
         }
-      />
-      {view === "audit" ? (
-        <AuditView range={range} setRange={setRange} />
-      ) : (
-        <ToolCallsView range={range} setRange={setRange} />
-      )}
-    </div>
+      >
+        {view === "audit" ? (
+          <AuditView range={range} setRange={setRange} />
+        ) : (
+          <ToolCallsView range={range} setRange={setRange} />
+        )}
+      </SettingsSection>
+    </SettingsTab>
   );
 }
 
@@ -168,6 +175,7 @@ interface ViewProps {
 function RangeToggle({ range, setRange }: ViewProps): ReactNode {
   return (
     <SegmentedToggle
+      size={SegmentedToggleSize.Filter}
       items={ACTIVITY_RANGE_ITEMS}
       value={range}
       onChange={setRange}

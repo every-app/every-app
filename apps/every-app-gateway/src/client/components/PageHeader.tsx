@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { cn } from "cn";
 
 /**
  * The frame of every page in the app shell: the same inset on every page,
@@ -25,7 +26,7 @@ export function PageHeader({
   actions,
 }: {
   title: ReactNode;
-  /** A subtitle, or metadata such as a `<dl>`. */
+  /** One plain sentence on what this does, only for what's specific to the Gateway. */
   description?: ReactNode;
   actions?: ReactNode;
 }) {
@@ -48,28 +49,52 @@ export function PageHeader({
   );
 }
 
-/** The heading of one section on a page, with an optional hint and action. */
+/**
+ * The heading of one section on a page, with an optional hint and action.
+ * At `level` 2 the row is a title and hint's height (44px) with or without a
+ * hint, so what follows starts at the same place from one page to the next.
+ * The actions go under the heading on a phone, so neither squeezes the other.
+ */
 export function SectionHeader({
   title,
   hint,
   action,
+  level = 2,
 }: {
-  title: string;
-  /** One line under the title; a link in it is underlined. */
+  title: ReactNode;
+  /** One plain sentence on what this does, only for what's specific to the Gateway; a link in it is underlined. */
   hint?: ReactNode;
   action?: ReactNode;
+  /** 2 for a section of the page, 3 for a group inside one. */
+  level?: 2 | 3;
 }) {
+  const Heading = level === 2 ? "h2" : "h3";
   return (
-    <div className="flex items-start justify-between gap-3">
-      <div className="space-y-0.5">
-        <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
+    <div
+      className={cn(
+        "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between",
+        level === 2 && "sm:min-h-11",
+      )}
+    >
+      <div className="max-w-3xl min-w-0">
+        <Heading
+          className={
+            level === 2 ? "text-base font-semibold" : "text-sm font-medium"
+          }
+        >
+          {title}
+        </Heading>
         {hint ? (
-          <p className="text-xs text-muted-foreground [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground">
+          <p className="text-sm text-muted-foreground [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground">
             {hint}
           </p>
         ) : null}
       </div>
-      {action}
+      {action ? (
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {action}
+        </div>
+      ) : null}
     </div>
   );
 }

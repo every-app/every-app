@@ -1,5 +1,7 @@
 // The date cell every table uses: a day, with the full timestamp on hover.
-// Give its column `cellClassName: "text-xs text-muted-foreground"`.
+
+/** The class of a date column, for its `cellClassName`. */
+export const DATE_CELL = "whitespace-nowrap text-muted-foreground tabular-nums";
 
 /**
  * A day, or `fallback` for a missing date such as "never used". `withTime`
@@ -20,12 +22,10 @@ export function DateCell({
   const date = new Date(value);
   return (
     <time dateTime={date.toISOString()} title={date.toLocaleString()}>
-      {withTime
-        ? date.toLocaleString(undefined, {
-            dateStyle: "medium",
-            timeStyle: "short",
-          })
-        : date.toLocaleDateString()}
+      {date.toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: withTime ? "short" : undefined,
+      })}
     </time>
   );
 }

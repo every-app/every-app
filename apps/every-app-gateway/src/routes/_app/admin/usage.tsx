@@ -6,7 +6,11 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { EmptyState } from "@/client/components/EmptyState";
 import { ErrorState } from "@/client/components/ErrorState";
-import { SectionHeader } from "@/client/components/PageHeader";
+import {
+  SettingsSection,
+  SettingsSummary,
+  SettingsTab,
+} from "@/client/components/SettingsLayout";
 import {
   UsageByAppTable,
   UsageByMemberTable,
@@ -89,11 +93,12 @@ function UsagePage() {
   ) : null;
 
   return (
-    <div className="space-y-6">
-      <SectionHeader
+    <SettingsTab>
+      <SettingsSection
         title="Usage"
+        hint="How much your apps use AI and other paid services, and what it costs."
         action={
-          <div className="flex items-center gap-2">
+          <>
             <Select
               items={months}
               value={month}
@@ -101,7 +106,10 @@ function UsagePage() {
                 if (value !== null) setMonth(value);
               }}
             >
-              <SelectTrigger aria-label="Month" className="min-w-44">
+              <SelectTrigger
+                aria-label="Month"
+                className="min-w-44 border-border bg-card"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -123,22 +131,46 @@ function UsagePage() {
                 <RefreshCw />
               )}
             </Button>
-          </div>
+          </>
         }
-      />
-
-      {aiDefaultQuery.isError ? (
-        <ErrorState
-          message="Couldn't load the AI default."
-          onRetry={() => void aiDefaultQuery.refetch()}
-          isRetrying={aiDefaultQuery.isFetching}
-        />
-      ) : (
-        <AiDefaultCard
-          report={aiDefaultQuery.data}
-          onChange={() => setEditingAiDefault(true)}
-        />
-      )}
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          {aiDefaultQuery.isError ? (
+            <ErrorState
+              message="Couldn't load the AI default."
+              onRetry={() => void aiDefaultQuery.refetch()}
+              isRetrying={aiDefaultQuery.isFetching}
+            />
+          ) : (
+            <AiDefaultCard
+              report={aiDefaultQuery.data}
+              onChange={() => setEditingAiDefault(true)}
+            />
+          )}
+          {summary && !isEmpty && !usageQuery.isError ? (
+            <SettingsSummary
+              label="Default monthly cap"
+              value={
+                defaultCostCap !== null ? (
+                  formatCostCap(defaultCostCap)
+                ) : (
+                  <span className="text-muted-foreground">Unlimited</span>
+                )
+              }
+              action={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label={`${hasDefault ? "Edit" : "Set"} the default monthly cap`}
+                  onClick={() => setEditingDefault(true)}
+                >
+                  {hasDefault ? "Edit" : "Set default"}
+                </Button>
+              }
+            />
+          ) : null}
+        </div>
+      </SettingsSection>
 
       {usageQuery.isError ? (
         error
@@ -149,37 +181,7 @@ function UsagePage() {
         />
       ) : (
         <>
-          {summary ? (
-            <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 rounded-lg border border-border px-4 py-3 text-sm">
-              <div>
-                <p className="font-medium">Default monthly cap</p>
-                <p className="text-xs text-muted-foreground">
-                  Every app without its own cap
-                </p>
-              </div>
-              <div className="flex items-center gap-2 tabular-nums">
-                {defaultCostCap !== null ? (
-                  <span>{formatCostCap(defaultCostCap)}</span>
-                ) : (
-                  <span className="text-muted-foreground">Unlimited</span>
-                )}
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  className="-mr-2"
-                  aria-label={`${hasDefault ? "Edit" : "Set"} the default monthly cap`}
-                  onClick={() => setEditingDefault(true)}
-                >
-                  {hasDefault ? "Edit" : "Set default"}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-          <section className="space-y-3">
-            <SectionHeader
-              title="By app"
-              hint="Calls the Gateway makes for apps: AI providers and capabilities such as DataForSEO, counted together. Cost only where the provider reports it."
-            />
+          <SettingsSection level={3} title="By app">
             <UsageByAppTable
               rows={summary?.byApp ?? []}
               isLoading={usageQuery.isLoading}
@@ -187,28 +189,25 @@ function UsagePage() {
               hasDefault={hasDefault}
               onSetCap={onSetCap}
             />
-          </section>
+          </SettingsSection>
           {nothingCounted ? null : (
             <>
-              <section className="space-y-3">
-                <SectionHeader title="By member" />
+              <SettingsSection level={3} title="By member">
                 <UsageByMemberTable
                   rows={summary?.byMember ?? []}
                   isLoading={usageQuery.isLoading}
                 />
-              </section>
-              <section className="space-y-3">
-                <SectionHeader title="By provider" />
+              </SettingsSection>
+              <SettingsSection level={3} title="By provider">
                 <UsageByTargetTable
                   rows={summary?.byTarget ?? []}
                   isLoading={usageQuery.isLoading}
                 />
-              </section>
+              </SettingsSection>
               {summary && summary.byModel.length > 0 ? (
-                <section className="space-y-3">
-                  <SectionHeader title="By model" />
+                <SettingsSection level={3} title="By model">
                   <UsageByModelTable rows={summary.byModel} isLoading={false} />
-                </section>
+                </SettingsSection>
               ) : null}
             </>
           )}
@@ -237,6 +236,6 @@ function UsagePage() {
           onSaved={onSaved}
         />
       ) : null}
-    </div>
+    </SettingsTab>
   );
 }

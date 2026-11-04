@@ -113,8 +113,8 @@ function AdminLayout() {
   const { data: session, isPending } = useSession();
   const { data: activeMemberRole, isPending: isRolePending } =
     authClient.useActiveMemberRole();
-  // The workspace's name for the heading; the same query the sidebar's
-  // switcher reads, so a rename updates both at once.
+  // The workspace's name for Rename; the same query the sidebar's switcher
+  // reads, so a rename shows there at once.
   const { data: activeOrganization } = useActiveOrganization({
     enabled: Boolean(session?.user),
   });
@@ -154,7 +154,6 @@ function AdminLayout() {
     <Page>
       <PageHeader
         title="Manage workspace"
-        description={activeOrganization?.name}
         actions={
           activeOrganization ? (
             <Button variant="outline" onClick={() => setRenaming(true)}>
@@ -170,9 +169,9 @@ function AdminLayout() {
           onClose={() => setRenaming(false)}
           onSubmit={async (name) => {
             const renamed = await renameOrganization({ data: { name } });
-            // The heading and the sidebar's switcher read the gateway's
-            // query: seed it with the name the server wrote, so both show
-            // it the instant the dialog closes, then refetch to be sure.
+            // The sidebar's switcher reads the gateway's query: seed it with
+            // the name the server wrote, so it shows the instant the dialog
+            // closes, then refetch to be sure.
             // The switcher's menu lists Better Auth's organizations,
             // refetched by notifying its $listOrg signal (what its own
             // /organization/update would do, were it open).
@@ -197,18 +196,20 @@ function AdminLayout() {
         }}
         className="gap-6"
       >
-        {/* The tabs scroll sideways on a phone instead of being cut off. */}
-        <div className="scrollbar-hidden overflow-x-auto border-b border-border pb-1">
+        {/* The tabs scroll sideways on a phone instead of being cut off. The
+            line is an inset shadow, so the active tab's bar sits on it, and
+            the first tab starts on the page's left edge. */}
+        <div className="scrollbar-hidden overflow-x-auto shadow-[inset_0_-1px_0_var(--border)]">
           <TabsList
             variant="line"
-            className="h-10 gap-5"
+            className="gap-6 p-0 group-data-horizontal/tabs:h-10"
             aria-label="Manage workspace"
           >
             {adminTabs.map(({ value, label, icon: Icon }) => (
               <TabsTrigger
                 key={value}
                 value={value}
-                className="gap-2 px-1 pb-2"
+                className="h-full gap-2 rounded-none border-0 px-0 group-data-horizontal/tabs:after:bottom-0"
               >
                 <Icon className="size-4" aria-hidden />
                 {label}

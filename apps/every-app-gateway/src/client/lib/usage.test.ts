@@ -14,10 +14,10 @@ describe("usage formatting", () => {
     expect(formatCount(12_345_678)).toBe("12,345,678");
   });
 
-  it("shows cost with four decimals under a dollar, two from there", () => {
+  it("shows cost with four decimals under a cent, two from there", () => {
     expect(formatCostMicros(0)).toBe("$0.00");
     expect(formatCostMicros(2_500)).toBe("$0.0025");
-    expect(formatCostMicros(999_940)).toBe("$0.9999");
+    expect(formatCostMicros(110_000)).toBe("$0.11");
     expect(formatCostMicros(1_000_000)).toBe("$1.00");
     expect(formatCostMicros(12_345_678)).toBe("$12.35");
   });

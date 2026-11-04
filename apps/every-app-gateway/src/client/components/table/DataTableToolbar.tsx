@@ -39,7 +39,7 @@ export function DataTableSearch({
   onChange: (value: string) => void;
 }) {
   return (
-    <InputGroup className="h-8 w-full sm:w-64">
+    <InputGroup className="h-8 w-full border-border bg-card sm:w-64">
       <InputGroupAddon>
         <Search />
       </InputGroupAddon>

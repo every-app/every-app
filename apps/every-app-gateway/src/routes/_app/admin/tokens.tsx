@@ -8,7 +8,10 @@ import { adminAppsCollection } from "@/client/tanstack-db";
 import { queryClient } from "@/client/tanstack-db";
 import { ConfirmDialog } from "@/client/components/ConfirmDialog";
 import { ErrorState } from "@/client/components/ErrorState";
-import { SectionHeader } from "@/client/components/PageHeader";
+import {
+  SettingsSection,
+  SettingsTab,
+} from "@/client/components/SettingsLayout";
 import { Button } from "@/client/components/ui/button";
 import { UserTokensTable } from "@/client/components/admin/UserTokensTable";
 import { CreateUserTokenModal } from "@/client/components/admin/CreateUserTokenModal";
@@ -77,22 +80,21 @@ function TokensPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <section className="space-y-3">
-        {/* TODO: move to a member-accessible settings page (admin layout is owner/admin-gated) */}
-        <SectionHeader
-          title="Personal access tokens"
-          hint="For scripts and tools that can't sign in on their own."
-          action={
-            <Button
-              onClick={() => setShowCreateUserTokenModal(true)}
-              disabled={isAppsLoading}
-            >
-              <Plus data-icon="inline-start" />
-              New token
-            </Button>
-          }
-        />
+    <SettingsTab>
+      {/* TODO: move to a member-accessible settings page (admin layout is owner/admin-gated) */}
+      <SettingsSection
+        title="Personal access tokens"
+        hint="Let scripts and other tools access your apps on your behalf."
+        action={
+          <Button
+            onClick={() => setShowCreateUserTokenModal(true)}
+            disabled={isAppsLoading}
+          >
+            <Plus data-icon="inline-start" />
+            New token
+          </Button>
+        }
+      >
         <UserTokensTable
           tokens={userTokensQuery.data?.tokens ?? []}
           isLoading={userTokensQuery.isLoading}
@@ -108,7 +110,7 @@ function TokensPage() {
           onRevoke={setRevokingUserToken}
           isRevoking={revokeUserTokenMutation.isPending}
         />
-      </section>
+      </SettingsSection>
 
       {showCreateUserTokenModal ? (
         <CreateUserTokenModal
@@ -142,6 +144,6 @@ function TokensPage() {
           Anything using it loses access on its next request.
         </ConfirmDialog>
       ) : null}
-    </div>
+    </SettingsTab>
   );
 }

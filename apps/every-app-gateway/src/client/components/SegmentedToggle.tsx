@@ -5,9 +5,13 @@ import {
   ToggleGroupItem,
 } from "@/client/components/ui/toggle-group";
 
-/** `Compact` sits in a menu; `Toolbar` matches the other 40px controls on a row. */
+/**
+ * `Compact` sits in a menu; `Filter` matches the other 32px controls in a
+ * table's toolbar; `Toolbar` matches the other 40px controls on a row.
+ */
 export enum SegmentedToggleSize {
   Compact = "compact",
+  Filter = "filter",
   Toolbar = "toolbar",
 }
 
@@ -15,6 +19,7 @@ export enum SegmentedToggleSize {
 // height less 6px.
 const ITEM_SIZE_CLASS: Record<SegmentedToggleSize, string> = {
   [SegmentedToggleSize.Compact]: "h-[22px]",
+  [SegmentedToggleSize.Filter]: "h-[26px] px-2",
   [SegmentedToggleSize.Toolbar]: "h-[34px] min-w-[34px] px-2",
 };
 
