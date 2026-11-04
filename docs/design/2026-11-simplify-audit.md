@@ -42,11 +42,17 @@ Where the audit below leans differently, these rulings win.
 | #958 | Agent docs about a quarter the size, generated reference |
 | #959 | Access: one fixed recipe, membership asked of the Gateway |
 
-All thirteen merged on 2026-11-03. The open questions and the everyapp.team rollout steps are in TODO.md, under "Simplify batch".
+All thirteen merged on 2026-11-03, then two more: #972 (schema probes the version check made dead) and #974 (below). The open questions and the everyapp.team rollout steps are in TODO.md, under "Simplify batch".
 
 **Events.** The design is [#953](2026-11-events.md), and it replaces I9 below. Nothing gets built until Ben approves it.
 
-### Queued: OAuth providers in one shape
+### OAuth providers in one shape (built: #974)
+
+Items 1–3 merged as #974 on 2026-11-03. Two additions from its review:
+- A hosted Gateway refuses a preset its operator hasn't registered (`PROVIDER_HOSTED`). A tenant's deploy never writes a Gateway-wide row.
+- Revoke falls back to the refresh token once the access token has expired, so a Google disconnect ends the grant.
+
+Item 4 is still open, in TODO.md.
 
 These are the OAuth thread's four proposed deletions (`2026-11-oauth-simplify-rollout.md`), judged against the rule above.
 
@@ -70,7 +76,6 @@ These are the OAuth thread's four proposed deletions (`2026-11-oauth-simplify-ro
    - Cost: "a stolen admin session can't add a way in" stops holding.
    - Item 2's design works with either store.
 
-Sequencing: one lane, after #938, #954, #957 and #958 merge. They touch `server/oauth/*`, `capabilities.ts`, `commands/secret` and `commands/provider`, and the generated provider docs.
 
 ## The short version
 

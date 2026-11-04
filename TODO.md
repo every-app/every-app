@@ -39,7 +39,7 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
   - no inbox on the Gateway for incoming webhooks;
   - apps declare the events they emit in the manifest;
   - drop `app.ready`, `app.needs_setup` (with `apps.setup_state`), `tool.error` and `connection.used`.
-- [ ] **OAuth clients: one store, but which?** Lean: the sealed D1 store, written from the browser, CLI or MCP. Drop the Worker-secret path. See the audit doc, "Queued: OAuth providers in one shape".
+- [ ] **OAuth clients: one store, but which?** Lean: the sealed D1 store, written from the browser, CLI or MCP. Drop the Worker-secret path. #974 made every OAuth provider a preset and kept both stores. See the audit doc, "OAuth providers in one shape".
 - [ ] **Public routes and Access (#959).** A CLI deploy that changes an app's public routes runs `access on`'s recipe by itself; a browser install only logs `access.rerun_needed`. Fine, or a fixed public path prefix? A prefix breaks embedded snippets like Analytics' `/collect`.
 - [ ] **Admins open every app (#947).** Owners and admins now open every app through their role, so an admin can't be left out of one app. Fine?
 - [ ] **`ai.routes` on a hosted Gateway (#945).** The manifest is the whole grant now. On a shared OpenAI key, an app naming OpenAI routes could reach other organizations' files and batches. Lean: refuse `ai.routes` when the Gateway is hosted.
@@ -55,19 +55,24 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
 - [ ] **The remote MCP apps live check** (#938): add an OAuth server with DCR (Linear's), connect two members, call, refresh, disconnect. A live test, on a test Gateway.
 - [ ] **The ElevenLabs live check** (#969): after `update` (which adds the `/oauth-clients/*` Access bypass), `mcp add https://api.elevenlabs.io/v1/mcp`, connect, call one tool. A live test.
 - [ ] **Remote MCP apps on everyapp.team are added again after #938.** Migration 0031 drops `remote_mcp_credentials`; an old app reads "registered before provider credentials" until `mcp remove`, then `mcp add`.
+- [ ] **The OAuth presets live check** (#974), on a test Gateway with a Google client in Worker secrets and one pasted in Admin:
+  - `update` (migration 0032 registers and binds the Google, Microsoft 365 and Slack rows); existing connections still work.
+  - Disconnect an idle Google connection; the grant is gone at myaccount.google.com.
 - [ ] **The OAuth-simplify live check** (#942): two apps on one Google client get tokens with different scopes, each connection holding only its own app's scopes. A live test, run on a test Gateway.
 - [ ] **The apps move to provider scope names** in `everyapp.config.ts` (OpenMail, OpenSEO, OpenCRM; CHANGELOG.md has the before and after) and redeploy; migration 0025 drops existing connections, so people connect again in each app. The rollout steps for everyapp.team are in #943.
 - [ ] **Roll the simplify batch (#945–#959) out to everyapp.team.** Live steps, in this order:
   1. Confirm OpenSEO, OpenMail and CRM were last deployed with an rc.9+ CLI (#962 says rc.11). Otherwise deploy each once with it first: bucket adoption is gone, so a later deploy would stop with `RESOURCE_NAME_TAKEN`.
-  2. `pnpm everyapp update --gateway https://everyapp.team` from main. It applies migrations 0026–0030: dollar caps, one AI default, the `everyone` flag, read/write tools and the Access evaluation key. Cap reads fail for a few seconds during the swap.
+  2. `pnpm everyapp update --gateway https://everyapp.team` from main. It applies migrations 0026–0032: dollar caps, one AI default, the `everyone` flag, read/write tools, the Access evaluation key, no `remote_mcp_credentials`, and the OAuth preset rows. Cap reads fail for a few seconds during the swap.
   3. `pnpm everyapp access on`, once. It swaps the email-list policy for the External Evaluation rule and bypasses `/access-evaluation/*`.
      - Check that an invitee gets in with no rerun.
      - Check that a stranger is refused at Access.
      - Check that `access.evaluated` shows in the Worker logs.
   4. `pnpm everyapp login --gateway https://everyapp.team`: admin commands now go through the Gateway's tools (or set `EVERYAPP_TOKEN`).
-- [ ] **Publish rc.12 (`pnpm publish:rc 0.3.0-rc.12`), then re-pin the apps exactly to it.**
+- [ ] **Publish rc.15 (`pnpm publish:rc 0.3.0-rc.15`; it carries #974), then re-pin the apps exactly to it.**
   - Analytics is on rc.1; OpenSEO-everyapp, Mission Control and RepoLens on rc.3; Workout and Talk on `^rc.10`.
   - App edits that ride the re-pin:
     - `risk: "destructive"` → `"write"` plus `destructive: true` in CRM, Analytics, OpenMail and Postiz.
     - `bearerRoutes` → `public` entries with `bearer: true` in the Birds hub and Talk/Open Notes, then `access on`.
     - Workout and Mission Control swap their copied skills for links.
+    - Postiz: `OAuthClientCapabilityId` → `OAuthPresetId`, `oauthPreset()`.
+    - CRM, OpenMail and OpenSEO list a preset: deploy them with rc.15+ to a Gateway past #974.
