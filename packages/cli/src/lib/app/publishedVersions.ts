@@ -13,7 +13,7 @@
  * pins the version it is, and leaves it set for a commit (.github/RELEASE.md). `^0.3.0-rc.6` admits
  * the later rcs and 0.3.0, never 0.4.0.
  */
-export const PUBLISHED_VERSION = "0.3.0-rc.14";
+export const PUBLISHED_VERSION = "0.3.0-rc.15";
 
 /** The packages published at `PUBLISHED_VERSION`. */
 export const PUBLISHED_PACKAGES = ["@every-app/sdk", "everyapp"] as const;
