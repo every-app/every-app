@@ -804,7 +804,16 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, 'v1.sealed.access', 'v1.sealed.refresh
     });
     expect(done()).toMatchObject({
       message: expect.stringContaining(
-        "Registered GitHub (github-oauth) on example.com.\n1. Register this redirect URI at https://github.com/settings/developers:\n   https://example.com/connect/github-oauth/callback\n2. Set the client it gives you with the command below.\nDocs: https://everyapp.com/docs/providers/github",
+        [
+          "Registered GitHub (github-oauth) on example.com.",
+          "1. Open Settings → Developer settings → OAuth Apps (https://github.com/settings/developers) and select New OAuth App. Make an OAuth App, not a GitHub App.",
+          "2. Enter a name, your Gateway's address as the homepage, and the redirect URI as the Authorization callback URL.",
+          "   https://example.com/connect/github-oauth/callback",
+          "3. Select Register application, then Generate a new client secret.",
+          "4. Copy the Client ID and the client secret. The secret is shown once.",
+          "5. Set the Client ID and Client Secret with the command below.",
+          "Docs: https://everyapp.com/docs/providers/github",
+        ].join("\n"),
       ),
       data: {
         id: "github-oauth",
@@ -1108,6 +1117,17 @@ describe("provider add, one step: the key or client asked for in the same run", 
       spec,
     );
 
+  /** The Google page's steps, as the terminal prints them: links as text (url), the redirect URI on its own line. */
+  const GOOGLE_STEPS = [
+    "1. Signed in to Google, create a Cloud project (https://console.cloud.google.com/projectcreate) (for example EveryApp). With Google Workspace, put it in your organization.",
+    "2. Enable the APIs your apps use: for OpenSEO, the Search Console API (https://console.cloud.google.com/apis/library/searchconsole.googleapis.com), the Analytics Admin API (https://console.cloud.google.com/apis/library/analyticsadmin.googleapis.com) and the Analytics Data API (https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com); for OpenCRM, the Gmail API and the Google Calendar API.",
+    "3. Set up the consent screen (https://console.cloud.google.com/auth/overview): an app name people will see, a support email, and the audience: Internal (your Workspace only, no review) or External.",
+    "4. On Data Access (https://console.cloud.google.com/auth/scopes), add only the scopes your apps use: webmasters.readonly and analytics.readonly for OpenSEO, gmail.readonly and calendar.readonly for OpenCRM.",
+    "5. Create a client (https://console.cloud.google.com/auth/clients): type Web application, and under Authorized redirect URIs add the redirect URI. Copy the Client ID and Client secret, or select Download JSON.",
+    "   https://example.com/connect/google-workspace/callback",
+    "6. External only: while the app is in Testing, add each person under Audience → Test users. Their access expires every 7 days until Google verifies the app. Personal Gmail accounts (https://everyapp.com/docs/google-personal-accounts)",
+  ];
+
   it("at a terminal, provider add google-workspace says the one thing to do, asks for the client and sets it", async () => {
     const { asked, ask } = asker({
       GOOGLE_WORKSPACE_CLIENT_ID: "1234.apps.googleusercontent.com",
@@ -1117,9 +1137,8 @@ describe("provider add, one step: the key or client asked for in the same run", 
     expect(shown).toBe(
       [
         "Google (google-workspace) is on example.com.",
-        "1. Register this redirect URI at https://console.cloud.google.com/apis/credentials:",
-        "   https://example.com/connect/google-workspace/callback",
-        "2. Paste the OAuth client it gives you.",
+        ...GOOGLE_STEPS,
+        "7. Paste the Client ID and Client Secret.",
         "Docs: https://everyapp.com/docs/providers/google",
         "Set GOOGLE_WORKSPACE_CLIENT_ID and GOOGLE_WORKSPACE_CLIENT_SECRET on the Gateway ✓",
         "Apps can now list google-workspace. Live now, no deploy needed.",
@@ -1168,9 +1187,8 @@ describe("provider add, one step: the key or client asked for in the same run", 
     expect(await human(run("google-workspace"))).toBe(
       [
         "Google (google-workspace) is on example.com.",
-        "1. Register this redirect URI at https://console.cloud.google.com/apis/credentials:",
-        "   https://example.com/connect/google-workspace/callback",
-        "2. Set the client it gives you with the command below.",
+        ...GOOGLE_STEPS,
+        "7. Set the Client ID and Client Secret with the command below.",
         "Docs: https://everyapp.com/docs/providers/google",
         "",
         "Next:",

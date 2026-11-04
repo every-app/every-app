@@ -661,6 +661,7 @@ describe("teardown", () => {
     account.queues.get(theirs)!.consumers.set("consumer-theirs", { script: "other-worker", settings: {} });
     // The activation queue an older install's setup made is ours too.
     const activation = account.createQueue("every-app-gateway-activate");
+    account.queues.get(activation)!.consumers.set("consumer-gateway", { script: GATEWAY, settings: {} });
 
     await run({ dryRun: true });
     expect(done()!["data"]["plan"]).toMatchObject({
@@ -671,8 +672,9 @@ describe("teardown", () => {
       queueConsumers: [
         { queueId: customerEvents, queueName: "customer-events", consumerId: "consumer-on-theirs", script: TODO_WORKER },
         { queueId: jobs, queueName: `${TODO_WORKER}--jobs`, consumerId: "consumer-ours", script: TODO_WORKER },
+        { queueId: activation, queueName: "every-app-gateway-activate", consumerId: "consumer-gateway", script: GATEWAY },
       ],
-      counts: expect.objectContaining({ queues: 2, queueConsumers: 2 }),
+      counts: expect.objectContaining({ queues: 2, queueConsumers: 3 }),
     });
 
     await run({ confirm: ACCOUNT_ID });
@@ -683,6 +685,8 @@ describe("teardown", () => {
     const order = (item: string) => removed.indexOf(item);
     expect(order(`consumer ${TODO_WORKER} of Queue "${TODO_WORKER}--jobs"`)).toBeGreaterThanOrEqual(0);
     expect(order(`consumer ${TODO_WORKER} of Queue "customer-events"`)).toBeLessThan(order(`Worker "${TODO_WORKER}"`));
+    expect(order(`consumer ${GATEWAY} of Queue "every-app-gateway-activate"`)).toBeLessThan(order(`Worker "${GATEWAY}"`));
+    expect(order(`Worker "${GATEWAY}"`)).toBeLessThan(order(`Queue "every-app-gateway-activate"`));
     expect(order(`Worker "${GATEWAY}"`)).toBeLessThan(order(`Queue "${TODO_WORKER}--jobs"`));
     expect(order(`Hyperdrive config "${TODO_WORKER}--pg"`)).toBeLessThan(order(`Queue "${TODO_WORKER}--jobs"`));
     expect(warnings("TEARDOWN_DELETE_FAILED").map((warning) => warning["message"])).not.toEqual(

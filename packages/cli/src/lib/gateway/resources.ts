@@ -13,6 +13,8 @@ import {
   gatewayNameOf,
   type GatewayNames,
 } from "@every-app/perimeter/manifest";
+import { isCfError } from "@/lib/cf/errors";
+import { deleteQueue, deleteQueueConsumer, findQueue, listQueueConsumers } from "@/lib/cf/queues";
 import type { CfRunner } from "@/lib/cf/runner";
 import { listAll } from "@/lib/cf/runner";
 import { findD1, findKv, getOrCreateD1, getOrCreateKv } from "@/lib/cf/resources";
@@ -53,6 +55,38 @@ export async function existingGatewayResources(
   const [d1Id, oauthKvId] = await Promise.all([findD1(cf, names.d1), findKv(cf, names.oauthKv)]);
   if (!d1Id || !oauthKvId) return null;
   return { d1Id, oauthKvId, created: [] };
+}
+
+/**
+ * Remove the activation queue releases before 0.3.0-rc.12 made
+ * (`<worker>-activate`) and the Gateway Worker's consumer on it: a Gateway
+ * release has no `queue()` handler any more, so while that consumer is
+ * there Cloudflare refuses the upload ("Queue handler is missing", code
+ * 11001). The consumer goes first, then the queue; either already gone is
+ * fine. Returns the queue's name when something was removed, else null.
+ */
+export async function removeLeftoverActivationQueue(
+  cf: CfRunner,
+  names: GatewayNames = DEFAULT_GATEWAY_NAMES,
+): Promise<string | null> {
+  const name = `${names.worker}-activate`;
+  const queue = await findQueue(cf, name);
+  if (!queue) return null;
+  const gone = async (remove: () => Promise<void>) => {
+    try {
+      await remove();
+    } catch (error) {
+      if (!isCfError(error, "not_found")) throw error;
+    }
+  };
+  await gone(async () => {
+    for (const consumer of await listQueueConsumers(cf, queue.queue_id)) {
+      if (consumer.script !== names.worker) continue;
+      await gone(() => deleteQueueConsumer(cf, queue.queue_id, consumer.consumer_id));
+    }
+  });
+  await gone(() => deleteQueue(cf, queue.queue_id));
+  return name;
 }
 
 /** The gateway's D1 database id, or null when no gateway of these names was deployed here. */

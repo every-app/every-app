@@ -20,9 +20,11 @@ The redirect URI to register, with your Gateway's address (like `apps.example.co
 https://<your gateway>/connect/slack/callback
 ```
 
-1. Open [api.slack.com/apps](https://api.slack.com/apps) and select **Create New App**. **From a manifest** is quickest: your coding agent can write one from the app's scopes.
-2. Pick the workspace. Under **OAuth & Permissions**, add the redirect URI above as a redirect URL, and the bot scopes the apps you run need.
-3. Under **Basic Information → App Credentials**, copy the **Client ID** and **Client Secret**.
+1. Open [api.slack.com/apps](https://api.slack.com/apps) and select **Create New App**, then **From scratch → Paste a manifest**. Pick the workspace and the **JSON** tab. Paste the app's Slack manifest if it ships one (Birds does), or have your coding agent write one from the bot scopes your apps list.
+2. The manifest's `oauth_config.redirect_urls` must contain the redirect URI above. Or add it after, under **OAuth & Permissions → Redirect URLs**.
+3. If Slack shows a bot token (`xoxb-`) and an app token (`xapp-`) after creating the app, ignore them. The Gateway gets its own token when someone connects in an app.
+4. Open the app's **Basic Information → App Credentials** and copy the **Client ID** and **Client Secret**. Keep the **Signing Secret** for apps that receive Slack events: they ask for it in `everyapp configure <app>`.
+5. A "request URL didn't respond" warning is fine before the app is deployed. Retry it under **Event Subscriptions** once the app is live and `everyapp access on` has run.
 
 Add it to your Gateway. It asks for the client ID and secret:
 

@@ -45,7 +45,7 @@ import { canPromptInTerminal } from "@/lib/output/prompt";
 import { formatTable } from "@/lib/output/table";
 import { listed } from "@/lib/output/text";
 import type { GatewayCommandFlags } from "../flags";
-import { providerDocsUrl } from "@/lib/providerDocs";
+import { providerConnectSteps, providerDocsUrl } from "@/lib/providerDocs";
 import { givenValues, setProviderSettings, shortName, type CredentialFlags } from "./credentials";
 import { readSpecSource, type ProviderOptions } from "./index";
 
@@ -315,7 +315,7 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
     type: "step",
     step: "provider.redirect",
     status: "ok",
-    message: `Register this redirect URI at ${capability.console}: ${redirectUri}`,
+    message: `Register the redirect URI ${redirectUri} at ${capability.console}`,
     data: { id, redirectUri, console: capability.console },
   });
   const [gatewayNames, uploaded, connections] = await Promise.all([
@@ -334,18 +334,18 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
     rowSource === "catalog"
       ? `${name} (${id}) is on ${gatewayHost}.`
       : `${replaced ? "Replaced" : "Registered"} ${name} (${id}) on ${gatewayHost}.`;
-  const register = `Register this redirect URI at ${capability.console}:\n   ${redirectUri}`;
+  // No punctuation right after a URL: terminals link it too.
+  const register = `Register this redirect URI at ${capability.console}\n   ${redirectUri}`;
+  const guide = providerConnectSteps(id, redirectUri);
+  const steps = guide ?? [`1. ${register}`];
+  const what = guide ? "the Client ID and Client Secret" : "the client it gives you";
+  const paste = interactive ? `Paste ${what}.` : `Set ${what} with the command below.`;
   const setup =
     needed.length === 0
       ? [header]
       : Object.keys(given).length > 0
         ? [header, register, `Docs: ${docs}`]
-        : [
-            header,
-            `1. ${register}`,
-            interactive ? "2. Paste the OAuth client it gives you." : "2. Set the client it gives you with the command below.",
-            `Docs: ${docs}`,
-          ];
+        : [header, ...steps, `${steps.length + 1}. ${paste}`, `Docs: ${docs}`];
   out.emit({ type: "step", step: "provider.setup", status: "ok", message: setup.join("\n"), data: { id, docs } });
   const outcome = await setProviderSettings({
     flags,

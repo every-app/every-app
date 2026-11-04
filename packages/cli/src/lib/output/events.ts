@@ -907,7 +907,7 @@ const SHOWN_PROGRESS: Readonly<Record<string, (data: EventData) => boolean>> = {
  * Progress a person sees as it comes, a dim line each, like request logs:
  * `everyapp dev`'s tool calls and how to use the running app.
  */
-const LOGGED_PROGRESS = new Set(["dev.mcp", "dev.session"]);
+const LOGGED_PROGRESS = new Set(["dev.mcp", "dev.session", "gateway.leftover"]);
 
 /**
  * A migration step: a database that was empty is created, one that had

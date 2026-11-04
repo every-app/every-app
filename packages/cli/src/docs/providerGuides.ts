@@ -390,9 +390,11 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
     blurb: "A Slack app in your workspace, so apps can post to approved channels and match people by email.",
     usedBy: [`${CRM} for team agents that post to Slack (optional)`],
     connect: [
-      "Open [api.slack.com/apps](https://api.slack.com/apps) and select **Create New App**. **From a manifest** is quickest: your coding agent can write one from the app's scopes.",
-      "Pick the workspace. Under **OAuth & Permissions**, add the redirect URI above as a redirect URL, and the bot scopes the apps you run need.",
-      "Under **Basic Information → App Credentials**, copy the **Client ID** and **Client Secret**.",
+      "Open [api.slack.com/apps](https://api.slack.com/apps) and select **Create New App**, then **From scratch → Paste a manifest**. Pick the workspace and the **JSON** tab. Paste the app's Slack manifest if it ships one (Birds does), or have your coding agent write one from the bot scopes your apps list.",
+      "The manifest's `oauth_config.redirect_urls` must contain the redirect URI above. Or add it after, under **OAuth & Permissions → Redirect URLs**.",
+      "If Slack shows a bot token (`xoxb-`) and an app token (`xapp-`) after creating the app, ignore them. The Gateway gets its own token when someone connects in an app.",
+      "Open the app's **Basic Information → App Credentials** and copy the **Client ID** and **Client Secret**. Keep the **Signing Secret** for apps that receive Slack events: they ask for it in `everyapp configure <app>`.",
+      "A \"request URL didn't respond\" warning is fine before the app is deployed. Retry it under **Event Subscriptions** once the app is live and `everyapp access on` has run.",
     ],
   },
   email: {

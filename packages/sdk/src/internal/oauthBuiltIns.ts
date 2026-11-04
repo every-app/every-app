@@ -120,7 +120,7 @@ export const BUILT_IN_OAUTH_SPECS = {
         id: "team_id",
       },
     },
-    hint: "A Slack app with the Gateway's callback as its redirect URL and the bot scopes your apps list.",
+    hint: "A Slack app with the Gateway's callback as its redirect URL and the bot scopes your apps list. The Gateway takes its Client ID and Client Secret, not a bot token (xoxb-).",
   },
 } as const;
 

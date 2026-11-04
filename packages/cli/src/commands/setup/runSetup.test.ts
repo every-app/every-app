@@ -11,7 +11,8 @@ import { readInstall } from "@/lib/gateway/install";
 import { markDeployed, register } from "@/lib/gateway/registry";
 import { openRelease, RELEASE_TARBALL } from "@/lib/gateway/release";
 import { gatewayReleaseSource } from "@/lib/gateway/source";
-import { ensureGatewayResources } from "@/lib/gateway/resources";
+import { gatewayNames } from "@every-app/perimeter/manifest";
+import { ensureGatewayResources, removeLeftoverActivationQueue } from "@/lib/gateway/resources";
 import { mintSetupLink } from "@/lib/gateway/setup-link";
 import { readAccessOffChoice } from "@/lib/access/record";
 import { cfD1Database } from "@/lib/cf/d1";
@@ -567,6 +568,44 @@ describe("everyapp setup", () => {
       rerun: "pnpm everyapp setup --domain <hostname>",
     });
     expect([...account.databases.values()].map((entry) => entry.name)).not.toContain("every-app-gateway");
+  });
+
+  it("update removes an older install's activation queue and the Gateway's consumer on it before the upload", async () => {
+    await setup({ domain: GW });
+    // Releases before 0.3.0-rc.12 made it and consumed it; the upload now has no queue() handler.
+    const activation = account.createQueue("every-app-gateway-activate");
+    account.queues.get(activation)!.consumers.set("consumer-gateway", { script: "every-app-gateway", settings: {} });
+    const newer = await buildGatewayRelease({ builtAt: "2026-10-13T00:00:00.000Z" });
+    const deploys = account.deploys.length;
+    events = [];
+    const out: EventSink = createNdjsonSink((line) => events.push(JSON.parse(line)));
+
+    await runGatewayDeploy({ json: true }, out, deps({ openRelease: () => openRelease(newer), source: () => releaseSource(newer) }));
+
+    expect(account.queues.has(activation)).toBe(false);
+    expect(account.deploys).toHaveLength(deploys + 1);
+    const removed = events.findIndex((event) => event.step === "gateway.leftover");
+    expect(events[removed]).toMatchObject({ type: "progress", message: "Removed the old activation queue every-app-gateway-activate" });
+    expect(account.cf.calls.findLastIndex((call) => call.args[0] === "deploy")).toBeGreaterThan(
+      account.cf.calls.findIndex((call) => call.args.join(" ").startsWith("queues delete")),
+    );
+
+    // Gone already: nothing said, nothing refused.
+    events = [];
+    await runGatewayDeploy({ json: true, redeploy: true }, out, deps({ openRelease: () => openRelease(newer), source: () => releaseSource(newer) }));
+    expect(events.map((event) => event.step)).not.toContain("gateway.leftover");
+  });
+
+  it("removes a named Gateway's leftover activation queue and only its own", async () => {
+    const demo = account.createQueue("every-app-gateway-demo-activate");
+    account.queues.get(demo)!.consumers.set("consumer-demo", { script: "every-app-gateway-demo", settings: {} });
+    const other = account.createQueue("every-app-gateway-activate");
+    account.queues.get(other)!.consumers.set("consumer-default", { script: "every-app-gateway", settings: {} });
+
+    await expect(removeLeftoverActivationQueue(account.cf, gatewayNames("demo"))).resolves.toBe("every-app-gateway-demo-activate");
+    expect(account.queues.has(demo)).toBe(false);
+    expect([...account.queues.get(other)!.consumers.keys()]).toEqual(["consumer-default"]);
+    await expect(removeLeftoverActivationQueue(account.cf, gatewayNames("demo"))).resolves.toBeNull();
   });
 
   it("deploys a checkout behind the live Gateway, saying so (GATEWAY_DOWNGRADE)", async () => {

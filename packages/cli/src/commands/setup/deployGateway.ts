@@ -25,7 +25,7 @@ import {
 } from "@/lib/gateway/apply";
 import type { InstallRecord } from "@/lib/gateway/install";
 import type { GatewayRelease } from "@/lib/gateway/release";
-import { ensureGatewayResources, existingGatewayResources } from "@/lib/gateway/resources";
+import { ensureGatewayResources, existingGatewayResources, removeLeftoverActivationQueue } from "@/lib/gateway/resources";
 import { CLI, thisCommandWithout } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 
@@ -175,6 +175,11 @@ export async function deployGatewayRelease({
       ? `Created ${resources.created.join(", ")}`
       : "The Gateway's database and KV namespace are there",
   });
+  // Before the upload: a leftover activation queue's consumer makes Cloudflare refuse it.
+  const leftover = await removeLeftoverActivationQueue(cf, names);
+  if (leftover) {
+    out.emit({ type: "progress", step: "gateway.leftover", message: `Removed the old activation queue ${leftover}` });
+  }
   const db = cfD1Database(cf, resources.d1Id);
   const result = await applyGateway({
     cf,
