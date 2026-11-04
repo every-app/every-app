@@ -53,7 +53,7 @@ const UNREADY: UserAccessApp["setup"] = {
   ready: false,
   settings: [],
   unmet: [],
-  groups: [],
+  features: [],
   command: { command: "pnpm everyapp secret set DATAFORSEO_API_KEY" },
 };
 

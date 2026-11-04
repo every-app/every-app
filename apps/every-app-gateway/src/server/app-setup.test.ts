@@ -17,7 +17,14 @@ const OPENSEO = {
   providers: ["openrouter"],
   capabilities: {
     dataforseo: { access: "read", why: "Keyword data." },
-    context: { access: "read", optional: true },
+    context: { access: "read" },
+  },
+  features: {
+    rendering: {
+      name: "Rendering",
+      why: "Audits of JS sites.",
+      capabilities: ["context"],
+    },
   },
 };
 
@@ -26,7 +33,14 @@ const ANALYTICS = {
   secrets: ["MAIN_SECRET"],
   capabilities: {
     members: { access: "read" },
-    email: { access: "write", optional: true },
+    email: { access: "write" },
+  },
+  features: {
+    reports: {
+      name: "Email reports",
+      why: "Mails reports.",
+      capabilities: ["email"],
+    },
   },
 };
 
@@ -96,10 +110,72 @@ describe("appSetupFor", () => {
     });
     expect(
       setup!.settings.find((setting) => setting.id === "context"),
-    ).toMatchObject({ set: false, blocking: false });
+    ).toMatchObject({ set: false, blocking: false, feature: "rendering" });
+    // The optional feature that's off never keeps the app closed.
+    expect(setup!.features).toEqual([
+      expect.objectContaining({
+        id: "rendering",
+        required: false,
+        state: "off",
+        settings: ["context"],
+      }),
+    ]);
     expect(setup!.command).toEqual({
       command: "pnpm everyapp configure openseo",
     });
+  });
+
+  it("keeps the app closed on a required feature, never on an optional one half set", async () => {
+    const manifest = {
+      id: "birds",
+      secrets: ["BIRDS_SECRETS_KEY"],
+      features: {
+        github: {
+          name: "GitHub",
+          required: true,
+          why: "Pushes branches.",
+          settings: [{ name: "GITHUB_APP_ID" }],
+          secrets: ["GITHUB_APP_PRIVATE_KEY"],
+        },
+        slack: {
+          name: "Slack",
+          why: "Talks in Slack.",
+          secrets: ["SLACK_SIGNING_SECRET", "SLACK_BOT_TOKEN"],
+        },
+      },
+    };
+    const closed = await appSetupFor(
+      input(manifest, {
+        secretNames: ["BIRDS_SECRETS_KEY", "SLACK_SIGNING_SECRET"],
+      }),
+      deps({}),
+    );
+    expect(closed!.unmet.map((setting) => setting.id)).toEqual([
+      "GITHUB_APP_PRIVATE_KEY",
+      "GITHUB_APP_ID",
+    ]);
+    expect(
+      closed!.features.map((feature) => [feature.id, feature.state]),
+    ).toEqual([
+      ["github", "off"],
+      ["slack", "incomplete"],
+    ]);
+    const open = await appSetupFor(
+      input(manifest, {
+        secretNames: [
+          "BIRDS_SECRETS_KEY",
+          "SLACK_SIGNING_SECRET",
+          "GITHUB_APP_ID",
+          "GITHUB_APP_PRIVATE_KEY",
+        ],
+      }),
+      deps({}),
+    );
+    expect(open).toMatchObject({ ready: true, command: null });
+    expect(open!.features.map((feature) => feature.state)).toEqual([
+      "ready",
+      "incomplete",
+    ]);
   });
 
   it("reads the stored manifest's JSON as the row holds it", async () => {

@@ -32,9 +32,13 @@ the app's tools to AI clients. The app gets nothing it doesn't declare in
    goes under `secrets`, a plain per-install value under `settings`; a key the
    Gateway holds is a provider (`providers`, for AI, called through
    `createGatewayFetch({ env })`) or a capability (`capabilities`: `members`,
-   `email`, `dataforseo`, an OAuth provider with `{ scopes, why }`). Locally
-   the value is in `.dev.vars`; after a deploy, `pnpm everyapp configure <app>`
-   asks for each at a hidden prompt. A value never goes through the chat, into
+   `email`, `dataforseo`, an OAuth provider with `{ scopes, why }`). The top
+   level is required. Group what is set up together, or what the app works
+   without, into `features` (`{ name, why, required?, steps, secrets,
+   settings, capabilities }`, each value with a `how`; optional by default,
+   all or nothing; `patterns.md`). Locally the value is in `.dev.vars`; after
+   a deploy, `pnpm everyapp configure <app>` walks each feature's steps and
+   asks for each value at a hidden prompt. A value never goes through the chat, into
    a committed file or onto a command line.
 6. **`pnpm dev` to try, `pnpm test`, `pnpm run deploy` to ship.** Anything
    else: https://everyapp.com/llms.txt. Look rows up in `patterns.md` when you

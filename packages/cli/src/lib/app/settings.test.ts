@@ -24,6 +24,7 @@ import {
   gatewayMissing,
   gatewayNamesRead,
   gatewayNeeds,
+  featuresLine,
   helperRows,
   namesToSet,
   renderSettingsTable,
@@ -37,20 +38,19 @@ const plain = (lines: string[]) => lines.map((line) => stripVTControlCharacters(
 const OPENROUTER_HINT =
   "An API key from OpenRouter's keys page; the Gateway puts it on every call as a bearer token.";
 
-/** CRM: an AI model from either provider, an optional capability, a required and an optional secret. */
+/** CRM: a required AI provider and secret; an optional pin, capability and secret, each in a feature. */
 const CRM = {
-  providers: [
-    { id: "openai", anyOf: "AI model" },
-    { id: "openrouter", anyOf: "AI model", why: "Any model through one key." },
-  ],
+  providers: ["openai", { id: "openrouter", why: "Any model through one key." }],
   capabilities: {
-    context: { access: "read", optional: true, why: "Renders JavaScript pages." },
+    context: { access: "read", why: "Renders JavaScript pages." },
     members: { access: "read" },
   },
-  secrets: [
-    { name: "TOKEN_ENCRYPTION_KEY", why: "Encrypts the OAuth tokens it stores." },
-    { name: "GITHUB_TOKEN", optional: true },
-  ],
+  secrets: [{ name: "TOKEN_ENCRYPTION_KEY", why: "Encrypts the OAuth tokens it stores." }],
+  features: {
+    pin: { name: "OpenAI pin", why: "A pinned model.", providers: ["openai"] },
+    rendering: { name: "Rendering", why: "JS sites.", capabilities: ["context"] },
+    github: { name: "GitHub", why: "Rate limit.", secrets: ["GITHUB_TOKEN"] },
+  },
 };
 
 describe("appSetupFrom", () => {
@@ -75,11 +75,16 @@ describe("appSetupFrom", () => {
     const unset = appSetupFrom({ manifest: CRM, appId: "crm", gatewayNames: [], secretNames: [] });
     expect(unset.setup.ready).toBe(false);
     expect(unset.setup.command).toEqual({ command: "pnpm everyapp configure crm" });
-    expect(namesToSet(unset.setup)).toEqual(["TOKEN_ENCRYPTION_KEY", "OPENAI_API_KEY"]);
+    expect(namesToSet(unset.setup)).toEqual(["OPENROUTER_API_KEY", "TOKEN_ENCRYPTION_KEY"]);
+    expect(unset.setup.features.map((feature) => [feature.id, feature.state])).toEqual([
+      ["pin", "off"],
+      ["rendering", "off"],
+      ["github", "off"],
+    ]);
 
     // The Gateway's names unknown: nothing of the Gateway's blocks.
     const unlisted = appSetupFrom({ manifest: CRM, appId: "crm", gatewayNames: null, secretNames: [] });
-    expect(unlisted.report.settings.find((setting) => setting.id === "openai")!.set).toBeNull();
+    expect(unlisted.report.settings.find((setting) => setting.id === "openrouter")!.set).toBeNull();
     expect(unlisted.setup.unmet.map((setting) => setting.id)).toEqual(["TOKEN_ENCRYPTION_KEY"]);
   });
 
@@ -105,7 +110,7 @@ describe("appSetupFrom", () => {
 });
 
 describe("the Gateway names an app needs, as secret list --json has always said them", () => {
-  it("marks required and any-of names required, what is read when set not, and lists only what keeps the app closed as missing", () => {
+  it("marks required names required, an optional feature's and what is read when set not, and lists only what keeps the app closed as missing", () => {
     const { report } = appSetupFrom({
       manifest: { ...CRM, capabilities: { ...CRM.capabilities, email: { access: "write" } } },
       appId: "crm",
@@ -113,7 +118,7 @@ describe("the Gateway names an app needs, as secret list --json has always said 
       secretNames: [],
     });
     expect(gatewayNeeds(report.settings, ["OPENROUTER_API_KEY"])).toEqual([
-      { name: "OPENAI_API_KEY", required: true, set: false },
+      { name: "OPENAI_API_KEY", required: false, set: false },
       { name: "OPENROUTER_API_KEY", required: true, set: true },
       { name: "CONTEXT_API_KEY", required: false, set: false },
       { name: "EMAIL_FROM", required: true, set: false },
@@ -122,31 +127,37 @@ describe("the Gateway names an app needs, as secret list --json has always said 
       { name: "RESEND_API_KEY", required: false, set: false },
       { name: "EMAIL_PROVIDER", required: false, set: false },
     ]);
-    // The AI model group is met: its other member isn't missing.
+    // The optional pin isn't missing.
     expect(gatewayMissing(report.settings, ["OPENROUTER_API_KEY"])).toEqual(["EMAIL_FROM", "EMAIL_FROM_NAME"]);
 
     const none = appSetupFrom({ manifest: CRM, appId: "crm", gatewayNames: [], secretNames: [] });
-    expect(gatewayMissing(none.report.settings, [])).toEqual(["OPENAI_API_KEY", "OPENROUTER_API_KEY"]);
+    expect(gatewayMissing(none.report.settings, [])).toEqual(["OPENROUTER_API_KEY"]);
   });
 });
 
 describe("the STATUS vocabulary", () => {
   const status = (setting: Parameters<typeof settingStatus>[0]) => stripVTControlCharacters(settingStatus(setting));
   const required = { kind: "required" } as const;
-  const anyOf = { kind: "anyOf", group: "AI model" } as const;
 
-  it("says set, not set (required or an unmet group), optional, one of a met group, not recorded, or couldn't check", () => {
-    expect(status({ set: true, need: required, blocking: false, holder: "gateway" })).toBe("✓ set");
-    expect(status({ set: false, need: required, blocking: true, holder: "gateway" })).toBe("! not set");
-    expect(status({ set: false, need: anyOf, blocking: true, holder: "gateway" })).toBe("! not set");
-    expect(status({ set: false, need: { kind: "optional" }, blocking: false, holder: "app" })).toBe(
-      "not set (optional)",
-    );
-    expect(status({ set: false, need: anyOf, blocking: false, holder: "gateway" })).toBe(
-      "not set (one of: AI model)",
-    );
-    expect(status({ set: null, need: required, blocking: false, holder: "app" })).toBe("! not recorded");
-    expect(status({ set: null, need: required, blocking: false, holder: "gateway" })).toBe("! couldn't check");
+  it("says set, not set (required), optional, not recorded, or couldn't check", () => {
+    expect(status({ set: true, need: required, holder: "gateway" })).toBe("✓ set");
+    expect(status({ set: false, need: required, holder: "gateway" })).toBe("! not set");
+    expect(status({ set: false, need: { kind: "optional" }, holder: "app" })).toBe("not set (optional)");
+    expect(status({ set: null, need: required, holder: "app" })).toBe("! not recorded");
+    expect(status({ set: null, need: required, holder: "gateway" })).toBe("! couldn't check");
+  });
+
+  it("says each app's features in one line", () => {
+    expect(
+      stripVTControlCharacters(
+        featuresLine([
+          { name: "GitHub", state: "ready" },
+          { name: "Slack", state: "off" },
+          { name: "Sandboxes", state: "incomplete" },
+        ])!,
+      ),
+    ).toBe("GitHub ✓ · Slack off · Sandboxes incomplete");
+    expect(featuresLine([])).toBeNull();
   });
 
   it("renders one row per setting with something to set, the names joined with +, with or without the APP column", () => {
@@ -179,10 +190,8 @@ describe("the Gateway's default model and its pins (launch gate, rc.7)", () => {
   // OpenMail and OpenCRM: `ai.chat` plus optional provider pins.
   const openmail = {
     ai: { chat: { why: "Drafts replies." } },
-    providers: [
-      { id: "openrouter", optional: true },
-      { id: "workers-ai", optional: true },
-    ],
+    providers: ["openrouter", "workers-ai"],
+    features: { pins: { name: "Pinned models", why: "A pinned build.", providers: ["openrouter", "workers-ai"] } },
   };
 
   it("lists the default's key once, required, not again as an optional pin", () => {
@@ -209,26 +218,24 @@ describe("the Gateway's default model and its pins (launch gate, rc.7)", () => {
 describe("helperRows", () => {
   it("gives a helper Worker the app's own rows against what it holds, in the same words", () => {
     const manifest = {
-      providers: [{ id: "openai", anyOf: "AI key" }],
-      secrets: ["MAIN_SECRET", { name: "GITHUB_TOKEN", optional: true }, { name: "MODEL_KEY", anyOf: "AI key" }],
+      providers: ["openai"],
+      secrets: ["MAIN_SECRET"],
+      features: { github: { name: "GitHub", why: "Rate limit.", secrets: ["GITHUB_TOKEN"] } },
     };
     const rows = (settings: Parameters<typeof helperRows>[2]) =>
       helperRows("seo", "audit", settings).map((row) => [row.setting, row.where, stripVTControlCharacters(row.status)]);
 
-    // The helper holds nothing of its own; the Gateway's OpenAI key meets the group for it.
+    // The helper holds nothing of its own; the Gateway's rows aren't its.
     const { report } = appSetupFrom({ manifest, appId: "seo", gatewayNames: ["OPENAI_API_KEY"], secretNames: [] });
     expect(rows(report.settings)).toEqual([
       ["MAIN_SECRET", "audit helper", "! not set"],
       ["GITHUB_TOKEN", "audit helper", "not set (optional)"],
-      ["MODEL_KEY", "audit helper", "not set (one of: AI key)"],
     ]);
 
-    // No key anywhere: the group is unmet for it.
     const bare = appSetupFrom({ manifest, appId: "seo", gatewayNames: [], secretNames: ["MAIN_SECRET"] });
     expect(rows(bare.report.settings)).toEqual([
       ["MAIN_SECRET", "audit helper", "✓ set"],
       ["GITHUB_TOKEN", "audit helper", "not set (optional)"],
-      ["MODEL_KEY", "audit helper", "! not set"],
     ]);
   });
 });
@@ -245,7 +252,7 @@ describe("describeUnmet", () => {
       gatewayNames: [],
       secretNames: [],
     });
-    expect(setup.unmet.map(describeUnmet)).toEqual([
+    expect(setup.unmet.map((setting) => describeUnmet(setting))).toEqual([
       [
         "OpenRouter: OPENROUTER_API_KEY",
         OPENROUTER_HINT,
@@ -262,12 +269,12 @@ describe("describeUnmet", () => {
     ]);
   });
 
-  it("adds each setting's setup guide once: the registry's for the Gateway's, the entry's for the app's own", () => {
+  it("adds each Gateway setting's setup guide once, and an app's own value's how with its URLs filled", () => {
     const { setup } = appSetupFrom({
       manifest: {
         providers: ["openrouter"],
         capabilities: { "google-workspace": { access: "write" } },
-        secrets: ["MAIN_SECRET", { name: "SIGNING_KEY", setup: "docs/setup/signing-key.md" }],
+        secrets: ["MAIN_SECRET", { name: "SIGNING_KEY", how: "Paste it at {appUrl}/settings" }],
       },
       appId: "analytics",
       gatewayNames: [],
@@ -283,7 +290,11 @@ describe("describeUnmet", () => {
       "Guide: node_modules/everyapp/skills/everyapp/setup/google.md",
       "MAIN_SECRET",
       "SIGNING_KEY",
-      "Guide: docs/setup/signing-key.md",
+      "Paste it at {appUrl}/settings",
+    ]);
+    expect(describeUnmet(setup.unmet.at(-1)!, { appUrl: "https://a.example.com", gatewayUrl: "https://example.com" })).toEqual([
+      "SIGNING_KEY",
+      "Paste it at https://a.example.com/settings",
     ]);
   });
 

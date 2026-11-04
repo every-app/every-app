@@ -18,7 +18,7 @@ Which to use: a provider in the catalog (or registered with `everyapp provider a
 
 The one command that sets an app up. It reads what the app's deployed manifest declares, asks for each unmet setting, and sets each where it belongs (Gateway or app Worker) in one go. Changes are live at once; no deploy needed. Run from any directory with the app's id, or in the app's directory with no id.
 
-At a terminal it shows, per unset setting, why the app needs it, where the key comes from and the setup guide, then a hidden prompt (a visible one for a plain setting). It asks which member of an unmet any-of group to set, and offers the optional ones (No by default). A ready app gets a menu to change one.
+At a terminal it asks, in order: each unset top-level setting (why the app needs it, where the key comes from, the setup guide, then a hidden prompt, or a visible one for a plain setting); then each required [feature](/docs/agent/manifest#features), with its numbered steps and each value's `how`; then "Set up <name>?" for each optional feature that's off ("Finish setting up <name>?" for one that's incomplete; No by default). A `generate` secret is made for the person, and shown once when its `how` says where to paste it. A `file` value's prompt takes the file's path. A feature's Gateway settings aren't asked for: it says whether each is set, and the one command if not (`everyapp provider add <id>`, or `secret set` for a Gateway service such as email). A ready app gets a menu to change one.
 
 A value never goes on the command line (`VALUE_ON_COMMAND_LINE`). For an agent or a script:
 
@@ -28,7 +28,7 @@ printf 'OPENROUTER_API_KEY=%s\n' "$OPENROUTER_API_KEY" | everyapp configure crm 
 everyapp configure crm --from-env --json                   # each unset name from $NAME
 ```
 
-Stdin takes `NAME=value` lines (blank and `#` lines skipped, `export ` allowed). With neither stdin nor `--from-env`, `--json` stops with `SECRET_VALUE_REQUIRED`. Prefer handing the person the command, so keys never pass through the chat.
+Stdin takes `NAME=value` lines (blank and `#` lines skipped, `export ` allowed). `--from-env` keeps a multi-line value (a PEM); a `file` value may also be the file's path. Generated secrets without a `how` are made on the run. `done.data.features` lists every feature with its steps filled in, its values (`how`, `set`, `generate`, `file`) and its state ([json](/docs/agent/json)). With nothing to set from stdin or `--from-env`, `--json` stops with `SECRET_VALUE_REQUIRED` (its `data.features` says what each feature needs). An optional feature left half set gets the warning `FEATURE_INCOMPLETE`. Prefer handing the person the command, so keys never pass through the chat.
 
 ## `everyapp secret set NAME…`
 
@@ -82,7 +82,7 @@ The six sign-in providers' settings are `<ID>_SIGNIN_<FIELD>` (`GOOGLE_SIGNIN_CL
 
 ## App secrets
 
-Declare them in the manifest (`secrets: ["GITHUB_TOKEN"]`), deploy, then `everyapp configure <app>`. Until a required one is set the app shows Needs setup. The app reads it as `env.GITHUB_TOKEN`. A name can't be reserved (`GATEWAY_URL`, `CF_VERSION_METADATA`, `EVERYAPP_*`, `EVERY_APP_*`, `APP__*`), a Gateway setting, or a binding.
+Declare them in the manifest (`secrets: ["GITHUB_TOKEN"]`), deploy, then `everyapp configure <app>`. A top-level secret is required: until it's set the app shows Needs setup. One the app works without goes in an optional feature ([manifest](/docs/agent/manifest#features)). `generate: true` makes the value; a top-level one without a `how` is set by the deploy itself. The app reads it as `env.GITHUB_TOKEN`. A name can't be reserved (`GATEWAY_URL`, `CF_VERSION_METADATA`, `EVERYAPP_*`, `EVERY_APP_*`, `APP__*`), a Gateway setting, or a binding.
 
 In development, put values in the app's `.dev.vars` (`GITHUB_TOKEN=…`, gitignored), including provider keys the Gateway would hold (`OPENROUTER_API_KEY`), since there's no Gateway locally. `everyapp dev --gateway <url>` uses a real Gateway's keys instead. [dev](/docs/agent/dev)
 

@@ -49,7 +49,14 @@ describe("the settings model and the provider registry", () => {
     const manifest = {
       capabilities: {
         northwind: { access: "read", why: "Shows charges." },
-        litware: { access: "read", optional: true },
+        litware: { access: "read" },
+      },
+      features: {
+        calls: {
+          name: "Calls",
+          why: "Places calls.",
+          capabilities: ["litware"],
+        },
       },
     };
     // The catalog alone knows neither.
@@ -75,6 +82,7 @@ describe("the settings model and the provider registry", () => {
         names: ["LITWARE_AUTH_TOKEN", "LITWARE_ACCOUNT_SID"],
         alsoReads: [],
         need: { kind: "optional" },
+        feature: "calls",
         docs: "https://console.litware.com/",
         // Several names: each hint carries its name, in the entry's order.
         hint: "LITWARE_ACCOUNT_SID: Starts with AC. LITWARE_AUTH_TOKEN: From the console's account page.",

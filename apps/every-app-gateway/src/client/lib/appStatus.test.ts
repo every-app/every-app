@@ -18,14 +18,14 @@ const READY: UserAccessApp["setup"] = {
   ready: true,
   settings: [],
   unmet: [],
-  groups: [],
+  features: [],
   command: null,
 };
 const UNREADY: UserAccessApp["setup"] = {
   ready: false,
   settings: [],
   unmet: [],
-  groups: [],
+  features: [],
   command: { command: "pnpm everyapp configure openseo" },
 };
 

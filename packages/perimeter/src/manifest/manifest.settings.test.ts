@@ -31,7 +31,7 @@ describe("settings manifest field", () => {
           name: "REGION",
           why: "Where data lives.",
           values: ["us", "eu"],
-          optional: true,
+          how: "The region in PostHog's settings",
         },
       ],
     });
@@ -41,6 +41,8 @@ describe("settings manifest field", () => {
   it.each([
     [[{ name: "A" }], "settings.0.why"],
     [[{ name: "A", why: "x", anyOf: "g" }], 'Unrecognized key: "anyOf"'],
+    [[{ name: "A", why: "x", optional: true }], 'Unrecognized key: "optional"'],
+    [[{ name: "A", why: "x", how: "{nope}" }], "{nope} isn't a placeholder"],
     [[{ name: "A", why: "x", type: "date" }], "settings.0.type"],
     [
       [{ name: "A", why: "x", type: "url", values: ["a", "b"] }],
@@ -48,10 +50,6 @@ describe("settings manifest field", () => {
     ],
     [[{ name: "A", why: "x", values: ["a"] }], "settings.0.values"],
     [[{ name: "A", why: "x", values: ["a", "a"] }], "each value once"],
-    [
-      [{ name: "A", why: "x", optional: true, default: "a" }],
-      "is optional already; drop optional",
-    ],
     [
       [{ name: "A", why: "x", type: "url", default: "nope" }],
       `the default isn't a value the setting takes: "nope" isn't an http or https URL.`,

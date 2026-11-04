@@ -38,7 +38,7 @@ const SETUP: AppSetup = {
     },
   ],
   unmet: [],
-  groups: [],
+  features: [],
   command: { command: "pnpm everyapp configure openseo" },
 };
 SETUP.unmet = [SETUP.settings[0]!];
@@ -60,7 +60,7 @@ const SETUP_OWN_SECRET: AppSetup = {
     },
   ],
   unmet: [],
-  groups: [],
+  features: [],
   command: { command: "pnpm everyapp configure research" },
 };
 SETUP_OWN_SECRET.unmet = [SETUP_OWN_SECRET.settings[0]!];

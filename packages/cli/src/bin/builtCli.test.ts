@@ -76,7 +76,7 @@ const CAPABILITIES = `capabilities: {
     members: { access: "read", why: "Whom the weekly digest goes to." },
     email: { access: "write", why: "Sends the weekly digest." },
     dataforseo: { access: "read", why: "Keyword data for the digest." },
-    context: { access: "read", optional: true, why: "Renders the pages the digest links." },
+    context: { access: "read", why: "Renders the pages the digest links." },
     slack: {
       why: "Posts the digest to a channel.",
       scopes: ["channels:read", "chat:write"],

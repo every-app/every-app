@@ -205,6 +205,40 @@ describe("installApp", () => {
     expect(result.secretNames).toEqual(["THEME"]);
   });
 
+  it("generates each top-level generated secret the Worker doesn't hold, and never one a person pastes or a feature's", async () => {
+    const manifest = {
+      ...MANIFEST,
+      secrets: [
+        { name: "SECRETS_KEY", generate: true },
+        { name: "HELD_KEY", generate: true },
+        {
+          name: "WEBHOOK_SECRET",
+          generate: true,
+          how: "Paste it into the webhook",
+        },
+      ],
+      features: {
+        slack: {
+          name: "Slack",
+          why: "Slack.",
+          secrets: [{ name: "SLACK_KEY", generate: true }],
+        },
+      },
+    } as unknown as Manifest;
+    secrets.set(WORKER, ["HELD_KEY"]);
+    const { input, ports, uploads } = setup({ manifest });
+    await installApp(input, ports);
+    const values = uploads.find((upload) => upload.worker === WORKER)!.values;
+    expect(values["SECRETS_KEY"]).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(values).not.toHaveProperty("HELD_KEY");
+    expect(values).not.toHaveProperty("WEBHOOK_SECRET");
+    expect(values).not.toHaveProperty("SLACK_KEY");
+    // The helper gets the same value with the same version.
+    expect(
+      uploads.find((upload) => upload.worker === HELPER)!.values["SECRETS_KEY"],
+    ).toBe(values["SECRETS_KEY"]);
+  });
+
   it("refuses a Worker the policy refuses before it migrates or uploads anything", async () => {
     const { input, ports } = setup({}, () => {
       const output = buildOutput();

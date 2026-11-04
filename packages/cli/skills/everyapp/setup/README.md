@@ -77,19 +77,25 @@ directory, `pnpm everyapp secret list <app id> --json` (the id as `status`
 lists it in `data.apps[].id`; in the app's directory it can be left out)
 reports the app's setup state as `data.app.setup`: `ready` (the app
 opens), `unmet` (the settings keeping it closed), `settings` (every
-setting, set or not), `groups` (each any-of group, `met` once one member
-is set) and `command`, the one `secret set` that sets everything missing
-(`{ command, note? }`, the note an any-of group's alternatives; null once
-ready). A setting has `names` (all must be set), `holder` (`gateway`, or
-`app` for the app's own secret), `need.kind` (`required`, `optional`, or
-`anyOf` with its `group`), `set` (true, false, or null when the app
-Worker's names were never recorded, which never blocks), `blocking`, and
-when known `why`, `hint` (what the key is and where it comes from, from
-the provider's entry), `docs` (where the key comes from) and `setup`: the file
-here that sets it up, relative to the everyapp skill (`setup/dataforseo.md`;
-in an app `node_modules/everyapp/skills/everyapp/setup/dataforseo.md`, in this checkout
-`packages/cli/skills/everyapp/setup/dataforseo.md`). An unset optional
-setting is in `settings` with `set: false`, never in `unmet`. The older
+setting, set or not), `features` (each feature of the manifest: `id`,
+`name`, `required`, `steps`, `state` `off`, `incomplete` or `ready`, and
+its settings' ids) and `command`, the one command that sets everything
+missing (`{ command }`; null once ready). A setting has `names` (all must
+be set), `holder` (`gateway`, or `app` for the app's own secret),
+`need.kind` (`required`, or `optional` for an optional feature's),
+`feature` (the feature it belongs to), `set` (true, false, or null when
+the app Worker's names were never recorded, which never blocks),
+`blocking`, and when known `why`, `how` (an app value's: where it lives),
+`hint` (what the key is and where it comes from, from the provider's
+entry), `docs` (where the key comes from) and, for a Gateway setting,
+`setup`: the file here that sets it up, relative to the everyapp skill
+(`setup/dataforseo.md`; in an app
+`node_modules/everyapp/skills/everyapp/setup/dataforseo.md`, in this
+checkout `packages/cli/skills/everyapp/setup/dataforseo.md`). An app's own
+values have their feature's `steps` and their `how` instead:
+`pnpm everyapp configure <app id> --json` returns them filled in as
+`data.features`. An unset setting of an optional feature is in `settings`
+with `set: false`, never in `unmet`. The older
 fields still hold: `data.gateway.needed` (each Gateway name with `required`
 and `set`) and `data.gateway.missing` (the required ones unset); from the
 checkout root with no app named, `data.apps[]` has every app's `id` and
@@ -107,7 +113,7 @@ its line is `Guide: pnpm everyapp provider show <id>` instead. On the Gateway's 
 visit to the app's own host lands in that dialog too; any other request
 gets a 503 `app_needs_setup`), and its tools stay out of the Gateway's
 `/mcp`. Set up what is unmet, in the order the person wants; an optional
-setting when they want its feature. A setting nobody needs is simply not
+feature when they want it. A setting nobody needs is simply not
 offered to apps.
 
 ## The rules every setup follows
@@ -188,7 +194,7 @@ the file applies):
    directory is no longer required): this file applies when its setting
    is in `data.app.setup.unmet` (each entry's `names`, `need.kind`,
    `holder` and `setup` say what goes where and which file), or, for an
-   optional one, in `settings` with `set: false`; `data.app.setup.command`
+   optional feature's, in `settings` with `set: false`; `data.app.setup.command`
    is the one command that sets what is missing. For a setting no app
    declares (the Gateway's own, Cloudflare Access's), from the checkout
    root `pnpm everyapp secret list --json`: `data.gateway.names` is what

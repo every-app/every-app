@@ -58,12 +58,10 @@ export interface SetupDialogRow {
 interface SetupDialogModel {
   action: SetupDialogAction;
   title: string;
-  /** The first step's heading, "Get 2 keys": what is still unset, one per any-of group. */
+  /** The first step's heading, "Get 2 keys": what is still unset. */
   gather: string;
   /** Everything the app can't open without, in manifest order: what is unset, and what already is (done). */
   needed: SetupDialogRow[];
-  /** One line per unmet any-of group: "One of these is enough: A, B". */
-  anyOf: string[];
   /** Unset settings the app works without, for whoever can set them. */
   optional: SetupDialogRow[];
   /** The folded optional section's line: "Google, Microsoft 365, Slack, +4 more". */
@@ -121,37 +119,23 @@ export function setupDialogModel(
       ? { kind: SetupAction.Run, command: setup.command.command }
       : { kind: SetupAction.AskAdmin, command: setup.command.command };
   const runs = action.kind === SetupAction.Run;
-  const labelOf = (id: string) =>
-    setup.settings.find((setting) => setting.id === id)?.label ?? id;
-  const unmetIds = new Set(setup.unmet.map((setting) => setting.id));
-  const unmetGroups = setup.groups.filter(
-    (group) => !group.met && group.members.some((id) => unmetIds.has(id)),
-  );
-  const metGroups = new Set(
-    setup.groups.filter((group) => group.met).map((group) => group.group),
-  );
   // What keeps it closed, and what already counts toward opening it: a
-  // required setting that is set, or the member of an any-of group that
-  // met it. Unknown (`set: null`) neither blocks nor is ticked off.
+  // required setting that is set. Unknown (`set: null`) neither blocks
+  // nor is ticked off.
   const needed = setup.settings.filter(
     (setting) =>
       setting.blocking ||
       (setting.set === true && setting.need.kind !== "optional"),
   );
-  const toGet =
-    setup.unmet.filter((setting) => setting.need.kind !== "anyOf").length +
-    unmetGroups.length;
+  const toGet = setup.unmet.length;
   const keys = setup.unmet.every((setting) => !setting.value);
-  // Unset and not blocking: declared optional, or a member of a group
-  // another member already satisfies.
+  // Unset and not blocking: an optional feature's.
   const optional = runs
     ? setup.settings.filter(
         (setting) =>
           setting.set === false &&
           !setting.blocking &&
-          (setting.need.kind === "optional" ||
-            (setting.need.kind === "anyOf" &&
-              metGroups.has(setting.need.group))),
+          setting.need.kind === "optional",
       )
     : [];
   const named = optional
@@ -165,10 +149,6 @@ export function setupDialogModel(
       ? `Get ${plural(toGet, "key")}`
       : `Have ${plural(toGet, "setting")} ready`,
     needed: needed.map((setting) => row(setting, runs)),
-    anyOf: unmetGroups.map(
-      (group) =>
-        `One of these is enough: ${group.members.map(labelOf).join(", ")}`,
-    ),
     optional: optional.map((setting) => row(setting, true)),
     optionalSummary: [...named, ...(more > 0 ? [`+${more} more`] : [])].join(
       ", ",

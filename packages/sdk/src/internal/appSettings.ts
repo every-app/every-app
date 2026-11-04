@@ -8,17 +8,20 @@
  * (`providers`) and a capability (`capabilities`) are the Gateway's: their
  * keys and clients live on the Gateway Worker, set once for every app
  * with `everyapp secret set <NAME>`. The app's own secrets (`secrets`)
- * live on its Worker, set from its directory. Each declaration carries a
- * need: required (the default; the app doesn't open until it is set),
- * optional (the app opens, and the feature says what is missing where it
- * is used), or a member of a named any-of group (the app opens once any
- * member is set; only for an app that picks among the set members at run
- * time). Each may say `why` it is needed and where it comes from
- * (`docs`, an https URL); for providers and capabilities the registries
- * here supply a default. An app's plain settings (`settings`: a host, a
- * project id, a region) are held like its secrets, on its Worker, but are
- * values rather than keys: each says what it takes (a URL, a number, one
- * of a list) and may give a default.
+ * live on its Worker, set from its directory. Everything the manifest
+ * lists at its top level is required: the app doesn't open until it is
+ * set. The rest is grouped into features (`features`): each a named set of
+ * secrets, settings and the Gateway capabilities and providers it needs,
+ * with numbered setup steps. A required feature's values are required; an
+ * optional feature is all or nothing, never blocking: off while none of
+ * its own values is set, incomplete while some are, ready once all are.
+ * Each declaration may say `why` it is needed, where it comes from
+ * (`docs`, an https URL) and, for an app's own value, `how` to get it;
+ * for providers and capabilities the registries here supply a default. An
+ * app's plain settings (`settings`: a host, a project id, a region) are
+ * held like its secrets, on its Worker, but are values rather than keys:
+ * each says what it takes (a URL, a number, one of a list) and may give a
+ * default.
  *
  * Everything in this module is pure and tenant-neutral: a manifest ships
  * in a release, and what is set is asked of the caller (`isSet`), which
@@ -46,36 +49,65 @@ import {
 } from "./gatewaySettings.js";
 import { hasRemoteMcpBlock, remoteMcpBlockProblem } from "./remoteMcp.js";
 
-/** A provider as `providers` lists it: its id, or an entry with a need. */
+/** A provider as `providers` lists it: its id, or an entry with why and docs. */
 export interface ProviderEntry extends SettingNeedFields {
   id: string;
 }
 
-/** A secret as `secrets` lists it: its name, or an entry with a need. */
-export interface SecretEntry extends SettingNeedFields {
+/** Where one of the app's own values comes from, for whoever sets it. */
+export interface OwnValueFields {
+  /** Where the value lives and what permission it needs (200 characters at most); may hold `{appUrl}` and `{gatewayUrl}`. */
+  how?: string;
+  /**
+   * The feature the value belongs to (its `features` key); absent for one
+   * the manifest lists at its top level.
+   */
+  feature?: string;
+}
+
+/** A secret as `secrets` (or a feature's `secrets`) lists it: its name, or an entry. */
+export interface SecretEntry extends SettingNeedFields, OwnValueFields {
   name: string;
+  /** `everyapp configure` (and the deploy, for a top-level one) makes it: 32 random bytes, base64url. */
+  generate?: boolean;
+  /** The value is a file's contents (a .pem): the prompt takes a path. */
+  file?: boolean;
 }
 
 /** What a plain setting's value is: text by default, or a URL, a number, a switch. */
 export type SettingValueType = "text" | "url" | "number" | "boolean";
 
 /**
- * An app's plain setting as `settings` lists it: a value that isn't a
- * secret (a PostHog host, a project id, a region) and differs per
- * install, set like a secret with `everyapp configure <app>` and read
+ * An app's plain setting as `settings` (or a feature's) lists it: a value
+ * that isn't a secret (a PostHog host, a project id, a region) and differs
+ * per install, set like a secret with `everyapp configure <app>` and read
  * from `env` as a string.
  */
-export interface SettingEntry {
+export interface SettingEntry extends OwnValueFields {
   name: string;
   why?: string;
   docs?: string;
-  optional?: boolean;
   /** What it takes; `text` when not given. */
   type?: SettingValueType;
   /** The values it may take, for a `text` setting that is one of a list. */
   values?: readonly string[];
   /** What the deploy sets it to while nobody has set it. */
   default?: string;
+}
+
+/** One feature as the manifest declares it (`features.<id>`). */
+export interface FeatureEntry {
+  id: string;
+  /** What people read: "GitHub". */
+  name: string;
+  /** Required features keep the app closed until set; optional ones (the default) are all or nothing. */
+  required: boolean;
+  why?: string;
+  /** Short Markdown lines, in order; may hold `{appUrl}` and `{gatewayUrl}`. */
+  steps: string[];
+  /** The Gateway capabilities and providers it needs, by id (declared under `capabilities` and `providers` too). */
+  capabilities: string[];
+  providers: string[];
 }
 
 /** What a plain setting's value must be: what `configure` checks and every surface says. */
@@ -85,27 +117,12 @@ export interface SettingValueRule {
   default?: string;
 }
 
-/** What any declaration may say about its need. */
+/** What any declaration may say about why it is needed. */
 export interface SettingNeedFields {
   /** Why the app needs it, for whoever sets it (200 characters at most). */
   why?: string;
   /** Where the key or client comes from: an https URL. */
   docs?: string;
-  /** The app works without it; the feature using it says so where it is used. */
-  optional?: boolean;
-  /**
-   * For an app's own secret: its setup guide, a path in the app
-   * (`docs/setup/main-secret.md`). Providers and capabilities take theirs
-   * from the registries (guides in the everyapp skill) and can't override it.
-   */
-  setup?: string;
-  /**
-   * The name of a group of which one set member is enough ("AI model").
-   * Only for an app that picks among the set members at run time: the
-   * gateway refuses a call to a provider whose key isn't set, whichever
-   * others are.
-   */
-  anyOf?: string;
 }
 
 /** The manifest fields this module reads, as a stored or authored manifest has them. */
@@ -114,6 +131,8 @@ export interface SettingsManifestLike {
   readonly capabilities?: { readonly [id: string]: unknown };
   readonly secrets?: ReadonlyArray<string | SecretEntry>;
   readonly settings?: ReadonlyArray<SettingEntry>;
+  /** Feature id → its name, need, steps and values (`features` in everyapp.config.ts). */
+  readonly features?: { readonly [id: string]: unknown };
   readonly ai?: {
     /** The app needs the Gateway's default chat model (`/api/ai/default`): `true`, or an entry with its need. */
     readonly chat?: boolean | SettingNeedFields;
@@ -147,10 +166,7 @@ export type SettingKind =
 /** Which Worker holds a setting: the Gateway's, or the app's own. */
 export type SettingHolder = "gateway" | "app";
 
-export type SettingNeed =
-  | { kind: "required" }
-  | { kind: "optional" }
-  | { kind: "anyOf"; group: string };
+export type SettingNeed = { kind: "required" } | { kind: "optional" };
 
 /** What `appSettings` may be told about the Gateway, for the default model provider. */
 export interface AppSettingsOptions {
@@ -180,14 +196,22 @@ export interface AppSetting {
   why?: string;
   docs?: string;
   /**
-   * What an agent reads to set it up end to end. For providers and
-   * capabilities, the registry's guide in the everyapp skill, relative to the
-   * skill (`setup/dataforseo.md`; in an app
+   * What an agent reads to set a Gateway setting up end to end: the
+   * registry's guide in the everyapp skill, relative to the skill
+   * (`setup/dataforseo.md`; in an app
    * `node_modules/everyapp/skills/everyapp/setup/…`, in the checkout
-   * `packages/cli/skills/everyapp/setup/…`). For an app's own secret, the
-   * manifest entry's guide, a path in the app (`docs/setup/main-secret.md`).
+   * `packages/cli/skills/everyapp/setup/…`). An app's own value has its
+   * feature's steps and its `how` instead.
    */
   setup?: string;
+  /** The feature it belongs to (a `features` key); absent for a top-level declaration. */
+  feature?: string;
+  /** For an app's own value: where it lives and what permission it needs, placeholders unfilled. */
+  how?: string;
+  /** An app's own secret `configure` makes when unset. */
+  generate?: boolean;
+  /** An app's own secret whose value is a file's contents. */
+  file?: boolean;
   /**
    * What the key is and where it comes from, in a sentence or three, from
    * the provider's entry (its `hint`, and each secret's own after it):
@@ -211,36 +235,35 @@ export interface EvaluatedSetting extends AppSetting {
    * Worker whose secret names were never recorded), which never blocks.
    */
   set: boolean | null;
-  /** This setting keeps the app from opening: required and unset, or a member of an any-of group none of whose members is set. */
+  /** This setting keeps the app from opening: required and unset. */
   blocking: boolean;
 }
 
-/** An any-of group: met once any member is set. */
-export interface AnyOfGroup {
-  group: string;
-  members: EvaluatedSetting[];
-  met: boolean;
+/**
+ * A feature's state: `off` while none of its own values is set (an
+ * optional feature that's off never blocks), `incomplete` while some are
+ * and others aren't (a warning, never a block, for an optional one),
+ * `ready` once every value and every Gateway setting it needs is set.
+ */
+export type FeatureState = "off" | "incomplete" | "ready";
+
+/** A feature with its settings evaluated. */
+export interface FeatureReport extends FeatureEntry {
+  state: FeatureState;
+  /** Its own values and the Gateway settings it needs, in manifest order. */
+  settings: EvaluatedSetting[];
 }
 
 /** What `evaluateAppSettings` finds: whether the app opens, and every setting's state. */
 export interface AppSettingsReport {
-  /** No required setting is unset and every any-of group is met. */
+  /** No required setting is unset. */
   ready: boolean;
-  /** Every setting, in manifest order: providers, capabilities, secrets. */
+  /** Every setting, in manifest order: providers, capabilities, secrets, settings. */
   settings: EvaluatedSetting[];
-  groups: AnyOfGroup[];
   /** The settings that keep the app closed, in manifest order. */
   unmet: EvaluatedSetting[];
-}
-
-/** The need an entry declares; required unless it says otherwise. */
-export function needOf(entry: SettingNeedFields | undefined): SettingNeed {
-  if (!entry) return { kind: "required" };
-  if (typeof entry.anyOf === "string" && entry.anyOf.trim()) {
-    return { kind: "anyOf", group: entry.anyOf.trim() };
-  }
-  if (entry.optional === true) return { kind: "optional" };
-  return { kind: "required" };
+  /** Every feature, in manifest order. */
+  features: FeatureReport[];
 }
 
 function needFields(entry: unknown): SettingNeedFields {
@@ -249,11 +272,80 @@ function needFields(entry: unknown): SettingNeedFields {
   return {
     ...(typeof record["why"] === "string" ? { why: record["why"] } : {}),
     ...(typeof record["docs"] === "string" ? { docs: record["docs"] } : {}),
-    ...(typeof record["optional"] === "boolean"
-      ? { optional: record["optional"] }
-      : {}),
-    ...(typeof record["setup"] === "string" ? { setup: record["setup"] } : {}),
-    ...(typeof record["anyOf"] === "string" ? { anyOf: record["anyOf"] } : {}),
+  };
+}
+
+/** `how`, `generate` and `file` as a stored entry has them. */
+function ownValueFields(
+  entry: unknown,
+): Pick<SecretEntry, "how" | "generate" | "file"> {
+  if (!entry || typeof entry !== "object") return {};
+  const record = entry as Record<string, unknown>;
+  return {
+    ...(typeof record["how"] === "string" ? { how: record["how"] } : {}),
+    ...(record["generate"] === true ? { generate: true } : {}),
+    ...(record["file"] === true ? { file: true } : {}),
+  };
+}
+
+const stringList = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value.filter((each): each is string => typeof each === "string")
+    : [];
+
+/** The features the manifest declares, in order, each read whatever a stored row holds. */
+export function featureEntries(
+  manifest: Pick<SettingsManifestLike, "features">,
+): FeatureEntry[] {
+  const features = manifest.features;
+  if (!features || typeof features !== "object") return [];
+  return Object.entries(features).flatMap(([id, raw]) => {
+    if (!raw || typeof raw !== "object") return [];
+    const record = raw as Record<string, unknown>;
+    return [
+      {
+        id,
+        name:
+          typeof record["name"] === "string" && record["name"].trim()
+            ? record["name"]
+            : id,
+        required: record["required"] === true,
+        ...(typeof record["why"] === "string" ? { why: record["why"] } : {}),
+        steps: stringList(record["steps"]),
+        capabilities: stringList(record["capabilities"]),
+        providers: stringList(record["providers"]),
+      },
+    ];
+  });
+}
+
+/** One feature's raw `secrets` or `settings` list, with the feature id. */
+function featureLists(
+  manifest: Pick<SettingsManifestLike, "features">,
+  key: "secrets" | "settings",
+): Array<{ feature: string; list: readonly unknown[] }> {
+  const features = manifest.features;
+  if (!features || typeof features !== "object") return [];
+  return Object.entries(features).flatMap(([feature, raw]) => {
+    const list =
+      raw && typeof raw === "object"
+        ? (raw as Record<string, unknown>)[key]
+        : undefined;
+    return Array.isArray(list) ? [{ feature, list }] : [];
+  });
+}
+
+/** The need of a capability or provider: optional when an optional feature lists it, else required. */
+function gatewayNeedOf(
+  features: readonly FeatureEntry[],
+  kind: "capabilities" | "providers",
+  id: string,
+): { need: SettingNeed; feature?: string } {
+  const owner = features.find((feature) => feature[kind].includes(id));
+  if (!owner) return { need: { kind: "required" } };
+  return {
+    need: { kind: owner.required ? "required" : "optional" },
+    feature: owner.id,
   };
 }
 
@@ -277,62 +369,84 @@ export function providerIds(
   return providerEntries(manifest).map((entry) => entry.id);
 }
 
-/** The app's own secrets the manifest lists, each as an entry whatever form it took. */
-export function secretEntries(
-  manifest: Pick<SettingsManifestLike, "secrets">,
-): SecretEntry[] {
-  return (manifest.secrets ?? []).flatMap((entry) => {
-    if (typeof entry === "string") return [{ name: entry }];
-    if (entry && typeof entry === "object" && typeof entry.name === "string") {
-      return [{ name: entry.name, ...needFields(entry) }];
+function secretEntryOf(entry: unknown, feature?: string): SecretEntry[] {
+  const tag = feature === undefined ? {} : { feature };
+  if (typeof entry === "string") return [{ name: entry, ...tag }];
+  if (entry && typeof entry === "object") {
+    const name = (entry as { name?: unknown }).name;
+    if (typeof name === "string") {
+      return [{ name, ...needFields(entry), ...ownValueFields(entry), ...tag }];
     }
-    return [];
-  });
+  }
+  return [];
+}
+
+/**
+ * The app's own secrets the manifest lists, each as an entry whatever form
+ * it took: the top-level ones, then each feature's (tagged with it).
+ */
+export function secretEntries(
+  manifest: Pick<SettingsManifestLike, "secrets" | "features">,
+): SecretEntry[] {
+  return [
+    ...(manifest.secrets ?? []).flatMap((entry) => secretEntryOf(entry)),
+    ...featureLists(manifest, "secrets").flatMap(({ feature, list }) =>
+      list.flatMap((entry) => secretEntryOf(entry, feature)),
+    ),
+  ];
 }
 
 /** The names of the app's own secrets, in order. */
 export function secretNames(
-  manifest: Pick<SettingsManifestLike, "secrets">,
+  manifest: Pick<SettingsManifestLike, "secrets" | "features">,
 ): string[] {
   return secretEntries(manifest).map((entry) => entry.name);
 }
 
-/** The app's plain settings the manifest lists, each as an entry. */
+function settingEntryOf(entry: unknown, feature?: string): SettingEntry[] {
+  if (!entry || typeof entry !== "object") return [];
+  const record = entry as Record<string, unknown>;
+  if (typeof record["name"] !== "string") return [];
+  const type = record["type"];
+  const values = record["values"];
+  return [
+    {
+      name: record["name"],
+      ...needFields(entry),
+      ...(typeof record["how"] === "string" ? { how: record["how"] } : {}),
+      ...(type === "url" ||
+      type === "number" ||
+      type === "boolean" ||
+      type === "text"
+        ? { type }
+        : {}),
+      ...(Array.isArray(values) &&
+      values.every((value) => typeof value === "string")
+        ? { values: values as string[] }
+        : {}),
+      ...(typeof record["default"] === "string"
+        ? { default: record["default"] }
+        : {}),
+      ...(feature === undefined ? {} : { feature }),
+    },
+  ];
+}
+
+/** The app's plain settings the manifest lists, each as an entry: the top-level ones, then each feature's. */
 export function settingEntries(
-  manifest: Pick<SettingsManifestLike, "settings">,
+  manifest: Pick<SettingsManifestLike, "settings" | "features">,
 ): SettingEntry[] {
-  return (manifest.settings ?? []).flatMap((entry) => {
-    if (!entry || typeof entry !== "object" || typeof entry.name !== "string") {
-      return [];
-    }
-    const record = entry as unknown as Record<string, unknown>;
-    const type = record["type"];
-    const values = record["values"];
-    return [
-      {
-        name: entry.name,
-        ...needFields(entry),
-        ...(type === "url" ||
-        type === "number" ||
-        type === "boolean" ||
-        type === "text"
-          ? { type }
-          : {}),
-        ...(Array.isArray(values) &&
-        values.every((value) => typeof value === "string")
-          ? { values: values as string[] }
-          : {}),
-        ...(typeof record["default"] === "string"
-          ? { default: record["default"] }
-          : {}),
-      },
-    ];
-  });
+  return [
+    ...(manifest.settings ?? []).flatMap((entry) => settingEntryOf(entry)),
+    ...featureLists(manifest, "settings").flatMap(({ feature, list }) =>
+      list.flatMap((entry) => settingEntryOf(entry, feature)),
+    ),
+  ];
 }
 
 /** The names of the app's plain settings, in order. */
 export function settingNames(
-  manifest: Pick<SettingsManifestLike, "settings">,
+  manifest: Pick<SettingsManifestLike, "settings" | "features">,
 ): string[] {
   return settingEntries(manifest).map((entry) => entry.name);
 }
@@ -343,7 +457,7 @@ export function settingNames(
  * `apps.secret_names` records.
  */
 export function appWorkerNames(
-  manifest: Pick<SettingsManifestLike, "secrets" | "settings">,
+  manifest: Pick<SettingsManifestLike, "secrets" | "settings" | "features">,
 ): string[] {
   return [...secretNames(manifest), ...settingNames(manifest)];
 }
@@ -504,18 +618,44 @@ function providerHint(
 function withNeed(
   setting: Omit<AppSetting, "need" | "why" | "docs" | "setup">,
   entry: SettingNeedFields | undefined,
+  need: { need: SettingNeed; feature?: string },
   defaults: { docs?: string; setup?: string; hint?: string } = {},
 ): AppSetting {
   const docs = entry?.docs ?? defaults.docs;
-  // The registry's guide for a Gateway setting; the manifest's for the app's own secret.
-  const setup = setting.holder === "gateway" ? defaults.setup : entry?.setup;
   return {
     ...setting,
-    need: needOf(entry),
+    need: need.need,
+    ...(need.feature === undefined ? {} : { feature: need.feature }),
     ...(entry?.why ? { why: entry.why } : {}),
     ...(docs ? { docs } : {}),
-    ...(setup ? { setup } : {}),
+    ...(defaults.setup ? { setup: defaults.setup } : {}),
     ...(defaults.hint ? { hint: defaults.hint } : {}),
+  };
+}
+
+/** An app's own value's need: its feature's (required, or optional), or required at the top level. */
+function ownNeedOf(
+  features: readonly FeatureEntry[],
+  feature: string | undefined,
+): { need: SettingNeed; feature?: string } {
+  if (feature === undefined) return { need: { kind: "required" } };
+  const owner = features.find((each) => each.id === feature);
+  return {
+    need: { kind: owner?.required ? "required" : "optional" },
+    feature,
+  };
+}
+
+/** `how`, `generate` and `file` onto an app's own setting, when its entry says them. */
+function withOwnValue(
+  setting: AppSetting,
+  entry: Pick<SecretEntry, "how" | "generate" | "file">,
+): AppSetting {
+  return {
+    ...setting,
+    ...(entry.how ? { how: entry.how } : {}),
+    ...(entry.generate ? { generate: true } : {}),
+    ...(entry.file ? { file: true } : {}),
   };
 }
 
@@ -533,6 +673,7 @@ export function appSettings(
   options: AppSettingsOptions = {},
 ): AppSetting[] {
   const settings: AppSetting[] = [];
+  const features = featureEntries(manifest);
   const chat = manifest.ai?.chat;
   if (chat === true || (chat && typeof chat === "object")) {
     // The default resolves on what is set: with nothing set, the first of
@@ -560,7 +701,8 @@ export function appSettings(
             .map((candidate) => settable(candidate.settings))
             .filter((names) => names.length > 0),
         },
-        chat === true ? undefined : chat,
+        chat === true ? undefined : needFields(chat),
+        { need: { kind: "required" } },
         {
           ...(provider?.mode === "ai" ? { docs: provider.docs } : {}),
           setup: "setup/ai.md",
@@ -569,10 +711,10 @@ export function appSettings(
       ),
     );
   }
-  // The default's settings: an optional pin that needs only those is the
-  // same row (one key, set once), so it isn't listed twice. A required
-  // pin stays: it needs that provider's key even while another provider
-  // serves the default.
+  // The default's settings: an optional pin (a provider an optional
+  // feature lists) that needs only those is the same row (one key, set
+  // once), so it isn't listed twice. A required pin stays: it needs that
+  // provider's key even while another provider serves the default.
   const defaultNames = settings.find(
     (setting) => setting.kind === "ai-default",
   )?.names;
@@ -580,9 +722,10 @@ export function appSettings(
     const capability = lookup.get(entry.id);
     if (capability?.mode !== "ai") continue;
     const names = providerNames(capability);
+    const need = gatewayNeedOf(features, "providers", entry.id);
     if (
       defaultNames &&
-      needOf(entry).kind === "optional" &&
+      need.need.kind === "optional" &&
       names.length > 0 &&
       names.every((name) => defaultNames.includes(name))
     ) {
@@ -599,6 +742,7 @@ export function appSettings(
           alsoReads: [],
         },
         entry,
+        need,
         {
           docs: capability.docs,
           setup: capability.setup,
@@ -623,6 +767,7 @@ export function appSettings(
           alsoReads,
         },
         needFields(entry),
+        gatewayNeedOf(features, "capabilities", id),
         {
           docs: capabilityDocs(capability),
           setup: capability.setup,
@@ -653,34 +798,43 @@ export function appSettings(
   }
   for (const entry of secretEntries(manifest)) {
     settings.push(
-      withNeed(
-        {
-          kind: "secret",
-          id: entry.name,
-          label: entry.name,
-          holder: "app",
-          names: [entry.name],
-          alsoReads: [],
-        },
+      withOwnValue(
+        withNeed(
+          {
+            kind: "secret",
+            id: entry.name,
+            label: entry.name,
+            holder: "app",
+            names: [entry.name],
+            alsoReads: [],
+          },
+          entry,
+          ownNeedOf(features, entry.feature),
+        ),
         entry,
       ),
     );
   }
   for (const entry of settingEntries(manifest)) {
-    // A setting with a default is never unset for long: the deploy writes it.
-    const need: SettingNeedFields =
-      entry.default !== undefined ? { ...entry, optional: true } : entry;
+    const own = ownNeedOf(features, entry.feature);
     settings.push({
-      ...withNeed(
-        {
-          kind: "setting",
-          id: entry.name,
-          label: entry.name,
-          holder: "app",
-          names: [entry.name],
-          alsoReads: [],
-        },
-        need,
+      ...withOwnValue(
+        withNeed(
+          {
+            kind: "setting",
+            id: entry.name,
+            label: entry.name,
+            holder: "app",
+            names: [entry.name],
+            alsoReads: [],
+          },
+          entry,
+          // A setting with a default is never unset for long: the deploy writes it.
+          entry.default !== undefined
+            ? { ...own, need: { kind: "optional" } }
+            : own,
+        ),
+        entry,
       ),
       value: settingValueRule(entry),
     });
@@ -725,14 +879,33 @@ export interface EvaluateOptions {
    * to them.
    */
   readiness?: (setting: AppSetting) => boolean | null | undefined;
+  /** The manifest's features ({@link featureEntries}), for their states; none by default. */
+  features?: readonly FeatureEntry[];
+}
+
+/**
+ * A feature's state from its settings (see {@link FeatureState}). Whether
+ * it is started is read from its own values that have no default (a
+ * default is written by the deploy, so it says nothing), or, for a
+ * feature of Gateway settings alone, from those.
+ */
+function featureState(settings: readonly EvaluatedSetting[]): FeatureState {
+  if (settings.every((setting) => setting.set !== false)) return "ready";
+  const own = settings.filter(
+    (setting) =>
+      setting.holder === "app" && setting.value?.default === undefined,
+  );
+  const started = (own.length > 0 ? own : settings).some(
+    (setting) => setting.set === true,
+  );
+  return started ? "incomplete" : "off";
 }
 
 /**
  * Every setting against what is set. `isSet` answers per holder and name:
  * true, false, or null when it can't tell (the registry never recorded
- * the app Worker's secret names), which never blocks. An any-of group is
- * met once any member is set; while none is and none is unknown, every
- * member blocks.
+ * the app Worker's secret names), which never blocks. A required setting
+ * that is unset blocks; an optional one (an optional feature's) never does.
  */
 export function evaluateAppSettings(
   settings: readonly AppSetting[],
@@ -747,38 +920,25 @@ export function evaluateAppSettings(
       blocking: false,
     };
   });
-  const groups: AnyOfGroup[] = [];
-  for (const setting of evaluated) {
-    if (setting.need.kind !== "anyOf") continue;
-    const group = setting.need.group;
-    let found = groups.find((each) => each.group === group);
-    if (!found) {
-      found = { group, members: [], met: false };
-      groups.push(found);
-    }
-    found.members.push(setting);
-  }
-  for (const group of groups) {
-    group.met = group.members.some((member) => member.set === true);
-    const unknown = group.members.some((member) => member.set === null);
-    if (!group.met && !unknown) {
-      for (const member of group.members) member.blocking = true;
-    }
-  }
   for (const setting of evaluated) {
     if (setting.need.kind === "required" && setting.set === false) {
       setting.blocking = true;
     }
   }
   const unmet = evaluated.filter((setting) => setting.blocking);
-  return { ready: unmet.length === 0, settings: evaluated, groups, unmet };
+  const features = (options.features ?? []).map((feature) => {
+    const own = evaluated.filter((setting) => setting.feature === feature.id);
+    return { ...feature, settings: own, state: featureState(own) };
+  });
+  return { ready: unmet.length === 0, settings: evaluated, unmet, features };
 }
 
 /** The one command that opens the app. */
 export interface SetupCommand {
   /**
    * `everyapp configure <app>`: asks for every required setting the app
-   * lacks, then offers the optional ones, and sets each where it is held.
+   * lacks, feature by feature, then offers its optional features, and sets
+   * each where it is held.
    */
   command: string;
 }
@@ -786,19 +946,18 @@ export interface SetupCommand {
 /**
  * What to run for an app that needs setup: `everyapp configure <app>`,
  * which reads the app's manifest (from the registry, so it runs from
- * anywhere), prompts for each unmet setting (one member of an any-of group
- * is enough: it asks which) and sets them where they are held. Null when
+ * anywhere), prompts for each unmet setting, feature by feature, and sets
+ * them where they are held. Null when
  * the app is ready. `cli` is how the operator runs everyapp (`pnpm
  * everyapp` from a checkout). Scripts that set one name at a time use
  * `everyapp secret set NAME [--app <id>]` instead.
  *
  * A provider app (`provider`: the gateway's own, with no Worker and no
  * directory; `everyapp mcp on <id>`, an MCP app) has nothing to configure: its
- * command is the `secret set` of its Gateway key (the first member of an
- * unmet any-of group), as `mcp list` says it.
+ * command is the `secret set` of its Gateway key, as `mcp list` says it.
  */
 export function setupCommand(
-  report: Pick<AppSettingsReport, "unmet" | "groups">,
+  report: Pick<AppSettingsReport, "unmet">,
   {
     cli,
     appId,
@@ -816,13 +975,7 @@ export function setupCommand(
     for (const name of setting.names)
       if (!names.includes(name)) names.push(name);
   };
-  for (const setting of report.unmet) {
-    if (setting.need.kind === "required") add(setting);
-  }
-  for (const group of report.groups) {
-    const first = group.members.find((member) => member.blocking);
-    if (first) add(first);
-  }
+  for (const setting of report.unmet) add(setting);
   return { command: `${cli} secret set ${names.join(" ")}` };
 }
 
@@ -833,17 +986,25 @@ export type AppSetupSetting = Omit<EvaluatedSetting, "alsoReads">;
  * An app's setup state as every surface shows it, the same on the
  * gateway's app lists (`setup`), `everyapp status --json`
  * (`apps[].setup`) and `everyapp secret list --json`: whether it opens,
- * every setting with its state, the any-of groups, and the one command
- * that opens it, `everyapp configure <app>` (null when it is ready, or
- * when whoever reads this can't run it: a shared app seen from another
- * organization).
+ * every setting with its state, every feature with its state, and the
+ * one command that opens it, `everyapp configure <app>` (null when it is
+ * ready, or when whoever reads this can't run it: a shared app seen from
+ * another organization).
  */
 export interface AppSetup {
   ready: boolean;
   settings: AppSetupSetting[];
   unmet: AppSetupSetting[];
-  groups: Array<{ group: string; met: boolean; members: string[] }>;
+  /** Each feature: its name, need, steps (placeholders unfilled), state, and its settings' ids. */
+  features: AppSetupFeature[];
   command: SetupCommand | null;
+}
+
+/** One feature as `AppSetup` carries it. */
+export interface AppSetupFeature extends FeatureEntry {
+  state: FeatureState;
+  /** The ids of its settings (in `settings`), in manifest order. */
+  settings: string[];
 }
 
 export function appSetupOf(
@@ -861,10 +1022,9 @@ export function appSetupOf(
     ready: report.ready,
     settings: report.settings.map(strip),
     unmet: report.unmet.map(strip),
-    groups: report.groups.map((group) => ({
-      group: group.group,
-      met: group.met,
-      members: group.members.map((member) => member.id),
+    features: report.features.map((feature) => ({
+      ...feature,
+      settings: feature.settings.map((setting) => setting.id),
     })),
     command:
       options.withCommand === false ? null : setupCommand(report, options),
@@ -886,4 +1046,19 @@ export function apiKeyCapabilityOf(
 ): ApiKeyCapability | undefined {
   const capability = lookup.get(id);
   return capability?.mode === "api_key" ? capability : undefined;
+}
+
+/**
+ * A fresh value for a secret the manifest marks `generate: true`: 32
+ * bytes from the platform's cryptographic random source, base64url
+ * without padding (43 characters).
+ */
+export function generatedSecret(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }

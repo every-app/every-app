@@ -2,6 +2,12 @@
 
 ## Unreleased: breaking
 
+An app's setup is grouped into **features** (`features` in `everyapp.config.ts`): each a name, a why, numbered steps with URLs, and the secrets, settings, capabilities and providers it needs. `everyapp configure <app>` walks them; `everyapp status` shows each app's features in one line.
+
+- `optional`, `anyOf` and a secret's `setup` guide are gone. Everything at the top level is required. Move what the app works without into an optional feature (all or nothing; `required: true` for one it can't open without). A capability or provider an optional feature lists stays declared under `capabilities` or `providers`.
+- A value says `how` (where it is, what permission it needs). A secret may say `generate: true` (made for you; the deploy sets a top-level one) or `file: true` (the prompt takes a `.pem`'s path).
+- An app deployed with `optional` still in its stored manifest reads those values as required: update its `everyapp.config.ts` and deploy it again.
+
 OAuth providers are simpler (docs/design/2026-11-oauth-simplify.md):
 
 - An app's `everyapp.config.ts` lists the provider's own scopes (`gmail.modify`, `Mail.Read`, `chat:write`). Scope sets are gone.

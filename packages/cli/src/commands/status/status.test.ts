@@ -448,8 +448,12 @@ describe("everyapp status", () => {
       manifest: {
         id: "crm",
         providers: [{ id: "openrouter", why: "Drafts replies." }],
-        capabilities: { context: { access: "read", optional: true } },
+        capabilities: { context: { access: "read" } },
         secrets: ["TOKEN_ENCRYPTION_KEY"],
+        features: {
+          github: { name: "GitHub", why: "Raises the rate limit.", secrets: ["GITHUB_TOKEN"] },
+          rendering: { name: "Rendering", why: "JavaScript sites.", capabilities: ["context"] },
+        },
       },
     });
     // Nothing to set: no rows, no setup.
@@ -492,6 +496,10 @@ describe("everyapp status", () => {
         "crm  OPENROUTER_API_KEY    Gateway  ! not set",
         "crm  CONTEXT_API_KEY       Gateway  not set (optional)",
         "crm  TOKEN_ENCRYPTION_KEY  crm      ! not set",
+        "crm  GITHUB_TOKEN          crm      not set (optional)",
+        "",
+        "APP  FEATURES",
+        "crm  GitHub off · Rendering off",
       ].join("\n"),
     );
     expect(report).toContain(
@@ -510,14 +518,17 @@ describe("everyapp status", () => {
     // Set outside everyapp: the next status sees it, records it, and the app is live.
     account.workers.get("every-app-gateway")!.secrets["OPENROUTER_API_KEY"] = "sk-or";
     account.workers.get(crm.workerName!)!.secrets["TOKEN_ENCRYPTION_KEY"] = "tek";
+    account.workers.get(crm.workerName!)!.secrets["GITHUB_TOKEN"] = "ghp";
     const ready = await status();
     expect(fixCodes(ready)).not.toContain("APP_NEEDS_SETUP");
     expect(ready["data"]["apps"]).toContainEqual(
       expect.objectContaining({ id: "crm", setup: expect.objectContaining({ ready: true, command: null }) }),
     );
-    expect((await readApp(db(), "crm")).secretNames).toEqual(["TOKEN_ENCRYPTION_KEY"]);
+    expect((await readApp(db(), "crm")).secretNames).toEqual(["GITHUB_TOKEN", "TOKEN_ENCRYPTION_KEY"]);
     const live = await shown();
     expect(live).toMatch(/\ncrm +✓ live +https:\/\/crm\.example\.com/);
+    // One line per app: each feature's state.
+    expect(live).toContain(["APP  FEATURES", "crm  GitHub ✓ · Rendering off"].join("\n"));
     expect(live).toContain("crm  TOKEN_ENCRYPTION_KEY  crm      ✓ set");
   });
 
@@ -1001,7 +1012,11 @@ describe("everyapp status", () => {
       (await mintSetupLink({ db: db(), gatewayUrl: "https://example.com" })).url,
     );
     await deployed("crm", {
-      manifest: { id: "crm", providers: [{ id: "openrouter", why: "Drafts replies.", optional: true }] },
+      manifest: {
+        id: "crm",
+        providers: [{ id: "openrouter", why: "Drafts replies." }],
+        features: { ai: { name: "AI", why: "Drafts replies.", providers: ["openrouter"] } },
+      },
     });
     const todo = await deployed("todo");
     for (const host of ["crm", "todo"]) await new GatewayWorker(account).fetch(`https://${host}.example.com/`);

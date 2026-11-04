@@ -37,6 +37,8 @@ import {
 } from "@every-app/sdk/cloudflare/sentinel";
 import {
   isReservedAppSecretName,
+  generatedSecret,
+  secretEntries,
   settingEntries,
 } from "@every-app/sdk/internal";
 import { installWorkerConfig, type InstallTarget } from "./config";
@@ -407,9 +409,10 @@ export async function installApp<C>(
   // too (a crawl's rendering, say), and without EVERY_APP_ORG_ID it would
   // name the app's own organization id, which the gateway refuses. With
   // them, the default of each plain setting (`settings`) the Worker doesn't
-  // hold yet: an app reads one nobody has set as its default.
+  // hold yet (an app reads one nobody has set as its default), and each
+  // top-level secret it generates, so the app opens after its first deploy.
   const values = {
-    ...(await settingDefaultsToWrite(input, ports)),
+    ...(await initialValuesToWrite(input, ports)),
     ...input.values,
     GATEWAY_URL: input.gatewayUrl,
     EVERY_APP_ORG_ID: input.organizationId,
@@ -656,24 +659,32 @@ async function installBuildOutput<C>(
 }
 
 /**
- * The defaults of the manifest's plain settings that the app's Worker
- * doesn't hold yet, to send with the version the deploy uploads (one
- * nobody has set reads its default, as in development); one the Worker
- * holds, the default or a value someone set, is never replaced. Without a
- * defaulted setting, Cloudflare isn't asked.
+ * What the app's Worker doesn't hold yet, to send with the version the
+ * deploy uploads: the defaults of the manifest's plain settings (one
+ * nobody has set reads its default, as in development), and a fresh value
+ * for each top-level secret it generates (`generate: true`) that has no
+ * `how` (one a person pastes somewhere is made by `everyapp configure`,
+ * which shows it). What the Worker holds, the default or a value someone
+ * set, is never replaced. Without either, Cloudflare isn't asked.
  */
-async function settingDefaultsToWrite<C>(
+async function initialValuesToWrite<C>(
   input: AppInstallInput,
   ports: AppInstallPorts<C>,
 ): Promise<Record<string, string>> {
   const defaults = settingEntries(input.manifest).filter(
     (entry) => entry.default !== undefined,
   );
-  if (defaults.length === 0) return {};
+  const generated = secretEntries(input.manifest).filter(
+    (entry) => entry.generate && entry.feature === undefined && !entry.how,
+  );
+  if (defaults.length === 0 && generated.length === 0) return {};
   const held = await ports.workerSecretNames(ports.cf, input.workerName);
-  return Object.fromEntries(
-    defaults
+  return Object.fromEntries([
+    ...defaults
       .filter((entry) => !held.includes(entry.name))
       .map((entry) => [entry.name, entry.default!]),
-  );
+    ...generated
+      .filter((entry) => !held.includes(entry.name))
+      .map((entry) => [entry.name, generatedSecret()]),
+  ]);
 }

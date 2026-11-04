@@ -206,24 +206,14 @@ export function devVarsHint(
     Boolean(set?.[name]),
   );
   if (report.ready) return [];
-  // The unset names of every required setting, in manifest order, then
-  // each any-of group none of whose members is set.
+  // The unset names of every required setting, in manifest order.
   const names: string[] = [];
   for (const setting of report.unmet) {
-    if (setting.need.kind !== "required") continue;
     for (const name of setting.names) {
       if (!set?.[name] && !names.includes(name)) names.push(name);
     }
   }
-  const groups = report.groups
-    .filter((group) => !group.met)
-    .map(
-      (group) =>
-        `one of ${group.members.map((member) => member.names.join(" with ")).join(", ")}`,
-    );
-  const list = [...(names.length > 0 ? [names.join(", ")] : []), ...groups].join(
-    " and ",
-  );
+  const list = names.join(", ");
   return [
     {
       label: "Dev vars",

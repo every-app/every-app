@@ -136,8 +136,8 @@ secret exists.
    or from `az`: `az ad app list --display-name "EveryApp" --query "[0].appId" -o tsv | pnpm everyapp secret set MICROSOFT_365_CLIENT_ID --json`.
    Look for `"type": "done"`. One value per pipe (`SECRET_SEVERAL_NAMES` otherwise). Both at once only at the
    person's terminal: `pnpm everyapp configure <app>` (it asks for the two names, id then secret, with hidden
-   prompts, after the app's required settings; for an app where the client is optional, Yes to `Set the N
-   optional settings too?`, Enter skipping the others) or `pnpm everyapp secret set MICROSOFT_365_CLIENT_ID MICROSOFT_365_CLIENT_SECRET`
+   prompts, after the app's required settings; for an app that lists it in an optional feature, configure
+   names `pnpm everyapp provider add microsoft-365` under that feature instead) or `pnpm everyapp secret set MICROSOFT_365_CLIENT_ID MICROSOFT_365_CLIENT_SECRET`
    (two hidden prompts); either covers step 5's set too. The change is live at once, no deploy.
 7. **You:** Verify, below.
 

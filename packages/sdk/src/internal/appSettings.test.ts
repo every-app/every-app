@@ -3,11 +3,13 @@ import {
   appSettings,
   appSetupOf,
   evaluateAppSettings,
-  needOf,
+  featureEntries,
+  generatedSecret,
   providerEntries,
   providerIds,
   secretEntries,
   secretNames,
+  settingEntries,
   setupCommand,
   type AppSetting,
   type SettingHolder,
@@ -30,14 +32,11 @@ describe("the manifest's declarations", () => {
   it("reads providers and secrets by id or as entries, and defaults their need to required", () => {
     expect(
       providerEntries({
-        providers: [
-          "openrouter",
-          { id: "workers-ai", anyOf: "AI model", why: "Runs the agent." },
-        ],
+        providers: ["openrouter", { id: "workers-ai", why: "Runs the agent." }],
       }),
     ).toEqual([
       { id: "openrouter" },
-      { id: "workers-ai", anyOf: "AI model", why: "Runs the agent." },
+      { id: "workers-ai", why: "Runs the agent." },
     ]);
     expect(
       providerIds({ providers: ["openai", { id: "openrouter" }] }),
@@ -48,8 +47,9 @@ describe("the manifest's declarations", () => {
           "MAIN_SECRET",
           {
             name: "GITHUB_TOKEN",
-            optional: true,
             docs: "https://github.com/settings/tokens",
+            how: "Settings → Tokens",
+            generate: true,
           },
         ],
       }),
@@ -57,21 +57,64 @@ describe("the manifest's declarations", () => {
       { name: "MAIN_SECRET" },
       {
         name: "GITHUB_TOKEN",
-        optional: true,
         docs: "https://github.com/settings/tokens",
+        how: "Settings → Tokens",
+        generate: true,
       },
     ]);
     expect(secretNames({ secrets: ["A", { name: "B" }] })).toEqual(["A", "B"]);
     expect(secretNames({})).toEqual([]);
-    expect(needOf(undefined)).toEqual({ kind: "required" });
-    expect(needOf({})).toEqual({ kind: "required" });
-    expect(needOf({ optional: false })).toEqual({ kind: "required" });
-    expect(needOf({ optional: true })).toEqual({ kind: "optional" });
-    // A group wins over `optional`; the validator refuses both anyway.
-    expect(needOf({ optional: true, anyOf: " AI model " })).toEqual({
-      kind: "anyOf",
-      group: "AI model",
-    });
+  });
+
+  it("reads features in order with their defaults, and their values tagged with the feature", () => {
+    const manifest = {
+      secrets: ["TOP"],
+      settings: [{ name: "HOST", why: "Where." }],
+      features: {
+        github: {
+          name: "GitHub",
+          required: true,
+          why: "Pushes branches.",
+          steps: ["Create an App: {appUrl}"],
+          settings: [{ name: "GITHUB_APP_ID", how: "General → App ID" }],
+          secrets: [
+            { name: "GITHUB_APP_PRIVATE_KEY", file: true },
+            "GITHUB_WEBHOOK_SECRET",
+          ],
+          capabilities: ["slack"],
+        },
+        bare: {},
+      },
+    };
+    expect(featureEntries(manifest)).toEqual([
+      {
+        id: "github",
+        name: "GitHub",
+        required: true,
+        why: "Pushes branches.",
+        steps: ["Create an App: {appUrl}"],
+        capabilities: ["slack"],
+        providers: [],
+      },
+      {
+        id: "bare",
+        name: "bare",
+        required: false,
+        steps: [],
+        capabilities: [],
+        providers: [],
+      },
+    ]);
+    expect(featureEntries({})).toEqual([]);
+    expect(secretEntries(manifest)).toEqual([
+      { name: "TOP" },
+      { name: "GITHUB_APP_PRIVATE_KEY", file: true, feature: "github" },
+      { name: "GITHUB_WEBHOOK_SECRET", feature: "github" },
+    ]);
+    expect(settingEntries(manifest)).toEqual([
+      { name: "HOST", why: "Where." },
+      { name: "GITHUB_APP_ID", how: "General → App ID", feature: "github" },
+    ]);
   });
 
   it("skips entries it can't read, as a stored manifest from another CLI might hold", () => {
@@ -88,20 +131,24 @@ describe("appSettings", () => {
       providers: ["workers-ai", { id: "openrouter", why: "SAM." }],
       capabilities: {
         dataforseo: { access: "read", why: "Keyword data." },
-        context: { access: "read", optional: true },
+        context: { access: "read" },
         email: { access: "write" },
         members: { access: "read" },
         slack: { access: "write" },
         "google-workspace": {
           access: "write",
-          optional: true,
           docs: "https://example.com/google",
         },
       },
-      secrets: [
-        "MAIN_SECRET",
-        { name: "GITHUB_TOKEN", optional: true, why: "Raises the rate limit." },
-      ],
+      secrets: ["MAIN_SECRET"],
+      features: {
+        rendering: { name: "Rendering", capabilities: ["context"] },
+        google: { name: "Google", capabilities: ["google-workspace"] },
+        github: {
+          name: "GitHub",
+          secrets: [{ name: "GITHUB_TOKEN", why: "Raises the rate limit." }],
+        },
+      },
     });
     expect(
       settings.map((setting) => [
@@ -219,13 +266,73 @@ describe("appSettings", () => {
     expect(byId["MAIN_SECRET"]!.setup).toBeUndefined();
   });
 
-  it("takes an app secret's setup guide from its entry, and never a Gateway setting's", () => {
+  it("never takes a setup guide from the manifest: the registry's for a Gateway setting, none for the app's own", () => {
     const settings = appSettings({
       providers: [{ id: "openai", setup: "setup/mine.md" } as never],
-      secrets: [{ name: "MAIN_SECRET", setup: "docs/setup/main-secret.md" }],
+      secrets: [
+        { name: "MAIN_SECRET", setup: "docs/setup/main-secret.md" } as never,
+      ],
     });
     expect(settings[0]!.setup).toBe("setup/openai.md");
-    expect(settings[1]!.setup).toBe("docs/setup/main-secret.md");
+    expect(settings[1]!.setup).toBeUndefined();
+  });
+
+  it("gives each value its feature's need: required, optional, or required at the top level; a default is optional", () => {
+    const settings = appSettings({
+      providers: ["openai", "openrouter"],
+      capabilities: {
+        slack: { access: "write" },
+        dataforseo: { access: "read" },
+      },
+      secrets: [{ name: "TOP", generate: true }],
+      settings: [{ name: "REGION", why: "Where.", default: "us" }],
+      features: {
+        github: {
+          name: "GitHub",
+          required: true,
+          settings: [{ name: "GITHUB_APP_ID", how: "App ID on {appUrl}" }],
+          secrets: [{ name: "GITHUB_KEY", file: true }],
+          capabilities: ["dataforseo"],
+        },
+        slack: {
+          name: "Slack",
+          secrets: [
+            { name: "SLACK_SIGNING_SECRET", generate: true, how: "Paste it" },
+          ],
+          settings: [{ name: "SLACK_MODE", default: "socket" }],
+          capabilities: ["slack"],
+          providers: ["openrouter"],
+        },
+      },
+    });
+    expect(
+      settings.map((setting) => [
+        setting.id,
+        setting.need.kind,
+        setting.feature ?? null,
+      ]),
+    ).toEqual([
+      ["openai", "required", null],
+      ["openrouter", "optional", "slack"],
+      ["slack", "optional", "slack"],
+      ["dataforseo", "required", "github"],
+      ["TOP", "required", null],
+      ["GITHUB_KEY", "required", "github"],
+      ["SLACK_SIGNING_SECRET", "optional", "slack"],
+      ["REGION", "optional", null],
+      ["GITHUB_APP_ID", "required", "github"],
+      ["SLACK_MODE", "optional", "slack"],
+    ]);
+    const byId = Object.fromEntries(
+      settings.map((setting) => [setting.id, setting]),
+    );
+    expect(byId["TOP"]).toMatchObject({ generate: true });
+    expect(byId["GITHUB_KEY"]).toMatchObject({ file: true });
+    expect(byId["SLACK_SIGNING_SECRET"]).toMatchObject({
+      generate: true,
+      how: "Paste it",
+    });
+    expect(byId["GITHUB_APP_ID"]).toMatchObject({ how: "App ID on {appUrl}" });
   });
 
   it("contributes nothing for a provider or capability the gateway doesn't offer, or a manifest with none", () => {
@@ -243,10 +350,10 @@ describe("the default model and its pins", () => {
   it("lists an optional pin that needs only the default's key once, as the default", () => {
     const settings = appSettings({
       ai: { chat: true },
-      providers: [
-        { id: "openrouter", optional: true },
-        { id: "workers-ai", optional: true },
-      ],
+      providers: ["openrouter", "workers-ai"],
+      features: {
+        pins: { name: "Pins", providers: ["openrouter", "workers-ai"] },
+      },
     });
     expect(settings.map((setting) => [setting.kind, setting.id])).toEqual([
       ["ai-default", "ai-default"],
@@ -272,31 +379,30 @@ describe("the default model and its pins", () => {
 
 describe("evaluateAppSettings", () => {
   const inbox = appSettings({
-    providers: [
-      { id: "workers-ai", anyOf: "AI model" },
-      { id: "openrouter", anyOf: "AI model" },
-    ],
+    providers: ["openrouter"],
     capabilities: { email: { access: "write" } },
   });
   const crm = appSettings({
     providers: ["openrouter"],
     capabilities: {
       context: { access: "read" },
-      slack: { access: "write", optional: true },
+      slack: { access: "write" },
     },
-    secrets: ["TOKEN_ENCRYPTION_KEY", { name: "GITHUB_TOKEN", optional: true }],
+    secrets: ["TOKEN_ENCRYPTION_KEY"],
+    features: {
+      slack: { name: "Slack", capabilities: ["slack"] },
+      github: { name: "GitHub", secrets: ["GITHUB_TOKEN"] },
+    },
   });
 
-  it("is ready when every required setting is set and each any-of group has a member set", () => {
+  it("is ready when every required setting is set", () => {
     const report = evaluateAppSettings(
       inbox,
       setOn(["OPENROUTER_API_KEY", "EMAIL_FROM", "EMAIL_FROM_NAME"], []),
     );
     expect(report.ready).toBe(true);
     expect(report.unmet).toEqual([]);
-    expect(report.groups).toEqual([
-      expect.objectContaining({ group: "AI model", met: true }),
-    ]);
+    expect(report.features).toEqual([]);
     expect(
       report.settings.map((setting) => [
         setting.id,
@@ -304,13 +410,12 @@ describe("evaluateAppSettings", () => {
         setting.blocking,
       ]),
     ).toEqual([
-      ["workers-ai", false, false],
       ["openrouter", true, false],
       ["email", true, false],
     ]);
   });
 
-  it("blocks on a required setting that is unset, never on an optional one", () => {
+  it("blocks on a required setting that is unset, never on an optional feature's", () => {
     const report = evaluateAppSettings(
       crm,
       setOn(["OPENROUTER_API_KEY"], ["TOKEN_ENCRYPTION_KEY"]),
@@ -323,19 +428,6 @@ describe("evaluateAppSettings", () => {
     expect(
       report.settings.find((setting) => setting.id === "GITHUB_TOKEN"),
     ).toMatchObject({ set: false, blocking: false });
-  });
-
-  it("blocks on every member of a any-of group while none is set", () => {
-    const report = evaluateAppSettings(
-      inbox,
-      setOn(["EMAIL_FROM", "EMAIL_FROM_NAME"], []),
-    );
-    expect(report.ready).toBe(false);
-    expect(report.unmet.map((setting) => setting.id)).toEqual([
-      "workers-ai",
-      "openrouter",
-    ]);
-    expect(report.groups[0]).toMatchObject({ group: "AI model", met: false });
   });
 
   it("counts a setting set only when every one of its names is", () => {
@@ -375,18 +467,6 @@ describe("evaluateAppSettings", () => {
     expect(
       report.settings.find((setting) => setting.id === "TOKEN_ENCRYPTION_KEY"),
     ).toMatchObject({ set: null, blocking: false });
-    // A any-of group with an unknown member and no set one is unknown too.
-    const group = evaluateAppSettings(
-      appSettings({
-        secrets: [
-          { name: "A", anyOf: "a key" },
-          { name: "B", anyOf: "a key" },
-        ],
-      }),
-      setOn([], null),
-    );
-    expect(group.ready).toBe(true);
-    expect(group.groups[0]!.met).toBe(false);
   });
 
   it("is ready for a capability with nothing to set", () => {
@@ -397,24 +477,113 @@ describe("evaluateAppSettings", () => {
   });
 });
 
+describe("feature states", () => {
+  const manifest = {
+    capabilities: {
+      slack: { access: "write" },
+      dataforseo: { access: "read" },
+    },
+    features: {
+      github: {
+        name: "GitHub",
+        required: true,
+        settings: [{ name: "GITHUB_APP_ID" }],
+        secrets: ["GITHUB_KEY"],
+      },
+      slack: {
+        name: "Slack",
+        secrets: ["SLACK_SIGNING_SECRET"],
+        settings: [{ name: "SLACK_MODE", default: "socket" }],
+        capabilities: ["slack"],
+      },
+      seo: { name: "SEO", capabilities: ["dataforseo"] },
+    },
+  };
+  const evaluate = (gateway: string[], app: string[] | null) =>
+    evaluateAppSettings(appSettings(manifest), setOn(gateway, app), {
+      features: featureEntries(manifest),
+    });
+  const states = (report: ReturnType<typeof evaluate>) =>
+    report.features.map((feature) => [feature.id, feature.state]);
+
+  it("is off while none of its own values is set, a default and a shared Gateway key not counting", () => {
+    const report = evaluate(
+      ["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET"],
+      ["SLACK_MODE"],
+    );
+    expect(states(report)).toEqual([
+      ["github", "off"],
+      ["slack", "off"],
+      ["seo", "off"],
+    ]);
+    // The required feature blocks; the optional ones never do.
+    expect(report.unmet.map((setting) => setting.id)).toEqual([
+      "GITHUB_KEY",
+      "GITHUB_APP_ID",
+    ]);
+    expect(report.features[1]!.settings.map((setting) => setting.id)).toEqual([
+      "slack",
+      "SLACK_SIGNING_SECRET",
+      "SLACK_MODE",
+    ]);
+  });
+
+  it("is incomplete while some are set, ready once every value and Gateway setting is", () => {
+    const half = evaluate(
+      [],
+      ["GITHUB_KEY", "SLACK_SIGNING_SECRET", "SLACK_MODE"],
+    );
+    expect(states(half)).toEqual([
+      ["github", "incomplete"],
+      ["slack", "incomplete"],
+      ["seo", "off"],
+    ]);
+    expect(half.ready).toBe(false);
+    const all = evaluate(
+      ["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET", "DATAFORSEO_API_KEY"],
+      ["GITHUB_KEY", "GITHUB_APP_ID", "SLACK_SIGNING_SECRET", "SLACK_MODE"],
+    );
+    expect(states(all)).toEqual([
+      ["github", "ready"],
+      ["slack", "ready"],
+      ["seo", "ready"],
+    ]);
+    expect(all.ready).toBe(true);
+  });
+
+  it("reads a feature of Gateway settings alone from those, and unknown values as not unset", () => {
+    expect(states(evaluate(["DATAFORSEO_API_KEY"], null))).toEqual([
+      ["github", "ready"],
+      ["slack", "off"],
+      ["seo", "ready"],
+    ]);
+  });
+});
+
+describe("generatedSecret", () => {
+  it("is 32 random bytes, base64url, fresh each call", () => {
+    const one = generatedSecret();
+    expect(one).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(generatedSecret()).not.toBe(one);
+  });
+});
+
 describe("setupCommand and appSetupOf", () => {
   const cli = "pnpm everyapp";
 
   it("is the one configure command for the app, whatever is unmet", () => {
     const settings: AppSetting[] = appSettings({
-      providers: [
-        { id: "workers-ai", anyOf: "AI model" },
-        { id: "openrouter", anyOf: "AI model" },
-      ],
+      providers: ["workers-ai", "openrouter"],
       capabilities: {
         dataforseo: { access: "read" },
         email: { access: "write" },
       },
-      secrets: ["MAIN_SECRET", { name: "GITHUB_TOKEN", optional: true }],
+      secrets: ["MAIN_SECRET"],
+      features: { github: { name: "GitHub", secrets: ["GITHUB_TOKEN"] } },
     });
     const report = evaluateAppSettings(settings, setOn([], []));
     // Configure asks for each unmet setting itself, so the command names
-    // no setting, and an unmet any-of group needs no note: it asks which.
+    // no setting.
     expect(setupCommand(report, { cli, appId: "seo" })).toEqual({
       command: "pnpm everyapp configure seo",
     });
@@ -424,19 +593,6 @@ describe("setupCommand and appSetupOf", () => {
     );
     expect(setupCommand(gatewayOnly, { cli, appId: "todo" })).toEqual({
       command: "pnpm everyapp configure todo",
-    });
-  });
-
-  it("is the same command when only an any-of group is unmet", () => {
-    const report = evaluateAppSettings(
-      appSettings({
-        providers: [{ id: "openrouter", anyOf: "AI model" }],
-        secrets: [{ name: "ANTHROPIC_API_KEY", anyOf: "AI model" }],
-      }),
-      setOn([], []),
-    );
-    expect(setupCommand(report, { cli, appId: "inbox" })).toEqual({
-      command: "pnpm everyapp configure inbox",
     });
   });
 
@@ -464,15 +620,21 @@ describe("setupCommand and appSetupOf", () => {
   });
 
   it("summarizes the report for every surface, with or without the command", () => {
+    const manifest = {
+      providers: ["workers-ai", "openrouter"],
+      secrets: ["MAIN_SECRET"],
+      features: {
+        pin: {
+          name: "Workers AI pin",
+          why: "A pinned model.",
+          providers: ["workers-ai"],
+        },
+      },
+    };
     const report = evaluateAppSettings(
-      appSettings({
-        providers: [
-          { id: "workers-ai", anyOf: "AI model" },
-          { id: "openrouter", anyOf: "AI model" },
-        ],
-        secrets: ["MAIN_SECRET"],
-      }),
+      appSettings(manifest),
       setOn(["OPENROUTER_API_KEY"], []),
+      { features: featureEntries(manifest) },
     );
     const setup = appSetupOf(report, { cli, appId: "inbox" });
     expect(setup.ready).toBe(false);
@@ -483,8 +645,18 @@ describe("setupCommand and appSetupOf", () => {
     ]);
     expect(setup.settings[0]).not.toHaveProperty("alsoReads");
     expect(setup.unmet.map((setting) => setting.id)).toEqual(["MAIN_SECRET"]);
-    expect(setup.groups).toEqual([
-      { group: "AI model", met: true, members: ["workers-ai", "openrouter"] },
+    expect(setup.features).toEqual([
+      {
+        id: "pin",
+        name: "Workers AI pin",
+        required: false,
+        why: "A pinned model.",
+        steps: [],
+        capabilities: [],
+        providers: ["workers-ai"],
+        state: "off",
+        settings: ["workers-ai"],
+      },
     ]);
     expect(setup.command).toEqual({
       command: "pnpm everyapp configure inbox",

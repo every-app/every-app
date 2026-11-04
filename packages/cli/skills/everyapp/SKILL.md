@@ -86,9 +86,11 @@ and types it at the hidden prompt; NAME=value lines on stdin from a command's
 output; or --from-env for variables the person exported before starting you.
 Never a value on the command line (VALUE_ON_COMMAND_LINE); never ask for,
 print, repeat or invent one. An app whose data.apps[].setup.ready is false
-doesn't open: show each unmet setting's why and docs, read its setup guide
-(node_modules/everyapp/skills/everyapp/<setup>, the setup/ folder beside this
-file), then hand over setup.command. Postgres URLs go in
+doesn't open: show each unmet setting's why and docs, read a Gateway
+setting's setup guide (node_modules/everyapp/skills/everyapp/<setup>, the
+setup/ folder beside this file) and, for the app's own values, each
+feature's steps and each value's how (`configure <app> --json` returns them
+filled in as data.features), then hand over setup.command. Postgres URLs go in
 .everyapp/secrets.env, which the person writes.
 
 Step-by-step setup of what the Gateway holds (the provider's side, the key or

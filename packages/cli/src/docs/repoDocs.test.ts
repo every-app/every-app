@@ -341,7 +341,7 @@ describe("the commands the documents cite", () => {
 
 /**
  * The pages whose subject is everyapp.config.ts: a dotted name on them
- * (`resources.d1`, `secrets[].anyOf`) is a manifest field. Elsewhere the
+ * (`resources.d1`, `secrets[].how`) is a manifest field. Elsewhere the
  * same shapes are event names (`mcp.tool_call`) and file names.
  */
 const MANIFEST_PAGES = [
@@ -368,7 +368,7 @@ describe("the manifest fields the documents name", () => {
   };
 
   it("are read from the schema (an empty walk would know no field and pass)", () => {
-    expect(fields.paths).toEqual(expect.arrayContaining(["id", "capabilities.<id>.access", "migrations.engine", "secrets[].anyOf"]));
+    expect(fields.paths).toEqual(expect.arrayContaining(["id", "capabilities.<id>.access", "migrations.engine", "features.<id>.secrets[].how"]));
     expect(fields.paths.length).toBeGreaterThanOrEqual(70);
   });
 

@@ -57,23 +57,20 @@ const SEO: EveryAppCliManifest = {
 const NOTES: EveryAppCliManifest = { id: "notes", resources: { d1: ["DB"] } };
 
 /**
- * An app that says what each setting is for and which it can do without
- * (object entries), and picks its AI provider among the set ones.
+ * An app that says what each setting is for (object entries), with what
+ * it can do without in optional features.
  */
 const CRM: EveryAppCliManifest = {
   id: "crm",
   resources: { d1: ["DB"] },
-  providers: [
-    { id: "openai", anyOf: "AI model" },
-    { id: "openrouter", anyOf: "AI model", why: "Any model through one key." },
-  ],
+  providers: ["openai", { id: "openrouter", why: "Any model through one key." }],
   capabilities: {
-    context: { access: "read", optional: true, why: "Renders JavaScript pages in audits." },
+    context: { access: "read", why: "Renders JavaScript pages in audits." },
   },
-  secrets: [
-    { name: "TOKEN_ENCRYPTION_KEY", why: "Encrypts the OAuth tokens it stores." },
-    { name: "GITHUB_TOKEN", optional: true, why: "Raises the GitHub rate limit." },
-  ],
+  secrets: [{ name: "TOKEN_ENCRYPTION_KEY", why: "Encrypts the OAuth tokens it stores." }],
+  features: {
+    extras: { name: "Extras", why: "Optional extras.", providers: ["openai"], capabilities: ["context"], secrets: ["GITHUB_TOKEN"] },
+  },
 };
 
 const VALUES: Record<string, string> = {
@@ -384,7 +381,7 @@ describe("secret set refuses a name that goes nowhere, before a value is read", 
     const dir = appDir(CRM);
     await expect(set(dir, "SENDGRID_KEY")).rejects.toMatchObject({
       code: "SECRET_NOT_DECLARED",
-      fix: 'add it to secrets in everyapp.config.ts: secrets: [{ name: "TOKEN_ENCRYPTION_KEY", why: "Encrypts the OAuth tokens it stores." }, { name: "GITHUB_TOKEN", why: "Raises the GitHub rate limit.", optional: true }, { name: "SENDGRID_KEY" }],',
+      fix: 'add it to secrets in everyapp.config.ts: secrets: [{ name: "TOKEN_ENCRYPTION_KEY", why: "Encrypts the OAuth tokens it stores." }, { name: "SENDGRID_KEY" }],',
     });
     expect(read).not.toHaveBeenCalled();
   });
@@ -780,7 +777,7 @@ describe("secret list", () => {
       // The sender's two names are one setting: one row, joined with +.
       "APP   SETTING                     WHERE    STATUS",
       "crm   OPENAI_API_KEY              Gateway  ✓ set",
-      "crm   OPENROUTER_API_KEY          Gateway  not set (one of: AI model)",
+      "crm   OPENROUTER_API_KEY          Gateway  ! not set",
       "crm   CONTEXT_API_KEY             Gateway  not set (optional)",
       "crm   TOKEN_ENCRYPTION_KEY        crm      ! not set",
       "crm   GITHUB_TOKEN                crm      not set (optional)",
@@ -798,7 +795,7 @@ describe("secret list", () => {
           id: "crm",
           setup: {
             ready: false,
-            groups: [{ group: "AI model", met: true, members: ["openai", "openrouter"] }],
+            features: [expect.objectContaining({ id: "extras", state: "off" })],
             command: { command: "pnpm everyapp configure crm" },
           },
         },
@@ -942,7 +939,7 @@ describe("secret list", () => {
     expect(done()!["message"]).toContain("EVERY_APP_ORG_ID            todo     ✓ set");
   });
 
-  it("says which setting is optional, which is one of a group, and when a group is met, by name from anywhere", async () => {
+  it("says which setting is optional, and when the app is ready, by name from anywhere", async () => {
     await deploy(appDir(CRM), CRM);
     const elsewhere = emptyDir();
     events = [];
@@ -950,16 +947,12 @@ describe("secret list", () => {
     expect(done()!["message"]).toBe(
       [
         "SETTING               WHERE    STATUS",
-        "OPENAI_API_KEY        Gateway  ! not set",
+        "OPENAI_API_KEY        Gateway  not set (optional)",
         "OPENROUTER_API_KEY    Gateway  ! not set",
         "CONTEXT_API_KEY       Gateway  not set (optional)",
         "TOKEN_ENCRYPTION_KEY  crm      ! not set",
         "GITHUB_TOKEN          crm      not set (optional)",
         "",
-        "OpenAI: OPENAI_API_KEY",
-        OPENAI_HINT,
-        "Get it at https://platform.openai.com/api-keys",
-        "Guide: node_modules/everyapp/skills/everyapp/setup/openai.md",
         "OpenRouter: Any model through one key.",
         OPENROUTER_HINT,
         "Get it at https://openrouter.ai/settings/keys",
@@ -967,12 +960,11 @@ describe("secret list", () => {
         "TOKEN_ENCRYPTION_KEY: Encrypts the OAuth tokens it stores.",
       ].join("\n"),
     );
-    // One of the group is enough: configure asks which.
     expect(done()!["data"]).toMatchObject({
       app: {
         setup: {
           ready: false,
-          groups: [{ group: "AI model", met: false }],
+          features: [expect.objectContaining({ id: "extras", state: "off" })],
           command: { command: "pnpm everyapp configure crm" },
         },
       },
@@ -985,7 +977,7 @@ describe("secret list", () => {
     expect(done()!["message"]).toBe(
       [
         "SETTING               WHERE    STATUS",
-        "OPENAI_API_KEY        Gateway  not set (one of: AI model)",
+        "OPENAI_API_KEY        Gateway  not set (optional)",
         "OPENROUTER_API_KEY    Gateway  ✓ set",
         "CONTEXT_API_KEY       Gateway  not set (optional)",
         "TOKEN_ENCRYPTION_KEY  crm      ✓ set",
@@ -994,11 +986,10 @@ describe("secret list", () => {
     );
     expect(done()!["data"]).toMatchObject({
       app: { setup: { ready: true, command: null } },
-      // A member of a met group is still one the app can't do without
-      // (required), but its absence keeps nothing closed (not missing).
+      // An optional feature's is never required, and keeps nothing closed (not missing).
       gateway: {
         needed: [
-          { name: "OPENAI_API_KEY", required: true, set: false },
+          { name: "OPENAI_API_KEY", required: false, set: false },
           { name: "OPENROUTER_API_KEY", required: true, set: true },
           { name: "CONTEXT_API_KEY", required: false, set: false },
         ],
@@ -1034,15 +1025,11 @@ describe("secret list", () => {
     expect(done()!["data"]["next"]).toBeUndefined();
   });
 
-  it("says what a helper lacks in the app's own words: needed, optional, or one of a group", async () => {
+  it("says what a helper lacks in the app's own words: needed or optional", async () => {
     const manifest: EveryAppCliManifest = {
       ...SEO,
-      secrets: [
-        "GITHUB_TOKEN",
-        { name: "SLACK_TOKEN", optional: true },
-        { name: "PRIMARY_MODEL_KEY", anyOf: "AI key" },
-        { name: "FALLBACK_MODEL_KEY", anyOf: "AI key" },
-      ],
+      secrets: ["GITHUB_TOKEN", "PRIMARY_MODEL_KEY"],
+      features: { extras: { name: "Extras", why: "Optional extras.", secrets: ["SLACK_TOKEN", "FALLBACK_MODEL_KEY"] } },
     };
     const dir = appDir(manifest);
     const workerName = await deploy(dir, manifest);
@@ -1061,13 +1048,13 @@ describe("secret list", () => {
       [
         row("SETTING", "WHERE", "STATUS"),
         row("GITHUB_TOKEN", "seo", "✓ set"),
-        row("SLACK_TOKEN", "seo", "✓ set"),
         row("PRIMARY_MODEL_KEY", "seo", "✓ set"),
-        row("FALLBACK_MODEL_KEY", "seo", "not set (one of: AI key)"),
+        row("SLACK_TOKEN", "seo", "✓ set"),
+        row("FALLBACK_MODEL_KEY", "seo", "not set (optional)"),
         row("GITHUB_TOKEN", "audit helper", "! not set"),
-        row("SLACK_TOKEN", "audit helper", "not set (optional)"),
         row("PRIMARY_MODEL_KEY", "audit helper", "✓ set"),
-        row("FALLBACK_MODEL_KEY", "audit helper", "not set (one of: AI key)"),
+        row("SLACK_TOKEN", "audit helper", "not set (optional)"),
+        row("FALLBACK_MODEL_KEY", "audit helper", "not set (optional)"),
       ].join("\n"),
     );
     // What the helper lacks of every declared name, as the setup skills read it.
@@ -1076,12 +1063,10 @@ describe("secret list", () => {
     });
     expect(done()!["data"]["next"]).toBeUndefined();
 
-    // With no AI key on the helper at all, each member of the group is needed there.
     delete helper.secrets["PRIMARY_MODEL_KEY"];
     events = [];
     await list(dir);
     expect(done()!["message"]).toContain(row("PRIMARY_MODEL_KEY", "audit helper", "! not set"));
-    expect(done()!["message"]).toContain(row("FALLBACK_MODEL_KEY", "audit helper", "! not set"));
   });
 
   it("in an app's directory before its first deploy, says so, and names the Gateway settings to set (from anywhere) before the deploy", async () => {

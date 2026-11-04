@@ -4,7 +4,7 @@ Lets the Gateway send its own mail (invitations, password resets, sign-up
 verification) and every app's, through one provider for the whole Gateway:
 Cloudflare Email Sending (the default) or Resend. Apps that send: openmail
 (replies from its own addresses; required), Open Analytics (reports and
-alerts; `optional: true`, so it opens without it) and any app whose
+alerts; in an optional feature, so it opens without it) and any app whose
 `everyapp.config.ts` lists `capabilities: { email: { access: "write" } }`.
 Email is optional: without it, an invite shows its link to share instead. At the end the person
 has a sending domain set up with the provider, `EMAIL_FROM` and
@@ -82,9 +82,11 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
   is `pnpm everyapp configure <app id>`, which asks for `EMAIL_FROM` and
   `EMAIL_FROM_NAME` among what the app still needs (visible, checked
   prompts; step 8 says what to type). An app
-  that marks `email` `optional: true` (Open Analytics) has the entry in
+  that lists `email` in an optional feature (Open Analytics) has the entry in
   `settings` with `set: false`, never in `unmet`: it opens without a
-  sender, and this file applies when they want its mail. The older
+  sender, and this file applies when they want its mail (`configure` names
+  it under that feature instead of asking: `pnpm everyapp secret set
+  EMAIL_FROM EMAIL_FROM_NAME`). The older
   `data.gateway.needed` (each `{ name, required, set }`) and
   `data.gateway.missing` still say the same of `EMAIL_FROM` and
   `EMAIL_FROM_NAME`; `RESEND_API_KEY`, `EMAIL_PROVIDER` and

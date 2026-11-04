@@ -51,7 +51,7 @@ const UNREADY: UserAccessApp["setup"] = {
   ready: false,
   settings: [],
   unmet: [],
-  groups: [],
+  features: [],
   command: { command: "pnpm everyapp configure openseo" },
 };
 

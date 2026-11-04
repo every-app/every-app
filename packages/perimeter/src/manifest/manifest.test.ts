@@ -501,7 +501,6 @@ describe("capabilities manifest field", () => {
       "microsoft-365": {
         scopes: ["Mail.Read", "https://graph.microsoft.com/Calendars.Read"],
         why: "Reads each member's own mailbox and calendar.",
-        optional: true,
       },
       slack: {
         scopes: ["channels:read", "chat:write"],
@@ -960,63 +959,59 @@ describe("secrets manifest field", () => {
   });
 });
 
-describe("each setting's need (optional, anyOf, why, docs)", () => {
+describe("each setting's need (why, docs)", () => {
   it("accepts providers and secrets by id or as entries, in both schemas", () => {
     const manifest = {
       id: "inbox",
       providers: [
-        { id: "workers-ai", anyOf: "AI model", why: "Runs the agent." },
-        {
-          id: "openrouter",
-          anyOf: "AI model",
-          docs: "https://openrouter.ai/settings/keys",
-        },
+        { id: "workers-ai", why: "Runs the agent." },
+        { id: "openrouter", docs: "https://openrouter.ai/settings/keys" },
         "openai",
       ],
       capabilities: {
         email: { access: "write", why: "Sends from mailboxes." },
-        context: { access: "read", optional: true },
+        context: { access: "read" },
       },
       secrets: [
         "MAIN_SECRET",
         {
           name: "GITHUB_TOKEN",
-          optional: true,
           why: "Raises GitHub's rate limit.",
           docs: "https://github.com/settings/tokens",
+          how: "Settings → Developer settings → Tokens, public_repo read",
         },
+        { name: "SIGNING_KEY", generate: true },
       ],
     };
     expect(validateManifestStrict(manifest)).toEqual(manifest);
     expect(validateManifest(manifest)).toEqual(manifest);
   });
 
-  it("lets an app's own secret name its setup guide, and providers and capabilities not", () => {
-    expect(
-      validateManifestStrict({
-        id: "analytics",
-        secrets: [{ name: "MAIN_SECRET", setup: "docs/setup/main-secret.md" }],
-      }).secrets,
-    ).toEqual([{ name: "MAIN_SECRET", setup: "docs/setup/main-secret.md" }]);
-    for (const setup of [
-      "../secret.md",
-      "/etc/secret.md",
-      "docs/../secret.md",
-      "docs/secret.txt",
-    ]) {
-      expect(() =>
-        validateManifestStrict({
-          id: "analytics",
-          secrets: [{ name: "MAIN_SECRET", setup }],
-        }),
-      ).toThrow(/secrets\.0\.setup: must be a Markdown file in the app/);
-    }
+  it("refuses optional, anyOf and setup, which features replaced", () => {
     expect(() =>
       validateManifestStrict({
-        id: "analytics",
-        providers: [{ id: "openai", setup: "setup/openai.md" }],
+        id: "inbox",
+        secrets: [{ name: "GITHUB_TOKEN", optional: true }],
       }),
-    ).toThrow(/providers\.0: Unrecognized key/);
+    ).toThrow(/secrets\.0: Unrecognized key: "optional"/);
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        providers: [{ id: "openai", anyOf: "AI model" }],
+      }),
+    ).toThrow(/providers\.0: Unrecognized key: "anyOf"/);
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        secrets: [{ name: "MAIN_SECRET", setup: "docs/setup/main-secret.md" }],
+      }),
+    ).toThrow(/secrets\.0: Unrecognized key: "setup"/);
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        capabilities: { context: { access: "read", optional: true } },
+      }),
+    ).toThrow(/capabilities\.context: Unrecognized key/);
     expect(() =>
       validateManifestStrict({
         id: "analytics",
@@ -1051,7 +1046,7 @@ describe("each setting's need (optional, anyOf, why, docs)", () => {
     expect(() =>
       validateManifestStrict({
         id: "inbox",
-        secrets: ["GITHUB_TOKEN", { name: "GITHUB_TOKEN", optional: true }],
+        secrets: ["GITHUB_TOKEN", { name: "GITHUB_TOKEN", why: "x" }],
       }),
     ).toThrow(/secrets\.1: duplicate secret GITHUB_TOKEN/);
     expect(() =>
@@ -1064,13 +1059,13 @@ describe("each setting's need (optional, anyOf, why, docs)", () => {
       validateManifestStrict({
         id: "inbox",
         resources: { d1: ["DB"] },
-        secrets: [{ name: "DB", optional: true }],
+        secrets: [{ name: "DB", why: "x" }],
       }),
     ).toThrow(/secrets: DB is one of the app's bindings/);
     expect(() =>
       validateManifestStrict({
         id: "inbox",
-        providers: ["openai", { id: "openai", optional: true }],
+        providers: ["openai", { id: "openai", why: "x" }],
       }),
     ).toThrow(/providers\.1: duplicate provider/);
     expect(() =>
@@ -1081,7 +1076,7 @@ describe("each setting's need (optional, anyOf, why, docs)", () => {
     ).toThrow(/providers\.1: duplicate provider/);
   });
 
-  it("refuses docs that aren't https, and a why or group that is empty or too long", () => {
+  it("refuses docs that aren't https, and a why or how that is empty or too long", () => {
     expect(() =>
       validateManifestStrict({
         id: "inbox",
@@ -1103,73 +1098,190 @@ describe("each setting's need (optional, anyOf, why, docs)", () => {
     expect(() =>
       validateManifestStrict({
         id: "inbox",
-        secrets: [
-          { name: "A", anyOf: "x".repeat(41) },
-          { name: "B", anyOf: "x".repeat(41) },
-        ],
+        secrets: [{ name: "A", how: "x".repeat(201) }],
       }),
-    ).toThrow(/secrets\.0\.anyOf/);
-  });
-
-  it("refuses an entry that is both optional and in a any-of group", () => {
+    ).toThrow(/secrets\.0\.how/);
     expect(() =>
       validateManifestStrict({
         id: "inbox",
-        providers: [
-          { id: "workers-ai", anyOf: "AI model", optional: true },
-          { id: "openrouter", anyOf: "AI model" },
-        ],
+        secrets: [{ name: "A", generate: true, file: true }],
       }),
     ).toThrow(
-      'providers: workers-ai is both optional and in the any-of group "AI model"; a group\'s member is optional by itself, so drop one of them.',
+      /secrets\.0\.file: a generated secret isn't a file; drop generate or file/,
     );
-    expect(() =>
-      validateManifestStrict({
-        id: "inbox",
-        capabilities: {
-          email: { access: "write", anyOf: "mail", optional: true },
-          members: { access: "read", anyOf: "mail" },
-        },
-      }),
-    ).toThrow(
-      /capabilities\.email is both optional and in the any-of group "mail"/,
-    );
-  });
-
-  it("refuses a any-of group with one member, and counts members across providers, capabilities and secrets", () => {
-    expect(() =>
-      validateManifestStrict({
-        id: "inbox",
-        providers: [{ id: "openrouter", anyOf: "AI model" }],
-      }),
-    ).toThrow(
-      'the any-of group "AI model" has one member (providers: openrouter); an any-of group needs two or more. Drop anyOf, or mark it optional.',
-    );
-    expect(() =>
-      validateManifestStrict({
-        id: "inbox",
-        providers: [{ id: "openrouter", anyOf: "AI model" }],
-        secrets: [{ name: "NORTHWIND_API_KEY", anyOf: "AI model" }],
-      }),
-    ).not.toThrow();
-    expect(() =>
-      validateManifestStrict({
-        id: "inbox",
-        capabilities: { context: { access: "read", anyOf: "research" } },
-        secrets: [{ name: "FIRECRAWL_KEY", anyOf: " research " }],
-      }),
-    ).not.toThrow();
   });
 
   it("counts a secret entry for the dispatch tier like a bare name", () => {
     expect(
       manifestTierProblems(
-        { secrets: [{ name: "GITHUB_TOKEN", optional: true }] },
+        { secrets: [{ name: "GITHUB_TOKEN", why: "x" }] },
         "dispatch",
       ),
     ).toEqual([
       "secrets: third-party apps can't have secrets of their own yet",
     ]);
+  });
+});
+
+describe("features", () => {
+  const GITHUB = {
+    name: "GitHub",
+    required: true,
+    why: "Agents push branches and open pull requests through your GitHub App.",
+    steps: [
+      "Create a GitHub App: https://github.com/settings/apps/new",
+      "Webhook URL: {appUrl}/github/webhooks. Permissions: Contents, Pull requests, Checks → Read and write.",
+      "Sign-in back to [the Gateway]({gatewayUrl}).",
+    ],
+    settings: [
+      { name: "GITHUB_APP_ID", how: "The App's General page → App ID" },
+    ],
+    secrets: [
+      {
+        name: "GITHUB_APP_PRIVATE_KEY",
+        file: true,
+        how: "General → Private keys → Generate; give the downloaded .pem",
+      },
+      {
+        name: "GITHUB_WEBHOOK_SECRET",
+        generate: true,
+        how: "Paste this into the App's Webhook secret",
+      },
+    ],
+    capabilities: ["slack"],
+    providers: ["openrouter"],
+  };
+  const base = {
+    id: "birds",
+    secrets: [{ name: "BIRDS_SECRETS_KEY", generate: true }],
+    providers: ["openrouter"],
+    capabilities: {
+      slack: { scopes: ["chat:write"], why: "Posts to Slack." },
+      dataforseo: { access: "read" },
+    },
+  };
+  const strictWith =
+    (features: unknown, extra: Record<string, unknown> = {}) =>
+    () =>
+      validateManifestStrict({ ...base, ...extra, features });
+
+  it("accepts a feature with steps, settings, secrets and the capabilities it needs, in both schemas", () => {
+    const manifest = { ...base, features: { github: GITHUB } };
+    expect(validateManifestStrict(manifest)).toEqual(manifest);
+    expect(validateManifest(manifest)).toEqual(manifest);
+    // A feature with only a capability is a feature too.
+    expect(
+      strictWith({
+        seo: {
+          name: "SEO",
+          why: "Keyword data.",
+          capabilities: ["dataforseo"],
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it("refuses a placeholder it doesn't fill, in steps and in how", () => {
+    expect(
+      strictWith({ github: { ...GITHUB, steps: ["Open {foo}/x"] } }),
+    ).toThrow(
+      /features\.github\.steps\.0: \{foo\} isn't a placeholder; use \{appUrl\} or \{gatewayUrl\}/,
+    );
+    expect(
+      strictWith({
+        github: {
+          ...GITHUB,
+          settings: [{ name: "GITHUB_APP_ID", how: "On {appurl}" }],
+        },
+      }),
+    ).toThrow(
+      /features\.github\.settings\.0\.how: \{appurl\} isn't a placeholder/,
+    );
+  });
+
+  it("refuses a bad entry: generate with file, a how too long, an id that isn't a slug, no why", () => {
+    expect(
+      strictWith({
+        github: {
+          ...GITHUB,
+          secrets: [{ name: "K", generate: true, file: true }],
+        },
+      }),
+    ).toThrow(
+      /features\.github\.secrets\.0\.file: a generated secret isn't a file/,
+    );
+    expect(
+      strictWith({
+        github: { ...GITHUB, secrets: [{ name: "K", how: "x".repeat(201) }] },
+      }),
+    ).toThrow(/features\.github\.secrets\.0\.how/);
+    expect(strictWith({ GitHub: GITHUB })).toThrow(
+      /features\.GitHub: a feature id is a lowercase slug/,
+    );
+    const { why: _why, ...withoutWhy } = GITHUB;
+    expect(strictWith({ github: withoutWhy })).toThrow(/features\.github\.why/);
+    expect(strictWith({ github: { ...GITHUB, optional: true } })).toThrow(
+      /features\.github: Unrecognized key/,
+    );
+  });
+
+  it("refuses a feature with nothing to set", () => {
+    expect(strictWith({ empty: { name: "Empty", why: "Nothing." } })).toThrow(
+      "Invalid everyapp.config: features.empty: lists nothing to set; give it secrets, settings, capabilities or providers, or drop it",
+    );
+  });
+
+  it("refuses a capability or provider it needs that the manifest doesn't declare, or another feature lists", () => {
+    expect(
+      strictWith({ github: { ...GITHUB, capabilities: ["email"] } }),
+    ).toThrow(
+      "Invalid everyapp.config: features.github.capabilities: email isn't declared under capabilities; declare it there too",
+    );
+    expect(
+      strictWith({ github: { ...GITHUB, providers: ["openai"] } }),
+    ).toThrow(
+      /features\.github\.providers: openai isn't declared under providers/,
+    );
+    expect(
+      strictWith({
+        github: GITHUB,
+        chat: { name: "Chat", why: "Slack.", capabilities: ["slack"] },
+      }),
+    ).toThrow(
+      /features\.chat\.capabilities: slack is in features\.github too; a capability belongs to one feature/,
+    );
+  });
+
+  it("declares each name in one place: the top level or one feature", () => {
+    expect(
+      strictWith({ github: { ...GITHUB, secrets: ["BIRDS_SECRETS_KEY"] } }),
+    ).toThrow(
+      "Invalid everyapp.config: features.github.secrets: BIRDS_SECRETS_KEY is declared under secrets too; a name goes in one place: the top level or one feature",
+    );
+    expect(
+      strictWith({
+        github: GITHUB,
+        merge: {
+          name: "Merge",
+          why: "Merges.",
+          settings: [{ name: "GITHUB_APP_ID" }],
+        },
+      }),
+    ).toThrow(
+      /features\.merge\.settings: GITHUB_APP_ID is declared under features\.github\.settings too/,
+    );
+  });
+
+  it("applies the top level's name rules to a feature's values", () => {
+    expect(
+      strictWith({ github: { ...GITHUB, secrets: ["OPENAI_API_KEY"] } }),
+    ).toThrow(/features\.github\.secrets: OPENAI_API_KEY is a Gateway setting/);
+    expect(
+      strictWith(
+        { github: { ...GITHUB, secrets: ["DB"] } },
+        { resources: { d1: ["DB"] } },
+      ),
+    ).toThrow(/secrets: DB is one of the app's bindings/);
   });
 });
 

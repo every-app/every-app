@@ -199,6 +199,8 @@ An inbound address's domain isn't a zone in this Cloudflare account. Add the dom
 `events add` got a URL and `--email` together, or `--email` with a signing secret. A subscription delivers one way; only a webhook is signed.
 ### EVENT_TARGET_REQUIRED
 `events add` named neither a webhook URL nor `--email`. Add one: `events add https://hooks.example.com/everyapp` or `events add --email admins`.
+### FEATURE_INCOMPLETE
+An optional feature is half set up: it never blocks the app but doesn't work. Run `everyapp configure <app>` to finish it, or unset its values.
 ### GATEWAY_AMBIGUOUS
 This machine is signed in to several Gateways and the command didn't say which (`data.gateways` lists them). Pass `--gateway <url>` or set `EVERYAPP_GATEWAY_URL`.
 ### GATEWAY_AT_ZONE_APEX

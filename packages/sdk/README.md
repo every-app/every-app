@@ -69,14 +69,13 @@ export default defineConfig((ctx) => ({
   in `.dev.vars`: `everyAppWorker()` declares it only when it is set there,
   since the Vite plugin passes a `.dev.vars` value through only for a
   declared secret. Type it as optional in `src/env.d.ts`
-  (`GITHUB_TOKEN?: string` in `Cloudflare.Env`). An entry can carry its
-  need: `{ name: "GITHUB_TOKEN", why, docs, optional: true }`, or
-  `anyOf: "<group>"` when one of a group must be set, and
-  `setup: "docs/setup/<name>.md"` names its guide, a file in the app;
-  `providers` and `capabilities` entries take `why`, `docs`, `optional` and
-  `anyOf` too. Until every required setting is set the app shows "Needs
-  setup" and its tools stay out of `/mcp`; `pnpm everyapp secret list` says
-  what is missing (`docs/manifest-settings.md`).
+  (`GITHUB_TOKEN?: string` in `Cloudflare.Env`). An entry can carry
+  `{ name: "GITHUB_TOKEN", why, docs, how, generate, file }`; `providers`
+  and `capabilities` entries take `why` and `docs`. The top level is
+  required; what the app works without goes in an optional feature
+  (`features`). Until every required setting is set the app shows "Needs
+  setup" and its tools stay out of `/mcp`; `pnpm everyapp configure <app>`
+  walks what is missing (`docs/manifest-settings.md`).
 
 ## Compatibility flags
 

@@ -77,7 +77,10 @@ describe("nextStepsFor", () => {
   });
 
   describe("AI_KEY", () => {
-    const optionalAi = { providers: [{ id: "openrouter", why: "Drafts replies.", optional: true }] };
+    const optionalAi = {
+      providers: [{ id: "openrouter", why: "Drafts replies." }],
+      features: { ai: { name: "AI", why: "Drafts replies.", providers: ["openrouter"] } },
+    };
 
     it("names the key the apps use when no AI key is set, for apps that run without it", () => {
       const facts = done({ gatewayNames: ["EMAIL_FROM"], apps: [app("crm", { manifest: optionalAi })] });
@@ -95,10 +98,8 @@ describe("nextStepsFor", () => {
       const openmail = app("openmail", {
         manifest: {
           ai: { chat: { why: "Drafts replies." } },
-          providers: [
-            { id: "openrouter", optional: true },
-            { id: "workers-ai", optional: true },
-          ],
+          providers: ["openrouter", "workers-ai"],
+          features: { pins: { name: "Pins", why: "A pinned model.", providers: ["openrouter", "workers-ai"] } },
         },
       });
       const steps = nextStepsFor(done({ gatewayNames: ["EMAIL_FROM"], apps: [openmail] }));
@@ -117,7 +118,7 @@ describe("nextStepsFor", () => {
         gatewayNames: [],
         apps: [
           app("crm", { manifest: optionalAi }),
-          app("chef", { manifest: { providers: [{ id: "openai", optional: true }] } }),
+          app("chef", { manifest: { providers: ["openai"], features: { ai: { name: "AI", why: "AI.", providers: ["openai"] } } } }),
           app("notes", { manifest: optionalAi }),
         ],
       });
@@ -268,7 +269,10 @@ describe("nextStepsFor", () => {
   });
 
   describe("EMAIL_UNSET", () => {
-    const sends = { capabilities: { email: { access: "write", why: "Sends digests.", optional: true } } };
+    const sends = {
+      capabilities: { email: { access: "write", why: "Sends digests." } },
+      features: { digests: { name: "Digests", why: "Sends digests.", capabilities: ["email"] } },
+    };
 
     it("asks for a sender while there are people to invite or an app that sends mail", () => {
       const facts = done({ gatewayNames: ["OPENAI_API_KEY"] });
@@ -304,7 +308,7 @@ describe("nextStepsFor", () => {
   it("keeps the design's order and stops at four", () => {
     const everything = done({
       gatewayNames: ["DATAFORSEO_API_KEY"],
-      apps: [app("crm", { manifest: { providers: [{ id: "openrouter", optional: true }] } })],
+      apps: [app("crm", { manifest: { providers: ["openrouter"], features: { ai: { name: "AI", why: "AI.", providers: ["openrouter"] } } } })],
       access: { on: false },
       counts: { members: 1, invitations: 0, connections: 0, tokens: 0, toolApps: 1 },
     });

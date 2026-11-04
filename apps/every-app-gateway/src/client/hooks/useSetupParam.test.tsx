@@ -40,7 +40,7 @@ const SEO = app({
     ready: false,
     settings: [],
     unmet: [],
-    groups: [],
+    features: [],
     command: { command: "pnpm everyapp configure openseo" },
   },
 });
@@ -141,7 +141,7 @@ const DATAFORSEO = app({
   name: "DataForSEO",
   hostname: null,
   tier: "provider",
-  setup: { ready: true, settings: [], unmet: [], groups: [], command: null },
+  setup: { ready: true, settings: [], unmet: [], features: [], command: null },
 });
 
 function McpHarness(props: Parameters<typeof useMcpParam>[0]) {

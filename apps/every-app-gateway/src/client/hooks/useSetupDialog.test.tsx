@@ -38,14 +38,14 @@ const UNREADY: AppSetup = {
   ready: false,
   settings: [],
   unmet: [],
-  groups: [],
+  features: [],
   command: { command: "pnpm everyapp secret set EMAIL_FROM EMAIL_FROM_NAME" },
 };
 const READY: AppSetup = {
   ready: true,
   settings: [],
   unmet: [],
-  groups: [],
+  features: [],
   command: null,
 };
 

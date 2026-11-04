@@ -401,14 +401,18 @@ describe("the gateway /mcp and an app that needs setup", () => {
     expect(await toolNames()).toContain("analytics_ping");
   });
 
-  it("names the one configure command for an unmet any-of group, and serves the app once any member is set", async () => {
+  it("names the one configure command for an unset provider, never blocks on an optional feature, and serves the app once set", async () => {
     await deploy("inbox", {
       id: "inbox",
       name: "Inbox",
-      providers: [
-        { id: "openrouter", anyOf: "AI model" },
-        { id: "workers-ai", anyOf: "AI model" },
-      ],
+      providers: ["workers-ai", "openrouter"],
+      features: {
+        pin: {
+          name: "OpenRouter pin",
+          why: "A pinned model.",
+          providers: ["openrouter"],
+        },
+      },
     });
     expect(await toolNames()).not.toContain("inbox_ping");
     expect(await listApps()).toContainEqual({
@@ -418,7 +422,8 @@ describe("the gateway /mcp and an app that needs setup", () => {
       reason: "needs setup: an admin runs pnpm everyapp configure inbox",
     });
 
-    // The other member of the group is enough. A Gateway setting arrives
+    // The required provider is enough: the optional feature's OpenRouter
+    // stays unset. A Gateway setting arrives
     // with a new deploy and fresh isolates; here the cached report is
     // dropped by hand instead.
     hoisted.env["WORKERS_AI_API_TOKEN"] = "cf-token";

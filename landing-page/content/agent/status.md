@@ -24,10 +24,10 @@ With no Gateway in any account it ends with `action_required` `install_gateway`:
 - **Release**: matches this CLI, newer available (`GATEWAY_OUTDATED`), behind, or changed outside everyapp.
 - **TLS**: certificates ready or pending.
 - **Apps**: one row per app. It shows `live`, `live on first visit`, `waiting for certificate`, `needs setup` (a required setting is unset and the app doesn't open), `never deployed`, `not bound`, `Worker missing` or `switched off`. Rows also show the app's public routes and who last deployed it. MCP apps aren't listed: use `everyapp mcp list`.
-- **Email** and **Settings** tables, for apps that declare them.
+- **Email** and **Settings** tables, for apps that declare them, and **Features**: one line per app, each feature with its state (`GitHub ✓ · Slack off · Sandboxes incomplete`). An optional feature that's off or incomplete never makes the app need setup.
 - One block per problem, with `Run:` or `Fix:`. Then **Next:**, at most four suggestions (an AI key, Access, people to invite, an AI client to connect, a first app, email).
 
-For an app that needs setup, the block names each unmet setting, what it is for, where the key comes from and the setup guide (`node_modules/everyapp/skills/everyapp/setup/<file>`, or for an app's own secret `docs/setup/<file>` in the app). Read the guide, then have the person run `everyapp configure <app>`.
+For an app that needs setup, the block names each unmet setting, what it is for, where the key comes from and the setup guide for a Gateway setting (`node_modules/everyapp/skills/everyapp/setup/<file>`). An app's own values are explained by their feature's steps and `how`, which `everyapp configure <app> --json` returns in `data.features`. Read them, then have the person run `everyapp configure <app>`.
 
 ## Fixes
 

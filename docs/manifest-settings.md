@@ -44,34 +44,39 @@ contributes no setting: `everyapp deploy` refuses an unknown capability,
 and the AI proxy refuses a call to an unknown provider
 (`ai_provider_not_supported`).
 
-## 2. Needs
+## 2. Needs and features
 
 Every setting has a **need**, which says what happens while it is unset:
 
-- **`required`**, the default. The app does not open until it is set: the
+- **`required`**: everything the manifest lists at its top level, and the
+  values of a required feature. The app does not open until it is set: the
   gateway shows it as "Needs setup", answers its routes with a redirect or
   a 503, and leaves its tools out of `/mcp` (§4).
-- **`optional`**. The app opens; the feature that uses the setting says
-  what is missing, where it is used (§6).
-- **A member of an any-of group**, `anyOf: "AI model"`. The group is met
-  once any member is set; more set is fine. While no member is set, every
-  member blocks, and `configure` asks which one to set.
+- **`optional`**: a value of an optional feature, or a capability or
+  provider an optional feature lists. The app opens; the feature that uses
+  it says what is missing, where it is used (§6). A plain setting with a
+  `default` is optional too: the deploy writes the default.
 
-The rule for authors:
+A **feature** (`features.<id>`) groups what a person sets up together: a
+name, a `why`, numbered `steps` (Markdown, `{appUrl}` and `{gatewayUrl}`
+filled in where shown), its own `secrets` and `settings`, and the ids of
+the `capabilities` and `providers` it needs (each declared at the top level
+too). `required: true` makes every value required; an optional feature
+(the default) is all or nothing, and its state is `off` while none of its
+own values is set, `incomplete` while some are (a warning, never a block),
+`ready` once all are and every Gateway setting it needs is.
 
-- Required means the app is useless without it. A setting only one feature
-  needs is optional, and the feature says what is missing where it is
-  used. Public routes close with the app, so weigh `required` against the
-  public surface: a tracker whose `MAIN_SECRET` is required goes dark at
-  `/collect` along with its dashboards.
-- `anyOf` is only for an app that picks among the _set_ members at run
-  time. The gateway refuses a call to a provider whose key isn't set,
-  whichever others are (`ai_provider_not_configured`), so an app that
-  chooses its provider at build time (an `AI_PROVIDER` var) declares that
-  one required and the other optional. A group's member is optional by
-  itself; the validator refuses an entry that says both. A group may span
-  kinds: a Gateway provider and a key of the app's own can be the two
-  members of "AI model".
+The rule for authors: required means the app is useless without it. A
+setting only one feature needs goes in an optional feature. Public routes
+close with the app, so weigh `required` against the public surface: a
+tracker whose `MAIN_SECRET` is required goes dark at `/collect` along with
+its dashboards.
+
+An app's own value may also say `how`: where it lives and what permission
+it needs (200 characters at most, placeholders allowed). A secret may say
+`generate: true` (configure makes 32 random bytes, base64url; the deploy
+sets a top-level one without a `how`) or `file: true` (the prompt takes a
+file's path, for a `.pem`).
 
 Every setting may also carry:
 
@@ -111,154 +116,62 @@ registries (`DEV_AI_PROVIDERS[id].setup`, a capability's `setup`: openai,
 openrouter, workers-ai, dataforseo, context, email, google-workspace,
 microsoft-365, slack and youtube, which shares `setup/google.md`; the AI
 routes share `setup/openai.md`; `members` and the other 14 social clients
-have none), and the manifest can't change it.
-An app's own secret may name its own guide with
-`setup: "setup/<name>.md"` on its entry; without one it has none.
+have none), and the manifest can't change it. An app's own values have
+no guide: their feature's steps and their `how` say it.
 
 ## 3. The manifest
 
 ```ts
-providers: Array<string | { id: string; why?: string; docs?: string; optional?: boolean; anyOf?: string }>
-capabilities: { [id]: { access: "read" | "write"; why?: string; docs?: string; optional?: boolean; anyOf?: string } }
-secrets: Array<string | { name: string; why?: string; docs?: string; optional?: boolean; anyOf?: string; setup?: string }>
+providers: Array<string | { id: string; why?: string; docs?: string }>
+capabilities: { [id]: { access: "read" | "write"; why?: string; docs?: string } }
+secrets: Array<string | { name: string; why?: string; docs?: string; how?: string; generate?: boolean; file?: boolean }>
+settings: Array<{ name: string; why: string; how?: string; docs?: string; type?; values?; default? }>
+features: { [id]: { name: string; why: string; required?: boolean; steps?: string[];
+  settings?: Array<{ name; how?; type?; values?; default? }>;
+  secrets?: Array<string | { name; how?; generate?; file? }>;
+  capabilities?: string[]; providers?: string[] } }
 ```
 
-A bare string is a required entry with no `why` and the default `docs`.
-The two forms mix in one list. The AI routes take no entry: `ai.routes`
-with anything in it is one required setting. `setup` is a secret entry's
-only; a provider's or a capability's guide is the registry's (§2).
+A bare string is an entry with no `why` and the default `docs`. The AI
+routes take no entry: `ai.routes` with anything in it is one required
+setting. The field-by-field reference is
+`landing-page/content/agent/manifest.md`.
 
-**What the strict validator refuses.** The CLI reads an
-`everyapp.config.ts` with the strict schema; the gateway registers a stored
-manifest with the lenient one, which accepts both forms and passes unknown
-entry fields through. The strict rules, with the message each gives (every
-one begins `Invalid everyapp.config:`; the paths are zod's, the index in a
-list or the id under `capabilities`):
-
-| Rule                                                                                | Message                                                                                                                                                                 |
-| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `optional` and `anyOf` on one entry                                                 | `providers: workers-ai is both optional and in the any-of group "AI model"; a group's member is optional by itself, so drop one of them.`                               |
-| an any-of group with one member, counted across providers, capabilities and secrets | `the any-of group "AI model" has one member (providers: openrouter); an any-of group needs two or more. Drop anyOf, or mark it optional.`                               |
-| a provider listed twice, in either form                                             | `providers.1: duplicate provider`                                                                                                                                       |
-| a secret listed twice, in either form                                               | `secrets.1: duplicate secret GITHUB_TOKEN`                                                                                                                              |
-| `docs` that isn't https                                                             | `secrets.0.docs: must be an https URL` (a value that isn't a URL at all gets `Invalid URL` as well)                                                                     |
-| `why` empty, or over 200 characters                                                 | `capabilities.context.why: Too big: expected string to have <=200 characters`                                                                                           |
-| `anyOf` empty, or over 40 characters                                                | `secrets.0.anyOf: Too big: expected string to have <=40 characters`                                                                                                     |
-| a field the entry doesn't take (`required: true`, say)                              | `secrets.0: Unrecognized key: "required"`                                                                                                                               |
-| `setup` on a provider or a capability entry                                         | `providers.0: Unrecognized key: "setup"`; `capabilities.email: Unrecognized key: "setup"` (their guides are the registry's)                                             |
-| a secret's `setup` that isn't a Markdown file in the app                           | `secrets.0.setup: must be a Markdown file in the app, such as "docs/setup/main-secret.md"` (lowercase segments, no `..`, ending `.md`)                                  |
-| a secret named like a Gateway setting                                               | ``secrets.0: OPENAI_API_KEY is a Gateway setting, which `everyapp secret set OPENAI_API_KEY` sets on the Gateway for every app; list `openai` under providers instead`` |
-| a secret named like one everyapp sets itself                                        | `secrets.0: GATEWAY_URL is set by everyapp itself (GATEWAY_URL, CF_VERSION_METADATA and the EVERYAPP_*, EVERY_APP_* and APP__* names)`                                  |
-| a secret named like one of the app's bindings                                       | `secrets: DB is one of the app's bindings; pick another name for the secret`                                                                                            |
-| a capability the gateway doesn't offer, or an access level it doesn't               | `capabilities.foo: unknown capability (the gateway offers: dataforseo, context, email, members, …)`; `capabilities.dataforseo.access: DataForSEO offers read access`    |
-
-The name rules are the ones `secrets` had before needs existed; they apply
-to an entry's `name` as to a bare name.
+**What the strict validator refuses**, besides the shapes (every message
+begins `Invalid everyapp.config:` and names the field): a name declared in
+two places (the top level or one feature); a feature that lists nothing to
+set; a feature's capability or provider that the top level doesn't
+declare, or that another feature lists too; a `{placeholder}` other than
+`{appUrl}` and `{gatewayUrl}`; `generate` with `file`; a feature id that
+isn't a lowercase slug; and, for every name wherever it is declared, the
+name rules `secrets` always had (a Gateway setting, a reserved name, one of
+the app's bindings). The gateway reads a stored manifest with the lenient
+schema, which passes unknown fields through.
 
 ### Example: an OpenSEO-like app
-
-Three settings, all the Gateway's. Context.dev only renders JavaScript in
-site audits, so it is optional; the other two are what the app is for.
 
 ```ts
 export default {
   id: "openseo",
-  name: "OpenSEO",
-  providers: [
-    { id: "openrouter", why: "Writes audit summaries and keyword briefs." },
-  ],
+  providers: [{ id: "openrouter", why: "Writes audit summaries." }],
   capabilities: {
-    dataforseo: {
-      access: "read",
-      why: "Keyword, SERP and backlink data for every report.",
-    },
-    context: {
-      access: "read",
-      optional: true,
-      why: "Renders JavaScript pages in site audits; audits run without it.",
+    dataforseo: { access: "read", why: "Keyword, SERP and backlink data." },
+    context: { access: "read", why: "Renders JavaScript pages in audits." },
+  },
+  features: {
+    rendering: {
+      name: "JavaScript rendering",
+      why: "Site audits render JavaScript-heavy pages; audits run without it.",
+      capabilities: ["context"],
     },
   },
 } as const;
 ```
 
-With `OPENROUTER_API_KEY` set and the other two unset, the app is closed
-for `DATAFORSEO_API_KEY` alone, and the one command is
-`pnpm everyapp configure openseo`: it asks for `DATAFORSEO_API_KEY`, then
-offers `CONTEXT_API_KEY` (by name, `pnpm everyapp secret set
-DATAFORSEO_API_KEY` sets the first alone). `CONTEXT_API_KEY` stays "not
-set (optional)" in `everyapp status`, and the audit settings say that JS
-rendering isn't set up on this gateway (§6).
-
-### Example: an analytics-like app, an optional email and a required secret of its own
-
-```ts
-export default {
-  id: "analytics",
-  name: "OpenAnalytics",
-  public: [{ path: "/collect", methods: ["POST"] }],
-  capabilities: {
-    members: { access: "read", why: "Whom scheduled reports go to." },
-    email: {
-      access: "write",
-      optional: true,
-      why: "Emails the weekly report; without it the report is only in the app.",
-    },
-  },
-  secrets: [
-    {
-      name: "MAIN_SECRET",
-      why: "Signs the tracker's collect requests; nothing is recorded without it.",
-      docs: "https://docs.example.com/analytics/main-secret",
-      setup: "docs/setup/main-secret.md",
-    },
-  ],
-} as const;
-```
-
-`members` has nothing to set and is always set. `EMAIL_FROM` unset leaves
-the app open with the weekly email off. `MAIN_SECRET` is the app's own: the
-one command, `pnpm everyapp configure analytics`, reads the manifest from
-the registry, so it runs from anywhere, and sets it on the app's Worker
-(by name: `pnpm everyapp secret set MAIN_SECRET --app analytics`). While it is unset,
-`/collect` answers 503 with the rest of the app (it is public, but public
-routes close with the app); the author accepted that because the tracker
-records nothing without the secret anyway. `MAIN_SECRET`'s `setup` names a
-guide in the app's own repository, `docs/setup/main-secret.md` (the CLI
-prints it as `Guide: docs/setup/main-secret.md`); email's is the registry's
-`setup/email.md` in the everyapp skill, which an app can't add to. §5 shows this app's `setup`.
-
-### Example: one of several AI providers
-
-An app that uses whichever of its providers is set (today by trying one and
-falling back on `ai_provider_not_configured`; a status route is left for
-later, §8) declares a group. Email is still required.
-
-```ts
-export default {
-  id: "writer",
-  name: "Writer",
-  providers: [
-    { id: "openrouter", anyOf: "AI model", why: "Drafts and rewrites." },
-    {
-      id: "workers-ai",
-      anyOf: "AI model",
-      why: "Drafts and rewrites, in the gateway's own Cloudflare account.",
-    },
-  ],
-  capabilities: {
-    email: { access: "write", why: "Sends finished drafts." },
-  },
-} as const;
-```
-
-With nothing set, every member of "AI model" blocks; the command is
-`pnpm everyapp configure writer`, which asks for `EMAIL_FROM` and
-`EMAIL_FROM_NAME`, then "Which AI model? One is enough." and the value of
-the member chosen. With `WORKERS_AI_API_TOKEN` set the group is met,
-`OPENROUTER_API_KEY` reads "not set (one of: AI model)", and only
-`EMAIL_FROM` and `EMAIL_FROM_NAME` are left. The validator refuses this
-manifest with one member removed ("an any-of group needs two or more"), and
-refuses `optional: true` on either member.
+With `OPENROUTER_API_KEY` set and the rest unset, the app is closed for
+`DATAFORSEO_API_KEY` alone; `pnpm everyapp configure openseo` asks for it,
+then asks "Set up JavaScript rendering?" and, on yes, names
+`pnpm everyapp provider add context`.
 
 ## 4. Where it shows
 
@@ -339,7 +252,7 @@ The STATUS column, on every surface the CLI renders settings:
 | STATUS                       | Meaning                                                                                 |
 | ---------------------------- | --------------------------------------------------------------------------------------- |
 | `✓ set` (green)              | every name the setting needs is set                                                     |
-| `! not set` (yellow)         | required and unset, or every member of an any-of group is unset: the app is closed      |
+| `! not set` (yellow)         | required and unset: the app is closed                                                   |
 | `not set (optional)` (dim)   | optional and unset: the app is open, the feature says so                                |
 | `not set (one of: AI model)` | a group member that is unset while another member is set                                |
 | `! not recorded` (yellow)    | an app secret whose Worker's names were never recorded: run `pnpm everyapp status` once (on a Gateway from before migration 0004 the column itself is missing until `pnpm everyapp update`; status and secret list read the names as not recorded meanwhile) |
@@ -372,10 +285,13 @@ setting with "Label: why", the provider's hint, "Get it at <docs>" and
 `EMAIL_FROM` gets a visible prompt with what it takes, and is checked; a
 setting with several names, an OAuth client's id and secret, reads unset
 while one is missing and is asked only for the missing one),
-"Which <group>? One is enough." for an unmet any-of group, then "Set the N
-optional settings too?" ("Set the optional setting too?" for one; No by
-default: one keystroke skips them all; Yes asks each with "(Enter to
-skip)"). An app that is ready gets a menu,
+then each required feature (its name, why and numbered steps, each Gateway
+setting it needs with `provider add` when unset, then a prompt per unset
+value with its `how`; a `generate` secret is made and shown once when its
+`how` says where to paste it; a `file` prompt takes a path), then "Set up
+<name>?" for each optional feature that's off ("Finish setting up <name>?"
+for one that's incomplete; No by default; Yes asks each value with "(Enter
+to skip)"). An app that is ready gets a menu,
 "Everything <app> needs is set. Change one?", listing every setting with
 its status and "No, done". Everything is applied in one go at the end
 (one new Worker version per destination, the Gateway's first), through
@@ -493,95 +409,42 @@ One shape on every surface: `setup` on the gateway's app lists,
 
 ```ts
 interface AppSetup {
-  ready: boolean; // no required setting unset, every any-of group met
+  ready: boolean; // no required setting unset
   settings: AppSetupSetting[]; // every setting, in manifest order
   unmet: AppSetupSetting[]; // the ones keeping the app closed
-  groups: Array<{ group: string; met: boolean; members: string[] }>;
+  features: Array<{
+    id: string; name: string; required: boolean; why?: string;
+    steps: string[]; capabilities: string[]; providers: string[];
+    state: "off" | "incomplete" | "ready";
+    settings: string[]; // its settings' ids
+  }>;
   command: { command: string } | null; // "pnpm everyapp configure <app>"; null: ready, or not yours to run
 }
 
 interface AppSetupSetting {
-  kind: "provider" | "capability" | "secret";
+  kind: "provider" | "capability" | "secret" | "setting" | "ai-default" | "remote-mcp";
   id: string; // provider id, capability id or secret name
   label: string; // "OpenRouter", "DataForSEO", "MAIN_SECRET"
   holder: "gateway" | "app";
   names: string[]; // every name that must be set for the setting to count as set
-  need:
-    | { kind: "required" }
-    | { kind: "optional" }
-    | { kind: "anyOf"; group: string };
+  need: { kind: "required" } | { kind: "optional" };
+  feature?: string; // the feature it belongs to
   why?: string;
+  how?: string; // an app value's: where it lives, placeholders unfilled
+  generate?: boolean;
+  file?: boolean;
   hint?: string; // what the key is and where it comes from: the provider entry's hint, then each setting's own (never the manifest's)
   docs?: string;
-  setup?: string; // the everyapp skill's guide to it, "setup/email.md": the registry's for a Gateway setting, the entry's for an app secret; none for a provider registered on the Gateway
+  setup?: string; // a Gateway setting's guide in the everyapp skill, "setup/email.md"; none for a provider registered on the Gateway
   set: boolean | null; // null: not known (app names never recorded); never blocks
-  blocking: boolean; // required and unset, or in an any-of group none of whose members is set
+  blocking: boolean; // required and unset
 }
 ```
 
-The analytics example of §3, on a gateway with no `EMAIL_FROM`, after the
-app's names were recorded with none set:
-
-```json
-{
-  "ready": false,
-  "settings": [
-    {
-      "kind": "capability",
-      "id": "members",
-      "label": "Members",
-      "holder": "gateway",
-      "names": [],
-      "need": { "kind": "required" },
-      "why": "Whom scheduled reports go to.",
-      "set": true,
-      "blocking": false
-    },
-    {
-      "kind": "capability",
-      "id": "email",
-      "label": "Email",
-      "holder": "gateway",
-      "names": ["EMAIL_FROM", "EMAIL_FROM_NAME"],
-      "need": { "kind": "optional" },
-      "why": "Emails the weekly report; without it the report is only in the app.",
-      "setup": "setup/email.md",
-      "set": false,
-      "blocking": false
-    },
-    {
-      "kind": "secret",
-      "id": "MAIN_SECRET",
-      "label": "MAIN_SECRET",
-      "holder": "app",
-      "names": ["MAIN_SECRET"],
-      "need": { "kind": "required" },
-      "why": "Signs the tracker's collect requests; nothing is recorded without it.",
-      "docs": "https://docs.example.com/analytics/main-secret",
-      "setup": "docs/setup/main-secret.md",
-      "set": false,
-      "blocking": true
-    }
-  ],
-  "unmet": [
-    {
-      "kind": "secret",
-      "id": "MAIN_SECRET",
-      "label": "MAIN_SECRET",
-      "holder": "app",
-      "names": ["MAIN_SECRET"],
-      "need": { "kind": "required" },
-      "why": "Signs the tracker's collect requests; nothing is recorded without it.",
-      "docs": "https://docs.example.com/analytics/main-secret",
-      "setup": "docs/setup/main-secret.md",
-      "set": false,
-      "blocking": true
-    }
-  ],
-  "groups": [],
-  "command": { "command": "pnpm everyapp configure analytics" }
-}
-```
+`pnpm everyapp configure <app> --json` adds `data.features`: each feature
+with its steps filled in, its values (`name`, `kind`, `how`, `set`,
+`generate`, `file`) and its Gateway needs (`set`, and `command` when
+unset), what an agent sets an app up from end to end.
 
 How an agent uses it (the everyapp skill's rule): run
 `pnpm everyapp status --json` and read `data.apps[].setup`; for each app
@@ -690,7 +553,7 @@ The `todo` example app and Postiz were deleted from everyapp.team on 2026-10-24 
 Listed with the decisions in TODO.md's history (`673bed8c8`), "Secrets model (2026-10-24)": an app
 self-reporting its present secret names so the column heals without the
 CLI; a provider status route so an app can pick among the set members of
-a group at run time (agentic-inbox moves to `anyOf` then); the hosted
+a provider at run time; the hosted
 deploy API refusing a dispatch-tier manifest whose required platform
 settings are unset; setting a Gateway setting from the browser when a
 deployer token is configured.

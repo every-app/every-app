@@ -192,7 +192,7 @@ describe("manifest.md", () => {
   it("names every field of everyapp.config.ts", () => {
     const fields = manifestFields();
     expect(fields.paths, "the schema walk found the fields").toEqual(
-      expect.arrayContaining(["id", "capabilities.<id>.access", "migrations.engine", "secrets[].anyOf"]),
+      expect.arrayContaining(["id", "capabilities.<id>.access", "migrations.engine", "features.<id>.secrets[].how"]),
     );
     const found = backticked(readPage("manifest"));
     const missing = fields.paths.filter((path) => !found.has(path));

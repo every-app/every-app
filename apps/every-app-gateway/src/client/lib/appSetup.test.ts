@@ -7,6 +7,7 @@ import {
   appSettings,
   appSetupOf,
   evaluateAppSettings,
+  featureEntries,
   type SettingsManifestLike,
 } from "@every-app/sdk/internal";
 import { SetupAction, setupDialogModel } from "./appSetup";
@@ -16,26 +17,29 @@ const OPENSEO: SettingsManifestLike & { id: string } = {
   providers: ["openrouter"],
   capabilities: {
     dataforseo: { access: "read", why: "Keyword data." },
-    context: { access: "read", optional: true, why: "JS rendering in audits." },
+    context: { access: "read", why: "JS rendering in audits." },
   },
-};
-
-const INBOX: SettingsManifestLike & { id: string } = {
-  id: "inbox",
-  providers: [
-    { id: "openrouter", anyOf: "AI model" },
-    { id: "workers-ai", anyOf: "AI model" },
-  ],
+  features: {
+    rendering: {
+      name: "Rendering",
+      why: "Audits of JS sites.",
+      capabilities: ["context"],
+    },
+  },
 };
 
 /** An app with a secret of its own, which the CLI records on its Worker. */
 const RESEARCH: SettingsManifestLike & { id: string } = {
   id: "research",
   providers: ["openrouter"],
-  secrets: [
-    { name: "MAIN_SECRET", why: "Signs share links." },
-    { name: "WEBHOOK_SECRET", optional: true },
-  ],
+  secrets: [{ name: "MAIN_SECRET", why: "Signs share links." }],
+  features: {
+    webhooks: {
+      name: "Webhooks",
+      why: "Receives events.",
+      secrets: ["WEBHOOK_SECRET"],
+    },
+  },
 };
 
 /** The app's setup as the gateway lists it, with these names set. */
@@ -44,8 +48,10 @@ function setupOf(
   set: readonly string[],
   withCommand = true,
 ) {
-  const report = evaluateAppSettings(appSettings(manifest), (_holder, name) =>
-    set.includes(name),
+  const report = evaluateAppSettings(
+    appSettings(manifest),
+    (_holder, name) => set.includes(name),
+    { features: featureEntries(manifest) },
   );
   return appSetupOf(report, {
     cli: "pnpm everyapp",
@@ -93,7 +99,6 @@ describe("setupDialogModel", () => {
         done: false,
       },
     ]);
-    expect(model.anyOf).toEqual([]);
     // What the admin could also set, for the feature that uses it.
     expect(model.optional.map((row) => [row.label, row.why])).toEqual([
       ["Context.dev", "JS rendering in audits."],
@@ -185,24 +190,10 @@ describe("setupDialogModel", () => {
     expect(model.optional).toEqual([]);
   });
 
-  it("says one member of an any-of group is enough, and counts the group once", () => {
-    const none = setupDialogModel(setupOf(INBOX, []), {
-      name: "Inbox",
-      canRun: true,
-    });
-    expect(none.needed.map((row) => row.label)).toEqual([
-      "OpenRouter",
-      "Workers AI",
-    ]);
-    expect(none.gather).toBe("Get 1 key");
-    expect(none.anyOf).toEqual([
-      "One of these is enough: OpenRouter, Workers AI",
-    ]);
-
-    // A provider app's command sets its key by name, in the same steps.
+  it("runs a provider app's own command, in the same steps", () => {
     const provider = setupDialogModel(
       {
-        ...setupOf(INBOX, []),
+        ...setupOf(OPENSEO, []),
         command: { command: "pnpm everyapp secret set DATAFORSEO_API_KEY" },
       },
       { name: "DataForSEO", canRun: true },
@@ -211,17 +202,6 @@ describe("setupDialogModel", () => {
       kind: SetupAction.Run,
       command: "pnpm everyapp secret set DATAFORSEO_API_KEY",
     });
-
-    // One set meets the group: it is ticked off, and the other no longer
-    // counts as needed.
-    const one = setupDialogModel(setupOf(INBOX, ["OPENROUTER_API_KEY"]), {
-      name: "Inbox",
-      canRun: true,
-    });
-    expect(one.needed.map((row) => [row.label, row.done])).toEqual([
-      ["OpenRouter", true],
-    ]);
-    expect(one.anyOf).toEqual([]);
   });
 
   it("names the first optional settings in the folded line", () => {
@@ -231,14 +211,21 @@ describe("setupDialogModel", () => {
           id: "crm",
           capabilities: {
             context: { access: "read" },
-            "google-workspace": { access: "write", optional: true },
-            "microsoft-365": { access: "write", optional: true },
-            slack: { access: "write", optional: true },
+            "google-workspace": { access: "write" },
+            "microsoft-365": { access: "write" },
+            slack: { access: "write" },
           },
-          secrets: [
-            { name: "GITHUB_TOKEN", optional: true },
-            { name: "ERASURE_SECRET", optional: true },
-          ],
+          features: {
+            mail: {
+              name: "Mail",
+              capabilities: ["google-workspace", "microsoft-365"],
+            },
+            chat: { name: "Slack", capabilities: ["slack"] },
+            extras: {
+              name: "Extras",
+              secrets: ["GITHUB_TOKEN", "ERASURE_SECRET"],
+            },
+          },
         },
         [],
       ),

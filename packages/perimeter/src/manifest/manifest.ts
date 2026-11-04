@@ -24,9 +24,8 @@ import {
   isReservedAppSecretName,
   isSignInSettingName,
   isSettableGatewaySetting,
-  providerEntries,
   RESERVED_APP_SECRET_NAMES_TEXT,
-  secretEntries,
+  providerIds,
   secretNames,
   settingNames,
   settingValueProblem,
@@ -348,8 +347,8 @@ function addProviderNameIssue(id: string, ctx: z.RefinementCtx): boolean {
 /**
  * What a provider, capability or secret may say about its need (the
  * settings model, `@every-app/sdk/internal` appSettings): why the app
- * needs it, where it comes from, and whether the app opens without it. A
- * declaration with none of these is required.
+ * needs it and where it comes from. Everything at the top level is
+ * required; what the app works without goes in an optional feature.
  */
 const HttpsUrlSchema = z
   .string()
@@ -361,12 +360,7 @@ const SettingNeedFieldsSchema = {
   why: z.string().min(1).max(200).optional(),
   /** Where the key or client comes from. */
   docs: HttpsUrlSchema.optional(),
-  /** The app works without it; the feature using it says so where it is used. */
-  optional: z.boolean().optional(),
-  /** The group of which one set member is enough, by name ("AI model"), for an app that picks among the set members at run time. */
-  anyOf: z.string().trim().min(1).max(40).optional(),
-  // `setup` is not here: only an app's own secret names its guide (below).
-} satisfies Record<Exclude<keyof SettingNeedFields, "setup">, z.ZodTypeAny>;
+} satisfies Record<keyof SettingNeedFields, z.ZodTypeAny>;
 
 /** One `providers` entry: a provider id, or the id with its need. */
 const ProviderEntrySchema = z
@@ -489,8 +483,8 @@ function oauthWhySchema(needs: string) {
 }
 
 /**
- * An OAuth entry as an author writes it: `{ scopes, why }` (and the need
- * fields `docs`, `optional`, `anyOf`), the removed keys refused with what
+ * An OAuth entry as an author writes it: `{ scopes, why }` (and `docs`),
+ * the removed keys refused with what
  * to write instead.
  */
 function oauthEntrySchema(
@@ -507,8 +501,6 @@ function oauthEntrySchema(
         `${label} needs why: what the app does with the account a person connects, in one sentence`,
       ),
       docs: SettingNeedFieldsSchema.docs,
-      optional: SettingNeedFieldsSchema.optional,
-      anyOf: SettingNeedFieldsSchema.anyOf,
       access: refusedKey(REMOVED_OAUTH_KEYS.access),
       background: refusedKey(REMOVED_OAUTH_KEYS.background),
       optionalScopes: refusedKey(REMOVED_OAUTH_KEYS.optionalScopes),
@@ -527,7 +519,7 @@ function oauthEntrySchema(
  *  - an API-key provider or a gateway service: `{ access, why }`, at a
  *    level it offers, and no `scopes`.
  *
- * Every entry also takes the need fields `docs`, `optional`, `anyOf`.
+ * Every entry also takes `docs`.
  * `lookup` is where `id` is found: the catalog, or a gateway's registry;
  * an id it doesn't have, or an AI provider's, is a programming error here
  * (the capabilities schema checks ids first).
@@ -786,7 +778,7 @@ const AiPolicySchema = z
     /**
      * The app needs a chat model and takes the workspace's default
      * (`/api/ai/default/…`, `aiBaseUrl()` with `createGatewayFetch()`):
-     * `true`, or an entry with its need (`why`, `optional`, `anyOf`). The
+     * `true`, or an entry with its `why` and `docs`. The
      * model allowlist above doesn't apply to the default route: the
      * operator chose the model. An app that needs one provider in
      * particular lists it under `providers` instead, or as well.
@@ -958,26 +950,65 @@ const AiGatewayBindingNameSchema = z
  * app's bindings is refused by {@link validateManifestStrict}, which sees
  * the whole manifest.
  */
-/**
- * An app's own secret may name its setup guide, a Markdown file in the app
- * (`docs/setup/main-secret.md`): lowercase path segments, so never absolute
- * and never `..`. The guides in the everyapp skill are the registries', for
- * Gateway settings; an app can't add one there.
- */
-const SetupGuideSchema = z
-  .string()
-  .regex(
-    /^[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*)*\.md$/,
-    'must be a Markdown file in the app, such as "docs/setup/main-secret.md"',
-  );
+/** The placeholders a feature's steps and a value's `how` may hold, filled with real URLs where they are shown. */
+export const SETUP_PLACEHOLDERS = ["appUrl", "gatewayUrl"] as const;
+
+/** Setup text (a step, a `how`): plain text, each `{name}` one of {@link SETUP_PLACEHOLDERS}. */
+function setupTextSchema(max: number) {
+  return z
+    .string()
+    .trim()
+    .min(1)
+    .max(max)
+    .regex(PLAIN_TEXT, "is one line of text, with no control characters")
+    .superRefine((text, ctx) => {
+      for (const [, name] of text.matchAll(/\{([^{}]*)\}/g)) {
+        if (!(SETUP_PLACEHOLDERS as readonly string[]).includes(name!)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `{${name}} isn't a placeholder; use {appUrl} or {gatewayUrl}, or drop the braces`,
+          });
+        }
+      }
+    });
+}
+
+/** Where one of the app's own values lives and what permission it needs. */
+const HowSchema = setupTextSchema(200);
+
+/** `generate` and `file` together: a generated value is never a file. */
+function refuseGeneratedFile(
+  entry: { generate?: boolean | undefined; file?: boolean | undefined },
+  ctx: z.RefinementCtx,
+): void {
+  if (entry.generate && entry.file) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["file"],
+      message: "a generated secret isn't a file; drop generate or file",
+    });
+  }
+}
+
+/** What a secret in a feature takes: the feature says why. */
+const FeatureSecretFieldsSchema = {
+  name: BindingNameSchema,
+  how: HowSchema.optional(),
+  /** `everyapp configure` makes it when unset: 32 random bytes, base64url. */
+  generate: z.boolean().optional(),
+  /** The value is a file's contents (a .pem); the prompt takes its path. */
+  file: z.boolean().optional(),
+};
 
 const SecretEntrySchemaStrict = z
-  .object({
-    name: BindingNameSchema,
-    ...SettingNeedFieldsSchema,
-    setup: SetupGuideSchema.optional(),
-  })
-  .strict();
+  .object({ ...FeatureSecretFieldsSchema, ...SettingNeedFieldsSchema })
+  .strict()
+  .superRefine(refuseGeneratedFile);
+
+const FeatureSecretEntrySchemaStrict = z
+  .object(FeatureSecretFieldsSchema)
+  .strict()
+  .superRefine(refuseGeneratedFile);
 
 /**
  * The provider a gateway registered (a lookup's id outside the catalog)
@@ -1061,22 +1092,24 @@ const AppSecretsSchemaStrict = appSecretsSchemaStrict();
  * held on the app's Workers like a secret and read from `env`. `why` is
  * required: whoever installs the app is asked for it.
  */
-const SettingEntrySchemaStrict = z
-  .object({
-    name: BindingNameSchema,
-    why: z.string().min(1).max(200),
-    docs: HttpsUrlSchema.optional(),
-    optional: z.boolean().optional(),
-    type: z.enum(["text", "url", "number", "boolean"]).optional(),
-    values: z
-      .array(z.string().trim().min(1).max(200))
-      .min(2)
-      .max(50)
-      .optional(),
-    default: z.string().trim().min(1).max(1000).optional(),
-  })
-  .strict()
-  .superRefine((entry, ctx) => {
+const SettingValueFieldsSchema = {
+  name: BindingNameSchema,
+  how: HowSchema.optional(),
+  type: z.enum(["text", "url", "number", "boolean"]).optional(),
+  values: z.array(z.string().trim().min(1).max(200)).min(2).max(50).optional(),
+  default: z.string().trim().min(1).max(1000).optional(),
+};
+
+/** A plain setting's value rules: `values` for text only, each once, a default it takes. */
+function checkSettingValue(
+  entry: {
+    type?: "text" | "url" | "number" | "boolean" | undefined;
+    values?: string[] | undefined;
+    default?: string | undefined;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  {
     const issue = (path: string, message: string) =>
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
     if (entry.values && entry.type && entry.type !== "text") {
@@ -1088,12 +1121,6 @@ const SettingEntrySchemaStrict = z
     }
     if (entry.values && new Set(entry.values).size !== entry.values.length) {
       issue("values", "each value once");
-    }
-    if (entry.optional === true && entry.default !== undefined) {
-      issue(
-        "optional",
-        "a setting with a default is never unset (the deploy sets the default), so it is optional already; drop optional",
-      );
     }
     if (entry.default !== undefined) {
       const problem = settingValueProblem(
@@ -1109,7 +1136,23 @@ const SettingEntrySchemaStrict = z
           `the default isn't a value the setting takes: ${problem}`,
         );
     }
-  });
+  }
+}
+
+const SettingEntrySchemaStrict = z
+  .object({
+    ...SettingValueFieldsSchema,
+    why: z.string().min(1).max(200),
+    docs: HttpsUrlSchema.optional(),
+  })
+  .strict()
+  .superRefine(checkSettingValue);
+
+/** A plain setting in a feature: the feature says why. */
+const FeatureSettingEntrySchemaStrict = z
+  .object(SettingValueFieldsSchema)
+  .strict()
+  .superRefine(checkSettingValue);
 
 /** The strict `settings` schema: the same name rules as `secrets`, each once. */
 function appSettingsSchemaStrict(lookup?: CapabilityLookup) {
@@ -1130,6 +1173,67 @@ function appSettingsSchemaStrict(lookup?: CapabilityLookup) {
 }
 
 const AppSettingsSchemaStrict = appSettingsSchemaStrict();
+
+/** The most features a manifest declares. */
+const MAX_FEATURES = 20;
+
+/**
+ * One feature as an author writes it (`features.<id>`): a named group of
+ * the app's own secrets and settings and the Gateway capabilities and
+ * providers it needs, with numbered setup steps. `required: true` keeps
+ * the app closed until it is set; an optional one (the default) is all or
+ * nothing. {@link assertFeaturesAreConsistent} checks it against the rest
+ * of the manifest.
+ */
+const FeatureSchemaStrict = z
+  .object({
+    /** What people read: "GitHub". */
+    name: z
+      .string()
+      .trim()
+      .min(1)
+      .max(60)
+      .regex(PLAIN_TEXT, "is one line of text"),
+    required: z.boolean().optional(),
+    /** What it gives the app, in one sentence. */
+    why: z.string().trim().min(1).max(200),
+    /** Short Markdown lines, numbered where they are shown. */
+    steps: z.array(setupTextSchema(500)).max(20).optional(),
+    settings: z.array(FeatureSettingEntrySchemaStrict).max(50).optional(),
+    secrets: z
+      .array(z.union([BindingNameSchema, FeatureSecretEntrySchemaStrict]))
+      .max(50)
+      .optional(),
+    /** Capabilities it needs, by id, each declared under `capabilities` too. */
+    capabilities: z.array(z.string().min(1)).max(20).optional(),
+    /** AI providers it needs, by id, each declared under `providers` too. */
+    providers: z.array(z.string().min(1)).max(20).optional(),
+  })
+  .strict();
+
+// The id is checked here rather than as the record's key schema, whose
+// refusal ("Invalid key in record") wouldn't say what an id is.
+const FeaturesSchemaStrict = z
+  .record(z.string(), FeatureSchemaStrict)
+  .superRefine((features, ctx) => {
+    const ids = Object.keys(features);
+    if (ids.length > MAX_FEATURES) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `at most ${MAX_FEATURES} features`,
+      });
+    }
+    for (const id of ids) {
+      if (!/^[a-z][a-z0-9-]{0,39}$/.test(id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [id],
+          message:
+            "a feature id is a lowercase slug (a-z, 0-9 and -, starting with a letter, at most 40 characters)",
+        });
+      }
+    }
+  });
 
 /**
  * A Vectorize index as an author writes it: `{ name, dimensions, metric }`
@@ -1403,7 +1507,7 @@ function manifestSchemaStrict(options: StrictManifestOptions = {}) {
       /**
        * The app's own secrets (an API key it calls out with), which
        * `everyapp secret set <NAME>` sets on its Workers: each by name, or as
-       * `{ name, why, docs, optional, anyOf, setup }`. Default: none.
+       * `{ name, why, docs, how, generate, file }`. Default: none.
        */
       secrets: (options.capabilities
         ? appSecretsSchemaStrict(options.capabilities)
@@ -1413,13 +1517,19 @@ function manifestSchemaStrict(options: StrictManifestOptions = {}) {
        * The app's plain settings: values that aren't secrets and differ per
        * install (a PostHog host, a region), set like its secrets with
        * `everyapp configure <app>` and read from `env`: each
-       * `{ name, why, type?, values?, default?, optional?, docs? }`.
+       * `{ name, why, how?, type?, values?, default?, docs? }`.
        * Default: none.
        */
       settings: (options.capabilities
         ? appSettingsSchemaStrict(options.capabilities)
         : AppSettingsSchemaStrict
       ).optional(),
+      /**
+       * What the app needs set, grouped, with setup steps: feature id →
+       * `{ name, required?, why, steps?, settings?, secrets?,
+       * capabilities?, providers? }`. Default: none.
+       */
+      features: FeaturesSchemaStrict.optional(),
     })
     .strict();
 }
@@ -1705,7 +1815,7 @@ export function validateManifestStrict(
   assertQueuesAreConsistent(manifest);
   assertDatabaseIsConsistent(manifest);
   assertAiGatewayIdsFit(manifest);
-  assertSettingNeedsAreConsistent(manifest);
+  assertFeaturesAreConsistent(manifest, options.capabilities);
   return manifest;
 }
 
@@ -1731,41 +1841,87 @@ function assertAiGatewayIdsFit(manifest: EveryAppManifest): void {
 }
 
 /**
- * Each declaration's need reads one way: not both `optional` and a
- * `anyOf` group (a group's member is optional by itself), and every
- * any-of group has two or more members across providers, capabilities and
- * secrets (one member alone is either required or optional).
+ * The features read against the rest of the manifest: each lists
+ * something to set, every capability or provider it names is declared
+ * (under `capabilities` or `providers`) and in no other feature, and each
+ * secret or setting name is declared in one place only (the top level or
+ * one feature), under the same name rules as the top level's.
  */
-function assertSettingNeedsAreConsistent(manifest: EveryAppManifest): void {
-  const declared: Array<{ path: string; need: SettingNeedFields }> = [
-    ...providerEntries(manifest).map((entry) => ({
-      path: `providers: ${entry.id}`,
-      need: entry,
-    })),
-    ...Object.entries(manifest.capabilities ?? {}).map(([id, entry]) => ({
-      path: `capabilities.${id}`,
-      need: entry,
-    })),
-    ...secretEntries(manifest).map((entry) => ({
-      path: `secrets: ${entry.name}`,
-      need: entry,
-    })),
-  ];
-  const groups = new Map<string, string[]>();
-  for (const { path, need } of declared) {
-    const group = need.anyOf?.trim();
-    if (need.optional === true && group) {
-      throw new ManifestError(
-        `Invalid everyapp.config: ${path} is both optional and in the any-of group "${group}"; a group's member is optional by itself, so drop one of them.`,
+function assertFeaturesAreConsistent(
+  manifest: EveryAppManifest,
+  lookup?: CapabilityLookup,
+): void {
+  const fail = (path: string, message: string): never => {
+    throw new ManifestError(`Invalid everyapp.config: ${path}: ${message}`);
+  };
+  const where = new Map<string, string>();
+  for (const entry of manifest.secrets ?? []) {
+    where.set(typeof entry === "string" ? entry : entry.name, "secrets");
+  }
+  for (const entry of manifest.settings ?? []) {
+    if (!where.has(entry.name)) where.set(entry.name, "settings");
+  }
+  const capabilities = new Set(Object.keys(manifest.capabilities ?? {}));
+  const providers = new Set(providerIds(manifest));
+  const listedBy = new Map<string, string>();
+  for (const [id, feature] of Object.entries(manifest.features ?? {})) {
+    const path = `features.${id}`;
+    const names = [
+      ...(feature.secrets ?? []).map((entry) => ({
+        name: typeof entry === "string" ? entry : entry.name,
+        field: "secrets",
+        what: "secret" as const,
+      })),
+      ...(feature.settings ?? []).map((entry) => ({
+        name: entry.name,
+        field: "settings",
+        what: "setting" as const,
+      })),
+    ];
+    if (
+      names.length === 0 &&
+      !feature.capabilities?.length &&
+      !feature.providers?.length
+    ) {
+      fail(
+        path,
+        "lists nothing to set; give it secrets, settings, capabilities or providers, or drop it",
       );
     }
-    if (group) groups.set(group, [...(groups.get(group) ?? []), path]);
-  }
-  for (const [group, members] of groups) {
-    if (members.length < 2) {
-      throw new ManifestError(
-        `Invalid everyapp.config: the any-of group "${group}" has one member (${members[0]}); an any-of group needs two or more. Drop anyOf, or mark it optional.`,
-      );
+    for (const { name, field, what } of names) {
+      const at = `${path}.${field}`;
+      const before = where.get(name);
+      if (before) {
+        fail(
+          at,
+          `${name} is declared under ${before} too; a name goes in one place: the top level or one feature`,
+        );
+      }
+      where.set(name, at);
+      const refused = ownNameRefusal(name, what, lookup);
+      if (refused) fail(at, refused);
+    }
+    for (const [field, declared, top] of [
+      ["capabilities", capabilities, "capabilities"],
+      ["providers", providers, "providers"],
+    ] as const) {
+      for (const each of feature[field] ?? []) {
+        if (!declared.has(each)) {
+          fail(
+            `${path}.${field}`,
+            `${each} isn't declared under ${top}; declare it there too`,
+          );
+        }
+        const key = `${field}:${each}`;
+        const other = listedBy.get(key);
+        if (other) {
+          fail(
+            `${path}.${field}`,
+            `${each} is in features.${other} too; a ${field === "capabilities" ? "capability" : "provider"} belongs to one feature`,
+          );
+        }
+        listedBy.set(key, id);
+      }
     }
   }
 }

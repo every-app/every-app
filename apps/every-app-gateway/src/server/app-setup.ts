@@ -21,6 +21,7 @@ import {
   BUILTIN_PROVIDERS,
   CATALOG,
   evaluateAppSettings,
+  featureEntries,
   providerIds,
   type AppSetting,
   type AppSettingsReport,
@@ -237,6 +238,7 @@ export async function appSettingsReport(
               oauthReady !== undefined
             ? oauthReady
             : undefined,
+      features: featureEntries(manifest),
     },
   );
   remember(key, report);

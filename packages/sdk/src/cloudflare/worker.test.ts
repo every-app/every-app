@@ -548,6 +548,27 @@ describe("everyAppWorker crons and the app's own secrets", () => {
     expect(env("production")["SDK_TEST_API_KEY"]).toBeUndefined();
   });
 
+  it("declares a feature's secret set locally, and its setting's default, as the top level's", () => {
+    fs.writeFileSync(path.join(root, ".dev.vars"), "GITHUB_KEY=dev-value\n");
+    const env = everyAppWorker({
+      manifest: {
+        ...manifest,
+        features: {
+          github: {
+            secrets: ["GITHUB_KEY", "GITHUB_WEBHOOK_SECRET"],
+            settings: [{ name: "GITHUB_OWNER", default: "acme" }],
+          },
+        },
+      },
+      entrypoint,
+      ctx: { mode: "development" },
+      root,
+    }).env as Record<string, unknown>;
+    expect(env["GITHUB_KEY"]).toEqual({ type: "secret" });
+    expect(env["GITHUB_WEBHOOK_SECRET"]).toBeUndefined();
+    expect(env["GITHUB_OWNER"]).toEqual({ type: "text", value: "acme" });
+  });
+
   it("reads .env files and the environment when there is no .dev.vars", () => {
     fs.writeFileSync(
       path.join(root, ".env.local"),

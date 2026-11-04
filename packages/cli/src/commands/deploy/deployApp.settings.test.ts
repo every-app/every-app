@@ -27,12 +27,13 @@ import { deployApp } from "./deployApp";
 
 const WORKER = "every-acme-crm";
 
-/** An AI provider, an optional capability, and a required secret with its why. */
+/** An AI provider, an optional feature's capability, and a required secret with its why. */
 const CRM: EveryAppCliManifest = {
   id: "crm",
   resources: { d1: ["DB"] },
   providers: [{ id: "openrouter", why: "Drafts replies." }],
-  capabilities: { context: { access: "read", optional: true } },
+  capabilities: { context: { access: "read" } },
+  features: { rendering: { name: "Rendering", why: "JS sites.", capabilities: ["context"] } },
   secrets: [{ name: "TOKEN_ENCRYPTION_KEY", why: "Encrypts the OAuth tokens it stores." }],
 };
 
@@ -173,7 +174,7 @@ describe("deploy and the app's settings", () => {
 
     gateway().secrets["OPENROUTER_API_KEY"] = "sk-or";
     account.workers.get(WORKER)!.secrets["TOKEN_ENCRYPTION_KEY"] = "tek";
-    const result = await deploy({ ...CRM, capabilities: { context: { access: "read", optional: true } } });
+    const result = await deploy(CRM);
     expect(warnings()).toEqual([]);
     expect(result.next).toEqual([]);
   });

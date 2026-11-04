@@ -13,11 +13,13 @@ import {
   appSetupOf,
   CATALOG,
   evaluateAppSettings,
+  featureEntries,
   isReservedAppSecretName,
   settingValueTakes,
   type AppSettingsReport,
   type CapabilityLookup,
   type AppSetup,
+  type AppSetupFeature,
   type AppSetupSetting,
   type EvaluatedSetting,
   type SettingsManifestLike,
@@ -25,6 +27,7 @@ import {
 import chalk from "chalk";
 import type { CfRunner } from "@/lib/cf/runner";
 import { listWorkerSecrets } from "@/lib/cf/secrets";
+import { fillPlaceholders, type SetupUrls } from "@/lib/app/features";
 import { CLI } from "@/lib/output/command";
 import { formatTable } from "@/lib/output/table";
 
@@ -85,10 +88,14 @@ export function boundGatewayNames(
 export function appSetupFrom(input: AppSetupInput): AppSetupResult {
   const lookup = input.lookup ?? CATALOG;
   const gatewayNames = input.gatewayNames === null ? null : boundGatewayNames(input.gatewayNames, lookup);
-  const report = evaluateAppSettings(appSettings(input.manifest, lookup), (holder, name) => {
-    const names = holder === "gateway" ? gatewayNames : input.secretNames;
-    return names === null ? null : names.includes(name);
-  });
+  const report = evaluateAppSettings(
+    appSettings(input.manifest, lookup),
+    (holder, name) => {
+      const names = holder === "gateway" ? gatewayNames : input.secretNames;
+      return names === null ? null : names.includes(name);
+    },
+    { features: featureEntries(input.manifest) },
+  );
   return { report, setup: appSetupOf(report, { cli: CLI, appId: input.appId }) };
 }
 
@@ -111,8 +118,8 @@ export function gatewayNamesRead(manifest: SettingsManifestLike, lookup: Capabil
  * One Gateway name an app reads, as `secret list --json`'s
  * `data.gateway.needed` has said it since before the settings model (the
  * setup skills read it): `required` when the app can't do without it
- * (required, or a member of an any-of group; what a setting also reads
- * when set is not), `set` whether the Gateway holds it.
+ * (what a setting also reads when set is not), `set` whether the Gateway
+ * holds it.
  */
 interface GatewayNeed {
   name: string;
@@ -164,26 +171,36 @@ const NOT_SET = `${chalk.yellow("!")} not set`;
 
 /**
  * A setting's state in words, the same everywhere: `✓ set`; `! not set`
- * (required, or every member of its any-of group is unset); dim `not set
- * (optional)`; dim `not set (one of: <group>)` when another member is set;
- * `! not recorded` for an app secret nobody listed yet; `! couldn't check`
- * for a Gateway setting cf couldn't list.
+ * (required); dim `not set (optional)`; `! not recorded` for an app secret
+ * nobody listed yet; `! couldn't check` for a Gateway setting cf couldn't
+ * list.
  */
-export function settingStatus(setting: Pick<EvaluatedSetting, "set" | "need" | "blocking" | "holder">): string {
+export function settingStatus(setting: Pick<EvaluatedSetting, "set" | "need" | "holder">): string {
   if (setting.set === true) return `${chalk.green("✓")} set`;
   if (setting.set === null) {
     return setting.holder === "app"
       ? `${chalk.yellow("!")} not recorded`
       : `${chalk.yellow("!")} couldn't check`;
   }
-  switch (setting.need.kind) {
-    case "required":
-      return NOT_SET;
-    case "optional":
-      return chalk.dim("not set (optional)");
-    case "anyOf":
-      return setting.blocking ? NOT_SET : chalk.dim(`not set (one of: ${setting.need.group})`);
+  return setting.need.kind === "required" ? NOT_SET : chalk.dim("not set (optional)");
+}
+
+/** A feature's state in a word: `✓` when ready, `incomplete` (yellow), `off` (dim). */
+function featureStateWord(feature: Pick<AppSetupFeature, "state">): string {
+  switch (feature.state) {
+    case "ready":
+      return chalk.green("✓");
+    case "incomplete":
+      return chalk.yellow("incomplete");
+    case "off":
+      return chalk.dim("off");
   }
+}
+
+/** One app's features in one line, "GitHub ✓ · Slack off · Sandboxes incomplete"; null without features. */
+export function featuresLine(features: readonly Pick<AppSetupFeature, "name" | "state">[]): string | null {
+  if (features.length === 0) return null;
+  return features.map((feature) => `${feature.name} ${featureStateWord(feature)}`).join(chalk.dim(" · "));
 }
 
 /** The SETTING cell: the names, joined with + when there are several. */
@@ -243,15 +260,18 @@ export function renderSettingsTable(
 /**
  * What an unmet setting is, for whoever sets it: "<label>: <why>" (the
  * names when the manifest says no why and the label doesn't name them),
- * then what the key is and where it comes from (the provider's `hint`),
- * what one of the app's plain settings takes ("Takes an http or https
- * URL"), then "Get it at <docs>" when the registry or manifest knows where.
+ * then where an app's own value lives (its `how`, placeholders filled when
+ * `urls` are known), what the key is and where it comes from (the
+ * provider's `hint`), what one of the app's plain settings takes ("Takes
+ * an http or https URL"), then "Get it at <docs>" when the registry or
+ * manifest knows where.
  */
-export function describeUnmet(setting: AppSetupSetting): string[] {
+export function describeUnmet(setting: AppSetupSetting, urls?: SetupUrls): string[] {
   const names = setting.names.join(" and ");
   const what = setting.why ?? (setting.label === names ? undefined : names);
   return [
     what ? `${setting.label}: ${what}` : setting.label,
+    ...(setting.how ? [urls ? fillPlaceholders(setting.how, urls) : setting.how] : []),
     ...(setting.hint ? [setting.hint] : []),
     // One of the app's plain settings: what its value must be.
     ...(setting.value ? [`Takes ${settingValueTakes(setting.value)}`] : []),
@@ -267,20 +287,16 @@ export function describeUnmet(setting: AppSetupSetting): string[] {
 export const SKILL_DIR = "node_modules/everyapp/skills/everyapp";
 
 /**
- * Where an agent reads how to set `setting` up: for an app's own secret, the
- * guide its manifest entry names, a path in the app ("Guide:
- * docs/setup/main-secret.md"); for a Gateway setting, the everyapp skill's
- * guide when the registry names one ("Guide: node_modules/everyapp/skills/
- * everyapp/setup/dataforseo.md"), else for a provider (a registered row has
- * no guide) the command that prints its whole spec ("Guide: pnpm everyapp
- * provider show stripe"). Null for an app's own secret without a guide.
+ * Where an agent reads how to set a Gateway setting up: the everyapp
+ * skill's guide when the registry names one ("Guide: node_modules/
+ * everyapp/skills/everyapp/setup/dataforseo.md"), else for a provider (a
+ * registered row has no guide) the command that prints its whole spec
+ * ("Guide: pnpm everyapp provider show stripe"). Null for an app's own
+ * value: its feature's steps and its `how` say it.
  */
-export function guideLine(
-  setting: Pick<AppSetupSetting, "setup" | "kind" | "id" | "holder">,
-): string | null {
-  if (setting.setup) {
-    return `Guide: ${setting.holder === "app" ? setting.setup : `${SKILL_DIR}/${setting.setup}`}`;
-  }
+export function guideLine(setting: Pick<AppSetupSetting, "setup" | "kind" | "id" | "holder">): string | null {
+  if (setting.holder === "app") return null;
+  if (setting.setup) return `Guide: ${SKILL_DIR}/${setting.setup}`;
   if (setting.kind === "capability" || setting.kind === "provider") {
     return `Guide: ${CLI} provider show ${setting.id}`;
   }
@@ -303,23 +319,7 @@ export function describeUnmetSettings(unmet: readonly AppSetupSetting[]): string
   });
 }
 
-/**
- * The names the setup command sets, as `setupCommand` picks them: every
- * required name that is unset, then the first member of each unmet any-of
- * group (one is enough; the command's note names the others).
- */
-export function namesToSet(setup: AppSetup): string[] {
-  const names: string[] = [];
-  const add = (setting: AppSetupSetting) => {
-    for (const name of setting.names) if (!names.includes(name)) names.push(name);
-  };
-  for (const setting of setup.unmet) {
-    if (setting.need.kind === "required") add(setting);
-  }
-  for (const group of setup.groups) {
-    if (group.met) continue;
-    const first = setup.unmet.find((setting) => setting.id === group.members[0]);
-    if (first) add(first);
-  }
-  return names;
+/** The names the setup command sets: every required name that is unset, once each. */
+export function namesToSet(setup: Pick<AppSetup, "unmet">): string[] {
+  return [...new Set(setup.unmet.flatMap((setting) => setting.names))];
 }

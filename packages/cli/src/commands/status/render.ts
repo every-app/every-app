@@ -10,7 +10,7 @@ import type { AccessState } from "@/lib/access/settings";
 import { listed } from "@/lib/output/text";
 import type { EmailRouteProblem } from "@/lib/app/emailRoutes";
 import { listPublicRoutes } from "@/lib/app/publicRoutes";
-import { renderSettingsTable, settingsRows } from "@/lib/app/settings";
+import { featuresLine, renderSettingsTable, settingsRows } from "@/lib/app/settings";
 import type { InstallRecord } from "@/lib/gateway/install";
 import { describeOrigin } from "@/lib/gateway/release";
 import { describeLeaseHolder, type LeaseHolder } from "@/lib/gateway/lease";
@@ -117,6 +117,11 @@ export function renderStatus({
   );
   // Each app's settings, for the apps that declare any.
   const settings = apps.flatMap((app) => (app.setup ? settingsRows(app.id, app.setup.settings) : []));
+  // Each app's features in one line, for the apps that declare any.
+  const features = apps.flatMap((app) => {
+    const line = app.setup ? featuresLine(app.setup.features) : null;
+    return line ? [[app.id, line]] : [];
+  });
   return [
     ...formatFacts(facts),
     "",
@@ -136,6 +141,7 @@ export function renderStatus({
       : [chalk.dim("No apps yet.")]),
     ...(mailing.length > 0 ? ["", ...emailTable(mailing, emailProblems)] : []),
     ...(settings.length > 0 ? ["", ...renderSettingsTable(settings)] : []),
+    ...(features.length > 0 ? ["", ...formatTable(["APP", "FEATURES"], features)] : []),
     ...renderProblems(problems),
   ].join("\n");
 }

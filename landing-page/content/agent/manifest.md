@@ -106,31 +106,70 @@ The app is private by default: every request needs a signed-in member with acces
 
 - `publicAssets`: up to 25 path globs of static files anyone may GET (favicons, `/assets/**` a public page loads). No identity is forwarded, ever.
 
-## What the app needs set: providers, capabilities, secrets, settings
+## What the app needs set: providers, capabilities, secrets, settings, features
 
-Each entry has a **need**: required (the default; the app shows Needs setup until it's set), `optional: true`, or `anyOf: "<group>"` (one member of the group is enough). `everyapp configure <app>` sets up whatever is unmet. [secrets](/docs/agent/secrets)
+Everything listed at the top level is required: the app shows Needs setup until it's set. What the app works without, or what a person sets up together (a GitHub App, a Slack app), goes in a [feature](#features). `everyapp configure <app>` walks it all. [secrets](/docs/agent/secrets)
 
 ### providers
 
-`providers`: AI providers the app calls through the Gateway's AI proxy, as ids (`"openrouter"`) or `{ id, why?, docs?, optional?, anyOf? }`: `providers[].id`, `providers[].why`, `providers[].docs`, `providers[].optional`, `providers[].anyOf`. The key stays on the Gateway. [ai](/docs/agent/ai)
+`providers`: AI providers the app calls through the Gateway's AI proxy, as ids (`"openrouter"`) or `{ id, why?, docs? }`: `providers[].id`, `providers[].why`, `providers[].docs`. The key stays on the Gateway. [ai](/docs/agent/ai)
 
 ### capabilities
 
-`capabilities`: Gateway-held APIs by id. An API-key provider or service takes `capabilities.<id>.access` (`read` or `write`); an OAuth provider takes `capabilities.<id>.scopes` (the provider's own short scope names) and a required `capabilities.<id>.why`. All take `capabilities.<id>.docs`, `capabilities.<id>.optional` and `capabilities.<id>.anyOf`. The deployed entry is the grant; calls outside it are refused. Built-ins include `email`, `members`, `dataforseo`, `context`, `slack`, `google-workspace` and `microsoft-365`; the full catalog is on [providers](/docs/agent/providers).
+`capabilities`: Gateway-held APIs by id. An API-key provider or service takes `capabilities.<id>.access` (`read` or `write`); an OAuth provider takes `capabilities.<id>.scopes` (the provider's own short scope names) and a required `capabilities.<id>.why`. All take `capabilities.<id>.docs`. The deployed entry is the grant; calls outside it are refused. Built-ins include `email`, `members`, `dataforseo`, `context`, `slack`, `google-workspace` and `microsoft-365`; the full catalog is on [providers](/docs/agent/providers).
 
 ### secrets
 
-`secrets`: the app's own secrets, as names or `{ name, why?, docs?, optional?, anyOf?, setup? }`: `secrets[].name`, `secrets[].why`, `secrets[].docs`, `secrets[].optional`, `secrets[].anyOf`, `secrets[].setup` (its guide, a Markdown file in the app's repository such as `docs/setup/main-secret.md`). A name is an identifier, not reserved (`GATEWAY_URL`, `CF_VERSION_METADATA`, `EVERYAPP_*`, `EVERY_APP_*`, `APP__*`), not a Gateway setting (list the provider instead), and not a binding.
+`secrets`: the app's own secrets, as names or `{ name, why?, docs?, how?, generate?, file? }`:
+
+- `secrets[].name`: an identifier, not reserved (`GATEWAY_URL`, `CF_VERSION_METADATA`, `EVERYAPP_*`, `EVERY_APP_*`, `APP__*`), not a Gateway setting (list the provider instead), and not a binding.
+- `secrets[].why`, `secrets[].docs`: why the app needs it, and an https page about it.
+- `secrets[].how`: where the value lives and what permission it needs, at most 200 characters. `{appUrl}` and `{gatewayUrl}` are filled in.
+- `secrets[].generate`: `true` makes the value (32 random bytes, base64url). The deploy sets a top-level one that has no `how`; `configure` sets the rest and shows one once when its `how` says where to paste it.
+- `secrets[].file`: `true` for a file's contents (a `.pem`): the prompt takes the file's path.
 
 ### settings
 
-`settings`: plain values that differ per install (an analytics host, a region). `settings[].name`, a required `settings[].why`, `settings[].type` (`text`, `url`, `number` or `boolean`), `settings[].values` (a list a text setting must be one of), `settings[].default`, `settings[].optional`, `settings[].docs`. Shown when typed; anything that grants access belongs in `secrets`.
+`settings`: plain values that differ per install (an analytics host, a region). `settings[].name`, a required `settings[].why`, `settings[].how`, `settings[].type` (`text`, `url`, `number` or `boolean`), `settings[].values` (a list a text setting must be one of), `settings[].default` (the deploy writes it, so a setting with one never blocks), `settings[].docs`. Shown when typed; anything that grants access belongs in `secrets`.
+
+### features
+
+`features`: what the app needs set, grouped by what it gives, each with numbered setup steps. The key is the feature's id, a lowercase slug.
+
+```ts
+features: {
+  github: {
+    name: "GitHub",
+    required: true,
+    why: "Agents push branches and open pull requests through your GitHub App.",
+    steps: [
+      "Create a GitHub App: https://github.com/settings/apps/new",
+      "Webhook URL: {appUrl}/github/webhooks. Permissions: Contents, Pull requests → Read and write.",
+    ],
+    settings: [{ name: "GITHUB_APP_ID", how: "The App's General page → App ID" }],
+    secrets: [
+      { name: "GITHUB_APP_PRIVATE_KEY", file: true, how: "General → Private keys → Generate; give the downloaded .pem" },
+      { name: "GITHUB_WEBHOOK_SECRET", generate: true, how: "Paste this into the App's Webhook secret" },
+    ],
+  },
+  slack: { name: "Slack", why: "Agents answer in Slack.", capabilities: ["slack"], secrets: ["SLACK_SIGNING_SECRET"] },
+},
+```
+
+- `features.<id>.name`: what people read. `features.<id>.why`: what it gives, one sentence.
+- `features.<id>.required`: `true` keeps the app closed until every value is set. Default `false`: optional, all or nothing. An optional feature is `off` while none of its values is set (never blocks), `incomplete` while some are (a warning, never a block), `ready` once all are.
+- `features.<id>.steps`: short Markdown lines, numbered when shown; links as plain URLs or `[text](url)`; `{appUrl}` and `{gatewayUrl}` are filled in.
+- `features.<id>.settings`: `{ name, how?, type?, values?, default? }`: `features.<id>.settings[].name`, `features.<id>.settings[].how`, `features.<id>.settings[].type`, `features.<id>.settings[].values`, `features.<id>.settings[].default`.
+- `features.<id>.secrets`: names or `{ name, how?, generate?, file? }`: `features.<id>.secrets[].name`, `features.<id>.secrets[].how`, `features.<id>.secrets[].generate`, `features.<id>.secrets[].file`.
+- `features.<id>.capabilities`, `features.<id>.providers`: ids the feature needs, each declared under `capabilities` or `providers` too. Listed in an optional feature, it no longer blocks the app. `configure` says whether each is set and the one command if not (`everyapp provider add <id>`; `secret set` for a Gateway service such as email).
+
+A name goes in one place: the top level or one feature. A capability or provider belongs to one feature at most. A feature lists something to set.
 
 ## `ai`
 
 Limits on the app's use of the Gateway's AI proxy (not `resources.ai`):
 
-- `ai.chat`: the app takes the workspace's default chat model. `true`, or `{ why?, docs?, optional?, anyOf? }`: `ai.chat.why`, `ai.chat.docs`, `ai.chat.optional`, `ai.chat.anyOf`.
+- `ai.chat`: the app takes the workspace's default chat model. `true`, or `{ why?, docs? }`: `ai.chat.why`, `ai.chat.docs`. Always required.
 - `ai.models`: model ids the app may request. Omitted: any.
 - `ai.routes`: OpenAI API paths beyond inference (`/v1/files`), each covering its sub-paths. The deployed manifest is the grant.
 

@@ -22,13 +22,14 @@ const manifest = {
       why: "Which project.",
       type: "number" as const,
     },
-    {
-      name: "REGION",
-      why: "Where data lives.",
-      values: ["us", "eu"],
-      optional: true,
-    },
   ],
+  features: {
+    region: {
+      name: "Region",
+      why: "Where data lives.",
+      settings: [{ name: "REGION", values: ["us", "eu"] }],
+    },
+  },
 };
 
 describe("an app's plain settings", () => {
@@ -50,7 +51,7 @@ describe("an app's plain settings", () => {
     expect(settings[0]!.value).toBeUndefined();
   });
 
-  it("need: required by default, optional with a default (the deploy writes it) or when marked", () => {
+  it("need: required by default, optional with a default (the deploy writes it) or in an optional feature", () => {
     const needs = appSettings(manifest).map((setting) => setting.need.kind);
     expect(needs).toEqual(["required", "optional", "required", "optional"]);
     const report = evaluateAppSettings(

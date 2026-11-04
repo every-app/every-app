@@ -35,17 +35,17 @@ apps get one Worker per organization on Workers for Platforms, and the gateway
 learns the organization per call. Both documents were written when the
 manifest key was `integrations` with `as` and `background` on each entry; read
 them with this document's `capabilities` and
-`{ access, why, docs, optional, anyOf }`.
+`{ access, why, docs }`.
 
 ## The four kinds
 
 One catalog (`CAPABILITIES` in `packages/sdk/src/internal/capabilities.ts`)
 defines every provider the gateway holds a credential for, built in; its
 `mode` is the kind. Three kinds are capabilities: they take the same
-manifest entry, `capabilities: { <id>: { access, why, docs, optional, anyOf } }`
+manifest entry, `capabilities: { <id>: { access, why, docs } }`
 (`access`, or for an OAuth provider `scopes`, the provider's own scope
-strings, instead ([OAuth providers](#oauth-providers)), and the need fields
-of [docs/manifest-settings.md](manifest-settings.md)),
+strings, instead ([OAuth providers](#oauth-providers)), and `why`, `docs`
+([docs/manifest-settings.md](manifest-settings.md))),
 travel the app's private binding to the gateway under
 `/api/integrations/<id>/...`, and answer `GET /api/integrations/<id>`
 (`integrationStatus`) without calling out. The fourth, `ai`, is an AI
@@ -264,12 +264,11 @@ both catalog API-key providers today; `read`, for email). An OAuth provider
 takes `scopes` instead of `access` ([OAuth providers](#oauth-providers)). `everyapp dev` can't ask the gateway, so it accepts an id outside
 the catalog and warns `CAPABILITY_NOT_IN_CATALOG`.
 
-An entry may also say its need: `optional: true` when only one feature uses
-it (the app opens without it, and that feature says what is missing),
-`anyOf: "<group>"` when any one of several is enough, `why` for whoever
-sets it, and `docs` to replace the registry's default page. Without them
-the capability is required, and the app doesn't open until it is set
-([docs/manifest-settings.md](manifest-settings.md)).
+An entry may also say `why` for whoever sets it, and `docs` to replace the
+registry's default page. A capability is required, and the app doesn't open
+until it is set, unless an optional feature lists it
+(`features.<id>.capabilities`): then the app opens without it and that
+feature says what is missing ([docs/manifest-settings.md](manifest-settings.md)).
 
 Call the provider's real URLs with the SDK's fetch:
 

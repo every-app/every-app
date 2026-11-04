@@ -18,7 +18,7 @@ A look-up table: find the job, open the file, copy it. `starter/` is the templat
 | Pattern | Copy from | Note |
 | --- | --- | --- |
 | A public route with its own token | `open-analytics/src/lib/edge/auth/collect-token.ts`, `open-analytics/src/lib/edge/collector/script-endpoint.ts` | Verify the token before storing anything |
-| A public route armed by a secret | `open-crm/src/server/features/erasure/erasureRoute.ts` | 404 until the optional secret is set; constant-time compare |
+| A public route armed by a secret | `open-crm/src/server/features/erasure/erasureRoute.ts` | 404 until the optional feature's secret is set; constant-time compare |
 | Share pages and static assets | `open-analytics/everyapp.config.ts` | `public` for pages and their data, `publicAssets` for files they load |
 
 ## The manifest
@@ -35,11 +35,12 @@ A look-up table: find the job, open the file, copy it. `starter/` is the templat
 | `migrations` | `open-crm/everyapp.config.ts` (drizzle); `open-analytics/everyapp.config.ts` (plain SQL) | The starter's default needs no `migrations` field |
 | `public` | `starter/everyapp.config.ts`; `open-crm/everyapp.config.ts` | Comment why each route is open |
 | `providers` and `ai.models` | `open-mail/everyapp.config.ts` | Every model id the code can send |
-| `capabilities`: an API key | `open-seo/everyapp.config.ts` | `{ access, why }`, `optional` where a feature can say what is missing |
+| `capabilities`: an API key | `open-seo/everyapp.config.ts` | `{ access, why }`; one the app works without also goes in an optional feature's `capabilities` |
 | `capabilities`: an OAuth provider | `open-mail/everyapp.config.ts` | `{ scopes, why }`: the provider's own scopes, the fewest that work |
 | `capabilities.email` and `capabilities.members` | `starter/everyapp.config.ts`; `open-analytics/everyapp.config.ts` | `listMembers()` in `starter/src/serverFunctions/home.ts` |
-| `secrets` | `open-analytics/everyapp.config.ts` (required); `open-crm/everyapp.config.ts` (optional) | A `why` that says how to make the value |
+| `secrets` | `open-analytics/everyapp.config.ts` | Top level means required; a `why` that says how to make the value, or `generate: true` for a random key |
 | `settings` | `landing-page/content/agent/manifest.md` | A per-install value that isn't a secret; never baked into `cloudflare.config.ts` |
+| `features`: values set up together, or ones the app works without | `landing-page/content/agent/manifest.md#features` | `{ name, why, required?, steps, settings, secrets, capabilities }`: numbered steps with URLs (`{appUrl}` for webhooks), each value's `how` (where it is, what permission), `generate: true` for a webhook secret, `file: true` for a .pem. Optional is the default and all or nothing |
 | `access: "everyone"` | `open-crm/everyapp.config.ts` | The default is admins only |
 | `build`, `dev` and `compatibilityDate` | `open-analytics/everyapp.config.ts` | `dev` must listen on `PORT` |
 | `cloudflare.config.ts` beyond the manifest | `open-crm/cloudflare.config.ts` | Crons and flags that are the same for every install |

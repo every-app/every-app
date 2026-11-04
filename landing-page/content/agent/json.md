@@ -91,14 +91,27 @@ An app's setup state (`status` as `apps[].setup`, `secret list` as `app.setup`, 
 { ready: boolean,
   settings: Setting[],   // every setting, in manifest order
   unmet: Setting[],      // the ones that keep the app closed ("Needs setup")
+  features: Feature[],   // every feature, in manifest order
   command: { command } | null }  // "everyapp configure <app>"; null once ready
 Setting = { kind: "provider" | "capability" | "secret" | "setting" | "ai-default" | "remote-mcp",
   id, label, holder: "gateway" | "app", names: string[],
-  need: { kind: "required" | "optional" | "anyOf", group? },
-  set: true | false | null, blocking: boolean, why?, hint?, docs?, setup? }
+  need: { kind: "required" | "optional" }, feature?,   // the feature it belongs to
+  set: true | false | null, blocking: boolean,
+  why?, how?, generate?, file?, hint?, docs?, setup? } // setup: a Gateway setting's guide
+Feature = { id, name, required, why?, steps: string[], capabilities: string[], providers: string[],
+  state: "off" | "incomplete" | "ready", settings: string[] }  // its settings' ids
 ```
 
-To set an app up, show each `unmet` setting's `why`, `hint` and `setup` guide (`setup/<name>.md` in the everyapp skill, or for an app's own secret a path in the app such as `docs/setup/main-secret.md`). Then have the person run `everyapp configure <app>` at a terminal so values never pass through the chat.
+`configure`'s `done.data.features` (and `SECRET_VALUE_REQUIRED`'s `data.features`) is each feature ready to act on:
+
+```ts
+{ id, name, required, why?, state: "off" | "incomplete" | "ready",
+  steps: string[],  // Markdown, {appUrl} and {gatewayUrl} filled in
+  values: [{ name, kind: "secret" | "setting", how?, set, generate, file }],
+  needs: [{ kind, id, label, set, command? }] }  // Gateway settings; command when unset: "everyapp provider add <id>"
+```
+
+To set an app up, show the person each feature's `steps` and each value's `how`, and each Gateway setting's `why`, `hint` and `setup` guide (`setup/<name>.md` in the everyapp skill). Then have the person run `everyapp configure <app>` at a terminal so values never pass through the chat. An agent that holds a value already pipes `NAME=value` lines in, or exports them and adds `--from-env` (a multi-line value such as a PEM is kept; a `file` value may be a path). Generated secrets without a `how` are made on the run; one with a `how` is made at a terminal, where it is shown once.
 
 ## The loop an agent runs
 

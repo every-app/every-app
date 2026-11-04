@@ -10,13 +10,16 @@
  * then, at a terminal: says in one line where the values go (a provider's
  * key or a capability's client is a Gateway setting, held once for every
  * app; the app's own secrets go on its Worker), shows each setting with
- * whether it is set (names only, never values), asks for each required
+ * whether it is set (names only, never values), asks for each top-level
  * setting that isn't (a hidden prompt, with why the app needs it, where
  * the key comes from and the setup guide above it; a plain setting's
  * prompt, the Gateway's or one of the app's own `settings`, is visible
- * and checked), asks which member of an unmet any-of
- * group to set, offers the optional ones (one keystroke skips them all;
- * Enter skips one), and sets everything in one go, each name where it
+ * and checked), then walks each required feature (its name, why and
+ * numbered steps, then a prompt per unset value with its `how`; a
+ * generated secret is made, and shown once when it must be pasted
+ * somewhere; a file's prompt takes its path), asks "Set up <name>?" for
+ * each optional feature that's off (or "Finish" one that's incomplete),
+ * and sets everything in one go, each name where it
  * belongs, through the secret command's machinery (leases, the
  * replaceable-version check, one Worker version per destination, the
  * app's secret names recorded). An app that is ready gets a menu to
@@ -40,9 +43,19 @@ import {
   type AppSettingsReport,
   type AppSetup,
   type EvaluatedSetting,
+  type FeatureReport,
   type ProviderRegistry,
 } from "@every-app/sdk/internal";
 import chalk from "chalk";
+import { generatedSecret } from "@every-app/sdk/internal";
+import {
+  featureIntro,
+  featuresData,
+  fileValue,
+  fillPlaceholders,
+  type FeatureData,
+  type SetupUrls,
+} from "@/lib/app/features";
 import {
   appSetupFrom,
   boundGatewayNames,
@@ -155,6 +168,8 @@ interface Target {
   connection: Awaited<ReturnType<typeof connectToGateway>>;
   /** The catalog and the Gateway's registered providers, which the manifest's capabilities are read against. */
   registry: ProviderRegistry;
+  /** The app's and the Gateway's URLs, which a feature's steps and `how` name. */
+  urls: SetupUrls;
 }
 
 /** What the app needs and what is set, as the settings model reads it now. */
@@ -175,12 +190,10 @@ interface State {
  * it is deployed) and is known to be unset.
  */
 interface Plan {
-  /** Required and unset: asked for first. */
+  /** The top level's required and unset settings: asked for first. */
   required: EvaluatedSetting[];
-  /** Each unmet any-of group with the members that can be set now: one is enough. */
-  groups: Array<{ group: string; members: EvaluatedSetting[] }>;
-  /** Unset settings the app works without: offered after the required ones. */
-  optional: EvaluatedSetting[];
+  /** Each feature, in manifest order, with its own values that are unset and can be set now. */
+  features: Array<{ feature: FeatureReport; values: EvaluatedSetting[] }>;
   /** The app's own settings, which wait for its first deploy. */
   afterDeploy: EvaluatedSetting[];
 }
@@ -195,15 +208,17 @@ export async function configureApp(options: ConfigureOptions): Promise<void> {
   const before = await readState(target);
   const plan = planOf(before, target);
   if (interactive) {
-    const tell = options.tell ?? tellPerson;
-    for (const line of introduction(target, before)) tell(line);
+    for (const line of introduction(target, before)) (options.tell ?? tellPerson)(line);
   }
 
   // Every value from a script's sources first (each refusal before anything
   // is written), then the prompts for what is still missing. The changes
   // go in manifest order, whatever order they came in.
   const provided = await providedValues(target, before, plan, options);
-  const typed = interactive ? await askFor(target, before, plan, provided, prompter) : {};
+  const tell = options.tell ?? tellPerson;
+  const typed = interactive
+    ? await askFor(target, before, plan, provided, prompter, tell)
+    : generatedFor(plan, provided, before);
   const changes = inManifestOrder({ ...provided, ...typed }, before);
   const names = Object.keys(changes);
 
@@ -315,6 +330,7 @@ async function findTarget(options: ConfigureOptions): Promise<Target> {
       deployed: { workerName: found.workerName, rowId: found.id },
       connection,
       registry: await gatewayRegistry(connection.db, connection.install),
+      urls: urlsOf(connection, found.hostname),
     };
   }
   const local = await loadEveryAppManifestIfPresent(options.cwd ?? process.cwd());
@@ -334,7 +350,13 @@ async function findTarget(options: ConfigureOptions): Promise<Target> {
     deployed: found && found.status !== "pending" ? { workerName: found.workerName, rowId: found.id } : null,
     connection,
     registry: await gatewayRegistry(connection.db, connection.install),
+    urls: urlsOf(connection, found?.hostname || `${local.id}.${connection.install.appBaseDomain}`),
   };
+}
+
+/** The URLs `{appUrl}` and `{gatewayUrl}` stand for. */
+function urlsOf(connection: Target["connection"], appHostname: string): SetupUrls {
+  return { appUrl: `https://${appHostname}`, gatewayUrl: `https://${connection.install.gatewayHost}` };
 }
 
 /**
@@ -365,20 +387,15 @@ function planOf({ report }: State, target: Target): Plan {
   const settableNow = (setting: EvaluatedSetting) =>
     setting.names.length > 0 && (setting.holder === "gateway" || target.deployed !== null);
   const unset = (setting: EvaluatedSetting) => setting.set === false && settableNow(setting);
-  const metGroups = new Set(report.groups.filter((group) => group.met).map((group) => group.group));
   return {
-    required: report.settings.filter((setting) => setting.need.kind === "required" && unset(setting)),
-    groups: report.groups
-      .filter((group) => !group.met && group.members.some((member) => member.blocking))
-      .map((group) => ({ group: group.group, members: group.members.filter(unset) }))
-      .filter((group) => group.members.length > 0),
-    optional: report.settings.filter(
-      (setting) =>
-        unset(setting) &&
-        !setting.blocking &&
-        (setting.need.kind === "optional" ||
-          (setting.need.kind === "anyOf" && metGroups.has(setting.need.group))),
+    required: report.settings.filter(
+      (setting) => setting.feature === undefined && setting.need.kind === "required" && unset(setting),
     ),
+    // A feature's Gateway settings are said, never asked for here: each is its provider's `provider add`.
+    features: report.features.map((feature) => ({
+      feature,
+      values: feature.settings.filter((setting) => setting.holder === "app" && unset(setting)),
+    })),
     afterDeploy: report.settings.filter(
       (setting) => setting.holder === "app" && setting.names.length > 0 && target.deployed === null,
     ),
@@ -442,7 +459,9 @@ async function providedValues(
 ): Promise<Record<string, string>> {
   const values: Record<string, string> = {};
   const checked = (name: string, value: string) => {
-    const rule = settingOf(state, name)?.value;
+    const setting = settingOf(state, name);
+    const rule = setting?.value;
+    if (setting?.file) return fileValue(value);
     return rule || isPlainGatewaySetting(name) ? checkedPlainValue(name, value, rule) : value;
   };
   // With --from-env, stdin is left alone (as `secret set --from-env` leaves
@@ -478,7 +497,12 @@ async function providedValues(
   }
   if (options.flags["from-env"]) {
     const env = options.env ?? process.env;
-    const unset = [...plan.required, ...plan.groups.flatMap((group) => group.members), ...plan.optional];
+    const unset = [
+      ...plan.required,
+      ...plan.features.flatMap((each) => each.values),
+      // Every unset Gateway setting, a feature's included: configure never asks for those, a script may give them.
+      ...state.report.settings.filter((setting) => setting.holder === "gateway" && setting.set === false),
+    ];
     for (const setting of unset) {
       for (const name of setting.names) {
         if (values[name] !== undefined || state.held.has(name)) continue;
@@ -530,11 +554,38 @@ export function parsePipedLines(text: string): Array<{ name: string; value: stri
 }
 
 /**
- * The prompts, for what the script's sources didn't cover. An app that
- * isn't ready: each required setting, then which member of each unmet
- * any-of group and its value, then, after one question, the optional
- * ones (Enter skips one). An app that is ready: a menu to change one
- * setting at a time, until "No, done".
+ * The secrets a script's run generates (`generate: true`, unset): the
+ * top level's and those of every feature that is on (required, started,
+ * or given a value now). One a person pastes somewhere (it has a `how`)
+ * waits for a terminal, where it is shown, or for a value piped in.
+ */
+function generatedFor(
+  plan: Plan,
+  provided: Readonly<Record<string, string>>,
+  state: State,
+): Record<string, string> {
+  const generated: Record<string, string> = {};
+  const silent = (setting: EvaluatedSetting) =>
+    setting.generate === true && !setting.how && provided[setting.id] === undefined && !state.held.has(setting.id);
+  for (const setting of plan.required) if (silent(setting)) generated[setting.id] = generatedSecret();
+  for (const { feature, values } of plan.features) {
+    const on =
+      feature.required ||
+      feature.state !== "off" ||
+      values.some((setting) => setting.names.some((name) => provided[name] !== undefined));
+    if (!on) continue;
+    for (const setting of values) if (silent(setting)) generated[setting.id] = generatedSecret();
+  }
+  return generated;
+}
+
+/**
+ * The prompts, for what the script's sources didn't cover: each required
+ * top-level setting, then each required feature (its intro, then its
+ * values), then "Set up <name>?" for each optional feature that's off
+ * ("Finish setting up <name>?" for one that's incomplete). An app that was
+ * ready and took nothing new: a menu to change one setting at a time,
+ * until "No, done".
  */
 async function askFor(
   target: Target,
@@ -542,43 +593,50 @@ async function askFor(
   plan: Plan,
   provided: Readonly<Record<string, string>>,
   prompter: Prompter,
+  tell: (line: string) => void,
 ): Promise<Record<string, string>> {
   const typed: Record<string, string> = {};
   const have = (name: string) => provided[name] !== undefined || typed[name] !== undefined || state.held.has(name);
-  const covered = (setting: EvaluatedSetting) => setting.names.every(have);
   const ask = async (setting: EvaluatedSetting, optional: boolean) => {
     let first = true;
     for (const name of setting.names) {
       if (have(name)) continue;
-      const value = await askValue(name, setting, prompter, { optional, context: first });
+      if (setting.generate) {
+        typed[name] = generatedSecret();
+        // Shown once, at the terminal only, when the person pastes it somewhere.
+        if (setting.how) {
+          tell(`${name}, generated: ${typed[name]}`);
+          tell(chalk.dim(fillPlaceholders(setting.how, target.urls)));
+        }
+        continue;
+      }
+      const value = await askValue(name, setting, prompter, { optional, context: first, urls: target.urls });
       first = false;
       if (value) typed[name] = value;
     }
   };
+  const walk = async ({ feature, values }: Plan["features"][number], optional: boolean) => {
+    for (const line of featureIntro(feature, target.urls, target.registry)) tell(line);
+    for (const setting of values) await ask(setting, optional);
+  };
+  const pending = (each: Plan["features"][number]) =>
+    each.values.some((setting) => !setting.names.every(have)) ||
+    each.feature.settings.some((setting) => setting.holder === "gateway" && setting.set === false);
 
-  if (plan.required.length > 0 || plan.groups.length > 0) {
-    for (const setting of plan.required) await ask(setting, false);
-    for (const group of plan.groups) {
-      if (group.members.some(covered)) continue;
-      const member =
-        group.members.length === 1
-          ? group.members[0]!
-          : await prompter.choose(
-              `Which ${group.group}? One is enough.`,
-              group.members.map((each) => ({ label: each.label, hint: each.names.join(" + "), value: each })),
-            );
-      await ask(member, false);
-    }
-    const optional = plan.optional.filter((setting) => !covered(setting));
-    if (optional.length > 0) {
-      const wanted = await prompter.confirm(
-        `Set the ${optional.length === 1 ? "optional setting" : `${optional.length} optional settings`} too?`,
-        optional.map((setting) => describeUnmet(setting)[0]!),
-      );
-      if (wanted) for (const setting of optional) await ask(setting, true);
-    }
-    return typed;
+  const needed = plan.required.length > 0 || plan.features.some((each) => each.feature.required && pending(each));
+  for (const setting of plan.required) await ask(setting, false);
+  for (const each of plan.features) {
+    if (each.feature.required && pending(each)) await walk(each, false);
   }
+  let offered = false;
+  for (const each of plan.features) {
+    if (each.feature.required || each.feature.state === "ready" || each.values.length === 0) continue;
+    offered = true;
+    const question =
+      each.feature.state === "incomplete" ? `Finish setting up ${each.feature.name}?` : `Set up ${each.feature.name}?`;
+    if (await prompter.confirm(question, each.feature.why ? [each.feature.why] : [])) await walk(each, true);
+  }
+  if (needed || (offered && Object.keys(typed).length > 0)) return typed;
 
   // Ready: everything required is set; change one, or leave.
   const changeable = state.report.settings.filter(
@@ -599,7 +657,11 @@ async function askFor(
     );
     if (!chosen) return typed;
     for (const name of chosen.names) {
-      const value = await askValue(name, chosen, prompter, { optional: true, context: name === chosen.names[0] });
+      const value = await askValue(name, chosen, prompter, {
+        optional: true,
+        context: name === chosen.names[0],
+        urls: target.urls,
+      });
       if (value) typed[name] = value;
     }
   }
@@ -615,16 +677,17 @@ async function askValue(
   name: string,
   setting: EvaluatedSetting,
   prompter: Prompter,
-  { optional, context }: { optional: boolean; context: boolean },
+  { optional, context, urls }: { optional: boolean; context: boolean; urls: SetupUrls },
 ): Promise<string> {
   const guide = guideLine(setting);
   // An app's plain setting is checked against its own entry (`settings`).
   const rule = setting.value;
   // describeUnmet says what an app's plain setting takes; a Gateway one's is said here.
   const lines = context
-    ? [...describeUnmet(setting), ...(guide ? [guide] : []), ...(rule ? [] : plainContext(name))]
+    ? [...describeUnmet(setting, urls), ...(guide ? [guide] : []), ...(rule ? [] : plainContext(name))]
     : plainContext(name, rule);
-  const question = optional ? `${name} (Enter to skip)` : name;
+  const asked = setting.file ? `${name} (a file's path, or its contents)` : name;
+  const question = optional ? `${asked} (Enter to skip)` : asked;
   const value =
     rule || isPlainGatewaySetting(name)
       ? await prompter.text(question, {
@@ -633,20 +696,24 @@ async function askValue(
           validate: (typed) => plainValueProblem(name, typed, rule),
         })
       : await prompter.secret(question, { context: lines, optional });
-  return value.trim();
+  // A file's contents are kept exactly; only the path typed is trimmed.
+  return setting.file && value.trim() ? fileValue(value.trim()) : value.trim();
 }
 
 /** Nothing to read and something required unset: how a script gets a value in. */
 function valueRequired(target: Target, state: State, plan: Plan): EveryAppError {
-  const names = [...plan.required, ...plan.groups.map((group) => group.members[0]!)]
+  const names = [
+    ...plan.required,
+    ...plan.features.flatMap((each) => (each.feature.required ? each.values : [])),
+  ]
     .flatMap((setting) => setting.names)
-    .filter((name) => !state.held.has(name));
+    .filter((name, index, all) => !state.held.has(name) && all.indexOf(name) === index);
   return new EveryAppError(
     "SECRET_VALUE_REQUIRED",
     `Can't ask for ${target.appId}'s settings without a terminal\n${target.appId} needs ${listed(names)}. Run this at a terminal, pipe NAME=value lines in (one per line), or export them under those names and add --from-env (which also takes the variable of any unset optional setting).`,
     {
       ...rerunOf(target, "with the variables exported", " --from-env"),
-      data: { names },
+      data: { names, features: featuresData(state.report.features, target.urls, target.registry) },
     },
   );
 }
@@ -701,12 +768,26 @@ function finish(
     display = chalk.green(`${appId} is ready.`);
   }
   if (set.length > 0) display = `${display}\n${chalk.dim("Live now. No deploy needed.")}`;
+  // An optional feature half set up never blocks, but doesn't work either.
+  for (const feature of after.report.features) {
+    if (feature.required || feature.state !== "incomplete") continue;
+    const unset = feature.settings.filter((setting) => setting.set === false).flatMap((setting) => setting.names);
+    out.emit({
+      type: "warning",
+      code: "FEATURE_INCOMPLETE",
+      step: "app.features",
+      message: `${feature.name} is half set up: ${listed(unset)} ${unset.length === 1 ? "isn't" : "aren't"} set`,
+      data: { feature: feature.id, names: unset },
+    });
+  }
+  const features: FeatureData[] = featuresData(after.report.features, target.urls, target.registry);
   out.emit({
     type: "done",
     message,
     display,
     data: {
       app: { id: appId, deployed: target.deployed !== null, setup },
+      features,
       set: [...set],
       ...(applied ? { changed: doneData(applied) } : {}),
       ...(next.length > 0 ? { next } : {}),

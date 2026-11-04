@@ -21,16 +21,16 @@
  * `everyAppWorker()` sets and `cf workers types` types from the file.
  */
 
-/** Why a setting is needed and whether the app opens without it (the settings model). */
+/**
+ * Why a setting is needed (the settings model). Everything listed at the
+ * top level is required; what the app works without goes in an optional
+ * feature (`features`).
+ */
 export interface EveryAppSettingNeed {
   /** Why the app needs it, for whoever sets it. At most 200 characters. */
   readonly why?: string;
   /** An https page that says where the key or client comes from. */
   readonly docs?: string;
-  /** The app opens without it; the feature using it says what is missing. */
-  readonly optional?: boolean;
-  /** The group of which one member is enough ("AI model"). */
-  readonly anyOf?: string;
 }
 
 /** A route reachable without a signed-in member. */
@@ -155,12 +155,17 @@ export interface EveryAppOAuthCapabilityEntry extends EveryAppSettingNeed {
  * differs per install (a PostHog host, a region), set with `everyapp
  * configure <app>` and read from `env`.
  */
-export interface EveryAppSettingEntry {
-  readonly name: string;
+export interface EveryAppSettingEntry extends EveryAppFeatureSettingEntry {
   /** Why the app needs it: what whoever installs the app reads. */
   readonly why: string;
   readonly docs?: string;
-  readonly optional?: boolean;
+}
+
+/** A plain setting in a feature: the feature says why. */
+export interface EveryAppFeatureSettingEntry {
+  readonly name: string;
+  /** Where the value is and what it needs, for whoever sets it (200 characters at most; `{appUrl}`, `{gatewayUrl}` are filled in). */
+  readonly how?: string;
   /** What it takes; text when not given. */
   readonly type?: "text" | "url" | "number" | "boolean";
   /** The values a text setting may take. */
@@ -169,11 +174,41 @@ export interface EveryAppSettingEntry {
   readonly default?: string;
 }
 
-/** One of the app's own secrets, with its need. */
-export interface EveryAppSecretEntry extends EveryAppSettingNeed {
+/** One of the app's own secrets in a feature: the feature says why. */
+export interface EveryAppFeatureSecretEntry {
   readonly name: string;
-  /** Its setup guide, a path in the app (`"docs/setup/main-secret.md"`). */
-  readonly setup?: string;
+  /** Where the value is and what permission it needs (200 characters at most; `{appUrl}`, `{gatewayUrl}` are filled in). */
+  readonly how?: string;
+  /** `everyapp configure` makes it (32 random bytes, base64url) when unset; shown once when `how` says where to paste it. */
+  readonly generate?: boolean;
+  /** The value is a file's contents (a .pem): the prompt takes the file's path. */
+  readonly file?: boolean;
+}
+
+/** One of the app's own secrets. */
+export interface EveryAppSecretEntry
+  extends EveryAppSettingNeed, EveryAppFeatureSecretEntry {}
+
+/**
+ * One feature: a named group of secrets, settings and Gateway capabilities
+ * with numbered setup steps. A required one keeps the app closed until it
+ * is set; an optional one (the default) is all or nothing.
+ */
+export interface EveryAppFeature {
+  /** What people read: "GitHub". */
+  readonly name: string;
+  /** Default false: the app opens without it. */
+  readonly required?: boolean;
+  /** What it gives the app, in one sentence (200 characters at most). */
+  readonly why: string;
+  /** Short Markdown lines, numbered when shown; links as plain URLs or `[text](url)`; `{appUrl}`, `{gatewayUrl}` are filled in. */
+  readonly steps?: readonly string[];
+  readonly settings?: readonly EveryAppFeatureSettingEntry[];
+  readonly secrets?: readonly (string | EveryAppFeatureSecretEntry)[];
+  /** Capabilities it needs, by id; each declared under `capabilities` too. */
+  readonly capabilities?: readonly string[];
+  /** AI providers it needs, by id; each declared under `providers` too. */
+  readonly providers?: readonly string[];
 }
 
 /** `everyapp.config.ts`. */
@@ -218,6 +253,8 @@ export interface EveryAppManifest {
   readonly secrets?: readonly (string | EveryAppSecretEntry)[];
   /** The app's plain settings: per-install values that aren't secrets. */
   readonly settings?: readonly EveryAppSettingEntry[];
+  /** Features by id (a lowercase slug): what the app needs set, grouped, with setup steps. */
+  readonly features?: { readonly [id: string]: EveryAppFeature };
   readonly ai?: {
     /** Model ids the app may request; any other is `model_not_allowed`. */
     readonly models?: readonly string[];

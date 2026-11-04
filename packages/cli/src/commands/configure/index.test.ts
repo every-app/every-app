@@ -30,25 +30,29 @@ import { configureApp, type Prompter } from "./index";
 const GATEWAY = "every-app-gateway";
 
 /**
- * An app that says what each setting is for, picks its AI provider among
- * the set ones, and has a secret of its own: one required, one optional.
+ * An app that says what each setting is for: an AI provider, a capability
+ * and a secret of its own it can't open without, and two optional
+ * features: one of a Gateway capability alone, one of a secret.
  */
 const CRM: EveryAppCliManifest = {
   id: "crm",
   resources: { d1: ["DB"] },
-  providers: [
-    { id: "openai", anyOf: "AI model" },
-    { id: "openrouter", anyOf: "AI model", why: "Any model through one key." },
-  ],
+  providers: [{ id: "openrouter", why: "Any model through one key." }],
   capabilities: {
     dataforseo: { access: "read", why: "Keyword data for research." },
-    context: { access: "read", optional: true, why: "Renders JavaScript pages in audits." },
-    email: { access: "write", optional: true },
+    context: { access: "read", why: "Renders JavaScript pages in audits." },
+    email: { access: "write" },
   },
-  secrets: [
-    { name: "TOKEN_ENCRYPTION_KEY", why: "Encrypts the OAuth tokens it stores." },
-    { name: "GITHUB_TOKEN", optional: true, why: "Raises the GitHub rate limit." },
-  ],
+  secrets: [{ name: "TOKEN_ENCRYPTION_KEY", why: "Encrypts the OAuth tokens it stores." }],
+  features: {
+    rendering: { name: "Rendering", why: "Audits of JavaScript sites.", capabilities: ["context"] },
+    mail: { name: "Mail", why: "Sends reports.", capabilities: ["email"] },
+    github: {
+      name: "GitHub",
+      why: "Raises the GitHub rate limit.",
+      secrets: [{ name: "GITHUB_TOKEN", how: "A fine-grained token with no permissions" }],
+    },
+  },
 };
 
 /** An app with nothing to set. */
@@ -255,28 +259,26 @@ async function failureOf(run: Promise<void>): Promise<Error & { code: string; fi
 }
 
 describe("configure at a terminal", () => {
-  it("asks for each required setting, which AI model, then offers the optional ones, and sets each where it is held", async () => {
+  it("asks for each required setting, then offers each optional feature, and sets each where it is held", async () => {
     const dir = appDir(CRM);
     const workerName = await deploy(dir, CRM);
 
     const run = configureAt(dir, {
       values: { DATAFORSEO_API_KEY: "login:password", OPENROUTER_API_KEY: "sk-or", TOKEN_ENCRYPTION_KEY: "tek" },
-      picks: ["OpenRouter"],
     });
     await run;
 
     // One line on where the values go, then the table, before the first prompt.
     expect(run.prompter.told[0]).toMatch(/^crm's settings are held as the Gateway's secrets/);
     // The SETTING column is as wide as the two-name email row.
-    expect(run.prompter.told.slice(2, 5)).toEqual([
+    expect(run.prompter.told.slice(2, 4)).toEqual([
       "SETTING                     WHERE    STATUS",
-      "OPENAI_API_KEY              Gateway  ! not set",
       "OPENROUTER_API_KEY          Gateway  ! not set",
     ]);
-    // Required first (manifest order), then the group's chosen member, never a set one twice.
-    expect(run.prompter.asked).toEqual(["DATAFORSEO_API_KEY", "TOKEN_ENCRYPTION_KEY", "OPENROUTER_API_KEY"]);
-    // The first prompt carries why, what the key is, where to get it and the guide; a hidden prompt for a credential.
-    expect(run.prompter.questions[0]).toEqual({
+    // The top level in manifest order; an optional feature's Gateway settings are never asked for.
+    expect(run.prompter.asked).toEqual(["OPENROUTER_API_KEY", "DATAFORSEO_API_KEY", "TOKEN_ENCRYPTION_KEY"]);
+    // A prompt carries why, what the key is, where to get it and the guide; a hidden prompt for a credential.
+    expect(run.prompter.questions[1]).toEqual({
       kind: "secret",
       question: "DATAFORSEO_API_KEY",
       optional: false,
@@ -287,21 +289,16 @@ describe("configure at a terminal", () => {
         "Guide: node_modules/everyapp/skills/everyapp/setup/dataforseo.md",
       ],
     });
-    expect(run.prompter.questions[2]).toEqual({
-      kind: "choose",
-      question: "Which AI model? One is enough.",
-      choices: ["OpenAI", "OpenRouter"],
-    });
-    // One keystroke skips every optional setting: the question names them.
+    // The one optional feature with a value of the app's own is offered, by name, No by default.
     expect(run.prompter.questions.at(-1)).toEqual({
       kind: "confirm",
-      question: "Set the 3 optional settings too?",
-      context: ["Context.dev: Renders JavaScript pages in audits.", "Email: EMAIL_FROM and EMAIL_FROM_NAME", "GITHUB_TOKEN: Raises the GitHub rate limit."],
+      question: "Set up GitHub?",
+      context: ["Raises the GitHub rate limit."],
     });
 
     expect(gateway().secrets).toMatchObject({ DATAFORSEO_API_KEY: "login:password", OPENROUTER_API_KEY: "sk-or" });
-    expect(gateway().secrets["OPENAI_API_KEY"]).toBeUndefined();
     expect(secretsOf(workerName)["TOKEN_ENCRYPTION_KEY"]).toBe("tek");
+    expect(secretsOf(workerName)["GITHUB_TOKEN"]).toBeUndefined();
     expect((await readApp(db(), "crm")).secretNames).toEqual(["TOKEN_ENCRYPTION_KEY"]);
     expect(warnings()).toEqual([]);
     // Said in manifest order, whatever order they were typed in.
@@ -323,35 +320,36 @@ describe("configure at a terminal", () => {
     ).toEqual(["Set OPENROUTER_API_KEY and DATAFORSEO_API_KEY on the Gateway", "Set TOKEN_ENCRYPTION_KEY on crm"]);
   });
 
-  it("sets the optional ones too when asked, skipping the ones left blank, and checks a plain setting as typed", async () => {
+  it("changes any setting from the menu once ready, skipping a name left blank, and checks a plain setting as typed", async () => {
     const dir = appDir(CRM);
     const workerName = await deploy(dir, CRM);
     gateway().secrets["DATAFORSEO_API_KEY"] = "set";
-    gateway().secrets["OPENAI_API_KEY"] = "set";
+    gateway().secrets["OPENROUTER_API_KEY"] = "set";
     secretsOf(workerName)["TOKEN_ENCRYPTION_KEY"] = "set";
 
-    // Ready already: the menu. Pick the optional email sender (two names,
-    // one menu entry; the name left blank is skipped), both plain settings,
-    // then the optional GitHub token, then leave.
+    // Ready already, the GitHub feature declined: the menu. Pick the email
+    // sender (two names, one menu entry; the name left blank is skipped),
+    // then the GitHub token, then leave.
     const run = configureAt(dir, {
       values: { EMAIL_FROM: "Acme <hello@example.com>", GITHUB_TOKEN: "ghp_x" },
       picks: ["EMAIL_FROM + EMAIL_FROM_NAME", "GITHUB_TOKEN", "No, done"],
     });
     await run;
 
-    expect(run.prompter.questions[0]).toMatchObject({
+    expect(run.prompter.questions[0]).toMatchObject({ kind: "confirm", question: "Set up GitHub?" });
+    expect(run.prompter.questions[1]).toMatchObject({
       kind: "choose",
       question: "Everything crm needs is set. Change one?",
-      choices: ["OPENAI_API_KEY", "OPENROUTER_API_KEY", "DATAFORSEO_API_KEY", "CONTEXT_API_KEY", "EMAIL_FROM + EMAIL_FROM_NAME", "TOKEN_ENCRYPTION_KEY", "GITHUB_TOKEN", "No, done"],
+      choices: ["OPENROUTER_API_KEY", "DATAFORSEO_API_KEY", "CONTEXT_API_KEY", "EMAIL_FROM + EMAIL_FROM_NAME", "TOKEN_ENCRYPTION_KEY", "GITHUB_TOKEN", "No, done"],
     });
     // A plain setting is asked visibly, with what it takes above it.
-    expect(run.prompter.questions[1]).toMatchObject({
+    expect(run.prompter.questions[2]).toMatchObject({
       kind: "text",
       question: "EMAIL_FROM (Enter to skip)",
       optional: true,
       context: expect.arrayContaining([expect.stringMatching(/^Takes an address/)]),
     });
-    expect(run.prompter.questions[2]).toMatchObject({
+    expect(run.prompter.questions[3]).toMatchObject({
       kind: "text",
       question: "EMAIL_FROM_NAME (Enter to skip)",
       optional: true,
@@ -365,38 +363,27 @@ describe("configure at a terminal", () => {
     });
   });
 
-  it("offers the optional settings after the required ones, and Enter skips one", async () => {
+  it("walks an optional feature once the person says yes: its intro, then each value with its how", async () => {
     const dir = appDir(CRM);
     const workerName = await deploy(dir, CRM);
     gateway().secrets["OPENROUTER_API_KEY"] = "set";
 
     const run = configureAt(dir, {
-      values: { DATAFORSEO_API_KEY: "k", TOKEN_ENCRYPTION_KEY: "tek", CONTEXT_API_KEY: "ctx" },
+      values: { DATAFORSEO_API_KEY: "k", TOKEN_ENCRYPTION_KEY: "tek", GITHUB_TOKEN: "ghp" },
       optional: true,
     });
     await run;
 
-    // No group question: one AI model is set, so the other member is offered
-    // with the optional ones. Then each optional, blank ones skipped.
-    expect(run.prompter.asked).toEqual([
-      "DATAFORSEO_API_KEY",
-      "TOKEN_ENCRYPTION_KEY",
-      "OPENAI_API_KEY",
-      "CONTEXT_API_KEY",
-      "EMAIL_FROM",
-      "EMAIL_FROM_NAME",
-      "GITHUB_TOKEN",
-    ]);
-    expect(run.prompter.questions.find((question) => question["kind"] === "choose")).toBeUndefined();
-    expect(run.prompter.questions.find((question) => question["kind"] === "confirm")).toMatchObject({
-      question: "Set the 4 optional settings too?",
+    expect(run.prompter.asked).toEqual(["DATAFORSEO_API_KEY", "TOKEN_ENCRYPTION_KEY", "GITHUB_TOKEN"]);
+    expect(run.prompter.questions.at(-1)).toEqual({
+      kind: "secret",
+      question: "GITHUB_TOKEN (Enter to skip)",
+      optional: true,
+      context: ["GITHUB_TOKEN", "A fine-grained token with no permissions"],
     });
-    expect(gateway().secrets["OPENAI_API_KEY"]).toBeUndefined();
-    expect(gateway().secrets["CONTEXT_API_KEY"]).toBe("ctx");
-    expect(gateway().secrets["EMAIL_FROM"]).toBeUndefined();
-    expect(gateway().secrets["EMAIL_FROM_NAME"]).toBeUndefined();
-    expect(secretsOf(workerName)["GITHUB_TOKEN"]).toBeUndefined();
-    expect(done()!["data"]["set"]).toEqual(["DATAFORSEO_API_KEY", "CONTEXT_API_KEY", "TOKEN_ENCRYPTION_KEY"]);
+    expect(run.prompter.told.slice(-3)).toEqual(["", "GitHub", "Raises the GitHub rate limit."]);
+    expect(secretsOf(workerName)["GITHUB_TOKEN"]).toBe("ghp");
+    expect(done()!["data"]["set"]).toEqual(["DATAFORSEO_API_KEY", "TOKEN_ENCRYPTION_KEY", "GITHUB_TOKEN"]);
   });
 
   it("says what is set, nothing changed, when the person leaves the menu at once", async () => {
@@ -404,7 +391,7 @@ describe("configure at a terminal", () => {
     const dir = appDir(CRM);
     const workerName = await deploy(dir, CRM);
     gateway().secrets["DATAFORSEO_API_KEY"] = "set";
-    gateway().secrets["OPENAI_API_KEY"] = "set";
+    gateway().secrets["OPENROUTER_API_KEY"] = "set";
     secretsOf(workerName)["TOKEN_ENCRYPTION_KEY"] = "set";
     const versions = account.cf.calls.length;
 
@@ -425,25 +412,27 @@ describe("configure at a terminal", () => {
   it("in an app's directory before its first deploy, sets the Gateway's settings and leaves the app's own for after the deploy", async () => {
     const dir = appDir(CRM);
 
-    const run = configureAt(dir, { values: { DATAFORSEO_API_KEY: "k", OPENAI_API_KEY: "sk" }, picks: ["OpenAI"] });
+    const run = configureAt(dir, { values: { DATAFORSEO_API_KEY: "k", OPENROUTER_API_KEY: "sk" } });
     await run;
 
-    expect(run.prompter.asked).toEqual(["DATAFORSEO_API_KEY", "OPENAI_API_KEY"]);
+    // The GitHub feature's token waits for the deploy: nothing to offer yet.
+    expect(run.prompter.asked).toEqual(["OPENROUTER_API_KEY", "DATAFORSEO_API_KEY"]);
+    expect(run.prompter.questions.some((question) => question["kind"] === "confirm")).toBe(false);
     expect(run.prompter.told).toContain("TOKEN_ENCRYPTION_KEY        crm      after first deploy");
-    expect(gateway().secrets).toMatchObject({ DATAFORSEO_API_KEY: "k", OPENAI_API_KEY: "sk" });
+    expect(gateway().secrets).toMatchObject({ DATAFORSEO_API_KEY: "k", OPENROUTER_API_KEY: "sk" });
     // The app's own read as unknown until its Worker exists, which never
     // blocks: no warning, and the deploy is what comes next.
     expect(warnings()).toEqual([]);
     expect(done()).toMatchObject({
       message:
-        "Set OPENAI_API_KEY and DATAFORSEO_API_KEY. crm's Gateway settings are set; its own TOKEN_ENCRYPTION_KEY and GITHUB_TOKEN come after its first deploy",
+        "Set OPENROUTER_API_KEY and DATAFORSEO_API_KEY. crm's Gateway settings are set; its own TOKEN_ENCRYPTION_KEY and GITHUB_TOKEN come after its first deploy",
       data: {
         app: { id: "crm", deployed: false },
         next: [{ command: "pnpm everyapp deploy", note: "then pnpm everyapp configure crm for TOKEN_ENCRYPTION_KEY and GITHUB_TOKEN" }],
       },
     });
 
-    // Still not ready (one AI model is set, DataForSEO isn't): the next and
+    // Still not ready (DataForSEO isn't set): the next and
     // the rerun are the directory form, since the name form is refused
     // until the first deploy.
     gateway().secrets["DATAFORSEO_API_KEY"] = "";
@@ -456,7 +445,7 @@ describe("configure at a terminal", () => {
       data: { names: ["DATAFORSEO_API_KEY"] },
     });
     events = [];
-    await configureFrom({ cwd: dir, stdin: "OPENROUTER_API_KEY=sk\n" });
+    await configureFrom({ cwd: dir, stdin: "CONTEXT_API_KEY=ctx\n" });
     expect(done()!["data"]["next"]).toEqual([
       { command: "pnpm everyapp configure", note: "in the app's directory: at a terminal, with NAME=value lines on stdin, or with --from-env" },
     ]);
@@ -484,19 +473,19 @@ describe("configure at a terminal", () => {
     const run = configureAt(
       dir,
       { values: { TOKEN_ENCRYPTION_KEY: "tek" } },
-      { fromEnv: true, env: { DATAFORSEO_API_KEY: "from-env", OPENROUTER_API_KEY: "never-replaced", OPENAI_API_KEY: "sk" } },
+      { fromEnv: true, env: { DATAFORSEO_API_KEY: "from-env", OPENROUTER_API_KEY: "never-replaced", CONTEXT_API_KEY: "ctx" } },
     );
     await run;
 
     // The variable of a set name isn't taken: --from-env fills, never
-    // replaces. An unset optional one (the group's other member) is filled.
+    // replaces. An optional feature's unset one is filled too.
     expect(run.prompter.asked).toEqual(["TOKEN_ENCRYPTION_KEY"]);
-    expect(gateway().secrets).toMatchObject({ DATAFORSEO_API_KEY: "from-env", OPENROUTER_API_KEY: "old", OPENAI_API_KEY: "sk" });
+    expect(gateway().secrets).toMatchObject({ DATAFORSEO_API_KEY: "from-env", OPENROUTER_API_KEY: "old", CONTEXT_API_KEY: "ctx" });
     expect(secretsOf(workerName)["TOKEN_ENCRYPTION_KEY"]).toBe("tek");
-    expect(done()!["data"]["set"]).toEqual(["OPENAI_API_KEY", "DATAFORSEO_API_KEY", "TOKEN_ENCRYPTION_KEY"]);
+    expect(done()!["data"]["set"]).toEqual(["DATAFORSEO_API_KEY", "CONTEXT_API_KEY", "TOKEN_ENCRYPTION_KEY"]);
     expect(
       events.filter((event) => event["type"] === "progress" && event["step"] === "configure.env").map((event) => event["message"]),
-    ).toEqual(["DATAFORSEO_API_KEY from $DATAFORSEO_API_KEY", "OPENAI_API_KEY from $OPENAI_API_KEY"]);
+    ).toEqual(["DATAFORSEO_API_KEY from $DATAFORSEO_API_KEY", "CONTEXT_API_KEY from $CONTEXT_API_KEY"]);
   });
 });
 
@@ -516,19 +505,19 @@ describe("configure from a script", () => {
       expect.objectContaining({
         code: "APP_NEEDS_SETUP",
         step: "app.secrets",
-        message: "crm won't open until OPENAI_API_KEY is set",
+        message: "crm won't open until OPENROUTER_API_KEY is set",
         data: { setup: expect.objectContaining({ ready: false }) },
       }),
     ]);
     expect(done()).toMatchObject({
-      message: "Set DATAFORSEO_API_KEY, EMAIL_FROM and TOKEN_ENCRYPTION_KEY. crm still needs OPENAI_API_KEY",
+      message: "Set DATAFORSEO_API_KEY, EMAIL_FROM and TOKEN_ENCRYPTION_KEY. crm still needs OPENROUTER_API_KEY",
       data: {
         set: ["DATAFORSEO_API_KEY", "EMAIL_FROM", "TOKEN_ENCRYPTION_KEY"],
         next: [{ command: "pnpm everyapp configure crm", note: "at a terminal, with NAME=value lines on stdin, or with --from-env" }],
       },
     });
 
-    // The other member of the group, from the environment: ready.
+    // The provider's key, from the environment: ready.
     events = [];
     await configureFrom({ appId: "crm", fromEnv: true, env: { OPENROUTER_API_KEY: "sk-or" } });
     expect(gateway().secrets["OPENROUTER_API_KEY"]).toBe("sk-or");
@@ -571,10 +560,10 @@ describe("configure from a script", () => {
     await expect(configureFrom({ appId: "crm" })).rejects.toMatchObject({
       code: "SECRET_VALUE_REQUIRED",
       message:
-        "Can't ask for crm's settings without a terminal\ncrm needs DATAFORSEO_API_KEY, TOKEN_ENCRYPTION_KEY and OPENAI_API_KEY. Run this at a terminal, pipe NAME=value lines in (one per line), or export them under those names and add --from-env (which also takes the variable of any unset optional setting).",
+        "Can't ask for crm's settings without a terminal\ncrm needs OPENROUTER_API_KEY, DATAFORSEO_API_KEY and TOKEN_ENCRYPTION_KEY. Run this at a terminal, pipe NAME=value lines in (one per line), or export them under those names and add --from-env (which also takes the variable of any unset optional setting).",
       rerun: "pnpm everyapp configure crm --from-env",
       rerunNote: "with the variables exported",
-      data: { names: ["DATAFORSEO_API_KEY", "TOKEN_ENCRYPTION_KEY", "OPENAI_API_KEY"] },
+      data: { names: ["OPENROUTER_API_KEY", "DATAFORSEO_API_KEY", "TOKEN_ENCRYPTION_KEY"] },
     });
     // --from-env with none of the variables set reads nothing either.
     await expect(configureFrom({ appId: "crm", fromEnv: true, env: { OTHER: "x" } })).rejects.toMatchObject({
@@ -788,8 +777,10 @@ const MC: EveryAppCliManifest = {
   settings: [
     { name: "POSTHOG_HOST", why: "Where the PostHog API is.", type: "url" },
     { name: "POSTHOG_PROJECT_ID", why: "Which PostHog project the dashboards read.", type: "number" },
-    { name: "REGION", why: "Where reports are dated.", values: ["us", "eu"], optional: true },
   ],
+  features: {
+    reports: { name: "Reports", why: "Dated reports.", settings: [{ name: "REGION", how: "Where reports are dated", values: ["us", "eu"] }] },
+  },
 };
 
 describe("an app's plain settings", () => {
@@ -863,5 +854,210 @@ describe("an app's plain settings", () => {
     await deploy(dir, withDefault);
     expect(secretsOf(workerName)["POSTHOG_HOST"]).toBe("https://eu.i.posthog.com");
     expect(secretsOf(workerName)["POSTHOG_PROJECT_ID"]).toBe("42");
+  });
+});
+
+/**
+ * An app with features: a top-level key the deploy generates, a required
+ * GitHub feature (steps, a setting, a file, a secret to paste somewhere)
+ * and an optional Slack one (secrets of its own, one generated silently,
+ * and a Gateway capability).
+ */
+const BIRDS: EveryAppCliManifest = {
+  id: "birds",
+  resources: { d1: ["DB"] },
+  capabilities: {
+    dataforseo: { access: "read", why: "Keyword data." },
+    context: { access: "read" },
+  },
+  secrets: [{ name: "BIRDS_SECRETS_KEY", generate: true }],
+  features: {
+    github: {
+      name: "GitHub",
+      required: true,
+      why: "Agents open pull requests.",
+      steps: [
+        "Create a GitHub App: https://github.com/settings/apps/new",
+        "Webhook URL: {appUrl}/github/webhooks. See [the docs](https://docs.github.com/apps).",
+      ],
+      settings: [{ name: "GITHUB_APP_ID", how: "The App's General page → App ID" }],
+      secrets: [
+        { name: "GITHUB_APP_PRIVATE_KEY", file: true, how: "General → Private keys → Generate" },
+        { name: "GITHUB_WEBHOOK_SECRET", generate: true, how: "Paste this into the App's Webhook secret" },
+      ],
+    },
+    slack: {
+      name: "Slack",
+      why: "Agents talk in Slack.",
+      secrets: ["SLACK_SIGNING_SECRET", "SLACK_BOT_TOKEN", { name: "SLACK_STATE_KEY", generate: true }],
+      capabilities: ["context"],
+    },
+  },
+};
+
+const PEM = "-----BEGIN RSA PRIVATE KEY-----\nMIIEow\nIBAAKC\n-----END RSA PRIVATE KEY-----\n";
+
+/** A .pem file in a temporary directory. */
+function pemFile(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-configure-pem-"));
+  dirs.push(dir);
+  const file = path.join(dir, "app.pem");
+  fs.writeFileSync(file, PEM);
+  return file;
+}
+
+describe("features", () => {
+  it("asks for the top level first, then walks the required feature with its steps, then offers the optional one", async () => {
+    const dir = appDir(BIRDS);
+    const workerName = await deploy(dir, BIRDS);
+    // The deploy generated the top-level key, so the app opens without a step for it.
+    expect(secretsOf(workerName)["BIRDS_SECRETS_KEY"]).toMatch(/^[A-Za-z0-9_-]{43}$/);
+
+    const file = pemFile();
+    const run = configureAt(dir, {
+      values: {
+        DATAFORSEO_API_KEY: "login:password",
+        "GITHUB_APP_PRIVATE_KEY (a file's path, or its contents)": file,
+        GITHUB_APP_ID: "123",
+      },
+    });
+    await run;
+
+    expect(run.prompter.asked).toEqual([
+      "DATAFORSEO_API_KEY",
+      "GITHUB_APP_PRIVATE_KEY (a file's path, or its contents)",
+      "GITHUB_APP_ID",
+    ]);
+    const told = run.prompter.told;
+    const intro = told.indexOf("GitHub");
+    expect(told.slice(intro, intro + 4)).toEqual([
+      "GitHub",
+      "Agents open pull requests.",
+      "1. Create a GitHub App: https://github.com/settings/apps/new",
+      "2. Webhook URL: https://birds.example.com/github/webhooks. See the docs (https://docs.github.com/apps).",
+    ]);
+    // A value's how is above its prompt.
+    expect(run.prompter.questions.find((question) => question["question"] === "GITHUB_APP_ID")).toMatchObject({
+      kind: "text",
+      context: ["GITHUB_APP_ID", "The App's General page → App ID", "Takes any text"],
+    });
+    // The webhook secret is made, set, and shown once with where it goes; never in the events.
+    const secrets = secretsOf(workerName);
+    const generated = secrets["GITHUB_WEBHOOK_SECRET"]!;
+    expect(generated).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(told.filter((line) => line.includes(generated))).toEqual([`GITHUB_WEBHOOK_SECRET, generated: ${generated}`]);
+    expect(told[told.indexOf(`GITHUB_WEBHOOK_SECRET, generated: ${generated}`) + 1]).toBe("Paste this into the App's Webhook secret");
+    expect(JSON.stringify(events)).not.toContain(generated);
+    // The file's contents, exactly.
+    expect(secrets["GITHUB_APP_PRIVATE_KEY"]).toBe(PEM);
+    expect(secrets["GITHUB_APP_ID"]).toBe("123");
+    // Then the optional feature, declined: off, and the app ready.
+    expect(run.prompter.questions.at(-1)).toEqual({ kind: "confirm", question: "Set up Slack?", context: ["Agents talk in Slack."] });
+    expect(secrets["SLACK_SIGNING_SECRET"]).toBeUndefined();
+    expect(secrets["SLACK_STATE_KEY"]).toBeUndefined();
+    expect(warnings()).toEqual([]);
+    expect(done()).toMatchObject({ message: expect.stringMatching(/birds is ready$/) });
+    expect(done()!["data"]["features"].map((feature: { id: string; state: string }) => [feature.id, feature.state])).toEqual([
+      ["github", "ready"],
+      ["slack", "off"],
+    ]);
+  });
+
+  it("gives a script every feature with its steps filled, values and needs, and takes a multi-line PEM from the environment", async () => {
+    const dir = appDir(BIRDS);
+    const workerName = await deploy(dir, BIRDS);
+    gateway().secrets["DATAFORSEO_API_KEY"] = "set";
+
+    // Nothing to read: the webhook secret is pasted somewhere, so a script isn't given one it never sees.
+    const refused = await failureOf(configureFrom({ appId: "birds" }));
+    expect(refused).toMatchObject({
+      code: "SECRET_VALUE_REQUIRED",
+      data: { names: ["GITHUB_APP_PRIVATE_KEY", "GITHUB_WEBHOOK_SECRET", "GITHUB_APP_ID"] },
+    });
+    expect(secretsOf(workerName)["GITHUB_WEBHOOK_SECRET"]).toBeUndefined();
+    const features = (refused as unknown as { data: { features: unknown[] } }).data.features;
+    expect(features).toEqual([
+      {
+        id: "github",
+        name: "GitHub",
+        required: true,
+        why: "Agents open pull requests.",
+        steps: [
+          "Create a GitHub App: https://github.com/settings/apps/new",
+          "Webhook URL: https://birds.example.com/github/webhooks. See [the docs](https://docs.github.com/apps).",
+        ],
+        values: [
+          { name: "GITHUB_APP_PRIVATE_KEY", kind: "secret", how: "General → Private keys → Generate", set: false, generate: false, file: true },
+          { name: "GITHUB_WEBHOOK_SECRET", kind: "secret", how: "Paste this into the App's Webhook secret", set: false, generate: true, file: false },
+          { name: "GITHUB_APP_ID", kind: "setting", how: "The App's General page → App ID", set: false, generate: false, file: false },
+        ],
+        needs: [],
+        state: "off",
+      },
+      {
+        id: "slack",
+        name: "Slack",
+        required: false,
+        why: "Agents talk in Slack.",
+        steps: [],
+        values: [
+          { name: "SLACK_SIGNING_SECRET", kind: "secret", set: false, generate: false, file: false },
+          { name: "SLACK_BOT_TOKEN", kind: "secret", set: false, generate: false, file: false },
+          { name: "SLACK_STATE_KEY", kind: "secret", set: false, generate: true, file: false },
+        ],
+        needs: [
+          {
+            kind: "capability",
+            id: "context",
+            label: "Context.dev",
+            set: false,
+            command: "pnpm everyapp provider add context",
+          },
+        ],
+        state: "off",
+      },
+    ]);
+
+    events = [];
+    await configureFrom({
+      appId: "birds",
+      fromEnv: true,
+      env: { GITHUB_APP_PRIVATE_KEY: PEM, GITHUB_APP_ID: "123", GITHUB_WEBHOOK_SECRET: "whs" },
+    });
+    expect(secretsOf(workerName)).toMatchObject({ GITHUB_APP_PRIVATE_KEY: PEM, GITHUB_APP_ID: "123", GITHUB_WEBHOOK_SECRET: "whs" });
+    expect(done()).toMatchObject({ message: expect.stringMatching(/birds is ready$/) });
+    expect(done()!["data"]["features"][0]).toMatchObject({ id: "github", state: "ready" });
+
+    // A file's path from the environment reads the file.
+    delete secretsOf(workerName)["GITHUB_APP_PRIVATE_KEY"];
+    events = [];
+    await configureFrom({ appId: "birds", fromEnv: true, env: { GITHUB_APP_PRIVATE_KEY: pemFile() } });
+    expect(secretsOf(workerName)["GITHUB_APP_PRIVATE_KEY"]).toBe(PEM);
+  });
+
+  it("turns an optional feature on with a value piped in, generates its silent secret, and warns while it is half set", async () => {
+    const dir = appDir(BIRDS);
+    const workerName = await deploy(dir, BIRDS);
+    gateway().secrets["DATAFORSEO_API_KEY"] = "set";
+    Object.assign(secretsOf(workerName), { GITHUB_APP_PRIVATE_KEY: PEM, GITHUB_APP_ID: "1", GITHUB_WEBHOOK_SECRET: "w" });
+
+    await configureFrom({ appId: "birds", stdin: "SLACK_SIGNING_SECRET=sss\n" });
+    const secrets = secretsOf(workerName);
+    expect(secrets["SLACK_SIGNING_SECRET"]).toBe("sss");
+    expect(secrets["SLACK_STATE_KEY"]).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(JSON.stringify(events)).not.toContain(secrets["SLACK_STATE_KEY"]!);
+    expect(warnings()).toEqual([
+      expect.objectContaining({
+        code: "FEATURE_INCOMPLETE",
+        message: "Slack is half set up: CONTEXT_API_KEY and SLACK_BOT_TOKEN aren't set",
+        data: { feature: "slack", names: ["CONTEXT_API_KEY", "SLACK_BOT_TOKEN"] },
+      }),
+    ]);
+    // Half set never blocks.
+    expect(done()).toMatchObject({
+      message: expect.stringMatching(/birds is ready$/),
+      data: { app: { setup: expect.objectContaining({ ready: true }) } },
+    });
+    expect(done()!["data"]["features"][1]).toMatchObject({ id: "slack", state: "incomplete" });
   });
 });

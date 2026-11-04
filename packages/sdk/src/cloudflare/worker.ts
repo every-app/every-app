@@ -199,8 +199,8 @@ export interface EveryAppWorkerManifest {
   limits?: WorkerLimits;
   /**
    * AI providers the app calls through the gateway (`createGatewayFetch()`):
-   * each by id, or as `{ id, optional, anyOf, why, docs }` (the manifest's
-   * settings model, `@every-app/sdk/internal` appSettings).
+   * each by id, or as `{ id, why, docs }` (the manifest's settings model,
+   * `@every-app/sdk/internal` appSettings).
    */
   providers?: ReadonlyArray<string | { readonly id: string }>;
   /** Capabilities the app calls through the gateway (`integrationFetch()`). */
@@ -219,31 +219,54 @@ export interface EveryAppWorkerManifest {
    * secret's name (OPENAI_API_KEY, DATAFORSEO_API_KEY, …) is declared for
    * the SDK's direct fallback.
    *
-   * Each by name, or as `{ name, optional, anyOf, why, docs }`: whether the
-   * app opens without it, and why it is needed.
+   * Each by name, or as `{ name, why, docs, how, generate, file }`.
    */
   secrets?: ReadonlyArray<string | { readonly name: string }>;
   /**
    * The app's plain settings: values that aren't secrets and differ per
    * install (a PostHog host, a region), as `{ name, why, type, values,
-   * default, optional }`. A deployed Worker holds them like its secrets
+   * default }`. A deployed Worker holds them like its secrets
    * (`everyapp configure <app>` sets them; the deploy writes each
    * default nobody has set), so production builds don't declare them. In
    * development each one set locally (`.dev.vars`, `.env`, as for
    * secrets) is declared as a secret, and one that isn't, but has a
    * default, as text with its default.
    */
-  settings?: ReadonlyArray<{
-    readonly name: string;
-    readonly default?: string;
-  }>;
+  settings?: ReadonlyArray<WorkerSettingEntry>;
+  /** Groups of secrets and settings with setup steps; each feature's are the app's too. */
+  features?: {
+    readonly [id: string]: {
+      readonly secrets?: ReadonlyArray<string | { readonly name: string }>;
+      readonly settings?: ReadonlyArray<WorkerSettingEntry>;
+    };
+  };
 }
 
-/** The names of the manifest's `secrets`, whichever form each took. */
+interface WorkerSettingEntry {
+  readonly name: string;
+  readonly default?: string;
+}
+
+/** The names of the manifest's `secrets` and its features', whichever form each took. */
 function manifestSecretNames(manifest: EveryAppWorkerManifest): string[] {
-  return (manifest.secrets ?? []).map((entry) =>
-    typeof entry === "string" ? entry : entry.name,
-  );
+  return [
+    ...(manifest.secrets ?? []),
+    ...Object.values(manifest.features ?? {}).flatMap(
+      (feature) => feature.secrets ?? [],
+    ),
+  ].map((entry) => (typeof entry === "string" ? entry : entry.name));
+}
+
+/** The manifest's plain settings and its features'. */
+function manifestSettings(
+  manifest: EveryAppWorkerManifest,
+): WorkerSettingEntry[] {
+  return [
+    ...(manifest.settings ?? []),
+    ...Object.values(manifest.features ?? {}).flatMap(
+      (feature) => feature.settings ?? [],
+    ),
+  ];
 }
 
 /** The ids of the manifest's `providers`, whichever form each took. */
@@ -1900,7 +1923,7 @@ function addSecrets(
   >,
   deploy: EveryAppDeployTarget | undefined,
 ): void {
-  const settings = options.manifest.settings ?? [];
+  const settings = manifestSettings(options.manifest);
   const secrets = [
     ...manifestSecretNames(options.manifest),
     ...settings.map((setting) => setting.name),

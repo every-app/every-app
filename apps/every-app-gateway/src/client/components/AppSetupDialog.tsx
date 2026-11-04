@@ -61,11 +61,6 @@ export function AppSetupDialog({
           <NeededRow key={row.id} row={row} />
         ))}
       </ul>
-      {model.anyOf.map((line) => (
-        <p key={line} className="text-xs text-muted-foreground">
-          {line}
-        </p>
-      ))}
     </div>
   );
   return (

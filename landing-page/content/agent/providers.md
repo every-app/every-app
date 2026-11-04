@@ -15,8 +15,12 @@ Kinds: `api_key` (the Gateway puts the key on calls to the provider's hosts; lis
 ```ts
 capabilities: {
   dataforseo: { access: "read", why: "Keyword research." },
-  stripe: { access: "write", why: "Creates refunds.", optional: true },
+  stripe: { access: "write", why: "Creates refunds." },
   "google-workspace": { scopes: ["gmail.modify"], why: "Mirrors your Gmail." },
+},
+// One the app works without: list it in an optional feature too.
+features: {
+  refunds: { name: "Refunds", why: "Refunds from the order page.", capabilities: ["stripe"] },
 },
 ```
 
