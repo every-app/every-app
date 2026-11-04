@@ -33,7 +33,7 @@ export async function readBuildOutput(cwd: string): Promise<Map<string, BuiltWor
   if (!(await isProductionBuild(path.join(cwd, BUILD_OUTPUT_DIR)))) {
     throw new EveryAppError(
       "APP_POLICY",
-      "The app's Build Output isn't a production build. The manifest's build command must run `cf build` (production by default).",
+      "The app's Build Output isn't a production build. Make the manifest's build command run `cf build --mode production` (plain `cf build` for a Vite app).",
     );
   }
   const workers = new Map<string, BuiltWorkerConfig>();

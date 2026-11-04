@@ -902,7 +902,7 @@ const MANIFEST_FIELDS = {
    * gateway UI afterwards.
    */
   access: AppAccessSchema.optional(),
-  /** Shell command that builds the app for production. Default: `cf build`. */
+  /** Shell command that builds the app for production. Default: `cf build` (`--mode production` without Vite). */
   build: z.string().min(1).optional(),
   /** Shell command that starts the app dev server for `everyapp dev`. Default: `cf dev`. */
   dev: z.string().min(1).optional(),

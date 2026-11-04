@@ -230,7 +230,7 @@ export interface EveryAppManifest {
   readonly email?: { readonly inbound?: boolean };
   /** Who can open the app once registered; `"admins"` by default. */
   readonly access?: "everyone" | "admins";
-  /** Shell command that builds the app; `cf build` by default. */
+  /** Shell command that builds the app; `cf build` by default (`--mode production` without Vite). */
   readonly build?: string;
   /** Shell command `everyapp dev` starts; it must listen on PORT. */
   readonly dev?: string;

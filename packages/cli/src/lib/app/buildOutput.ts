@@ -33,7 +33,7 @@ export async function* builtWorkers<Config = Record<string, unknown>>(
   }
 }
 
-/** Whether the Build Output at `dir` is a production build (`cf build`'s default), not a preview. */
+/** Whether the Build Output at `dir` is a production build, not a preview. */
 export async function isProductionBuild(dir: string): Promise<boolean> {
   const rootConfig = JSON.parse(
     await fs.readFile(path.join(dir, "config.json"), "utf8"),

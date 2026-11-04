@@ -1314,7 +1314,7 @@ describe("deploy of an app without helper Workers", () => {
           "d1 create --name every-acme-todo",
           "kv namespaces list --per-page 100 --page 1",
           "kv namespaces create --title every-acme-todo",
-          "build",
+          "build --mode production",
           "workflows get every-acme-todo--rank-check",
           "workers deployments list --worker every-acme-todo --per-page 10",
           "d1 migrations list <uuid> --dir <app>/drizzle",
@@ -1748,7 +1748,7 @@ describe("deploy and delete with the gateway on a subdomain", () => {
     const checked = commands.indexOf("dns records list");
     expect(checked).toBeGreaterThanOrEqual(0);
     expect(checked).toBeLessThan(commands.indexOf("d1 create --name"));
-    expect(checked).toBeLessThan(commands.indexOf("build"));
+    expect(checked).toBeLessThan(commands.indexOf("build --mode production"));
     // It waited for the certificate, then the request made the app live.
     expect(worker.requests).toEqual([`https://todo.${GW}/`, `https://todo.${GW}/`]);
     expect(events).toContainEqual(

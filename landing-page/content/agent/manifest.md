@@ -141,7 +141,7 @@ Limits on the app's use of the Gateway's AI proxy (not `resources.ai`):
 
 ## Build, dev and install
 
-- `build`: the production build command, run with `EVERYAPP_BUILD=1` (default `cf build`).
+- `build`: the production build command, run with `EVERYAPP_BUILD=1` (default `cf build`, with `--mode production` for an app without Vite).
 - `dev`: the dev server command `everyapp dev` runs with `PORT` set; it must listen there (default `cf dev`).
 - `install`: `false` to skip, a command, or omitted to detect the package manager.
 

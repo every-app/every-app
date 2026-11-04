@@ -596,7 +596,7 @@ account json cf kv namespaces list --per-page 100 --page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf kv namespaces create --title every-acme-todo
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
-project text cf build cwd=<app>
+project text cf build --mode production cwd=<app>
 account json cf workflows get every-acme-todo--rank-check
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers deployments list --worker every-acme-todo --per-page 10
@@ -660,7 +660,7 @@ account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-f
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 list --name every-acme-todo --per-page 100
 account json cf kv namespaces list --per-page 100 --page 1
-project text cf build cwd=<app>
+project text cf build --mode production cwd=<app>
 account json cf workflows get every-acme-todo--rank-check
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers deployments list --worker every-acme-todo --per-page 10

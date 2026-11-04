@@ -27,14 +27,14 @@ afterEach(async () => {
 });
 
 describe("buildApp", () => {
-  it("runs cf build with EVERYAPP_BUILD=1 and writes nothing into the app", async () => {
+  it("runs cf build --mode production with EVERYAPP_BUILD=1 and writes nothing into the app", async () => {
     const cf = new FakeCf().on(["build"], { stdout: "Build complete" });
 
     await buildApp({ cwd, cf, verbose: false });
 
-    // Production is Vite's default mode; cf rejects --mode for TanStack Start.
+    // Without Vite, Wrangler builds and records the mode only from --mode.
     expect(cf.calls[0]).toMatchObject({
-      args: ["build"],
+      args: ["build", "--mode", "production"],
       plane: "project",
       cwd,
       mode: "text",
@@ -42,6 +42,16 @@ describe("buildApp", () => {
     });
     // The build is tenant-neutral: no install's inputs, in a file or else.
     expect(await fs.readdir(cwd)).toEqual([]);
+  });
+
+  it("runs a Vite app's cf build without --mode", async () => {
+    await fs.writeFile(path.join(cwd, "vite.config.ts"), "export default {};\n");
+    const cf = new FakeCf().on(["build"], { stdout: "Build complete" });
+
+    await buildApp({ cwd, cf, verbose: false });
+
+    // Production is Vite's default mode; cf rejects --mode for TanStack Start.
+    expect(cf.calls[0]?.args).toEqual(["build"]);
   });
 
   it("shows what the build printed last when it fails", async () => {

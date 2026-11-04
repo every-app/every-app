@@ -210,7 +210,7 @@ export async function packAppRelease({
     throw new EveryAppError(
       "RELEASE_PACK_FAILED",
       "The app's Build Output isn't a production build\nA release ships only one.",
-      { fix: "build with `cf build` (production by default)" },
+      { fix: "build with `cf build --mode production` (plain `cf build` for a Vite app)" },
     );
   }
   const migrations = releasedMigrationsDir(manifest);
