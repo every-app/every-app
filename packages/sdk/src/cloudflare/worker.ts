@@ -233,13 +233,23 @@ export interface EveryAppWorkerManifest {
    * default, as text with its default.
    */
   settings?: ReadonlyArray<WorkerSettingEntry>;
-  /** Groups of secrets and settings with setup steps; each feature's are the app's too. */
-  features?: {
-    readonly [id: string]: {
-      readonly secrets?: ReadonlyArray<string | { readonly name: string }>;
-      readonly settings?: ReadonlyArray<WorkerSettingEntry>;
-    };
-  };
+  /**
+   * Groups of secrets, settings, capabilities and providers with setup
+   * steps; each feature's secrets and settings are the app's too.
+   */
+  features?: { readonly [id: string]: WorkerFeature };
+}
+
+/** One feature, as `EveryAppFeature` in the manifest types. */
+interface WorkerFeature {
+  readonly name: string;
+  readonly required?: boolean;
+  readonly why: string;
+  readonly steps?: readonly string[];
+  readonly settings?: ReadonlyArray<WorkerSettingEntry>;
+  readonly secrets?: ReadonlyArray<string | { readonly name: string }>;
+  readonly capabilities?: readonly string[];
+  readonly providers?: readonly string[];
 }
 
 interface WorkerSettingEntry {

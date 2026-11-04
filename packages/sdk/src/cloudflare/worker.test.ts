@@ -29,6 +29,7 @@ import {
   type DurableObjectBinding,
   type DurableObjectExport,
   type EveryAppDevEnv,
+  type EveryAppWorkerManifest,
   type EveryAppWorkerReference,
   type HyperdriveBinding,
   type KvBinding,
@@ -41,7 +42,7 @@ import {
   type VectorizeBinding,
   aiGatewayUrl,
 } from "./index";
-import type { EveryAppCapabilityEntry } from "../manifest";
+import { defineEveryApp, type EveryAppCapabilityEntry } from "../manifest";
 import { devAccessTokenName } from "../server/integrationFetch";
 import { DEV_ISSUER, DEV_PUBLIC_KEY_PEM } from "../dev/index";
 import { aiProviderSettings, DEV_AI_PROVIDERS } from "../internal/aiProviders";
@@ -565,6 +566,8 @@ describe("everyAppWorker crons and the app's own secrets", () => {
         ...manifest,
         features: {
           github: {
+            name: "GitHub",
+            why: "Links issues to deals.",
             secrets: ["GITHUB_KEY", "GITHUB_WEBHOOK_SECRET"],
             settings: [{ name: "GITHUB_OWNER", default: "acme" }],
           },
@@ -577,6 +580,37 @@ describe("everyAppWorker crons and the app's own secrets", () => {
     expect(env["GITHUB_KEY"]).toEqual({ type: "secret" });
     expect(env["GITHUB_WEBHOOK_SECRET"]).toBeUndefined();
     expect(env["GITHUB_OWNER"]).toEqual({ type: "text", value: "acme" });
+  });
+
+  it("takes the features defineEveryApp takes, one with only a capability or a provider too", () => {
+    const app = defineEveryApp({
+      id: "todo",
+      capabilities: { slack: { access: "write", why: "Posts deal updates." } },
+      providers: ["openai"],
+      features: {
+        slack: {
+          name: "Slack",
+          why: "Posts deal updates to a channel.",
+          steps: ["Connect Slack in {gatewayUrl}."],
+          capabilities: ["slack"],
+        },
+        summaries: {
+          name: "Summaries",
+          required: true,
+          why: "Summarizes each deal.",
+          providers: ["openai"],
+        },
+      },
+    });
+    expectTypeOf(app).toExtend<EveryAppWorkerManifest>();
+    expect(() =>
+      everyAppWorker({
+        manifest: app,
+        entrypoint,
+        ctx: { mode: undefined },
+        root,
+      }),
+    ).not.toThrow();
   });
 
   it("reads .env files and the environment when there is no .dev.vars", () => {
