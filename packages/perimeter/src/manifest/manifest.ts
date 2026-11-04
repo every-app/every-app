@@ -22,7 +22,6 @@ import {
   gatewaySettingOwner,
   isCapabilityId,
   isReservedAppSecretName,
-  isRemoteMcpSecretName,
   isSignInSettingName,
   isSettableGatewaySetting,
   providerEntries,
@@ -1026,8 +1025,9 @@ function appSecretsSchemaStrict(lookup?: CapabilityLookup) {
 /**
  * Why `name` can't be one of the app's own secrets or settings (`what`),
  * or null when it can: not a name the deploy sets, not a sign-in
- * provider's, a remote MCP app's or any other Gateway setting (with a
- * gateway's registry, one a registered provider holds counts too). Read
+ * provider's or any other Gateway setting (with a gateway's registry, one
+ * a registered provider holds counts too: a remote MCP app's
+ * `<APPID>_MCP_TOKEN` among them). Read
  * without regard to case.
  */
 function ownNameRefusal(
@@ -1046,9 +1046,6 @@ function ownNameRefusal(
     ? null
     : registeredSettingOwner(lookup, upper);
   if (!isSettableGatewaySetting(upper) && !registered) return null;
-  if (isRemoteMcpSecretName(upper)) {
-    return `${name} is a remote MCP app's credential name (every name ending in _MCP_TOKEN is the Gateway's, set with \`everyapp secret set\`); give the app's ${what} another name`;
-  }
   const owner = registered ?? gatewaySettingOwner(upper);
   const instead = owner
     ? `list \`${owner.id}\` under ${owner.kind === "provider" ? "providers" : "capabilities"} instead`

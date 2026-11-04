@@ -1,8 +1,11 @@
 /**
  * `everyapp mcp add|remove|on|off|list|show|refresh|tool` end to end, in a
  * fake Cloudflare account with a deployed gateway (as secret/index.test.ts):
- * the rows, the access, the probe's warnings, the credential offered and
- * pinned, each key's state as a warning and in the list, the tools a show
+ * the rows (the app's and its own provider row), the access, the probe
+ * first (a credential refused before anything is written, OAuth chosen
+ * from the 401), OAuth discovery and client registration, the credential
+ * offered, set through secret set's path, bound and checked, each
+ * credential's state as a warning and in the list, the tools a show
  * reads, how secret set, secret list, delete and status treat MCP apps, and
  * the `mcp_app.*` event each change queues for the Gateway to deliver.
  */
@@ -75,6 +78,44 @@ const listsTools = () =>
         { status: 200, headers: { "content-type": "application/json" } },
       ),
   );
+
+type Route = Record<string, unknown> | ((init: RequestInit) => Response);
+
+/** A fetch answering by URL (an object as JSON, a function as it says), 404 for anything else, recording each call. */
+function routes(table: Record<string, Route>) {
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), init: init ?? {} });
+    const route = table[String(url).split("?")[0]!];
+    if (!route) return new Response("not found", { status: 404 });
+    if (typeof route === "function") return route(init ?? {});
+    return new Response(JSON.stringify(route), { status: 200, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+  return { fetcher, calls };
+}
+
+const O_MCP = "https://o.example.org/mcp";
+const ISSUER = "https://auth.example.org";
+const AS = {
+  issuer: ISSUER,
+  authorization_endpoint: `${ISSUER}/authorize`,
+  token_endpoint: `${ISSUER}/token`,
+  registration_endpoint: `${ISSUER}/register`,
+  code_challenge_methods_supported: ["S256"],
+  token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post"],
+};
+/** An MCP server that signs in with OAuth: its 401, its resource metadata, its authorization server, its registration. */
+const oauthServer = (as: Record<string, unknown> = AS, register: Route = { client_id: "cid-1", client_secret: "csecret-1", token_endpoint_auth_method: "client_secret_basic" }) =>
+  routes({
+    [O_MCP]: () =>
+      new Response("", {
+        status: 401,
+        headers: { "www-authenticate": `Bearer resource_metadata="https://o.example.org/.well-known/oauth-protected-resource/mcp", scope="mcp"` },
+      }),
+    "https://o.example.org/.well-known/oauth-protected-resource/mcp": { resource: O_MCP, authorization_servers: [ISSUER], scopes_supported: ["mcp"] },
+    [`${ISSUER}/.well-known/oauth-authorization-server`]: as,
+    [`${ISSUER}/register`]: register,
+  });
 
 const options = <F extends McpOptions["flags"] = typeof flags>(
   extra: Partial<McpOptions<F>> = {},
@@ -280,24 +321,24 @@ describe("mcp remove", () => {
     expect(done()).toMatchObject({ message: expect.stringContaining("was removed already"), data: { removed: false } });
   });
 
-  it("tombstones a remote app and keeps its credential and pin, saying what removes them", async () => {
+  it("tombstones a remote app and keeps its provider row and key, saying what cleans them up", async () => {
     await addTreg(settingNow("treg-secret"));
     events = [];
     await removeApp(options(), "treg");
-    expect(done()).toMatchObject({ data: { id: "treg", kind: "remote", removed: true } });
+    expect(done()).toMatchObject({
+      data: { id: "treg", kind: "remote", removed: true, provider: { id: "treg-mcp", own: true, kept: true, settings: ["TREG_MCP_TOKEN"] } },
+    });
     expect(done()!["message"]).toContain(
-      "TREG_MCP_TOKEN stays on the Gateway, pinned to https://treg.to: pnpm everyapp secret unset TREG_MCP_TOKEN removes both.",
+      "Its provider row treg-mcp and TREG_MCP_TOKEN stay: pnpm everyapp provider remove treg-mcp and pnpm everyapp secret unset TREG_MCP_TOKEN clean them up.",
     );
     expect(done()!["message"]).toContain(`pnpm everyapp mcp add ${TREG} --name treg adds it again`);
     expect(gatewayWorker().secrets["TREG_MCP_TOKEN"]).toBe("treg-secret");
-    expect(await query("SELECT name, origin FROM remote_mcp_credentials")).toEqual([
-      { name: "TREG_MCP_TOKEN", origin: "https://treg.to" },
-    ]);
+    expect((await query("SELECT id FROM providers")).map((row) => row["id"])).toEqual(["treg-mcp"]);
   });
 });
 
 describe("mcp add", () => {
-  it("writes the row, probes the server once without a credential, and says to set the credential", async () => {
+  it("looks at the server first, writes the app and its own provider row, and says to set the credential", async () => {
     const fetch = listsTools();
     await addTreg({ fetch });
 
@@ -308,8 +349,19 @@ describe("mcp add", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     const [, init] = vi.mocked(fetch).mock.calls[0]! as unknown as [string, RequestInit];
     expect(JSON.stringify(init.headers)).not.toMatch(/authorization/i);
+    // The probe comes before the write.
+    const steps = events.filter((event) => event["type"] === "step" && event["status"] === "ok").map((event) => event["step"]);
+    expect(steps.indexOf("mcp.probe")).toBeLessThan(steps.indexOf("mcp.add"));
     expect(events.find((event) => event["step"] === "mcp.probe" && event["status"] === "ok")).toMatchObject({
       message: `${TREG} answers MCP (2026-07-28, 2 tools, server treg)`,
+    });
+    const [provider] = await query("SELECT id, spec, bound_to FROM providers");
+    expect(provider).toMatchObject({ id: "treg-mcp", bound_to: null });
+    expect(JSON.parse(String(provider!["spec"]))).toMatchObject({
+      id: "treg-mcp",
+      hosts: ["treg.to"],
+      auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
+      tags: ["mcp"],
     });
     expect(warnings("PROVIDER_KEY_UNSET")).toEqual([
       expect.objectContaining({ data: { fix: "pnpm everyapp secret set TREG_MCP_TOKEN", name: "TREG_MCP_TOKEN" } }),
@@ -320,12 +372,12 @@ describe("mcp add", () => {
         id: "treg",
         name: "treg",
         url: TREG,
-        auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
+        auth: { kind: "provider", provider: "treg-mcp" },
+        credential: { kind: "bearer", setting: "TREG_MCP_TOKEN", set: false, bound: false },
         risk: "annotations",
         on: true,
         was: "new",
         probe: { outcome: "reachable", era: "2026-07-28", tools: 2, server: "treg" },
-        key: { name: "TREG_MCP_TOKEN", set: false, bound: false, boundOrigin: null },
         mcp: { url: "https://example.com/mcp", toolPrefix: "treg_" },
         next: [
           { command: "pnpm everyapp secret set TREG_MCP_TOKEN", note: "treg's credential" },
@@ -336,10 +388,12 @@ describe("mcp add", () => {
     expect(done()!["message"]).toContain("TREG_MCP_TOKEN isn't set: pnpm everyapp secret set TREG_MCP_TOKEN");
   });
 
-  it("at a terminal, offers the credential through secret set's reader, sets it on the Gateway and pins it to the origin", async () => {
+  it("at a terminal, offers the credential, sets it through secret set's path, binds the row and checks it from here", async () => {
     const asked: Array<{ question: string; context?: readonly string[] }> = [];
     const read: string[] = [];
+    const fetch = listsTools();
     await addTreg({
+      fetch,
       interactive: true,
       confirm: async (question, context) => {
         asked.push({ question, context });
@@ -355,19 +409,41 @@ describe("mcp add", () => {
         question: "Set TREG_MCP_TOKEN now?",
         context: [
           "treg's credential (bearer token) is a Gateway setting.",
-          "The Gateway sends it to https://treg.to and nowhere else. Later: pnpm everyapp secret set TREG_MCP_TOKEN",
+          "The Gateway sends it to treg.to and nowhere else. Later: pnpm everyapp secret set TREG_MCP_TOKEN",
         ],
       },
     ]);
     expect(read).toEqual(["TREG_MCP_TOKEN"]);
     expect(gatewayWorker().secrets["TREG_MCP_TOKEN"]).toBe("treg-secret");
-    expect(await query("SELECT name, origin, bound_by FROM remote_mcp_credentials")).toEqual([
-      { name: "TREG_MCP_TOKEN", origin: "https://treg.to", bound_by: ACTOR },
-    ]);
+    expect((await query("SELECT bound_to FROM providers WHERE id = 'treg-mcp'"))[0]!["bound_to"]).not.toBeNull();
+    // The check: one tools/list with the value, as the Gateway sends it.
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const [, check] = vi.mocked(fetch).mock.calls[1]! as unknown as [string, RequestInit];
+    expect((check.headers as Record<string, string>)["authorization"]).toBe("Bearer treg-secret");
     expect(warnings("PROVIDER_KEY_UNSET")).toEqual([]);
-    expect(done()!["data"]).toMatchObject({ key: { name: "TREG_MCP_TOKEN", set: true, bound: true, boundOrigin: "https://treg.to" } });
+    expect(done()!["data"]).toMatchObject({
+      credential: { kind: "bearer", setting: "TREG_MCP_TOKEN", set: true, bound: true },
+      verify: { ok: true, tools: 2 },
+    });
+    expect(done()!["message"]).toContain("Working: 2 tools.");
     expect(done()!["data"]["next"]).toEqual([{ command: "pnpm everyapp mcp show treg", note: "its tools, once the Gateway lists them" }]);
     expect(JSON.stringify(events)).not.toContain("treg-secret");
+  });
+
+  it("warns REMOTE_MCP_CREDENTIAL_REJECTED when the server refuses the value", async () => {
+    vi.stubEnv("TREG_KEY", "wrong");
+    await addTreg({
+      flags: { ...flags, auth: "header", header: "X-Api-Key", "from-env": "TREG_KEY" },
+      fetch: serverAnswering(() => new Response("", { status: 401 })),
+    });
+    expect(gatewayWorker().secrets["TREG_MCP_TOKEN"]).toBe("wrong");
+    expect(warnings("REMOTE_MCP_CREDENTIAL_REJECTED")).toEqual([
+      expect.objectContaining({
+        message: `${TREG} refused TREG_MCP_TOKEN (401)\nCheck the key, and where it goes: the Gateway sends it as a header X-Api-Key. pnpm everyapp secret set TREG_MCP_TOKEN sets it again.`,
+        data: expect.objectContaining({ status: 401, fix: "pnpm everyapp secret set TREG_MCP_TOKEN" }),
+      }),
+    ]);
+    expect(done()!["data"]).toMatchObject({ credential: { kind: "header", set: true, bound: true }, verify: { ok: false, status: 401 } });
   });
 
   it("leaves the credential unset when the person says no, and sets nothing it wasn't given", async () => {
@@ -382,7 +458,7 @@ describe("mcp add", () => {
     vi.stubEnv("TREG_KEY", "from-the-env");
     await addTreg({ flags: { ...flags, auth: "bearer", "from-env": "TREG_KEY" } });
     expect(gatewayWorker().secrets["TREG_MCP_TOKEN"]).toBe("from-the-env");
-    expect(done()!["data"]).toMatchObject({ key: { set: true, bound: true } });
+    expect(done()!["data"]).toMatchObject({ credential: { set: true, bound: true } });
 
     vi.stubEnv("EMPTY_KEY", "");
     await expect(
@@ -391,48 +467,39 @@ describe("mcp add", () => {
     expect((await rows()).map((row) => row["app_slug"])).toEqual(["treg"]);
     await expect(
       addServer(options<AddFlags>({ flags: { ...flags, "from-env": "TREG_KEY" } }), "https://deepwiki.com/mcp"),
-    ).rejects.toMatchObject({ code: "REMOTE_MCP_INVALID", message: "--from-env names a credential, and --auth none sends none" });
+    ).rejects.toMatchObject({ code: "REMOTE_MCP_INVALID", message: "--from-env sets a static credential's value: say how it is sent" });
   });
 
-  it("asks nothing for a server that takes no credential, and warns when it asks for one", async () => {
+  it("adds a server that answers without a credential with none, asking nothing", async () => {
     const confirm = vi.fn();
-    await addServer(
-      options<AddFlags>({
-        interactive: true,
-        confirm,
-        fetch: serverAnswering(() => new Response("", { status: 401, headers: { "www-authenticate": 'Bearer realm="x"' } })),
-      }),
-      "https://deepwiki.com/mcp",
-    );
+    await addServer(options<AddFlags>({ interactive: true, confirm, fetch: listsTools() }), "https://deepwiki.com/mcp");
     expect(confirm).not.toHaveBeenCalled();
-    expect(done()!["data"]).toMatchObject({ id: "deepwiki", auth: { kind: "none" }, key: null, probe: { outcome: "needs-credential", status: 401 } });
+    expect(done()!["data"]).toMatchObject({ id: "deepwiki", auth: { kind: "none" }, credential: { kind: "none" } });
+    expect(await query("SELECT id FROM providers")).toEqual([]);
+  });
+
+  it("refuses a server that asks for a credential none was given for, before writing; --force adds it with a warning", async () => {
+    const asks = () => serverAnswering(() => new Response("", { status: 401, headers: { "www-authenticate": 'Bearer realm="x"' } }));
+    await expect(addServer(options<AddFlags>({ fetch: asks() }), "https://deepwiki.com/mcp")).rejects.toMatchObject({
+      code: "REMOTE_MCP_NEEDS_CREDENTIAL",
+      message:
+        "https://deepwiki.com/mcp needs a credential. Check the server's docs for how it authenticates, then add it with --auth bearer|header|query|basic, --auth oauth, or --provider <id>. --force adds it anyway.",
+    });
+    await expect(addServer(options<AddFlags>({ flags: { ...flags, auth: "none" }, fetch: asks() }), "https://deepwiki.com/mcp")).rejects.toMatchObject({
+      code: "REMOTE_MCP_NEEDS_CREDENTIAL",
+    });
+    expect(await rows()).toEqual([]);
+
+    await addServer(options<AddFlags>({ flags: { ...flags, force: true }, fetch: asks() }), "https://deepwiki.com/mcp");
+    expect(done()!["data"]).toMatchObject({ id: "deepwiki", auth: { kind: "none" }, probe: { outcome: "needs-credential", status: 401 } });
     expect(warnings("REMOTE_MCP_PROBE_FAILED")).toEqual([
       expect.objectContaining({
         message: expect.stringMatching(/^https:\/\/deepwiki.com\/mcp asks for a credential, and deepwiki sends none\n/),
-        data: expect.objectContaining({
-          fix: "pnpm everyapp mcp remove deepwiki, then pnpm everyapp mcp add https://deepwiki.com/mcp --name deepwiki --auth bearer",
-        }),
       }),
     ]);
   });
 
-  it("warns, never refuses, when the server wants OAuth, redirects, or can't be reached", async () => {
-    await addServer(
-      options<AddFlags>({
-        flags: { ...flags, name: "o" },
-        fetch: serverAnswering(
-          () =>
-            new Response("", {
-              status: 401,
-              headers: { "www-authenticate": 'Bearer resource_metadata="https://o.example.org/.well-known/oauth-protected-resource"' },
-            }),
-        ),
-      }),
-      "https://o.example.org/mcp",
-    );
-    expect(warnings("REMOTE_MCP_WANTS_OAUTH")).toEqual([
-      expect.objectContaining({ message: expect.stringContaining("If the server also takes an API key, add it with --auth bearer and set the key.") }),
-    ]);
+  it("warns, never refuses, when the server redirects or can't be reached", async () => {
     await addServer(
       options<AddFlags>({
         flags: { ...flags, name: "moved" },
@@ -458,44 +525,193 @@ describe("mcp add", () => {
     expect((await rows()).map((row) => [row["app_slug"], row["status"]])).toEqual([
       ["far", "active"],
       ["moved", "active"],
-      ["o", "active"],
     ]);
   });
 
-  it("refuses flags that say two things before connecting, and what the registry refuses before writing", async () => {
+  it("refuses flags that say two things before connecting, and what the registry refuses before probing", async () => {
     createCf.mockClear();
-    await expect(
-      addServer(options<AddFlags>({ flags: { ...flags, auth: "bearer", header: "X-Api-Key" } }), TREG),
-    ).rejects.toMatchObject({ code: "REMOTE_MCP_INVALID" });
-    await expect(addServer(options<AddFlags>({ flags: { ...flags, auth: "header" } }), TREG)).rejects.toMatchObject({
-      code: "REMOTE_MCP_INVALID",
-    });
-    await expect(
-      addServer(options<AddFlags>({ flags: { ...flags, auth: "none", secret: "TREG_MCP_TOKEN" } }), TREG),
-    ).rejects.toMatchObject({ code: "REMOTE_MCP_INVALID" });
+    for (const extra of [
+      { auth: "bearer", header: "X-Api-Key" },
+      { auth: "header" },
+      { auth: "query" },
+      { auth: "bearer", param: "key" },
+      { auth: "basic", prefix: "Token" },
+      { auth: "none", "from-env": "X" },
+      { auth: "bearer", provider: "elevenlabs" },
+      { "client-secret-from-env": "X" },
+      { auth: "bearer", "client-id": "x" },
+    ] as const) {
+      await expect(addServer(options<AddFlags>({ flags: { ...flags, ...extra } }), TREG)).rejects.toMatchObject({ code: "REMOTE_MCP_INVALID" });
+    }
     expect(createCf).not.toHaveBeenCalled();
-    await expect(addServer(options<AddFlags>({ fetch: listsTools() }), "https://apps.example.com/mcp")).rejects.toMatchObject({
+    const fetch = listsTools();
+    await expect(addServer(options<AddFlags>({ fetch }), "https://apps.example.com/mcp")).rejects.toMatchObject({
       code: "REMOTE_MCP_URL_REFUSED",
     });
+    expect(fetch).not.toHaveBeenCalled();
     await addTreg();
     await expect(addTreg()).rejects.toMatchObject({ code: "REMOTE_MCP_EXISTS" });
     expect((await rows()).map((row) => row["app_slug"])).toEqual(["treg"]);
   });
 
-  it("takes --header for header auth and --secret for another name in the family", async () => {
+  it("places a static credential as the flags say: a header with a prefix, a query parameter, Basic", async () => {
     await addServer(
-      options<AddFlags>({
-        flags: { ...flags, name: "example", header: "X-Api-Key", secret: "EXAMPLE_KEY_MCP_TOKEN", risk: "read" },
-        fetch: listsTools(),
-      }),
+      options<AddFlags>({ flags: { ...flags, name: "example", auth: "header", header: "X-Api-Key", prefix: "Key ", risk: "read" }, fetch: listsTools() }),
       "https://api.example.org/mcp",
     );
     expect(done()!["data"]).toMatchObject({
       id: "example",
-      auth: { kind: "header", secret: "EXAMPLE_KEY_MCP_TOKEN", header: "X-Api-Key" },
+      auth: { kind: "provider", provider: "example-mcp" },
+      credential: { kind: "header", setting: "EXAMPLE_MCP_TOKEN" },
       risk: "read",
-      key: { name: "EXAMPLE_KEY_MCP_TOKEN", set: false },
     });
+    await addServer(options<AddFlags>({ flags: { ...flags, name: "q", auth: "query", param: "api_key" }, fetch: listsTools() }), "https://q.example.org/mcp");
+    await addServer(options<AddFlags>({ flags: { ...flags, name: "b", auth: "basic" }, fetch: listsTools() }), "https://b.example.org/mcp");
+    const specs = Object.fromEntries(
+      (await query("SELECT id, spec FROM providers")).map((row) => [row["id"], JSON.parse(String(row["spec"]))["auth"]]),
+    );
+    expect(specs).toEqual({
+      "example-mcp": { kind: "header", secret: "EXAMPLE_MCP_TOKEN", header: "X-Api-Key", prefix: "Key " },
+      "q-mcp": { kind: "query", secret: "Q_MCP_TOKEN", param: "api_key" },
+      "b-mcp": { kind: "basic", secret: "B_MCP_TOKEN", as: "pair" },
+    });
+  });
+});
+
+describe("mcp add with OAuth", () => {
+  it("signs in when the server's 401 names its metadata: discovers, registers a client, sets it through secret set's path and opens the connect page", async () => {
+    const server = oauthServer();
+    const opened: string[] = [];
+    await addServer(
+      options<AddFlags>({ flags: { ...flags, name: "o" }, fetch: server.fetcher, openBrowser: async (url) => opened.push(url) }),
+      O_MCP,
+    );
+    expect(events.find((event) => event["type"] === "error")).toBeUndefined();
+    // The registration asked for the Gateway's callback.
+    const registration = server.calls.find((call) => call.url === `${ISSUER}/register`)!;
+    expect(JSON.parse(String(registration.init.body))).toMatchObject({
+      redirect_uris: ["https://example.com/connect/o-mcp/callback"],
+      token_endpoint_auth_method: "client_secret_basic",
+    });
+    const [row] = await query("SELECT id, spec, bound_to FROM providers");
+    expect(row!["bound_to"]).not.toBeNull();
+    expect(JSON.parse(String(row!["spec"]))).toMatchObject({
+      id: "o-mcp",
+      hosts: ["o.example.org"],
+      auth: {
+        kind: "oauth2-user",
+        authorizeUrl: `${ISSUER}/authorize`,
+        tokenUrl: `${ISSUER}/token`,
+        clientId: "O_MCP_CLIENT_ID",
+        clientSecret: "O_MCP_CLIENT_SECRET",
+        inject: "basic",
+        pkce: true,
+        resource: O_MCP,
+        issuer: ISSUER,
+        tolerated: ["mcp"],
+      },
+    });
+    expect(gatewayWorker().secrets["O_MCP_CLIENT_ID"]).toBe("cid-1");
+    expect(gatewayWorker().secrets["O_MCP_CLIENT_SECRET"]).toBe("csecret-1");
+    const connect = "https://example.com/connect/o-mcp?app=o&return=/?mcp=o";
+    expect(opened).toEqual([connect]);
+    expect(done()).toMatchObject({
+      data: {
+        id: "o",
+        auth: { kind: "provider", provider: "o-mcp" },
+        credential: { kind: "oauth", setting: "O_MCP_CLIENT_ID", set: true, bound: true },
+        connect: { url: connect },
+        oauth: { issuer: ISSUER, registered: "dcr" },
+      },
+    });
+    expect(done()!["message"]).toContain(`Each member connects their own o account: ${connect}`);
+    expect(JSON.stringify(events)).not.toContain("csecret-1");
+
+    // --no-open prints the page only.
+    events = [];
+    opened.length = 0;
+    await removeApp(options(), "o");
+    await addServer(
+      options<AddFlags>({
+        flags: { ...flags, name: "o", "no-open": true },
+        interactive: true,
+        fetch: oauthServer().fetcher,
+      }),
+      O_MCP,
+    );
+    expect(done()!["data"]["connect"]).toEqual({ url: "https://example.com/connect/o-mcp?app=o&return=/?mcp=o" });
+  });
+
+  it("keeps the client the row has when the server's metadata is the same, so people's connections keep working", async () => {
+    await addServer(options<AddFlags>({ flags: { ...flags, name: "o" }, fetch: oauthServer().fetcher }), O_MCP);
+    await removeApp(options(), "o");
+    events = [];
+    const again = oauthServer();
+    await addServer(options<AddFlags>({ flags: { ...flags, name: "o" }, fetch: again.fetcher }), O_MCP);
+    expect(again.calls.some((call) => call.url === `${ISSUER}/register`)).toBe(false);
+    expect(done()!["data"]).toMatchObject({ was: "revived", oauth: { registered: "existing" } });
+  });
+
+  it("refuses a server that registers no clients, printing the redirect URI to register; takes a pasted client", async () => {
+    const { registration_endpoint: _, ...noRegistration } = AS;
+    await expect(
+      addServer(options<AddFlags>({ flags: { ...flags, name: "o" }, fetch: oauthServer(noRegistration).fetcher }), O_MCP),
+    ).rejects.toMatchObject({
+      code: "REMOTE_MCP_OAUTH_NO_CLIENT",
+      message: expect.stringContaining("https://example.com/connect/o-mcp/callback"),
+      data: { redirectUri: "https://example.com/connect/o-mcp/callback", issuer: ISSUER },
+    });
+    expect(await rows()).toEqual([]);
+    expect(await query("SELECT id FROM providers")).toEqual([]);
+
+    vi.stubEnv("O_SECRET", "pasted-secret");
+    await addServer(
+      options<AddFlags>({
+        flags: { ...flags, name: "o", "client-id": "pasted-id", "client-secret-from-env": "O_SECRET" },
+        fetch: oauthServer(noRegistration).fetcher,
+      }),
+      O_MCP,
+    );
+    expect(gatewayWorker().secrets["O_MCP_CLIENT_ID"]).toBe("pasted-id");
+    expect(gatewayWorker().secrets["O_MCP_CLIENT_SECRET"]).toBe("pasted-secret");
+    expect(done()!["data"]).toMatchObject({ oauth: { issuer: ISSUER, registered: "pasted" } });
+  });
+
+  it("refuses REMOTE_MCP_OAUTH_DISCOVERY when the server's metadata can't be found, writing nothing", async () => {
+    await expect(
+      addServer(
+        options<AddFlags>({ flags: { ...flags, name: "o", auth: "oauth" }, fetch: serverAnswering(() => new Response("not found", { status: 404 })) }),
+        O_MCP,
+      ),
+    ).rejects.toMatchObject({ code: "REMOTE_MCP_OAUTH_DISCOVERY" });
+    expect(await rows()).toEqual([]);
+  });
+});
+
+describe("mcp add --provider", () => {
+  it("uses a provider of the registry whose host is the URL's, warning while its key isn't set", async () => {
+    await addServer(options<AddFlags>({ flags: { ...flags, provider: "elevenlabs" }, fetch: listsTools() }), "https://api.elevenlabs.io/v1/mcp");
+    expect(done()!["data"]).toMatchObject({
+      id: "elevenlabs",
+      auth: { kind: "provider", provider: "elevenlabs" },
+      credential: { kind: "provider", setting: "ELEVENLABS_API_KEY", set: false, bound: true },
+    });
+    expect(warnings("PROVIDER_KEY_UNSET")).toEqual([
+      expect.objectContaining({ data: { fix: "pnpm everyapp secret set ELEVENLABS_API_KEY", name: "ELEVENLABS_API_KEY" } }),
+    ]);
+    expect(await query("SELECT id FROM providers")).toEqual([]);
+  });
+
+  it("refuses REMOTE_MCP_PROVIDER_HOST when the URL's host isn't one of the provider's, before probing", async () => {
+    const fetch = listsTools();
+    await expect(
+      addServer(options<AddFlags>({ flags: { ...flags, provider: "elevenlabs" }, fetch }), "https://mcp.elsewhere.org/mcp"),
+    ).rejects.toMatchObject({
+      code: "REMOTE_MCP_PROVIDER_HOST",
+      message: expect.stringContaining("elevenlabs sends its key to api.elevenlabs.io, not to mcp.elsewhere.org"),
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(await rows()).toEqual([]);
   });
 });
 
@@ -527,7 +743,7 @@ describe("mcp list", () => {
     await addTreg();
     await seedTregListing();
     await addServer(options<AddFlags>({ fetch: listsTools() }), "https://deepwiki.com/mcp");
-    await addServer(options<AddFlags>({ flags: { ...flags, name: "o", auth: "oauth" }, fetch: listsTools() }), "https://o.example.org/mcp");
+    await addServer(options<AddFlags>({ flags: { ...flags, name: "o" }, fetch: oauthServer().fetcher }), O_MCP);
     await turnOff(options(), "deepwiki");
     events = [];
     await listMcp(options());
@@ -536,23 +752,57 @@ describe("mcp list", () => {
       data: {
         apps: [
           { id: "dataforseo", kind: "builtin", status: "on", on: true, key: { set: true } },
-          { id: "deepwiki", kind: "remote", status: "off", on: false, url: "https://deepwiki.com/mcp", auth: { kind: "none" }, supported: true, tools: null, key: null },
-          { id: "o", kind: "remote", status: "on", auth: { kind: "oauth" }, supported: false, key: null },
+          { id: "deepwiki", kind: "remote", status: "off", on: false, url: "https://deepwiki.com/mcp", auth: { kind: "none" }, credential: { kind: "none" }, tools: null, key: null },
+          {
+            id: "o",
+            kind: "remote",
+            status: "needs setup",
+            auth: { kind: "provider", provider: "o-mcp" },
+            credential: { kind: "oauth", provider: "o-mcp", connected: 0, client: { setting: "O_MCP_CLIENT_ID", set: true, bound: true } },
+            connect: { url: "https://example.com/connect/o-mcp?app=o&return=/?mcp=o" },
+            key: null,
+          },
           {
             id: "treg",
             kind: "remote",
             status: "needs setup",
             on: true,
             url: TREG,
-            auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
+            auth: { kind: "provider", provider: "treg-mcp" },
+            credential: { kind: "key", provider: "treg-mcp", setting: "TREG_MCP_TOKEN", set: false, bound: false },
             tools: 2,
-            key: { name: "TREG_MCP_TOKEN", set: false, bound: false, boundOrigin: null },
+            key: { name: "TREG_MCP_TOKEN", set: false, bound: false },
             lastListedAt: "2026-10-25T12:05:00.000Z",
           },
         ],
         next: [{ command: "pnpm everyapp secret set TREG_MCP_TOKEN", note: "treg's credential" }],
       },
     });
+    // Never a token: who connected is show's, and only as an email.
+    expect(done()!["data"]["apps"][2]["credential"]["people"]).toBeUndefined();
+  });
+
+  it("says a registration from before provider credentials needs removing and adding again", async () => {
+    await addServer(options<AddFlags>({ fetch: listsTools() }), "https://deepwiki.com/mcp");
+    const [row] = await query("SELECT manifest FROM apps WHERE app_slug = 'deepwiki'");
+    const manifest = JSON.parse(String(row!["manifest"]));
+    manifest.remote.auth = { kind: "bearer", secret: "DEEPWIKI_MCP_TOKEN" };
+    await db().run([{ sql: "UPDATE apps SET manifest = ? WHERE app_slug = 'deepwiki'", params: [JSON.stringify(manifest)] }]);
+    events = [];
+    await listMcp(options());
+    expect(done()!["data"]["apps"].find((app: { id: string }) => app.id === "deepwiki")).toMatchObject({
+      status: "needs setup",
+      url: "https://deepwiki.com/mcp",
+      auth: null,
+      credential: { kind: "predates" },
+    });
+    expect(done()!["data"]["next"]).toContainEqual({
+      command: "pnpm everyapp mcp remove deepwiki",
+      note: "deepwiki was registered before provider credentials; then add it again",
+    });
+    events = [];
+    await listMcp({ flags: {}, out: { emit: (event) => events.push(event as never), exitCode: 0, verbose: false }, createCf });
+    expect(String(done()!["display"]).replace(/\u001b\[[0-9;]*m/g, "")).toContain("registered before provider credentials: remove and add again");
   });
 
   it("draws the table a person reads", async () => {
@@ -562,12 +812,12 @@ describe("mcp list", () => {
     const display = String(done()!["display"]).replace(/\u001b\[[0-9;]*m/g, "");
     expect(display).toMatch(/^APP\s+KIND\s+STATUS\s+TOOLS\s+KEY\n/);
     expect(display).toMatch(/dataforseo  DataForSEO\s+built-in\s+not added\s+not listed yet\s+DATAFORSEO_API_KEY not set/);
-    expect(display).toMatch(/treg  treg\s+remote\s+needs setup\s+not listed yet\s+TREG_MCP_TOKEN not set/);
+    expect(display).toMatch(/treg  treg\s+remote\s+needs setup\s+not listed yet\s+TREG_MCP_TOKEN unset/);
   });
 });
 
 describe("mcp show", () => {
-  it("shows a remote app's facts, its credential and pin, its snapshot, and every tool with its risk and source", async () => {
+  it("shows a remote app's facts, its credential, its snapshot, and every tool with its risk and source", async () => {
     await addTreg(settingNow("treg-secret"));
     await seedTregListing();
     await changeTool(options<ToolFlags>({ flags: { ...flags, risk: "read" } }), "treg", "delete-everything");
@@ -580,12 +830,13 @@ describe("mcp show", () => {
         status: "on",
         on: true,
         url: TREG,
-        auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
+        auth: { kind: "provider", provider: "treg-mcp" },
+        credential: { kind: "key", provider: "treg-mcp", setting: "TREG_MCP_TOKEN", set: true, bound: true },
         risk: "annotations",
         rev: 2,
         overrides: { "delete-everything": { risk: "read" } },
         addedBy: ACTOR,
-        key: { name: "TREG_MCP_TOKEN", set: true, bound: true, boundOrigin: "https://treg.to" },
+        key: { name: "TREG_MCP_TOKEN", set: true, bound: true },
         snapshot: { status: "ok", tools: 2, listedAt: "2026-10-25T12:05:00.000Z", lastError: null },
         tools: [
           { name: "treg_delete_everything", serverName: "delete-everything", risk: "write", source: "override", on: true },
@@ -595,7 +846,33 @@ describe("mcp show", () => {
       },
     });
     expect(done()!["message"]).toMatch(/URL\s+https:\/\/treg\.to\/mcp\//);
-    expect(done()!["message"]).toMatch(/Credential\s+TREG_MCP_TOKEN set, pinned to https:\/\/treg\.to/);
+    expect(done()!["message"]).toMatch(/Auth\s+bearer token/);
+    expect(done()!["message"]).toMatch(/Credential\s+TREG_MCP_TOKEN set/);
+  });
+
+  it("shows who has connected an OAuth app, never a token", async () => {
+    await addServer(options<AddFlags>({ flags: { ...flags, name: "o" }, fetch: oauthServer().fetcher }), O_MCP);
+    const [org] = await query("SELECT organization_id FROM apps WHERE app_slug = 'o'");
+    await db().run([
+      {
+        sql: "INSERT INTO users (id, name, email, email_verified, created_at, updated_at) VALUES ('u-ada', 'Ada', 'ada@example.org', 1, 0, 0)",
+      },
+      {
+        sql: `INSERT INTO provider_connections (id, organization_id, provider_id, user_id, app_row_id, label, scopes, access_token_enc, status, created_at, updated_at)
+VALUES ('c1', ?, 'o-mcp', 'u-ada', (SELECT id FROM apps WHERE app_slug = 'o'), 'Ada', '[]', 'sealed-token', 'active', 0, 0)`,
+        params: [String(org!["organization_id"])],
+      },
+    ]);
+    events = [];
+    await showApp(options(), "o");
+    expect(done()!["data"]).toMatchObject({
+      status: "on",
+      credential: { kind: "oauth", connected: 1, people: ["ada@example.org"] },
+      connect: { url: "https://example.com/connect/o-mcp?app=o&return=/?mcp=o" },
+    });
+    expect(done()!["message"]).toMatch(/Auth\s+OAuth, each member connects/);
+    expect(done()!["message"]).toMatch(/Credential\s+OAuth: 1 connected \(ada@example.org\)/);
+    expect(JSON.stringify(events)).not.toContain("sealed-token");
   });
 
   it("shows a built-in's key and its catalog's tools, and one that isn't added", async () => {
@@ -673,58 +950,43 @@ describe("secret set and unset with a remote MCP credential", () => {
   const unset = (...names: string[]) =>
     unsetSecrets({ flags: { ...flags, yes: true }, out: out(), cwd: emptyDir(), createCf, names });
 
-  it("routes the name to the Gateway, pins it to the declaring app's origin, and unset drops the pin", async () => {
+  it("routes the name to the Gateway through the app's own provider row and binds the row to its host", async () => {
     await addTreg();
     events = [];
     await set("TREG_MCP_TOKEN");
     expect(gatewayWorker().secrets["TREG_MCP_TOKEN"]).toBe("value-of-TREG_MCP_TOKEN");
-    expect(await query("SELECT name, origin, bound_by FROM remote_mcp_credentials")).toEqual([
-      { name: "TREG_MCP_TOKEN", origin: "https://treg.to", bound_by: ACTOR },
-    ]);
-    expect(warnings("REMOTE_MCP_SECRET_UNDECLARED")).toEqual([]);
-    // Where the credential goes is said every time it is set.
+    expect((await query("SELECT bound_to FROM providers WHERE id = 'treg-mcp'"))[0]!["bound_to"]).not.toBeNull();
+    expect(events.find((event) => event["step"] === "secrets.provider")).toMatchObject({
+      message: expect.stringContaining("the key is sent to treg.to"),
+    });
     expect(done()).toMatchObject({
-      message: "Set TREG_MCP_TOKEN on the Gateway\nTREG_MCP_TOKEN is sent to https://treg.to and nowhere else.",
-      data: { gateway: { names: ["TREG_MCP_TOKEN"], pinned: [{ name: "TREG_MCP_TOKEN", origin: "https://treg.to" }] } },
+      message: "Set TREG_MCP_TOKEN on the Gateway",
+      data: { gateway: { names: ["TREG_MCP_TOKEN"], bound: ["treg-mcp"] } },
     });
 
     events = [];
     await unset("TREG_MCP_TOKEN");
     expect(gatewayWorker().secrets["TREG_MCP_TOKEN"]).toBeUndefined();
-    expect(await query("SELECT * FROM remote_mcp_credentials")).toEqual([]);
   });
 
-  it("warns when no MCP app declares the name", async () => {
-    await set("LOST_MCP_TOKEN");
-    expect(gatewayWorker().secrets["LOST_MCP_TOKEN"]).toBe("value-of-LOST_MCP_TOKEN");
-    expect(warnings("REMOTE_MCP_SECRET_UNDECLARED")).toEqual([
-      expect.objectContaining({
-        message: "No MCP app declares LOST_MCP_TOKEN\nThe Gateway pins it to the first MCP app that uses it.",
-        data: expect.objectContaining({ name: "LOST_MCP_TOKEN", pinnedTo: null }),
-      }),
-    ]);
-    expect(await query("SELECT * FROM remote_mcp_credentials")).toEqual([]);
+  it("refuses an _MCP_TOKEN name no provider row holds: the family is gone", async () => {
+    await expect(set("LOST_MCP_TOKEN")).rejects.toMatchObject({ code: expect.any(String) });
+    expect(gatewayWorker().secrets["LOST_MCP_TOKEN"]).toBeUndefined();
   });
 
-  it("warns at add when the credential is pinned to another origin, and list says it needs setup", async () => {
+  it("an app added again at another host replaces its row, which unbinds the key until it is set again", async () => {
     await addTreg(settingNow("treg-secret"));
     await removeApp(options(), "treg");
-    // Another server takes the same credential name: its pin to treg.to stays.
     events = [];
-    await addServer(
-      options<AddFlags>({ flags: { ...flags, name: "treg2", secret: "TREG_MCP_TOKEN" }, fetch: listsTools() }),
-      "https://moved.example.org/mcp",
-    );
-    expect(warnings("REMOTE_MCP_SECRET_BOUND_ELSEWHERE")).toEqual([
-      expect.objectContaining({
-        message: expect.stringContaining("TREG_MCP_TOKEN was set for https://treg.to, not https://moved.example.org"),
-      }),
+    await addServer(options<AddFlags>({ flags: { ...flags, name: "treg", auth: "bearer" }, fetch: listsTools() }), "https://moved.example.org/mcp");
+    expect(warnings("PROVIDER_KEY_UNSET")).toEqual([
+      expect.objectContaining({ message: expect.stringContaining("TREG_MCP_TOKEN was set for other hosts, not moved.example.org") }),
     ]);
     events = [];
     await listMcp(options());
-    expect(done()!["data"]["apps"].find((app: { id: string }) => app.id === "treg2")).toMatchObject({
+    expect(done()!["data"]["apps"].find((app: { id: string }) => app.id === "treg")).toMatchObject({
       status: "needs setup",
-      key: { name: "TREG_MCP_TOKEN", set: true, bound: false, boundOrigin: "https://treg.to" },
+      credential: { kind: "key", set: true, bound: false },
     });
   });
 });
@@ -763,6 +1025,8 @@ describe("the events the mcp commands queue", () => {
       { type: "mcp_app.disabled", actor, data: builtin },
       { type: "mcp_app.enabled", actor, data: builtin },
       { type: "mcp_app.removed", actor, data: builtin },
+      // treg's own provider row, written in the add's batch.
+      { type: "provider.added", actor, data: { provider: { id: "treg-mcp", name: "treg MCP server", kind: "api_key" } } },
       { type: "mcp_app.added", actor, data: remote },
       { type: "mcp_app.disabled", actor, data: remote },
       { type: "mcp_app.enabled", actor, data: remote },
@@ -772,7 +1036,7 @@ describe("the events the mcp commands queue", () => {
 });
 
 describe("MCP apps and the other commands", () => {
-  it("are left out of status; secret list lists the ones that need setup, with each credential's name", async () => {
+  it("are left out of status; secret list lists the ones that need setup, naming the MCP app each setting serves", async () => {
     gatewayWorker().secrets["DATAFORSEO_API_KEY"] = "login:password";
     await turnOn(options(), "dataforseo");
     events = [];
@@ -799,20 +1063,20 @@ describe("MCP apps and the other commands", () => {
     await listSecrets({ flags, out: out(), cwd: emptyDir(), createCf });
     expect(done()).toMatchObject({
       data: {
-        gateway: { mcpCredentials: [{ name: "TREG_MCP_TOKEN", apps: ["treg"], set: false }] },
+        gateway: { mcpCredentials: [{ name: "TREG_MCP_TOKEN", provider: "treg-mcp", apps: ["treg"], set: false, bound: false }] },
         apps: [
           {
             id: "treg",
             setup: {
               ready: false,
-              unmet: [expect.objectContaining({ kind: "remote-mcp", names: ["TREG_MCP_TOKEN"], setup: "setup/remote-mcp.md" })],
+              unmet: [expect.objectContaining({ names: ["TREG_MCP_TOKEN"] })],
               command: { command: "pnpm everyapp secret set TREG_MCP_TOKEN" },
             },
           },
         ],
       },
     });
-    expect(done()!["message"]).toMatch(/TREG_MCP_TOKEN\s+not set/);
+    expect(done()!["message"]).toMatch(/TREG_MCP_TOKEN\s+MCP: treg\s+not set/);
   });
 
   it("delete refuses an MCP app, naming mcp remove", async () => {

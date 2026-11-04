@@ -80,6 +80,8 @@ export const OAUTH_AUTH_FIELDS = [
   "tokenHeaders",
   "identity",
   "tolerated",
+  "resource",
+  "issuer",
 ] as const;
 
 /**
@@ -176,7 +178,9 @@ function endpoint(
   ) {
     problems.push({
       path,
-      message: "must be an https URL with no port, credentials or fragment",
+      message: parsed.port
+        ? `must be an https URL on the default port (${parsed.port} is not: the Gateway's OAuth requests go to port 443 only), with no credentials or fragment`
+        : "must be an https URL with no port, credentials or fragment",
     });
     return undefined;
   }
@@ -185,6 +189,47 @@ function endpoint(
     return undefined;
   }
   return { url, host: parsed.hostname.toLowerCase() };
+}
+
+/**
+ * An https URL that names something rather than being fetched (an RFC
+ * 8707 resource, an RFC 8414 issuer): a port is allowed, credentials and a
+ * fragment are not, and an issuer takes no query either.
+ */
+function identifierUrl(
+  value: unknown,
+  path: string,
+  problems: SpecProblem[],
+  { query }: { query: boolean },
+): string | undefined {
+  if (value === undefined) return undefined;
+  const url = printable(value, path, problems, 2048);
+  if (url === undefined) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    problems.push({ path, message: "must be an https URL" });
+    return undefined;
+  }
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.username ||
+    parsed.password ||
+    parsed.hash ||
+    url.includes("#")
+  ) {
+    problems.push({
+      path,
+      message: "must be an https URL with no credentials or fragment",
+    });
+    return undefined;
+  }
+  if (!query && parsed.search) {
+    problems.push({ path, message: "may not carry a query string" });
+    return undefined;
+  }
+  return url;
 }
 
 function settingName(
@@ -458,6 +503,12 @@ export function parseOAuthUserSpec(
   );
   const parsedIdentity = identity(auth["identity"], common.hosts, problems);
   const tolerated = scopeList(auth["tolerated"], "auth.tolerated", problems);
+  const resource = identifierUrl(auth["resource"], "auth.resource", problems, {
+    query: true,
+  });
+  const issuer = identifierUrl(auth["issuer"], "auth.issuer", problems, {
+    query: false,
+  });
   if (
     !authorize ||
     !token ||
@@ -486,6 +537,8 @@ export function parseOAuthUserSpec(
       : { identity: parsedIdentity.identity }),
     identityScopes: parsedIdentity?.scopes ?? [],
     tolerated: tolerated ?? [],
+    ...(resource === undefined ? {} : { resource }),
+    ...(issuer === undefined ? {} : { issuer }),
   };
   const capability = oauthCapabilityOf(
     common,
@@ -680,6 +733,8 @@ export function oauthSpecOf(
       ...(flow.tolerated.length === 0
         ? {}
         : { tolerated: [...flow.tolerated] }),
+      ...(flow.resource === undefined ? {} : { resource: flow.resource }),
+      ...(flow.issuer === undefined ? {} : { issuer: flow.issuer }),
     },
     ...(capability.hint === undefined ? {} : { hint: capability.hint }),
     ...(capability.example === undefined

@@ -47,7 +47,6 @@ import { join } from "node:path";
 import {
   catalogHash,
   IDENTITY_HEADER,
-  remoteMcpAuthHeaders,
   TOOLS_PROTOCOL_VERSION,
   verifyIdentityJwt,
   type EveryAppUser,
@@ -1251,11 +1250,8 @@ describe("fake: a credentialed remote server through the ToolBus", () => {
       const sent: UpstreamRequest[] = [];
       const client = new RemoteMcpClient({
         url: fake.url,
-        // The gateway's path from the registration to the headers.
-        headers: remoteMcpAuthHeaders(
-          { kind: "bearer", secret: "HARBOR_MCP_TOKEN" },
-          UPSTREAM_TOKEN,
-        ),
+        // What the gateway sends for a bearer provider (`HARBOR_MCP_TOKEN`).
+        headers: { authorization: `Bearer ${UPSTREAM_TOKEN}` },
         fetch: recordingFetch(sent),
       });
       const remote = await remoteApp(

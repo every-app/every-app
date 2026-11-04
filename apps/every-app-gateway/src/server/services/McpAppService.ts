@@ -7,6 +7,14 @@
  * CLI runs against D1; a refusal comes back as a PublicError with the
  * rule's code and sentence, which the form shows as it is.
  *
+ * A server's credential is a provider (docs/design/2026-11-mcp-apps-auth.md):
+ * a static one becomes the app's own API-key row (`<appId>-mcp`) whose
+ * value the operator sets in a terminal; OAuth is discovered and a client
+ * registered from here, sealed into `oauth_clients`, and each member
+ * connects their own account; or an existing provider whose hosts include
+ * the URL's. No value passes through here but the sealed paste of an
+ * OAuth client a server can't register (Admin → Apps only).
+ *
  * Owners and admins do all of it, remove included (as deleting an app
  * is). The server functions' middleware checks the role; each operation
  * checks it again here.
@@ -25,24 +33,43 @@
 import { env, waitUntil } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import {
+  DELETED_APP_STATUS,
   isRemoteMcpRow,
   mcpAppRemoveUpdate,
   mcpAppStatusUpdate,
   planRemoteMcpAppAdd,
+  planRemoteMcpProviderRow,
   remoteMcpAppUpdate,
   remoteMcpBlockOf,
   type AppRow,
+  type RemoteMcpAddInput,
+  type RemoteMcpAddPlan,
   type RemoteMcpChange,
+  type RemoteMcpProviderRowPlan,
 } from "@every-app/perimeter/registry";
 import {
+  capabilitySettings,
+  chooseTokenEndpointAuthMethod,
+  discoverMcpOAuth,
+  isRemoteMcpProviderIdOf,
+  mcpOAuthProviderSpec,
+  mcpStaticProviderSpec,
   PROVIDER_APP_TIER,
+  registerMcpClient,
   remoteMcpAuthLabel,
   remoteMcpIdFromUrl,
-  remoteMcpOf,
-  remoteMcpSecretOf,
+  remoteMcpProviderHosts,
+  remoteMcpProviderId,
+  remoteMcpRedirectUri,
   remoteToolEnabled,
   remoteToolRisk,
   isToolRisk,
+  type Capability,
+  type CapabilitySettings,
+  type McpOAuthDiscovery,
+  type McpOAuthFetch,
+  type McpProviderSpecResult,
+  type ProviderRegistry,
   type RemoteMcpBlock,
   type RemoteMcpUrlEnv,
   type ToolRisk,
@@ -59,6 +86,18 @@ import {
   McpAppRepository,
   registryRow,
 } from "@/server/repositories/McpAppRepository";
+import { OAuthClientRepository } from "@/server/repositories/OAuthClientRepository";
+import { ProviderConnectionRepository } from "@/server/repositories/ProviderConnectionRepository";
+import { ProviderRepository } from "@/server/repositories/ProviderRepository";
+import { resolveOAuthClient } from "@/server/oauth/client";
+import {
+  gatewayProviders,
+  invalidateGatewayProviders,
+  refusedGatewayHost,
+  registryFromRows,
+} from "@/server/providers";
+import { remoteMcpConnectPath } from "@/server/remote-mcp/bind";
+import { SealingUnavailableError } from "@/server/secrets/sealed";
 import {
   logToolSync,
   syncAppTools,
@@ -70,6 +109,7 @@ import type {
 } from "@/schemas/mcpApp";
 import type {
   AddedRemoteMcpApp,
+  McpAppConnectionStatus,
   McpAppCredential,
   McpAppDetails,
   McpAppSnapshot,
@@ -109,10 +149,6 @@ function urlEnv(): RemoteMcpUrlEnv {
 /** Whether the Gateway has a setting set, read as app-setup reads it. */
 function isSet(name: string): boolean {
   return setting(name) !== null;
-}
-
-function secretSetCommand(name: string): string {
-  return `${SETUP_CLI} secret set ${name}`;
 }
 
 function assertAdmin(ctx: OrgContext): void {
@@ -261,119 +297,400 @@ async function listToolsWithin(
   return outcome;
 }
 
-/** What another organization's use of a credential name reads as: never an origin. */
-const OTHER_ORGANIZATION = "another organization";
+/** The Gateway's own fetch for OAuth discovery and client registration; tests stand in for the servers. */
+let oauthFetch: McpOAuthFetch | undefined;
 
-/**
- * Where each credential name of a live remote MCP app on this Gateway is
- * sent, for the rules' `secretUsedAt`: the origin, when the organization's
- * own app uses it; "another organization" when another organization's
- * does (one set of Gateway secrets serves every organization, so a name
- * one organization's server uses is never another's to point at the same
- * server, and its origin isn't told to them).
- */
-async function credentialUse(
-  organizationId: string,
-): Promise<(secretName: string) => string | null> {
-  const own = new Map<string, string>();
-  const others = new Set<string>();
-  for (const row of await McpAppRepository.findLiveProviderManifests()) {
-    let block: RemoteMcpBlock | null = null;
-    try {
-      block = row.manifest ? remoteMcpOf(JSON.parse(row.manifest)) : null;
-    } catch {
-      block = null;
-    }
-    const secret = block ? remoteMcpSecretOf(block.auth) : null;
-    if (!block || !secret) continue;
-    if (row.organizationId !== organizationId) {
-      others.add(secret);
-      continue;
-    }
-    if (own.has(secret)) continue;
-    try {
-      own.set(secret, new URL(block.url).origin);
-    } catch {
-      // A stored URL that doesn't parse sends nothing anywhere.
-    }
-  }
-  return (secretName) =>
-    others.has(secretName) ? OTHER_ORGANIZATION : (own.get(secretName) ?? null);
+/** Tests stand in for a server's metadata and registration endpoints; `undefined` restores `fetch`. */
+export function setMcpOAuthFetchForTests(
+  fetcher: McpOAuthFetch | undefined,
+): void {
+  oauthFetch = fetcher;
 }
 
-/** The auth block as the rules read it: only the fields its kind takes. */
-function authInput(
+function discoveryFetch(): McpOAuthFetch {
+  return oauthFetch ?? ((input, init) => fetch(input, init));
+}
+
+function gatewayUrl(): string {
+  return (setting("GATEWAY_URL") ?? "").trim().replace(/\/+$/, "");
+}
+
+/** The words a person reads in place of a bare problem: a sentence, ending once. */
+function sentence(text: string): string {
+  const trimmed = text.trim();
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+/** The provider settings named for `secret set`: the ones an API-key provider reads. */
+function apiKeySetupCommand(capability: Capability): string | null {
+  if (capability.mode !== "api_key") return null;
+  return `${SETUP_CLI} secret set ${capabilitySettings(capability).join(" ")}`;
+}
+
+/** Whether an API-key provider's key is set and bound to the hosts it has now. */
+function apiKeyReady(
+  providerId: string,
+  capability: Capability,
+  registry: ProviderRegistry,
+): boolean {
+  if (capability.mode !== "api_key") return false;
+  return (
+    registry.bound(providerId) &&
+    capabilitySettings(capability).every((name) => isSet(name))
+  );
+}
+
+/** A synthesized provider row's spec, or the rules' refusal as a public error. */
+function specOrRefuse(result: McpProviderSpecResult): Record<string, unknown> {
+  if (!result.ok) {
+    throw new PublicError("REMOTE_MCP_INVALID", sentence(result.problem));
+  }
+  return result.spec;
+}
+
+interface OAuthClientChoice {
+  clientId: string;
+  clientSecret: string | null;
+  inject: "form" | "basic";
+  registered: "dcr" | "pasted";
+}
+
+/**
+ * Find how the server signs in (RFC 9728 and RFC 8414 metadata, fetched
+ * from here: https, public hosts, no redirects, bounded) and get a client:
+ * the pasted one (Admin → Apps only), else one the server registers for
+ * this Gateway (RFC 7591). Refuses `REMOTE_MCP_OAUTH_DISCOVERY` when the
+ * metadata can't be read, `REMOTE_MCP_OAUTH_NO_CLIENT` when no client can
+ * be had (with the redirect URI to register one by hand).
+ */
+async function oauthClientFor(
+  url: string,
+  appId: string,
+  name: string,
   auth: AddRemoteMcpAppInput["auth"],
-): Record<string, unknown> {
-  if (auth.kind === "none" || auth.kind === "oauth") return { kind: auth.kind };
+  allowPastedClient: boolean,
+): Promise<{ discovery: McpOAuthDiscovery; client: OAuthClientChoice }> {
+  const fetcher = discoveryFetch();
+  const discovered = await discoverMcpOAuth({ url, fetch: fetcher });
+  if (!discovered.ok) {
+    throw new PublicError(
+      "REMOTE_MCP_OAUTH_DISCOVERY",
+      sentence(
+        `The Gateway couldn't find how ${url} signs in: ${discovered.problem}`,
+      ),
+    );
+  }
+  const discovery = discovered.discovery;
+  const redirectUri = remoteMcpRedirectUri(gatewayUrl(), appId);
+  if (auth.clientId) {
+    if (!allowPastedClient) {
+      throw new PublicError(
+        "INVALID_INPUT",
+        "A client id and secret are pasted in Admin → Apps or given to the CLI, never through a tool.",
+      );
+    }
+    const secret = auth.clientSecret ?? null;
+    const method = chooseTokenEndpointAuthMethod(
+      discovery.tokenEndpointAuthMethods,
+    );
+    return {
+      discovery,
+      client: {
+        clientId: auth.clientId,
+        clientSecret: secret,
+        inject: secret && method === "client_secret_basic" ? "basic" : "form",
+        registered: "pasted",
+      },
+    };
+  }
+  const registration = await registerMcpClient({
+    discovery,
+    redirectUri,
+    clientName: `EveryApp (${name})`.slice(0, 100),
+    fetch: fetcher,
+  });
+  if (!registration.ok) {
+    throw new PublicError(
+      "REMOTE_MCP_OAUTH_NO_CLIENT",
+      `${sentence(registration.problem)} Register a client with ${discovery.issuer} using the redirect URI ${redirectUri}, then paste its client id and secret in Admin → Apps.`,
+    );
+  }
   return {
-    kind: auth.kind,
-    ...(auth.secret ? { secret: auth.secret } : {}),
-    ...(auth.kind === "header" && auth.header !== undefined
-      ? { header: auth.header }
-      : {}),
-    ...(auth.kind === "header" && auth.prefix ? { prefix: auth.prefix } : {}),
+    discovery,
+    client: {
+      clientId: registration.clientId,
+      clientSecret: registration.clientSecret ?? null,
+      inject: registration.inject,
+      registered: "dcr",
+    },
   };
 }
 
+/** Seal an OAuth client into `oauth_clients`, bound to the row's binding key. */
+async function sealClient(
+  providerId: string,
+  client: OAuthClientChoice,
+  bindingKey: string,
+  addedBy: string,
+): Promise<void> {
+  try {
+    await OAuthClientRepository.upsert(
+      {
+        providerId,
+        clientId: client.clientId,
+        clientSecret: client.clientSecret,
+        boundTo: bindingKey,
+        addedBy,
+      },
+      env as never,
+    );
+  } catch (error) {
+    if (error instanceof SealingUnavailableError) {
+      throw new PublicError(
+        "SEALING_UNAVAILABLE",
+        "This Gateway can't seal a secret: BETTER_AUTH_SECRET is not set",
+      );
+    }
+    throw error;
+  }
+}
+
+/** Write the app's own provider row as planned: insert it, replace its spec (its binding kept), or keep it. */
+async function writeProviderRow(
+  plan: RemoteMcpProviderRowPlan,
+  addedBy: string,
+): Promise<void> {
+  if (plan.action === "insert") {
+    const written = await ProviderRepository.insert({
+      id: plan.id,
+      spec: plan.spec,
+      addedBy,
+    });
+    // Written meanwhile by another add: this spec replaces it, its binding kept.
+    if (!written)
+      await ProviderRepository.replaceSpec({ id: plan.id, spec: plan.spec });
+  } else if (plan.action === "replace") {
+    await ProviderRepository.replaceSpec({ id: plan.id, spec: plan.spec });
+    // Tokens issued under the old spec (another server, other endpoints)
+    // never go to the new one: every connection is dropped, and members
+    // connect again.
+    await ProviderConnectionRepository.removeAllForProvider(plan.id);
+  }
+  if (plan.action !== "keep") invalidateGatewayProviders();
+}
+
 /**
- * Register a remote MCP server for the organization: the row only (owners
- * and admins open it by their role; an admin grants anyone else), then, for a server that takes no credential, its tools listed within the
- * request so the answer can say how many.
+ * Register a remote MCP server for the organization: the row (owners and
+ * admins open it by their role; an admin grants anyone else), with its
+ * credential as a provider. A static credential (bearer, header,
+ * query, basic) becomes the app's own API-key row, `<appId>-mcp`, whose
+ * value the operator sets with `secret set` (never here). OAuth discovers
+ * the server's authorization server, registers a client (or takes the
+ * pasted one, Admin → Apps only), writes the app's own `oauth2-user` row
+ * and seals the client into `oauth_clients` bound to it; each member then
+ * connects their own account. `provider` names an existing provider whose
+ * hosts include the URL's (`REMOTE_MCP_PROVIDER_HOST`). For a server that
+ * needs nothing more, its tools are listed within the request so the
+ * answer can say how many.
  */
 async function add(
   ctx: OrgContext,
   input: AddRemoteMcpAppInput,
   actor: string | null,
+  options: { allowPastedClient?: boolean } = { allowPastedClient: true },
 ): Promise<AddedRemoteMcpApp> {
   assertAdmin(ctx);
   const url = input.url.trim();
+  const credentialKind = input.auth.kind;
   // The id the rules will settle on, so its row (a tombstone included) is
   // read before they run: they read rows, they don't fetch them.
   const wanted = input.id ?? remoteMcpIdFromUrl(url);
-  const [existing, secretUsedAt] = await Promise.all([
+  const [existing, registry] = await Promise.all([
     wanted ? AppRepository.findByAppSlug(wanted, ctx.orgId) : undefined,
-    credentialUse(ctx.orgId),
+    gatewayProviders(),
   ]);
-  let plan;
-  try {
-    plan = planRemoteMcpAppAdd({
-      organizationId: ctx.orgId,
-      url,
-      id: input.id ?? null,
-      name: input.name ?? null,
-      description: input.description ?? null,
-      auth: authInput(input.auth),
-      risk: input.risk ?? null,
-      env: urlEnv(),
-      existingApp: (id) =>
-        existing && existing.appSlug === id ? registryRow(existing) : null,
-      secretUsedAt,
-      actor,
-      now: Date.now(),
+  const base = {
+    organizationId: ctx.orgId,
+    url,
+    id: input.id ?? null,
+    name: input.name ?? null,
+    description: input.description ?? null,
+    risk: input.risk ?? null,
+    env: urlEnv(),
+    existingApp: (id: string) =>
+      existing && existing.appSlug === id ? registryRow(existing) : null,
+    actor,
+    now: Date.now(),
+  };
+  const plan = (input: Partial<RemoteMcpAddInput>) => {
+    try {
+      return planRemoteMcpAppAdd({ ...base, ...input });
+    } catch (error) {
+      throw asPublicError(error);
+    }
+  };
+  const addedBy = actor ?? ctx.userId;
+  const ownKinds = credentialKind !== "none" && credentialKind !== "provider";
+  // Every rule but the credential's first (the id, the URL, an id in use),
+  // so nothing is fetched or written for a server the rules refuse.
+  if (ownKinds) plan({ auth: { kind: "none" } });
+
+  let added: RemoteMcpAddPlan;
+  let providerRow: RemoteMcpProviderRowPlan | null = null;
+  let client: OAuthClientChoice | null = null;
+  let issuer: string | null = null;
+  let scopes: string[] = [];
+  if (credentialKind === "none") {
+    added = plan({ auth: { kind: "none" } });
+  } else if (credentialKind === "provider") {
+    if (!input.auth.provider) {
+      throw new PublicError(
+        "INVALID_INPUT",
+        "Choose the provider whose credential the server takes.",
+      );
+    }
+    // Another organization's server's own row (`<appId>-mcp`) holds that
+    // organization's key: never one to point a second app at.
+    if (
+      input.auth.provider.endsWith("-mcp") &&
+      registry.sourceOf(input.auth.provider) === "row" &&
+      (await McpAppRepository.providerUsedByOtherOrganization(
+        input.auth.provider,
+        ctx.orgId,
+      ))
+    ) {
+      throw new PublicError(
+        "REMOTE_MCP_INVALID",
+        `${input.auth.provider} is the credential of another organization's MCP app on this Gateway.`,
+      );
+    }
+    added = plan({
+      auth: {
+        kind: "provider",
+        provider: input.auth.provider,
+      },
+      lookupProvider: (id) => registry.get(id),
+      providerSettings: settings() as CapabilitySettings,
     });
-  } catch (error) {
-    throw asPublicError(error);
+  } else {
+    const appId = wanted!;
+    const name = input.name ?? appId;
+    let spec: Record<string, unknown>;
+    if (credentialKind === "oauth") {
+      const got = await oauthClientFor(
+        url,
+        appId,
+        name,
+        input.auth,
+        options.allowPastedClient === true,
+      );
+      client = got.client;
+      issuer = got.discovery.issuer;
+      scopes = got.discovery.scopes;
+      spec = specOrRefuse(
+        mcpOAuthProviderSpec({
+          appId,
+          name,
+          url,
+          discovery: got.discovery,
+          client: {
+            hasSecret: client.clientSecret !== null,
+            inject: client.inject,
+          },
+        }),
+      );
+    } else {
+      spec = specOrRefuse(
+        mcpStaticProviderSpec({
+          appId,
+          name,
+          url,
+          kind: credentialKind,
+          header: input.auth.header ?? null,
+          prefix: input.auth.prefix ?? null,
+          param: input.auth.param ?? null,
+        }),
+      );
+    }
+    const providerId = remoteMcpProviderId(appId);
+    // The row and its key are the Gateway's: never another organization's
+    // app's credential to rewrite or share.
+    if (
+      await McpAppRepository.providerUsedByOtherOrganization(
+        providerId,
+        ctx.orgId,
+      )
+    ) {
+      throw new PublicError(
+        "REMOTE_MCP_INVALID",
+        `${providerId} is the credential of another organization's MCP app on this Gateway; give this app another name.`,
+      );
+    }
+    const rows = await ProviderRepository.all();
+    const others = registryFromRows(
+      rows.filter((row) => row.id !== providerId),
+    );
+    try {
+      providerRow = planRemoteMcpProviderRow({
+        appId,
+        spec,
+        existing: rows.find((row) => row.id === providerId) ?? null,
+        rowSettings: new Set(
+          others.rows().flatMap((row) => capabilitySettings(row.capability)),
+        ),
+        refuseHost: (host) => refusedGatewayHost(host, env as never),
+      });
+    } catch (error) {
+      throw asPublicError(error);
+    }
+    const ownRow = providerRow;
+    added = plan({
+      auth: { kind: "provider" },
+      scopes,
+      lookupProvider: (id) =>
+        id === ownRow.id ? ownRow.capability : registry.get(id),
+      providerSettings: settings() as CapabilitySettings,
+    });
+    await writeProviderRow(providerRow, addedBy);
+    if (client)
+      await sealClient(providerRow.id, client, providerRow.bindingKey, addedBy);
   }
-  await McpAppRepository.writeRemoteApp(plan.app);
+  await McpAppRepository.writeRemoteApp(added.app);
   // A revived tombstone is added again, as a new one is.
-  await announce(ctx, plan.app, (subject) =>
+  await announce(ctx, added.app, (subject) =>
     catalogue.mcpAppAdded({ ...subject, kind: "remote" }),
   );
 
-  const secret = remoteMcpSecretOf(plan.remote.auth);
+  const provider = added.provider;
+  const capability = provider?.capability ?? null;
+  const fresh = await gatewayProviders();
+  let secret: string | null = null;
+  let setupCommand: string | null = null;
+  let connectPath: string | null = null;
+  let ready = provider === null;
+  if (provider && capability?.mode === "api_key") {
+    secret = capabilitySettings(capability)[0] ?? null;
+    ready = apiKeyReady(provider.id, capability, fresh);
+    if (!ready) setupCommand = apiKeySetupCommand(capability);
+  } else if (provider && capability?.mode === "oauth_client") {
+    connectPath = remoteMcpConnectPath(provider.id, added.id);
+  }
   let listing: Listing | null = null;
-  if (plan.remote.auth.kind === "none") {
-    listing = await listToolsWithin(syncable(plan.app), ADD_LISTING_BUDGET_MS);
+  if (ready) {
+    listing = await listToolsWithin(syncable(added.app), ADD_LISTING_BUDGET_MS);
   }
   return {
-    rowId: plan.app.id,
-    appId: plan.id,
-    name: plan.app.name,
-    kind: plan.kind,
-    authKind: plan.remote.auth.kind,
+    rowId: added.app.id,
+    appId: added.id,
+    name: added.app.name,
+    kind: added.kind,
+    authKind: added.remote.auth.kind,
+    credentialKind,
+    provider: provider?.id ?? null,
     secret,
-    setupCommand: secret && !isSet(secret) ? secretSetCommand(secret) : null,
+    setupCommand,
+    connectPath,
+    oauth: client && issuer ? { issuer, registered: client.registered } : null,
     toolCount: listing ? listing.toolCount : null,
     toolsStatus: listing ? listing.status : null,
   };
@@ -489,7 +806,8 @@ async function setStatus(
 /**
  * Remove an MCP app of either kind: the tombstone, with everyone's
  * access, its tokens, its snapshot and its place in AI connections. The
- * credential stays set on the Gateway (only the operator unsets it).
+ * provider row and the key or client it holds stay on the Gateway
+ * (`provider remove` and `secret unset` clean up).
  */
 async function remove(ctx: OrgContext, input: { id: string }): Promise<void> {
   assertAdmin(ctx);
@@ -563,33 +881,148 @@ function snapshotIsCurrent(
   return versionId === prefix || versionId.startsWith(`${prefix}:`);
 }
 
-async function credentialOf(block: RemoteMcpBlock): Promise<McpAppCredential> {
-  if (block.auth.kind === "none") {
-    return { name: null, set: false, boundTo: null, state: "none" };
+const NO_CREDENTIAL: McpAppCredential = {
+  kind: "none",
+  provider: null,
+  providerName: null,
+  own: false,
+  name: null,
+  set: false,
+  state: "none",
+  connections: 0,
+  connectPath: null,
+  viewer: null,
+};
+
+/**
+ * Where a remote app's credential stands, for `ctx`'s member: its
+ * provider, an API key's setting and whether it is set and bound, an
+ * OAuth provider's client, how many members have connected it in the app
+ * and the member's own connection. Never a value or a token.
+ */
+async function credentialOf(
+  ctx: OrgContext,
+  block: RemoteMcpBlock,
+  appSlug: string,
+): Promise<McpAppCredential> {
+  if (block.auth.kind === "none") return NO_CREDENTIAL;
+  const providerId = block.auth.provider;
+  const registry = await gatewayProviders();
+  const capability = registry.get(providerId);
+  const hosts = capability
+    ? remoteMcpProviderHosts(capability, settings() as CapabilitySettings)
+    : null;
+  const own = isRemoteMcpProviderIdOf(providerId, appSlug);
+  const named = {
+    provider: providerId,
+    providerName:
+      capability && capability.mode !== "service"
+        ? capability.label
+        : providerId,
+    own,
+  };
+  if (!capability || !hosts) {
+    return {
+      ...NO_CREDENTIAL,
+      kind: capability?.mode === "oauth_client" ? "oauth" : "api_key",
+      ...named,
+      state: "missing",
+    };
   }
-  if (block.auth.kind === "oauth") {
-    return { name: null, set: false, boundTo: null, state: "unsupported" };
+  if (capability.mode === "api_key") {
+    const names = capabilitySettings(capability);
+    const set = names.every((name) => isSet(name));
+    return {
+      ...NO_CREDENTIAL,
+      kind: "api_key",
+      ...named,
+      name: names[0] ?? null,
+      set,
+      state: !set
+        ? "not_set"
+        : registry.bound(providerId)
+          ? "ready"
+          : "bound_elsewhere",
+    };
   }
-  const name = block.auth.secret;
-  const set = isSet(name);
-  const boundTo = await McpAppRepository.findCredentialBinding(name);
-  let origin: string | null = null;
-  try {
-    origin = new URL(block.url).origin;
-  } catch {
-    origin = null;
+  if (capability.mode !== "oauth_client") {
+    return { ...NO_CREDENTIAL, kind: "api_key", ...named, state: "missing" };
   }
-  const state: McpAppCredential["state"] = !set
-    ? "not_set"
-    : boundTo === null
-      ? "set"
-      : boundTo === origin
-        ? "bound"
-        : "bound_elsewhere";
-  // Never another origin: the binding table is keyed by name across the
-  // whole Gateway, so on a hosted Gateway "elsewhere" can be another
-  // organization's server, which is not this one's to see.
-  return { name, set, boundTo: state === "bound" ? boundTo : null, state };
+  const [client, connections, row] = await Promise.all([
+    resolveOAuthClient({
+      id: providerId,
+      capability,
+      env: env as never,
+      lookup: registry,
+    }),
+    ProviderConnectionRepository.listByOrganization(ctx.orgId),
+    AppRepository.findByAppSlug(appSlug, ctx.orgId),
+  ]);
+  // The app's own connections: each member's, made in this app.
+  const ofApp = connections.filter(
+    (connection) =>
+      connection.providerId === providerId && connection.appRowId === row?.id,
+  );
+  const active = ofApp.filter((connection) => connection.status === "active");
+  const mine = ofApp.find((connection) => connection.userId === ctx.userId);
+  return {
+    ...NO_CREDENTIAL,
+    kind: "oauth",
+    ...named,
+    state: !client
+      ? "no_client"
+      : active.length > 0
+        ? "connected"
+        : "not_connected",
+    connections: active.length,
+    connectPath: remoteMcpConnectPath(providerId, appSlug),
+    viewer: mine ? { status: mine.status, label: mine.label } : null,
+  };
+}
+
+/** The command that sets a credential that needs setting: an API key's `secret set`. */
+async function credentialSetupCommand(
+  block: RemoteMcpBlock,
+  credential: McpAppCredential,
+): Promise<string | null> {
+  if (
+    credential.kind !== "api_key" ||
+    (credential.state !== "not_set" && credential.state !== "bound_elsewhere")
+  ) {
+    return null;
+  }
+  if (block.auth.kind !== "provider") return null;
+  const capability = (await gatewayProviders()).get(block.auth.provider);
+  return capability ? apiKeySetupCommand(capability) : null;
+}
+
+/**
+ * For any member: whether an OAuth MCP app is connected for them (their
+ * own connection, made in the app) and where they connect it. Null for a built-in, a removed app, or an app
+ * whose credential isn't an OAuth provider. Never a token.
+ */
+async function connection(
+  ctx: OrgContext,
+  input: { appId: string },
+): Promise<McpAppConnectionStatus | null> {
+  const row = await AppRepository.findByAppSlug(input.appId, ctx.orgId);
+  if (!row || row.status === DELETED_APP_STATUS) return null;
+  const block = remoteMcpBlockOf(row);
+  if (!block || block.auth.kind !== "provider") return null;
+  const providerId = block.auth.provider;
+  const capability = (await gatewayProviders()).get(providerId);
+  if (capability?.mode !== "oauth_client") return null;
+  const found = await ProviderConnectionRepository.find({
+    organizationId: ctx.orgId,
+    providerId,
+    userId: ctx.userId,
+    appRowId: row.id,
+  });
+  return {
+    providerName: capability.label,
+    connectPath: remoteMcpConnectPath(providerId, row.appSlug),
+    connection: found ? { status: found.status, label: found.label } : null,
+  };
 }
 
 /**
@@ -634,7 +1067,7 @@ async function get(
     };
   }
   const [credential, rows] = await Promise.all([
-    credentialOf(block),
+    credentialOf(ctx, block, row.appSlug),
     McpAppRepository.findListedTools(row.id, ctx.orgId),
   ]);
   const current = snapshotIsCurrent(catalog?.versionId, block);
@@ -692,17 +1125,14 @@ async function get(
     remote: block,
     origin,
     authKind: block.auth.kind,
-    authLabel: remoteMcpAuthLabel(block.auth),
+    authLabel: remoteMcpAuthLabel(
+      block.auth,
+      block.auth.kind === "provider"
+        ? (await gatewayProviders()).get(block.auth.provider)
+        : undefined,
+    ),
     credential,
-    // Set but never pinned (`state: "set"`) needs the operator's `secret
-    // set` as much as unset: the Gateway pins nothing on first use.
-    setupCommand:
-      credential.name &&
-      (credential.state === "not_set" ||
-        credential.state === "set" ||
-        credential.state === "bound_elsewhere")
-        ? secretSetCommand(credential.name)
-        : null,
+    setupCommand: await credentialSetupCommand(block, credential),
     snapshot,
     tools,
   };
@@ -715,4 +1145,5 @@ export const McpAppService = {
   remove,
   refreshTools,
   get,
+  connection,
 } as const;

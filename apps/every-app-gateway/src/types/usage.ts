@@ -46,6 +46,13 @@ export interface UsageAppRow extends UsageTotals {
    * it spent in, and cannot be capped.
    */
   callable: boolean;
+  /**
+   * Whether the app is metered: caps, cap checks and cap alerts apply. A
+   * remote MCP app (an MCP server added by URL) is not: its calls are
+   * counted and shown, never capped (the Usage page says "Not metered"),
+   * and its caps read as none whatever the defaults.
+   */
+  metered: boolean;
 }
 
 export interface UsageMemberRow extends UsageTotals {

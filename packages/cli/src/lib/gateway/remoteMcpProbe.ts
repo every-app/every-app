@@ -11,7 +11,15 @@
  * isn't a JSON-RPC result, one POST of a 2025 `initialize`. Answers are
  * read as JSON or as SSE (`data:` lines), capped. No redirect is followed,
  * as the Gateway follows none. 10 seconds in all.
+ *
+ * A 401's `WWW-Authenticate: Bearer resource_metadata=…` is what tells
+ * `mcp add` the server signs in with OAuth (the MCP authorization spec);
+ * the challenge's metadata URL and scope are kept for discovery. Given a
+ * `credential` (the headers and query parameters a static key becomes),
+ * the same look checks the key once `mcp add` set it: `listTools` then
+ * completes a 2025 server's session to count its tools.
  */
+import { parseWwwAuthenticate } from "@every-app/sdk/internal";
 
 /** The protocol revision the ToolBus serves and the probe asks for first. */
 const MODERN_ERA = "2026-07-28";
@@ -24,8 +32,11 @@ const BODY_CAP_BYTES = 1024 * 1024;
 export type RemoteMcpProbe =
   /** It answered MCP without a credential. `tools` only when the modern era listed them. */
   | { outcome: "reachable"; era: string; tools: number | null; server: string | null }
-  /** 401 or 403: it wants a credential; `oauth` when its challenge names `resource_metadata`. */
-  | { outcome: "needs-credential"; status: number; oauth: boolean }
+  /**
+   * 401 or 403: it wants a credential; `oauth` when its Bearer challenge
+   * names `resource_metadata` (kept as `resourceMetadata`, with its `scope`).
+   */
+  | { outcome: "needs-credential"; status: number; oauth: boolean; resourceMetadata?: string; scope?: string }
   /** A 3xx: the Gateway follows no redirects. */
   | { outcome: "redirected"; status: number; location: string | null }
   /** No answer, or not an MCP answer. */
@@ -38,6 +49,18 @@ interface ProbeOptions {
   fetch?: typeof fetch;
   /** The whole probe's budget (tests shorten it). */
   timeoutMs?: number;
+  /** A static credential to send: headers to set, query parameters to add to the URL. */
+  credential?: { headers: Record<string, string>; query: Record<string, string> };
+  /** Count a 2025 server's tools too: `notifications/initialized`, then `tools/list` in its session. */
+  listTools?: boolean;
+}
+
+/** The URL with a credential's query parameters added. */
+function withQuery(url: string, query: Record<string, string>): string {
+  if (Object.keys(query).length === 0) return url;
+  const target = new URL(url);
+  for (const [name, value] of Object.entries(query)) target.searchParams.set(name, value);
+  return target.toString();
 }
 
 /** Look at `url` once, without a credential. Never throws. */
@@ -45,9 +68,15 @@ export async function probeRemoteMcp(url: string, options: ProbeOptions): Promis
   const fetcher = options.fetch ?? fetch;
   const deadline = AbortSignal.timeout(options.timeoutMs ?? PROBE_TIMEOUT_MS);
   const clientInfo = { name: "everyapp-cli", version: options.version };
+  const credential = options.credential?.headers ?? {};
+  try {
+    url = withQuery(url, options.credential?.query ?? {});
+  } catch {
+    return { outcome: "unreachable", reason: "the URL doesn't parse" };
+  }
   try {
     const listed = await post(fetcher, url, deadline, {
-      headers: { "mcp-protocol-version": MODERN_ERA, "mcp-method": "tools/list" },
+      headers: { ...credential, "mcp-protocol-version": MODERN_ERA, "mcp-method": "tools/list" },
       body: {
         jsonrpc: "2.0",
         id: 1,
@@ -74,7 +103,7 @@ export async function probeRemoteMcp(url: string, options: ProbeOptions): Promis
       };
     }
     const initialized = await post(fetcher, url, deadline, {
-      headers: {},
+      headers: { ...credential },
       body: {
         jsonrpc: "2.0",
         id: 2,
@@ -86,10 +115,19 @@ export async function probeRemoteMcp(url: string, options: ProbeOptions): Promis
     const init = initialized.message ? resultOf(initialized.message) : null;
     if (init && typeof init["protocolVersion"] === "string") {
       const info = record(init["serverInfo"]);
+      const era = init["protocolVersion"];
+      const tools = options.listTools
+        ? await legacyToolCount(fetcher, url, deadline, {
+            ...credential,
+            "mcp-protocol-version": era,
+            ...(initialized.session ? { "mcp-session-id": initialized.session } : {}),
+          })
+        : null;
+      if (tools !== null && typeof tools === "object") return tools;
       return {
         outcome: "reachable",
-        era: init["protocolVersion"],
-        tools: null,
+        era,
+        tools,
         server: typeof info?.["name"] === "string" ? info["name"] : null,
       };
     }
@@ -99,10 +137,36 @@ export async function probeRemoteMcp(url: string, options: ProbeOptions): Promis
   }
 }
 
+/**
+ * A 2025 server's tool count, in the session `initialize` opened: the
+ * `notifications/initialized` it waits for, then one `tools/list`. Null
+ * when it doesn't answer a list; the probe's classification when the
+ * list is refused (a 401 or 403 there means the credential wasn't taken).
+ */
+async function legacyToolCount(
+  fetcher: typeof fetch,
+  url: string,
+  signal: AbortSignal,
+  headers: Record<string, string>,
+): Promise<number | null | RemoteMcpProbe> {
+  const notified = await post(fetcher, url, signal, {
+    headers,
+    body: { jsonrpc: "2.0", method: "notifications/initialized" },
+  });
+  if (notified.kind === "final") return notified.probe;
+  const listed = await post(fetcher, url, signal, {
+    headers,
+    body: { jsonrpc: "2.0", id: 3, method: "tools/list", params: {} },
+  });
+  if (listed.kind === "final") return listed.probe;
+  const result = listed.message ? resultOf(listed.message) : null;
+  return result && Array.isArray(result["tools"]) ? result["tools"].length : null;
+}
+
 /** What one POST came to: a classification that ends the probe, or a body to read. */
 type Answer =
   | { kind: "final"; probe: RemoteMcpProbe }
-  | { kind: "message"; status: number; message: Record<string, unknown> | null };
+  | { kind: "message"; status: number; message: Record<string, unknown> | null; session: string | null };
 
 async function post(
   fetcher: typeof fetch,
@@ -130,17 +194,29 @@ async function post(
   }
   if (response.status === 401 || response.status === 403) {
     await response.body?.cancel().catch(() => undefined);
-    const challenge = response.headers.get("www-authenticate") ?? "";
+    const challenge = parseWwwAuthenticate(response.headers.get("www-authenticate"));
     return {
       kind: "final",
-      probe: { outcome: "needs-credential", status: response.status, oauth: /resource_metadata\s*=/i.test(challenge) },
+      probe: {
+        outcome: "needs-credential",
+        status: response.status,
+        oauth: Boolean(challenge?.resourceMetadata),
+        ...(challenge?.resourceMetadata ? { resourceMetadata: challenge.resourceMetadata } : {}),
+        ...(challenge?.scope ? { scope: challenge.scope } : {}),
+      },
     };
   }
+  const session = response.headers.get("mcp-session-id");
   const id = request.body["id"];
+  if (id === undefined) {
+    // A notification: nothing to read but that it was taken.
+    await response.body?.cancel().catch(() => undefined);
+    return { kind: "message", status: response.status, message: null, session };
+  }
   const text = await readCapped(response);
   const type = (response.headers.get("content-type") ?? "").toLowerCase();
   const message = type.includes("text/event-stream") ? sseMessage(text, id) : jsonMessage(text);
-  return { kind: "message", status: response.status, message };
+  return { kind: "message", status: response.status, message, session };
 }
 
 /** The body as text, at most {@link BODY_CAP_BYTES}. */

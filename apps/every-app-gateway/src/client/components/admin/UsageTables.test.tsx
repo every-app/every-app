@@ -47,6 +47,7 @@ function row(name: string, overrides: Partial<UsageAppRow> = {}): UsageAppRow {
     costCapSource: null,
     paused: false,
     callable: true,
+    metered: true,
     ...overrides,
   };
 }
@@ -183,5 +184,11 @@ it("shows a past month's cap alone, its source kept, with no bar", () => {
 it("gives a deleted app neither a cap nor a button", () => {
   render([row("Gone", { callable: false, appSlug: "gone" })]);
   expect(capCells()).toEqual([""]);
+  expect(container.querySelector("tbody button")).toBeNull();
+});
+
+it("reads Not metered with no button for an MCP server added by URL, even under a default", () => {
+  render([row("Treg", { metered: false })], { hasDefault: true });
+  expect(capCells()).toEqual(["Not metered"]);
   expect(container.querySelector("tbody button")).toBeNull();
 });

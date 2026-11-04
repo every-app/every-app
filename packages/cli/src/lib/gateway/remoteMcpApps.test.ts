@@ -3,9 +3,12 @@
  * on SQLite through `cf d1 query` as the CLI sends it: add (new, revived,
  * every refusal), on and off, remove, the refusals for ids that aren't MCP
  * apps, refresh, one tool's override, what `show` reads, the state `list`
- * gives, the credential's pin to its origin, and the `mcp_app.*` event each
- * change queues.
+ * gives from each credential (none, a key set or not and set for its
+ * hosts or not, OAuth with its connections, a registration from before
+ * provider credentials), and the `mcp_app.*` event each change queues.
  */
+import { planRemoteMcpProviderRow } from "@every-app/perimeter/registry";
+import { mcpStaticProviderSpec, type Capability } from "@every-app/sdk/internal";
 import { beforeEach, describe, expect, it } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
 import { FakeCf } from "@/lib/cf/fakeCf";
@@ -18,19 +21,21 @@ import {
 import { register, type Deployer } from "./registry";
 import {
   addRemoteMcpApp,
-  bindRemoteMcpCredentials,
+  credentialReady,
+  connectionKey,
+  credentialState,
   listMcpApps,
   mcpAppState,
-  readCredentialBindings,
+  readCredentialContext,
   readMcpAppDetail,
   refreshMcpAppTools,
-  remoteMcpCredentialNames,
+  remoteMcpProviderUses,
   remoteMcpTables,
   removeMcpApp,
   resolveMcpApp,
   setMcpAppStatus,
   setRemoteMcpTool,
-  unbindRemoteMcpCredentials,
+  type CredentialContext,
   type RemoteMcpAddInput,
 } from "./remoteMcpApps";
 
@@ -54,10 +59,19 @@ beforeEach(async () => {
 
 const db = () => cfD1Database(cf, DB_ID);
 
+/** The capability of treg's own static row (`treg-mcp`), as `mcp add` would plan it. */
+function tregRow(): Capability {
+  const built = mcpStaticProviderSpec({ appId: "treg", name: "treg", url: "https://treg.to/mcp/", kind: "bearer" });
+  if (!built.ok) throw new Error(built.problem);
+  return planRemoteMcpProviderRow({ appId: "treg", spec: built.spec, existing: null }).capability;
+}
+const lookupProvider = (id: string) => (id === "treg-mcp" ? tregRow() : undefined);
+
 const add = (overrides: Partial<RemoteMcpAddInput> = {}) =>
   addRemoteMcpApp(db(), {
     url: "https://treg.to/mcp/",
-    auth: { kind: "bearer" },
+    auth: { kind: "provider" },
+    lookupProvider,
     env: ENV,
     deployer: BEN,
     organizationName: "Acme",
@@ -135,11 +149,12 @@ describe("addRemoteMcpApp", () => {
       description: expect.stringContaining("https://treg.to"),
       remote: {
         url: "https://treg.to/mcp/",
-        auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
+        auth: { kind: "provider", provider: "treg-mcp" },
         risk: "annotations",
         tools: {},
         rev: 1,
       },
+      capabilities: { "treg-mcp": expect.objectContaining({ access: "read" }) },
     });
     expect(grantees("treg")).toEqual([]);
   });
@@ -154,10 +169,13 @@ describe("addRemoteMcpApp", () => {
       code: "REMOTE_MCP_URL_REFUSED",
     });
     await expect(add({ id: "dataforseo" })).rejects.toMatchObject({ code: "REMOTE_MCP_INVALID" });
-    // A credential name another live app sends to another origin.
+    // A provider whose hosts aren't the URL's, and a block from before provider credentials.
     await expect(
-      add({ url: "https://other.example.org/mcp", id: "other", auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" } }),
-    ).rejects.toMatchObject({ code: "REMOTE_MCP_SECRET_TAKEN" });
+      add({ url: "https://other.example.org/mcp", id: "other", auth: { kind: "provider", provider: "treg-mcp" } }),
+    ).rejects.toMatchObject({ code: "REMOTE_MCP_PROVIDER_HOST" });
+    await expect(
+      add({ url: "https://other.example.org/mcp", id: "other", auth: { kind: "bearer", secret: "OTHER_MCP_TOKEN" } }),
+    ).rejects.toMatchObject({ code: "REMOTE_MCP_INVALID", message: expect.stringContaining("predates provider credentials") });
     expect(row("other")).toBeUndefined();
     await register(db(), {
       appSlug: "crm",
@@ -168,7 +186,7 @@ describe("addRemoteMcpApp", () => {
       deployer: BEN,
       organizationName: "Acme",
     });
-    await expect(add({ url: "https://crm.example.org/mcp", id: "crm" })).rejects.toMatchObject({
+    await expect(add({ url: "https://crm.example.org/mcp", id: "crm", auth: { kind: "none" } })).rejects.toMatchObject({
       code: "APP_TIER_MISMATCH",
     });
   });
@@ -194,14 +212,13 @@ describe("addRemoteMcpApp", () => {
 });
 
 describe("on, off and remove", () => {
-  it("turns a remote app off and on by status, and removes it with its listing, keeping the credential's pin", async () => {
+  it("turns a remote app off and on by status, and removes it with its listing", async () => {
     const { organization, plan } = await add();
     addUser("ben", organization.id);
     sqlite.sqlite
       .prepare("INSERT INTO user_app_access (id, user_id, app_row_id, organization_id) VALUES ('g1', 'ben', ?, ?)")
       .run(plan.app.id, organization.id);
     seedListing("treg");
-    await bindRemoteMcpCredentials(db(), ["TREG_MCP_TOKEN"], "ben@example.com", NOW);
     const ref = await resolveMcpApp(db(), "treg");
     expect(ref).toMatchObject({ kind: "remote", id: "treg", app: { status: "active" } });
 
@@ -220,9 +237,6 @@ describe("on, off and remove", () => {
     expect(grantees("treg")).toEqual([]);
     expect(sqlite.all("SELECT * FROM remote_mcp_tools")).toEqual([]);
     expect(sqlite.all("SELECT * FROM app_tools")).toEqual([]);
-    expect(sqlite.all("SELECT name, origin FROM remote_mcp_credentials")).toEqual([
-      { name: "TREG_MCP_TOKEN", origin: "https://treg.to" },
-    ]);
     expect(await removeMcpApp(db(), (await resolveMcpApp(db(), "treg")).app, BEN, NOW + 3)).toEqual({ removed: false });
     // The tombstone still resolves, so on and show can say how to add it again.
     expect(await resolveMcpApp(db(), "treg")).toMatchObject({ kind: "remote", app: { status: "deleted" } });
@@ -362,75 +376,106 @@ describe("readMcpAppDetail", () => {
   });
 });
 
-describe("listMcpApps and mcpAppState", () => {
-  it("lists the built-ins, then each live remote app, with its state against the Gateway's names and pins", async () => {
+describe("listMcpApps, credentialState and mcpAppState", () => {
+  /** A context with treg's own row, its key set or not and bound or not, and no connections. */
+  const context = (names: string[], bound = true): CredentialContext => ({
+    gatewayNames: names,
+    registry: { get: (id) => lookupProvider(id), ids: () => ["treg-mcp"], bound: () => bound },
+    connections: new Map(),
+    uploadedClients: new Set(),
+  });
+
+  it("lists the built-ins, then each live remote app, with its credential and state", async () => {
     await add();
     await add({ url: "https://deepwiki.com/mcp", auth: { kind: "none" } });
     seedListing("treg");
     const entries = await listMcpApps(db());
-    expect(entries.map((entry) => [entry.id, entry.kind, entry.keyName])).toEqual([
-      ["dataforseo", "builtin", "DATAFORSEO_API_KEY"],
-      ["deepwiki", "remote", null],
-      ["treg", "remote", "TREG_MCP_TOKEN"],
+    expect(entries.map((entry) => [entry.id, entry.kind, entry.keyName, entry.problem])).toEqual([
+      ["dataforseo", "builtin", "DATAFORSEO_API_KEY", null],
+      ["deepwiki", "remote", null, null],
+      ["treg", "remote", null, null],
     ]);
     expect(entries[2]!.snapshot).toMatchObject({ toolCount: 2 });
-    const state = (id: string, names: string[], pins = new Map()) =>
-      mcpAppState(entries.find((entry) => entry.id === id)!, names, pins);
-    expect(state("dataforseo", [])).toBe("not added");
-    expect(state("deepwiki", [])).toBe("on");
-    expect(state("treg", [])).toBe("needs setup");
-    expect(state("treg", ["TREG_MCP_TOKEN"])).toBe("on");
-    expect(
-      state("treg", ["TREG_MCP_TOKEN"], new Map([["TREG_MCP_TOKEN", { origin: "https://elsewhere.example", boundBy: null, boundAt: null }]])),
-    ).toBe("needs setup");
-  });
-});
-
-describe("the credential's pin", () => {
-  it("pins a set credential to the origin of the live app that declares it, and drops the pin on unset", async () => {
-    await add();
-    expect(await remoteMcpTables(db())).toEqual({ credentials: true, tools: true });
-    expect(await bindRemoteMcpCredentials(db(), ["TREG_MCP_TOKEN", "OPENAI_API_KEY", "LOST_MCP_TOKEN"], "ben@example.com", NOW)).toEqual({
-      bound: [{ name: "TREG_MCP_TOKEN", origin: "https://treg.to" }],
-      undeclared: [{ name: "LOST_MCP_TOKEN", kept: null }],
-      ambiguous: [],
+    const entry = (id: string) => entries.find((each) => each.id === id)!;
+    const state = (id: string, ctx: CredentialContext) =>
+      mcpAppState(entry(id), ctx.gatewayNames, entry(id).kind === "remote" ? credentialState(entry(id).remote, entry(id).problem, ctx, id) : null);
+    expect(state("dataforseo", context([]))).toBe("not added");
+    expect(state("deepwiki", context([]))).toBe("on");
+    expect(credentialState(entry("treg").remote, null, context([]), "treg")).toEqual({
+      kind: "key",
+      provider: "treg-mcp",
+      setting: "TREG_MCP_TOKEN",
+      set: false,
+      bound: true,
     });
-    expect([...(await readCredentialBindings(db()))]).toEqual([
-      ["TREG_MCP_TOKEN", { origin: "https://treg.to", boundBy: "ben@example.com", boundAt: NOW }],
-    ]);
-    // Set again after the app is gone: the old pin stays.
-    await removeMcpApp(db(), (await resolveMcpApp(db(), "treg")).app, BEN, NOW);
-    expect((await bindRemoteMcpCredentials(db(), ["TREG_MCP_TOKEN"], "ben@example.com", NOW + 1)).undeclared).toEqual([
-      { name: "TREG_MCP_TOKEN", kept: "https://treg.to" },
-    ]);
-    expect(await unbindRemoteMcpCredentials(db(), ["TREG_MCP_TOKEN", "OPENAI_API_KEY"])).toEqual(["TREG_MCP_TOKEN"]);
-    expect(await readCredentialBindings(db())).toEqual(new Map());
+    expect(state("treg", context([]))).toBe("needs setup");
+    expect(state("treg", context(["TREG_MCP_TOKEN"]))).toBe("on");
+    // Set, but for the hosts and auth an earlier spec had: the pin.
+    expect(state("treg", context(["TREG_MCP_TOKEN"], false))).toBe("needs setup");
   });
 
-  it("pins nothing when live apps at two origins declare the name (a row edited by hand)", async () => {
-    await add();
-    await add({ url: "https://two.example.org/mcp", id: "two", auth: { kind: "bearer", secret: "TWO_MCP_TOKEN" } });
-    const manifest = manifestOf("two");
-    manifest.remote.auth.secret = "TREG_MCP_TOKEN";
-    sqlite.sqlite.prepare("UPDATE apps SET manifest = ? WHERE app_slug = 'two'").run(JSON.stringify(manifest));
-    expect(await remoteMcpCredentialNames(db())).toEqual(new Map([["TREG_MCP_TOKEN", ["treg", "two"]]]));
-    expect(await bindRemoteMcpCredentials(db(), ["TREG_MCP_TOKEN"], "ben@example.com", NOW)).toMatchObject({
-      bound: [],
-      ambiguous: [{ name: "TREG_MCP_TOKEN", origins: ["https://treg.to", "https://two.example.org"] }],
-    });
+  it("reads a registration from before provider credentials as needing setup, saying why", async () => {
+    await add({ url: "https://deepwiki.com/mcp", auth: { kind: "none" } });
+    const manifest = manifestOf("deepwiki");
+    manifest.remote.auth = { kind: "bearer", secret: "DEEPWIKI_MCP_TOKEN" };
+    sqlite.sqlite.prepare("UPDATE apps SET manifest = ? WHERE app_slug = 'deepwiki'").run(JSON.stringify(manifest));
+    const old = (await listMcpApps(db())).find((each) => each.id === "deepwiki")!;
+    expect(old.remote).toBeNull();
+    expect(old.problem).toContain("predates provider credentials");
+    const credential = credentialState(old.remote, old.problem, context([]), "deepwiki");
+    expect(credential).toEqual({ kind: "predates", problem: expect.stringContaining("predates provider credentials") });
+    expect(mcpAppState(old, [], credential)).toBe("needs setup");
   });
 
-  it("does nothing on a Gateway whose D1 predates migration 0011", async () => {
-    sqlite.sqlite.exec("DROP TABLE remote_mcp_credentials; DROP TABLE remote_mcp_tools;");
-    expect(await remoteMcpTables(db())).toEqual({ credentials: false, tools: false });
-    await add();
-    expect(await bindRemoteMcpCredentials(db(), ["TREG_MCP_TOKEN"], "ben@example.com")).toEqual({
-      bound: [],
-      undeclared: [],
-      ambiguous: [],
+  it("counts an OAuth provider's connections made in the app, and is ready with a client and one connection", () => {
+    const oauth = { mode: "oauth_client", label: "Linear", secrets: { clientId: "LINEAR_MCP_CLIENT_ID" }, api: ["mcp.linear.app"] } as unknown as Capability;
+    const ctx = (connections: CredentialContext["connections"], names = ["LINEAR_MCP_CLIENT_ID"]): CredentialContext => ({
+      gatewayNames: names,
+      registry: { get: () => oauth, ids: () => ["linear-mcp"], bound: () => true },
+      connections,
+      uploadedClients: new Set(),
     });
-    expect(await unbindRemoteMcpCredentials(db(), ["TREG_MCP_TOKEN"])).toEqual([]);
-    expect(await readCredentialBindings(db())).toEqual(new Map());
+    const block = () => ({
+      url: "https://mcp.linear.app/mcp",
+      auth: { kind: "provider" as const, provider: "linear-mcp" },
+      risk: "annotations" as const,
+      tools: {},
+      rev: 1,
+    });
+    const people = new Map([[connectionKey("linear-mcp", "linear"), ["a@example.com", "b@example.com"]]]);
+    const member = credentialState(block(), null, ctx(people), "linear");
+    expect(member).toMatchObject({ kind: "oauth", connected: 2, people: ["a@example.com", "b@example.com"] });
+    expect(credentialReady(member)).toBe(true);
+    // Connections made in another app don't count.
+    expect(credentialReady(credentialState(block(), null, ctx(people), "other"))).toBe(false);
+    expect(credentialReady(credentialState(block(), null, ctx(new Map()), "linear"))).toBe(false);
+    expect(credentialReady(credentialState(block(), null, ctx(people, []), "linear"))).toBe(false);
+    expect(credentialState({ ...block(), auth: { kind: "provider", provider: "gone" } }, null, { ...ctx(people), registry: { get: () => undefined, ids: () => [], bound: () => false } }, "linear")).toEqual({ kind: "missing", provider: "gone" });
+  });
+
+  it("reads the context from the Gateway: its rows, the organization's active connections, the uploaded clients", async () => {
+    const { organization } = await add({ url: "https://deepwiki.com/mcp", auth: { kind: "none" } });
+    addUser("ben", organization.id);
+    sqlite.sqlite.exec(
+      `INSERT INTO provider_connections (id, organization_id, provider_id, user_id, app_row_id, label, scopes, access_token_enc, status, created_at, updated_at)
+       VALUES ('c1', '${organization.id}', 'linear-mcp', 'ben', (SELECT id FROM apps WHERE app_slug = 'deepwiki'), 'Ben', '[]', 'x', 'active', 0, 0),
+              ('c2', '${organization.id}', 'linear-mcp', 'old', (SELECT id FROM apps WHERE app_slug = 'deepwiki'), 'Old', '[]', 'x', 'revoked', 0, 0)`,
+    );
+    const read = await readCredentialContext(db(), { gatewayHost: "gw.example.com", appBaseDomain: "gw.example.com" }, ["X"]);
+    expect([...read.connections]).toEqual([[connectionKey("linear-mcp", "deepwiki"), ["ben@example.com"]]]);
+    expect(read.gatewayNames).toEqual(["X"]);
+  });
+
+  it("names the provider each live remote app uses, for secret list", async () => {
+    await add();
+    await add({ url: "https://deepwiki.com/mcp", auth: { kind: "none" } });
+    expect(await remoteMcpProviderUses(db())).toEqual(new Map([["treg-mcp", ["treg"]]]));
+  });
+
+  it("works on a Gateway whose D1 predates migration 0011's listing", async () => {
+    sqlite.sqlite.exec("DROP TABLE remote_mcp_tools;");
+    expect(await remoteMcpTables(db())).toEqual({ tools: false });
+    await add();
     expect(await removeMcpApp(db(), (await resolveMcpApp(db(), "treg")).app, BEN)).toEqual({ removed: true });
   });
 });

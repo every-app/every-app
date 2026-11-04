@@ -2,9 +2,9 @@
 /**
  * "Add an MCP server" in the Add app chooser, rendered for real (React in
  * a DOM): the row sits between the four apps and Build your own, the form
- * checks the credential's name as typed with the shared rule, sends the
- * server function the shape it reads, shows a refusal in the rule's own
- * words, and once added says what to do next.
+ * offers every credential kind, sends the server function the shape it
+ * reads, asks for a client when the server can't register one, shows a
+ * refusal in the rule's own words, and once added says what to do next.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -13,9 +13,24 @@ import type { AddedRemoteMcpApp } from "@/types/mcpApp";
 
 const mocks = vi.hoisted(() => ({
   addRemoteMcpApp: vi.fn(),
+  listProviders: vi.fn(async () => ({
+    providers: [
+      { id: "elevenlabs", name: "ElevenLabs", kind: "api_key" },
+      { id: "openai", name: "OpenAI", kind: "ai" },
+      {
+        id: "linear",
+        name: "Linear",
+        kind: "oauth",
+        oauth: { flow: "gateway" },
+      },
+    ],
+  })),
 }));
 vi.mock("@/serverFunctions/mcpApps", () => ({
   addRemoteMcpApp: mocks.addRemoteMcpApp,
+}));
+vi.mock("@/serverFunctions/providers", () => ({
+  listProviders: mocks.listProviders,
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -41,8 +56,12 @@ function added(overrides: Partial<AddedRemoteMcpApp> = {}): AddedRemoteMcpApp {
     name: "treg",
     kind: "new",
     authKind: "none",
+    credentialKind: "none",
+    provider: null,
     secret: null,
     setupCommand: null,
+    connectPath: null,
+    oauth: null,
     toolCount: 12,
     toolsStatus: "ok",
     ...overrides,
@@ -149,8 +168,8 @@ describe("the Add an MCP server form", () => {
     ]) {
       expect(field(label)).toBeTruthy();
     }
-    // No credential to name until a kind takes one.
-    expect(text()).not.toContain(COPY.secretLabel);
+    // Nothing more to fill in until a kind takes it.
+    expect(text()).not.toContain(COPY.headerLabel);
     await type(COPY.urlLabel, "https://mcp.deepwiki.com/mcp");
     expect(field(COPY.nameLabel).getAttribute("placeholder")).toBe("deepwiki");
     expect(text()).toContain(COPY.nameHelp("deepwiki"));
@@ -160,27 +179,13 @@ describe("the Add an MCP server form", () => {
     expect(text()).toContain(FIRST_SCREEN.addApp.dialogTitle);
   });
 
-  it("prefills the credential's name from the app's and checks an edited one with the shared rule", async () => {
+  it("names the Gateway setting a static credential's value goes in, from the app's id", async () => {
     await openForm();
     await type(COPY.urlLabel, "https://treg.to/mcp/");
     await choose(COPY.credentialLabel, "Bearer token");
-    const secret = field(COPY.secretLabel) as HTMLInputElement;
-    expect(secret.value).toBe("TREG_MCP_TOKEN");
-    // Follows the name until edited.
+    expect(text()).toContain(COPY.tokenSettingHelp("TREG_MCP_TOKEN"));
     await type(COPY.nameLabel, "my-docs");
-    expect((field(COPY.secretLabel) as HTMLInputElement).value).toBe(
-      "MY_DOCS_MCP_TOKEN",
-    );
-
-    await type(COPY.secretLabel, "OPENAI_API_KEY");
-    expect(text()).toContain(
-      "The credential's name must end in _MCP_TOKEN (letters, digits and underscores), like TREG_MCP_TOKEN.",
-    );
-    await press(button(COPY.submit));
-    expect(mocks.addRemoteMcpApp).not.toHaveBeenCalled();
-
-    await type(COPY.secretLabel, "DOCS_MCP_TOKEN");
-    expect(text()).not.toContain("must end in _MCP_TOKEN");
+    expect(text()).toContain(COPY.tokenSettingHelp("MY_DOCS_MCP_TOKEN"));
   });
 
   it("refuses an empty URL and a name the rule refuses before sending anything", async () => {
@@ -201,7 +206,9 @@ describe("the Add an MCP server form", () => {
       added({
         appId: "docs",
         name: "docs",
-        authKind: "header",
+        authKind: "provider",
+        credentialKind: "header",
+        provider: "docs-mcp",
         secret: "DOCS_MCP_TOKEN",
         setupCommand: "pnpm everyapp secret set DOCS_MCP_TOKEN",
         toolCount: null,
@@ -219,7 +226,7 @@ describe("the Add an MCP server form", () => {
       data: {
         url: "https://docs.example.org/mcp",
         id: "docs",
-        auth: { kind: "header", secret: "DOCS_MCP_TOKEN", header: "X-Api-Key" },
+        auth: { kind: "header", header: "X-Api-Key" },
         risk: "read",
       },
     });
@@ -230,7 +237,9 @@ describe("the Add an MCP server form", () => {
     mocks.addRemoteMcpApp.mockResolvedValue(
       added({
         name: "Treg",
-        authKind: "bearer",
+        authKind: "provider",
+        credentialKind: "bearer",
+        provider: "treg-mcp",
         secret: "TREG_MCP_TOKEN",
         setupCommand: "pnpm everyapp secret set TREG_MCP_TOKEN",
         toolCount: null,
@@ -244,7 +253,7 @@ describe("the Add an MCP server form", () => {
     expect(mocks.addRemoteMcpApp).toHaveBeenCalledWith({
       data: {
         url: "https://treg.to/mcp/",
-        auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
+        auth: { kind: "bearer" },
         risk: "annotations",
       },
     });
@@ -293,5 +302,108 @@ describe("the Add an MCP server form", () => {
     expect(alert?.textContent).toContain("The URL must be https://.");
     // Still the form, to fix and try again.
     expect(field(COPY.urlLabel)).toBeTruthy();
+  });
+
+  it("sends a query parameter's name", async () => {
+    mocks.addRemoteMcpApp.mockResolvedValue(added());
+    await openForm();
+    await type(COPY.urlLabel, "https://treg.to/mcp/");
+    await choose(COPY.credentialLabel, "Query parameter");
+    await press(button(COPY.submit));
+    expect(text()).toContain(COPY.errors.param);
+    expect(mocks.addRemoteMcpApp).not.toHaveBeenCalled();
+    await type(COPY.paramLabel, "api_key");
+    await press(button(COPY.submit));
+    expect(mocks.addRemoteMcpApp).toHaveBeenCalledWith({
+      data: {
+        url: "https://treg.to/mcp/",
+        auth: { kind: "query", param: "api_key" },
+        risk: "annotations",
+      },
+    });
+  });
+
+  it("offers the registry's API-key and OAuth providers", async () => {
+    mocks.addRemoteMcpApp.mockResolvedValue(added());
+    await openForm();
+    await type(COPY.urlLabel, "https://mcp.linear.app/mcp");
+    await choose(COPY.credentialLabel, "Use a provider");
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    await act(async () => field(COPY.providerLabel).click());
+    await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+    const options = [...document.querySelectorAll('[role="option"]')].map(
+      (element) => element.textContent?.trim(),
+    );
+    // The API-key and OAuth providers, never an AI one.
+    expect(options).toContain("ElevenLabs (elevenlabs)");
+    expect(options).toContain("Linear (linear)");
+    expect(options.some((option) => option?.includes("openai"))).toBe(false);
+    const item = [...document.querySelectorAll('[role="option"]')].find(
+      (element) => element.textContent?.trim() === "Linear (linear)",
+    ) as HTMLElement;
+    await act(async () => item.click());
+    await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+    await press(button(COPY.submit));
+    expect(mocks.addRemoteMcpApp).toHaveBeenCalledWith({
+      data: {
+        url: "https://mcp.linear.app/mcp",
+        auth: { kind: "provider", provider: "linear" },
+        risk: "annotations",
+      },
+    });
+  });
+
+  it("asks for a client and shows the redirect URI when the server can't register one, then sends it", async () => {
+    mocks.addRemoteMcpApp.mockRejectedValueOnce(
+      Object.assign(
+        new Error(
+          "https://auth.treg.to doesn't offer dynamic client registration",
+        ),
+        { name: "PublicError", code: "REMOTE_MCP_OAUTH_NO_CLIENT" },
+      ),
+    );
+    await openForm();
+    await type(COPY.urlLabel, "https://treg.to/mcp/");
+    await choose(COPY.credentialLabel, "OAuth (sign in)");
+    await press(button(COPY.submit));
+    expect(mocks.addRemoteMcpApp).toHaveBeenLastCalledWith({
+      data: {
+        url: "https://treg.to/mcp/",
+        auth: { kind: "oauth" },
+        risk: "annotations",
+      },
+    });
+    expect(text()).toContain(COPY.clientIntro);
+    expect(text()).toContain(
+      `${window.location.origin}/connect/treg-mcp/callback`,
+    );
+    mocks.addRemoteMcpApp.mockResolvedValueOnce(
+      added({
+        authKind: "provider",
+        credentialKind: "oauth",
+        provider: "treg-mcp",
+        connectPath: "/connect/treg-mcp?app=treg&return=%2F%3Fmcp%3Dtreg",
+        oauth: { issuer: "https://auth.treg.to", registered: "pasted" },
+        toolCount: null,
+        toolsStatus: null,
+      }),
+    );
+    await type(COPY.clientIdLabel, "client-123");
+    await type(COPY.clientSecretLabel, "shh");
+    await press(button(COPY.submit));
+    expect(mocks.addRemoteMcpApp).toHaveBeenLastCalledWith({
+      data: {
+        url: "https://treg.to/mcp/",
+        auth: { kind: "oauth", clientId: "client-123", clientSecret: "shh" },
+        risk: "annotations",
+      },
+    });
+    expect(text()).toContain(MCP_APP_COPY.added.connectTitle("treg"));
+    const link = [...dialog().querySelectorAll("a")].find(
+      (element) => element.textContent?.trim() === MCP_APP_COPY.added.connect,
+    );
+    expect(link?.getAttribute("href")).toBe(
+      "/connect/treg-mcp?app=treg&return=%2F%3Fmcp%3Dtreg",
+    );
   });
 });

@@ -97,11 +97,7 @@ import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { readInstall, writeInstall, type InstallRecord } from "@/lib/gateway/install";
 import { acquireAppLease, acquireGatewayLease, LeasePurpose } from "@/lib/gateway/lease";
 import { bindProviderSettings, gatewayRegistry, providerRowsNaming } from "@/lib/gateway/providers";
-import {
-  bindRemoteMcpCredentials,
-  remoteMcpCredentialNames,
-  unbindRemoteMcpCredentials,
-} from "@/lib/gateway/remoteMcpApps";
+import { remoteMcpProviderUses } from "@/lib/gateway/remoteMcpApps";
 import { operatorActor, queueEventFromCli } from "@/lib/gateway/events";
 import {
   findRegisteredApp,
@@ -187,17 +183,10 @@ export async function list(flags: GatewayCommandFlags, appId?: string): Promise<
 /** `secret set`: every name routed, the Gateway reached and the app found, then each value read, then the changes applied. */
 export async function setSecrets(options: SetSecretsOptions): Promise<void> {
   const { applied, gatewayHost } = await applySecretValues(options);
-  // Where each remote MCP credential goes, said every time: the operator sees the origin it was pinned to.
-  const pins = (applied.gateway?.pinned ?? []).map(
-    ({ name, origin }) => `${name} is sent to ${origin} and nowhere else.`,
-  );
   options.out.emit({
     type: "done",
-    message: [`Set ${describe(applied, "on")}`, ...pins].join("\n"),
-    display: [
-      ...pins,
-      chalk.dim(applied.app ? "Live now. No deploy needed." : `Live now on ${gatewayHost}. No deploy needed.`),
-    ].join("\n"),
+    message: `Set ${describe(applied, "on")}`,
+    display: chalk.dim(applied.app ? "Live now. No deploy needed." : `Live now on ${gatewayHost}. No deploy needed.`),
     data: doneData(applied),
   });
 }
@@ -317,6 +306,45 @@ export async function applyGatewaySettings(
     providers: [],
   };
   return apply(reached, changes, options, removing ? SecretAction.Unset : SecretAction.Set);
+}
+
+/**
+ * Set settings a registered provider row holds from another command
+ * (`mcp add`: a remote MCP app's own `<APPID>_MCP_TOKEN`, or its OAuth
+ * client's `_MCP_CLIENT_ID` and `_SECRET`): `secret set`'s own path for
+ * a row's setting, so the same lease, one Gateway version, and the row
+ * bound to the hosts and auth it has now (`providers.value-bound-to-hosts`).
+ * Each name must be a catalog setting or one a row holds.
+ */
+export async function applyProviderSettings(
+  connection: Pick<
+    Awaited<ReturnType<typeof connectToGateway>>,
+    "cf" | "db" | "deployer" | "accountName" | "gatewayUrl" | "install" | "names"
+  >,
+  changes: Readonly<Record<string, string>>,
+  options: Pick<SecretOptions, "flags" | "out" | "announce">,
+): Promise<Applied> {
+  const names = Object.keys(changes);
+  const registry = await gatewayRegistry(connection.db, connection.install);
+  const providers = providerRowsNaming(registry, names);
+  const held = new Set(providers.flatMap((row) => capabilitySettings(row.capability)));
+  for (const name of names) {
+    if (!isSettableGatewaySetting(name) && !held.has(name)) throw new Error(`${name} isn't a Gateway setting`);
+  }
+  // Where each row's key goes, as secret set says it before a value is used.
+  sayWhereKeysGo(providers, names, options.out);
+  const reached: Reached = {
+    route: { gateway: names, app: null, undeclared: [] },
+    cf: connection.cf,
+    db: connection.db,
+    deployer: connection.deployer,
+    accountName: connection.accountName,
+    gatewayHost: connection.gatewayUrl.replace(/^https:\/\//, ""),
+    gatewayWorker: connection.names.worker,
+    app: null,
+    providers,
+  };
+  return (await apply(reached, changes, options, SecretAction.Set))!;
 }
 
 /**
@@ -462,12 +490,31 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
     const hosted = install.deploymentMode === "hosted";
     const relevant = settable.filter((name) => hosted || !isHostedOnlyGatewaySetting(name));
     const unset = relevant.filter((name) => !gatewayNames.includes(name));
-    // The credentials live remote MCP apps declare (`<ID>_MCP_TOKEN`), which
-    // no fixed list names: each unset one is listed beside the rest.
-    const credentials = await remoteMcpCredentialNames(db);
+    // The providers live remote MCP apps use (an app's own `<id>-mcp` row
+    // among them): each setting is named with the apps it serves.
+    const uses = await remoteMcpProviderUses(db);
+    const mcpCredentials = [...uses].flatMap(([provider, ids]) => {
+      const capability = registry.get(provider);
+      return capability
+        ? capabilitySettings(capability).map((name) => ({
+            name,
+            provider,
+            apps: ids,
+            set: gatewayNames.includes(name),
+            bound: registry.bound(provider),
+          }))
+        : [];
+    });
+    const servesMcp = (name: string): string => {
+      const apps = [...new Set(mcpCredentials.filter((each) => each.name === name).flatMap((each) => each.apps))];
+      return apps.length > 0 ? `  ${chalk.dim(`MCP: ${apps.join(", ")}`)}` : "";
+    };
+    const listedFirst = unset.filter((name) => read.has(name) || (hosted && isHostedOnlyGatewaySetting(name)));
     const listed = [
-      ...unset.filter((name) => read.has(name) || (hosted && isHostedOnlyGatewaySetting(name))),
-      ...[...credentials.keys()].filter((name) => !gatewayNames.includes(name)),
+      ...listedFirst,
+      ...[...new Set(mcpCredentials.map((each) => each.name))].filter(
+        (name) => !gatewayNames.includes(name) && !listedFirst.includes(name),
+      ),
     ];
     // The sign-in providers' settings no app reads: `signin list` shows them
     // by provider, so they are named by that line rather than counted here
@@ -485,7 +532,7 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
         // An MCP app has no Worker of its own: its key or credential is a
         // Gateway setting. Listed only while it needs setup, with the one
         // `secret set` that sets it up (`mcp list` shows them all).
-        const report = evaluateAppSettings(appSettings(app.manifest), (holder, name) =>
+        const report = evaluateAppSettings(appSettings(app.manifest, registry), (holder, name) =>
           holder === "gateway" ? gatewayNames.includes(name) : null,
         );
         if (report.ready) continue;
@@ -517,9 +564,9 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
         ...formatTable(
           ["NAME", "SET BY"],
           [
-            ...yours.map((name) => [name, "you"]),
+            ...yours.map((name) => [`${name}${servesMcp(name)}`, "you"]),
             ...setups.map((name) => [name, chalk.dim("setup")]),
-            ...listed.map((name) => [name, chalk.dim("not set")]),
+            ...listed.map((name) => [`${name}${servesMcp(name)}`, chalk.dim("not set")]),
           ],
         ),
         ...(more > 0 ? [chalk.dim(`${more} more can be set; see docs/capabilities.md`)] : []),
@@ -536,8 +583,8 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
           workerName: gatewayOwnNames.worker,
           names: gatewayNames,
           settable,
-          // Each remote MCP app credential name, the apps that declare it, and whether it is set.
-          mcpCredentials: [...credentials].map(([name, ids]) => ({ name, apps: ids, set: gatewayNames.includes(name) })),
+          // Each setting of a provider a remote MCP app uses: the provider, the apps, whether it is set, and set for its hosts.
+          mcpCredentials,
         },
         apps: apps.map(({ id, setup }) => ({ id, setup })),
       },
@@ -690,8 +737,6 @@ export interface Applied {
     versions: Record<string, string | null>;
     /** The registered providers whose key this set, now bound to their hosts. */
     bound?: string[];
-    /** Remote MCP credentials among `names`, each with the one origin the Gateway now sends it to. */
-    pinned?: Array<{ name: string; origin: string }>;
   };
   app?: {
     id: string;
@@ -1250,20 +1295,7 @@ async function apply(
           });
         }
         if (destination.step === "secrets.gateway") {
-          // A remote MCP app's credential is pinned to the origin it was set
-          // for. The value is live already: a pin that fails is said, and the
-          // Gateway pins an unpinned credential to its app's origin on first use.
-          const pinned = await pinRemoteMcpCredentials(db, names, removing, deployer.actor, out).catch(
-            (error: unknown) => {
-              out.emit({
-                type: "progress",
-                step: "secrets.pin",
-                message: `Couldn't record which origin ${listed(names)} ${names.length === 1 ? "is" : "are"} pinned to (${errorMessage(error).split("\n")[0]}); the Gateway pins it on first use`,
-              });
-              return [];
-            },
-          );
-          applied.gateway = { names, versions, ...(pinned.length > 0 ? { pinned } : {}) };
+          applied.gateway = { names, versions };
           // The Gateway reads a registered provider's key only for the hosts
           // and auth its row has now: record them (`providers.value-bound-to-hosts`).
           if (!removing && reached.providers.length > 0 && gatewayInstall) {
@@ -1305,54 +1337,6 @@ async function apply(
   } finally {
     await gatewayLease?.release();
   }
-}
-
-/**
- * After the Gateway's settings changed: pin each remote MCP app credential
- * among them (`<ID>_MCP_TOKEN`) to the origin of the live MCP app that
- * declares it (`remote_mcp_credentials`), or drop its pin when it was
- * removed. The Gateway sends a credential only to the origin it is pinned
- * to, so a row re-pointed by an owner or admin never takes it elsewhere.
- * Nothing on a Gateway whose D1 predates the table.
- */
-async function pinRemoteMcpCredentials(
-  db: D1Database,
-  names: readonly string[],
-  removing: boolean,
-  actor: string,
-  out: EventSink,
-): Promise<Array<{ name: string; origin: string }>> {
-  if (removing) {
-    for (const name of await unbindRemoteMcpCredentials(db, names)) {
-      out.emit({ type: "progress", step: "secrets.pin", message: `${name}'s pin to its MCP server's origin is gone` });
-    }
-    return [];
-  }
-  const result = await bindRemoteMcpCredentials(db, names, actor);
-  for (const { name, origin } of result.bound) {
-    out.emit({ type: "progress", step: "secrets.pin", message: `${name} is pinned to ${origin}` });
-  }
-  for (const { name, kept } of result.undeclared) {
-    out.emit({
-      type: "warning",
-      code: "REMOTE_MCP_SECRET_UNDECLARED",
-      step: "secrets.gateway",
-      message: kept
-        ? `No MCP app declares ${name} now\nIt stays pinned to ${kept}, where it was set before; the Gateway sends it nowhere else.`
-        : `No MCP app declares ${name}\nThe Gateway pins it to the first MCP app that uses it.`,
-      data: { name, pinnedTo: kept, fix: `${CLI} mcp add <url> --secret ${name}` },
-    });
-  }
-  for (const { name, origins } of result.ambiguous) {
-    out.emit({
-      type: "warning",
-      code: "REMOTE_MCP_SECRET_AMBIGUOUS",
-      step: "secrets.gateway",
-      message: `MCP apps at ${listed(origins)} all declare ${name}\nIt isn't pinned to any of them, so the Gateway sends it to none until one is removed.`,
-      data: { name, origins, rerun: `${CLI} mcp list`, rerunNote: "names the apps" },
-    });
-  }
-  return result.bound;
 }
 
 /**

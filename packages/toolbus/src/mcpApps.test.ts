@@ -128,7 +128,7 @@ describe("the MCP app tool definitions", () => {
     ]);
   });
 
-  it("take a credential's setting name and never its value: closed schemas, the kinds and risks as enums", () => {
+  it("never take a credential's value: closed schemas, the kinds and risks as enums", () => {
     const add = properties("mcp_add");
     expect(Object.keys(add)).toEqual([
       "url",
@@ -150,18 +150,17 @@ describe("the MCP app tool definitions", () => {
     });
     expect(Object.keys(auth["properties"] as Record<string, unknown>)).toEqual([
       "kind",
-      "secret",
       "header",
       "prefix",
+      "param",
+      "provider",
     ]);
     expect(
       (auth["properties"] as Record<string, Record<string, unknown>>)["kind"],
-    ).toMatchObject({ enum: ["none", "bearer", "header", "basic", "oauth"] });
-    expect(
-      (auth["properties"] as Record<string, Record<string, unknown>>)[
-        "secret"
-      ]!["description"],
-    ).toContain("Never the credential itself");
+    ).toMatchObject({
+      enum: ["none", "bearer", "header", "query", "basic", "oauth", "provider"],
+    });
+    expect(auth["description"]).toContain("Never carries a value");
     expect(add["risk"]).toMatchObject({
       enum: ["annotations", "read", "write"],
     });

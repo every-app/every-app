@@ -88,8 +88,8 @@ export function deployerFor(
   return { actor: email, email };
 }
 
-/** A registry refusal, as the error a command reports. */
-function asEveryAppError(error: unknown): unknown {
+/** A registry rule's refusal as the CLI's error (its code and message), anything else as it is. */
+export function asEveryAppError(error: unknown): unknown {
   if (error instanceof RegistrationError) {
     return new EveryAppError(error.code, error.message, {
       retryable: error.status >= 500,

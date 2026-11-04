@@ -15,7 +15,7 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
 - [ ] **Hosted offboarding.** Should removing a member also end their sessions in that organization, and should Deactivate offer "Clear app access" (default: keep)?
 - [ ] **Where IdP groups come from**, for mapping SSO or Access groups to Gateway groups: the OIDC `groups` scope on the sign-in path, the outer-ring JWT's `custom` claim, or a `/cdn-cgi/access/get-identity` call at sign-in?
 - [ ] **Take Better Auth off the app-host path?** A warm app request waits on three D1 reads in a row (session, user, access row). A direct session reader would cut that, at the cost of a change to identity code.
-- [ ] **Granola for agents: which first?** (a) A curated MCP app over the API key, like DataForSEO, or (b) OAuth for `mcp add --auth oauth`, which brings Granola's own MCP tools and works on its Basic plan but touches the perimeter and identity.
+- [ ] **Granola for agents: which first?** (a) A curated MCP app over the API key, like DataForSEO, or (b) `mcp add --auth oauth` (built in #938), which brings Granola's own MCP tools and works on its Basic plan.
 - [ ] **Granola personal keys.** A personal key reads one person's notes for every member who can open the app. Say on the provider page that a team should use a workspace key with Public notes only?
 
 ### Apps
@@ -52,6 +52,9 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
 
 ## Waiting on Ben
 
+- [ ] **The remote MCP apps live check** (#938): add an OAuth server with DCR (Linear's), connect two members, call, refresh, disconnect. A live test, on a test Gateway.
+- [ ] **ElevenLabs' hosted MCP needs CIMD.** It takes only OAuth, and its authorization server offers CIMD but no DCR. Build CIMD, and let an OAuth `mcp add` past the catalog's `elevenlabs` host claim?
+- [ ] **Remote MCP apps on everyapp.team are added again after #938.** Migration 0031 drops `remote_mcp_credentials`; an old app reads "registered before provider credentials" until `mcp remove`, then `mcp add`.
 - [ ] **The OAuth-simplify live check** (#942): two apps on one Google client get tokens with different scopes, each connection holding only its own app's scopes. A live test, run on a test Gateway.
 - [ ] **The apps move to provider scope names** in `everyapp.config.ts` (OpenMail, OpenSEO, OpenCRM; CHANGELOG.md has the before and after) and redeploy; migration 0025 drops existing connections, so people connect again in each app. The rollout steps for everyapp.team are in #943.
 - [ ] **Roll the simplify batch (#945–#959) out to everyapp.team.** Live steps, in this order:

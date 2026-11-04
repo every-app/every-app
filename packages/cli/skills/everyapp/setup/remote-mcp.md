@@ -4,53 +4,52 @@ Any remote MCP server that speaks Streamable HTTP (a docs search, a
 company's API, a SaaS tool's MCP endpoint) can become an MCP app of the
 Gateway's: `pnpm everyapp mcp add <url>` registers it, the Gateway serves its
 tools on its own `/mcp` to every member it is granted to as `<id>_<tool>`,
-holds the server's credential itself (a Gateway setting, never sent to an AI
-client), sends it only to the server's origin, and attributes, audits and
-counts every call like an app's. A read-only connection sees only the tools
-whose risk is `read`. At the end the person has the app on, its credential
-set and pinned to the server's origin, the people who need it granted, and
-one tool call through the Gateway's `/mcp` that worked.
+holds the server's credential itself (never sent to an AI client), sends it
+only to the server's host, and attributes and audits every call. MCP servers
+added by URL aren't metered: no cap applies to them. A read-only connection
+sees only the tools whose risk is `read`. At the end the person has the app
+on, its credential set (or their account connected, for OAuth), the people
+who need it granted, and one tool call through the Gateway's `/mcp` that
+worked.
 
 ## Settings
 
-| NAME                                                                                  | required or optional                          | what it holds                                                                                                                                                                                                                         |
-| ------------------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<ID>_MCP_TOKEN` (the app id upper-cased, `-` as `_`; `--secret` picks another name ending in `_MCP_TOKEN`) | required, unless the server takes no credential (`--auth none`) | What the server's docs call its API key, token or password. `--auth bearer` sends it as `Authorization: Bearer <value>`; `--auth header --header X-Api-Key` as `X-Api-Key: <value>`; `--auth basic` takes `user:password` and sends HTTP Basic. |
+The credential is a provider. `mcp add` writes the app's own provider row,
+`<id>-mcp`, beside the app, or uses one the Gateway has (`--provider <id>`).
 
-The name is a Gateway setting like any provider key, set with
-`pnpm everyapp secret set <NAME>` (any name ending in `_MCP_TOKEN` goes to the
-Gateway; nothing else is accepted for it). When it is set, the CLI pins it to
-the origin of the MCP app that declares it (`https://treg.to` for
-`https://treg.to/mcp/`): the Gateway sends a credential only to the origin it
-was set for. A server re-pointed or re-added at another address needs its
-credential set again; only the operator (the Cloudflare login) can, so an
-owner or admin who changes an app in the Gateway never moves a credential.
-`mcp list` and `mcp show` say "needs setup" until it is set and pinned.
+| NAME | required or optional | what it holds |
+| ---- | -------------------- | ------------- |
+| `<ID>_MCP_TOKEN` (the app id upper-cased, `-` as `_`) | required for `--auth bearer`, `header`, `query` or `basic` | What the server's docs call its API key or token. `bearer` sends `Authorization: Bearer <value>` (`--prefix Token` for another scheme); `header --header X-Api-Key` sends `X-Api-Key: <value>`; `query --param api_key` adds it to the URL; `basic` takes `user:password`. |
+| `<ID>_MCP_CLIENT_ID`, `<ID>_MCP_CLIENT_SECRET` | set by `mcp add` for OAuth | The OAuth client the Gateway signs in with. `mcp add` registers one with the server, or takes `--client-id` (and `--client-secret-from-env <VAR>`) for a server that registers none. |
 
-`--auth oauth` is accepted and recorded, but the Gateway doesn't sign in to
-MCP servers with OAuth this week: such an app serves no tools ("OAuth: not
-supported yet"). If an OAuth server also takes an API key, add it with
-`--auth bearer` instead.
+Each is set through `secret set`'s path, which binds it to the row's host:
+the Gateway sends it nowhere else. A row that changes (the server re-added at
+another host, say) needs its key set again; `mcp list` says
+`set for other hosts` until it is.
+
+With OAuth, each member connects their own account at the Gateway's connect
+page. No token is ever shown or typed.
 
 ## Costs and plans
 
 EveryApp charges nothing for an MCP app. The server's provider charges what
 it charges for its calls (its own plan and limits apply; read them on its
-site). Every forwarded call is counted in the organization's usage as
-`mcp:<id>`. Monthly caps in Admin → Usage count dollars of provider-reported
-cost, and a remote server reports no price, so a cap never stops an MCP app
-by URL: its own plan and limits are what bound it.
+site). Every call is counted in the organization's usage and listed in
+Activity; `pnpm everyapp workspace usage` marks the app "not metered", and a
+cap on it is refused (`APP_NOT_METERED`). Its own plan and limits are what
+bound it.
 
 ## Only a person can
 
 - Create an account with the server's provider and accept its terms, when it
   has any.
-- Create the API key or token on the provider's dashboard and type it at the
-  hidden prompt.
+- Create the API key on the provider's dashboard and type it at the hidden
+  prompt, or sign in to their own account on the connect page (OAuth).
+- Register an OAuth client in the provider's console, for a server that
+  registers none itself.
 - Decide who gets the app beyond the owners and admins (Admin → Apps → Manage
   access), and whether a tool the server says is safe should count as a write
   (you suggest; they decide).
-- Decide to replace a credential the Gateway already holds.
 
 ## Before you start
 
@@ -58,75 +57,64 @@ by URL: its own plan and limits are what bound it.
    true; `data.gatewayUrl` is `https://<gateway host>`. Not installed, or no
    owner: [gateway.md](gateway.md) first.
 2. The server's MCP address and how it authenticates, from its docs: an
-   `https://` URL (often ending in `/mcp`) that speaks Streamable HTTP. An old
-   HTTP+SSE-only endpoint (a separate `/sse` URL from 2024) isn't served. The
-   credential is usually an API key sent as a bearer token; some servers read
-   a header of their own (`X-Api-Key`); public servers take none. The
-   Gateway follows no redirects, so use the address the server answers at,
-   not one that redirects to it.
-3. `pnpm everyapp mcp list --json`: the server isn't added already (no entry
-   in `data.apps` with its `url`). The id is the domain's name, the label
-   before its suffix (`https://mcp.deepwiki.com/mcp` → `deepwiki`,
-   `https://treg.to/mcp/` → `treg`), or `--name <id>` (lowercase letters,
-   digits and hyphens, at most 32 characters); it is the tools' prefix, so
-   keep it short.
+   `https://` URL (often ending in `/mcp`) that speaks Streamable HTTP. The
+   Gateway follows no redirects, so use the address the server answers at.
+3. `pnpm everyapp mcp list --json`: the server isn't added already. The id is
+   the domain's name (`https://mcp.deepwiki.com/mcp` → `deepwiki`), or
+   `--name <id>` (lowercase letters, digits and hyphens, at most 32); it is
+   the tools' prefix, so keep it short.
 
 ## Steps
 
 One step per message: give the step, wait for the words it ends with
 ("done", "I have it"), then the next.
 
-1. **You:** add it. `pnpm everyapp mcp add <url> --auth bearer --json` (or
-   `--auth header --header <name>`, `--auth basic`; nothing for a public
-   server), with `--name <id>` when the host name makes a poor id and
-   `--risk read` for a server that only reads and doesn't say so in its tool
-   annotations (`--risk write` treats every tool as a write). The app is on
-   at once for the person running it (when they are a member), the owners
-   and the admins. The `done` event's `data.id`, `data.key` (null for
-   `--auth none`; else the credential's `name` and whether it is `set` and
-   `bound` to the URL's origin) and `data.probe` (what one look at the server
-   from this machine found, without the credential) say what happened.
-   `PROVIDER_KEY_UNSET` means the credential comes next.
-   `REMOTE_MCP_PROBE_FAILED` and `REMOTE_MCP_WANTS_OAUTH` are warnings, never
-   refusals: a 401 with `--auth none` means the server wants a credential
-   (`pnpm everyapp mcp remove <id>`, then the same add with `--auth bearer`), a
-   redirect means another address, and "Couldn't reach" may be this
-   machine's network only (the Gateway fetches from Cloudflare).
-2. **Person:** the credential. They create the key on the provider's
-   dashboard, then, in a second terminal in the `every-app` folder:
-   `pnpm everyapp secret set <NAME>` (the name from step 1, for example
-   `pnpm everyapp secret set TREG_MCP_TOKEN`) and paste it at the hidden
-   prompt (for `--auth basic`, `user:password`). It ends with
-   `Set <NAME> on the Gateway`. When the person runs `mcp add` themselves at
-   a terminal, it asks `Set <NAME> now?` right after adding and, on yes, shows
-   the same hidden prompt (`secret set`'s own); No leaves it for `secret set`.
-   The README's other two ways work as for any `secret set` (a pipe into
-   `pnpm everyapp secret set <NAME> --json`, or the hidden read then
-   `--from-env <VAR>`); `mcp add <url> --auth bearer --from-env <VAR> --json`
-   takes the variable at the add itself, read before anything is written.
-   Wait for "done".
-3. **Person:** who gets it. The owners, the admins and whoever added it have
-   it already. Anyone else: Admin → Apps → the app's row → **Manage access**.
-   A member sees its tools after granting, in a client connected to the
-   Gateway (the next step).
-4. **Person:** connect an AI client to the Gateway if theirs isn't yet:
+1. **You:** add it. `pnpm everyapp mcp add <url> --json` looks at the server
+   first, from this machine, and writes nothing until it knows the
+   credential:
+   - it answers without one: added with none;
+   - its 401 names OAuth metadata: added with OAuth (discovered, a client
+     registered), and `data.connect.url` is the connect page;
+   - it asks for a credential otherwise: refused `REMOTE_MCP_NEEDS_CREDENTIAL`.
+     Read its docs, then add it again with `--auth bearer` (or
+     `--auth header --header <name>`, `--auth query --param <name>`,
+     `--auth basic`, `--auth oauth`), or `--provider <id>` for a provider the
+     Gateway has (`pnpm everyapp provider list`; the URL's host must be one of
+     its hosts).
+
+   Add `--risk read` for a server that only reads and doesn't say so in its
+   tool annotations. The `done` event's `data.credential` says what it is and
+   whether it is `set` and `bound`; `PROVIDER_KEY_UNSET` means the key comes
+   next.
+2. **Person, a static key:** they create the key on the provider's dashboard,
+   then, in a second terminal in the `every-app` folder,
+   `pnpm everyapp secret set <ID>_MCP_TOKEN` and paste it at the hidden prompt
+   (for `basic`, `user:password`). When the person runs `mcp add` themselves
+   at a terminal, it asks `Set <NAME> now?` and shows the same prompt;
+   `--from-env <VAR>` takes it from a variable at the add. Once it is set,
+   `mcp add` checks it with one call: `Working: <n> tools`, or the warning
+   `REMOTE_MCP_CREDENTIAL_REJECTED`. Wait for "done".
+3. **Person, OAuth:** they open the connect page (`mcp add` opens it at a
+   terminal; `--no-open` only prints it), sign in and approve. Every other
+   member connects their own account the same way, or from the app's dialog
+   on the Gateway's home page. A server that registers no clients was refused
+   `REMOTE_MCP_OAUTH_NO_CLIENT` with the redirect URI to register: they
+   register a client in its console with that URI, then you run the add again
+   with `--client-id <id> --client-secret-from-env <VAR>`.
+4. **Person:** who gets it. The owners and the admins open it by their role.
+   Anyone else: Admin → Apps → the app's row → **Manage access**.
+5. **Person:** connect an AI client to the Gateway if theirs isn't yet:
    `claude mcp add --transport http everyapp https://<gateway host>/mcp`,
    then `/mcp` → **everyapp** → **Authenticate** in Claude Code (other clients:
    the same URL; mcp.md beside this folder, "Connecting a person").
 
 ## Verify
 
-1. `pnpm everyapp mcp show <id> --json`: `data.status` is `"on"` (not
-   `"needs setup"`), `data.key.set` and `data.key.bound` are true and
-   `data.key.boundOrigin` is the URL's origin (all three skipped for
-   `--auth none`: `data.key` is null). `data.snapshot` is null until the
-   Gateway lists the tools, on the first request to its `/mcp` after the add
-   (or within the hour). From the checkout root,
-   `pnpm everyapp secret list --json` agrees: the name is in
-   `data.gateway.names`, its `data.gateway.mcpCredentials` entry has
-   `set: true`, and the app has left `data.apps` (it is listed there only
-   while it needs setup, with `setup.command` the `secret set` that sets it
-   up).
+1. `pnpm everyapp mcp show <id> --json`: `data.status` is `"on"`.
+   `data.credential` is `{ kind: "none" }`, a key with `set` and `bound`
+   true, or OAuth with `connected` at least 1 (`people` lists who, never a
+   token). `data.snapshot` is null until the Gateway lists the tools, on the
+   first request to its `/mcp` (or within the hour).
 2. One tool call through the Gateway: in the person's connected client, ask
    for something the server does ("use <id> to …", or "list the tools <id>
    offers"); the client shows a call to an `<id>_<tool>` tool and its
@@ -148,52 +136,47 @@ One step per message: give the step, wait for the words it ends with
 4. Logs, when a call fails: README's path (**Workers & Pages** →
    `every-app-gateway` → **Observability** → **Live**). The remote proxy logs
    each failed upstream call as `mcp.remote.upstream_failed` with the status
-   (never the credential), and a first-use pin as
-   `mcp.remote.credential_bound` (names from the design,
-   docs/design/2026-10-mcp-by-url.md; not checked against a live Gateway
-   here, unverified).
+   (never the credential).
 
 ## If it fails
 
-| error or symptom                                                       | meaning                                                                                                     | what to do                                                                                                                         |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `SECRET_VALUE_REQUIRED` from `secret set --json`                       | Nothing was piped and there is no terminal to prompt in                                                     | One of the README's three ways: the person's own terminal, a pipe, or `--from-env`                                                  |
-| `SECRET_EMPTY`                                                         | The `--from-env` variable is empty or not exported in that shell (from `mcp add --from-env`, nothing was added) | The hidden read (README's third way) in that same terminal first, then rerun                                                     |
-| `REMOTE_MCP_URL_REFUSED`                                               | Not `https://`, an IP address, the Gateway's own host or app domain, or a provider the Gateway holds a key for | The server's own MCP address, by host name, over https                                                                              |
-| `REMOTE_MCP_EXISTS`                                                    | That id is an MCP app already                                                                               | `pnpm everyapp mcp show <id>`; another address is `mcp remove <id>` then `mcp add` again, or another `--name`                       |
-| `REMOTE_MCP_SECRET_TAKEN`                                              | Another MCP app at another origin uses that credential name                                                 | `--secret <OTHER>_MCP_TOKEN`: one credential name per origin                                                                        |
-| `REMOTE_MCP_INVALID`                                                   | A bad id, risk, header or credential name, or flags that say two things                                     | As the message says                                                                                                                 |
-| `PROVIDER_APP_UNKNOWN`                                                 | The id isn't an MCP app here                                                                                | `pnpm everyapp mcp list` for the ids                                                                                                |
-| `REMOTE_MCP_SECRET_BOUND_ELSEWHERE` from `mcp add`, or `needs setup` in `mcp list` or `mcp show` with the key set | The credential is pinned to another origin (`data.key.boundOrigin`): it was set for an earlier server | `pnpm everyapp secret set <NAME>` again (Steps 2)                                                                  |
-| `REMOTE_MCP_TOOL_NOT_LISTED` from `mcp tool`                           | The tool's name isn't in the last listing: the override was kept under that name, as the server's           | `pnpm everyapp mcp show <id>` for both names, then `mcp tool` with the right one                                                    |
-| `REMOTE_MCP_SECRET_UNDECLARED` from `secret set`                       | No MCP app declares that name (a typo, or set before `mcp add`)                                             | Check the name with `mcp show <id>`; `mcp add` first                                                                                |
-| `REMOTE_MCP_WANTS_OAUTH`                                               | The server wants OAuth, which the Gateway doesn't do yet                                                    | If it also takes an API key: `--auth bearer` and set the key; otherwise it can't be served this week                                |
-| `REMOTE_MCP_GATEWAY_OUTDATED`                                          | The Gateway predates MCP apps by URL                                                                        | `pnpm everyapp update`, then Verify                                                                                                 |
-| `data.snapshot.status` `error`, `lastError` naming 401                  | The server rejected the credential                                                                          | A fresh key from the provider, `secret set` again, then `pnpm everyapp mcp refresh <id>`                                            |
-| `lastError` naming a redirect or a timeout                             | The address redirects, or the server is slow or down                                                        | The address it redirects to (remove, add again); a slow server: retry later                                                        |
-| The tools changed on the server, not on the Gateway                    | The Gateway's snapshot is up to an hour old                                                                 | `pnpm everyapp mcp refresh <id>`                                                                                                    |
-| A tool is missing for one person only                                  | Their connection is read-only (write tools hidden), or they weren't granted the app                         | Admin → Apps → Manage access; a read & write connection                                                                            |
+| error or symptom | meaning | what to do |
+| ---------------- | ------- | ---------- |
+| `REMOTE_MCP_NEEDS_CREDENTIAL` | The server asks for a credential and none was given | Its docs say how: `--auth` bearer, header, query, basic or oauth, or `--provider <id>`; `--force` adds it without one |
+| `REMOTE_MCP_OAUTH_DISCOVERY` | The server's OAuth metadata can't be found or isn't usable (no PKCE, not https) | If it takes an API key instead, a static `--auth` |
+| `REMOTE_MCP_OAUTH_NO_CLIENT` | The server registers no clients (or refused the registration) | Register one with the redirect URI the message prints, then `--client-id` and `--client-secret-from-env` |
+| `REMOTE_MCP_CREDENTIAL_REJECTED` (warning) | The server refused the key when `mcp add` checked it | Check the key and where it goes (`--auth`, `--header`, `--param`), then `secret set <ID>_MCP_TOKEN` again |
+| `REMOTE_MCP_PROVIDER_HOST` | `--provider`'s hosts don't include the URL's host | The server's own credential (`--auth`), or the provider whose host it is |
+| `PROVIDER_KEY_UNSET` (warning), `set for other hosts` in `mcp list` | The key isn't set, or was set for an earlier row | `pnpm everyapp secret set <NAME>` |
+| `OAuth: 0 connected` in `mcp list` | Nobody has connected an account yet | The connect page (`mcp show <id>` prints it) |
+| `registered before provider credentials` in `mcp list` | The app was added before this release | `pnpm everyapp mcp remove <id>`, then add it again |
+| `REMOTE_MCP_URL_REFUSED` | Not `https://`, an IP address, the Gateway's own host or app domain, or a provider's host without `--provider` | The server's own MCP address, by host name, over https |
+| `REMOTE_MCP_EXISTS` | That id is an MCP app already | `mcp show <id>`; `mcp remove <id>` then add again, or another `--name` |
+| `REMOTE_MCP_INVALID` | A bad id, risk, header or provider, or flags that say two things | As the message says |
+| `REMOTE_MCP_PROBE_FAILED` (warning) | A redirect, or no answer from this machine | Another address; or this machine's network only (the Gateway fetches from Cloudflare) |
+| `SECRET_EMPTY` | The `--from-env` variable is empty (nothing was added) | Export it in that shell, then rerun |
+| `APP_NOT_METERED` | A cap was asked of an MCP server added by URL | None applies: its calls are counted and audited only |
+| `data.snapshot.status` `error` | The server refused the listing, or is down | Fix the credential or connect an account, then `pnpm everyapp mcp refresh <id>` |
 
 ## Rerun, rotate, remove
 
 - **Rerun.** `mcp add` refuses an id that exists (`REMOTE_MCP_EXISTS`), so a
-  rerun starts from Verify. `secret set` replaces; `mcp tool` and
-  `mcp refresh` can run again.
-- **Rotate.** A new key on the provider's dashboard, then Steps 2 again: the
-  Gateway uses the new value on its next request. A value that went through
-  the chat is compromised: rotate it.
-- **Off, and back on.** `pnpm everyapp mcp off <id> --json` stops serving it
-  and keeps everyone's access, tokens and the snapshot;
-  `pnpm everyapp mcp on <id> --json` serves it again at once.
-- **Remove.** `pnpm everyapp mcp remove <id> --json`: a tombstone, with
-  everyone's access, its tokens and its place in AI connections gone (adding
-  it again starts fresh). The credential and its pin stay;
-  `pnpm everyapp secret unset <NAME> --json` removes both (it asks; with
-  `--json` add `--yes` only once the person said so). Then revoke the key on
+  rerun starts from Verify. `secret set` replaces.
+- **Rotate.** A new key on the provider's dashboard, then
+  `secret set <ID>_MCP_TOKEN` again. A value that went through the chat is
+  compromised: rotate it.
+- **Off, and back on.** `mcp off <id>` stops serving it and keeps access;
+  `mcp on <id>` serves it again at once.
+- **Remove.** `pnpm everyapp mcp remove <id> --json`: everyone's access and
+  its tokens go. Its provider row, its key and people's OAuth connections
+  stay (adding it again at the same address reuses them);
+  `pnpm everyapp provider remove <id>-mcp` and
+  `pnpm everyapp secret unset <NAME>` clean them up. Then revoke the key on
   the provider's side.
 
 ## Sources
 
-- docs/design/2026-10-mcp-by-url.md (the remote block, the credential family and its pin, the proxy, the defaults taken)
-- In code: `packages/sdk/src/internal/remoteMcp.ts` (the URL, id, auth and risk rules: `remoteMcpUrlProblem`, `remoteMcpIdFromUrl`, `remoteToolRisk`), `packages/sdk/src/internal/gatewaySettings.ts` (`isRemoteMcpSecretName`: any name ending in `_MCP_TOKEN` is the Gateway's), `packages/sdk/src/internal/appSettings.ts` (the `remote-mcp` setting kind naming this file), `packages/perimeter/src/registry/remoteMcpApps.ts` (`planRemoteMcpAppAdd` and its refusals), `packages/cli/src/commands/provider/index.ts` (`mcp add`, `show`, `tool`, the probe's warnings), `packages/cli/src/lib/gateway/remoteMcpApps.ts` (the rows, the pin in `remote_mcp_credentials`), `packages/cli/src/commands/secret/index.ts` (the pin on `secret set`, dropped on `secret unset`), `apps/every-app-gateway/src/db/remote-mcp.schema.ts` (migration 0011)
-- https://modelcontextprotocol.io/specification (Streamable HTTP transport, tool annotations `readOnlyHint` and `destructiveHint`, authorization with `resource_metadata`)
+- docs/design/2026-11-mcp-apps-auth.md (provider credentials, OAuth to MCP servers, not metered)
+- docs/design/2026-10-mcp-by-url.md (the remote block, the proxy)
+- In code: `packages/sdk/src/internal/remoteMcp.ts` (the URL, id, auth and risk rules), `packages/sdk/src/internal/mcpOAuth.ts` (discovery, client registration, the synthesized specs), `packages/perimeter/src/registry/remoteMcpApps.ts` (`planRemoteMcpAppAdd`, `planRemoteMcpProviderRow`), `packages/cli/src/commands/mcp/index.ts` (`mcp add` and the rest), `packages/cli/src/lib/gateway/remoteMcpApps.ts` (the rows and each credential's state)
+- https://modelcontextprotocol.io/specification (Streamable HTTP, tool annotations, authorization with `resource_metadata`)

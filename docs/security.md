@@ -135,8 +135,9 @@ per package (`pnpm -C <package> exec vitest run <file>`, the Gateway with
 | B4 App → Gateway | A caller is the registry row its binding props name, or nothing | `apps/every-app-gateway/src/server/app-gateway-entrypoint.test.ts` :: accepts valid props that match an active registry row |
 | B4 | A provider key never reaches an app | `apps/every-app-gateway/src/server/ai-proxy.test.ts` :: forwards request to OpenAI with gateway-managed key and strips internal headers |
 | B4 | A capability call carries the Gateway's key and nothing the app sent | `apps/every-app-gateway/src/server/integration-proxy.test.ts` :: forwards a call with the gateway's key and nothing the app sent |
-| B4 | A person's OAuth token is used only from the app it was connected in, for no more scopes than that app lists | `apps/every-app-gateway/src/server/oauth/spec-flow.sqlite.test.ts` :: refuses a token carrying scopes beyond what the app asked |
-| B4 | A remote MCP credential is sent only to the origin it is bound to | `apps/every-app-gateway/src/server/remote-mcp/remote-mcp.sqlite.test.ts` :: refuses to send a credential bound to another origin |
+| B4 | A person's OAuth token is used only from the app it was connected in, for no more scopes than that app lists. An MCP app's own row (`<id>-mcp`) keeps what its server grants: the token goes to that server alone | `apps/every-app-gateway/src/server/oauth/spec-flow.sqlite.test.ts` :: refuses a token carrying scopes beyond what the app asked |
+| B4 | A remote MCP app's key or OAuth client is a provider row (`<id>-mcp`) bound to the server's host; a key set for another spec of the row is sent nowhere | `apps/every-app-gateway/src/server/remote-mcp/remote-mcp.sqlite.test.ts` :: sends nothing with a key set for another spec of its row |
+| B4 | An OAuth MCP server is called with each member's own connection, made in the app | `apps/every-app-gateway/src/server/remote-mcp/remote-mcp.sqlite.test.ts` :: calls with each member's own connection |
 | B5 AI client → `/mcp` | Write tools are hidden from read-only callers | `packages/toolbus/src/policy.test.ts` :: hides write tools from read-only callers |
 | B5 | Consent is a same-origin form POST from the signed-in person, spent once | `apps/every-app-gateway/src/server/mcp-auth/gateway-mcp.e2e.sqlite.test.ts` :: refuses a decision from another site, another browser, or twice |
 | B5 | A revoked connection stops on its next request and its next refresh | `apps/every-app-gateway/src/server/mcp-auth/gateway-mcp.e2e.sqlite.test.ts` :: stops a revoked connection at once, and its refresh |
@@ -181,8 +182,12 @@ From `docs/hosted-vision.md`, section 3:
 2. **The deploy policy doesn't pin the `AppGateway` binding's props** (B3,
    B7, high). On self-host only the operator deploys, so this is the
    operator misattributing their own app; it is a hosted launch-gate item.
-3. **An app spends the operator's provider keys without bound unless a cap
-   is set** (B4, high): a per-app cap or the workspace default stops it.
+3. **An app spends the operator's provider keys without bound** (B4,
+   high). Caps count only cost a provider reports (OpenRouter, DataForSEO).
+   OpenAI, Anthropic, Workers AI, Groq and remote MCP servers never move
+   the cap, so a default cap doesn't bound them. Use a provider-side limit
+   where offered, or Cloudflare AI Gateway rate limits. Remote MCP apps
+   aren't metered at all: only the server's own plan bounds them.
 4. **First-party app hosts share the control plane's session cookie** (B1,
    B2, medium; Access mitigates). Script on any app host can overwrite it
    and sign the victim in as the attacker. Per-host sessions, as third-party
@@ -201,8 +206,9 @@ From `docs/hosted-vision.md`, section 3:
    change between runs goes unnoticed.
 9. **Remote MCP servers are untrusted text, and one credential is one
    identity** (B4, B5, medium). Tool descriptions and results can steer the
-   model; a pasted bearer gives every member granted the app that person's
-   reach on the server; OAuth-only servers can't be used yet.
+   model; a static key gives every member granted the app its holder's reach
+   on the server (with OAuth, each member uses their own account, and
+   replacing the app's credential spec deletes those connections).
 10. **A sole owner has no recovery but the operator** (B2, medium), and only
     the holder can revoke a personal token (B5, low).
 

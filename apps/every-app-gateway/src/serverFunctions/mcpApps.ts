@@ -6,11 +6,15 @@
  * and the writes are McpAppService's.
  */
 import { createServerFn } from "@tanstack/react-start";
-import { organizationAdminMiddleware } from "@/middleware/auth";
+import {
+  organizationAdminMiddleware,
+  organizationMemberMiddleware,
+} from "@/middleware/auth";
 import { publicErrorMiddleware } from "@/middleware/publicError";
 import { McpAppService } from "@/server/services/McpAppService";
 import {
   addRemoteMcpAppSchema,
+  mcpAppConnectionSchema,
   mcpAppIdSchema,
   setMcpAppStatusSchema,
   updateRemoteMcpAppSchema,
@@ -19,7 +23,8 @@ import {
 /**
  * Register a remote MCP server as an MCP app of this Gateway's. For a
  * server that takes no credential the answer says how many tools the
- * Gateway listed; for one that does, the command that sets it.
+ * Gateway listed; for a static key, the command that sets it; for OAuth,
+ * where the adder connects their account.
  */
 export const addRemoteMcpApp = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationAdminMiddleware])
@@ -46,7 +51,7 @@ export const setMcpAppStatus = createServerFn({ method: "POST" })
 
 /**
  * Remove an MCP app: access, tokens, its tools snapshot and its place in
- * AI connections go; the credential stays set on the Gateway.
+ * AI connections go; its provider and the key or client it holds stay.
  */
 export const removeMcpApp = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationAdminMiddleware])
@@ -70,4 +75,16 @@ export const getMcpApp = createServerFn()
   .validator((data: unknown) => mcpAppIdSchema.parse(data))
   .handler(async ({ data, context }) => {
     return McpAppService.get(context.org, data);
+  });
+
+/**
+ * For any member: whether an OAuth MCP app is connected for them, and
+ * where they connect it (the launcher's MCP app dialog). Null for an app
+ * that takes no OAuth connection. Never a token.
+ */
+export const getMcpAppConnection = createServerFn()
+  .middleware([publicErrorMiddleware, organizationMemberMiddleware])
+  .validator((data: unknown) => mcpAppConnectionSchema.parse(data))
+  .handler(async ({ data, context }) => {
+    return McpAppService.connection(context.org, data);
   });

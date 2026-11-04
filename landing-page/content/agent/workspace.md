@@ -24,7 +24,7 @@ Owners and admins open every app through their role. Members open an app three w
 
 ## Caps
 
-Each app's provider calls (AI and API providers) are counted per UTC month and can be capped in dollars of provider-reported cost. A **default cap** applies to every app without its own; `--unlimited` exempts one app. A capped app is **Paused**: its provider calls answer `429 app_monthly_cap_exceeded` until next month or a raise, while the app still opens. Owners and admins get an email at 80% and at the cap (the built-in Cap alerts subscription; the Gateway must send email). Caps count only providers that report a price (OpenRouter, DataForSEO); calls to others are counted but never move a cap.
+Each app's provider calls (AI and API providers) are counted per UTC month and can be capped in dollars of provider-reported cost. A **default cap** applies to every app without its own; `--unlimited` exempts one app. A capped app is **Paused**: its provider calls answer `429 app_monthly_cap_exceeded` until next month or a raise, while the app still opens. Owners and admins get an email at 80% and at the cap (the built-in Cap alerts subscription; the Gateway must send email). Caps count only providers that report a price (OpenRouter, DataForSEO); calls to others are counted but never move a cap. MCP servers added by URL aren't metered: no cap of their own or the default's (`APP_NOT_METERED` refuses one), and Usage shows them as Not metered (`notMetered` in `workspace usage`). Their calls are still counted and audited.
 
 ## `everyapp workspace`
 

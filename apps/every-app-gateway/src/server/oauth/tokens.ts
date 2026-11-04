@@ -90,6 +90,10 @@ export async function tokenCall({
 }): Promise<TokenCallResult> {
   const flow = capability.flow;
   const form = new URLSearchParams(fields);
+  // The resource the tokens are for (RFC 8707), on the code exchange and
+  // every refresh: an MCP server's authorization server mints a token for
+  // that server alone.
+  if (flow.resource) form.set("resource", flow.resource);
   const headers = new Headers({
     "content-type": "application/x-www-form-urlencoded",
     accept: "application/json",

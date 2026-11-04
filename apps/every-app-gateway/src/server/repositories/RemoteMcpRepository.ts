@@ -1,35 +1,11 @@
 import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import {
-  apps,
-  appToolCatalogs,
-  remoteMcpCredentials,
-  remoteMcpTools,
-} from "@/db/schema";
+import { apps, appToolCatalogs, remoteMcpTools } from "@/db/schema";
 import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import type { RemoteToolRecord } from "@every-app/toolbus/remote";
 
 /** D1 binds at most 100 parameters a statement; a tools row binds 9. */
 const TOOL_ROWS_PER_INSERT = 11;
-
-interface CredentialBinding {
-  name: string;
-  origin: string;
-  boundBy: string | null;
-  boundAt: Date;
-}
-
-/** Which origin a credential name was set for, if recorded. */
-async function findCredentialBinding(
-  name: string,
-): Promise<CredentialBinding | null> {
-  const [row] = await db
-    .select()
-    .from(remoteMcpCredentials)
-    .where(eq(remoteMcpCredentials.name, name))
-    .limit(1);
-  return row ?? null;
-}
 
 /** Replace what a remote server listed for one app row, in one batch. */
 async function replaceTools(
@@ -121,45 +97,8 @@ async function findStaleRemoteApps(
   return rows;
 }
 
-/**
- * The origin another live MCP app sends a credential name to, if one
- * does (any organization: the gateway has one set of secrets), for the
- * registry rule that keeps a name bound to one origin.
- */
-async function originUsingSecret(
-  name: string,
-  exceptRowId?: string,
-): Promise<string | null> {
-  const rows = await db
-    .select({ id: apps.id, manifest: apps.manifest })
-    .from(apps)
-    .where(
-      and(
-        eq(apps.tier, PROVIDER_APP_TIER),
-        sql`${apps.status} != 'deleted'`,
-        sql`json_valid(${apps.manifest})`,
-        sql`json_extract(${apps.manifest}, '$.remote.auth.secret') = ${name}`,
-      ),
-    )
-    .limit(5);
-  for (const row of rows) {
-    if (exceptRowId && row.id === exceptRowId) continue;
-    try {
-      const url = (
-        JSON.parse(row.manifest ?? "{}") as { remote?: { url?: string } }
-      ).remote?.url;
-      if (url) return new URL(url).origin;
-    } catch {
-      // An unreadable row binds nothing.
-    }
-  }
-  return null;
-}
-
 export const RemoteMcpRepository = {
-  findCredentialBinding,
   replaceTools,
   findToolsByApp,
   findStaleRemoteApps,
-  originUsingSecret,
 } as const;

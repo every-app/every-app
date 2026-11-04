@@ -204,6 +204,13 @@
       "when": 1793699136782,
       "tag": "0030_access_evaluation_key",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1793704213362,
+      "tag": "0031_drop_remote_mcp_credentials",
+      "breakpoints": true
     }
   ]
 }

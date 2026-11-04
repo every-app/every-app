@@ -48,12 +48,13 @@ vi.mock("better-auth/tanstack-start", () => ({
 import { generateKeyPairSync } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { planProviderAppOn } from "@every-app/perimeter/registry";
+import { parseProviderSpec, providerBindingKey } from "@every-app/sdk/internal";
 import { MCP_APP_TOOLS, type McpPrincipal } from "@every-app/toolbus";
-import { apps, remoteMcpCredentials, userAppAccess } from "@/db/schema";
+import { apps, providers, userAppAccess } from "@/db/schema";
 import { clearAppCapCache } from "@/server/app-cap";
 import { resetAppSetupCacheForTests } from "@/server/app-setup";
 import type { McpCaller } from "@/server/mcp-auth/validate";
-import { resetRemoteMcpBindingsForTests } from "@/server/remote-mcp/bind";
+import { resetGatewayProvidersForTests } from "@/server/providers";
 import {
   resetRemoteMcpForTests,
   setRemoteUpstreamFetchForTests,
@@ -351,7 +352,7 @@ beforeEach(async () => {
   resetAppSetupCacheForTests();
   resetToolBusForTests();
   resetRemoteMcpForTests();
-  resetRemoteMcpBindingsForTests();
+  resetGatewayProvidersForTests();
   clearAppCapCache();
   openTools = [
     tool("search", { readOnlyHint: true }),
@@ -395,7 +396,6 @@ describe("an admin managing MCP apps over /mcp", () => {
         url: OPEN,
         auth: "none",
         risk: "annotations",
-        supported: true,
         credential: null,
         listedAt: expect.any(String),
       },
@@ -544,6 +544,7 @@ describe("an admin managing MCP apps over /mcp", () => {
       name: "Treg",
       url: TREG,
       auth: "bearer",
+      provider: "treg-mcp",
       credential: { name: "TREG_MCP_TOKEN", set: false },
       tools: null,
       setupCommand: "pnpm everyapp secret set TREG_MCP_TOKEN",
@@ -554,8 +555,12 @@ describe("an admin managing MCP apps over /mcp", () => {
         id: "treg",
         status: "needs setup",
         tools: null,
-        auth: "bearer",
+        auth: "provider",
+        provider: "treg-mcp",
         credential: {
+          kind: "api_key",
+          provider: "treg-mcp",
+          own: true,
           name: "TREG_MCP_TOKEN",
           set: false,
           bound: false,
@@ -570,29 +575,36 @@ describe("an admin managing MCP apps over /mcp", () => {
       (await toolNames(admin())).filter((name) => name.startsWith("treg_")),
     ).toEqual([]);
 
-    // A value where the name goes is refused without being echoed.
-    const refused = await refusal(
-      "everyapp_mcp_add",
-      {
-        url: "https://other.example/mcp",
-        auth: { kind: "bearer", secret: "sk-live-abcdef" },
-      },
-      admin(),
-    );
-    expect(refused).toMatch(/^REMOTE_MCP_INVALID: /);
-    expect(refused).not.toContain("sk-live-abcdef");
+    // A value in any field is refused without being echoed: the schema is
+    // closed, and a pasted OAuth client is Admin → Apps' alone.
+    for (const auth of [
+      { kind: "bearer", secret: "sk-live-abcdef" },
+      { kind: "oauth", clientId: "x", clientSecret: "sk-live-abcdef" },
+    ]) {
+      const refused = await refusal(
+        "everyapp_mcp_add",
+        { url: "https://other.example/mcp", auth },
+        admin(),
+      );
+      expect(refused).toMatch(/^Invalid arguments for everyapp_mcp_add/);
+      expect(refused).not.toContain("sk-live-abcdef");
+    }
 
-    // The operator sets it with `secret set`, which also pins the name to
-    // the server's origin (a new isolate reads the new setting; the Gateway
-    // never pins on first use itself); the refresh lists through it.
+    // The operator sets it with `secret set`, which also binds the row's
+    // key to its spec (a new isolate reads the new setting; the Gateway
+    // never binds on first use itself); the refresh lists through it.
     hoisted.env["TREG_MCP_TOKEN"] = TOKEN;
-    await db.insert(remoteMcpCredentials).values({
-      name: "TREG_MCP_TOKEN",
-      origin: "https://treg.example",
-      boundBy: "ben@example.com",
-      boundAt: new Date(),
-    });
-    resetRemoteMcpBindingsForTests();
+    const [row] = await db.select().from(providers);
+    const parsed = parseProviderSpec(JSON.parse(row!.spec));
+    if (!parsed.ok) throw new Error("the row's spec should parse");
+    await db
+      .update(providers)
+      .set({
+        boundTo: providerBindingKey(parsed.capability),
+        boundAt: new Date(),
+      })
+      .where(eq(providers.id, "treg-mcp"));
+    resetGatewayProvidersForTests();
     resetAppSetupCacheForTests();
     expect(
       await data("everyapp_mcp_refresh", { app: "treg" }, admin()),
@@ -603,11 +615,6 @@ describe("an admin managing MCP apps over /mcp", () => {
       added: ["treg_get_user", "treg_send_mail"],
       removed: [],
     });
-    const [binding] = await db
-      .select()
-      .from(remoteMcpCredentials)
-      .where(eq(remoteMcpCredentials.name, "TREG_MCP_TOKEN"));
-    expect(binding?.origin).toBe("https://treg.example");
     const shown = await data("everyapp_mcp_show", { app: "treg" }, admin());
     expect(shown["app"]).toMatchObject({
       status: "on",
@@ -615,7 +622,7 @@ describe("an admin managing MCP apps over /mcp", () => {
         name: "TREG_MCP_TOKEN",
         set: true,
         bound: true,
-        state: "bound",
+        state: "ready",
       },
     });
     expect(shown["app"]).not.toHaveProperty("setupCommand");
@@ -634,7 +641,7 @@ describe("an admin managing MCP apps over /mcp", () => {
       owner(),
     );
     expect(removed["note"]).toBe(
-      "Its access, tokens, tools snapshot and place in AI connections are gone. TREG_MCP_TOKEN stays set on the Gateway; the operator unsets it with pnpm everyapp secret unset TREG_MCP_TOKEN.",
+      "Its access, tokens, tools snapshot and place in AI connections are gone. Its provider treg-mcp and its key stay on the Gateway; pnpm everyapp provider remove treg-mcp and pnpm everyapp secret unset TREG_MCP_TOKEN clean up.",
     );
     expect(JSON.stringify(removed)).not.toContain(TOKEN);
   });

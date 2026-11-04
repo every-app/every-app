@@ -25,6 +25,7 @@ import {
   type AppSetting,
   type AppSettingsReport,
   type AppSetup,
+  type OAuthClientCapability,
   type ProviderRegistry,
   PROVIDER_APP_TIER,
   remoteMcpOf,
@@ -64,14 +65,17 @@ export interface AppSetupDeps {
    */
   providers: () => Promise<ProviderRegistry>;
   /**
-   * A remote MCP app's credential rule (server/remote-mcp/bind.ts): set,
-   * and bound to the row's origin. Read only for a row with a `remote`
-   * block; `undefined` leaves it to the names.
+   * Whether the Gateway holds a usable client for an OAuth provider: the
+   * Worker env's (while bound) or the sealed `oauth_clients` copy an add
+   * from Admin → Apps or a tool wrote (server/oauth/client.ts). Read only
+   * for a remote MCP app whose credential is an OAuth provider: its client
+   * comes either way, so the names alone can't say.
    */
-  remoteMcpReady?: (
-    manifest: Record<string, unknown>,
-    rowId: string,
-  ) => Promise<boolean | undefined>;
+  oauthClientReady?: (
+    providerId: string,
+    capability: OAuthClientCapability,
+    registry: ProviderRegistry,
+  ) => Promise<boolean>;
 }
 
 const defaultDeps: AppSetupDeps = {
@@ -80,12 +84,15 @@ const defaultDeps: AppSetupDeps = {
     (await import("@/server/email/sendEmail")).isEmailConfigured(),
   providers: async () =>
     (await import("@/server/providers")).gatewayProviders(),
-  remoteMcpReady: async (manifest, rowId) => {
-    const remote = remoteMcpOf(manifest);
-    if (!remote) return undefined;
-    const { credentialFor } = await import("@/server/remote-mcp/bind");
-    const state = await credentialFor(remote, rowId);
-    return state.kind === "ready" || state.kind === "none";
+  oauthClientReady: async (providerId, capability, registry) => {
+    const { resolveOAuthClient } = await import("@/server/oauth/client");
+    const client = await resolveOAuthClient({
+      id: providerId,
+      capability,
+      env: env as never,
+      lookup: registry,
+    });
+    return client !== null;
   },
 };
 
@@ -199,19 +206,25 @@ export async function appSettingsReport(
   // A remote MCP app's row keeps its id across a remove and an add
   // (revived), and its version is null: its registration's revision keys
   // the cache instead.
-  const remoteRev = remoteMcpOf(manifest)?.rev;
-  const key = `${cacheKey(input)}\0${remoteRev ?? ""}\0${registryKey(registry, settings)}`;
+  const remote = remoteMcpOf(manifest);
+  // A remote app's OAuth client comes from the env or from D1, so whether
+  // it is held is read (one D1 read) before the cache and keys it.
+  const oauthProvider =
+    remote?.auth.kind === "provider" ? remote.auth.provider : null;
+  const oauthCapability = oauthProvider ? registry.get(oauthProvider) : null;
+  const oauthReady =
+    oauthProvider &&
+    oauthCapability?.mode === "oauth_client" &&
+    deps.oauthClientReady
+      ? await deps.oauthClientReady(oauthProvider, oauthCapability, registry)
+      : undefined;
+  const key = `${cacheKey(input)}\0${remote?.rev ?? ""}\0${registryKey(registry, settings)}\0${oauthReady ?? ""}`;
   const cached = reports.get(key);
   if (cached) return cached;
   const listsEmail = settings.some(
     (setting) => setting.kind === "capability" && setting.id === "email",
   );
   const emailConfigured = listsEmail ? await deps.emailConfigured() : undefined;
-  const listsRemote = settings.some((setting) => setting.kind === "remote-mcp");
-  const remoteReady =
-    listsRemote && deps.remoteMcpReady
-      ? await deps.remoteMcpReady(manifest, input.rowId)
-      : undefined;
   const report = evaluateAppSettings(
     settings,
     isSetOn(deps, input.secretNames, registry.unboundSettings()),
@@ -219,8 +232,10 @@ export async function appSettingsReport(
       readiness: (setting) =>
         setting.kind === "capability" && setting.id === "email"
           ? emailConfigured
-          : setting.kind === "remote-mcp"
-            ? remoteReady
+          : setting.kind === "capability" &&
+              setting.id === oauthProvider &&
+              oauthReady !== undefined
+            ? oauthReady
             : undefined,
     },
   );

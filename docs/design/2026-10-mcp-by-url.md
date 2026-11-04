@@ -1,6 +1,6 @@
 # MCP apps by URL: any remote MCP server becomes an MCP app on a gateway
 
-Date: 2026-10-25. Status: being built (the PRs are listed in section 12 as they open). The agent reference is `landing-page/content/agent/mcp.md`, "MCP apps"; the defaults to confirm are TODO.md's "MCP apps by URL (2026-10-25)". Follows [2026-10-mcp-provider-apps.md](2026-10-mcp-provider-apps.md) (the tier, #485 and #489) and [2026-10-mcp-apps-ui.md](2026-10-mcp-apps-ui.md) (the name, the launcher section, the dialog, #599), and builds the "PR 3: remote-MCP proxy kind" and the "`everyapp mcp add <url>`" sketch those two planned, made registrable at run time.
+Date: 2026-10-25. Status: built (the PRs are listed in section 12); its credential model (the `_MCP_TOKEN` family, the origin pin, OAuth not supported) is superseded by [2026-11-mcp-apps-auth.md](2026-11-mcp-apps-auth.md) (PR #938): a remote app's credential is a provider, with upstream OAuth. The agent reference is `landing-page/content/agent/mcp.md`, "MCP apps"; the defaults to confirm are TODO.md's "MCP apps by URL (2026-10-25)". Follows [2026-10-mcp-provider-apps.md](2026-10-mcp-provider-apps.md) (the tier, #485 and #489) and [2026-10-mcp-apps-ui.md](2026-10-mcp-apps-ui.md) (the name, the launcher section, the dialog, #599), and builds the "PR 3: remote-MCP proxy kind" and the "`everyapp mcp add <url>`" sketch those two planned, made registrable at run time.
 
 ## 1. The ask
 

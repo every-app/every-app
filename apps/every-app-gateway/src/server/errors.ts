@@ -62,8 +62,14 @@ const PUBLIC_ERROR_CODES = [
   "REMOTE_MCP_INVALID",
   "REMOTE_MCP_URL_REFUSED",
   "REMOTE_MCP_EXISTS",
-  "REMOTE_MCP_SECRET_TAKEN",
+  "REMOTE_MCP_PROVIDER_HOST",
+  // Adding an MCP server with OAuth (McpAppService): discovery failed, or
+  // no client could be registered and none was pasted.
+  "REMOTE_MCP_OAUTH_DISCOVERY",
+  "REMOTE_MCP_OAUTH_NO_CLIENT",
   "APP_TIER_MISMATCH",
+  // A cap asked of an app that isn't metered (a remote MCP app).
+  "APP_NOT_METERED",
   // OAuth providers (server/oauth/service.ts): the registry rules' codes
   // (their messages are the rules' own sentences) and the flow's.
   "PROVIDER_NOT_FOUND",

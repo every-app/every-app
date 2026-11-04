@@ -4,9 +4,11 @@
  * GitHub preset added with a client pasted in the UI, a person connecting
  * in an app, the connection stored sealed as theirs in that app, an app's
  * call through the proxy with the held token, the refresh, the expiry, the
- * disconnect with a revoke; the state rules and the return rule; and the
- * Google catalog entry with its client from D1. The generic spec, the mint
- * check and background use are in spec-flow.sqlite.test.ts.
+ * disconnect with a revoke; the state rules and the return rule; the
+ * Google catalog entry with its client from D1; and an MCP server's row:
+ * `resource` on every leg, `iss` checked, scopes lenient for the app's own
+ * row only. The generic
+ * spec, the mint check and background use are in spec-flow.sqlite.test.ts.
  */
 import { generateKeyPairSync } from "node:crypto";
 import {
@@ -49,6 +51,7 @@ vi.mock("@/auth", () => ({
 }));
 
 import {
+  mcpOAuthProviderSpec,
   mintIdentityJwt,
   OAUTH_PRESETS,
   parseProviderSpec,
@@ -77,6 +80,7 @@ import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 import { resolveOAuthClient } from "./client";
 import { DEFAULT_RETURN, safeReturnTo, serveConnectRoute } from "./flow";
 import { gatewayHeldTokens } from "./heldTokens";
+import { accessTokenFor } from "./tokens";
 import {
   addOAuthProvider,
   disconnect,
@@ -940,6 +944,225 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
       source: "env",
       clientId: "env-id",
       clientSecret: "env-secret",
+    });
+  });
+
+  describe("an MCP server's OAuth row (resource and issuer)", () => {
+    const MCP_URL = "https://mcp.treg.to/mcp";
+    const ISSUER = "https://auth.treg.to";
+    let forms: URLSearchParams[];
+
+    /** Treg's token endpoint: records each form, answers a token that expires in a minute. */
+    const tregToken = async (request: Request): Promise<Response> => {
+      forms.push(new URLSearchParams(await request.text()));
+      return Response.json({
+        access_token: `treg-access-${forms.length}`,
+        refresh_token: "treg-refresh",
+        expires_in: 60,
+        scope: "mcp:tools offline",
+      });
+    };
+
+    async function addTregRow(
+      options: { providerId?: string; callerSlug?: string } = {},
+    ) {
+      const made = mcpOAuthProviderSpec({
+        appId: "treg",
+        name: "Treg",
+        url: MCP_URL,
+        discovery: {
+          resource: MCP_URL,
+          issuer: ISSUER,
+          authorizationEndpoint: `${ISSUER}/authorize`,
+          tokenEndpoint: `${ISSUER}/token`,
+          scopes: ["mcp:tools"],
+          tokenEndpointAuthMethods: ["client_secret_post"],
+          resourceMetadata: true,
+        },
+        client: { hasSecret: true, inject: "form" },
+      });
+      if (!made.ok) throw new Error(made.problem);
+      // `providerId` renames the row: an ordinary OAuth spec that sets a
+      // `resource`, not any app's own MCP row.
+      const providerId = options.providerId ?? "treg-mcp";
+      const prefix = providerId.toUpperCase().replace(/-/g, "_");
+      const spec =
+        providerId === "treg-mcp"
+          ? made.spec
+          : {
+              ...made.spec,
+              id: providerId,
+              auth: {
+                ...(made.spec.auth as object),
+                clientId: `${prefix}_CLIENT_ID`,
+                clientSecret: `${prefix}_CLIENT_SECRET`,
+              },
+              tags: [],
+            };
+      await addOAuthProvider(org("owner", owner), null, {
+        spec,
+        clientId: "treg-client",
+        clientSecret: "treg-secret",
+      });
+      resetGatewayProvidersForTests();
+      // The remote MCP app the row is for: a provider-tier row whose
+      // manifest lists it with the scopes discovery found.
+      await db.insert(apps).values({
+        id: "app-treg",
+        organizationId: acme,
+        appSlug: "treg",
+        name: "Treg",
+        description: "",
+        tier: "provider",
+        status: "active",
+        manifest: JSON.stringify({
+          id: "treg",
+          name: "Treg",
+          description: "Treg's MCP server.",
+          remote: {
+            url: MCP_URL,
+            auth: { kind: "provider", provider: "treg-mcp" },
+            risk: "annotations",
+            tools: {},
+            rev: 1,
+          },
+          capabilities: {
+            [providerId]: { scopes: ["mcp:tools"], why: "Treg's tools." },
+          },
+        }),
+      });
+      // Another app that lists the row in its manifest: not its own.
+      if (options.callerSlug) {
+        await db.insert(apps).values({
+          id: `app-${options.callerSlug}`,
+          organizationId: acme,
+          appSlug: options.callerSlug,
+          name: "Other",
+          description: "",
+          status: "active",
+          manifest: JSON.stringify({
+            id: options.callerSlug,
+            name: "Other",
+            description: "Another app.",
+            capabilities: {
+              [providerId]: { scopes: ["mcp:tools"], why: "Treg's tools." },
+            },
+          }),
+        });
+      }
+    }
+
+    /** Start a connect; the authorize URL and the callback a server would send back. */
+    async function start(
+      providerId = "treg-mcp",
+      slug = "treg",
+    ): Promise<{ authorize: URL; state: string }> {
+      const started = await serveConnectRoute(
+        new Request(`${GATEWAY}/connect/${providerId}?app=${slug}`),
+        { fetchUpstream: tregToken, now: () => now },
+      );
+      expect(started?.status).toBe(302);
+      const authorize = new URL(started!.headers.get("location")!);
+      return { authorize, state: authorize.searchParams.get("state")! };
+    }
+
+    function callback(state: string, extra = "", providerId = "treg-mcp") {
+      return serveConnectRoute(
+        new Request(
+          `${GATEWAY}/connect/${providerId}/callback?code=the-code&state=${state}${extra}`,
+        ),
+        { fetchUpstream: tregToken, now: () => now },
+      );
+    }
+
+    beforeEach(() => {
+      forms = [];
+    });
+
+    it("sends resource on the authorize URL, the code exchange and every refresh, and keeps what the server granted", async () => {
+      await addTregRow();
+      const { authorize, state } = await start();
+      expect(authorize.origin + authorize.pathname).toBe(`${ISSUER}/authorize`);
+      expect(authorize.searchParams.get("resource")).toBe(MCP_URL);
+      expect(authorize.searchParams.get("scope")).toBe("mcp:tools");
+      expect(authorize.searchParams.get("code_challenge_method")).toBe("S256");
+
+      // The issuer the flow is for: accepted.
+      const finished = await callback(
+        state,
+        `&iss=${encodeURIComponent(ISSUER)}`,
+      );
+      expect(finished?.status).toBe(302);
+      expect(forms[0]!.get("grant_type")).toBe("authorization_code");
+      expect(forms[0]!.get("resource")).toBe(MCP_URL);
+      expect(forms[0]!.get("code_verifier")).toBeTruthy();
+
+      // Lenient scopes: more than asked is kept as granted, never refused.
+      const [row] = await db
+        .select()
+        .from(providerConnections)
+        .where(eq(providerConnections.providerId, "treg-mcp"));
+      expect(JSON.parse(row!.scopes)).toEqual(["mcp:tools", "offline"]);
+      expect(row!.appRowId).toBe("app-treg");
+
+      // The refresh, a minute later, carries resource too.
+      const registry = await gatewayProviders();
+      const capability = registry.get("treg-mcp");
+      if (capability?.mode !== "oauth_client") throw new Error("oauth row");
+      const client = await resolveOAuthClient({
+        id: "treg-mcp",
+        capability,
+        env: fakeEnv as never,
+        lookup: registry,
+      });
+      const refreshed = await accessTokenFor({
+        connectionId: row!.id,
+        scopes: JSON.parse(row!.scopes) as string[],
+        capability,
+        client: client!,
+        env: fakeEnv as never,
+        fetchUpstream: tregToken,
+        now: now + 60_000,
+        log: { provider: "treg-mcp" },
+      });
+      expect(refreshed).toEqual({ ok: true, accessToken: "treg-access-2" });
+      expect(forms[1]!.get("grant_type")).toBe("refresh_token");
+      expect(forms[1]!.get("resource")).toBe(MCP_URL);
+    });
+
+    it("checks the scopes of a row that isn't the calling app's own: another app listing treg-mcp is refused, nothing stored", async () => {
+      await addTregRow({ callerSlug: "other" });
+      const { state } = await start("treg-mcp", "other");
+      const refused = await callback(state);
+      expect(refused?.status).toBe(400);
+      expect(await refused?.text()).toContain("offline");
+      expect(await db.select().from(providerConnections)).toEqual([]);
+    });
+
+    it("checks the scopes of an ordinary OAuth spec that sets a resource: refused, nothing stored", async () => {
+      await addTregRow({ providerId: "treg-api" });
+      const { state } = await start("treg-api");
+      const refused = await callback(state, "", "treg-api");
+      expect(refused?.status).toBe(400);
+      expect(await refused?.text()).toContain("offline");
+      expect(await db.select().from(providerConnections)).toEqual([]);
+    });
+
+    it("refuses a callback whose iss is another authorization server's, the state spent and nothing exchanged", async () => {
+      await addTregRow();
+      const { state } = await start();
+      const refused = await callback(
+        state,
+        `&iss=${encodeURIComponent("https://evil.example")}`,
+      );
+      expect(refused?.status).toBe(400);
+      expect(await refused?.text()).toContain("another authorization server");
+      expect(forms).toEqual([]);
+      expect(await db.select().from(providerConnections)).toEqual([]);
+      // The state was spent: the right iss with it is refused too.
+      const again = await callback(state, `&iss=${encodeURIComponent(ISSUER)}`);
+      expect(again?.status).toBe(400);
+      expect(await again?.text()).toContain("used already");
     });
   });
 });

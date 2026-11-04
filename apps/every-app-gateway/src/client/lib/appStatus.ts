@@ -1,9 +1,5 @@
 import type { ComponentProps } from "react";
-import {
-  hasRemoteMcpBlock,
-  PROVIDER_APP_TIER,
-  remoteMcpOf,
-} from "@every-app/sdk/internal";
+import { hasRemoteMcpBlock, PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import type { Badge } from "@/client/components/ui/badge";
 import type { UserAccessApp } from "@/types/app";
 
@@ -34,8 +30,6 @@ export enum AppStatusLabel {
   NeedsSetup = "Needs setup",
   /** An MCP app turned off (`everyapp mcp off`, Turn off): kept, not served. */
   Off = "Off",
-  /** A remote MCP server that wants OAuth, which the Gateway doesn't do yet. */
-  NotSupported = "Not supported yet",
   /**
    * At the organization's monthly cap on provider calls: the app opens,
    * but the Gateway refuses its AI and provider calls until the month ends
@@ -66,9 +60,7 @@ type AppStatusInput = Pick<
  * opens: once its key is set it is Active, and its tools are served to AI
  * clients; the card opens the "Use it from your agent" dialog instead
  * ({@link mcpAppUsable}). An MCP app that is off reads "Off" (its access
- * and tokens are kept; Turn on serves it again), and a remote one whose
- * server wants OAuth reads "Not supported yet" where the list carries its
- * manifest (Admin → Apps). Either kind, at its monthly cap (`paused`),
+ * and tokens are kept; Turn on serves it again). Either kind, at its monthly cap (`paused`),
  * shows "Paused" in place of Active and opens as it did: only its
  * provider calls are refused. The deploy and setup states come first,
  * since the person must act on them before a cap matters. An app
@@ -93,13 +85,6 @@ export function appStatus(
       return {
         label: AppStatusLabel.Off,
         variant: "secondary",
-        opens: false,
-      };
-    }
-    if (remoteMcpAuthKind(app) === "oauth") {
-      return {
-        label: AppStatusLabel.NotSupported,
-        variant: "outline",
         opens: false,
       };
     }
@@ -219,14 +204,6 @@ export function isRemoteMcpApp(
   app: Pick<UserAccessApp, "tier"> & { manifest?: string | null },
 ): boolean {
   return isMcpApp(app) && hasRemoteMcpBlock(parsedManifest(app.manifest));
-}
-
-/** A remote MCP app's auth kind, or null (a built-in, or no manifest to read). */
-function remoteMcpAuthKind(
-  app: Pick<UserAccessApp, "tier"> & { manifest?: string | null },
-): string | null {
-  if (!isMcpApp(app)) return null;
-  return remoteMcpOf(parsedManifest(app.manifest))?.auth.kind ?? null;
 }
 
 /** The chip beside an MCP app's name, on the card and in Admin → Apps. */

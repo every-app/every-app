@@ -372,7 +372,7 @@ A host in the spec isn't one a key may go to (an IP, `localhost`, a private name
 ### PROVIDER_IN_USE
 Apps list the provider under `capabilities`. Remove it from them first.
 ### PROVIDER_KEY_UNSET
-The MCP app is on, but its key isn't set. Set it with `everyapp secret set <NAME>`.
+The MCP app is on, but its key isn't set, or was set for other hosts. Set it with `everyapp secret set <NAME>`.
 ### PROVIDER_NOT_FOUND
 Not a built-in provider, preset, file or URL, or not registered here (`everyapp provider list`).
 ### PROVIDER_PRESET_UNKNOWN
@@ -411,28 +411,28 @@ GitHub refused a call during `release --publish`. Retryable on 5xx and 429.
 A release is at most 200 MB.
 ### RELEASE_UNSUPPORTED
 The release uses a Build Output this CLI doesn't deploy. Update everyapp.
+### REMOTE_MCP_CREDENTIAL_REJECTED
+Warning: `mcp add` checked the key with one `tools/list` and the server refused it. Check the key and where it goes (`--auth`, `--header`, `--param`), then `everyapp secret set <ID>_MCP_TOKEN` again.
 ### REMOTE_MCP_EXISTS
 An MCP app with that id exists. Remove it first, or change it in place with `everyapp mcp tool`.
 ### REMOTE_MCP_GATEWAY_OUTDATED
 The Gateway predates remote MCP apps. Run `everyapp update`.
 ### REMOTE_MCP_INVALID
 `mcp add` got flags or a server answer a remote MCP app can't use (the message says which). Fix and rerun.
+### REMOTE_MCP_NEEDS_CREDENTIAL
+The server asks for a credential and nothing said how to give it. Add it with `--auth bearer|header|query|basic|oauth` or `--provider <id>`; `--force` adds it with none.
+### REMOTE_MCP_OAUTH_DISCOVERY
+The server's OAuth metadata can't be found or isn't usable (no PKCE, not https). If it takes an API key instead, use a static `--auth`.
+### REMOTE_MCP_OAUTH_NO_CLIENT
+The server's authorization server registers no clients. Register one with the redirect URI the message prints, then add again with `--client-id <id> --client-secret-from-env <VAR>`.
 ### REMOTE_MCP_PROBE_FAILED
 The server didn't answer the probe from this machine; the app was added anyway.
-### REMOTE_MCP_SECRET_AMBIGUOUS
-Several MCP apps declare that credential name.
-### REMOTE_MCP_SECRET_BOUND_ELSEWHERE
-The credential is pinned to another origin; set it again for this server.
-### REMOTE_MCP_SECRET_TAKEN
-That credential name belongs to an MCP app at another origin. Pass another `--secret`.
-### REMOTE_MCP_SECRET_UNDECLARED
-No live MCP app declares that `_MCP_TOKEN` name.
+### REMOTE_MCP_PROVIDER_HOST
+`--provider`'s hosts don't include the MCP URL's host. Use the server's own `--auth`, or the provider whose host it is.
 ### REMOTE_MCP_TOOL_NOT_LISTED
 The tool isn't in the server's last listing; the override is kept for when it appears.
 ### REMOTE_MCP_URL_REFUSED
-The Gateway won't fetch that MCP URL: it must be public `https://`, not an IP, not on this Gateway, and not a provider whose key it holds.
-### REMOTE_MCP_WANTS_OAUTH
-The server asks for OAuth sign-in. [mcp](/docs/agent/mcp#mcp-apps)
+The Gateway won't fetch that MCP URL: it must be public `https://`, not an IP, not on this Gateway, and not a provider's host unless `--provider` names that provider.
 ### REPEATED_FLAG
 A flag was given twice (exit 252).
 ### RESERVED_APP_ID

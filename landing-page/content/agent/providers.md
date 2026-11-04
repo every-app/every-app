@@ -64,9 +64,19 @@ Built in: `google-workspace`, `microsoft-365`, `slack`. Presets (`everyapp provi
 
 ### The spec: `auth.kind: "oauth2-user"`
 
-The common fields, with `hosts` the API hosts the token goes to, and an `auth` block: `authorizeUrl`, `tokenUrl`, optional `revokeUrl` and `revokeMethod`, `clientId` and optional `clientSecret` (setting names under the id's prefix), `inject` (`form` or `basic`), `pkce`, `scopeSeparator` (`space` or `comma`), `scopePrefix` (joined onto an app's short scope), `authorizeParams`, `tokenHeaders`, `identity` (`{ url, label, id? }`, to name the connection) and `tolerated` (extra scopes a token may carry).
+The common fields, with `hosts` the API hosts the token goes to, and an `auth` block: `authorizeUrl`, `tokenUrl`, optional `revokeUrl` and `revokeMethod`, `clientId` and optional `clientSecret` (setting names under the id's prefix), `inject` (`form` or `basic`), `pkce`, `scopeSeparator` (`space` or `comma`), `scopePrefix` (joined onto an app's short scope), `authorizeParams`, `tokenHeaders`, `identity` (`{ url, label, id? }`, to name the connection), `tolerated` (extra scopes a token may carry), `resource` (the RFC 8707 resource the tokens are for; an MCP app's own `<id>-mcp` row keeps the scopes its server grants; any other row is checked as usual) and `issuer` (the RFC 8414 issuer; a callback's `iss` must equal it).
 
 Disconnecting (the app, Settings → Connected accounts, Manage workspace → Providers, `everyapp provider disconnect <id> --user <email> [--app <app>]`) deletes the connection and revokes it at the provider. Removing a member, their access to an app, or the app deletes the connections too. `everyapp provider connections [--user] [--provider] [--app] [--all]` lists who connected what, never a token.
+
+## Rows `mcp add` writes
+
+A remote MCP app's credential is a provider row `<id>-mcp` (`treg` → `treg-mcp`), written with the app by `everyapp mcp add <url>`. Its `hosts` is the MCP URL's host alone, so the key or token goes nowhere else.
+
+- `--auth bearer|header|query|basic`: an `api_key` row whose value is `<ID>_MCP_TOKEN` (`everyapp secret set TREG_MCP_TOKEN`).
+- `--auth oauth`: an `oauth2-user` row from the server's discovered metadata, with `resource` and `issuer`, the client registered by DCR or given with `--client-id`, and the discovered scopes and `scopes_supported` as `tolerated`. Each member connects their own account in the app.
+- `--provider <id>`: an existing provider instead (`elevenlabs`). The URL's host must be one of its hosts (`REMOTE_MCP_PROVIDER_HOST`).
+
+Adding the app again with another credential replaces the row and deletes its connections. `mcp remove` leaves the row with its organization; `provider remove <id>-mcp` removes it.
 
 ## Specs an app bundles
 

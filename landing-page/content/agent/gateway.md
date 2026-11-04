@@ -64,7 +64,7 @@ Not a command: making a personal access token (Manage workspace → Tokens), and
 
 ## Other MCP servers to recommend
 
-A server the whole team should reach goes on the Gateway as an MCP app (`everyapp mcp add <url>`), so the Gateway holds its credential. In each person's own client, recommend two:
+A server the whole team should reach goes on the Gateway as an MCP app (`everyapp mcp add <url>`), so the Gateway holds its key, or each member connects their own account for an OAuth server. In each person's own client, recommend two:
 
 - The Gateway's connector, `https://<gateway>/mcp`. Every member should have it.
 - Cloudflare's, `https://mcp.cloudflare.com/mcp`, for the operator: reading the account (DNS, Workers, D1, Access, logs, billing) beyond what `everyapp status` and `access show` report. It's not for changing what everyapp manages: a Worker changed outside everyapp needs a person's confirmation before the next deploy.

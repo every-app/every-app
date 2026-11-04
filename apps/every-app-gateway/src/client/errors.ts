@@ -94,8 +94,14 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
   REMOTE_MCP_INVALID: "Check the server's details and try again.",
   REMOTE_MCP_URL_REFUSED: "The Gateway can't use that URL.",
   REMOTE_MCP_EXISTS: "An MCP app with this name is on this Gateway already.",
-  REMOTE_MCP_SECRET_TAKEN:
-    "That credential name belongs to another MCP app; choose another.",
+  REMOTE_MCP_PROVIDER_HOST:
+    "That provider doesn't send its credential to this server's host.",
+  REMOTE_MCP_OAUTH_DISCOVERY:
+    "The Gateway couldn't find how this server signs in.",
+  REMOTE_MCP_OAUTH_NO_CLIENT:
+    "This server can't register the Gateway as a client: paste a client id and secret.",
+  APP_NOT_METERED:
+    "An MCP server added by URL isn't metered, so it takes no cap.",
   APP_TIER_MISMATCH: "That name belongs to another app on this Gateway.",
   PROVIDER_NOT_FOUND: "No such provider on this Gateway.",
   PROVIDER_SPEC_INVALID: "The provider spec is not valid.",
@@ -128,7 +134,10 @@ const RULE_MESSAGE_CODES: ReadonlySet<string> = new Set<PublicErrorCode>([
   "REMOTE_MCP_INVALID",
   "REMOTE_MCP_URL_REFUSED",
   "REMOTE_MCP_EXISTS",
-  "REMOTE_MCP_SECRET_TAKEN",
+  "REMOTE_MCP_PROVIDER_HOST",
+  "REMOTE_MCP_OAUTH_DISCOVERY",
+  "REMOTE_MCP_OAUTH_NO_CLIENT",
+  "APP_NOT_METERED",
   "APP_TIER_MISMATCH",
   // The OAuth provider rules (server/oauth/service.ts) name what is wrong.
   "PROVIDER_NOT_FOUND",

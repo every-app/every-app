@@ -9,28 +9,6 @@ import {
 import { apps } from "./apps.schema";
 
 /**
- * Which origin a remote MCP app's credential was set for
- * (docs/design/2026-10-mcp-by-url.md, "The credential and where it is
- * pinned"). `everyapp secret set <NAME>_MCP_TOKEN` records the origin of the
- * row that declares the name; a gateway that finds a set credential with
- * no row here binds it to the row's origin on first use. The gateway sends
- * a credential only to the origin bound here, so an owner or admin who
- * re-points a row, or removes one and adds another under the same id,
- * never makes it go anywhere the operator didn't set it for. One row per
- * credential name; the install has one set of Gateway secrets, so the
- * table is not per organization. `everyapp secret unset` deletes the row.
- */
-export const remoteMcpCredentials = sqliteTable("remote_mcp_credentials", {
-  // The Gateway setting's name (`TREG_MCP_TOKEN`).
-  name: text("name").primaryKey(),
-  // The origin (`https://treg.to`) the credential may be sent to.
-  origin: text("origin").notNull(),
-  // The Cloudflare login that set it, or "gateway" for a first-use binding.
-  boundBy: text("bound_by"),
-  boundAt: integer("bound_at", { mode: "timestamp_ms" }).notNull(),
-});
-
-/**
  * What a remote MCP server listed, tool by tool, as the gateway last read
  * it (server/remote-mcp writes it at every listing, under the snapshot's
  * own write): the server's name for the tool, the ToolBus name it got

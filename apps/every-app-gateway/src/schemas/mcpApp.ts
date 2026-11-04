@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {
-  REMOTE_MCP_AUTH_KINDS,
+  REMOTE_MCP_CREDENTIAL_KINDS,
   REMOTE_MCP_RISK_DEFAULTS,
   TOOL_RISKS,
 } from "@every-app/sdk/internal";
@@ -38,13 +38,32 @@ export const addRemoteMcpAppSchema = z.object({
   /** The name people read; the id when absent. */
   name: optionalText(255),
   description: optionalText(1000),
-  auth: z.object({
-    kind: z.enum(REMOTE_MCP_AUTH_KINDS),
-    /** The Gateway setting's NAME, never a value. */
-    secret: optionalText(64),
-    header: optionalText(100),
-    prefix: z.string().max(32).optional(),
-  }),
+  /**
+   * The credential: none; a static kind (`bearer`, `header`, `query`,
+   * `basic`), which becomes the app's own API-key provider row whose
+   * value the operator sets in a terminal (never here); `oauth`, a
+   * discovered row and a client registered with the server (or pasted:
+   * `clientId`, `clientSecret`, the Admin form's sealed paste, never a
+   * tool's); or `provider`, an existing provider of the registry.
+   */
+  auth: z
+    .object({
+      kind: z.enum([...REMOTE_MCP_CREDENTIAL_KINDS, "provider"]),
+      /** `header`: the header's name. */
+      header: optionalText(100),
+      /** `bearer`: another scheme; `header`: text before the value. */
+      prefix: z.string().max(32).optional(),
+      /** `query`: the parameter's name. */
+      param: optionalText(100),
+      /** `provider`: its id. */
+      provider: optionalText(40),
+      /** `oauth`, when the server can't register a client: the pasted client id. */
+      clientId: optionalText(512),
+      /** And its secret, sealed on the Gateway (a public client has none). */
+      clientSecret: optionalText(2048),
+    })
+    // A field it doesn't know (a value where a name went) is refused, not dropped.
+    .strict(),
   risk: z.enum(REMOTE_MCP_RISK_DEFAULTS).optional(),
 });
 
@@ -82,3 +101,8 @@ export const setMcpAppStatusSchema = z.object({
 
 /** One MCP app by its row's id: show, refresh, remove. */
 export const mcpAppIdSchema = z.object({ id: rowId });
+
+/** An MCP app by its app id (`treg`), for a member's connection status. */
+export const mcpAppConnectionSchema = z.object({
+  appId: z.string().trim().min(1).max(64),
+});

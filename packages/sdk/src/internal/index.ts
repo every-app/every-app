@@ -18,6 +18,7 @@ export * from "./audit.js";
 export * from "./providerSpec.js";
 export * from "./providerRegistry.js";
 export * from "./remoteMcp.js";
+export * from "./mcpOAuth.js";
 export * from "./signInProviders.js";
 export * from "./devProviders.js";
 export {

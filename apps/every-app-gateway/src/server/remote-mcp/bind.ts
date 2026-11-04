@@ -1,171 +1,415 @@
 /**
- * A remote MCP app's credential, and where it may go
- * (docs/design/2026-10-mcp-by-url.md, "The credential and where it is
- * pinned"). The value is a Gateway setting named by the row's manifest
- * (`<ID>_MCP_TOKEN`), read from this Worker's env and never from anywhere
- * else. A name is bound to one origin: the one `everyapp secret set`
- * recorded (the operator's explicit pin). A value set some other way (the
- * Cloudflare dashboard) has no pin and is sent nowhere until the operator
- * runs `secret set`: the gateway never pins on first use, since the first
- * row to use a name could be any owner's or admin's. The gateway sends the
- * credential only to the origin it is bound to: a row whose URL names
- * another origin reads as needing setup, and nothing is sent.
+ * A remote MCP app's credential, and whose it is
+ * (docs/design/2026-11-mcp-apps-auth.md, phases 2 and 3). The block names
+ * a provider of the registry, or none:
  *
- * Nothing here returns the value except as the request headers the client
- * sends, and nothing logs it.
+ * - an API-key provider (a catalog entry such as `elevenlabs`, a
+ *   registered row, or the app's own `<appId>-mcp` row): one key the
+ *   Gateway holds in its settings, read only while the row is bound to the
+ *   hosts and auth it has now (`providers.value-bound-to-hosts`, the
+ *   registry's `bound`), placed on the request as the provider's `auth`
+ *   says (headers, or query parameters on the URL the client posts to);
+ * - an OAuth provider with a Gateway-run flow: the connection a member
+ *   made in this app at `/connect/<provider>?app=<app>`. A call uses the
+ *   caller's own connection; a listing, which no one in particular makes,
+ *   uses the app's connection used most recently. The access token comes from the existing lease and refresh
+ *   (oauth/tokens.ts `accessTokenFor`) and goes as `Authorization: Bearer`.
+ *
+ * Either way the credential goes only to a URL on one of the provider's
+ * hosts: the row's URL is checked against them here, before every fetch,
+ * so a row edited by hand can't point a key or a token anywhere else.
+ *
+ * Nothing here returns a value except as the headers and query the client
+ * sends (and `secrets`, every form of it an error must never show), and
+ * nothing logs one.
  */
-import { env } from "cloudflare:workers";
+import { env, waitUntil } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import {
-  remoteMcpAuthHeaders,
-  remoteMcpSecretOf,
+  authorizationFor,
+  capabilitySettings,
+  isRemoteMcpProviderIdOf,
+  remoteMcpProviderHosts,
   remoteMcpUrlProblem,
+  type ApiKeyCapability,
+  type Capability,
+  type CapabilitySettings,
+  type OAuthClientCapability,
+  type ProviderRegistry,
   type RemoteMcpBlock,
 } from "@every-app/sdk/internal";
-import { RemoteMcpRepository } from "@/server/repositories/RemoteMcpRepository";
+import { gatewayProviders } from "@/server/providers";
+import { ProviderConnectionRepository } from "@/server/repositories/ProviderConnectionRepository";
+import { SETUP_CLI } from "@/server/setup-cli";
+import type { OAuthClientResolver } from "../oauth/client";
+import type { Fetch } from "../oauth/tokens";
+
+/** The registry facts about the row the credential is for. */
+interface CredentialRoute {
+  rowId: string;
+  organizationId: string;
+  appSlug: string;
+  name?: string;
+}
+
+/** Who is calling: a member (a tool call), or no one (a listing). */
+export type CredentialCaller = { id: string } | null;
 
 export type CredentialState =
   /** `auth.kind: none`: nothing to send. */
-  | { kind: "none"; headers: Record<string, string> }
-  /** The credential is set and bound to this row's origin. `secrets`: every form of the value an error must never show. */
+  | { kind: "none" }
+  /**
+   * The credential to send: `headers` and `query` (parameters set on the
+   * URL), `secrets` (every form of the value an error must never show),
+   * and `key`, what tells one credential from another for the client
+   * cache (whose it is and its value, in memory only).
+   */
   | {
       kind: "ready";
+      provider: string;
       headers: Record<string, string>;
-      name: string;
+      query: Record<string, string>;
       secrets: string[];
+      key: string;
+      /** For an OAuth provider: whose connection it is, and where to reconnect it. */
+      oauth?: { connectionId: string; connectUrl: string; label: string };
     }
-  /** The Gateway setting isn't set. */
-  | { kind: "unset"; name: string }
-  /** The setting is set, but no operator pinned it to an origin: nothing is sent. */
-  | { kind: "unpinned"; name: string }
-  /** The setting is set, but for another origin: nothing is sent. */
-  | { kind: "mismatch"; name: string; boundOrigin: string }
-  /** `auth.kind: oauth`: not served this week. */
-  | { kind: "unsupported"; reason: string }
-  /** The row's URL is refused by the rules: nothing is sent or bound. */
-  | { kind: "refused"; reason: string };
+  /**
+   * The member has no usable connection to the app's OAuth provider: a
+   * call answers this as a tool error, never a protocol error.
+   */
+  | { kind: "connect"; message: string; connectUrl: string }
+  /** Nothing can be sent for anyone: what the app lacks, in plain words. */
+  | { kind: "needs_setup"; reason: string };
 
-/** How long a binding read stays good in this isolate. */
-const BINDING_CACHE_MS = 60_000;
-const bindings = new Map<string, { origin: string; readAt: number }>();
-
-export function resetRemoteMcpBindingsForTests(): void {
-  bindings.clear();
+interface CredentialDeps {
+  /** The token and refresh fetches (tests stand in for the provider). */
+  fetchUpstream?: Fetch;
+  resolveClient?: OAuthClientResolver;
+  providers?: () => Promise<ProviderRegistry>;
 }
 
-function settings(): Record<string, unknown> {
-  return env as unknown as Record<string, unknown>;
+function settings(): CapabilitySettings & Record<string, unknown> {
+  return env as unknown as CapabilitySettings & Record<string, unknown>;
 }
 
-/** The setting's value when set to something, else null. */
-function settingValue(name: string): string | null {
+function read(name: string): string | null {
   const value = settings()[name];
-  return typeof value === "string" && value.trim() ? value : null;
+  return typeof value === "string" ? value : null;
+}
+
+function gatewayUrl(): string {
+  return (read("GATEWAY_URL") ?? "").trim().replace(/\/+$/, "");
 }
 
 /**
- * The origin a credential name is pinned to, or null when no operator has
- * pinned it (`everyapp secret set` writes the pin). Never written here. A
- * pin is cached per isolate for a minute; its absence is not, so a pin
- * written by the CLI is seen on the next read.
+ * Where a member connects the provider for a remote MCP app, a path on
+ * the Gateway: back to the launcher's dialog for the app afterwards.
  */
-async function boundOrigin(name: string): Promise<string | null> {
-  const cached = bindings.get(name);
-  const now = Date.now();
-  if (cached && now - cached.readAt < BINDING_CACHE_MS) return cached.origin;
-  const existing = await RemoteMcpRepository.findCredentialBinding(name);
-  if (!existing) return null;
-  bindings.set(name, { origin: existing.origin, readAt: now });
-  return existing.origin;
+export function remoteMcpConnectPath(
+  provider: string,
+  appSlug: string,
+): string {
+  const back = `/?mcp=${encodeURIComponent(appSlug)}`;
+  return `/connect/${encodeURIComponent(provider)}?app=${encodeURIComponent(appSlug)}&return=${encodeURIComponent(back)}`;
 }
 
-/**
- * The credential state for a row's `remote` block: the headers to send,
- * or why nothing can be sent. Reads the Gateway's env and the binding
- * table, writes nothing; logs a missing pin or a mismatch once per read.
- */
-export async function credentialFor(
-  block: RemoteMcpBlock,
-  rowId: string,
-): Promise<CredentialState> {
-  // The URL rule first, so a row edited by hand never binds a credential
-  // to an address the rules refuse.
-  const read = (name: string) => {
-    const value = settings()[name];
-    return typeof value === "string" ? value : null;
-  };
-  const urlProblem = remoteMcpUrlProblem(block.url, {
-    gatewayUrl: read("GATEWAY_URL") ?? "",
-    appBaseDomain: read("APP_BASE_DOMAIN"),
-    thirdPartyDomain: read("THIRD_PARTY_DOMAIN"),
-  });
-  if (urlProblem) {
+/** The same, as a full URL for a message an AI client relays. */
+function remoteMcpConnectUrl(provider: string, appSlug: string): string {
+  return `${gatewayUrl()}${remoteMcpConnectPath(provider, appSlug)}`;
+}
+
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).hostname.toLowerCase().replace(/\.$/, "");
+  } catch {
+    return null;
+  }
+}
+
+/** The connect sentence a call answers with. */
+function connectMessage(label: string, url: string, again: boolean): string {
+  return again
+    ? `Reconnect your ${label} account to use this tool: ${url}`
+    : `Connect your ${label} account to use this tool: ${url}`;
+}
+
+/** An API-key provider's credential: its key while set and bound, placed as its `auth` says. */
+function apiKeyCredential(
+  providerId: string,
+  capability: ApiKeyCapability,
+  registry: ProviderRegistry,
+): CredentialState {
+  const names = capabilitySettings(capability);
+  const command = `${SETUP_CLI} secret set ${names.join(" ")}`;
+  const values = settings();
+  const auth = authorizationFor(capability, values);
+  if (!auth) {
     return {
-      kind: "refused",
-      reason: `its address is refused by this Gateway (${urlProblem})`,
+      kind: "needs_setup",
+      reason: `its key isn't set for this server: its operator runs ${command}`,
     };
   }
-  if (block.auth.kind === "oauth") {
+  // A registered row's key is read only for the hosts and auth it was set
+  // for: a row replaced since reads nothing until the key is set again.
+  if (!registry.bound(providerId)) {
     return {
-      kind: "unsupported",
-      reason:
-        "this server wants OAuth, which this Gateway doesn't do yet; if it also takes an API key, add it again with --auth bearer",
+      kind: "needs_setup",
+      reason: `its key was set for other hosts or another auth than ${providerId} has now: its operator runs ${command} again`,
     };
   }
-  const name = remoteMcpSecretOf(block.auth);
-  if (!name) return { kind: "none", headers: {} };
-  const value = settingValue(name);
-  if (!value) return { kind: "unset", name };
-  const origin = new URL(block.url).origin;
-  const bound = await boundOrigin(name);
-  if (bound === null) {
-    logEvent(
-      "mcp.remote.credential_unpinned",
-      { name, appRowId: rowId, origin },
-      "warn",
-    );
-    return { kind: "unpinned", name };
-  }
-  if (bound !== origin) {
-    logEvent(
-      "mcp.remote.credential_origin_mismatch",
-      { name, appRowId: rowId, origin, boundOrigin: bound },
-      "warn",
-    );
-    return { kind: "mismatch", name, boundOrigin: bound };
-  }
-  // The raw value, and for a user:password pair each half, so the client's
-  // sanitizer strips them from anything an error carries.
-  const secrets = [value];
-  if (block.auth.kind === "basic" && value.includes(":")) {
+  // Every form of the value an error could carry: each setting's raw value
+  // and, for a user:password pair, each half.
+  const secrets: string[] = [];
+  for (const name of names) {
+    const value = values[name];
+    if (typeof value !== "string" || !value.trim()) continue;
+    secrets.push(value, value.trim());
     const colon = value.indexOf(":");
-    secrets.push(value.slice(0, colon), value.slice(colon + 1));
+    if (capability.auth.kind === "basic" && colon > 0) {
+      secrets.push(value.slice(0, colon), value.slice(colon + 1));
+    }
   }
   return {
     kind: "ready",
-    headers: remoteMcpAuthHeaders(block.auth, value),
-    name,
-    secrets: secrets.filter((part) => part.length > 0),
+    provider: providerId,
+    headers: auth.headers,
+    query: auth.query,
+    secrets: [...new Set(secrets.filter((part) => part.length > 0))],
+    key: `key:${providerId}:${JSON.stringify([auth.headers, auth.query])}`,
   };
 }
 
-/** Plain words for a state that serves nothing, for setup reports and tool errors. */
-export function credentialProblem(
-  state: CredentialState,
-  cli = "pnpm everyapp",
-): string | null {
-  switch (state.kind) {
-    case "none":
-    case "ready":
-      return null;
-    case "unset":
-      return `its credential ${state.name} isn't set on this Gateway: its operator sets it with ${cli} secret set ${state.name}`;
-    case "unpinned":
-      return `its credential ${state.name} is set but not pinned to a server: its operator runs ${cli} secret set ${state.name}, which pins it to this server`;
-    case "mismatch":
-      return `its credential ${state.name} was set for ${state.boundOrigin}, not for this server; its operator runs ${cli} secret set ${state.name} again`;
-    case "unsupported":
-    case "refused":
-      return state.reason;
+/** An OAuth provider's credential: the connection the caller (or the listing) uses. */
+async function oauthCredential(
+  providerId: string,
+  capability: OAuthClientCapability,
+  registry: ProviderRegistry,
+  block: RemoteMcpBlock,
+  route: CredentialRoute,
+  caller: CredentialCaller,
+  deps: CredentialDeps,
+): Promise<CredentialState> {
+  const label = capability.label;
+  const connectUrl = remoteMcpConnectUrl(providerId, route.appSlug);
+  // The OAuth side loads on first use, as the proxy's does: it reads D1
+  // and the event bus, which a key-only or credential-less app never needs.
+  const [{ resolveOAuthClient }, { gatewayHeldTokens }] = await Promise.all([
+    import("../oauth/client"),
+    import("../oauth/heldTokens"),
+  ]);
+  const client = await (deps.resolveClient ?? resolveOAuthClient)({
+    id: providerId,
+    capability,
+    env: settings() as never,
+    lookup: registry,
+  });
+  if (!client) {
+    return {
+      kind: "needs_setup",
+      reason: `the Gateway holds no OAuth client for ${label}: add the server again, or an owner or admin adds a client under Manage workspace → Providers`,
+    };
   }
+  let connection: Awaited<
+    ReturnType<typeof ProviderConnectionRepository.find>
+  > = null;
+  if (caller) {
+    connection = await ProviderConnectionRepository.find({
+      organizationId: route.organizationId,
+      providerId,
+      userId: caller.id,
+      appRowId: route.rowId,
+    });
+    if (!connection || connection.status === "expired") {
+      return {
+        kind: "connect",
+        message: connectMessage(label, connectUrl, connection !== null),
+        connectUrl,
+      };
+    }
+  } else {
+    connection = await ProviderConnectionRepository.latestActiveForProvider(
+      route.organizationId,
+      providerId,
+      route.rowId,
+    );
+    if (!connection) {
+      return {
+        kind: "needs_setup",
+        reason: `nobody has connected ${label} yet: a member connects at ${connectUrl}`,
+      };
+    }
+  }
+  const fetchUpstream: Fetch =
+    deps.fetchUpstream ?? ((request) => fetch(request));
+  const held = gatewayHeldTokens({ fetchUpstream });
+  const heldConnection = {
+    id: connection.id,
+    userId: connection.userId,
+    appRowId: connection.appRowId,
+    label: connection.label,
+    scopes: connection.scopes,
+    status: connection.status,
+    expiresAt: connection.expiresAt,
+  };
+  const token = await held.accessToken({
+    connection: heldConnection,
+    providerId,
+    capability,
+    client,
+    organizationId: route.organizationId,
+  });
+  if (!token.ok) {
+    if (token.reason === "expired" || token.reason === "no_refresh_token") {
+      waitUntil(
+        held
+          .expired({
+            connection: heldConnection,
+            providerId,
+            capability,
+            organizationId: route.organizationId,
+          })
+          .catch(() => undefined),
+      );
+    }
+    logEvent(
+      "mcp.remote.connection_unusable",
+      {
+        app: route.appSlug,
+        appRowId: route.rowId,
+        provider: providerId,
+        reason: token.reason,
+      },
+      "warn",
+    );
+    if (caller) {
+      return {
+        kind: "connect",
+        message: connectMessage(label, connectUrl, true),
+        connectUrl,
+      };
+    }
+    return {
+      kind: "needs_setup",
+      reason: `the ${label} connection it lists with needs to be made again: connect at ${connectUrl}`,
+    };
+  }
+  if (caller) {
+    waitUntil(
+      held
+        .used({
+          connection: heldConnection,
+          providerId,
+          capability,
+          organizationId: route.organizationId,
+          appId: route.appSlug,
+        })
+        .catch(() => undefined),
+    );
+  }
+  return {
+    kind: "ready",
+    provider: providerId,
+    headers: { authorization: `Bearer ${token.accessToken}` },
+    query: {},
+    secrets: [token.accessToken],
+    key: `oauth:${connection.id}:${token.accessToken}`,
+    oauth: { connectionId: connection.id, connectUrl, label },
+  };
+}
+
+/**
+ * The credential for a row's `remote` block, for `caller` (a member's
+ * tool call) or for a listing (null): what to send, the connect sentence
+ * a call answers with, or why nothing can be sent. Reads the Gateway's
+ * env, the registry and the connection; writes only what a refresh and
+ * `last_used_at` write.
+ */
+export async function credentialFor(
+  block: RemoteMcpBlock,
+  route: CredentialRoute,
+  caller: CredentialCaller,
+  deps: CredentialDeps = {},
+): Promise<CredentialState> {
+  if (block.auth.kind === "none") return { kind: "none" };
+  const providerId = block.auth.provider;
+  const registry = await (deps.providers ?? gatewayProviders)();
+  const capability: Capability | undefined = registry.get(providerId);
+  const hosts = capability
+    ? remoteMcpProviderHosts(capability, settings())
+    : null;
+  if (!capability || !hosts) {
+    return {
+      kind: "needs_setup",
+      reason: capability
+        ? `${providerId} can't be an MCP server's credential: remove the app and add it again`
+        : `its provider ${providerId} isn't on this Gateway: remove the app and add it again`,
+    };
+  }
+  // The URL must be on one of the provider's hosts before anything is
+  // read: a key or a token goes nowhere else.
+  const host = hostOf(block.url);
+  if (!host || !hosts.includes(host)) {
+    logEvent(
+      "mcp.remote.provider_host_mismatch",
+      { app: route.appSlug, appRowId: route.rowId, provider: providerId, host },
+      "warn",
+    );
+    return {
+      kind: "needs_setup",
+      reason: `${providerId} sends its credential to ${hosts.join(", ") || "no host"}, not to ${host ?? "this URL"}`,
+    };
+  }
+  if (capability.mode === "api_key") {
+    return apiKeyCredential(providerId, capability, registry);
+  }
+  if (capability.mode === "oauth_client") {
+    return oauthCredential(
+      providerId,
+      capability,
+      registry,
+      block,
+      route,
+      caller,
+      deps,
+    );
+  }
+  return {
+    kind: "needs_setup",
+    reason: `${providerId} can't be an MCP server's credential: remove the app and add it again`,
+  };
+}
+
+/**
+ * Why a row's URL is refused by this Gateway's rules, checked before
+ * anything is read or fetched; null when it isn't. A reserved host (one
+ * whose key the Gateway holds for apps) is allowed only for an app that
+ * names that host's provider, never for the app's own row.
+ */
+export async function urlRefusal(
+  block: RemoteMcpBlock,
+  appSlug: string,
+  deps: Pick<CredentialDeps, "providers"> = {},
+): Promise<string | null> {
+  let providerHosts: string[] = [];
+  if (
+    block.auth.kind === "provider" &&
+    !isRemoteMcpProviderIdOf(block.auth.provider, appSlug)
+  ) {
+    const registry = await (deps.providers ?? gatewayProviders)();
+    const named = registry.get(block.auth.provider);
+    providerHosts = named
+      ? (remoteMcpProviderHosts(named, settings()) ?? [])
+      : [];
+  }
+  const problem = remoteMcpUrlProblem(
+    block.url,
+    {
+      gatewayUrl: read("GATEWAY_URL") ?? "",
+      appBaseDomain: read("APP_BASE_DOMAIN"),
+      thirdPartyDomain: read("THIRD_PARTY_DOMAIN"),
+    },
+    { providerHosts },
+  );
+  return problem ? `its address is refused by this Gateway (${problem})` : null;
 }

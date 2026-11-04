@@ -651,38 +651,42 @@ everyapp ai gateway off
 ### `everyapp mcp add <url>`
 Add any remote MCP server as an MCP app: its tools reach members' AI clients through the Gateway's /mcp.
 
-The Gateway serves the server's tools on its own /mcp under <id>_<tool> names, holding the server's credential itself: every call is attributed to the member, audited, counted and capped like an app's, and read tools are told apart from write tools (a read-only connection sees only the read ones). The owners and the admins can use it at once; an admin grants others in Admin → Apps → Manage access. Nothing is deployed.
+The Gateway serves the server's tools on its own /mcp under <id>_<tool> names, holding the server's credential itself: every call is attributed to the member, audited and counted (MCP servers added by URL aren't metered: no cap applies), and read tools are told apart from write tools. The owners and the admins can use it at once; an admin grants others in Admin → Apps → Manage access. Nothing is deployed.
 
-The credential is a Gateway setting named <ID>_MCP_TOKEN (--secret picks another name ending in _MCP_TOKEN), pinned to the URL's origin when it is set: the Gateway never sends it anywhere else. At a terminal, add offers to set it right away (hidden input, as secret set asks); --from-env VAR sets it from an environment variable; otherwise, afterwards:
-```sh
-everyapp secret set TREG_MCP_TOKEN
-```
+add looks at the URL once from this machine before writing anything. A server that answers without a credential is added with none. One whose 401 names its OAuth metadata is added with OAuth. One that asks for a credential otherwise is refused (REMOTE_MCP_NEEDS_CREDENTIAL) until you say how it authenticates; --force adds it anyway.
 
---auth bearer sends Authorization: Bearer <value>; header sends <header>: <value>; basic takes user:password; none sends nothing. oauth is recorded but not served yet: the Gateway doesn't sign in to MCP servers with OAuth this week.
+The credential is a provider: the app's own <id>-mcp row, written beside it, or --provider <id> for one the Gateway has (its host must be the URL's). --auth bearer|header|query|basic: a static value, <ID>_MCP_TOKEN. At a terminal add offers to set it (hidden input); --from-env VAR sets it from a variable; later: everyapp secret set TREG_MCP_TOKEN Once set, add checks it with one tools/list from here. The Gateway sends it only to the URL's host. --auth oauth: the Gateway signs in to the server. add discovers its authorization server and registers a client with it; for a server that registers none, register one with the redirect URI add prints and give --client-id (--client-secret-from-env). Each member then connects their own account, at the connect page add prints and opens (--no-open: print only).
 
-add looks at the URL once from this machine, without the credential, and says what it found (MCP, a 401, a redirect, or nothing); that is a warning, never a refusal, since the Gateway, not this machine, is what fetches it. The Gateway follows no redirects.
+The Gateway follows no redirects.
 
 ```sh
 everyapp mcp add https://mcp.deepwiki.com/mcp
 everyapp mcp add https://treg.to/mcp/ --auth bearer
 everyapp mcp add https://api.example.org/mcp --name example --auth header --header X-Api-Key --risk read
+everyapp mcp add https://mcp.linear.app/mcp
 ```
 
 - `<url>`: The server's MCP address (https://, the one URL the Gateway ever sends its credential to)
 - `--name <value>`: The app's id and tool prefix (default: from the URL's host, https://mcp.treg.to/mcp → treg)
-- `--auth none|bearer|header|basic|oauth`: How the Gateway authenticates to the server (default: none; bearer with --secret, header with --header)
+- `--auth none|bearer|header|query|basic|oauth`: How the Gateway authenticates to the server (default: OAuth when its 401 names resource metadata, none when it answers without a credential)
 - `--header <value>`: With --auth header: the header the server reads the credential from (X-Api-Key)
-- `--secret <value>`: The Gateway setting holding the credential, ending in _MCP_TOKEN (default: <ID>_MCP_TOKEN)
+- `--prefix <value>`: With --auth bearer: the scheme instead of Bearer (Token); with --auth header: what goes before the value
+- `--param <value>`: With --auth query: the query parameter the server reads the credential from (api_key)
+- `--provider <id>`: Use a provider the Gateway has as the credential (provider list names them): an API key, or an OAuth provider; the URL's host must be one of its hosts
+- `--client-id <id>`: With --auth oauth: a client registered with the server by hand, for a server that registers none itself
+- `--client-secret-from-env <VAR>`: --client-id's secret, from this environment variable
 - `--risk annotations|read|write`: How a tool's risk is decided: from the server's hints, unknown as write (annotations, the default), or every tool read or write
 - `--description <value>`: What the app is for, as Admin → Apps and everyapp_list_apps say it (default: from the URL)
-- `--from-env <VAR>`: Set the credential from this environment variable once the app is added (as secret set --from-env)
+- `--from-env <VAR>`: With a static --auth: set the credential from this environment variable (as secret set --from-env)
+- `--force`: Add a server that asks for a credential with none (its tools won't list until it has one)
+- `--no-open`: Print the OAuth connect page without opening it in the browser
 
 ### `everyapp mcp remove <id>`
 Remove an MCP app: it leaves /mcp and the home page, and everyone's access to it goes.
 
 Like deleting an app: the Gateway stops serving its tools within 30 seconds, and everyone's access to it, the personal tokens bound to it, its tools snapshot and its place in AI connections go with it. Adding it again starts fresh. To stop serving it and keep all that, turn it off instead: everyapp mcp off <id>.
 
-The Gateway setting holding its key or credential stays, and so does a credential's pin to its origin; everyapp secret unset <NAME> removes both.
+Its provider row (<id>-mcp) and the key or client it holds stay, with everyone's OAuth connections; everyapp provider remove <id>-mcp and everyapp secret unset <NAME> clean them up.
 
 ```sh
 everyapp mcp remove treg
@@ -734,7 +738,7 @@ everyapp mcp list
 ### `everyapp mcp show <id>`
 Show an MCP app: its address, credential, status, last tool listing and every tool with its risk.
 
-For a remote server: the URL, how the Gateway authenticates, the credential's name, whether it is set and the origin it is pinned to, the risk default, when the tools were last listed (and the error if that failed), then every tool the server listed: its name on the Gateway, the server's own name, its risk and where that comes from (the server's hint, the app's default, your override), and whether it is on. Nothing is changed.
+For a remote server: the URL, how the Gateway authenticates, its provider, whether the key is set (and set for the hosts it has now), or for OAuth who has connected (never a token) and the connect page, the risk default, when the tools were last listed (and the error if that failed), then every tool the server listed: its name on the Gateway, the server's own name, its risk and where that comes from (the server's hint, the app's default, your override), and whether it is on. Nothing is changed.
 
 ```sh
 everyapp mcp show treg

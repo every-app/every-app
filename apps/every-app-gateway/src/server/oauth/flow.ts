@@ -21,6 +21,7 @@ import { logEvent } from "@every-app/perimeter";
 import {
   OAUTH_TOKEN_BODY_LIMIT,
   grantedScopes,
+  isRemoteMcpProviderIdOf,
   joinScopes,
   requestedScopes,
   scopeExcess,
@@ -373,6 +374,8 @@ async function serveStart(
     authorize.searchParams.set("code_challenge", await s256(verifier));
     authorize.searchParams.set("code_challenge_method", "S256");
   }
+  // The resource the tokens are for (RFC 8707): an MCP server's URL.
+  if (flow.resource) authorize.searchParams.set("resource", flow.resource);
   logEvent("oauth.connect_started", {
     provider: id,
     org: person.org.orgId,
@@ -475,6 +478,17 @@ async function serveCallback(
     );
   }
   const flow = capability.flow;
+  // The mix-up defense (RFC 9207): an authorization server that says who
+  // it is must be the one the flow is for.
+  const iss = url.searchParams.get("iss");
+  if (iss !== null && flow.issuer && iss !== flow.issuer) {
+    logEvent("oauth.callback_refused", { ...log, reason: "issuer" }, "warn");
+    return errorPage(
+      400,
+      CANT_CONNECT,
+      "The answer came from another authorization server than the one this connect started with. Nothing was connected. Start again.",
+    );
+  }
   const client = await (deps.resolveClient ?? resolveOAuthClient)({
     id,
     capability,
@@ -511,7 +525,15 @@ async function serveCallback(
   // The mint check: the token may hold what was asked (the app's scopes
   // and the spec's identity ones) and nothing more. Otherwise the tokens
   // are dropped here: never stored, forwarded or logged.
-  const granted = grantedScopes(flow, exchanged.tokens.body, state.scopes);
+  // One carve-out: the calling app's own remote MCP row (`<app>-mcp`) keeps
+  // what its server grants, never refused. The token reaches that server
+  // alone, and the ToolBus's per-tool risk guards what it does. Any other
+  // row, even one whose spec sets a `resource`, gets the check.
+  const mcpServer =
+    flow.resource !== undefined && isRemoteMcpProviderIdOf(id, app.appSlug);
+  const granted =
+    grantedScopes(flow, exchanged.tokens.body, state.scopes) ??
+    (mcpServer ? [...state.scopes] : null);
   if (!granted) {
     logEvent(
       "oauth.callback_refused",
@@ -524,7 +546,7 @@ async function serveCallback(
       `${capability.label} didn't say which scopes it granted in a form the Gateway reads; nothing was kept.`,
     );
   }
-  const excess = scopeExcess(flow, granted, state.scopes);
+  const excess = mcpServer ? [] : scopeExcess(flow, granted, state.scopes);
   if (excess.length > 0) {
     logEvent(
       "oauth.callback_refused",

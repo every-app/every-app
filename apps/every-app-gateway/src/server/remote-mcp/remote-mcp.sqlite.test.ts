@@ -6,7 +6,9 @@
  * forwarded with the credential the gateway holds, the credential never
  * leaving the gateway, the usage counted against the row and the call
  * audited; the risk mapping and the operator's overrides; the credential
- * binding; off and on; the identity check on the contract itself; and
+ * as a provider (an API key bound to the row's hosts, its query
+ * parameters on the URL, an OAuth connection per member); no cap on a
+ * remote app; off and on; the identity check on the contract itself; and
  * app.tools_changed, kind "remote", once for each change of the list.
  */
 import {
@@ -53,21 +55,27 @@ import { eq, sql } from "drizzle-orm";
 import {
   mcpAppStatusUpdate,
   planRemoteMcpAppAdd,
+  planRemoteMcpProviderRow,
   remoteMcpAppUpdate,
+  type RemoteMcpProviderRowPlan,
 } from "@every-app/perimeter/registry";
 import {
   IDENTITY_HEADER,
+  mcpOAuthProviderSpec,
+  mcpStaticProviderSpec,
   mintIdentityJwt,
   TOOLS_CALL_PATH,
   TOOLS_PROTOCOL_VERSION,
+  type RemoteMcpStaticKind,
 } from "@every-app/sdk/internal";
 import {
   apps,
   appToolCatalogs,
   events,
   mcpToolCalls,
+  oauthClients,
   orgAppSettings,
-  remoteMcpCredentials,
+  providers,
   remoteMcpTools,
   usageDaily,
   userAppAccess,
@@ -88,7 +96,8 @@ import {
 import { resetAppSetupCacheForTests } from "@/server/app-setup";
 import { createKvFake } from "@/test/kv-fake";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
-import { resetRemoteMcpBindingsForTests } from "./bind";
+import { resetGatewayProvidersForTests } from "@/server/providers";
+import { ProviderConnectionRepository } from "@/server/repositories/ProviderConnectionRepository";
 import {
   remoteMcpAppFetcher,
   resetRemoteMcpForTests,
@@ -148,6 +157,8 @@ let answerCall: (name: string, args: unknown) => Response;
 /** Which era the fake Treg speaks. */
 let era: "modern" | "legacy";
 let redirectTo: string | null;
+/** The Authorization values the fake Treg accepts. */
+let accepted: Set<string>;
 
 function rpc(id: unknown, result: unknown): Response {
   return Response.json({ jsonrpc: "2.0", id, result });
@@ -167,7 +178,11 @@ async function fakeTreg(request: Request): Promise<Response> {
       headers: { location: redirectTo },
     });
   }
-  if (request.headers.get("authorization") !== `Bearer ${TOKEN}`) {
+  const query = new URL(request.url).searchParams.get("api_key");
+  if (
+    !accepted.has(request.headers.get("authorization") ?? "") &&
+    !(query !== null && accepted.has(`query:${query}`))
+  ) {
     return new Response("who are you", { status: 401 });
   }
   const modern = request.headers.get("mcp-protocol-version") === "2026-07-28";
@@ -312,17 +327,109 @@ async function pat(userId: string, access?: "read"): Promise<string> {
   return plaintext;
 }
 
-/** The row `everyapp mcp add` writes, with its initial access. */
-async function addTreg(overrides: { risk?: string } = {}): Promise<string> {
+/** Treg's authorization server, as discovery would read it. */
+const TREG_DISCOVERY = {
+  resource: UPSTREAM,
+  issuer: "https://auth.treg.example",
+  authorizationEndpoint: "https://auth.treg.example/authorize",
+  tokenEndpoint: "https://auth.treg.example/token",
+  scopes: ["mcp"],
+  tokenEndpointAuthMethods: ["client_secret_basic"],
+  resourceMetadata: true,
+};
+
+type TregCredential =
+  | { kind: "none" }
+  | { kind: RemoteMcpStaticKind; param?: string; bound?: boolean }
+  | { kind: "oauth" };
+
+/**
+ * Treg's own provider row, `treg-mcp`, as `everyapp mcp add` writes it: a
+ * bearer key bound to the row's spec by default (what `secret set` records),
+ * or an OAuth row with a client sealed in `oauth_clients`.
+ */
+async function writeTregProvider(
+  credential: Exclude<TregCredential, { kind: "none" }>,
+): Promise<RemoteMcpProviderRowPlan> {
+  const result =
+    credential.kind === "oauth"
+      ? mcpOAuthProviderSpec({
+          appId: "treg",
+          name: "Treg",
+          url: UPSTREAM,
+          discovery: TREG_DISCOVERY,
+          client: { hasSecret: true, inject: "basic" },
+        })
+      : mcpStaticProviderSpec({
+          appId: "treg",
+          name: "Treg",
+          url: UPSTREAM,
+          kind: credential.kind,
+          param: credential.param ?? null,
+        });
+  if (!result.ok) throw new Error(result.problem);
+  const plan = planRemoteMcpProviderRow({
+    appId: "treg",
+    spec: result.spec,
+    existing: null,
+  });
+  const bound = credential.kind === "oauth" || credential.bound !== false;
+  await db
+    .insert(providers)
+    .values({
+      id: plan.id,
+      spec: plan.spec,
+      addedBy: "ben@example.com",
+      addedAt: new Date(),
+      updatedAt: new Date(),
+      boundTo: bound && credential.kind !== "oauth" ? plan.bindingKey : null,
+      boundAt: bound && credential.kind !== "oauth" ? new Date() : null,
+    })
+    .onConflictDoUpdate({
+      target: providers.id,
+      set: {
+        spec: plan.spec,
+        boundTo: bound && credential.kind !== "oauth" ? plan.bindingKey : null,
+      },
+    });
+  if (credential.kind === "oauth") {
+    const { OAuthClientRepository } = await import(
+      "@/server/repositories/OAuthClientRepository"
+    );
+    await OAuthClientRepository.upsert(
+      {
+        providerId: plan.id,
+        clientId: "treg-client",
+        clientSecret: "treg-client-secret",
+        boundTo: plan.bindingKey,
+        addedBy: "ben@example.com",
+      },
+      hoisted.env as never,
+    );
+  }
+  resetGatewayProvidersForTests();
+  return plan;
+}
+
+/** The row `everyapp mcp add` writes, with its initial access, and its provider row. */
+async function addTreg(
+  overrides: { risk?: string; credential?: TregCredential } = {},
+): Promise<string> {
   const members = await db.query.members.findMany({
     where: (members, { eq }) => eq(members.organizationId, orgId),
   });
+  const credential = overrides.credential ?? { kind: "bearer" };
+  const providerRow =
+    credential.kind === "none" ? null : await writeTregProvider(credential);
   const plan = planRemoteMcpAppAdd({
     organizationId: orgId,
     url: UPSTREAM,
     id: "treg",
     name: "Treg",
-    auth: { kind: "bearer" },
+    auth: providerRow ? { kind: "provider" } : { kind: "none" },
+    ...(credential.kind === "oauth" ? { scopes: ["mcp"] } : {}),
+    lookupProvider: (id) =>
+      providerRow && id === providerRow.id ? providerRow.capability : undefined,
     ...(overrides.risk ? { risk: overrides.risk } : {}),
     env: { gatewayUrl: GATEWAY, appBaseDomain: "apps.example.com" },
     existingApp: () => null,
@@ -337,6 +444,46 @@ async function addTreg(overrides: { risk?: string } = {}): Promise<string> {
       .onConflictDoUpdate({ target: apps.id, set: row }),
   ]);
   return plan.app.id;
+}
+
+/** Re-register Treg with another credential, forgetting the isolate's caches. */
+async function reAddTreg(credential: TregCredential): Promise<void> {
+  await db.delete(userAppAccess);
+  await db.delete(apps).where(eq(apps.id, rowId));
+  rowId = await addTreg({ credential });
+  resetAppSetupCacheForTests();
+  resetRemoteMcpForTests();
+  clearCatalogSyncClaimsForTests();
+}
+
+/** A member's connection to `treg-mcp` made in Treg, its token sealed. */
+async function connectTreg(
+  userId: string,
+  accessToken: string,
+  options: { expiresAt?: number | null; lastUsedAt?: Date } = {},
+): Promise<string> {
+  const connection = await ProviderConnectionRepository.upsert(
+    {
+      organizationId: orgId,
+      providerId: "treg-mcp",
+      userId,
+      appRowId: rowId,
+      label: `${userId}@treg`,
+      externalId: null,
+      scopes: ["mcp"],
+      accessToken,
+      refreshToken: null,
+      expiresAt: options.expiresAt ?? null,
+    },
+    hoisted.env as never,
+  );
+  if (options.lastUsedAt) {
+    await ProviderConnectionRepository.touchLastUsed(
+      connection.id,
+      options.lastUsedAt,
+    );
+  }
+  return connection.id;
 }
 
 async function currentRow() {
@@ -390,7 +537,7 @@ beforeEach(async () => {
   clearHostnameCacheForTests();
   resetAppSetupCacheForTests();
   resetRemoteMcpForTests();
-  resetRemoteMcpBindingsForTests();
+  resetGatewayProvidersForTests();
   clearAppCapCache();
   clearCapEventMemoryForTests();
   clearEventSubjectCachesForTests();
@@ -398,10 +545,10 @@ beforeEach(async () => {
   hoisted.testDb.current = db;
   orgId = await seedOrganization(db, "acme");
   ownerId = await seedMember(db, { organizationId: orgId, role: "owner" });
+  // Treg's own bearer row, bound as `everyapp secret set TREG_MCP_TOKEN`
+  // binds it: without the binding the Gateway sends the key nowhere.
   rowId = await addTreg();
-  // The operator's pin, as `everyapp secret set TREG_MCP_TOKEN` writes it:
-  // without one the Gateway sends the credential nowhere.
-  await pinTreg();
+  accepted = new Set([`Bearer ${TOKEN}`]);
   seen = [];
   era = "modern";
   redirectTo = null;
@@ -428,16 +575,6 @@ beforeEach(async () => {
     return response;
   });
 });
-
-/** What `everyapp secret set TREG_MCP_TOKEN` records: the name pinned to Treg's origin. */
-async function pinTreg(): Promise<void> {
-  await db.insert(remoteMcpCredentials).values({
-    name: "TREG_MCP_TOKEN",
-    origin: "https://treg.example",
-    boundBy: "ben@example.com",
-    boundAt: new Date(),
-  });
-}
 
 afterEach(async () => {
   await settle();
@@ -612,22 +749,20 @@ describe("a remote MCP app on the gateway's /mcp", () => {
     expect(logs.join("\n")).toContain("[credential]");
   });
 
-  it("refuses to send a credential bound to another origin, and reads as needing setup", async () => {
-    await db.delete(remoteMcpCredentials);
-    resetRemoteMcpBindingsForTests();
-    await db.insert(remoteMcpCredentials).values({
-      name: "TREG_MCP_TOKEN",
-      origin: "https://other.example",
-      boundBy: "ben@example.com",
-      boundAt: new Date(),
-    });
+  it("sends nothing with a key set for another spec of its row, and reads as needing setup (`providers.value-bound-to-hosts`)", async () => {
+    // The row replaced since the key was set (another host, another auth):
+    // its binding no longer matches, so the key is read for no one.
+    await db
+      .update(providers)
+      .set({ boundTo: JSON.stringify({ hosts: ["other.example"] }) })
+      .where(eq(providers.id, "treg-mcp"));
+    resetGatewayProvidersForTests();
     const token = await pat(ownerId);
     expect(await toolNames(token)).toEqual([]);
     const listed = await listApps(token);
     expect(listed.find((app) => app["id"] === "treg")).toMatchObject({
       available: false,
-      reason:
-        "needs setup: an admin runs pnpm everyapp secret set TREG_MCP_TOKEN",
+      reason: expect.stringMatching(/secret set TREG_MCP_TOKEN/),
     });
     expect(seen).toEqual([]);
     const call = await callTool(token, "treg_get_user", { id: "u1" });
@@ -635,32 +770,31 @@ describe("a remote MCP app on the gateway's /mcp", () => {
     expect(seen).toEqual([]);
   });
 
-  it("never pins a credential on first use: an unpinned one is sent nowhere and reads as needing setup (`remote-mcp.credential-only-to-bound-origin`)", async () => {
+  it("never sends a key no one bound: a value set without secret set is sent nowhere, and an unset one needs setup", async () => {
     const token = await pat(ownerId);
-    // With the operator's pin (the fixture's): served.
+    // Bound (the fixture's): served.
     expect(await toolNames(token)).toEqual([
       "treg_delete_user",
       "treg_get_user",
       "treg_send_mail",
     ]);
 
-    // The value set but no pin (the dashboard, say; or the pin undone):
-    // nothing is sent, nothing is pinned by the Gateway, and the row says
-    // what the operator runs.
+    // The value set but never bound (the dashboard, say): nothing is sent.
     seen = [];
-    await db.delete(remoteMcpCredentials);
+    await db
+      .update(providers)
+      .set({ boundTo: null, boundAt: null })
+      .where(eq(providers.id, "treg-mcp"));
+    resetGatewayProvidersForTests();
     resetAppSetupCacheForTests();
     resetRemoteMcpForTests();
-    resetRemoteMcpBindingsForTests();
     clearCatalogSyncClaimsForTests();
     expect(await toolNames(token)).toEqual([]);
-    expect(await db.select().from(remoteMcpCredentials)).toEqual([]);
     expect(seen).toEqual([]);
     let listed = await listApps(token);
     expect(listed.find((app) => app["id"] === "treg")).toMatchObject({
       available: false,
-      reason:
-        "needs setup: an admin runs pnpm everyapp secret set TREG_MCP_TOKEN",
+      reason: expect.stringMatching(/secret set TREG_MCP_TOKEN/),
     });
     const call = await callTool(token, "treg_get_user", { id: "u1" });
     expect(call.error?.message).toMatch(/Unknown tool/);
@@ -675,6 +809,39 @@ describe("a remote MCP app on the gateway's /mcp", () => {
       available: false,
       reason: expect.stringMatching(/secret set TREG_MCP_TOKEN/),
     });
+  });
+
+  it("puts a query-parameter key on the URL it posts to, and never in a result or a log line", async () => {
+    const logs: string[] = [];
+    for (const method of ["log", "warn", "error", "info"] as const) {
+      vi.spyOn(console, method).mockImplementation((...args: unknown[]) => {
+        logs.push(
+          args
+            .map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg)))
+            .join(" "),
+        );
+      });
+    }
+    await reAddTreg({ kind: "query", param: "api_key" });
+    accepted = new Set([`query:${TOKEN}`]);
+    const token = await pat(ownerId);
+    expect(await toolNames(token)).toEqual([
+      "treg_delete_user",
+      "treg_get_user",
+      "treg_send_mail",
+    ]);
+    const listedAt = new URL(seen[0]!.url);
+    expect(listedAt.origin + listedAt.pathname).toBe(UPSTREAM);
+    expect(listedAt.searchParams.get("api_key")).toBe(TOKEN);
+    expect(seen[0]!.headers["authorization"]).toBeUndefined();
+    answerCall = () =>
+      new Response(`bad request for ${UPSTREAM}?api_key=${TOKEN}`, {
+        status: 500,
+      });
+    const call = await callTool(token, "treg_get_user", { id: "u1" });
+    expect(call.result?.isError).toBe(true);
+    expect(JSON.stringify(call)).not.toContain(TOKEN);
+    for (const line of logs) expect(line).not.toContain(TOKEN);
   });
 
   it("treats an unhinted tool and a destructiveHint as write, a readOnlyHint as read, and lets the overrides win", async () => {
@@ -768,7 +935,7 @@ describe("a remote MCP app on the gateway's /mcp", () => {
   });
 
   // A remote server reports no price, so the row's cost this month is
-  // seeded here: what a cap reads, whoever counted it.
+  // seeded here: what a metered app's cap would read.
   const spend = (costMicros: number) =>
     UsageRepository.record({
       organizationId: orgId,
@@ -781,7 +948,8 @@ describe("a remote MCP app on the gateway's /mcp", () => {
       status: 200,
     });
 
-  it("checks the organization's monthly cap before forwarding", async () => {
+  it("checks no cap on a remote MCP app: a cap row or a default refuses nothing, and every call is still counted", async () => {
+    // Left from before, or written by hand: neither binds a remote app.
     await db.insert(orgAppSettings).values({
       organizationId: orgId,
       appRowId: rowId,
@@ -790,96 +958,25 @@ describe("a remote MCP app on the gateway's /mcp", () => {
       updatedBy: ownerId,
     });
     const token = await pat(ownerId);
-    const first = await callTool(token, "treg_get_user", { id: "u1" });
-    expect(first.result?.isError).toBeUndefined();
-    await spend(1_000_000);
-    const second = await callTool(token, "treg_get_user", { id: "u2" });
-    expect(second.result?.isError).toBe(true);
-    expect(second.result?.content[0]?.text).toMatch(
-      /monthly cap of \$1\.00 of provider-reported cost/,
-    );
-    expect(
-      seen.filter((request) => request.body["method"] === "tools/call"),
-    ).toHaveLength(1);
-    // A capped call for a name the isolate's cache doesn't know lists
-    // nothing upstream either: the cap is checked before any listing.
-    resetRemoteMcpForTests();
-    const listsBefore = seen.filter(
-      (request) => request.body["method"] === "tools/list",
-    ).length;
-    const third = await callTool(token, "treg_get_user", { id: "u3" });
-    expect(third.result?.content[0]?.text).toMatch(/monthly cap/);
-    expect(
-      seen.filter((request) => request.body["method"] === "tools/list"),
-    ).toHaveLength(listsBefore);
-  });
-
-  it("reports the cap standing to the event bus: cap.warning at 80%, then cap.reached and app.paused_cap once", async () => {
-    await db.insert(orgAppSettings).values({
-      organizationId: orgId,
-      appRowId: rowId,
-      monthlyCostCapMicros: 5_000_000,
-      updatedAt: new Date(),
-      updatedBy: ownerId,
-    });
-    const token = await pat(ownerId);
-    const capEvents = async () =>
-      (await db.select().from(events))
-        .filter((event) =>
-          ["cap.warning", "cap.reached", "app.paused_cap"].includes(event.type),
-        )
-        .map((event) => ({
-          type: event.type,
-          data: JSON.parse(event.data) as Record<string, unknown>,
-        }));
-    // Under 80% of $5 when checked: forwarded, nothing to say.
-    await spend(3_000_000);
-    const first = await callTool(token, "treg_get_user", { id: "u1" });
-    expect(first.result?.isError).toBeUndefined();
-    expect(await capEvents()).toEqual([]);
-    // Checked at $4 of $5: forwarded, and warned.
-    await spend(1_000_000);
-    const second = await callTool(token, "treg_get_user", { id: "u2" });
-    expect(second.result?.isError).toBeUndefined();
-    expect(await capEvents()).toEqual([
-      {
-        type: "cap.warning",
-        data: expect.objectContaining({
-          app: expect.objectContaining({ id: "treg", rowId }),
-          costCap: 5,
-          cost: 4,
-          threshold: 80,
-          source: "app",
-        }),
-      },
-    ]);
-    // At the cap, two calls are refused: reached and paused, once.
-    await spend(1_000_000);
-    for (const id of ["u6", "u7"]) {
-      const call = await callTool(token, "treg_get_user", { id });
-      expect(call.result?.content[0]?.text).toMatch(
-        /monthly cap of \$5\.00 of provider-reported cost/,
-      );
-    }
-    clearCapEventMemoryForTests();
-    const eighth = await callTool(token, "treg_get_user", { id: "u8" });
-    expect(eighth.result?.isError).toBe(true);
-    expect((await capEvents()).map((event) => event.type)).toEqual([
-      "cap.warning",
-      "cap.reached",
-      "app.paused_cap",
-    ]);
-    expect((await capEvents())[1]!.data).toEqual(
-      expect.objectContaining({ costCap: 5, cost: 5, source: "app" }),
-    );
-  });
-
-  it("reports nothing to the event bus for an app with no cap", async () => {
-    const token = await pat(ownerId);
-    for (const id of ["u1", "u2", "u3", "u4", "u5", "u6"]) {
+    // Spent past the cap: a metered app would be refused here.
+    await spend(2_000_000);
+    for (const id of ["u1", "u2", "u3"]) {
       const call = await callTool(token, "treg_get_user", { id });
       expect(call.result?.isError).toBeUndefined();
     }
+    expect(
+      seen.filter((request) => request.body["method"] === "tools/call"),
+    ).toHaveLength(3);
+    const usage = (
+      await db.select().from(usageDaily).where(eq(usageDaily.appRowId, rowId))
+    ).find((row) => row.target === "mcp:treg");
+    expect(usage).toMatchObject({
+      target: "mcp:treg",
+      userId: ownerId,
+      calls: 3,
+    });
+    expect(await db.select().from(mcpToolCalls)).toHaveLength(3);
+    // And nothing about caps reaches the event bus.
     const types = (await db.select().from(events)).map((event) => event.type);
     expect(
       types.filter((type) =>
@@ -973,6 +1070,129 @@ describe("a remote MCP app on the gateway's /mcp", () => {
       seen.filter((request) => request.body["method"] === "tools/call"),
     ).toHaveLength(1);
     await settle();
+  });
+});
+
+describe("a remote MCP app whose credential is an OAuth provider", () => {
+  const OWNER_TOKEN = "owner-oauth-access-token-0123";
+  const MEMBER_TOKEN = "member-oauth-access-token-4567";
+  const CONNECT = `${GATEWAY}/connect/treg-mcp?app=treg&return=%2F%3Fmcp%3Dtreg`;
+  let memberId: string;
+
+  beforeEach(async () => {
+    await reAddTreg({ kind: "oauth" });
+    memberId = await seedMember(db, { organizationId: orgId, role: "member" });
+    await db.insert(userAppAccess).values({
+      id: crypto.randomUUID(),
+      organizationId: orgId,
+      userId: memberId,
+      appRowId: rowId,
+      grantedBy: ownerId,
+    });
+    accepted = new Set([`Bearer ${OWNER_TOKEN}`, `Bearer ${MEMBER_TOKEN}`]);
+  });
+
+  it("calls with each member's own connection, and answers a member without one with the connect link", async () => {
+    await connectTreg(ownerId, OWNER_TOKEN);
+    const ownerPat = await pat(ownerId);
+    const memberPat = await pat(memberId);
+    // Listed once anyone has connected; listed for everyone with access.
+    expect(await toolNames(memberPat)).toEqual([
+      "treg_delete_user",
+      "treg_get_user",
+      "treg_send_mail",
+    ]);
+    expect(seen[0]!.headers["authorization"]).toBe(`Bearer ${OWNER_TOKEN}`);
+
+    seen = [];
+    const own = await callTool(ownerPat, "treg_get_user", { id: "u1" });
+    expect(own.result?.isError).toBeUndefined();
+    const sent = seen.find(
+      (request) => request.body["method"] === "tools/call",
+    );
+    expect(sent?.headers["authorization"]).toBe(`Bearer ${OWNER_TOKEN}`);
+
+    // The member hasn't connected: a tool error with the link, nothing sent.
+    seen = [];
+    const theirs = await callTool(memberPat, "treg_get_user", { id: "u2" });
+    expect(theirs.error).toBeUndefined();
+    expect(theirs.result?.isError).toBe(true);
+    expect(theirs.result?.content[0]?.text).toBe(
+      `Connect your Treg MCP server account to use this tool: ${CONNECT}`,
+    );
+    expect(seen).toEqual([]);
+
+    // Once they connect, their own token goes, never the owner's.
+    await connectTreg(memberId, MEMBER_TOKEN);
+    const again = await callTool(memberPat, "treg_get_user", { id: "u3" });
+    expect(again.result?.isError).toBeUndefined();
+    const forwarded = seen.filter(
+      (request) => request.body["method"] === "tools/call",
+    );
+    expect(forwarded.at(-1)?.headers["authorization"]).toBe(
+      `Bearer ${MEMBER_TOKEN}`,
+    );
+    // Every call counted per member.
+    const usage = await db.select().from(usageDaily);
+    expect(usage.map((row) => row.userId).sort()).toEqual(
+      [ownerId, memberId].sort(),
+    );
+  });
+
+  it("lists with the app's connection used most recently", async () => {
+    await connectTreg(ownerId, OWNER_TOKEN, {
+      lastUsedAt: new Date(Date.now() - 60_000),
+    });
+    await connectTreg(memberId, MEMBER_TOKEN, { lastUsedAt: new Date() });
+    // The system token the catalog sync mints is what a listing needs: go
+    // through the sync, as the gateway does.
+    const sync = async () => {
+      seen = [];
+      resetRemoteMcpForTests();
+      clearCatalogSyncClaimsForTests();
+      await db.delete(appToolCatalogs);
+      await syncAppTools({
+        rowId,
+        organizationId: orgId,
+        appSlug: "treg",
+        hostname: null,
+        workerName: null,
+        tier: "provider",
+        versionId: null,
+        manifest: (await currentRow()).manifest,
+        name: "Treg",
+      });
+      await settle();
+      return seen.find((request) => request.body["method"] === "tools/list")
+        ?.headers["authorization"];
+    };
+    expect(await sync()).toBe(`Bearer ${MEMBER_TOKEN}`);
+  });
+
+  it("reads as listing nothing while nobody has connected, and says who connects where", async () => {
+    const memberPat = await pat(memberId);
+    expect(await toolNames(memberPat)).toEqual([]);
+    expect(seen).toEqual([]);
+    const [catalog] = await db
+      .select()
+      .from(appToolCatalogs)
+      .where(eq(appToolCatalogs.appRowId, rowId));
+    expect(catalog?.lastError).toContain(
+      `nobody has connected Treg MCP server yet: a member connects at ${CONNECT}`,
+    );
+  });
+
+  it("answers an upstream 401 with the reconnect link", async () => {
+    await connectTreg(ownerId, OWNER_TOKEN);
+    const ownerPat = await pat(ownerId);
+    await toolNames(ownerPat);
+    accepted = new Set();
+    const call = await callTool(ownerPat, "treg_get_user", { id: "u1" });
+    expect(call.result?.isError).toBe(true);
+    expect(call.result?.content[0]?.text).toBe(
+      `Treg rejected the connection (401). Reconnect your Treg MCP server account to use this tool: ${CONNECT}`,
+    );
+    expect(JSON.stringify(call)).not.toContain(OWNER_TOKEN);
   });
 });
 

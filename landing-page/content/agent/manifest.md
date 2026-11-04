@@ -120,7 +120,7 @@ Each entry has a **need**: required (the default; the app shows Needs setup unti
 
 ### secrets
 
-`secrets`: the app's own secrets, as names or `{ name, why?, docs?, optional?, anyOf?, setup? }`: `secrets[].name`, `secrets[].why`, `secrets[].docs`, `secrets[].optional`, `secrets[].anyOf`, `secrets[].setup` (its guide, a Markdown file in the app's repository such as `docs/setup/main-secret.md`). A name is an identifier, not reserved (`GATEWAY_URL`, `CF_VERSION_METADATA`, `EVERYAPP_*`, `EVERY_APP_*`, `APP__*`), not a Gateway setting (list the provider instead), not ending in `_MCP_TOKEN`, and not a binding.
+`secrets`: the app's own secrets, as names or `{ name, why?, docs?, optional?, anyOf?, setup? }`: `secrets[].name`, `secrets[].why`, `secrets[].docs`, `secrets[].optional`, `secrets[].anyOf`, `secrets[].setup` (its guide, a Markdown file in the app's repository such as `docs/setup/main-secret.md`). A name is an identifier, not reserved (`GATEWAY_URL`, `CF_VERSION_METADATA`, `EVERYAPP_*`, `EVERY_APP_*`, `APP__*`), not a Gateway setting (list the provider instead), and not a binding.
 
 ### settings
 

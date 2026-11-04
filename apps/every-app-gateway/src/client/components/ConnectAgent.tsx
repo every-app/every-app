@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRight } from "lucide-react";
 import { CodeBlock } from "@/client/components/CodeBlock";
-import { CONNECT_AI_DOCS_URL } from "@/client/components/McpAppDialog";
 import {
   Dialog,
   DialogContent,
@@ -16,7 +15,10 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/client/components/ui/tabs";
-import { CONNECT_AGENT_COPY } from "@/client/lib/connectAgentCopy";
+import {
+  CONNECT_AGENT_COPY,
+  CONNECT_AI_DOCS_URL,
+} from "@/client/lib/connectAgentCopy";
 
 const COPY = CONNECT_AGENT_COPY;
 

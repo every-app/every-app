@@ -1,4 +1,16 @@
-import { and, asc, eq, inArray, isNull, lt, not, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  lt,
+  ne,
+  not,
+  or,
+  sql,
+} from "drizzle-orm";
 import { db } from "@/db";
 import { apps, providerConnections } from "@/db/schema";
 import { accessToApp } from "./effective-access";
@@ -144,6 +156,37 @@ async function listByOrganization(
     .where(eq(providerConnections.organizationId, organizationId))
     .orderBy(asc(providerConnections.createdAt), asc(providerConnections.id));
   return rows.map(shape);
+}
+
+/**
+ * The app's active connection to a provider that was used most recently
+ * (then the most recently updated), of any member: what lists a remote
+ * MCP server's tools when no one in particular is calling. Null when
+ * there is none.
+ */
+async function latestActiveForProvider(
+  organizationId: string,
+  providerId: string,
+  appRowId: string,
+): Promise<ProviderConnection | null> {
+  const [row] = await db
+    .select(listed)
+    .from(providerConnections)
+    .where(
+      and(
+        eq(providerConnections.organizationId, organizationId),
+        eq(providerConnections.providerId, providerId),
+        eq(providerConnections.appRowId, appRowId),
+        ne(providerConnections.status, "expired"),
+      ),
+    )
+    .orderBy(
+      sql`${providerConnections.lastUsedAt} IS NULL`,
+      desc(providerConnections.lastUsedAt),
+      desc(providerConnections.updatedAt),
+    )
+    .limit(1);
+  return row ? shape(row) : null;
 }
 
 /** One person's own connections across organizations, oldest first. */
@@ -452,6 +495,7 @@ export const ProviderConnectionRepository = {
   find,
   byId,
   listByOrganization,
+  latestActiveForProvider,
   listByUser,
   upsert,
   readTokens,

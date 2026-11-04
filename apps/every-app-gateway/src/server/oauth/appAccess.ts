@@ -5,6 +5,7 @@
  * connect and every background use of someone's connection ask here.
  */
 import { and, eq } from "drizzle-orm";
+import { isRemoteMcpRow } from "@every-app/perimeter/registry";
 import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import { db } from "@/db";
 import { apps, members, users } from "@/db/schema";
@@ -87,7 +88,13 @@ export async function appForMember(input: {
     input.slug,
     input.organizationId,
   );
-  if (own && own.status !== "deleted" && own.tier !== PROVIDER_APP_TIER) {
+  // A remote MCP app (a provider-tier row with a `remote` block) connects
+  // like a deployed app: its manifest lists its own OAuth provider.
+  if (
+    own &&
+    own.status !== "deleted" &&
+    (own.tier !== PROVIDER_APP_TIER || isRemoteMcpRow(own))
+  ) {
     const opens = await memberMayUseApp({
       organizationId: input.organizationId,
       userId: input.userId,

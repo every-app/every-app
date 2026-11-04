@@ -359,6 +359,18 @@ export interface OAuthFlow {
   identityScopes: readonly string[];
   /** Scopes a token may carry beyond what was asked without refusal (another spelling of an identity scope). Never a data scope. */
   tolerated: readonly string[];
+  /**
+   * The resource the tokens are for (RFC 8707), an https URL: sent as
+   * `resource` on the authorize URL, the code exchange and every refresh.
+   * An MCP server's row carries its URL here (./mcpOAuth.ts).
+   */
+  resource?: string;
+  /**
+   * The authorization server's issuer (RFC 8414), an https URL: when the
+   * callback carries `iss` it must equal this (RFC 9207, the mix-up
+   * defense).
+   */
+  issuer?: string;
 }
 
 /**

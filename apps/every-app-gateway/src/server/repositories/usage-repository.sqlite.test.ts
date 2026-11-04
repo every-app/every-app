@@ -312,6 +312,7 @@ describe("UsageRepository (SQLite)", () => {
           costCapSource: null,
           paused: false,
           callable: true,
+          metered: true,
         },
         {
           appRowId: "app-gone",
@@ -329,6 +330,7 @@ describe("UsageRepository (SQLite)", () => {
           costCapSource: null,
           paused: false,
           callable: false,
+          metered: true,
         },
       ]);
       expect(summary.byMember).toEqual([
@@ -524,6 +526,7 @@ describe("UsageRepository (SQLite)", () => {
           costCapSource: "app",
           paused: false,
           callable: true,
+          metered: true,
         },
       ]);
       expect(summary.defaultMonthlyCostCapMicros).toBeNull();
@@ -650,6 +653,7 @@ describe("UsageRepository (SQLite)", () => {
           calls: 1,
           monthlyCostCapMicros: null,
           callable: false,
+          metered: true,
         }),
         expect.objectContaining({ appRowId: "app-chef", callable: true }),
       ]);
@@ -834,6 +838,85 @@ describe("UsageRepository (SQLite)", () => {
         )),
       ]).toEqual([]);
       expect([...(await UsageRepository.pausedApps(acme, [], AT))]).toEqual([]);
+    });
+
+    it("counts a remote MCP app's calls but never caps or pauses it: Not metered", async () => {
+      await db.insert(apps).values({
+        id: "app-treg",
+        organizationId: acme,
+        appSlug: "treg",
+        name: "Treg",
+        description: "",
+        tier: "provider",
+        status: "active",
+        manifest: JSON.stringify({
+          id: "treg",
+          name: "Treg",
+          description: "Treg's MCP server.",
+          remote: {
+            url: "https://treg.to/mcp",
+            auth: { kind: "none" },
+            risk: "annotations",
+            tools: {},
+            rev: 1,
+          },
+        }),
+      });
+      await db.insert(orgSettings).values({
+        organizationId: acme,
+        defaultMonthlyCostCapMicros: 1,
+        updatedAt: AT,
+        updatedBy: owner,
+      });
+      // A cap row left from before binds nothing either.
+      await db.insert(orgAppSettings).values({
+        organizationId: acme,
+        appRowId: "app-treg",
+        monthlyCostCapMicros: 1,
+        unlimited: false,
+        updatedAt: AT,
+        updatedBy: owner,
+      });
+      for (const appRowId of ["app-treg", "app-treg", "app-chef"]) {
+        await UsageRepository.record(
+          event({
+            organizationId: acme,
+            appRowId,
+            userId: owner,
+            at: AT,
+            costMicros: 1,
+          }),
+        );
+      }
+      expect([
+        ...(await UsageRepository.pausedApps(
+          acme,
+          ["app-treg", "app-chef"],
+          AT,
+        )),
+      ]).toEqual(["app-chef"]);
+      const summary = await UsageRepository.summarize({
+        organizationId: acme,
+        month: "2026-10",
+        now: AT,
+      });
+      const treg = summary.byApp.find((row) => row.appRowId === "app-treg");
+      expect(treg).toMatchObject({
+        calls: 2,
+        callable: true,
+        metered: false,
+        monthlyCostCapMicros: null,
+        effectiveMonthlyCostCapMicros: null,
+        costCapSource: null,
+        paused: false,
+      });
+      expect(
+        summary.byApp.find((row) => row.appRowId === "app-chef"),
+      ).toMatchObject({
+        metered: true,
+        effectiveMonthlyCostCapMicros: 1,
+        paused: true,
+      });
     });
 
     it("reads the month's reported cost for the caps from the one monthly row", async () => {

@@ -71,6 +71,13 @@ An app's AI tools are defineTools() in src/tools.ts, served at
 https://<gateway>/mcp as <app>_<tool>: mcp.md beside this file says how to
 write, connect and debug them.
 
+`mcp add <url>` looks at the server first and writes nothing until it knows
+the credential: none when it answers without one; OAuth when its 401 names
+OAuth metadata (each member connects their own account at the connect page add
+prints); else --auth bearer|header|query|basic (the key <ID>_MCP_TOKEN, sent
+only to the URL's host) or --provider <id>. MCP servers added by URL aren't
+metered: a cap is refused (APP_NOT_METERED). Guide: setup/remote-mcp.md.
+
 ## Values never pass through the chat
 
 A key, token or client secret goes in through one of three ways: the person

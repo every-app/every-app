@@ -44,11 +44,7 @@ import {
   isInstallOwnedGatewaySetting,
   isSettableGatewaySetting,
 } from "./gatewaySettings.js";
-import {
-  remoteMcpAuthLabel,
-  remoteMcpOf,
-  remoteMcpSecretOf,
-} from "./remoteMcp.js";
+import { hasRemoteMcpBlock, remoteMcpBlockProblem } from "./remoteMcp.js";
 
 /** A provider as `providers` lists it: its id, or an entry with a need. */
 export interface ProviderEntry extends SettingNeedFields {
@@ -122,7 +118,12 @@ export interface SettingsManifestLike {
     /** The app needs the Gateway's default chat model (`/api/ai/default`): `true`, or an entry with its need. */
     readonly chat?: boolean | SettingNeedFields;
   };
-  /** A remote MCP app's registration (./remoteMcp.ts): its credential is a required Gateway setting. */
+  /**
+   * A remote MCP app's registration (./remoteMcp.ts). Its credential is
+   * the provider it lists under `capabilities`; a block that can't be read
+   * (one from before provider credentials) is a `remote-mcp` setting that
+   * is never set: remove the app and add it again.
+   */
   readonly remote?: unknown;
   readonly name?: string;
 }
@@ -135,7 +136,12 @@ export type SettingKind =
   | "setting"
   /** The Gateway's default model provider (`ai.chat`): one key of any provider in the order, or the operator's choice. */
   | "ai-default"
-  /** A remote MCP app's credential (./remoteMcp.ts): one Gateway setting named by the row. */
+  /**
+   * A remote MCP app's registration that can't be read (./remoteMcp.ts:
+   * one from before provider credentials): no names, never set, fixed by
+   * removing the app and adding it again. A readable registration's
+   * credential is the provider under `capabilities`, a `capability`.
+   */
   | "remote-mcp";
 
 /** Which Worker holds a setting: the Gateway's, or the app's own. */
@@ -625,26 +631,25 @@ export function appSettings(
       ),
     );
   }
-  const remote = remoteMcpOf(manifest);
-  if (remote) {
-    const secret = remoteMcpSecretOf(remote.auth);
-    if (secret) {
-      const label =
-        typeof manifest.name === "string" && manifest.name.trim()
-          ? manifest.name.trim()
-          : "the MCP server";
-      settings.push({
-        kind: "remote-mcp",
-        id: secret,
-        label: `${label} credential`,
-        holder: "gateway",
-        names: [secret],
-        alsoReads: [],
-        need: { kind: "required" },
-        why: `What ${label} expects: ${remoteMcpAuthLabel(remote.auth)}. The Gateway sends it to ${remote.url} and nowhere else.`,
-        setup: "setup/remote-mcp.md",
-      });
-    }
+  const remoteProblem = hasRemoteMcpBlock(manifest)
+    ? remoteMcpBlockProblem(manifest)
+    : null;
+  if (remoteProblem) {
+    const label =
+      typeof manifest.name === "string" && manifest.name.trim()
+        ? manifest.name.trim()
+        : "the MCP server";
+    settings.push({
+      kind: "remote-mcp",
+      id: "remote",
+      label: `${label} registration`,
+      holder: "gateway",
+      names: [],
+      alsoReads: [],
+      need: { kind: "required" },
+      why: `${label}'s registration can't be read: ${remoteProblem}.`,
+      setup: "setup/remote-mcp.md",
+    });
   }
   for (const entry of secretEntries(manifest)) {
     settings.push(
@@ -688,6 +693,9 @@ function settingIsSet(
   setting: AppSetting,
   isSet: (holder: SettingHolder, name: string) => boolean | null,
 ): boolean | null {
+  // An unreadable remote registration has nothing to set: it is fixed by
+  // adding the app again, never by a value.
+  if (setting.kind === "remote-mcp") return false;
   const groupIsSet = (names: readonly string[]): boolean | null => {
     let unknown = false;
     for (const name of names) {
@@ -798,6 +806,10 @@ export function setupCommand(
   }: { cli: string; appId: string; provider?: boolean },
 ): SetupCommand | null {
   if (report.unmet.length === 0) return null;
+  if (report.unmet.some((setting) => setting.kind === "remote-mcp")) {
+    // Nothing to set: the registration predates provider credentials.
+    return { command: `${cli} mcp remove ${appId}` };
+  }
   if (!provider) return { command: `${cli} configure ${appId}` };
   const names: string[] = [];
   const add = (setting: EvaluatedSetting) => {

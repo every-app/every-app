@@ -9,8 +9,12 @@
  *
  * A remote MCP app's row is a provider-tier row (no Worker, no hostname,
  * `active` from the start) whose manifest carries the `remote` block: the
- * one URL, the auth kind and the credential's setting NAME, the risk
- * default, the per-tool overrides and a revision. The same id as a
+ * one URL, the credential (none, or a provider of the registry: a catalog
+ * entry, a registered row, or the app's own `<id>-mcp` row planned by
+ * {@link planRemoteMcpProviderRow}), the risk default, the per-tool
+ * overrides and a revision. Remote MCP apps are not metered
+ * ({@link isMeteredAppRow}): their calls are counted and audited, never
+ * capped. The same id as a
  * deployed app's or a built-in provider's is refused, tombstones included.
  * Who opens the app follows a deployed app's rule: the owners and the
  * admins; an admin grants others or makes it available to everyone.
@@ -25,14 +29,21 @@ import {
   isProviderAppId,
   parseRemoteMcpAuth,
   parseRemoteMcpBlock,
+  providerBindingKey,
   PROVIDER_APP_TIER,
   remoteMcpAppManifest,
   remoteMcpIdFromUrl,
   remoteMcpIdProblem,
   remoteMcpOf,
-  remoteMcpSecretName,
+  remoteMcpProviderHosts,
+  remoteMcpProviderId,
   remoteMcpUrlProblem,
+  resolveProviderRow,
   REMOTE_MCP_RISK_DEFAULTS,
+  type Capability,
+  type CapabilitySettings,
+  type ProviderRow,
+  type RegistrableCapability,
   type RemoteMcpAuth,
   type RemoteMcpBlock,
   type RemoteMcpRiskDefault,
@@ -54,23 +65,28 @@ export interface RemoteMcpAddInput {
   id?: string | null;
   name?: string | null;
   description?: string | null;
-  /** The auth block as given (`{ kind: "bearer" }` fills the default secret name). */
+  /**
+   * The credential as given: `{ kind: "none" }` (the default), or
+   * `{ kind: "provider", provider? }`; a provider left out is the app's
+   * own row, `<id>-mcp` ({@link planRemoteMcpProviderRow}).
+   */
   auth?: unknown;
+  /**
+   * The provider registry as the caller resolves it: the gateway's
+   * registry, plus the app's own `<id>-mcp` row when it is about to be
+   * written (its capability, from {@link planRemoteMcpProviderRow}).
+   * Required when `auth` names a provider.
+   */
+  lookupProvider?: (providerId: string) => Capability | undefined;
+  /** The Gateway's settings, for an API-key provider whose host is a setting (`hostSetting`). */
+  providerSettings?: CapabilitySettings;
+  /** An OAuth provider's scopes the connect asks for (discovery's; none: the server decides). */
+  scopes?: readonly string[] | null;
   risk?: string | null;
   /** The Gateway's environment the URL is checked against. */
   env: RemoteMcpUrlEnv;
   /** The organization's row for the id (tombstones included), once the id is known. */
   existingApp: (id: string) => AppRow | null;
-  /**
-   * Where another live MCP app on this Gateway already sends the
-   * credential name, if one does: the origin for the organization's own
-   * app, or a label such as "another organization" for another
-   * organization's (one set of Gateway secrets serves every organization,
-   * and an origin would tell one about another). A name is bound to one
-   * origin; a second server at another origin takes another name
-   * (`REMOTE_MCP_SECRET_TAKEN`); the same origin may share it.
-   */
-  secretUsedAt?: (secretName: string) => string | null;
   /**
    * A shared-scope app (the platform's, visible to every organization on a
    * hosted gateway) under this id, if any: a remote server can't take its
@@ -88,30 +104,76 @@ export interface RemoteMcpAddPlan {
   id: string;
   app: AppRow;
   remote: RemoteMcpBlock;
+  /** The provider the app's credential is, as resolved; null for none. */
+  provider: { id: string; capability: Capability } | null;
 }
 
 function refuse(
-  code: "REMOTE_MCP_INVALID" | "REMOTE_MCP_URL_REFUSED",
+  code:
+    | "REMOTE_MCP_INVALID"
+    | "REMOTE_MCP_URL_REFUSED"
+    | "REMOTE_MCP_PROVIDER_HOST",
   message: string,
 ): never {
   throw new RegistrationError({ status: 400, code, message });
 }
 
-/** The auth block with the default secret name filled in for the id. */
+/** The auth block as given, the app's own provider id filled in when a provider kind names none. */
 function authFor(id: string, raw: unknown): RemoteMcpAuth {
   const given =
     raw && typeof raw === "object" && !Array.isArray(raw)
       ? (raw as Record<string, unknown>)
       : { kind: raw ?? "none" };
-  const kind = given["kind"];
   const withDefault =
-    (kind === "bearer" || kind === "header" || kind === "basic") &&
-    given["secret"] === undefined
-      ? { ...given, secret: remoteMcpSecretName(id) }
+    given["kind"] === "provider" && given["provider"] === undefined
+      ? { ...given, provider: remoteMcpProviderId(id) }
       : given;
   const parsed = parseRemoteMcpAuth(withDefault);
   if (!parsed.ok) refuse("REMOTE_MCP_INVALID", parsed.problem);
   return parsed.auth;
+}
+
+/**
+ * The provider `auth` names, checked for a remote MCP app at `url`: it
+ * exists, it is an API-key provider or an OAuth provider the Gateway runs
+ * the flow for, and the URL's host is
+ * one of the hosts the provider sends its credential to
+ * (`REMOTE_MCP_PROVIDER_HOST`). Returns the capability and those hosts.
+ */
+export function checkRemoteMcpProvider(input: {
+  url: string;
+  auth: Extract<RemoteMcpAuth, { kind: "provider" }>;
+  lookupProvider?: (providerId: string) => Capability | undefined;
+  providerSettings?: CapabilitySettings;
+}): { capability: Capability; hosts: string[] } {
+  const { auth } = input;
+  const capability = input.lookupProvider?.(auth.provider);
+  if (!capability) {
+    refuse(
+      "REMOTE_MCP_INVALID",
+      `there is no provider ${auth.provider} on this Gateway (pnpm everyapp provider list names them)`,
+    );
+  }
+  const hosts = remoteMcpProviderHosts(capability, input.providerSettings);
+  if (!hosts) {
+    refuse(
+      "REMOTE_MCP_INVALID",
+      `${auth.provider} can't be an MCP server's credential: it must be an API-key provider or an OAuth provider the Gateway connects people to`,
+    );
+  }
+  let host = "";
+  try {
+    host = new URL(input.url).hostname.toLowerCase().replace(/\.$/, "");
+  } catch {
+    refuse("REMOTE_MCP_URL_REFUSED", "the URL doesn't parse");
+  }
+  if (!hosts.includes(host)) {
+    refuse(
+      "REMOTE_MCP_PROVIDER_HOST",
+      `${auth.provider} sends its key to ${hosts.length > 0 ? hosts.join(", ") : "no host"}, not to ${host}`,
+    );
+  }
+  return { capability, hosts };
 }
 
 /** A remote MCP app's row is a provider-tier row with a `remote` block. */
@@ -175,19 +237,23 @@ function assertRemoteRow(id: string, existingApp: AppRow): void {
 /**
  * Register a remote MCP server: what to write, from the input and the
  * organization's row for the id (if any). Refuses a URL
- * the rules refuse (`REMOTE_MCP_URL_REFUSED`), a bad id, auth block or
- * risk (`REMOTE_MCP_INVALID`), an id in use (`APP_TIER_MISMATCH` for a
+ * the rules refuse (`REMOTE_MCP_URL_REFUSED`; a provider host only with
+ * that provider), a bad id, auth block, provider or risk
+ * (`REMOTE_MCP_INVALID`), a provider whose hosts don't include the URL's
+ * (`REMOTE_MCP_PROVIDER_HOST`), an id in use (`APP_TIER_MISMATCH` for a
  * deployed app's or the built-in's; `REMOTE_MCP_EXISTS` for a remote app
- * that is on or off already: edit or remove it instead).
+ * that is on or off already: edit or remove it instead). The app's own
+ * provider row is planned apart ({@link planRemoteMcpProviderRow}), first,
+ * so `lookupProvider` can answer for it.
  */
 export function planRemoteMcpAppAdd(
   input: RemoteMcpAddInput,
 ): RemoteMcpAddPlan {
   const url = input.url.trim();
-  const urlProblem = remoteMcpUrlProblem(url, input.env);
-  if (urlProblem) refuse("REMOTE_MCP_URL_REFUSED", urlProblem);
   const id = (input.id ?? "").trim() || remoteMcpIdFromUrl(url);
   if (!id) {
+    const urlProblem = remoteMcpUrlProblem(url, input.env);
+    if (urlProblem) refuse("REMOTE_MCP_URL_REFUSED", urlProblem);
     refuse(
       "REMOTE_MCP_INVALID",
       "no app id could be read from the URL's host; give one with --name",
@@ -195,6 +261,32 @@ export function planRemoteMcpAppAdd(
   }
   const idProblem = remoteMcpIdProblem(id);
   if (idProblem) refuse("REMOTE_MCP_INVALID", idProblem);
+  const auth = authFor(id, input.auth);
+  // The reserved-host rule gives way only to a provider of the registry
+  // the app names, never to the app's own row (which names whatever host
+  // the URL has).
+  const named =
+    auth.kind === "provider" && auth.provider !== remoteMcpProviderId(id)
+      ? input.lookupProvider?.(auth.provider)
+      : undefined;
+  const urlProblem = remoteMcpUrlProblem(url, input.env, {
+    providerHosts: named
+      ? (remoteMcpProviderHosts(named, input.providerSettings) ?? [])
+      : [],
+  });
+  if (urlProblem) refuse("REMOTE_MCP_URL_REFUSED", urlProblem);
+  let provider: { id: string; capability: Capability } | null = null;
+  if (auth.kind === "provider") {
+    const checked = checkRemoteMcpProvider({
+      url,
+      auth,
+      ...(input.lookupProvider ? { lookupProvider: input.lookupProvider } : {}),
+      ...(input.providerSettings
+        ? { providerSettings: input.providerSettings }
+        : {}),
+    });
+    provider = { id: auth.provider, capability: checked.capability };
+  }
   const shared = input.sharedApp?.(id);
   if (shared && shared.status !== DELETED_APP_STATUS) {
     throw new RegistrationError({
@@ -211,21 +303,6 @@ export function planRemoteMcpAppAdd(
       "REMOTE_MCP_INVALID",
       `risk must be one of ${REMOTE_MCP_RISK_DEFAULTS.join(", ")}`,
     );
-  }
-  const auth = authFor(id, input.auth);
-  if ("secret" in auth && input.secretUsedAt) {
-    const usedAt = input.secretUsedAt(auth.secret);
-    const origin = new URL(url).origin;
-    if (usedAt && usedAt !== origin) {
-      // `usedAt` is what the caller chose to say: the origin for the
-      // organization's own app, or a label such as "another organization"
-      // when an origin would tell one organization about another.
-      throw new RegistrationError({
-        status: 409,
-        code: "REMOTE_MCP_SECRET_TAKEN",
-        message: `${auth.secret} is the credential of an MCP app at ${usedAt}; a server at ${origin} takes another name (--secret <NAME>_MCP_TOKEN).`,
-      });
-    }
   }
   // A revived tombstone continues its revision count: a snapshot or an
   // isolate's cache from the removed registration must read as stale.
@@ -244,6 +321,8 @@ export function planRemoteMcpAppAdd(
     name: input.name,
     description: input.description,
     remote,
+    providerCapability: provider?.capability ?? null,
+    scopes: input.scopes ?? null,
   });
 
   if (existingApp) {
@@ -276,7 +355,121 @@ export function planRemoteMcpAppAdd(
     deployedByActor: input.actor,
     everyone: false,
   };
-  return { kind: existingApp ? "revived" : "new", id, app, remote };
+  return {
+    kind: existingApp ? "revived" : "new",
+    id,
+    app,
+    remote,
+    provider,
+  };
+}
+
+export interface RemoteMcpProviderRowInput {
+  /** The app the row is for: its id is `<appId>-mcp`. */
+  appId: string;
+  /** The spec, from `mcpStaticProviderSpec` or `mcpOAuthProviderSpec` (`@every-app/sdk/internal`). */
+  spec: Record<string, unknown>;
+  /** The `providers` row with that id, if there is one. */
+  existing: ProviderRow | null;
+  /** The settings the gateway's other rows hold (`registry.settingNames()` of the rows, this one's left out). */
+  rowSettings?: ReadonlySet<string>;
+  /** A host no row may name on this gateway, with why (`gatewayHostRefusal` with its hosts). */
+  refuseHost?: (host: string) => string | null;
+}
+
+/**
+ * What to do with the app's own provider row (`<appId>-mcp`): `insert` a
+ * new one; `keep` the one there when its spec is the same; `replace` it
+ * when it differs. A replaced row keeps its `bound_to`: the registry reads
+ * the key only while that still equals {@link providerBindingKey} of the
+ * new spec, so a changed host, auth placement, endpoint, resource or
+ * issuer unbinds the key or client until it is set again (the pin), and a
+ * changed name does not. A row of that id registered by hand (no `mcp`
+ * tag) is refused rather than replaced. `mcp remove` never deletes the row.
+ */
+export type RemoteMcpProviderRowPlan = {
+  action: "insert" | "replace" | "keep";
+  id: string;
+  /** The spec as the row stores it (JSON text). */
+  spec: string;
+  capability: RegistrableCapability;
+  /** The binding key of the new spec, what `secret set` writes to `bound_to`. */
+  bindingKey: string;
+  /** Whether the row's key or client is bound to this spec already (false for `insert`). */
+  bound: boolean;
+};
+
+export function planRemoteMcpProviderRow(
+  input: RemoteMcpProviderRowInput,
+): RemoteMcpProviderRowPlan {
+  const id = remoteMcpProviderId(input.appId);
+  if (input.spec["id"] !== id) {
+    throw new Error(`planRemoteMcpProviderRow: the spec is not ${id}'s`);
+  }
+  const resolved = resolveProviderRow(
+    { id, spec: input.spec },
+    {
+      rowSettings: input.rowSettings ?? new Set(),
+      ...(input.refuseHost ? { refuseHost: input.refuseHost } : {}),
+    },
+  );
+  if (!resolved.ok) {
+    refuse(
+      resolved.refusal.code === "PROVIDER_HOST_REFUSED"
+        ? "REMOTE_MCP_URL_REFUSED"
+        : "REMOTE_MCP_INVALID",
+      `the server's credential can't be registered as ${id}: ${resolved.refusal.message}`,
+    );
+  }
+  const capability = resolved.capability;
+  const bindingKey = providerBindingKey(capability);
+  const spec = JSON.stringify(input.spec);
+  if (!input.existing) {
+    return { action: "insert", id, spec, capability, bindingKey, bound: false };
+  }
+  let existingSpec: unknown = input.existing.spec;
+  if (typeof existingSpec === "string") {
+    try {
+      existingSpec = JSON.parse(existingSpec);
+    } catch {
+      existingSpec = null;
+    }
+  }
+  const tags =
+    existingSpec && typeof existingSpec === "object"
+      ? (existingSpec as Record<string, unknown>)["tags"]
+      : undefined;
+  if (existingSpec !== null && !(Array.isArray(tags) && tags.includes("mcp"))) {
+    refuse(
+      "REMOTE_MCP_INVALID",
+      `${id} is a provider registered by hand, not this MCP app's own; remove it (pnpm everyapp provider remove ${id}) or give the app another id with --name`,
+    );
+  }
+  const bound = (input.existing.boundTo ?? null) === bindingKey;
+  if (
+    existingSpec !== null &&
+    canonicalJson(existingSpec) === canonicalJson(input.spec)
+  ) {
+    return { action: "keep", id, spec, capability, bindingKey, bound };
+  }
+  return { action: "replace", id, spec, capability, bindingKey, bound };
+}
+
+/**
+ * Whether an app row is metered (caps, cap checks, cap alerts): every
+ * deployed app and built-in MCP app is; a remote MCP app (a provider-tier
+ * row with a `remote` block, readable or not) is not. Its calls are still
+ * counted in usage and audited.
+ */
+export function isMeteredAppRow(
+  app: Pick<AppRow, "tier" | "manifest">,
+): boolean {
+  return !isRemoteMcpRow(app);
+}
+
+/** The words of `APP_NOT_METERED`: a cap asked of a remote MCP app. */
+export function appNotMeteredMessage(name: string): string {
+  return `${name} is an MCP server added by URL; it isn't metered, so it takes no cap.`;
 }
 
 export interface RemoteMcpChange {
@@ -371,8 +564,15 @@ export function remoteMcpAppUpdate(
       change.description === undefined ? app.description : change.description,
     remote,
   });
-  // Keep anything else the stored manifest carried (none today).
-  const next = { ...stored, ...manifest };
+  // Keep anything else the stored manifest carried, and its provider
+  // entry as it was written (with the OAuth scopes it lists).
+  const next = {
+    ...stored,
+    ...manifest,
+    ...(stored["capabilities"] === undefined
+      ? {}
+      : { capabilities: stored["capabilities"] }),
+  };
   return {
     manifest: JSON.stringify(next),
     name: manifest.name,

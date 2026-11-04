@@ -255,7 +255,7 @@ describe("an MCP app", () => {
     );
   });
 
-  it("tells a remote MCP server from a built-in by its manifest, and reads one that wants OAuth as Not supported yet", () => {
+  it("tells a remote MCP server from a built-in by its manifest, and reads one with a provider credential as Active", () => {
     const remote = (kind: string) => ({
       ...mcp(),
       manifest: JSON.stringify({
@@ -264,8 +264,7 @@ describe("an MCP app", () => {
         description: "Treg's MCP server.",
         remote: {
           url: "https://treg.to/mcp/",
-          auth:
-            kind === "bearer" ? { kind, secret: "TREG_MCP_TOKEN" } : { kind },
+          auth: kind === "provider" ? { kind, provider: "treg-mcp" } : { kind },
           risk: "annotations",
           tools: {},
           rev: 1,
@@ -273,17 +272,15 @@ describe("an MCP app", () => {
       }),
     });
     expect(isRemoteMcpApp(remote("none"))).toBe(true);
-    expect(isRemoteMcpApp(remote("bearer"))).toBe(true);
+    expect(isRemoteMcpApp(remote("provider"))).toBe(true);
+    // A registration from before provider credentials is still a remote app.
+    expect(isRemoteMcpApp(remote("oauth"))).toBe(true);
     expect(isRemoteMcpApp({ ...mcp(), manifest: '{"id":"dataforseo"}' })).toBe(
       false,
     );
     expect(isRemoteMcpApp(mcp())).toBe(false);
     expect(appStatus(remote("none")).label).toBe(AppStatusLabel.Active);
-    expect(appStatus(remote("oauth"))).toEqual({
-      label: AppStatusLabel.NotSupported,
-      variant: "outline",
-      opens: false,
-    });
-    expect(mcpAppUsable(remote("oauth"))).toBe(false);
+    expect(appStatus(remote("provider")).label).toBe(AppStatusLabel.Active);
+    expect(mcpAppUsable(remote("provider"))).toBe(true);
   });
 });

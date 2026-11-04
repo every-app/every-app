@@ -99,9 +99,10 @@ MCP apps: the Gateway also serves tools that aren't any app's, with no page
 and nothing to deploy, on the same /mcp under the same access rules: a data
 provider's built in (DataForSEO: `dataforseo_<tool>`, once the operator runs
 `pnpm everyapp mcp on dataforseo` and sets DATAFORSEO_API_KEY), and any remote
-MCP server added by URL (`pnpm everyapp mcp add <url> --auth bearer`, its tools
-`<id>_<tool>`). For a remote server the Gateway holds the credential (the
-Gateway setting `<ID>_MCP_TOKEN`, pinned to the URL's origin), forwards each
+MCP server added by URL (`pnpm everyapp mcp add <url>`, its tools
+`<id>_<tool>`). For a remote server the Gateway holds the credential (a
+provider: a key such as `<ID>_MCP_TOKEN` bound to the URL's host, or each
+member's own OAuth connection), forwards each
 call, and decides each tool's risk from the server's annotations (no hint
 counts as `write`; `mcp tool <id> <tool> --risk …` overrides one). `mcp off`
 stops serving and keeps access; `mcp remove` deletes it. Never wrap a

@@ -1,4 +1,8 @@
 import { logEvent } from "@every-app/perimeter";
+import {
+  appNotMeteredMessage,
+  isMeteredAppRow,
+} from "@every-app/perimeter/registry";
 import { AppRepository } from "../repositories/AppRepository";
 import { OrgAppSettingsRepository } from "../repositories/OrgAppSettingsRepository";
 import { OrgSettingsRepository } from "../repositories/OrgSettingsRepository";
@@ -121,7 +125,8 @@ async function announce(
  * unlimited); or say the app has none whatever the default (`unlimited`).
  * The app must be one the organization calls: its own, or a shared app,
  * which every organization caps on its own since the count is per
- * organization. Owners and admins only (the server function's gate). The
+ * organization. Owners and admins only (the server function's gate). A
+ * remote MCP app takes no cap (`APP_NOT_METERED`). The
  * cap binds at once in this isolate and within seconds elsewhere. The
  * change is announced on the event bus (`cap.raised` or `cap.changed`,
  * with the caps that bound the app before and after); the organization's
@@ -137,6 +142,10 @@ async function setMonthlyCap(
 ): Promise<AppCapState> {
   const app = await AppRepository.findCallableById(input.appRowId, ctx.orgId);
   if (!app) throw new PublicError("APP_NOT_FOUND", "App not found");
+  // A remote MCP app isn't metered: its calls are counted, never capped.
+  if (!isMeteredAppRow(app)) {
+    throw new PublicError("APP_NOT_METERED", appNotMeteredMessage(app.name));
+  }
   const unlimited = input.unlimited ?? false;
   if (unlimited && input.costUsd != null) {
     throw new PublicError(

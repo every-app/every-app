@@ -1,11 +1,10 @@
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { ArrowLeft, CircleAlert } from "lucide-react";
 import {
   remoteMcpIdFromUrl,
   remoteMcpIdProblem,
-  remoteMcpSecretName,
-  remoteMcpSecretProblem,
-  type RemoteMcpAuthKind,
+  remoteMcpRedirectUri,
+  remoteMcpTokenSetting,
   type RemoteMcpRiskDefault,
 } from "@every-app/sdk/internal";
 import { ChoiceSelect } from "@/client/components/ChoiceSelect";
@@ -26,16 +25,32 @@ import {
   FieldLabel,
 } from "@/client/components/ui/field";
 import { Input } from "@/client/components/ui/input";
-import { asSentence, getRuleErrorMessage } from "@/client/errors";
-import { MCP_APP_COPY } from "@/client/lib/mcpAppCopy";
+import { asSentence, getErrorCode, getRuleErrorMessage } from "@/client/errors";
+import {
+  MCP_APP_COPY,
+  type AddCredentialChoice,
+} from "@/client/lib/mcpAppCopy";
 import { addRemoteMcpApp } from "@/serverFunctions/mcpApps";
+import { listProviders } from "@/serverFunctions/providers";
 import type { AddedRemoteMcpApp } from "@/types/mcpApp";
 
 const COPY = MCP_APP_COPY.addForm;
 
-/** The kinds whose credential is a Gateway setting the operator sets. */
-function takesSecret(kind: RemoteMcpAuthKind): boolean {
-  return kind === "bearer" || kind === "header" || kind === "basic";
+/** The static kinds: one value the operator sets as the app's own provider row's setting. */
+function isStatic(kind: AddCredentialChoice): boolean {
+  return (
+    kind === "bearer" ||
+    kind === "header" ||
+    kind === "query" ||
+    kind === "basic"
+  );
+}
+
+/** A provider the form offers: an API-key provider, or an OAuth one the Gateway connects people to. */
+interface ProviderChoice {
+  id: string;
+  name: string;
+  kind: "api_key" | "oauth";
 }
 
 /** What the form sends `addRemoteMcpApp`. */
@@ -43,9 +58,13 @@ interface AddMcpServerInput {
   url: string;
   id?: string;
   auth: {
-    kind: RemoteMcpAuthKind;
-    secret?: string;
+    kind: AddCredentialChoice;
     header?: string;
+    prefix?: string;
+    param?: string;
+    provider?: string;
+    clientId?: string;
+    clientSecret?: string;
   };
   risk: RemoteMcpRiskDefault;
 }
@@ -53,10 +72,13 @@ interface AddMcpServerInput {
 interface FormState {
   url: string;
   name: string;
-  kind: RemoteMcpAuthKind;
+  kind: AddCredentialChoice;
   header: string;
-  /** The credential's name as typed, once edited; else it follows the name. */
-  secret: string | null;
+  prefix: string;
+  param: string;
+  provider: string;
+  clientId: string;
+  clientSecret: string;
   risk: RemoteMcpRiskDefault;
 }
 
@@ -65,14 +87,8 @@ function derivedId(state: FormState): string {
   return state.name.trim() || remoteMcpIdFromUrl(state.url.trim()) || "";
 }
 
-function secretOf(state: FormState): string {
-  if (state.secret !== null) return state.secret.trim();
-  const id = derivedId(state);
-  return id ? remoteMcpSecretName(id) : "";
-}
-
 /** Each field's problem, in the rules' words where the rules have them. */
-function problemsOf(state: FormState) {
+function problemsOf(state: FormState, askClient: boolean) {
   const url = state.url.trim();
   let urlProblem: string | null = null;
   if (!url) urlProblem = COPY.errors.url;
@@ -89,34 +105,107 @@ function problemsOf(state: FormState) {
     : url && !urlProblem && !remoteMcpIdFromUrl(url)
       ? COPY.errors.noName
       : null;
-  const headerProblem =
-    state.kind === "header" && !state.header.trim() ? COPY.errors.header : null;
-  const secretProblem = takesSecret(state.kind)
-    ? remoteMcpSecretProblem(secretOf(state))
-    : null;
   return {
     url: urlProblem,
     name: nameProblem ? asSentence(nameProblem) : null,
-    header: headerProblem,
-    secret: secretProblem ? asSentence(secretProblem) : null,
+    header:
+      state.kind === "header" && !state.header.trim()
+        ? COPY.errors.header
+        : null,
+    param:
+      state.kind === "query" && !state.param.trim() ? COPY.errors.param : null,
+    provider:
+      state.kind === "provider" && !state.provider
+        ? COPY.errors.provider
+        : null,
+    clientId:
+      state.kind === "oauth" && askClient && !state.clientId.trim()
+        ? COPY.errors.clientId
+        : null,
   };
 }
 
 /** The form's input for the server function, from what the person entered. */
-function addMcpServerInput(state: FormState): AddMcpServerInput {
+function addMcpServerInput(
+  state: FormState,
+  providerKind: ProviderChoice["kind"] | undefined,
+  askClient: boolean,
+): AddMcpServerInput {
   const name = state.name.trim();
+  const prefix = state.prefix.trim();
+  let auth: AddMcpServerInput["auth"];
+  switch (state.kind) {
+    case "bearer":
+      auth = { kind: "bearer", ...(prefix ? { prefix } : {}) };
+      break;
+    case "header":
+      auth = {
+        kind: "header",
+        header: state.header.trim(),
+        ...(state.prefix ? { prefix: state.prefix } : {}),
+      };
+      break;
+    case "query":
+      auth = { kind: "query", param: state.param.trim() };
+      break;
+    case "oauth": {
+      const secret = state.clientSecret.trim();
+      auth = askClient
+        ? {
+            kind: "oauth",
+            clientId: state.clientId.trim(),
+            ...(secret ? { clientSecret: secret } : {}),
+          }
+        : { kind: "oauth" };
+      break;
+    }
+    case "provider":
+      auth = {
+        kind: "provider",
+        provider: state.provider,
+      };
+      break;
+    default:
+      auth = { kind: state.kind };
+  }
   return {
     url: state.url.trim(),
     ...(name ? { id: name } : {}),
-    auth: takesSecret(state.kind)
-      ? {
-          kind: state.kind,
-          secret: secretOf(state),
-          ...(state.kind === "header" ? { header: state.header.trim() } : {}),
-        }
-      : { kind: state.kind },
+    auth,
     risk: state.risk,
   };
+}
+
+/** The providers a remote server can take, from the registry: API keys, and OAuth with the Gateway's flow. */
+function useProviderChoices(active: boolean): ProviderChoice[] | null {
+  const [providers, setProviders] = useState<ProviderChoice[] | null>(null);
+  useEffect(() => {
+    if (!active || providers !== null) return;
+    let live = true;
+    listProviders()
+      .then(({ providers: all }) => {
+        if (!live) return;
+        setProviders(
+          all
+            .filter(
+              (provider) =>
+                provider.kind === "api_key" || provider.kind === "oauth",
+            )
+            .map((provider) => ({
+              id: provider.id,
+              name: provider.name,
+              kind: provider.kind as ProviderChoice["kind"],
+            })),
+        );
+      })
+      .catch(() => {
+        if (live) setProviders([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [active, providers]);
+  return providers;
 }
 
 /**
@@ -139,34 +228,48 @@ export function AddMcpServerView({
     name: "",
     kind: "none",
     header: "",
-    secret: null,
+    prefix: "",
+    param: "",
+    provider: "",
+    clientId: "",
+    clientSecret: "",
     risk: "annotations",
   });
   const [attempted, setAttempted] = useState(false);
   const [pending, setPending] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  // The server couldn't register the Gateway as a client: ask for one.
+  const [askClient, setAskClient] = useState(false);
   const [added, setAdded] = useState<AddedRemoteMcpApp | null>(null);
+  const providers = useProviderChoices(state.kind === "provider");
   const ids = {
     url: useId(),
     name: useId(),
     kind: useId(),
     header: useId(),
-    secret: useId(),
+    prefix: useId(),
+    param: useId(),
+    provider: useId(),
+    clientId: useId(),
+    clientSecret: useId(),
     risk: useId(),
   };
 
   if (added) return <AddedMcpServer added={added} />;
 
-  const problems = problemsOf(state);
-  // A field's problem shows once the form was tried, or, for the
-  // credential's name, as soon as it is edited (it is checked as typed).
+  const problems = problemsOf(state, askClient);
   const shown = {
     url: attempted ? problems.url : null,
     name: attempted || state.name.trim() ? problems.name : null,
     header: attempted ? problems.header : null,
-    secret: attempted || state.secret !== null ? problems.secret : null,
+    param: attempted ? problems.param : null,
+    provider: attempted ? problems.provider : null,
+    clientId: attempted ? problems.clientId : null,
   };
   const id = derivedId(state);
+  const chosenProvider = providers?.find(
+    (provider) => provider.id === state.provider,
+  );
   const set = (change: Partial<FormState>) => {
     setServerError(null);
     setState((current) => ({ ...current, ...change }));
@@ -178,10 +281,18 @@ export function AddMcpServerView({
     setPending(true);
     setServerError(null);
     try {
-      const result = await addRemoteMcpApp({ data: addMcpServerInput(state) });
+      const result = await addRemoteMcpApp({
+        data: addMcpServerInput(state, chosenProvider?.kind, askClient),
+      });
       setAdded(result);
       onAdded?.(result);
     } catch (error) {
+      if (
+        state.kind === "oauth" &&
+        getErrorCode(error) === "REMOTE_MCP_OAUTH_NO_CLIENT"
+      ) {
+        setAskClient(true);
+      }
       setServerError(getRuleErrorMessage(error, COPY.errors.failed));
     } finally {
       setPending(false);
@@ -189,6 +300,14 @@ export function AddMcpServerView({
   };
 
   const riskHelp = COPY.riskItems.find((item) => item.value === state.risk);
+  const credentialHelp =
+    isStatic(state.kind) && id
+      ? `${COPY.credentialHelp[state.kind]} ${COPY.tokenSettingHelp(remoteMcpTokenSetting(id))}`
+      : COPY.credentialHelp[state.kind];
+  const redirectUri =
+    askClient && id && typeof window !== "undefined"
+      ? remoteMcpRedirectUri(window.location.origin, id)
+      : null;
   return (
     <form
       noValidate
@@ -245,7 +364,7 @@ export function AddMcpServerView({
       <FormField
         id={ids.kind}
         label={COPY.credentialLabel}
-        help={COPY.credentialHelp[state.kind]}
+        help={credentialHelp}
       >
         {(describedBy) => (
           <ChoiceSelect
@@ -277,26 +396,115 @@ export function AddMcpServerView({
           )}
         </FormField>
       ) : null}
-      {takesSecret(state.kind) ? (
+      {state.kind === "header" ? (
         <FormField
-          id={ids.secret}
-          label={COPY.secretLabel}
-          help={COPY.secretHelp}
-          error={shown.secret}
+          id={ids.prefix}
+          label={COPY.prefixLabel}
+          help={COPY.prefixHelp}
         >
           {(describedBy) => (
             <Input
-              id={ids.secret}
+              id={ids.prefix}
               autoComplete="off"
               spellCheck={false}
-              className="font-mono"
-              value={secretOf(state)}
-              aria-invalid={shown.secret ? true : undefined}
+              maxLength={32}
+              value={state.prefix}
               aria-describedby={describedBy}
-              onChange={(event) => set({ secret: event.target.value })}
+              onChange={(event) => set({ prefix: event.target.value })}
             />
           )}
         </FormField>
+      ) : null}
+      {state.kind === "query" ? (
+        <FormField id={ids.param} label={COPY.paramLabel} error={shown.param}>
+          {(describedBy) => (
+            <Input
+              id={ids.param}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder={COPY.paramPlaceholder}
+              value={state.param}
+              aria-invalid={shown.param ? true : undefined}
+              aria-describedby={describedBy}
+              onChange={(event) => set({ param: event.target.value })}
+            />
+          )}
+        </FormField>
+      ) : null}
+      {state.kind === "provider" ? (
+        <FormField
+          id={ids.provider}
+          label={COPY.providerLabel}
+          help={
+            providers === null
+              ? COPY.providersLoading
+              : providers.length === 0
+                ? COPY.providersNone
+                : undefined
+          }
+          error={shown.provider}
+        >
+          {(describedBy) => (
+            <ChoiceSelect
+              id={ids.provider}
+              describedBy={describedBy}
+              value={state.provider}
+              items={(providers ?? []).map((provider) => ({
+                value: provider.id,
+                label: `${provider.name} (${provider.id})`,
+              }))}
+              onValueChange={(provider) => set({ provider })}
+            />
+          )}
+        </FormField>
+      ) : null}
+      {state.kind === "oauth" && askClient ? (
+        <>
+          <div className="flex flex-col gap-2 text-sm">
+            <p>{COPY.clientIntro}</p>
+            {redirectUri ? (
+              <CodeBlock
+                code={redirectUri}
+                successMessage="Redirect URI copied"
+              />
+            ) : null}
+          </div>
+          <FormField
+            id={ids.clientId}
+            label={COPY.clientIdLabel}
+            error={shown.clientId}
+          >
+            {(describedBy) => (
+              <Input
+                id={ids.clientId}
+                autoComplete="off"
+                spellCheck={false}
+                className="font-mono"
+                value={state.clientId}
+                aria-invalid={shown.clientId ? true : undefined}
+                aria-describedby={describedBy}
+                onChange={(event) => set({ clientId: event.target.value })}
+              />
+            )}
+          </FormField>
+          <FormField
+            id={ids.clientSecret}
+            label={COPY.clientSecretLabel}
+            help={COPY.clientSecretHelp}
+          >
+            {(describedBy) => (
+              <Input
+                id={ids.clientSecret}
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                value={state.clientSecret}
+                aria-describedby={describedBy}
+                onChange={(event) => set({ clientSecret: event.target.value })}
+              />
+            )}
+          </FormField>
+        </>
       ) : null}
       <FormField id={ids.risk} label={COPY.riskLabel} help={riskHelp?.help}>
         {(describedBy) => (
@@ -364,8 +572,9 @@ function FormField({
 }
 
 /**
- * What to do once the Gateway added the server: set its credential (the
- * operator's command), or nothing, with how many tools are on /mcp.
+ * What to do once the Gateway added the server: set its key (the
+ * operator's command), connect an account (OAuth), or nothing, with how
+ * many tools are on /mcp.
  */
 function AddedMcpServer({ added }: { added: AddedRemoteMcpApp }) {
   const copy = MCP_APP_COPY.added;
@@ -387,16 +596,28 @@ function AddedMcpServer({ added }: { added: AddedRemoteMcpApp }) {
       </>
     );
   }
-  const line =
-    added.authKind === "oauth"
-      ? copy.oauth
-      : added.secret
-        ? copy.credentialSet(added.secret)
-        : added.toolCount && added.toolCount > 0
-          ? copy.tools(added.toolCount, added.appId)
-          : added.toolsStatus === "empty"
-            ? copy.empty
-            : copy.firstUse;
+  if (added.connectPath) {
+    return (
+      <>
+        <DialogHeader>
+          <DialogTitle>{copy.connectTitle(added.name)}</DialogTitle>
+          <DialogDescription>{copy.connectIntro}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter showCloseButton>
+          <Button nativeButton={false} render={<a href={added.connectPath} />}>
+            {copy.connect}
+          </Button>
+        </DialogFooter>
+      </>
+    );
+  }
+  const line = added.secret
+    ? copy.credentialSet(added.secret)
+    : added.toolCount && added.toolCount > 0
+      ? copy.tools(added.toolCount, added.appId)
+      : added.toolsStatus === "empty"
+        ? copy.empty
+        : copy.firstUse;
   return (
     <>
       <DialogHeader>

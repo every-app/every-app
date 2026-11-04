@@ -252,6 +252,76 @@ describe("parseProviderSpec with auth.kind oauth2-user", () => {
   });
 });
 
+describe("resource and issuer (MCP servers' OAuth)", () => {
+  it("parses them into the flow, round-trips them, and leaves them out when absent", () => {
+    const parsed = parseProviderSpec(
+      withAuth({
+        resource: "https://mcp.example.com:8443/mcp?tenant=1",
+        issuer: "https://auth.example.com/tenant",
+      }),
+    );
+    expect(parsed.ok, JSON.stringify(parsed)).toBe(true);
+    if (!parsed.ok || parsed.capability.mode !== "oauth_client") return;
+    expect(parsed.capability.flow).toMatchObject({
+      resource: "https://mcp.example.com:8443/mcp?tenant=1",
+      issuer: "https://auth.example.com/tenant",
+    });
+    const again = parseProviderSpec(
+      providerSpecOf("github-oauth", parsed.capability),
+    );
+    expect(again).toEqual(parsed);
+    const plain = parseProviderSpec(GITHUB);
+    if (!plain.ok || plain.capability.mode !== "oauth_client") return;
+    expect(plain.capability.flow).not.toHaveProperty("resource");
+    expect(plain.capability.flow).not.toHaveProperty("issuer");
+  });
+
+  it("refuses a resource or issuer off https, with credentials or a fragment, and an issuer with a query", () => {
+    expect(
+      problems(withAuth({ resource: "http://mcp.example.com/mcp" })),
+    ).toEqual([
+      "auth.resource: must be an https URL with no credentials or fragment",
+    ]);
+    expect(
+      problems(withAuth({ resource: "https://mcp.example.com/mcp#x" })),
+    ).toHaveLength(1);
+    expect(
+      problems(withAuth({ resource: "https://u:p@mcp.example.com/" })),
+    ).toHaveLength(1);
+    expect(
+      problems(withAuth({ issuer: "https://auth.example.com/?a=1" })),
+    ).toEqual(["auth.issuer: may not carry a query string"]);
+    expect(problems(withAuth({ issuer: 7 }))).toHaveLength(1);
+  });
+
+  it("binds the client to them when present, and leaves other rows' keys as they were", () => {
+    const plain = parseProviderSpec(GITHUB);
+    const withResource = parseProviderSpec(
+      withAuth({ resource: "https://api.github.com/mcp" }),
+    );
+    const withIssuer = parseProviderSpec(
+      withAuth({ issuer: "https://github.com" }),
+    );
+    if (!plain.ok || !withResource.ok || !withIssuer.ok) {
+      throw new Error("a spec didn't parse");
+    }
+    const keys = [plain, withResource, withIssuer].map((each) =>
+      providerBindingKey(each.capability),
+    );
+    expect(new Set(keys).size).toBe(3);
+    expect(keys[0]).not.toContain("resource");
+    expect(keys[0]).not.toContain("issuer");
+  });
+
+  it("says why a port is refused on an endpoint", () => {
+    expect(
+      problems(withAuth({ tokenUrl: "https://github.com:8443/token" })),
+    ).toEqual([
+      "auth.tokenUrl: must be an https URL on the default port (8443 is not: the Gateway's OAuth requests go to port 443 only), with no credentials or fragment",
+    ]);
+  });
+});
+
 describe("the presets", () => {
   it("every preset parses, is an OAuth provider, and takes no catalog id", () => {
     expect(oauthPresetIds()).toEqual([

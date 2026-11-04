@@ -139,9 +139,9 @@ export interface UpstreamCallResult {
 }
 
 export interface RemoteMcpClientOptions {
-  /** The registered URL: the only address ever fetched. */
+  /** The registered URL (with an API key's query parameters, when its provider puts them there): the only address ever fetched. */
   url: string;
-  /** The credential headers ({@link remoteMcpAuthHeaders}); sent on every request, logged nowhere. */
+  /** The credential headers (the provider's key as its `auth` places it, or an OAuth connection's bearer); sent on every request, logged nowhere. */
   headers?: Record<string, string>;
   /**
    * Every form of the credential that must never appear in an error: the

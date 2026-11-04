@@ -3,21 +3,16 @@
  * (services/McpAppService.ts): a remote MCP server's row as the registry
  * rules plan it (@every-app/perimeter/registry
  * remoteMcpApps.ts), its status, its stored block, and what the server
- * listed tool by tool (`remote_mcp_tools`) and which origin its credential
- * is bound to (`remote_mcp_credentials`), both migration 0011. The CLI
+ * listed tool by tool (`remote_mcp_tools`, migration 0011). Its
+ * credential is a provider's (`providers`, `oauth_clients`,
+ * `provider_connections`), read through their own repositories. The CLI
  * writes the same rows against D1 itself (ADR-0003).
  */
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { DELETED_APP_STATUS, type AppRow } from "@every-app/perimeter/registry";
 import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import { db } from "@/db";
-import {
-  apps,
-  appToolCatalogs,
-  appTools,
-  remoteMcpCredentials,
-  remoteMcpTools,
-} from "@/db/schema";
+import { apps, appToolCatalogs, appTools, remoteMcpTools } from "@/db/schema";
 
 type StoredApp = typeof apps.$inferSelect;
 
@@ -41,29 +36,6 @@ export function registryRow(row: StoredApp): AppRow {
     deployedByActor: row.deployedByActor,
     everyone: row.everyone,
   };
-}
-
-/**
- * Every live MCP app row on this Gateway, every organization's (the
- * Gateway has one set of secrets): which origin each remote app sends
- * which credential name to is read from their manifests.
- */
-async function findLiveProviderManifests(): Promise<
-  { organizationId: string; appSlug: string; manifest: string | null }[]
-> {
-  return db
-    .select({
-      organizationId: apps.organizationId,
-      appSlug: apps.appSlug,
-      manifest: apps.manifest,
-    })
-    .from(apps)
-    .where(
-      and(
-        eq(apps.tier, PROVIDER_APP_TIER),
-        ne(apps.status, DELETED_APP_STATUS),
-      ),
-    );
 }
 
 /**
@@ -192,21 +164,37 @@ async function findListedTools(appRowId: string, organizationId: string) {
     .orderBy(asc(remoteMcpTools.upstreamName));
 }
 
-/** The origin a credential name is bound to, or null when it isn't. */
-async function findCredentialBinding(name: string): Promise<string | null> {
-  const [row] = await db
-    .select({ origin: remoteMcpCredentials.origin })
-    .from(remoteMcpCredentials)
-    .where(eq(remoteMcpCredentials.name, name))
+/**
+ * Whether another organization's remote MCP app names `providerId` as
+ * its credential, a removed one's tombstone included: removing an app
+ * keeps its provider row and the key bound to it, so the row stays that
+ * organization's. A provider row and its key are the Gateway's, every
+ * organization's at once, so an app's own row (`<appId>-mcp`) is never
+ * rewritten for, or shared with, another organization's app of that id.
+ */
+async function providerUsedByOtherOrganization(
+  providerId: string,
+  organizationId: string,
+): Promise<boolean> {
+  const [found] = await db
+    .select({ id: apps.id })
+    .from(apps)
+    .where(
+      and(
+        eq(apps.tier, PROVIDER_APP_TIER),
+        ne(apps.organizationId, organizationId),
+        sql`json_valid(${apps.manifest})`,
+        sql`json_extract(${apps.manifest}, '$.remote.auth.provider') = ${providerId}`,
+      ),
+    )
     .limit(1);
-  return row?.origin ?? null;
+  return found !== undefined;
 }
 
 export const McpAppRepository = {
-  findLiveProviderManifests,
+  providerUsedByOtherOrganization,
   writeRemoteApp,
   updateRemoteApp,
   setStatus,
   findListedTools,
-  findCredentialBinding,
 } as const;

@@ -68,6 +68,8 @@ First run `everyapp status --json` and work through `data.fixes` ([status](/docs
 - **A client can't connect or loops on sign-in**: check `MCP_OAUTH_ENABLED` and `MCP_DCR_ENABLED` aren't off, and, behind Access, run `everyapp access on` to put its bypassed paths back.
 - **A personal token gets 401 or `token_scope`**: it's revoked, expired, read-only on a write tool, or bound to another app. Make a new one in Manage workspace → Tokens.
 - **Tools missing**: hidden by risk (a read-only connection sees no write tools), the person can't open the app, or the app needs setup. `everyapp workspace activity` shows blocked calls with the reason.
+- **An MCP app added by URL shows Needs setup**: its key isn't set (`everyapp secret set <ID>_MCP_TOKEN`), its `<id>-mcp` provider row changed since (set the key again), or it's an OAuth server nobody has connected yet (the link is in `everyapp mcp show <id>`). A registration from before 2026-11-02: `mcp remove`, then `mcp add`.
+- **A call answers `Connect your <Provider> account to use this tool: <url>`**: that member opens the link once. Each member connects their own account.
 
 ## Cloudflare Access
 

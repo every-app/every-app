@@ -66,9 +66,10 @@ export interface ProviderRow {
  * replacing a row's hosts or auth changes the key and the value it held
  * is no longer read until the operator sets it again. For an OAuth
  * provider the client is bound to its authorize, token and revoke URLs,
- * its API hosts, where the client goes on the token request and its
- * client setting names (`oauth.client-bound-to-endpoints`): an admin who
- * re-points `tokenUrl` has to paste the secret again.
+ * its API hosts, where the client goes on the token request, its client
+ * setting names, and its `resource` and `issuer` when it has them
+ * (`oauth.client-bound-to-endpoints`): an admin who re-points `tokenUrl`
+ * has to paste the secret again.
  */
 export function providerBindingKey(capability: RegistrableCapability): string {
   if (capability.mode === "ai") {
@@ -90,6 +91,13 @@ export function providerBindingKey(capability: RegistrableCapability): string {
       clientId: capability.secrets.clientId,
       clientSecret: capability.secrets.clientSecret ?? null,
       hosts: [...capability.api].sort(),
+      // Only when present, so a row without them keeps the key it was bound to.
+      ...(capability.flow?.resource === undefined
+        ? {}
+        : { resource: capability.flow.resource }),
+      ...(capability.flow?.issuer === undefined
+        ? {}
+        : { issuer: capability.flow.issuer }),
     });
   }
   return JSON.stringify({

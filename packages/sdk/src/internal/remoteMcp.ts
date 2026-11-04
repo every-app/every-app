@@ -3,52 +3,83 @@
  * (`everyapp mcp add <url>`, Admin → Apps → Add app → "Add an MCP server",
  * `everyapp_mcp_add`), served to members' AI clients as an MCP app of the
  * Gateway's own, like a built-in provider app (./providerApps.ts) but with
- * its tools read from the server and each call forwarded to it with a
- * credential the Gateway holds (docs/design/2026-10-mcp-by-url.md).
+ * its tools read from the server and each call forwarded to it
+ * (docs/design/2026-10-mcp-by-url.md, docs/design/2026-11-mcp-apps-auth.md).
  *
  * The registration record is the app row's manifest: `id`, `name`,
  * `description` and a `remote` block ({@link RemoteMcpBlock}): the one URL
- * the Gateway ever fetches, how it authenticates ({@link RemoteMcpAuth},
- * the credential always the NAME of a Gateway setting, never a value), how
- * a tool's risk is decided when the server's annotations don't say, the
- * operator's per-tool overrides, and a revision the writers bump so the
- * Gateway re-lists the tools on first use after a change.
+ * the Gateway ever fetches, its credential ({@link RemoteMcpAuth}: none, or
+ * a provider of the registry, whose key or OAuth connection the Gateway
+ * holds and binds to the provider's hosts), how a tool's risk is decided
+ * when the server's annotations don't say, the operator's per-tool
+ * overrides, and a revision the writers bump so the Gateway re-lists the
+ * tools on first use after a change. An app with a provider also lists it
+ * under `capabilities` ({@link remoteMcpAppManifest}), so the settings
+ * model treats its key or client as any app's.
+ *
+ * A credential the registrar gives at `mcp add` becomes a provider row of
+ * the app's own, `<appId>-mcp` ({@link remoteMcpProviderId}; the specs are
+ * built in ./mcpOAuth.ts): an API-key row for a static value
+ * (`<APPID>_MCP_TOKEN`), a discovered `oauth2-user` row for OAuth
+ * (`<APPID>_MCP_CLIENT_ID`, `_SECRET`).
  *
  * Everything here is pure and shared by the CLI, the perimeter's registry
  * rules, the Gateway (which serves the row and validates again at every
  * fetch) and the settings model (./appSettings.ts), so the rules cannot
- * drift: what the URL may be, what the credential may be called, how a
- * server's tool names become the ToolBus's, and what risk a tool gets.
+ * drift: what the URL may be, what the credential may be, how a server's
+ * tool names become the ToolBus's, and what risk a tool gets.
  */
-import { CAPABILITIES } from "./capabilities.js";
-import { isRemoteMcpSecretName } from "./gatewaySettings.js";
+import {
+  CAPABILITIES,
+  apiKeyHosts,
+  type Capability,
+  type CapabilitySettings,
+} from "./capabilities.js";
 import { isProviderAppId } from "./providerApps.js";
+import { PROVIDER_ID } from "./providerSpec.js";
 import { TOOL_NAME_PATTERN, isToolRisk, type ToolRisk } from "./tools.js";
 
-export const REMOTE_MCP_AUTH_KINDS = [
-  "none",
-  "bearer",
-  "header",
-  "basic",
-  "oauth",
-] as const;
+/** The kinds a stored `remote.auth` block may have. */
+export const REMOTE_MCP_AUTH_KINDS = ["none", "provider"] as const;
 export type RemoteMcpAuthKind = (typeof REMOTE_MCP_AUTH_KINDS)[number];
 
 /**
- * How the Gateway authenticates to the server. `secret` is the name of
- * the Gateway setting holding the value ({@link remoteMcpSecretName}),
- * never the value. `oauth` is recorded so the app can say what the server
- * wants; it is not served (the design's section 10).
+ * How the Gateway authenticates to the server: nothing, or a provider of
+ * the registry (a catalog entry such as `elevenlabs`, a registered row, or
+ * the row `everyapp mcp add` synthesizes for the app,
+ * {@link remoteMcpProviderId}). The credential lives with the provider and
+ * is bound to its hosts (`providers.value-bound-to-hosts`); the block only
+ * names it. With an OAuth provider each member connects their own
+ * account in the app.
  */
 export type RemoteMcpAuth =
   | { kind: "none" }
-  /** `Authorization: Bearer <value>`. */
-  | { kind: "bearer"; secret: string }
-  /** `<header>: <prefix><value>`. */
-  | { kind: "header"; secret: string; header: string; prefix?: string }
-  /** The value is `user:password`; sent as `Authorization: Basic <base64>`. */
-  | { kind: "basic"; secret: string }
-  | { kind: "oauth" };
+  | { kind: "provider"; provider: string };
+
+/**
+ * What the registrar may ask for at `mcp add` (`--auth`): none, a static
+ * credential the add turns into a synthesized API-key provider row, or
+ * OAuth, a discovered `oauth2-user` row (./mcpOAuth.ts).
+ */
+export const REMOTE_MCP_CREDENTIAL_KINDS = [
+  "none",
+  "bearer",
+  "header",
+  "query",
+  "basic",
+  "oauth",
+] as const;
+export type RemoteMcpCredentialKind =
+  (typeof REMOTE_MCP_CREDENTIAL_KINDS)[number];
+/** The static credential kinds: one value, placed as the synthesized row's `auth` says. */
+export type RemoteMcpStaticKind = Exclude<
+  RemoteMcpCredentialKind,
+  "none" | "oauth"
+>;
+
+/** Why an old registration (`bearer`, `header`, `basic`, `oauth` with a `secret`) no longer parses. */
+export const REMOTE_MCP_AUTH_PREDATES =
+  "this registration predates provider credentials; remove it and add it again";
 
 /**
  * How a tool's risk is decided for the app. `annotations`: from the
@@ -85,6 +116,8 @@ export interface RemoteMcpManifest {
   name: string;
   description: string;
   remote: RemoteMcpBlock;
+  /** The provider the app's credential is, listed as a deployed app lists one ({@link remoteMcpAppManifest}). */
+  capabilities?: Record<string, RemoteMcpCapabilityEntry>;
 }
 
 /** The manifest fields the Gateway reads, as a stored manifest has them. */
@@ -96,9 +129,7 @@ const ID_PATTERN = /^[a-z]([a-z0-9-]*[a-z0-9])?$/;
 const ID_MAX_LENGTH = 32;
 /** App ids a remote server can't take: the Gateway's own tool prefix. */
 const RESERVED_IDS: readonly string[] = ["everyapp"];
-const SECRET_MAX_LENGTH = 64;
-const HEADER_NAME_PATTERN = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,100}$/;
-const PREFIX_MAX_LENGTH = 32;
+const HEADER_NAME_PATTERN = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/;
 const URL_MAX_LENGTH = 2048;
 const NAME_MAX_LENGTH = 255;
 const DESCRIPTION_MAX_LENGTH = 1000;
@@ -106,9 +137,10 @@ const OVERRIDES_MAX = 500;
 const UPSTREAM_NAME_MAX = 256;
 
 /**
- * Headers the `header` kind may not name: the ones the Gateway sets on the
- * request, the ones that route it, and the ones that would carry something
- * other than this app's credential.
+ * Headers a static `header` credential may not name: the ones the Gateway
+ * sets on the request, the ones that route it, and the ones that would
+ * carry something other than this app's credential (`Authorization` is
+ * the `bearer` kind's; `--prefix` gives it another scheme).
  */
 const FORBIDDEN_AUTH_HEADERS: ReadonlySet<string> = new Set([
   "authorization",
@@ -123,11 +155,93 @@ const FORBIDDEN_AUTH_HEADERS: ReadonlySet<string> = new Set([
   "mcp-protocol-version",
   "mcp-method",
   "mcp-name",
+  "last-event-id",
 ]);
 
-/** The default credential name for an app id: `treg` → `TREG_MCP_TOKEN`. */
-export function remoteMcpSecretName(id: string): string {
-  return `${id.toUpperCase().replace(/-/g, "_")}_MCP_TOKEN`;
+/**
+ * Why `header` can't carry a remote MCP server's static credential, or
+ * null when it can: an HTTP header name the MCP transport and the Gateway
+ * don't set themselves.
+ */
+export function remoteMcpHeaderProblem(header: unknown): string | null {
+  if (typeof header !== "string" || !HEADER_NAME_PATTERN.test(header)) {
+    return "the header must be an HTTP header name";
+  }
+  if (FORBIDDEN_AUTH_HEADERS.has(header.toLowerCase())) {
+    return `the header can't be ${header}; use --auth bearer for Authorization`;
+  }
+  return null;
+}
+
+/** The settings prefix of an app id's synthesized row: `my-server` → `MY_SERVER_MCP_`. */
+function settingsPrefix(appId: string): string {
+  return `${appId.toUpperCase().replace(/-/g, "_")}_MCP_`;
+}
+
+/**
+ * The provider row `everyapp mcp add` writes for an app's own credential:
+ * `<appId>-mcp` (`treg` → `treg-mcp`), its settings `TREG_MCP_*`.
+ */
+export function remoteMcpProviderId(appId: string): string {
+  return `${appId}-mcp`;
+}
+
+/** Whether `providerId` is `appId`'s synthesized row ({@link remoteMcpProviderId}). */
+export function isRemoteMcpProviderIdOf(
+  providerId: string,
+  appId: string,
+): boolean {
+  return providerId === remoteMcpProviderId(appId);
+}
+
+/** The static credential's setting on the synthesized row: `treg` → `TREG_MCP_TOKEN`. */
+export function remoteMcpTokenSetting(appId: string): string {
+  return `${settingsPrefix(appId)}TOKEN`;
+}
+
+/** The OAuth client id's setting on the synthesized row: `treg` → `TREG_MCP_CLIENT_ID`. */
+export function remoteMcpClientIdSetting(appId: string): string {
+  return `${settingsPrefix(appId)}CLIENT_ID`;
+}
+
+/** The OAuth client secret's setting on the synthesized row: `treg` → `TREG_MCP_CLIENT_SECRET`. */
+export function remoteMcpClientSecretSetting(appId: string): string {
+  return `${settingsPrefix(appId)}CLIENT_SECRET`;
+}
+
+/**
+ * The redirect URI of an app's synthesized OAuth row, what a server's
+ * client is registered with: `<gateway origin>/connect/<appId>-mcp/callback`.
+ */
+export function remoteMcpRedirectUri(
+  gatewayUrl: string,
+  appId: string,
+): string {
+  let origin = gatewayUrl.trim().replace(/\/+$/, "");
+  try {
+    origin = new URL(gatewayUrl).origin;
+  } catch {
+    // Not a URL: used as given, without a trailing slash.
+  }
+  return `${origin}/connect/${remoteMcpProviderId(appId)}/callback`;
+}
+
+/**
+ * The hosts a provider sends its credential to, the hosts an MCP URL
+ * using it must be on: an API-key provider's `hosts` (and its host
+ * setting's value, given `settings`), an OAuth provider's API hosts. Null
+ * for a provider a remote MCP app can't use: an AI provider, a service,
+ * or an OAuth client the Gateway runs no flow for.
+ */
+export function remoteMcpProviderHosts(
+  capability: Capability,
+  settings?: CapabilitySettings,
+): string[] | null {
+  if (capability.mode === "api_key") return apiKeyHosts(capability, settings);
+  if (capability.mode === "oauth_client" && capability.flow) {
+    return [...capability.api];
+  }
+  return null;
 }
 
 /** Whether `id` can be a remote MCP app's id (kebab-case, at most 32, not reserved, not a built-in's). */
@@ -219,13 +333,19 @@ export function reservedUpstreamHosts(): string[] {
  * `https:` (or `http:` and loopback hosts only while the Gateway itself
  * runs on `http://`, local dev), a host name rather than an address, no
  * credentials or fragment in it, not the Gateway's own origin or one of
- * its app hosts, and not a provider whose key the Gateway holds. The
- * Gateway checks the stored URL again before every fetch, so a row edited
- * by hand is refused the same way.
+ * its app hosts, and not a provider whose key the Gateway holds
+ * ({@link reservedUpstreamHosts}) unless the app names that provider:
+ * `providerHosts` are the hosts of the provider the app's credential is
+ * (never an app's own synthesized row), and a reserved host among them is
+ * allowed (`mcp add https://api.elevenlabs.io/v1/mcp --provider
+ * elevenlabs`). The Gateway's own origin, its app domains and IPs stay
+ * refused always. The Gateway checks the stored URL again before every
+ * fetch, so a row edited by hand is refused the same way.
  */
 export function remoteMcpUrlProblem(
   url: string,
   env: RemoteMcpUrlEnv,
+  options: { providerHosts?: readonly string[] } = {},
 ): string | null {
   if (typeof url !== "string" || !url.trim()) return "give the server's URL";
   if (url.length > URL_MAX_LENGTH) return "the URL is too long";
@@ -288,8 +408,11 @@ export function remoteMcpUrlProblem(
       return `the URL is on this Gateway's app domain (${normalized})`;
     }
   }
-  if (reservedUpstreamHosts().includes(host)) {
-    return `${host} is a provider this Gateway holds a key for; apps reach it through the Gateway's capabilities, not as an MCP app`;
+  const named = (options.providerHosts ?? []).map((each) =>
+    each.toLowerCase().replace(/\.$/, ""),
+  );
+  if (reservedUpstreamHosts().includes(host) && !named.includes(host)) {
+    return `${host} is a provider this Gateway holds a key for; add it with --provider <that provider> so the app uses its key, or reach it through the Gateway's capabilities`;
   }
   return null;
 }
@@ -298,19 +421,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** The credential name's problem, or null: in the family, and bounded. */
-export function remoteMcpSecretProblem(name: unknown): string | null {
-  if (typeof name !== "string" || !name)
-    return "give the credential's setting name";
-  if (name.length > SECRET_MAX_LENGTH)
-    return "the credential's name is too long";
-  if (!isRemoteMcpSecretName(name)) {
-    return `the credential's name must end in _MCP_TOKEN (letters, digits and underscores), like ${remoteMcpSecretName("treg")}`;
-  }
-  return null;
-}
-
-/** The auth block's problem, or the block as typed. */
+/**
+ * The auth block's problem, or the block as typed: `{ kind: "none" }`,
+ * or `{ kind: "provider", provider }` naming a provider id. A
+ * block of the kinds before provider credentials (`bearer`, `header`,
+ * `basic`, `oauth`) is refused with {@link REMOTE_MCP_AUTH_PREDATES}: such
+ * a row serves nothing and reads as needing setup.
+ */
 export function parseRemoteMcpAuth(
   raw: unknown,
 ): { ok: true; auth: RemoteMcpAuth } | { ok: false; problem: string } {
@@ -318,51 +435,48 @@ export function parseRemoteMcpAuth(
     return { ok: false, problem: "auth must name a kind" };
   }
   const kind = raw["kind"];
-  if (!(REMOTE_MCP_AUTH_KINDS as readonly string[]).includes(kind)) {
+  if (["bearer", "header", "basic", "oauth"].includes(kind)) {
+    return { ok: false, problem: REMOTE_MCP_AUTH_PREDATES };
+  }
+  if (kind === "none") {
+    for (const field of Object.keys(raw)) {
+      if (field !== "kind") {
+        return {
+          ok: false,
+          problem: `auth.${field} is not a field of kind none`,
+        };
+      }
+    }
+    return { ok: true, auth: { kind } };
+  }
+  if (kind !== "provider") {
     return {
       ok: false,
       problem: `auth.kind must be one of ${REMOTE_MCP_AUTH_KINDS.join(", ")}`,
     };
   }
-  if (kind === "none" || kind === "oauth") {
-    return { ok: true, auth: { kind } };
-  }
-  const secretProblem = remoteMcpSecretProblem(raw["secret"]);
-  if (secretProblem)
-    return { ok: false, problem: `auth.secret: ${secretProblem}` };
-  const secret = raw["secret"] as string;
-  if (kind === "bearer" || kind === "basic") {
-    return { ok: true, auth: { kind, secret } };
-  }
-  const header = raw["header"];
-  if (typeof header !== "string" || !HEADER_NAME_PATTERN.test(header)) {
-    return { ok: false, problem: "auth.header must be an HTTP header name" };
-  }
-  if (FORBIDDEN_AUTH_HEADERS.has(header.toLowerCase())) {
-    return {
-      ok: false,
-      problem: `auth.header can't be ${header}; use kind "bearer" or "basic" for Authorization`,
-    };
-  }
-  const prefix = raw["prefix"];
-  if (prefix !== undefined) {
-    if (
-      typeof prefix !== "string" ||
-      prefix.length > PREFIX_MAX_LENGTH ||
-      /[\r\n]/.test(prefix)
-    ) {
-      return { ok: false, problem: "auth.prefix must be a short string" };
+  for (const field of Object.keys(raw)) {
+    if (!["kind", "provider"].includes(field)) {
+      return {
+        ok: false,
+        problem: `auth.${field} is not a field of kind provider`,
+      };
     }
   }
-  return {
-    ok: true,
-    auth: {
-      kind: "header",
-      secret,
-      header,
-      ...(typeof prefix === "string" && prefix ? { prefix } : {}),
-    },
-  };
+  const provider = raw["provider"];
+  if (typeof provider !== "string" || !PROVIDER_ID.test(provider)) {
+    return {
+      ok: false,
+      problem:
+        "auth.provider must be a provider id: lowercase letters, digits and hyphens, a letter first",
+    };
+  }
+  return { ok: true, auth: { kind: "provider", provider } };
+}
+
+/** The provider the block names, or null for `none`. */
+export function remoteMcpProviderOf(auth: RemoteMcpAuth): string | null {
+  return auth.kind === "provider" ? auth.provider : null;
 }
 
 /**
@@ -460,14 +574,20 @@ export function remoteMcpOf(manifest: unknown): RemoteMcpBlock | null {
   return parsed.ok ? parsed.block : null;
 }
 
+/**
+ * Why a stored manifest's `remote` block can't be read, or null when it
+ * can or there is none: {@link REMOTE_MCP_AUTH_PREDATES} for a block from
+ * before provider credentials.
+ */
+export function remoteMcpBlockProblem(manifest: unknown): string | null {
+  if (!isRecord(manifest) || manifest["remote"] === undefined) return null;
+  const parsed = parseRemoteMcpBlock(manifest["remote"]);
+  return parsed.ok ? null : parsed.problem;
+}
+
 /** Whether a stored manifest declares a remote MCP server at all (well-formed or not). */
 export function hasRemoteMcpBlock(manifest: unknown): boolean {
   return isRecord(manifest) && manifest["remote"] !== undefined;
-}
-
-/** The credential's setting name the block declares, if its kind takes one. */
-export function remoteMcpSecretOf(auth: RemoteMcpAuth): string | null {
-  return "secret" in auth ? auth.secret : null;
 }
 
 /**
@@ -511,18 +631,62 @@ export function isHeaderSafeToolName(name: string): boolean {
   return /^[\x21-\x7e]{1,256}$/.test(name);
 }
 
-/** The manifest a remote MCP app's row stores, from what the registrar gave. */
+/**
+ * The entry a remote MCP app's manifest lists its provider under
+ * (`capabilities`), as a deployed app lists one: `{ access, why }` for an
+ * API-key provider, `{ scopes, why }` for an OAuth one.
+ */
+export type RemoteMcpCapabilityEntry =
+  | { access: "read"; why: string }
+  | { scopes: string[]; why: string };
+
+/**
+ * The manifest a remote MCP app's row stores, from what the registrar
+ * gave. An app with a provider credential lists the provider under
+ * `capabilities` like a deployed app that uses it, so the settings model
+ * (./appSettings.ts) asks for its key or client, `secret list` names it
+ * and the connect flow asks for its scopes: nothing about a remote app's
+ * credential is special there. `providerCapability` is the provider as
+ * the registry resolves it (the synthesized row's, before it is written);
+ * for an OAuth provider the entry lists `scopes`, the server's own scope
+ * strings the connect asks for (discovery's, or none: the server decides).
+ */
 export function remoteMcpAppManifest(input: {
   id: string;
   name?: string | null;
   description?: string | null;
   remote: RemoteMcpBlock;
+  providerCapability?: Capability | null;
+  /** An OAuth provider's scopes the connect asks for. */
+  scopes?: readonly string[] | null;
 }): RemoteMcpManifest {
   const name = (input.name ?? "").trim().slice(0, NAME_MAX_LENGTH) || input.id;
   const description =
     (input.description ?? "").trim().slice(0, DESCRIPTION_MAX_LENGTH) ||
     remoteMcpDefaultDescription(name, input.remote.url);
-  return { id: input.id, name, description, remote: input.remote };
+  const manifest: RemoteMcpManifest = {
+    id: input.id,
+    name,
+    description,
+    remote: input.remote,
+  };
+  const auth = input.remote.auth;
+  if (auth.kind !== "provider") return manifest;
+  let where = "";
+  try {
+    where = new URL(input.remote.url).origin;
+  } catch {
+    where = "the server";
+  }
+  const why = `${name}'s MCP server at ${where} takes this credential; the Gateway sends it there when a member calls the app's tools.`;
+  const shortWhy = why.length > 200 ? `${why.slice(0, 199)}…` : why;
+  manifest.capabilities = {
+    [auth.provider]:
+      input.providerCapability?.mode === "oauth_client"
+        ? { scopes: [...(input.scopes ?? [])], why: shortWhy }
+        : { access: "read", why: shortWhy },
+  };
+  return manifest;
 }
 
 /** How a tool got its risk: the server's hint, the app's default, the operator's override, or the fallback. */
@@ -583,45 +747,37 @@ export function normalizeRemoteToolName(name: string): string | null {
 }
 
 /**
- * The request headers that carry the credential for `auth`, from the
- * setting's value. The value never appears anywhere else.
+ * Plain words for how the app authenticates, for lists and dialogs. With
+ * the provider's capability as the registry resolves it: "bearer token",
+ * "header X-Api-Key", "query parameter key", "user and password" (an
+ * API-key provider; "<kind>, <provider>'s key" when the provider isn't
+ * the app's own synthesized row), or "OAuth, each member connects" (an
+ * OAuth provider). Without it, the provider's id.
  */
-export function remoteMcpAuthHeaders(
+export function remoteMcpAuthLabel(
   auth: RemoteMcpAuth,
-  value: string,
-): Record<string, string> {
-  switch (auth.kind) {
-    case "none":
-    case "oauth":
-      return {};
-    case "bearer":
-      return { authorization: `Bearer ${value}` };
-    case "basic":
-      return { authorization: `Basic ${base64(value)}` };
-    case "header":
-      return { [auth.header]: `${auth.prefix ?? ""}${value}` };
+  capability?: Capability | null,
+): string {
+  if (auth.kind === "none") return "no credential";
+  if (!capability) return `provider ${auth.provider}`;
+  if (capability.mode === "oauth_client") {
+    return "OAuth, each member connects";
   }
-}
-
-function base64(text: string): string {
-  const bytes = new TextEncoder().encode(text);
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
-}
-
-/** Plain words for an auth kind, for lists and dialogs. */
-export function remoteMcpAuthLabel(auth: RemoteMcpAuth): string {
-  switch (auth.kind) {
-    case "none":
-      return "no credential";
-    case "bearer":
-      return "bearer token";
-    case "basic":
-      return "user and password";
-    case "header":
-      return `header ${auth.header}`;
-    case "oauth":
-      return "OAuth (not supported yet)";
-  }
+  if (capability.mode !== "api_key") return `provider ${auth.provider}`;
+  const placement = capability.auth;
+  const words =
+    placement.kind === "bearer"
+      ? placement.scheme && placement.scheme.toLowerCase() !== "bearer"
+        ? `${placement.scheme} token`
+        : "bearer token"
+      : placement.kind === "header"
+        ? `header ${placement.header}`
+        : placement.kind === "query"
+          ? `query parameter ${placement.param}`
+          : placement.as === "pair"
+            ? "user and password"
+            : "basic auth";
+  return auth.provider.endsWith("-mcp")
+    ? words
+    : `${words}, ${capability.label}'s key`;
 }

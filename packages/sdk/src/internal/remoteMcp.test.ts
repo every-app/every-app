@@ -4,22 +4,30 @@ import {
   evaluateAppSettings,
   setupCommand,
 } from "./appSettings.js";
-import {
-  isRemoteMcpSecretName,
-  isSettableGatewaySetting,
-} from "./gatewaySettings.js";
+import { CAPABILITIES, type Capability } from "./capabilities.js";
+import { isSettableGatewaySetting } from "./gatewaySettings.js";
+import { mcpOAuthProviderSpec, mcpStaticProviderSpec } from "./mcpOAuth.js";
+import { providerRegistry, rowSecretProblem } from "./providerRegistry.js";
+import { parseProviderSpec } from "./providerSpec.js";
 import {
   normalizeRemoteToolName,
   parseRemoteMcpAuth,
   parseRemoteMcpBlock,
   remoteMcpAppManifest,
+  remoteMcpAuthLabel,
+  remoteMcpBlockProblem,
   isHeaderSafeToolName,
-  remoteMcpAuthHeaders,
+  remoteMcpClientIdSetting,
+  remoteMcpClientSecretSetting,
   remoteMcpDefaultDescription,
+  remoteMcpHeaderProblem,
   remoteMcpIdFromUrl,
   remoteMcpIdProblem,
   remoteMcpOf,
-  remoteMcpSecretName,
+  remoteMcpProviderHosts,
+  remoteMcpProviderId,
+  remoteMcpRedirectUri,
+  remoteMcpTokenSetting,
   remoteMcpUrlProblem,
   remoteToolEnabled,
   remoteToolOverride,
@@ -36,37 +44,97 @@ const LOCAL = { gatewayUrl: "http://localhost:3000" };
 
 const block: RemoteMcpBlock = {
   url: "https://treg.to/mcp/",
-  auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
+  auth: { kind: "provider", provider: "treg-mcp" },
   risk: "annotations",
   tools: {},
   rev: 1,
 };
 
-describe("the credential name family", () => {
-  it("is <ID>_MCP_TOKEN by default and any _MCP_TOKEN name by choice", () => {
-    expect(remoteMcpSecretName("treg")).toBe("TREG_MCP_TOKEN");
-    expect(remoteMcpSecretName("my-server")).toBe("MY_SERVER_MCP_TOKEN");
+function capabilityOf(
+  built: ReturnType<typeof mcpStaticProviderSpec>,
+): Capability {
+  if (!built.ok) throw new Error(built.problem);
+  const parsed = parseProviderSpec(built.spec);
+  if (!parsed.ok) throw new Error(JSON.stringify(parsed.problems));
+  return parsed.capability;
+}
+
+const tregStatic = capabilityOf(
+  mcpStaticProviderSpec({
+    appId: "treg",
+    name: "Treg",
+    url: "https://treg.to/mcp/",
+    kind: "bearer",
+  }),
+);
+const tregOAuth = capabilityOf(
+  mcpOAuthProviderSpec({
+    appId: "treg",
+    name: "Treg",
+    url: "https://treg.to/mcp/",
+    discovery: {
+      resource: "https://treg.to/mcp/",
+      issuer: "https://auth.treg.to",
+      authorizationEndpoint: "https://auth.treg.to/authorize",
+      tokenEndpoint: "https://auth.treg.to/token",
+      scopes: [],
+      tokenEndpointAuthMethods: ["none"],
+      resourceMetadata: true,
+    },
+    client: { hasSecret: false, inject: "form" },
+  }),
+);
+
+describe("the app's own provider and its setting names", () => {
+  it("is <id>-mcp, with <ID>_MCP_TOKEN and <ID>_MCP_CLIENT_ID/SECRET", () => {
+    expect(remoteMcpProviderId("treg")).toBe("treg-mcp");
+    expect(remoteMcpTokenSetting("treg")).toBe("TREG_MCP_TOKEN");
+    expect(remoteMcpTokenSetting("my-server")).toBe("MY_SERVER_MCP_TOKEN");
+    expect(remoteMcpClientIdSetting("my-server")).toBe(
+      "MY_SERVER_MCP_CLIENT_ID",
+    );
+    expect(remoteMcpClientSecretSetting("treg")).toBe("TREG_MCP_CLIENT_SECRET");
+    expect(remoteMcpRedirectUri("https://apps.example.com/", "treg")).toBe(
+      "https://apps.example.com/connect/treg-mcp/callback",
+    );
+    expect(remoteMcpRedirectUri("http://localhost:3000", "a-b")).toBe(
+      "http://localhost:3000/connect/a-b-mcp/callback",
+    );
+  });
+
+  it("are no longer a Gateway family: the row holds them as its own", () => {
     for (const name of [
       "TREG_MCP_TOKEN",
-      "A1_MCP_TOKEN",
-      "MY_SERVER_MCP_TOKEN",
+      "TREG_MCP_CLIENT_ID",
+      "TREG_MCP_CLIENT_SECRET",
     ]) {
-      expect(isRemoteMcpSecretName(name), name).toBe(true);
-      expect(isSettableGatewaySetting(name), name).toBe(true);
+      expect(isSettableGatewaySetting(name), name).toBe(false);
+      expect(
+        rowSecretProblem("treg-mcp", name, () => false),
+        name,
+      ).toBeNull();
     }
-    for (const name of [
-      "_MCP_TOKEN",
-      "treg_mcp_token",
-      "TREG_MCP_TOKENS",
-      "MCP_TOKEN",
-      "OPENAI_API_KEY_MCP",
-      "TREG-MCP_TOKEN",
-    ]) {
-      expect(isRemoteMcpSecretName(name), name).toBe(false);
-    }
-    // A fixed setting stays settable; a fixed provider key is not in the family.
+    // Another app's row can't take them.
+    expect(
+      rowSecretProblem("other-mcp", "TREG_MCP_TOKEN", () => false),
+    ).toMatch(/doesn't start with OTHER_MCP_/);
+    // A fixed setting stays settable.
     expect(isSettableGatewaySetting("OPENAI_API_KEY")).toBe(true);
-    expect(isRemoteMcpSecretName("OPENAI_API_KEY")).toBe(false);
+  });
+
+  it("names the hosts a provider sends its credential to, or null when it can't serve an MCP app", () => {
+    expect(remoteMcpProviderHosts(tregStatic)).toEqual(["treg.to"]);
+    expect(remoteMcpProviderHosts(tregOAuth)).toEqual(["treg.to"]);
+    expect(
+      remoteMcpProviderHosts(
+        CAPABILITIES["elevenlabs" as keyof typeof CAPABILITIES] as Capability,
+      ),
+    ).toEqual(["api.elevenlabs.io"]);
+    expect(
+      remoteMcpProviderHosts(
+        CAPABILITIES["openai" as keyof typeof CAPABILITIES] as Capability,
+      ),
+    ).toBeNull();
   });
 });
 
@@ -142,6 +210,33 @@ describe("the URL rule", () => {
     );
   });
 
+  it("lets a reserved host through only for the provider the app names", () => {
+    expect(
+      remoteMcpUrlProblem("https://api.elevenlabs.io/v1/mcp", LIVE),
+    ).toMatch(/holds a key/);
+    expect(
+      remoteMcpUrlProblem("https://api.elevenlabs.io/v1/mcp", LIVE, {
+        providerHosts: ["api.elevenlabs.io"],
+      }),
+    ).toBeNull();
+    expect(
+      remoteMcpUrlProblem("https://api.openai.com/mcp", LIVE, {
+        providerHosts: ["api.elevenlabs.io"],
+      }),
+    ).toMatch(/holds a key/);
+    // The Gateway's own hosts and IPs stay refused whatever the provider.
+    expect(
+      remoteMcpUrlProblem("https://apps.example.com/mcp", LIVE, {
+        providerHosts: ["apps.example.com"],
+      }),
+    ).toMatch(/own address/);
+    expect(
+      remoteMcpUrlProblem("https://1.2.3.4/mcp", LIVE, {
+        providerHosts: ["1.2.3.4"],
+      }),
+    ).toMatch(/IP address/);
+  });
+
   it("derives the reserved hosts from the registries", () => {
     const hosts = reservedUpstreamHosts();
     expect(hosts).toContain("api.dataforseo.com");
@@ -152,111 +247,79 @@ describe("the URL rule", () => {
 });
 
 describe("the auth block", () => {
-  it("parses each kind and fills nothing in", () => {
+  it("parses none and a provider", () => {
     expect(parseRemoteMcpAuth({ kind: "none" })).toEqual({
       ok: true,
       auth: { kind: "none" },
     });
-    expect(parseRemoteMcpAuth({ kind: "oauth" })).toEqual({
-      ok: true,
-      auth: { kind: "oauth" },
-    });
     expect(
-      parseRemoteMcpAuth({ kind: "bearer", secret: "TREG_MCP_TOKEN" }),
-    ).toEqual({
-      ok: true,
-      auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
-    });
+      parseRemoteMcpAuth({ kind: "provider", provider: "treg-mcp" }),
+    ).toEqual({ ok: true, auth: { kind: "provider", provider: "treg-mcp" } });
+    // Organization connections are gone: an account is no field.
     expect(
       parseRemoteMcpAuth({
-        kind: "header",
-        secret: "X_MCP_TOKEN",
-        header: "X-Api-Key",
-        prefix: "Key ",
+        kind: "provider",
+        provider: "github",
+        account: "organization",
       }),
-    ).toEqual({
-      ok: true,
-      auth: {
-        kind: "header",
-        secret: "X_MCP_TOKEN",
-        header: "X-Api-Key",
-        prefix: "Key ",
-      },
-    });
-    expect(
-      parseRemoteMcpAuth({ kind: "basic", secret: "D_MCP_TOKEN" }),
-    ).toEqual({
-      ok: true,
-      auth: { kind: "basic", secret: "D_MCP_TOKEN" },
-    });
+    ).toMatchObject({ ok: false });
   });
 
-  it("refuses a missing or foreign secret name, a bad kind and a routing header", () => {
-    expect(parseRemoteMcpAuth({ kind: "bearer" })).toMatchObject({
+  it("refuses the kinds from before provider credentials, and a bad provider or account", () => {
+    for (const old of [
+      { kind: "bearer", secret: "TREG_MCP_TOKEN" },
+      { kind: "header", secret: "X_MCP_TOKEN", header: "X-Api-Key" },
+      { kind: "basic", secret: "D_MCP_TOKEN" },
+      { kind: "oauth" },
+    ]) {
+      expect(parseRemoteMcpAuth(old)).toEqual({
+        ok: false,
+        problem:
+          "this registration predates provider credentials; remove it and add it again",
+      });
+    }
+    expect(parseRemoteMcpAuth({ kind: "provider" })).toMatchObject({
       ok: false,
-      problem: expect.stringMatching(/secret/),
+      problem: expect.stringMatching(/auth.provider/),
     });
     expect(
-      parseRemoteMcpAuth({ kind: "bearer", secret: "OPENAI_API_KEY" }),
-    ).toMatchObject({
-      ok: false,
-      problem: expect.stringMatching(/_MCP_TOKEN/),
-    });
-    expect(
-      parseRemoteMcpAuth({ kind: "query", secret: "A_MCP_TOKEN" }),
+      parseRemoteMcpAuth({ kind: "provider", provider: "Treg" }),
     ).toMatchObject({ ok: false });
     expect(
       parseRemoteMcpAuth({
-        kind: "header",
-        secret: "A_MCP_TOKEN",
-        header: "Authorization",
+        kind: "provider",
+        provider: "t-mcp",
+        account: "me",
       }),
-    ).toMatchObject({
-      ok: false,
-      problem: expect.stringMatching(/can't be Authorization/),
-    });
+    ).toMatchObject({ ok: false, problem: expect.stringMatching(/account/) });
     expect(
-      parseRemoteMcpAuth({
-        kind: "header",
-        secret: "A_MCP_TOKEN",
-        header: "Mcp-Session-Id",
-      }),
+      parseRemoteMcpAuth({ kind: "provider", provider: "t-mcp", secret: "X" }),
     ).toMatchObject({ ok: false });
-    expect(
-      parseRemoteMcpAuth({
-        kind: "header",
-        secret: "A_MCP_TOKEN",
-        header: "bad header",
-      }),
-    ).toMatchObject({ ok: false });
-    expect(parseRemoteMcpAuth("bearer")).toMatchObject({ ok: false });
+    expect(parseRemoteMcpAuth({ kind: "query" })).toMatchObject({ ok: false });
+    expect(parseRemoteMcpAuth("none")).toMatchObject({ ok: false });
   });
 
-  it("builds the one header that carries the value, and nothing for none or oauth", () => {
+  it("refuses a header the transport or the Gateway sets", () => {
+    expect(remoteMcpHeaderProblem("X-Api-Key")).toBeNull();
+    expect(remoteMcpHeaderProblem("Authorization")).toMatch(/--auth bearer/);
+    expect(remoteMcpHeaderProblem("Mcp-Session-Id")).toMatch(/can't be/);
+    expect(remoteMcpHeaderProblem("bad header")).toMatch(/header name/);
+  });
+
+  it("says in plain words how the app authenticates", () => {
+    expect(remoteMcpAuthLabel({ kind: "none" })).toBe("no credential");
+    const own = { kind: "provider" as const, provider: "treg-mcp" };
+    expect(remoteMcpAuthLabel(own)).toBe("provider treg-mcp");
+    expect(remoteMcpAuthLabel(own, tregStatic)).toBe("bearer token");
+    expect(remoteMcpAuthLabel(own, tregOAuth)).toBe(
+      "OAuth, each member connects",
+    );
     expect(
-      remoteMcpAuthHeaders({ kind: "bearer", secret: "T" }, "abc"),
-    ).toEqual({ authorization: "Bearer abc" });
-    expect(
-      remoteMcpAuthHeaders({ kind: "basic", secret: "T" }, "user:pw"),
-    ).toEqual({
-      authorization: `Basic ${btoa("user:pw")}`,
-    });
-    expect(
-      remoteMcpAuthHeaders(
-        { kind: "header", secret: "T", header: "X-Api-Key" },
-        "abc",
+      remoteMcpAuthLabel(
+        { kind: "provider", provider: "elevenlabs" },
+        CAPABILITIES["elevenlabs" as keyof typeof CAPABILITIES] as Capability,
       ),
-    ).toEqual({ "X-Api-Key": "abc" });
-    expect(
-      remoteMcpAuthHeaders(
-        { kind: "header", secret: "T", header: "X-Api-Key", prefix: "Key " },
-        "abc",
-      ),
-    ).toEqual({
-      "X-Api-Key": "Key abc",
-    });
-    expect(remoteMcpAuthHeaders({ kind: "none" }, "abc")).toEqual({});
-    expect(remoteMcpAuthHeaders({ kind: "oauth" }, "abc")).toEqual({});
+    ).toBe("header xi-api-key, ElevenLabs's key");
   });
 });
 
@@ -276,14 +339,15 @@ describe("the stored block", () => {
     ).toBe(false);
     expect(remoteMcpOf(JSON.parse(JSON.stringify(manifest)))).toEqual(block);
     expect(remoteMcpOf({ id: "crm" })).toBeNull();
-    expect(
-      remoteMcpOf({
-        remote: {
-          url: "https://x",
-          auth: { kind: "bearer", secret: "OPENAI_API_KEY" },
-        },
-      }),
-    ).toBeNull();
+    const old = {
+      remote: {
+        url: "https://x",
+        auth: { kind: "bearer", secret: "X_MCP_TOKEN" },
+      },
+    };
+    expect(remoteMcpOf(old)).toBeNull();
+    expect(remoteMcpBlockProblem(old)).toMatch(/predates provider credentials/);
+    expect(remoteMcpBlockProblem(manifest)).toBeNull();
   });
 
   it("defaults risk and rev, checks each override, and bounds the map", () => {
@@ -426,22 +490,41 @@ describe("a tool's risk and name", () => {
 });
 
 describe("the settings model", () => {
-  it("reads the credential as one required Gateway setting with the remote-mcp setup guide", () => {
+  it("lists the app's provider as a capability, so its key is a Gateway setting like any app's", () => {
     const manifest = remoteMcpAppManifest({
       id: "treg",
       name: "Treg",
       remote: block,
+      providerCapability: tregStatic,
     });
-    const settings = appSettings(manifest);
+    expect(manifest.capabilities).toEqual({
+      "treg-mcp": {
+        access: "read",
+        why: "Treg's MCP server at https://treg.to takes this credential; the Gateway sends it there when a member calls the app's tools.",
+      },
+    });
+    const registry = providerRegistry([
+      {
+        id: "treg-mcp",
+        spec: (
+          mcpStaticProviderSpec({
+            appId: "treg",
+            name: "Treg",
+            url: "https://treg.to/mcp/",
+            kind: "bearer",
+          }) as { spec: unknown }
+        ).spec,
+      },
+    ]);
+    const settings = appSettings(manifest, registry);
     expect(settings).toEqual([
       expect.objectContaining({
-        kind: "remote-mcp",
-        id: "TREG_MCP_TOKEN",
-        label: "Treg credential",
+        kind: "capability",
+        id: "treg-mcp",
+        label: "Treg MCP server",
         holder: "gateway",
         names: ["TREG_MCP_TOKEN"],
         need: { kind: "required" },
-        setup: "setup/remote-mcp.md",
       }),
     ]);
     const unset = evaluateAppSettings(settings, () => false);
@@ -452,10 +535,36 @@ describe("the settings model", () => {
         appId: "treg",
         provider: true,
       }),
-    ).toEqual({
-      command: "pnpm everyapp secret set TREG_MCP_TOKEN",
-    });
+    ).toEqual({ command: "pnpm everyapp secret set TREG_MCP_TOKEN" });
     expect(evaluateAppSettings(settings, () => true).ready).toBe(true);
+  });
+
+  it("asks for an OAuth row's client, and lists its scopes", () => {
+    const manifest = remoteMcpAppManifest({
+      id: "treg",
+      name: "Treg",
+      remote: {
+        ...block,
+        auth: { kind: "provider", provider: "treg-mcp" },
+      },
+      providerCapability: tregOAuth,
+      scopes: ["mcp:read"],
+    });
+    expect(manifest.capabilities?.["treg-mcp"]).toEqual({
+      scopes: ["mcp:read"],
+      why: expect.any(String),
+    });
+    const settings = appSettings(manifest, {
+      get: (id) => (id === "treg-mcp" ? tregOAuth : undefined),
+      ids: () => ["treg-mcp"],
+    });
+    expect(settings).toEqual([
+      expect.objectContaining({
+        kind: "capability",
+        id: "treg-mcp",
+        names: ["TREG_MCP_CLIENT_ID"],
+      }),
+    ]);
   });
 
   it("needs nothing for a server with no credential", () => {
@@ -463,6 +572,35 @@ describe("the settings model", () => {
       id: "deepwiki",
       remote: { ...block, auth: { kind: "none" } },
     });
+    expect(manifest.capabilities).toBeUndefined();
     expect(appSettings(manifest)).toEqual([]);
+  });
+
+  it("reads a registration from before provider credentials as needing setup: remove and add again", () => {
+    const settings = appSettings({
+      name: "Treg",
+      remote: {
+        url: "https://treg.to/mcp/",
+        auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
+      },
+    });
+    expect(settings).toEqual([
+      expect.objectContaining({
+        kind: "remote-mcp",
+        id: "remote",
+        names: [],
+        need: { kind: "required" },
+        why: expect.stringMatching(/predates provider credentials/),
+      }),
+    ]);
+    const report = evaluateAppSettings(settings, () => true);
+    expect(report.ready).toBe(false);
+    expect(
+      setupCommand(report, {
+        cli: "pnpm everyapp",
+        appId: "treg",
+        provider: true,
+      }),
+    ).toEqual({ command: "pnpm everyapp mcp remove treg" });
   });
 });

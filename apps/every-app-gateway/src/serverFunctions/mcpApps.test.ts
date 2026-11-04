@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   publicErrorMiddleware: { name: "publicErrorMiddleware" },
   organizationAdminMiddleware: { name: "organizationAdminMiddleware" },
+  organizationMemberMiddleware: { name: "organizationMemberMiddleware" },
 }));
 
 vi.mock("@tanstack/react-start", () => ({
@@ -25,6 +26,7 @@ vi.mock("@tanstack/react-start", () => ({
 }));
 vi.mock("@/middleware/auth", () => ({
   organizationAdminMiddleware: mocks.organizationAdminMiddleware,
+  organizationMemberMiddleware: mocks.organizationMemberMiddleware,
 }));
 vi.mock("@/middleware/publicError", () => ({
   publicErrorMiddleware: mocks.publicErrorMiddleware,
@@ -34,6 +36,7 @@ vi.mock("@/server/services/McpAppService", () => ({ McpAppService: {} }));
 import {
   addRemoteMcpApp,
   getMcpApp,
+  getMcpAppConnection,
   refreshMcpAppTools,
   removeMcpApp,
   setMcpAppStatus,
@@ -51,6 +54,7 @@ const fns = {
   setMcpAppStatus,
   refreshMcpAppTools,
   getMcpApp,
+  getMcpAppConnection,
   removeMcpApp,
 } as unknown as Record<string, ServerFnBuilder>;
 
@@ -70,6 +74,16 @@ describe("MCP app server functions", () => {
     ]);
   });
 
+  it("getMcpAppConnection is any member's: their own connection status", () => {
+    expect(fns["getMcpAppConnection"]!.middlewares).toEqual([
+      mocks.publicErrorMiddleware,
+      mocks.organizationMemberMiddleware,
+    ]);
+    expect(
+      fns["getMcpAppConnection"]!.validatorFn!({ appId: " treg " }),
+    ).toEqual({ appId: "treg" });
+  });
+
   it("removeMcpApp is the owners' and admins', like the rest", () => {
     expect(fns["removeMcpApp"]!.middlewares).toEqual([
       mocks.publicErrorMiddleware,
@@ -77,14 +91,14 @@ describe("MCP app server functions", () => {
     ]);
   });
 
-  it("reads an add as a URL, an optional id and name, an auth kind and a risk default", () => {
+  it("reads an add as a URL, an optional id and name, a credential kind and a risk default", () => {
     const add = fns["addRemoteMcpApp"]!.validatorFn!;
     expect(
       add({
         url: "  https://treg.to/mcp/ ",
         id: " ",
         name: "",
-        auth: { kind: "bearer", secret: " TREG_MCP_TOKEN " },
+        auth: { kind: "query", param: " api_key " },
         risk: "annotations",
       }),
     ).toEqual({
@@ -92,9 +106,29 @@ describe("MCP app server functions", () => {
       id: undefined,
       name: undefined,
       description: undefined,
-      auth: { kind: "bearer", secret: "TREG_MCP_TOKEN", header: undefined },
+      auth: {
+        kind: "query",
+        param: "api_key",
+        header: undefined,
+        provider: undefined,
+        clientId: undefined,
+        clientSecret: undefined,
+      },
       risk: "annotations",
     });
+    expect(
+      add({
+        url: "https://api.elevenlabs.io/v1/mcp",
+        auth: { kind: "provider", provider: "elevenlabs" },
+      }),
+    ).toMatchObject({ auth: { kind: "provider", provider: "elevenlabs" } });
+    // A field the schema doesn't know (a value where a name went) is refused.
+    expect(() =>
+      add({
+        url: "https://treg.to/mcp",
+        auth: { kind: "bearer", secret: "sk-live" },
+      }),
+    ).toThrow();
     expect(() => add({ url: "", auth: { kind: "none" } })).toThrow(
       "Give the server's URL",
     );

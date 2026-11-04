@@ -13,13 +13,17 @@
  * The two schema helpers below are this file's own, since workspace.ts
  * imports this one.
  *
- * No tool takes or returns a credential: `auth.secret` is the NAME of the
- * Gateway setting that holds it, and the answer names the command the
- * operator runs to set it (`pnpm everyapp secret set <NAME>`), so the
- * value is typed in a terminal and never passes through an AI client.
+ * No tool takes or returns a credential (docs/design/2026-11-mcp-apps-auth.md):
+ * a server's credential is a provider. A static one becomes the app's own
+ * provider row and the answer names the command the operator runs to set
+ * its value (`pnpm everyapp secret set <APPID>_MCP_TOKEN`), so the value is
+ * typed in a terminal and never passes through an AI client; OAuth is
+ * added with a client the server registers (a pasted client is Admin →
+ * Apps' alone) and each member connects their own account at the link the
+ * answer gives.
  */
 import {
-  REMOTE_MCP_AUTH_KINDS,
+  REMOTE_MCP_CREDENTIAL_KINDS,
   REMOTE_MCP_RISK_DEFAULTS,
   TOOL_RISKS,
 } from "@every-app/sdk/internal";
@@ -33,7 +37,8 @@ const URL_MAX = 2048;
 const REMOTE_ID_MAX = 32;
 const NAME_MAX = 255;
 const DESCRIPTION_MAX = 1000;
-const SECRET_MAX = 64;
+const PROVIDER_MAX = 40;
+const PARAM_MAX = 100;
 const HEADER_MAX = 100;
 const PREFIX_MAX = 32;
 const TOOL_NAME_MAX = 256;
@@ -72,7 +77,7 @@ export const MCP_APP_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "mcp_list",
     title: "List MCP apps",
     description:
-      "List the organization's MCP apps: the built-in ones (DataForSEO) that were added and every remote MCP server added by URL. Each with its id, name, kind (builtin or remote), status (on; off; or needs setup: on, but its credential isn't set or is pinned to another server), how many tools the Gateway serves, a remote server's URL and auth kind, and the credential's setting name with whether it is set and bound. Never a credential's value. Owners and admins.",
+      "List the organization's MCP apps: the built-in ones (DataForSEO) that were added and every remote MCP server added by URL. Each with its id, name, kind (builtin or remote), status (on; off; or needs setup: on, but its key isn't set or was set for other hosts, its OAuth provider has no client or nobody has connected it, or its provider is gone), how many tools the Gateway serves, a remote server's URL and its credential's provider: an API key's setting name with whether it is set and bound, or an OAuth provider's connection count and connect link. Never a credential's value. Owners and admins.",
     inputSchema: closed({}),
   },
   {
@@ -80,7 +85,7 @@ export const MCP_APP_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "mcp_show",
     title: "Show an MCP app",
     description:
-      "Show one MCP app: its URL and auth kind, the credential's setting name and whether it is set and bound (never its value), its status, when its tools were last listed and the error if that failed, and every tool: the name AI clients call, the server's own name, its risk and where that comes from (override, app, hint or default), whether it is on, and why it isn't listed. Owners and admins.",
+      "Show one MCP app: its URL and its credential's provider (an API key's setting name and whether it is set and bound, never its value; an OAuth provider's connections and connect link), its status, when its tools were last listed and the error if that failed, and every tool: the name AI clients call, the server's own name, its risk and where that comes from (override, app, hint or default), whether it is on, and why it isn't listed. Owners and admins.",
     inputSchema: closed({ app: APP }, ["app"]),
   },
   {
@@ -88,7 +93,7 @@ export const MCP_APP_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "mcp_add",
     title: "Add an MCP server",
     description:
-      "Add a remote MCP server by its URL as an MCP app: the Gateway serves its tools on /mcp as `<id>_<tool>` to whoever has access (the owners and the admins to start). For a server with no credential the Gateway lists its tools at once and the answer says how many. For one with a credential the answer names the Gateway setting that holds it and the command the operator runs in a terminal to set it; the credential itself is never passed here and never returned. Refused for a URL on this Gateway's own domains or a private address, an id in use, or a credential name another server uses. Owners and admins.",
+      "Add a remote MCP server by its URL as an MCP app: the Gateway serves its tools on /mcp as `<id>_<tool>` to whoever has access (the owners and the admins to start). For a server with no credential the Gateway lists its tools at once and the answer says how many. A static credential (bearer, header, query, basic) becomes the app's own provider `<id>-mcp`: the answer names its setting and the command the operator runs in a terminal to set it. OAuth: the Gateway finds how the server signs in and registers itself as a client, and each member connects their own account at the connect link the answer gives (a server that can't register clients is added in Admin → Apps or from the CLI with a client id). Or name an existing provider whose hosts include the URL's (`provider`). The credential itself is never passed here and never returned. Refused for a URL on this Gateway's own domains or a private address, an id in use, or a provider that doesn't send its credential to the URL's host. Owners and admins.",
     inputSchema: closed(
       {
         url: text(
@@ -106,27 +111,31 @@ export const MCP_APP_TOOLS: readonly WorkspaceToolDefinition[] = [
         ),
         auth: {
           description:
-            "How the Gateway authenticates to the server; for a credential, the name of the setting that holds it.",
+            "How the Gateway authenticates to the server. Never carries a value.",
           ...closed(
             {
               kind: {
                 type: "string",
                 description:
-                  "How the Gateway authenticates to the server: none; bearer (`Authorization: Bearer <credential>`); header (a header of your naming); basic (the credential is `user:password`); oauth (recorded, not served yet).",
-                enum: [...REMOTE_MCP_AUTH_KINDS],
+                  "none; bearer (`Authorization: Bearer <credential>`); header (a header of your naming); query (a query parameter on the URL); basic (the credential is `user:password`); oauth (members sign in to the server with their own accounts); provider (an existing provider of this Gateway, named in `provider`).",
+                enum: [...REMOTE_MCP_CREDENTIAL_KINDS, "provider"],
               },
-              secret: text(
-                "The NAME of the Gateway setting that holds the credential, ending in _MCP_TOKEN. Default: `<ID>_MCP_TOKEN`. Never the credential itself.",
-                SECRET_MAX,
-              ),
               header: text(
                 "For kind header: the header's name (`X-Api-Key`).",
                 HEADER_MAX,
               ),
               prefix: text(
-                "For kind header: text sent before the credential (`Token `). Optional.",
+                "For kind header: text sent before the credential (`Token `); for bearer: another scheme. Optional.",
                 PREFIX_MAX,
                 0,
+              ),
+              param: text(
+                "For kind query: the parameter's name (`api_key`).",
+                PARAM_MAX,
+              ),
+              provider: text(
+                "For kind provider: its id, as everyapp_provider_list lists it (`elevenlabs`).",
+                PROVIDER_MAX,
               ),
             },
             ["kind"],
@@ -147,7 +156,7 @@ export const MCP_APP_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "mcp_remove",
     title: "Remove an MCP app",
     description:
-      "Remove an MCP app, built-in or remote: it stops being served, and everyone's access, its tokens, its tools snapshot and its place in AI connections go. The credential stays set on the Gateway. To stop serving it and keep all that, use everyapp_mcp_off. Cannot be undone: needs confirm: true. Owners and admins.",
+      "Remove an MCP app, built-in or remote: it stops being served, and everyone's access, its tokens, its tools snapshot and its place in AI connections go. Its provider and the key or client it holds stay on the Gateway. To stop serving it and keep all that, use everyapp_mcp_off. Cannot be undone: needs confirm: true. Owners and admins.",
     inputSchema: closed(
       {
         app: APP,

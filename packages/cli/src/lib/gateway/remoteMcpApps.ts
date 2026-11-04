@@ -7,17 +7,22 @@
  * (ADR-0003), with the rules in `@every-app/perimeter/registry`
  * (remoteMcpApps.ts): this reads the rows they need and writes what they
  * return, each change in one batch. All the SQL of `mcp add|remove|on|off|
- * list|show|refresh|tool` and of the credential binding is here, so the
- * Gateway's server functions and workspace tools can mirror the shapes.
+ * list|show|refresh|tool` is here (the app's own provider row's is
+ * ./providers.ts's), so the Gateway's server functions and workspace tools
+ * can mirror the shapes.
  *
  * `on` and `off` are the status (`active` serves, `disabled` keeps access,
  * tokens and the snapshot and serves nothing); `remove` is the tombstone,
- * as `everyapp delete` leaves for a deployed app. The credential a remote
- * app declares (`<ID>_MCP_TOKEN`) is a Gateway setting `secret set` sets;
- * `remote_mcp_credentials` (migration 0011) pins it to the origin it was
- * set for, and `remote_mcp_tools` is what the Gateway last listed, tool by
- * tool. A Gateway whose D1 predates migration 0011 has neither table until
- * `everyapp update`: reads treat them as empty and writes leave them alone.
+ * as `everyapp delete` leaves for a deployed app. A remote app's
+ * credential is a provider of the registry (docs/design/2026-11-mcp-apps-
+ * auth.md): a catalog entry, a registered row, or the app's own row
+ * `<id>-mcp` that `mcp add` writes in the app's batch; its key or OAuth
+ * client is a Gateway setting `secret set` sets and binds to the row's
+ * hosts (`providers.bound_to`), and an OAuth provider's connections are
+ * `provider_connections`. `remote_mcp_tools` is what the Gateway last
+ * listed, tool by tool; a Gateway whose D1 predates migration 0011 has no
+ * such table until `everyapp update`: reads treat it as empty and writes
+ * leave it alone.
  *
  * Each change queues its event in the batch that writes it (the outbox,
  * ./events.ts; nothing on a Gateway from before migration 0012):
@@ -37,16 +42,19 @@ import {
   type RemoteMcpAddPlan,
 } from "@every-app/perimeter/registry";
 import {
+  capabilitySettings,
   isProviderAppId,
-  isRemoteMcpSecretName,
   PROVIDER_APP_IDS,
   PROVIDER_APP_TIER,
   PROVIDER_APPS,
   providerAppKeySetting,
+  remoteMcpBlockProblem,
   remoteMcpIdFromUrl,
-  remoteMcpSecretOf,
+  remoteMcpProviderOf,
   remoteToolEnabled,
   remoteToolRisk,
+  type Capability,
+  type CapabilityLookup,
   type RemoteMcpBlock,
   type RemoteMcpToolOverride,
   type RemoteMcpUrlEnv,
@@ -57,8 +65,11 @@ import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
 import { operatorActor, queueEventFromCli, type EventApp } from "./events";
+import type { InstallRecord } from "./install";
+import { gatewayRegistry, listConnections, readUploadedClients } from "./providers";
 import {
   appColumns,
+  asEveryAppError,
   ensureInstallOrganization,
   hasSecretNamesColumn,
   installOrganization,
@@ -75,8 +86,6 @@ type D1Row = Record<string, unknown>;
 
 /** Which of migration 0011's tables this Gateway's D1 has. */
 interface RemoteMcpTables {
-  /** `remote_mcp_credentials`: which origin each credential is pinned to. */
-  credentials: boolean;
   /** `remote_mcp_tools`: what each remote server listed, tool by tool. */
   tools: boolean;
 }
@@ -84,27 +93,18 @@ interface RemoteMcpTables {
 const remoteTables = new WeakMap<D1Database, Promise<RemoteMcpTables>>();
 
 /**
- * Whether the Gateway's D1 has migration 0011's tables (2026-10-25). A
- * Gateway from before it serves no remote MCP app until `update` runs its
- * migrations; until then reads find nothing and writes skip them, so the
- * other commands keep working against it. Asked of each database once.
+ * Whether the Gateway's D1 has `remote_mcp_tools` (migration 0011,
+ * 2026-10-25). A Gateway from before it serves no remote MCP app until
+ * `update` runs its migrations; until then reads find nothing and writes
+ * skip it, so the other commands keep working against it. Asked of each
+ * database once.
  */
 export function remoteMcpTables(db: D1Database): Promise<RemoteMcpTables> {
   let known = remoteTables.get(db);
   if (!known) {
     known = db
-      .run([
-        {
-          sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('remote_mcp_credentials', 'remote_mcp_tools')",
-        },
-      ])
-      .then(([rows = []]) => {
-        const names = new Set(rows.map((row) => String(row["name"])));
-        return {
-          credentials: names.has("remote_mcp_credentials"),
-          tools: names.has("remote_mcp_tools"),
-        };
-      });
+      .run([{ sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'remote_mcp_tools'" }])
+      .then(([rows = []]) => ({ tools: rows.length > 0 }));
     remoteTables.set(db, known);
   }
   return known;
@@ -131,11 +131,18 @@ function mcpAppEventData(app: StoredAppRow): {
   };
 }
 
-/** The URL of a row's `remote` block, read even from a tombstone. */
-function remoteUrlOf(
+/** The URL of a row's `remote` block, read even from a tombstone or a block from before provider credentials. */
+export function remoteUrlOf(
   app: Pick<StoredAppRow, "tier" | "manifest">,
 ): string | null {
-  return remoteMcpBlockOf(app)?.url ?? null;
+  const url = remoteMcpBlockOf(app)?.url;
+  if (url) return url;
+  try {
+    const raw = (JSON.parse(app.manifest ?? "null") as { remote?: { url?: unknown } } | null)?.remote?.url;
+    return typeof raw === "string" ? raw : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The install organization's row for an id, tombstones included. */
@@ -237,41 +244,6 @@ export function removedRemoteApp(ref: McpAppRef): EveryAppError {
   );
 }
 
-/**
- * The origins live MCP apps send each credential name to, across every
- * organization (the Gateway has one set of secrets): a name the registry
- * binds to one origin (REMOTE_MCP_SECRET_TAKEN otherwise).
- */
-async function credentialOrigins(
-  db: D1Database,
-): Promise<Map<string, Set<string>>> {
-  const [rows = []] = await db.run([
-    {
-      sql: `SELECT tier, manifest FROM apps WHERE tier = ? AND status != '${DELETED_APP_STATUS}'`,
-      params: [PROVIDER_APP_TIER],
-    },
-  ]);
-  const origins = new Map<string, Set<string>>();
-  for (const row of rows) {
-    const block = remoteMcpBlockOf({
-      tier: String(row["tier"]),
-      manifest: text(row["manifest"]),
-    });
-    const secret = block ? remoteMcpSecretOf(block.auth) : null;
-    if (!block || !secret) continue;
-    let origin: string;
-    try {
-      origin = new URL(block.url).origin;
-    } catch {
-      continue;
-    }
-    const set = origins.get(secret) ?? new Set<string>();
-    set.add(origin);
-    origins.set(secret, set);
-  }
-  return origins;
-}
-
 export interface RemoteMcpAddInput {
   url: string;
   /** `--name`: the app id (derived from the URL's host when absent). */
@@ -279,8 +251,10 @@ export interface RemoteMcpAddInput {
   /** The display name (default: the id). */
   name?: string;
   description?: string;
-  /** The auth block as the flags give it (`{ kind: "bearer" }` takes the default name). */
-  auth: Record<string, unknown>;
+  /** The auth block: `{ kind: "none" }`, or `{ kind: "provider", provider? }` (no provider: the app's own `<id>-mcp`). */
+  auth: unknown;
+  /** The provider registry as the Gateway resolves it, the app's own row included when it is about to be written. */
+  lookupProvider?: (providerId: string) => Capability | undefined;
   risk?: string;
   /** What the URL is checked against: the Gateway's own address and app domain. */
   env: RemoteMcpUrlEnv;
@@ -288,6 +262,17 @@ export interface RemoteMcpAddInput {
   /** Names the organization created when the Gateway has none yet. */
   organizationName: string;
   now?: number;
+  /** The app's own provider row's statements (./providers.ts), written in the app's batch. */
+  providerWrites?: readonly D1Statement[];
+}
+
+/** What a remote MCP app is planned against: the organization and the id's row. */
+interface RemoteMcpAddContext {
+  organization: Organization;
+  hasOwner: boolean;
+  /** The id the rules take: `--name`, else the URL's host's. */
+  id: string;
+  existingApp: StoredAppRow | null;
 }
 
 interface RemoteMcpAdded {
@@ -295,6 +280,62 @@ interface RemoteMcpAdded {
   organization: Organization;
   /** The Gateway has an owner. */
   hasOwner: boolean;
+}
+
+/**
+ * Read what adding `url` is planned against, creating the install
+ * organization when the Gateway has none yet (as every add has).
+ */
+export function readRemoteMcpAddContext(
+  db: D1Database,
+  input: Pick<RemoteMcpAddInput, "url" | "id" | "deployer" | "organizationName" | "now">,
+): Promise<RemoteMcpAddContext> {
+  return registryCall(async () => {
+    const now = input.now ?? Date.now();
+    const url = input.url.trim();
+    const id = (input.id ?? "").trim() || remoteMcpIdFromUrl(url) || "";
+    const { organization, hasOwner } = await ensureInstallOrganization(db, input.organizationName, now);
+    const [existing = []] = await db.run([
+      {
+        sql: `SELECT ${await appColumns(db)} FROM apps WHERE organization_id = ? AND app_slug = ?`,
+        params: [organization.id, id],
+      },
+    ]);
+    return {
+      organization,
+      hasOwner,
+      id,
+      existingApp: existing[0] ? toAppRow(existing[0]) : null,
+    };
+  });
+}
+
+/** The registry's plan for the add (every refusal raised as the CLI's error), writing nothing. */
+export function planRemoteMcpAdd(
+  context: RemoteMcpAddContext,
+  input: Omit<RemoteMcpAddInput, "organizationName" | "providerWrites">,
+): RemoteMcpAddPlan {
+  try {
+    return planRemoteMcpAppAdd({
+      organizationId: context.organization.id,
+      url: input.url.trim(),
+      id: input.id,
+      name: input.name,
+      description: input.description,
+      auth: input.auth,
+      ...(input.lookupProvider ? { lookupProvider: input.lookupProvider } : {}),
+      risk: input.risk,
+      env: input.env,
+      existingApp: (slug) => {
+        if (slug !== context.id) throw new Error(`The rules asked for "${slug}", not "${context.id}".`);
+        return context.existingApp;
+      },
+      actor: input.deployer.actor,
+      now: input.now ?? Date.now(),
+    });
+  } catch (error) {
+    throw asEveryAppError(error);
+  }
 }
 
 /** What adding a remote MCP app writes, in one batch (the row; a revived one's leftovers cleared). */
@@ -361,57 +402,19 @@ function remoteToolsDelete(
 }
 
 /**
- * Register a remote MCP server in the install organization (created when
- * the Gateway has none yet): the row `active` at once, granted to nobody
- * (owners and admins open it by their role), or its own tombstone revived
- * as new. The registry's refusals (REMOTE_MCP_URL_REFUSED,
- * REMOTE_MCP_INVALID, REMOTE_MCP_EXISTS, REMOTE_MCP_SECRET_TAKEN,
- * APP_TIER_MISMATCH) write nothing.
+ * Write a planned add in one batch: the app's own provider row
+ * (`providerWrites`, ./providers.ts) when it has one, the app row (or its
+ * own tombstone revived as new), and `mcp_app.added`.
  */
-export function addRemoteMcpApp(
+export function writeRemoteMcpAdd(
   db: D1Database,
-  input: RemoteMcpAddInput,
+  context: RemoteMcpAddContext,
+  plan: RemoteMcpAddPlan,
+  input: Pick<RemoteMcpAddInput, "deployer" | "now" | "providerWrites">,
 ): Promise<RemoteMcpAdded> {
   return registryCall(async () => {
     const now = input.now ?? Date.now();
-    const url = input.url.trim();
-    // The id the rules will take, so its row is read in the same batch.
-    const id = (input.id ?? "").trim() || remoteMcpIdFromUrl(url) || "";
-    const { organization, hasOwner } = await ensureInstallOrganization(
-      db,
-      input.organizationName,
-      now,
-    );
-    const [existing = []] = await db.run([
-      {
-        sql: `SELECT ${await appColumns(db)} FROM apps WHERE organization_id = ? AND app_slug = ?`,
-        params: [organization.id, id],
-      },
-    ]);
-    const existingApp = existing[0] ? toAppRow(existing[0]) : null;
-    const origins = await credentialOrigins(db);
-    const plan = planRemoteMcpAppAdd({
-      organizationId: organization.id,
-      url,
-      id: input.id,
-      name: input.name,
-      description: input.description,
-      auth: input.auth,
-      risk: input.risk,
-      env: input.env,
-      existingApp: (slug) => {
-        if (slug !== id)
-          throw new Error(`The rules asked for "${slug}", not "${id}".`);
-        return existingApp;
-      },
-      secretUsedAt: (secret) => {
-        const used = [...(origins.get(secret) ?? [])];
-        const origin = new URL(url).origin;
-        return used.find((each) => each !== origin) ?? used[0] ?? null;
-      },
-      actor: input.deployer.actor,
-      now,
-    });
+    const { organization } = context;
     const tables = await remoteMcpTables(db);
     const added = await queueEventFromCli(db, {
       organizationId: organization.id,
@@ -430,14 +433,37 @@ export function addRemoteMcpApp(
       now,
     });
     await db.run([
+      ...(input.providerWrites ?? []),
       ...addWrites(plan, now, {
         secretNames: await hasSecretNamesColumn(db),
         remoteTools: tables.tools,
       }),
       ...added,
     ]);
-    return { plan, organization, hasOwner };
+    return {
+      plan,
+      organization,
+      hasOwner: context.hasOwner,
+    };
   });
+}
+
+/**
+ * Register a remote MCP server in the install organization (created when
+ * the Gateway has none yet): the row `active` at once, granted to nobody
+ * (owners and admins open it by their role), or its own tombstone revived
+ * as new; with `providerWrites`, the app's own provider row in the same
+ * batch. The registry's refusals (REMOTE_MCP_URL_REFUSED,
+ * REMOTE_MCP_INVALID, REMOTE_MCP_PROVIDER_HOST, REMOTE_MCP_EXISTS,
+ * APP_TIER_MISMATCH) write nothing.
+ */
+export async function addRemoteMcpApp(
+  db: D1Database,
+  input: RemoteMcpAddInput,
+): Promise<RemoteMcpAdded> {
+  const context = await readRemoteMcpAddContext(db, input);
+  const plan = planRemoteMcpAdd(context, input);
+  return writeRemoteMcpAdd(db, context, plan, input);
 }
 
 /**
@@ -578,33 +604,114 @@ export async function refreshMcpAppTools(
   return toSnapshot(catalog[0]);
 }
 
-/** A credential's pin: the origin `secret set` bound it to (the Gateway never pins on first use). */
-export interface CredentialBinding {
-  origin: string;
-  boundBy: string | null;
-  boundAt: number | null;
+/** What a remote app's credential is checked against: the Gateway's settings, its providers, the OAuth connections. */
+export interface CredentialContext {
+  /** The setting names on the Gateway Worker. */
+  gatewayNames: readonly string[];
+  /** The catalog and the registered rows, as the Gateway resolves them. */
+  registry: CapabilityLookup & { bound(id: string): boolean };
+  /** The install organization's active connections, by {@link connectionKey} (the provider, in an app): whose they are. */
+  connections: ReadonlyMap<string, string[]>;
+  /** The providers with a client uploaded in the Gateway (Admin → Providers, or its own Add an MCP server). */
+  uploadedClients: ReadonlySet<string>;
 }
 
-/** Every credential binding, by name; empty on a Gateway from before migration 0011. */
-export async function readCredentialBindings(
+/**
+ * A remote app's credential as `mcp list` and `mcp show` report it, never
+ * a value: none; an API key (its setting, whether it is set, and whether
+ * it was set for the hosts the provider has now); an OAuth provider (its
+ * client, and how many are connected); a provider the Gateway doesn't have;
+ * or a registration from before provider credentials.
+ */
+export type CredentialState =
+  | { kind: "none" }
+  | { kind: "key"; provider: string; setting: string; set: boolean; bound: boolean }
+  | {
+      kind: "oauth";
+      provider: string;
+      /** The client: its id's setting, set and bound, or uploaded in the Gateway. */
+      client: { setting: string; set: boolean; bound: boolean; uploaded: boolean };
+      /** How many members have connected it in the app, and who (emails). */
+      connected: number;
+      people: string[];
+    }
+  | { kind: "missing"; provider: string }
+  | { kind: "predates"; problem: string };
+
+/** Where a connection is counted: its provider, in the app it was made in. */
+export function connectionKey(providerId: string, appId: string): string {
+  return `${providerId} ${appId}`;
+}
+
+/** The credential of app `appId`'s block (or of a block that can't be read: `problem`). */
+export function credentialState(
+  remote: RemoteMcpBlock | null,
+  problem: string | null,
+  context: CredentialContext,
+  appId: string,
+): CredentialState {
+  if (!remote) return { kind: "predates", problem: problem ?? "its registration can't be read" };
+  const provider = remoteMcpProviderOf(remote.auth);
+  if (!provider) return { kind: "none" };
+  const capability = context.registry.get(provider);
+  if (!capability || (capability.mode !== "api_key" && capability.mode !== "oauth_client")) {
+    return { kind: "missing", provider };
+  }
+  const settings = capabilitySettings(capability);
+  const set = settings.every((name) => context.gatewayNames.includes(name));
+  const bound = context.registry.bound(provider);
+  if (capability.mode === "api_key") {
+    return { kind: "key", provider, setting: settings[0] ?? capability.auth.secret, set, bound };
+  }
+  const people = context.connections.get(connectionKey(provider, appId)) ?? [];
+  return {
+    kind: "oauth",
+    provider,
+    client: { setting: capability.secrets.clientId, set, bound, uploaded: context.uploadedClients.has(provider) },
+    connected: people.length,
+    people: [...people],
+  };
+}
+
+/** Whether the credential lets the Gateway serve the app: nothing to set, a bound key, a client and a connection. */
+export function credentialReady(state: CredentialState): boolean {
+  switch (state.kind) {
+    case "none":
+      return true;
+    case "key":
+      return state.set && state.bound;
+    case "oauth":
+      return ((state.client.set && state.client.bound) || state.client.uploaded) && state.connected > 0;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Read what each remote app's credential is checked against
+ * ({@link CredentialContext}), for the install organization's
+ * connections: `gatewayNames` are what `secret list` read.
+ */
+export async function readCredentialContext(
   db: D1Database,
-): Promise<Map<string, CredentialBinding>> {
-  if (!(await remoteMcpTables(db)).credentials) return new Map();
-  const [rows = []] = await db.run([
-    {
-      sql: "SELECT name, origin, bound_by, bound_at FROM remote_mcp_credentials ORDER BY name",
-    },
+  install: Pick<InstallRecord, "gatewayHost" | "appBaseDomain">,
+  gatewayNames: readonly string[],
+): Promise<CredentialContext> {
+  const found = await installOrganization(db);
+  const [registry, connections, uploaded] = await Promise.all([
+    gatewayRegistry(db, install),
+    found ? listConnections(db, { organizationId: found.organization.id }) : Promise.resolve([]),
+    readUploadedClients(db),
   ]);
-  return new Map(
-    rows.map((row) => [
-      String(row["name"]),
-      {
-        origin: String(row["origin"]),
-        boundBy: text(row["bound_by"]),
-        boundAt: row["bound_at"] == null ? null : Number(row["bound_at"]),
-      },
-    ]),
-  );
+  const byProvider = new Map<string, string[]>();
+  for (const connection of connections) {
+    if (connection.status !== "active" || !connection.app) continue;
+    const key = connectionKey(connection.providerId, connection.app.id);
+    const people = byProvider.get(key) ?? [];
+    people.push(connection.userEmail ?? connection.label ?? connection.userId);
+    byProvider.set(key, people);
+  }
+  return { gatewayNames, registry, connections: byProvider, uploadedClients: new Set(uploaded.keys()) };
 }
 
 /** One MCP app as `mcp list` reads it. */
@@ -616,9 +723,20 @@ interface McpAppEntry {
   app: StoredAppRow | null;
   /** A remote app's block (null when it can't be read, or for a built-in). */
   remote: RemoteMcpBlock | null;
-  /** The Gateway setting holding its key or credential; null when it takes none. */
+  /** Why a remote app's block can't be read (one from before provider credentials), else null. */
+  problem: string | null;
+  /** A built-in's Gateway setting holding its key; null for a remote app (its credential is a provider). */
   keyName: string | null;
   snapshot: ToolSnapshot | null;
+}
+
+/** Why a remote row's block can't be read, or null. */
+export function remoteProblemOf(app: Pick<StoredAppRow, "manifest">): string | null {
+  try {
+    return remoteMcpBlockProblem(JSON.parse(app.manifest ?? "null"));
+  } catch {
+    return "its manifest isn't JSON";
+  }
 }
 
 /**
@@ -653,6 +771,7 @@ export async function listMcpApps(db: D1Database): Promise<McpAppEntry[]> {
       kind: "builtin",
       app,
       remote: null,
+      problem: null,
       keyName: providerAppKeySetting(id),
       snapshot: app ? (snapshots.get(app.id) ?? null) : null,
     };
@@ -667,7 +786,8 @@ export async function listMcpApps(db: D1Database): Promise<McpAppEntry[]> {
         kind: "remote",
         app,
         remote,
-        keyName: remote ? remoteMcpSecretOf(remote.auth) : null,
+        problem: remote ? null : remoteProblemOf(app),
+        keyName: null,
         snapshot: snapshots.get(app.id) ?? null,
       };
     });
@@ -679,36 +799,20 @@ export type McpAppState = "on" | "off" | "needs setup" | "not added";
 
 /**
  * An MCP app's state: not added (a built-in with no live row), off (not
- * `active`), needs setup (its key or credential isn't set, a remote app's
- * block can't be read, or its credential is pinned to another origin), or
- * on. An OAuth server reads as on or off: what it needs is said beside it
- * ("not supported yet"), since nothing can be set for it.
+ * `active`), needs setup (a built-in's key isn't set; a remote app's block
+ * can't be read, or its credential isn't ready: {@link credentialReady}),
+ * or on.
  */
 export function mcpAppState(
-  entry: Pick<McpAppEntry, "kind" | "app" | "remote" | "keyName">,
+  entry: Pick<McpAppEntry, "kind" | "app" | "keyName">,
   gatewayNames: readonly string[],
-  bindings: ReadonlyMap<string, CredentialBinding>,
+  credential: CredentialState | null,
 ): McpAppState {
   if (!entry.app || entry.app.status === DELETED_APP_STATUS) return "not added";
   if (entry.app.status !== "active") return "off";
-  if (entry.kind === "remote" && !entry.remote) return "needs setup";
-  if (entry.keyName && !gatewayNames.includes(entry.keyName))
-    return "needs setup";
-  if (entry.kind === "remote" && entry.keyName && entry.remote) {
-    const binding = bindings.get(entry.keyName);
-    if (binding && binding.origin !== originOf(entry.remote.url))
-      return "needs setup";
-  }
+  if (entry.kind === "remote") return credential && credentialReady(credential) ? "on" : "needs setup";
+  if (entry.keyName && !gatewayNames.includes(entry.keyName)) return "needs setup";
   return "on";
-}
-
-/** A URL's origin, or "" when it doesn't parse. */
-export function originOf(url: string): string {
-  try {
-    return new URL(url).origin;
-  } catch {
-    return "";
-  }
 }
 
 /** One tool of a remote app, as `mcp show` lists it. */
@@ -734,15 +838,13 @@ interface CatalogToolEntry {
   risk: string;
 }
 
-/** What `mcp show` reads beyond the row: the snapshot, the tools, the credential's pin. */
+/** What `mcp show` reads beyond the row: the snapshot and the tools. */
 interface McpAppDetail {
   snapshot: ToolSnapshot | null;
   /** A remote app's tools as last listed, joined with the catalog. */
   remoteTools: RemoteToolEntry[];
   /** The catalog's tools (`app_tools`), for a built-in. */
   catalogTools: CatalogToolEntry[];
-  /** The credential's binding, when it has a credential and one is recorded. */
-  binding: CredentialBinding | null;
   /** Whether the Gateway's D1 has `remote_mcp_tools` (migration 0011). */
   listingKnown: boolean;
 }
@@ -808,8 +910,7 @@ export async function readMcpAppDetail(
 ): Promise<McpAppDetail> {
   const scoped = [ref.app.id, ref.app.organizationId];
   const tables = await remoteMcpTables(db);
-  const secret = remote ? remoteMcpSecretOf(remote.auth) : null;
-  const [catalog = [], tools = [], listed = [], bindings = []] = await db.run([
+  const [catalog = [], tools = [], listed = []] = await db.run([
     {
       sql: "SELECT status, tool_count, fetched_at, last_error FROM app_tool_catalogs WHERE app_row_id = ? AND organization_id = ?",
       params: scoped,
@@ -827,19 +928,10 @@ WHERE app_row_id = ? AND organization_id = ? ORDER BY upstream_name`,
           },
         ]
       : [{ sql: "SELECT 1 WHERE 0" }]),
-    ...(tables.credentials && secret
-      ? [
-          {
-            sql: "SELECT origin, bound_by, bound_at FROM remote_mcp_credentials WHERE name = ?",
-            params: [secret],
-          },
-        ]
-      : [{ sql: "SELECT 1 WHERE 0" }]),
   ]);
   const catalogRisks = new Map(
     tools.map((tool) => [String(tool["name"]), String(tool["risk"])]),
   );
-  const binding = bindings[0];
   return {
     snapshot: toSnapshot(catalog[0]),
     remoteTools: remote
@@ -850,14 +942,6 @@ WHERE app_row_id = ? AND organization_id = ? ORDER BY upstream_name`,
       title: text(tool["title"]),
       risk: String(tool["risk"]),
     })),
-    binding: binding
-      ? {
-          origin: String(binding["origin"]),
-          boundBy: text(binding["bound_by"]),
-          boundAt:
-            binding["bound_at"] == null ? null : Number(binding["bound_at"]),
-        }
-      : null,
     listingKnown: tables.tools,
   };
 }
@@ -984,103 +1068,24 @@ WHERE id = ? AND manifest = ? AND status != '${DELETED_APP_STATUS}' RETURNING id
   });
 }
 
-/** What `secret set` did about the credential names it set. */
-interface CredentialBindingResult {
-  /** Each name pinned to its app's origin. */
-  bound: Array<{ name: string; origin: string }>;
-  /** Names no live MCP app declares: `kept` is the origin an earlier binding still holds. */
-  undeclared: Array<{ name: string; kept: string | null }>;
-  /** Names live MCP apps at more than one origin declare (a row edited by hand): left unbound. */
-  ambiguous: Array<{ name: string; origins: string[] }>;
-}
-
 /**
- * After `secret set` set Gateway settings: pin each remote MCP credential
- * name among them (the `_MCP_TOKEN` family) to the origin of the live
- * MCP app that declares it (`remote_mcp_credentials`: name, origin, who
- * set it, when). A name no live app declares keeps whatever binding it
- * had, and the Gateway binds an unbound one to the first app that uses it.
- * Nothing on a Gateway whose D1 predates migration 0011.
+ * Which live remote MCP apps use each provider, across organizations (the
+ * Gateway has one set of settings): what `secret list` says a provider's
+ * setting is for.
  */
-export async function bindRemoteMcpCredentials(
-  db: D1Database,
-  names: readonly string[],
-  actor: string,
-  now = Date.now(),
-): Promise<CredentialBindingResult> {
-  const result: CredentialBindingResult = {
-    bound: [],
-    undeclared: [],
-    ambiguous: [],
-  };
-  const family = names.filter(isRemoteMcpSecretName);
-  if (family.length === 0 || !(await remoteMcpTables(db)).credentials)
-    return result;
-  const origins = await credentialOrigins(db);
-  const existing = await readCredentialBindings(db);
-  const writes: D1Statement[] = [];
-  for (const name of family) {
-    const declared = [...(origins.get(name) ?? [])].sort();
-    if (declared.length === 0) {
-      result.undeclared.push({
-        name,
-        kept: existing.get(name)?.origin ?? null,
-      });
-    } else if (declared.length > 1) {
-      result.ambiguous.push({ name, origins: declared });
-    } else {
-      result.bound.push({ name, origin: declared[0]! });
-      writes.push({
-        sql: `INSERT INTO remote_mcp_credentials (name, origin, bound_by, bound_at) VALUES (?, ?, ?, ?)
-ON CONFLICT(name) DO UPDATE SET origin = excluded.origin, bound_by = excluded.bound_by, bound_at = excluded.bound_at`,
-        params: [name, declared[0]!, actor, now],
-      });
-    }
-  }
-  if (writes.length > 0) await db.run(writes);
-  return result;
-}
-
-/**
- * After `secret unset` removed Gateway settings: drop the binding of each
- * remote MCP credential name among them. Returns the names whose binding
- * went.
- */
-export async function unbindRemoteMcpCredentials(
-  db: D1Database,
-  names: readonly string[],
-): Promise<string[]> {
-  const family = names.filter(isRemoteMcpSecretName);
-  if (family.length === 0 || !(await remoteMcpTables(db)).credentials)
-    return [];
-  const [gone = []] = await db.run([
-    {
-      sql: `DELETE FROM remote_mcp_credentials WHERE name IN (${family.map(() => "?").join(", ")}) RETURNING name`,
-      params: family,
-    },
-  ]);
-  return gone.map((row) => String(row["name"]));
-}
-
-/** Every live remote MCP app's credential name, across organizations, with the app ids that declare it. */
-export async function remoteMcpCredentialNames(
-  db: D1Database,
-): Promise<Map<string, string[]>> {
+export async function remoteMcpProviderUses(db: D1Database): Promise<Map<string, string[]>> {
   const [rows = []] = await db.run([
     {
       sql: `SELECT app_slug, tier, manifest FROM apps WHERE tier = ? AND status != '${DELETED_APP_STATUS}' ORDER BY app_slug`,
       params: [PROVIDER_APP_TIER],
     },
   ]);
-  const names = new Map<string, string[]>();
+  const uses = new Map<string, string[]>();
   for (const row of rows) {
-    const block = remoteMcpBlockOf({
-      tier: String(row["tier"]),
-      manifest: text(row["manifest"]),
-    });
-    const secret = block ? remoteMcpSecretOf(block.auth) : null;
-    if (!secret) continue;
-    names.set(secret, [...(names.get(secret) ?? []), String(row["app_slug"])]);
+    const block = remoteMcpBlockOf({ tier: String(row["tier"]), manifest: text(row["manifest"]) });
+    const provider = block ? remoteMcpProviderOf(block.auth) : null;
+    if (!provider) continue;
+    uses.set(provider, [...(uses.get(provider) ?? []), String(row["app_slug"])]);
   }
-  return names;
+  return uses;
 }

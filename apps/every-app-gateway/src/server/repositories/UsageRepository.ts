@@ -12,7 +12,10 @@ import {
   usageMonthly,
   users,
 } from "@/db/schema";
-import { DELETED_APP_STATUS } from "@every-app/perimeter/registry";
+import {
+  DELETED_APP_STATUS,
+  isMeteredAppRow,
+} from "@every-app/perimeter/registry";
 import {
   utcDay,
   utcMonth,
@@ -218,8 +221,11 @@ async function pausedApps(
       .select({
         appRowId: usageMonthly.appRowId,
         costMicros: usageMonthly.costMicros,
+        tier: apps.tier,
+        manifest: apps.manifest,
       })
       .from(usageMonthly)
+      .leftJoin(apps, eq(apps.id, usageMonthly.appRowId))
       .where(
         and(
           eq(usageMonthly.organizationId, organizationId),
@@ -229,8 +235,10 @@ async function pausedApps(
   ]);
   const defaultCap = defaults[0]?.defaultCap ?? null;
   const rows = new Map(settings.map((row) => [row.appRowId, row]));
-  for (const { appRowId, costMicros } of counts) {
+  for (const { appRowId, tier, manifest, costMicros } of counts) {
     if (!wanted.has(appRowId)) continue;
+    // A remote MCP app is never paused: it isn't metered.
+    if (tier !== null && !isMeteredAppRow({ tier, manifest })) continue;
     const row = rows.get(appRowId);
     const { cap } = effectiveMonthlyCap({
       appCap: row?.appCap ?? null,
@@ -390,6 +398,8 @@ async function summarize({
         appRowId: apps.id,
         name: apps.name,
         appSlug: apps.appSlug,
+        tier: apps.tier,
+        manifest: apps.manifest,
         monthlyCostCapMicros: orgAppSettings.monthlyCostCapMicros,
         capUnlimited: orgAppSettings.unlimited,
       })
@@ -463,6 +473,7 @@ async function summarize({
     effectiveMonthlyCostCapMicros: null as number | null,
     costCapSource: null as UsageAppRow["costCapSource"],
     paused: false,
+    metered: true,
   };
   const appRows = new Map<string, UsageAppRow>(
     byApp.map((row) => [
@@ -489,7 +500,23 @@ async function summarize({
   // today's cap says nothing.
   const current = month === utcMonth(now);
   for (const row of callable) {
-    const { monthlyCostCapMicros, capUnlimited, ...listed } = row;
+    const { monthlyCostCapMicros, capUnlimited, tier, manifest, ...listed } =
+      row;
+    if (!isMeteredAppRow({ tier, manifest })) {
+      // A remote MCP app: counted and shown, never capped, whatever the
+      // default or a row left from before say ("Not metered").
+      const existing = appRows.get(row.appRowId) ?? {
+        ...none,
+        ...listed,
+        toolCalls: 0,
+        ...uncapped,
+        callable: true,
+      };
+      existing.callable = true;
+      existing.metered = false;
+      appRows.set(row.appRowId, existing);
+      continue;
+    }
     const effective = effectiveMonthlyCap({
       appCap: monthlyCostCapMicros,
       unlimited: capUnlimited ?? false,

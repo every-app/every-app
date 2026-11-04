@@ -34,7 +34,7 @@ Stdin takes `NAME=value` lines (blank and `#` lines skipped, `export ` allowed).
 
 Sets one or more names, each where it belongs, before reading any value:
 
-1. A Gateway setting (any directory) goes to the Gateway Worker. So does any name ending in `_MCP_TOKEN` (a remote MCP app's credential) and any setting of a provider registered on this Gateway.
+1. A Gateway setting (any directory) goes to the Gateway Worker. So does any setting of a provider registered on this Gateway, a remote MCP app's `<ID>_MCP_TOKEN` among them.
 2. Any other name must be one the app declares: the app in this directory, or `--app <id>` from anywhere. It goes to the app's Worker and its helpers.
 3. Anything else is refused: `SECRET_NOT_DECLARED` (with `data.didYouMean` for a near miss), `SECRET_NOT_SETTABLE` (install-owned or dev-only settings), `SECRET_NAME_INVALID`, `SECRET_NAME_RESERVED`.
 
@@ -62,7 +62,7 @@ Every catalog provider's settings, like `DATAFORSEO_API_KEY`, `CONTEXT_API_KEY`,
 
 ### MCP apps
 
-The built-in DataForSEO MCP app reads `DATAFORSEO_API_KEY`. A remote MCP app added by URL reads `<ID>_MCP_TOKEN`, sent only to the origin it's pinned to; set it with `everyapp secret set <ID>_MCP_TOKEN` (or when `mcp add` asks). [mcp](/docs/agent/mcp#mcp-apps)
+The built-in DataForSEO MCP app reads `DATAFORSEO_API_KEY`. A remote MCP app added by URL with a static key reads `<ID>_MCP_TOKEN`, a setting of its own provider row `<id>-mcp`, sent only to the server's host; set it with `everyapp secret set <ID>_MCP_TOKEN` (or when `mcp add` asks). An OAuth server's client is `<ID>_MCP_CLIENT_ID` (and `<ID>_MCP_CLIENT_SECRET`), set by `mcp add`; each member connects their own account. `--provider <id>` uses that provider's settings. [mcp](/docs/agent/mcp#mcp-apps)
 
 ### Cloudflare Access and sign-in
 
@@ -82,7 +82,7 @@ The six sign-in providers' settings are `<ID>_SIGNIN_<FIELD>` (`GOOGLE_SIGNIN_CL
 
 ## App secrets
 
-Declare them in the manifest (`secrets: ["GITHUB_TOKEN"]`), deploy, then `everyapp configure <app>`. Until a required one is set the app shows Needs setup. The app reads it as `env.GITHUB_TOKEN`. A name can't be reserved (`GATEWAY_URL`, `CF_VERSION_METADATA`, `EVERYAPP_*`, `EVERY_APP_*`, `APP__*`), a Gateway setting, a binding, or end in `_MCP_TOKEN`.
+Declare them in the manifest (`secrets: ["GITHUB_TOKEN"]`), deploy, then `everyapp configure <app>`. Until a required one is set the app shows Needs setup. The app reads it as `env.GITHUB_TOKEN`. A name can't be reserved (`GATEWAY_URL`, `CF_VERSION_METADATA`, `EVERYAPP_*`, `EVERY_APP_*`, `APP__*`), a Gateway setting, or a binding.
 
 In development, put values in the app's `.dev.vars` (`GITHUB_TOKEN=…`, gitignored), including provider keys the Gateway would hold (`OPENROUTER_API_KEY`), since there's no Gateway locally. `everyapp dev --gateway <url>` uses a real Gateway's keys instead. [dev](/docs/agent/dev)
 

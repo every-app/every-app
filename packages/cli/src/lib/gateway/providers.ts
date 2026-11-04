@@ -344,6 +344,86 @@ async function providerEvent(
   });
 }
 
+// A remote MCP app's own row (`<appId>-mcp`, `everyapp mcp add`).
+
+/** What `mcp add` plans the app's own provider row against: the row there, the other rows' settings, the host rule. */
+interface RemoteMcpProviderContext {
+  existing: (ProviderRow & { spec: string }) | null;
+  /** The settings every other row names (the app's own row may not take one). */
+  rowSettings: Set<string>;
+  refuseHost: (host: string) => string | null;
+}
+
+/**
+ * The app's own provider row and what its plan is checked against
+ * (`planRemoteMcpProviderRow` in `@every-app/perimeter/registry`).
+ */
+export async function remoteMcpProviderContext(
+  db: D1Database,
+  install: ProviderInstall,
+  providerId: string,
+): Promise<RemoteMcpProviderContext> {
+  const rows = await readProviderRows(db);
+  const others = registryOf(
+    rows.filter((row) => row.id !== providerId),
+    install,
+  );
+  return {
+    existing: rows.find((row) => row.id === providerId) ?? null,
+    rowSettings: new Set(others.rows().flatMap((row) => capabilitySettings(row.capability))),
+    refuseHost: refuseHostFor(install),
+  };
+}
+
+/**
+ * The statements that write a remote MCP app's own provider row as
+ * planned, for the batch that writes the app: `insert` the row (unbound
+ * until `secret set` sets its key or client), `replace` its spec over the
+ * one read (its `bound_to` kept: the registry reads the key only while it
+ * equals the new spec's binding key, so a changed host or endpoint
+ * unbinds it), nothing to `keep`. An insert or replace queues
+ * `provider.added`, as `provider add` does for both.
+ */
+export async function remoteMcpProviderRowWrites(
+  db: D1Database,
+  plan: { action: "insert" | "replace" | "keep"; id: string; spec: string; capability: RegistrableCapability },
+  existingSpec: string | null,
+  deployer: Deployer,
+  now: number,
+): Promise<D1Statement[]> {
+  if (plan.action === "keep") return [];
+  const event = await providerEvent(
+    db,
+    "provider.added",
+    { id: plan.id, name: plan.capability.label, kind: plan.capability.mode === "oauth_client" ? "oauth" : plan.capability.mode },
+    deployer,
+    now,
+    {
+      sql: "EXISTS (SELECT 1 FROM providers WHERE id = ? AND spec = ? AND updated_at = ?)",
+      params: [plan.id, plan.spec, now],
+    },
+  );
+  return [
+    // A replaced spec (another server, other endpoints) never gets the
+    // tokens issued under the old one: its connections go, and members
+    // connect again.
+    ...(plan.action === "replace"
+      ? [{ sql: "DELETE FROM provider_connections WHERE provider_id = ?", params: [plan.id] }]
+      : []),
+    plan.action === "replace"
+      ? {
+          sql: "UPDATE providers SET spec = ?, updated_at = ? WHERE id = ? AND spec = ?",
+          params: [plan.spec, now, plan.id, existingSpec ?? ""],
+        }
+      : {
+          sql: `INSERT INTO providers (id, spec, added_by, added_at, updated_at, bound_to, bound_at)
+VALUES (?1, ?2, ?3, ?4, ?4, NULL, NULL) ON CONFLICT(id) DO NOTHING`,
+          params: [plan.id, plan.spec, deployer.actor, now],
+        },
+    ...event,
+  ];
+}
+
 function safeJson(text: string): unknown {
   try {
     return JSON.parse(text);

@@ -76,10 +76,6 @@ describe("settings manifest field", () => {
       "list `openai` under providers instead",
     ],
     [
-      [{ name: "X_MCP_TOKEN", why: "x" }],
-      "give the app's setting another name",
-    ],
-    [
       [{ name: "a-b", why: "x" }],
       "binding names must be JavaScript identifiers",
     ],

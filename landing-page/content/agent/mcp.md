@@ -57,7 +57,7 @@ Every request re-checks the connection, the person's role and access, so revokin
 
 Listing modes: `full` lists the built-ins, the workspace tools the caller's role reaches, then every app tool. `compact` lists the built-ins only; it's used when the full listing would pass 256 tools or 1 MiB, or when asked for with the header `X-EveryApp-Tools: compact` (or `full`) or `/mcp?tools=compact`. The agent finds tools with `everyapp_search_tools` and calls them through `everyapp_call_read` or `everyapp_call_write`. The server's instructions start ``Tools for <org> on EveryApp. Each tool is named `<app>_<tool>`; call everyapp_list_apps.`` and name apps that need setup. Built-ins carry `_meta["anthropic/alwaysLoad"]` so Claude Code keeps them loaded.
 
-Transport: Streamable HTTP, `POST` only, a body of at most 256 KiB. A browser `Origin` must be the Gateway's own or in `MCP_ALLOWED_ORIGINS`. An app has 30 seconds per call. Every call, allowed or not, is audited (Admin → Activity, `everyapp workspace activity`) and counted against the app's cap.
+Transport: Streamable HTTP, `POST` only, a body of at most 256 KiB. A browser `Origin` must be the Gateway's own or in `MCP_ALLOWED_ORIGINS`. An app has 30 seconds per call. Every call, allowed or not, is audited (Admin → Activity, `everyapp workspace activity`) and counted against the app's cap, if it has one.
 
 ## Built-in tools
 
@@ -83,12 +83,22 @@ No built-in ever returns a credential, and none sets one: keys go in with `every
 
 ## MCP apps
 
-An MCP app is a set of tools the Gateway serves on its `/mcp` with no deployed app behind it. Its tools are `<id>_<tool>`, attributed to the member, audited and held to the app's cap like any other. The launcher lists them under "MCP apps"; their card opens "Use it from your agent".
+An MCP app is a set of tools the Gateway serves on its `/mcp` with no deployed app behind it. Its tools are `<id>_<tool>`, attributed to the member and audited like any other. DataForSEO is held to the app's cap; a remote app isn't metered (no cap, `APP_NOT_METERED`), though its calls are counted. The launcher lists them under "MCP apps"; their card opens "Use it from your agent".
 
 - **Built-in**: DataForSEO, a curated tool set on the Gateway's `DATAFORSEO_API_KEY`. `everyapp mcp on dataforseo`, then `everyapp secret set DATAFORSEO_API_KEY` (either order).
-- **Remote**: any MCP server by URL. `everyapp mcp add https://mcp.example.com/mcp` (`--name`, `--auth none|bearer|header|basic|oauth`, `--header`, `--secret`, `--risk`, `--description`, `--from-env`). The Gateway lists the server's tools and forwards each call with a credential it holds in `<ID>_MCP_TOKEN`, sent only to that server's origin. Guide: `setup/remote-mcp.md`.
+- **Remote**: any MCP server by URL. `everyapp mcp add https://mcp.example.com/mcp` (`--name`, `--auth none|bearer|header|query|basic|oauth`, `--provider`, `--header`, `--client-id`, `--risk`, `--description`, `--from-env`). The Gateway lists the server's tools and forwards each call. Guide: `setup/remote-mcp.md`.
 
-`mcp off` stops serving and keeps access and tokens; `mcp on` serves again; `mcp remove` deletes the app (the key stays). `mcp list` and `mcp show <id>` report the state; `mcp refresh <id>` re-lists a remote server's tools; `mcp tool <id> <tool> --risk read|write|annotations` or `--off` overrides one tool. A remote tool is `read` when the server hints `readOnlyHint`, else `write`. Admin → Apps → Add app → Add an MCP server does the same in the browser.
+### The credential: a provider
+
+A remote app's credential is a provider row `<id>-mcp`, written with the app. Its host is the MCP URL's, so the credential goes nowhere else.
+
+- `--auth bearer|header|query|basic`: a static key, `everyapp secret set <ID>_MCP_TOKEN`.
+- `--auth oauth` (picked when the server's 401 names its OAuth metadata): `mcp add` discovers the authorization server and registers a client (DCR), or takes `--client-id` for one registered by hand. Each member connects their own account in the app, at `/connect/<id>-mcp?app=<id>&return=/?mcp=<id>`. Until then their calls answer `Connect your <Provider> account to use this tool: <url>`. The discovered scopes go in the app's capability entry `{ scopes, why }`, `scopes_supported` is `tolerated`, and the scopes the server grants are kept as granted.
+- `--provider <id>`: a provider the Gateway already has (`--provider elevenlabs`); the URL's host must be one of its hosts (`REMOTE_MCP_PROVIDER_HOST`).
+
+Adding the app again with another credential replaces its `<id>-mcp` row and deletes its connections.
+
+`mcp off` stops serving and keeps access and tokens; `mcp on` serves again; `mcp remove` deletes the app (its `<id>-mcp` row and key stay its organization's; `provider remove <id>-mcp` drops them). `mcp list` and `mcp show <id>` report the state; `mcp refresh <id>` re-lists a remote server's tools; `mcp tool <id> <tool> --risk read|write|annotations` or `--off` overrides one tool. A remote tool is `read` when the server hints `readOnlyHint`, else `write`. Admin → Apps → Add app → Add an MCP server does the same in the browser.
 
 ## Connecting clients
 

@@ -9,7 +9,9 @@
  * answers the internal tools contract itself (`/__everyapp/tools/list`,
  * `/__everyapp/tools/call`), listing the server's tools through the
  * ToolBus's remote client ({@link RemoteMcpClient}) and forwarding each
- * call with the credential the gateway holds ({@link credentialFor}).
+ * call with the credential the gateway holds ({@link credentialFor}): a
+ * provider's key, or the calling member's own OAuth connection (a listing
+ * uses the organization's, else the connection used most recently).
  *
  * Identity: the gateway mints each call's identity for `aud`
  * `provider:<row id>` as for a built-in, and this app verifies it with the
@@ -29,6 +31,11 @@
  * body verbatim in a result, an audit row or a log line: a failure is one
  * sentence naming what happened, and the log carries the client's
  * sanitized head.
+ *
+ * Remote MCP apps are not metered (docs/design/2026-11-mcp-apps-auth.md,
+ * phase 1): no cap is checked and no cap event is noted for them; every
+ * call is still counted (`usage_daily`, `usage_monthly`, per member) and
+ * audited (`mcp_tool_calls`), so Usage shows who uses which server.
  */
 import { env, waitUntil } from "cloudflare:workers";
 import {
@@ -40,7 +47,6 @@ import {
   catalogHash,
   isProviderAppId,
   parseRemoteMcpBlock,
-  remoteMcpUrlProblem,
   requiredScopeForRisk,
   TOOLS_CALL_PATH,
   TOOLS_LIST_PATH,
@@ -67,20 +73,18 @@ import {
   type NormalizedRemoteCatalog,
 } from "@every-app/toolbus/remote";
 import {
-  capExceededFields,
-  capRefusalMessage,
-  checkMonthlyCap,
-} from "@/server/app-cap";
-import { noteCapCheck } from "@/server/events/cap-events";
-import {
   providerAudience,
   providerIdentityVerify,
 } from "@/server/provider-apps";
-import { OrgAppSettingsRepository } from "@/server/repositories/OrgAppSettingsRepository";
 import { RemoteMcpRepository } from "@/server/repositories/RemoteMcpRepository";
 import { UsageRepository } from "@/server/repositories/UsageRepository";
 import type { UsageEvent } from "@/server/usage-event";
-import { credentialFor, credentialProblem, type CredentialState } from "./bind";
+import {
+  credentialFor,
+  urlRefusal,
+  type CredentialCaller,
+  type CredentialState,
+} from "./bind";
 
 /** How long a listing stays good in this isolate when the server sends no `ttlMs`. */
 const LISTING_CACHE_MS = 10 * 60_000;
@@ -151,49 +155,34 @@ interface Listing {
   ttlMs: number;
 }
 
+/** One credential's client: a row's, for whose credential it is and its value. */
 interface Entry {
   rev: number;
   url: string;
-  credentialName: string | null;
+  /** The credential's cache key (whose it is and its value), "none" for none. */
+  key: string;
   client: RemoteMcpClient;
+}
+
+/** A row's listing, shared by every member's client. */
+interface RowListing {
+  rev: number;
+  url: string;
   listing?: Listing;
   listing$?: Promise<Listing>;
   /** When a call last forced a re-list for a name the cache didn't know. */
   forcedAt?: number;
 }
 
-// Per isolate, by row: the client (its era and session) and the listing.
+// Per isolate: the clients (their era and session) by row and whose
+// credential, and the listings by row.
 const entries = new Map<string, Entry>();
+const listings = new Map<string, RowListing>();
 const ENTRIES_MAX = 200;
 
 export function resetRemoteMcpForTests(): void {
   entries.clear();
-}
-
-function settings(): Record<string, unknown> {
-  return env as unknown as Record<string, unknown>;
-}
-
-function gatewayUrl(): string {
-  const value = settings()["GATEWAY_URL"];
-  return typeof value === "string" ? value.trim() : "";
-}
-
-/** What the URL rule reads of this gateway's environment. */
-function urlEnv(): {
-  gatewayUrl: string;
-  appBaseDomain?: string | null;
-  thirdPartyDomain?: string | null;
-} {
-  const read = (name: string) => {
-    const value = settings()[name];
-    return typeof value === "string" ? value : null;
-  };
-  return {
-    gatewayUrl: gatewayUrl(),
-    appBaseDomain: read("APP_BASE_DOMAIN"),
-    thirdPartyDomain: read("THIRD_PARTY_DOMAIN"),
-  };
+  listings.clear();
 }
 
 function toolsJson(status: number, body: unknown): Response {
@@ -226,59 +215,94 @@ function errorResult(hash: string, text: string): Response {
   });
 }
 
+function bounded<V>(map: Map<string, V>, key: string, value: V): V {
+  map.delete(key);
+  map.set(key, value);
+  if (map.size > ENTRIES_MAX) {
+    const oldest = map.keys().next().value;
+    if (oldest !== undefined) map.delete(oldest);
+  }
+  return value;
+}
+
+/** The URL the client posts to: the row's, with an API key's query parameters set. */
+function urlWithQuery(url: string, query: Record<string, string>): string {
+  const names = Object.keys(query);
+  if (names.length === 0) return url;
+  const target = new URL(url);
+  for (const name of names) target.searchParams.set(name, query[name]!);
+  return target.toString();
+}
+
+type Usable = Extract<CredentialState, { kind: "none" | "ready" }>;
+
 /**
- * The entry for a row, built or rebuilt when the registration changed
- * (`rev`, the URL or the credential's name), with the client that holds
- * the era and session.
+ * The client for a row and whose credential it is, built or rebuilt when
+ * the registration changed (`rev`, the URL) or the credential did (a new
+ * key, a refreshed token, another connection).
  */
-async function entryFor(
+function entryFor(
   route: RemoteMcpRoute,
   block: RemoteMcpBlock,
-  credential: CredentialState,
-): Promise<Entry> {
-  const credentialName = "name" in credential ? credential.name : null;
-  const existing = entries.get(route.rowId);
+  credential: Usable,
+  whose: string,
+): Entry {
+  const key = credential.kind === "ready" ? credential.key : "none";
+  const cacheKey = `${route.rowId}\0${whose}`;
+  const existing = entries.get(cacheKey);
   if (
     existing &&
     existing.rev === block.rev &&
     existing.url === block.url &&
-    existing.credentialName === credentialName
+    existing.key === key
   ) {
     return existing;
   }
-  const headers = "headers" in credential ? credential.headers : {};
-  const secrets = "secrets" in credential ? credential.secrets : [];
-  const entry: Entry = {
+  const ready = credential.kind === "ready" ? credential : null;
+  return bounded(entries, cacheKey, {
     rev: block.rev,
     url: block.url,
-    credentialName,
+    key,
     client: new RemoteMcpClient({
-      url: block.url,
-      headers,
-      secrets,
+      url: urlWithQuery(block.url, ready?.query ?? {}),
+      headers: ready?.headers ?? {},
+      secrets: ready?.secrets ?? [],
       clientInfo: { name: "every-app-gateway", version: "0.1" },
       ...(upstreamFetch ? { fetch: upstreamFetch } : {}),
     }),
-  };
-  entries.delete(route.rowId);
-  entries.set(route.rowId, entry);
-  if (entries.size > ENTRIES_MAX) {
-    const oldest = entries.keys().next().value;
-    if (oldest !== undefined) entries.delete(oldest);
+  });
+}
+
+/** The row's listing record, reset when the registration changed. */
+function rowListing(route: RemoteMcpRoute, block: RemoteMcpBlock): RowListing {
+  const existing = listings.get(route.rowId);
+  if (existing && existing.rev === block.rev && existing.url === block.url) {
+    return existing;
   }
-  return entry;
+  return bounded(listings, route.rowId, { rev: block.rev, url: block.url });
 }
 
 /** One sentence for the model about an upstream failure, never its body. */
-function upstreamFailure(name: string, error: unknown): string {
+function upstreamFailure(
+  name: string,
+  error: unknown,
+  credential?: Usable,
+): string {
+  // An OAuth app's 401 is the member's connection to make again; a key's
+  // is its operator's to set again.
+  const oauth = credential?.kind === "ready" ? credential.oauth : undefined;
   if (error instanceof RemoteMcpError) {
     switch (error.kind) {
       case "redirect":
         return `${name} redirected the request; this Gateway follows no redirects.`;
       case "unauthorized":
-        return `${name} rejected the credential (401); its operator sets it again with everyapp secret set.`;
+        return oauth
+          ? `${name} rejected the connection (401). Reconnect your ${oauth.label} account to use this tool: ${oauth.connectUrl}`
+          : `${name} rejected the credential (401); its operator sets it again with everyapp secret set.`;
       case "forbidden":
-        return `${name} refused the request (403).`;
+        return oauth
+          ? `${name} refused the request (403). If your ${oauth.label} account should have access, reconnect it: ${oauth.connectUrl}`
+          : `${name} refused the request (403).`;
       case "timeout":
         return `${name} did not answer in time.`;
       case "unreachable":
@@ -335,10 +359,12 @@ function logUpstreamFailure(
 async function listing(
   route: RemoteMcpRoute,
   block: RemoteMcpBlock,
-  entry: Entry,
+  rowEntry: RowListing,
+  client: RemoteMcpClient,
   force = false,
   signal?: AbortSignal,
 ): Promise<Listing> {
+  const entry = rowEntry;
   const now = Date.now();
   if (
     !force &&
@@ -349,7 +375,7 @@ async function listing(
   }
   if (entry.listing$) return entry.listing$;
   entry.listing$ = (async () => {
-    const upstream = await entry.client.listTools(signal);
+    const upstream = await client.listTools(signal);
     const appName = route.name ?? route.appSlug;
     const catalog = normalizeRemoteCatalog(
       route.appSlug,
@@ -406,30 +432,46 @@ async function listing(
   return entry.listing$;
 }
 
-/** Why the row can't be served at all, before anything is fetched. */
-async function refusal(
+/**
+ * Why the row can't be served, before anything is fetched, or its
+ * credential: for `caller` (a member's call) or for a listing (null). A
+ * member who must connect their own account gets `connect`, which a call
+ * answers as a tool error.
+ */
+async function gate(
   route: RemoteMcpRoute,
   block: RemoteMcpBlock,
-): Promise<{ credential: CredentialState } | { problem: string }> {
-  const urlProblem = remoteMcpUrlProblem(block.url, urlEnv());
+  caller: CredentialCaller,
+): Promise<{ credential: Usable } | { problem: string } | { connect: string }> {
+  const appName = route.name ?? route.appSlug;
+  const urlProblem = await urlRefusal(block, route.appSlug);
   if (urlProblem) {
     logEvent(
       "mcp.remote.refused",
       { app: route.appSlug, appRowId: route.rowId, problem: urlProblem },
       "warn",
     );
-    return {
-      problem: `${route.name ?? route.appSlug}'s address is refused by this Gateway (${urlProblem}).`,
-    };
+    return { problem: `${appName}'s ${urlProblem.replace(/^its /, "")}.` };
   }
-  const credential = await credentialFor(block, route.rowId);
-  const credentialIssue = credentialProblem(credential);
-  if (credentialIssue) {
-    return {
-      problem: `${route.name ?? route.appSlug} isn't ready: ${credentialIssue}.`,
-    };
+  const credential = await credentialFor(
+    block,
+    route,
+    caller,
+    upstreamFetch
+      ? { fetchUpstream: (request) => upstreamFetch!(request) }
+      : {},
+  );
+  if (credential.kind === "needs_setup") {
+    return { problem: `${appName} isn't ready: ${credential.reason}.` };
   }
+  if (credential.kind === "connect") return { connect: credential.message };
   return { credential };
+}
+
+/** Whose client a credential is: none's, an API key's (one for everyone), or a connection's. */
+function whoseOf(credential: Usable): string {
+  if (credential.kind === "none") return "none";
+  return credential.oauth ? `conn:${credential.oauth.connectionId}` : "key";
 }
 
 /** `POST /__everyapp/tools/list` for a remote row. */
@@ -449,18 +491,34 @@ async function listTools(
       return toolsError(401, "unauthenticated", error.message);
     throw error;
   }
-  const gate = await refusal(route, block);
-  if ("problem" in gate) return toolsError(500, "misconfigured", gate.problem);
-  const entry = await entryFor(route, block, gate.credential);
+  const gated = await gate(route, block, null);
+  if ("problem" in gated)
+    return toolsError(500, "misconfigured", gated.problem);
+  // A listing never has a caller, so it never has to connect.
+  if ("connect" in gated)
+    return toolsError(500, "misconfigured", gated.connect);
+  const entry = entryFor(
+    route,
+    block,
+    gated.credential,
+    whoseOf(gated.credential),
+  );
   let listed: Listing;
   try {
-    listed = await listing(route, block, entry, true, request.signal);
+    listed = await listing(
+      route,
+      block,
+      rowListing(route, block),
+      entry.client,
+      true,
+      request.signal,
+    );
   } catch (error) {
     logUpstreamFailure(route, "list", error);
     return toolsError(
       500,
       "misconfigured",
-      upstreamFailure(route.name ?? route.appSlug, error),
+      upstreamFailure(route.name ?? route.appSlug, error, gated.credential),
     );
   }
   const tools: ToolDescriptorV1[] = listed.catalog.tools;
@@ -549,66 +607,50 @@ async function callTool(
     );
   }
   const appName = route.name ?? route.appSlug;
-  // The organization's monthly cap on the row (Manage workspace → Usage,
-  // the app's own or the workspace default), checked before anything goes
-  // upstream, as for a built-in provider app.
-  const cap = await checkMonthlyCap(
-    {
-      effectiveMonthlyCap: OrgAppSettingsRepository.getEffectiveMonthlyCap,
-      monthlyCostMicros: UsageRepository.monthlyCostMicros,
-    },
-    route.organizationId,
-    route.rowId,
-  );
-  // The standing goes to the event bus after the answer (cap.warning,
-  // cap.reached, app.paused_cap), as for a built-in provider app.
-  if (cap.standing !== undefined) {
-    waitUntil(
-      noteCapCheck(route.organizationId, route.rowId, cap).catch(
-        (error: unknown) =>
-          logEvent(
-            "events.cap_failed",
-            {
-              app: route.appSlug,
-              message: error instanceof Error ? error.message : String(error),
-            },
-            "warn",
-          ),
-      ),
-    );
-  }
-  if (cap.exceeded) {
-    logEvent(
-      "usage.cap_exceeded",
-      {
-        organizationId: route.organizationId,
-        appId: route.appSlug,
-        appRowId: route.rowId,
-        ...capExceededFields(cap),
-      },
-      "warn",
-    );
-    return errorResult("", capRefusalMessage(appName, cap));
-  }
-  const gate = await refusal(route, block);
-  if ("problem" in gate) return toolsError(500, "misconfigured", gate.problem);
-  const entry = await entryFor(route, block, gate.credential);
+  // No cap is checked: a remote MCP app isn't metered (its calls are
+  // counted below and audited by the ToolBus all the same).
+  const gated = await gate(route, block, { id: user.id });
+  if ("problem" in gated)
+    return toolsError(500, "misconfigured", gated.problem);
+  // The member's own account isn't connected (or the organization's):
+  // the model relays the connect link, and the member tries again.
+  if ("connect" in gated) return errorResult("", gated.connect);
+  const credential = gated.credential;
+  const entry = entryFor(route, block, credential, whoseOf(credential));
+  const rowEntry = rowListing(route, block);
   let listed: Listing;
   try {
-    listed = await listing(route, block, entry, false, request.signal);
+    listed = await listing(
+      route,
+      block,
+      rowEntry,
+      entry.client,
+      false,
+      request.signal,
+    );
     if (!listed.catalog.map.has(call.name)) {
       // A tool the snapshot knows and the cache doesn't: list once more,
       // at most every FORCED_RELIST_MIN_MS, so a stale name can't drive
       // credentialed listings on every call.
       const now = Date.now();
-      if (!entry.forcedAt || now - entry.forcedAt >= FORCED_RELIST_MIN_MS) {
-        entry.forcedAt = now;
-        listed = await listing(route, block, entry, true, request.signal);
+      if (
+        !rowEntry.forcedAt ||
+        now - rowEntry.forcedAt >= FORCED_RELIST_MIN_MS
+      ) {
+        rowEntry.forcedAt = now;
+        listed = await listing(
+          route,
+          block,
+          rowEntry,
+          entry.client,
+          true,
+          request.signal,
+        );
       }
     }
   } catch (error) {
     logUpstreamFailure(route, "list", error, call.name);
-    return errorResult("", upstreamFailure(appName, error));
+    return errorResult("", upstreamFailure(appName, error, credential));
   }
   const upstreamName = listed.catalog.map.get(call.name);
   const descriptor = listed.catalog.tools.find(
@@ -672,7 +714,10 @@ async function callTool(
     const status =
       error instanceof RemoteMcpError && error.status ? error.status : 502;
     count(status >= 400 ? status : 502);
-    return errorResult(listed.hash, upstreamFailure(appName, error));
+    return errorResult(
+      listed.hash,
+      upstreamFailure(appName, error, credential),
+    );
   }
 }
 

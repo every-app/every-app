@@ -78,9 +78,11 @@ Nothing prompts. A yes/no question is `CONFIRMATION_REQUIRED` (pass `--yes` once
 - `status`: the whole report. It has `gatewayUrl`, `apps[]` (each with `status`, `publicRoutes` and `setup`), `access` (`{ on }`), `fixes[]` as `{ code, severity, message, run, note?, fix? }` ([status](/docs/agent/status)) and `next[]` as `{ code, command?, url?, note, why }`. The next-step codes are `AI_KEY`, `PROVIDER_OFFER`, `PROVIDER_KEY`, `ACCESS_OFF`, `INVITE`, `CONNECT_AI`, `CREATE_APP` and `EMAIL_UNSET`.
 - `db query`: `{ database, results: [[row, …] per statement], meta: [{ duration, changes }] }`.
 - `secret list`: names only, never values. The Gateway's names and settable names, and each app's `setup`.
+- `secret set`: `gateway.bound` lists the provider rows (a remote MCP app's `<id>-mcp` among them) whose key is now bound to their hosts.
 - `deploy`: `{ url, workerName, versionId, live, organization, publicRoutes, next }`.
 - `workspace …`, `events …`, `ai show|default`, `call <tool>`: the Gateway tool's answer. With no stored sign-in and no `EVERYAPP_TOKEN`, the run first emits a `gateway.signin` progress event whose URL the person opens, and waits. A tool's refusal is `GATEWAY_TOOL_ERROR` (`data.code`, `data.tool`); a refused credential `GATEWAY_REFUSED`.
 - `setup` and `update`: `{ gatewayUrl, adminUrl, organizationName, owner, release, gateway, accessOn, next }`. `gateway` is `installed`, `upgraded`, `repaired` or `up-to-date`.
+- `mcp add`: `{ id, url, auth, credential, connect?, oauth?, verify?, probe, mcp, next }`. `credential.kind` is `none`, `bearer`, `header`, `query`, `basic`, `oauth` or `provider`; `connect.url` is where each member connects an OAuth server; `verify` is the static key's check.
 - `create`: `{ appId, dir, next }`. `release`: `{ tarball, shown, version, sha256, next }`. `delete`: `{ appId, workerName, alreadyDeleted, purged }`.
 
 An app's setup state (`status` as `apps[].setup`, `secret list` as `app.setup`, `configure` as `app.setup`) is:

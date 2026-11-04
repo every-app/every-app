@@ -108,8 +108,10 @@ describe("every setup file", () => {
     for (const file of allFiles) {
       for (const call of secretCalls(file.text)) {
         for (const name of call.names) {
-          // A fixed Gateway setting, or a remote MCP app's credential (any name ending in _MCP_TOKEN).
-          if (isPlaceholder(name) || isSettableGatewaySetting(name) || call.app) continue;
+          // A fixed Gateway setting, or a setting of a remote MCP app's own provider row
+          // (`<APPID>_MCP_TOKEN`, `_MCP_CLIENT_ID`, `_MCP_CLIENT_SECRET`), which mcp add registers at run time.
+          const remoteMcpRow = /^[A-Z][A-Z0-9_]*_MCP_(?:TOKEN|CLIENT_ID|CLIENT_SECRET)$/.test(name);
+          if (isPlaceholder(name) || isSettableGatewaySetting(name) || remoteMcpRow || call.app) continue;
           problems.push(`${file.name}:${call.line} secret ${call.action} ${name}: not a settable Gateway setting`);
         }
       }

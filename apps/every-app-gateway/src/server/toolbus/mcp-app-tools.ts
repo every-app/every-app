@@ -9,11 +9,12 @@
  * tool error `CODE: message`, anything else a plain failure.
  *
  * An MCP app is named as a person would type it: its id (the tool prefix,
- * `treg`) or its row id. No answer carries a credential: a remote server's
- * credential is the NAME of a Gateway setting, said with whether it is set
- * and bound, and the command the operator runs to set it in a terminal;
- * the origin a credential is bound to is never told (it may be another
- * server's).
+ * `treg`) or its row id. No answer carries a credential, and no input
+ * takes one: a remote server's credential is a provider, said by its id,
+ * an API key's setting NAME with whether it is set and bound (and the
+ * command the operator runs to set it in a terminal), or an OAuth
+ * provider's connection count and connect link. OAuth with a client the
+ * server registers is allowed here; a pasted client is Admin → Apps' alone.
  */
 import { env } from "cloudflare:workers";
 import {
@@ -85,12 +86,12 @@ async function resolveMcpApp(ctx: OrgContext, ref: string) {
 }
 
 /**
- * The credential as the tools say it: its setting's name, whether the
- * Gateway has it set, and for a remote server whether it is bound to the
- * server's origin (`state` as McpAppService has it). Null when the app
- * takes none. A built-in's key is set by name and never bound.
+ * The credential as the tools say it: a built-in's key setting, or a
+ * remote server's provider (an API key's setting and whether it is set
+ * and bound; an OAuth provider's client, connections and connect link).
+ * Null when the app takes none. Never a value.
  */
-function credentialOf(details: McpAppDetails) {
+function credentialOf(details: McpAppDetails): JsonObject | null {
   if (details.kind === "builtin") {
     if (!isProviderAppId(details.appId)) return null;
     const name = providerAppKeySetting(details.appId);
@@ -98,41 +99,59 @@ function credentialOf(details: McpAppDetails) {
     return { name, set, state: set ? "set" : "not_set" };
   }
   const credential = details.credential;
-  if (!credential?.name) return null;
+  if (!credential || credential.kind === "none") return null;
+  if (credential.kind === "api_key") {
+    return {
+      kind: "api_key",
+      provider: credential.provider,
+      own: credential.own,
+      name: credential.name,
+      set: credential.set,
+      bound: credential.state === "ready",
+      state: credential.state,
+    };
+  }
+  const gateway = setting("GATEWAY_URL")?.replace(/\/+$/, "") ?? "";
   return {
-    name: credential.name,
-    set: credential.set,
-    bound: credential.state === "bound",
+    kind: "oauth",
+    provider: credential.provider,
+    own: credential.own,
+    connections: credential.connections,
     state: credential.state,
+    ...(credential.connectPath
+      ? { connect: `${gateway}${credential.connectPath}` }
+      : {}),
   };
 }
 
 /** The command that opens the app, while its credential needs setting. */
 function setupCommandOf(
   details: McpAppDetails,
-  credential: ReturnType<typeof credentialOf>,
+  credential: JsonObject | null,
 ): string | null {
   if (details.kind === "remote") return details.setupCommand;
-  return credential && !credential.set
-    ? secretSetCommand(credential.name)
+  return credential && credential["set"] === false
+    ? secretSetCommand(String(credential["name"]))
     : null;
 }
 
 /**
- * On, off, or needs setup: on, but its credential isn't set or is bound to
- * another origin, or a remote app's stored block can't be read. A server
- * that wants OAuth reads as on or off, `supported: false` beside it, since
- * nothing can be set for it.
+ * On, off, or needs setup: on, but a key isn't set or is bound to other
+ * hosts, an OAuth provider has no client or nobody has connected it yet,
+ * its provider is
+ * gone, or a remote app's stored block can't be read.
  */
-function statusOf(
-  details: McpAppDetails,
-  credential: ReturnType<typeof credentialOf>,
-): McpAppStatus {
+function statusOf(details: McpAppDetails): McpAppStatus {
   if (details.status !== "active") return "off";
-  if (details.kind === "remote" && !details.remote) return "needs setup";
-  if (credential && (!credential.set || credential.state === "bound_elsewhere"))
-    return "needs setup";
-  return "on";
+  if (details.kind === "remote") {
+    if (!details.remote) return "needs setup";
+    const state = details.credential?.state ?? "none";
+    return state === "none" || state === "ready" || state === "connected"
+      ? "on"
+      : "needs setup";
+  }
+  const credential = credentialOf(details);
+  return credential && credential["set"] === false ? "needs setup" : "on";
 }
 
 /** One MCP app as the list and the show say it: never a credential's value. */
@@ -145,7 +164,7 @@ function summaryOf(details: McpAppDetails): JsonObject {
     rowId: details.id,
     name: details.name,
     kind: details.kind,
-    status: statusOf(details, credential),
+    status: statusOf(details),
     // The snapshot's count; null when never listed, or the last listing failed.
     tools:
       snapshot.status === null || snapshot.status === "error"
@@ -155,8 +174,10 @@ function summaryOf(details: McpAppDetails): JsonObject {
       ? {
           url: details.remote.url,
           auth: details.remote.auth.kind,
+          ...(details.remote.auth.kind === "provider"
+            ? { provider: details.remote.auth.provider }
+            : {}),
           risk: details.remote.risk,
-          supported: details.remote.auth.kind !== "oauth",
         }
       : {}),
     credential,
@@ -236,6 +257,20 @@ export const MCP_APP_HANDLERS: Record<string, McpAppHandler> = {
   },
 
   async mcp_add(ctx, args, principal) {
+    // A pasted OAuth client is a secret: Admin → Apps' sealed paste takes
+    // it, never a tool (the model would have seen it).
+    if (args["auth"] && typeof args["auth"] === "object") {
+      const auth = args["auth"] as JsonObject;
+      if (
+        auth["clientId"] !== undefined ||
+        auth["clientSecret"] !== undefined
+      ) {
+        throw new PublicError(
+          "INVALID_INPUT",
+          "A client id and secret are pasted in Admin → Apps or given to the CLI, never through a tool.",
+        );
+      }
+    }
     const parsed = addRemoteMcpAppSchema.safeParse(args);
     if (!parsed.success) {
       const [issue] = parsed.error.issues;
@@ -250,14 +285,16 @@ export const MCP_APP_HANDLERS: Record<string, McpAppHandler> = {
       ctx,
       parsed.data,
       principal.email || null,
+      { allowPastedClient: false },
     );
     // The URL as the rules stored it.
     const row = await AppRepository.findById(added.rowId, ctx.orgId);
     const url = (row && remoteMcpBlockOf(row)?.url) ?? parsed.data.url;
+    const gateway = setting("GATEWAY_URL")?.replace(/\/+$/, "") ?? "";
+    const connect = added.connectPath ? `${gateway}${added.connectPath}` : null;
     let next: string;
-    if (added.authKind === "oauth") {
-      next =
-        "This server wants OAuth, which the Gateway doesn't serve yet: the app is kept and serves nothing.";
+    if (connect) {
+      next = `Each member connects their own account at the connect link (open it in a browser); the Gateway lists the tools once someone has.`;
     } else if (added.setupCommand) {
       next =
         "The operator runs the command in a terminal and types the credential there, never into a chat. The Gateway lists the tools once it is set.";
@@ -271,11 +308,18 @@ export const MCP_APP_HANDLERS: Record<string, McpAppHandler> = {
       rowId: added.rowId,
       name: added.name,
       url,
-      auth: added.authKind,
+      auth: added.credentialKind,
+      ...(added.provider ? { provider: added.provider } : {}),
       ...(added.kind === "revived" ? { revived: true } : {}),
       credential: added.secret
         ? { name: added.secret, set: added.setupCommand === null }
         : null,
+      ...(connect
+        ? {
+            connect: { url: connect },
+          }
+        : {}),
+      ...(added.oauth ? { oauth: added.oauth } : {}),
       tools: added.toolCount,
       ...(added.setupCommand ? { setupCommand: added.setupCommand } : {}),
       next,
@@ -290,7 +334,7 @@ export const MCP_APP_HANDLERS: Record<string, McpAppHandler> = {
       );
     }
     const details = await detailsOf(ctx, args);
-    const credential = credentialOf(details);
+    const credential = details.credential;
     await McpAppService.remove(ctx, { id: details.id });
     return {
       removed: {
@@ -301,9 +345,9 @@ export const MCP_APP_HANDLERS: Record<string, McpAppHandler> = {
       },
       note: [
         "Its access, tokens, tools snapshot and place in AI connections are gone.",
-        ...(credential?.set
+        ...(credential?.own && credential.provider
           ? [
-              `${credential.name} stays set on the Gateway; the operator unsets it with ${SETUP_CLI} secret unset ${credential.name}.`,
+              `Its provider ${credential.provider} and its ${credential.kind === "oauth" ? "client and connections" : "key"} stay on the Gateway; ${SETUP_CLI} provider remove ${credential.provider}${credential.name ? ` and ${SETUP_CLI} secret unset ${credential.name}` : ""} clean up.`,
             ]
           : []),
       ].join(" "),

@@ -134,6 +134,9 @@ function toolCallsColumn<
   };
 }
 
+/** The cap cell of an app that takes no cap (a remote MCP app). */
+const NOT_METERED = "Not metered";
+
 /**
  * The cap that binds the app this month and how far into it the app is,
  * or the cap alone for a past month (the counts are the current month's),
@@ -141,7 +144,8 @@ function toolCallsColumn<
  * ignore the default, "Unlimited" when nothing binds. A paused app reads
  * "Paused · $20.00 of $20.00" in red with a red bar, and its button is
  * Raise. The button opens the cap dialog. An app the organization can no
- * longer call (deleted) has no cap and no button.
+ * longer call (deleted) has no cap and no button, and an MCP server added
+ * by URL, which isn't metered, reads "Not metered" with no button.
  */
 function MonthlyCapCell({
   row,
@@ -155,6 +159,10 @@ function MonthlyCapCell({
   onSetCap: (row: UsageAppRow) => void;
 }) {
   if (!row.callable) return null;
+  // An MCP server added by URL is counted, never capped: no cap, no button.
+  if (!row.metered) {
+    return <span className="text-muted-foreground">{NOT_METERED}</span>;
+  }
   const cap = row.effectiveMonthlyCostCapMicros;
   // The visible label and the verb a screen reader hears before "monthly
   // cap": "Set cap" reads as "Set monthly cap for Notes".

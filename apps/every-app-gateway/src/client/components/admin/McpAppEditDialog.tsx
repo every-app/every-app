@@ -303,9 +303,15 @@ function McpAppEditForm({
         </dd>
         <dt className="font-medium">{COPY.credentialLabel}</dt>
         <dd className="flex min-w-0 flex-col gap-2" data-testid="credential">
+          {credential?.providerName ? (
+            <span>
+              {COPY.providerLine(credential.providerName, credential.own)}
+            </span>
+          ) : null}
           <span className="text-muted-foreground">
             {credential ? credentialLine(credential) : null}
           </span>
+          {credential ? <ViewerConnection credential={credential} /> : null}
           {details.setupCommand ? (
             <CodeBlock
               code={details.setupCommand}
@@ -393,7 +399,10 @@ function McpAppEditForm({
         {details.tools.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {credential?.state === "not_set" ||
-            credential?.state === "bound_elsewhere"
+            credential?.state === "bound_elsewhere" ||
+            credential?.state === "no_client" ||
+            credential?.state === "not_connected" ||
+            credential?.state === "missing"
               ? COPY.noToolsNeedsCredential
               : COPY.noTools}
           </p>
@@ -533,15 +542,58 @@ function credentialLine(credential: NonNullable<McpAppDetails["credential"]>) {
   switch (credential.state) {
     case "none":
       return copy.none;
-    case "unsupported":
-      return copy.unsupported;
     case "not_set":
       return copy.not_set(name);
-    case "set":
-      return copy.set(name);
-    case "bound":
-      return copy.bound(name, credential.boundTo ?? "");
     case "bound_elsewhere":
       return copy.bound_elsewhere(name);
+    case "ready":
+      return copy.ready(name);
+    case "no_client":
+      return copy.no_client;
+    case "not_connected":
+      return copy.not_connected;
+    case "connected":
+      return copy.connected(credential.connections);
+    case "missing":
+      return copy.missing;
   }
+}
+
+/**
+ * The viewing admin's own connection to an OAuth app: connected as whom,
+ * or a link to connect.
+ */
+function ViewerConnection({
+  credential,
+}: {
+  credential: NonNullable<McpAppDetails["credential"]>;
+}) {
+  if (credential.kind !== "oauth" || !credential.connectPath) return null;
+  if (credential.state === "no_client" || credential.state === "missing") {
+    return null;
+  }
+  const viewer = credential.viewer;
+  const link = (label: string) => (
+    <Button
+      variant="outline"
+      size="sm"
+      className="self-start"
+      nativeButton={false}
+      render={<a href={credential.connectPath!} />}
+    >
+      {label}
+    </Button>
+  );
+  if (viewer?.status === "active") {
+    return <span>{COPY.connectedAs(viewer.label)}</span>;
+  }
+  if (viewer?.status === "expired") {
+    return (
+      <div className="flex flex-col gap-2">
+        <span>{COPY.connectionExpired}</span>
+        {link(COPY.reconnect)}
+      </div>
+    );
+  }
+  return link(COPY.connect);
 }

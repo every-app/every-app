@@ -6,6 +6,9 @@
  * `mcp.json` with a `url`); check them there before changing one.
  */
 
+/** The person's page on connecting Claude, ChatGPT and Claude Code. */
+export const CONNECT_AI_DOCS_URL = "https://everyapp.com/docs/connect-ai";
+
 type ConnectClientId = "claude" | "claude-code" | "codex" | "cursor" | "other";
 
 interface ConnectStep {

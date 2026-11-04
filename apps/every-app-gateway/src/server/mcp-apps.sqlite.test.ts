@@ -140,13 +140,20 @@ import {
   appToolCatalogs,
   appTools,
   events,
-  remoteMcpCredentials,
+  oauthClients,
+  providerConnections,
+  providers,
   remoteMcpTools,
   userAppAccess,
 } from "@/db/schema";
 import { clearEventSubjectCachesForTests } from "@/server/events/subjects";
+import { resetGatewayProvidersForTests } from "@/server/providers";
+import { AppCapService } from "@/server/services/AppCapService";
 import { AppService } from "@/server/services/AppService";
-import { McpAppService } from "@/server/services/McpAppService";
+import {
+  McpAppService,
+  setMcpOAuthFetchForTests,
+} from "@/server/services/McpAppService";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 
 type Role = "owner" | "admin" | "member";
@@ -270,12 +277,15 @@ beforeEach(async () => {
   Object.assign(hoisted.env, {
     GATEWAY_URL: GATEWAY,
     APP_BASE_DOMAIN: "apps.example.com",
+    BETTER_AUTH_SECRET: "test-secret-0123456789abcdefghijklmnopqrstuv",
   });
   hoisted.background.length = 0;
   hoisted.listing = TREG_TOOLS;
   hoisted.syncs = [];
   hoisted.synced = [];
   clearEventSubjectCachesForTests();
+  resetGatewayProvidersForTests();
+  setMcpOAuthFetchForTests(undefined);
   db = await createTestDb();
   hoisted.testDb.current = db;
   acme = await seedOrganization(db, "acme");
@@ -305,6 +315,10 @@ describe("adding a remote MCP server", () => {
       name: "treg",
       kind: "new",
       authKind: "none",
+      credentialKind: "none",
+      provider: null,
+      connectPath: null,
+      oauth: null,
       secret: null,
       setupCommand: null,
       toolCount: 3,
@@ -331,54 +345,6 @@ describe("adding a remote MCP server", () => {
     });
     // Nobody is granted it: owners and admins open it by their role.
     expect(await grantees(added.rowId)).toEqual([]);
-  });
-
-  it("answers the command that sets a credentialed server's credential, and lists nothing until it is set", async () => {
-    const added = await McpAppService.add(
-      as(owner, "owner"),
-      {
-        url: TREG,
-        name: "Treg",
-        auth: { kind: "bearer" },
-        risk: "write",
-      },
-      null,
-    );
-    expect(added).toMatchObject({
-      appId: "treg",
-      name: "Treg",
-      authKind: "bearer",
-      secret: "TREG_MCP_TOKEN",
-      setupCommand: "pnpm everyapp secret set TREG_MCP_TOKEN",
-      toolCount: null,
-      toolsStatus: null,
-    });
-    expect(hoisted.syncs).toEqual([]);
-    expect(manifestOf(await row(added.rowId)).remote).toMatchObject({
-      auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
-      risk: "write",
-    });
-
-    // Already set on the Gateway: nothing to run.
-    hoisted.env["DOCS_MCP_TOKEN"] = "set";
-    const docs = await McpAppService.add(
-      as(owner, "owner"),
-      {
-        url: "https://docs.example.org/mcp",
-        id: "docs",
-        auth: { kind: "header", header: "X-Api-Key", secret: "DOCS_MCP_TOKEN" },
-      },
-      null,
-    );
-    expect(docs).toMatchObject({
-      secret: "DOCS_MCP_TOKEN",
-      setupCommand: null,
-    });
-    expect(manifestOf(await row(docs.rowId)).remote.auth).toEqual({
-      kind: "header",
-      header: "X-Api-Key",
-      secret: "DOCS_MCP_TOKEN",
-    });
   });
 
   it("refuses a member, and writes nothing", async () => {
@@ -420,17 +386,126 @@ describe("adding a remote MCP server", () => {
     expect(await db.select().from(apps)).toEqual([]);
   });
 
-  it("refuses a bad credential name or header with the rule's sentence", async () => {
-    await expect(
-      McpAppService.add(
-        as(admin, "admin"),
-        { url: TREG, auth: { kind: "bearer", secret: "OPENAI_API_KEY" } },
-        null,
-      ),
-    ).rejects.toMatchObject({
-      code: "REMOTE_MCP_INVALID",
-      message: expect.stringContaining("must end in _MCP_TOKEN"),
+  it("writes a static credential as the app's own provider row and answers the command that sets its key", async () => {
+    const added = await McpAppService.add(
+      as(owner, "owner"),
+      {
+        url: TREG,
+        name: "Treg",
+        auth: { kind: "bearer" },
+        risk: "write",
+      },
+      null,
+    );
+    expect(added).toMatchObject({
+      appId: "treg",
+      name: "Treg",
+      authKind: "provider",
+      credentialKind: "bearer",
+      provider: "treg-mcp",
+      secret: "TREG_MCP_TOKEN",
+      setupCommand: "pnpm everyapp secret set TREG_MCP_TOKEN",
+      connectPath: null,
+      oauth: null,
+      toolCount: null,
+      toolsStatus: null,
     });
+    expect(hoisted.syncs).toEqual([]);
+    const manifest = manifestOf(await row(added.rowId)) as ReturnType<
+      typeof manifestOf
+    > & { capabilities?: Record<string, unknown> };
+    expect(manifest.remote).toMatchObject({
+      auth: { kind: "provider", provider: "treg-mcp" },
+      risk: "write",
+    });
+    expect(Object.keys(manifest.capabilities ?? {})).toEqual(["treg-mcp"]);
+    const [stored] = await db
+      .select()
+      .from(providers)
+      .where(eq(providers.id, "treg-mcp"));
+    expect(stored?.boundTo).toBeNull();
+    expect(JSON.parse(stored!.spec)).toMatchObject({
+      id: "treg-mcp",
+      hosts: ["treg.to"],
+      auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
+      tags: ["mcp"],
+    });
+
+    // A header, set on the Gateway already but never bound to the new row:
+    // the command still shows, since the key is read only once bound.
+    hoisted.env["DOCS_MCP_TOKEN"] = "set";
+    const docs = await McpAppService.add(
+      as(owner, "owner"),
+      {
+        url: "https://docs.example.org/mcp",
+        id: "docs",
+        auth: { kind: "header", header: "X-Api-Key" },
+      },
+      null,
+    );
+    expect(docs).toMatchObject({
+      secret: "DOCS_MCP_TOKEN",
+      setupCommand: "pnpm everyapp secret set DOCS_MCP_TOKEN",
+    });
+    const [docsRow] = await db
+      .select()
+      .from(providers)
+      .where(eq(providers.id, "docs-mcp"));
+    expect(JSON.parse(docsRow!.spec).auth).toEqual({
+      kind: "header",
+      secret: "DOCS_MCP_TOKEN",
+      header: "X-Api-Key",
+    });
+  });
+
+  it("keeps the app's own row when it is the same, and replaces it (unbinding the key) when it changed", async () => {
+    const first = await McpAppService.add(
+      as(owner, "owner"),
+      { url: TREG, auth: { kind: "bearer" } },
+      null,
+    );
+    const [written] = await db.select().from(providers);
+    // The operator binds the key, as `secret set` does.
+    await db
+      .update(providers)
+      .set({ boundTo: "bound-key-of-the-bearer-spec" })
+      .where(eq(providers.id, "treg-mcp"));
+    await McpAppService.remove(as(owner, "owner"), { id: first.rowId });
+    // Removed: the provider row and its binding stay.
+    expect(await db.select().from(providers)).toHaveLength(1);
+    // A connection issued under the old spec (an OAuth row's, say).
+    await db.insert(providerConnections).values({
+      id: "conn-1",
+      organizationId: acme,
+      providerId: "treg-mcp",
+      userId: owner,
+      appRowId: first.rowId,
+      label: null,
+      externalId: null,
+      scopes: "[]",
+      accessTokenEnc: "sealed",
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await McpAppService.add(
+      as(owner, "owner"),
+      { url: TREG, auth: { kind: "query", param: "key" } },
+      null,
+    );
+    const [replaced] = await db.select().from(providers);
+    expect(JSON.parse(replaced!.spec).auth).toEqual({
+      kind: "query",
+      secret: "TREG_MCP_TOKEN",
+      param: "key",
+    });
+    expect(replaced!.addedAt).toEqual(written!.addedAt);
+    expect(replaced!.boundTo).toBe("bound-key-of-the-bearer-spec");
+    // Its tokens never reach the replaced spec's server: dropped.
+    expect(await db.select().from(providerConnections)).toEqual([]);
+  });
+
+  it("refuses a bad header or a query credential without its parameter, with the rule's sentence, and writes nothing", async () => {
     await expect(
       McpAppService.add(
         as(admin, "admin"),
@@ -439,46 +514,23 @@ describe("adding a remote MCP server", () => {
       ),
     ).rejects.toMatchObject({
       code: "REMOTE_MCP_INVALID",
-      message: expect.stringContaining("auth.header can't be Authorization"),
+      message: expect.stringContaining("Authorization"),
     });
-  });
-
-  it("refuses a credential name the organization's own server at another origin uses, and lets a second path on the same server share it", async () => {
-    await McpAppService.add(
-      as(owner, "owner"),
-      { url: TREG, auth: { kind: "bearer", secret: "SHARED_MCP_TOKEN" } },
-      null,
-    );
     await expect(
       McpAppService.add(
         as(admin, "admin"),
-        {
-          url: "https://evil.example.net/mcp",
-          id: "evil",
-          auth: { kind: "bearer", secret: "SHARED_MCP_TOKEN" },
-        },
+        { url: TREG, auth: { kind: "query" } },
         null,
       ),
     ).rejects.toMatchObject({
-      code: "REMOTE_MCP_SECRET_TAKEN",
-      message: expect.stringContaining(
-        "SHARED_MCP_TOKEN is the credential of an MCP app at https://treg.to",
-      ),
+      code: "REMOTE_MCP_INVALID",
+      message: expect.stringContaining("query parameter"),
     });
-    await expect(
-      McpAppService.add(
-        as(admin, "admin"),
-        {
-          url: "https://treg.to/other-mcp",
-          id: "treg-two",
-          auth: { kind: "bearer", secret: "SHARED_MCP_TOKEN" },
-        },
-        null,
-      ),
-    ).resolves.toMatchObject({ appId: "treg-two" });
+    expect(await db.select().from(apps)).toEqual([]);
+    expect(await db.select().from(providers)).toEqual([]);
   });
 
-  it("refuses a credential name another organization's server uses, even at the same origin, without saying where", async () => {
+  it("refuses another organization's app of the same id its own provider row, without writing", async () => {
     const other = await seedOrganization(db, "other");
     const otherOwner = await seedMember(db, {
       organizationId: other,
@@ -486,31 +538,298 @@ describe("adding a remote MCP server", () => {
     });
     await McpAppService.add(
       as(otherOwner, "owner", other),
-      { url: TREG, auth: { kind: "bearer", secret: "OTHER_MCP_TOKEN" } },
+      { url: TREG, auth: { kind: "bearer" } },
       null,
     );
-    const refusal = McpAppService.add(
-      as(admin, "admin"),
-      { url: TREG, auth: { kind: "bearer", secret: "OTHER_MCP_TOKEN" } },
-      null,
-    );
-    await expect(refusal).rejects.toMatchObject({
-      code: "REMOTE_MCP_SECRET_TAKEN",
-      message: expect.stringContaining(
-        "OTHER_MCP_TOKEN is the credential of an MCP app at another organization",
+    const [theirs] = await db.select().from(providers);
+    await expect(
+      McpAppService.add(
+        as(admin, "admin"),
+        { url: TREG, auth: { kind: "header", header: "X-Key" } },
+        null,
       ),
+    ).rejects.toMatchObject({
+      code: "REMOTE_MCP_INVALID",
+      message: expect.stringContaining("another organization's MCP app"),
     });
-    await expect(refusal).rejects.not.toMatchObject({
-      message: expect.stringContaining("at https://treg.to;"),
+    await expect(
+      McpAppService.add(
+        as(admin, "admin"),
+        {
+          url: TREG,
+          id: "mine",
+          auth: { kind: "provider", provider: "treg-mcp" },
+        },
+        null,
+      ),
+    ).rejects.toMatchObject({ code: "REMOTE_MCP_INVALID" });
+    expect(await db.select().from(providers)).toEqual([theirs]);
+    // Removed, its row and key stay the other organization's: still refused.
+    const [theirApp] = await db.select().from(apps);
+    await McpAppService.remove(as(otherOwner, "owner", other), {
+      id: theirApp!.id,
     });
-    // Its own default name is free: one per organization's app.
     await expect(
       McpAppService.add(
         as(admin, "admin"),
         { url: TREG, auth: { kind: "bearer" } },
         null,
       ),
-    ).resolves.toMatchObject({ secret: "TREG_MCP_TOKEN" });
+    ).rejects.toMatchObject({
+      code: "REMOTE_MCP_INVALID",
+      message: expect.stringContaining("another organization's MCP app"),
+    });
+    // Under another id, its own row: fine.
+    await expect(
+      McpAppService.add(
+        as(admin, "admin"),
+        { url: TREG, id: "treg-acme", auth: { kind: "bearer" } },
+        null,
+      ),
+    ).resolves.toMatchObject({ provider: "treg-acme-mcp" });
+  });
+
+  it("uses an existing provider only for a URL on its hosts, and lets a reserved host through only for its own provider", async () => {
+    // A catalog provider: its key is sent to its own hosts alone.
+    await expect(
+      McpAppService.add(
+        as(admin, "admin"),
+        {
+          url: TREG,
+          auth: { kind: "provider", provider: "elevenlabs" },
+        },
+        null,
+      ),
+    ).rejects.toMatchObject({
+      code: "REMOTE_MCP_PROVIDER_HOST",
+      message: expect.stringContaining("not to treg.to"),
+    });
+    const added = await McpAppService.add(
+      as(admin, "admin"),
+      {
+        url: "https://api.elevenlabs.io/v1/mcp",
+        id: "voices",
+        auth: { kind: "provider", provider: "elevenlabs" },
+      },
+      null,
+    );
+    expect(added).toMatchObject({
+      authKind: "provider",
+      credentialKind: "provider",
+      provider: "elevenlabs",
+      secret: "ELEVENLABS_API_KEY",
+      setupCommand: "pnpm everyapp secret set ELEVENLABS_API_KEY",
+    });
+    expect(await db.select().from(providers)).toEqual([]);
+    // The same reserved host with no provider, or with its own row: refused.
+    await expect(
+      McpAppService.add(
+        as(admin, "admin"),
+        {
+          url: "https://api.elevenlabs.io/v1/mcp",
+          id: "voices-two",
+          auth: { kind: "bearer" },
+        },
+        null,
+      ),
+    ).rejects.toMatchObject({ code: "REMOTE_MCP_URL_REFUSED" });
+    await expect(
+      McpAppService.add(
+        as(admin, "admin"),
+        { url: TREG, auth: { kind: "provider", provider: "nope" } },
+        null,
+      ),
+    ).rejects.toMatchObject({ code: "REMOTE_MCP_INVALID" });
+  });
+
+  it("adds an OAuth server: discovery and client registration from the Gateway, the client sealed and bound to the row, a connect link", async () => {
+    const fetched: string[] = [];
+    let registered: Record<string, unknown> | null = null;
+    setMcpOAuthFetchForTests(async (input, init) => {
+      fetched.push(input);
+      if (
+        input.startsWith("https://treg.to/.well-known/oauth-protected-resource")
+      ) {
+        return Response.json({
+          resource: TREG,
+          authorization_servers: ["https://auth.treg.to"],
+          scopes_supported: ["mcp"],
+        });
+      }
+      if (
+        input.startsWith(
+          "https://auth.treg.to/.well-known/oauth-authorization-server",
+        )
+      ) {
+        return Response.json({
+          issuer: "https://auth.treg.to",
+          authorization_endpoint: "https://auth.treg.to/authorize",
+          token_endpoint: "https://auth.treg.to/token",
+          registration_endpoint: "https://auth.treg.to/register",
+          code_challenge_methods_supported: ["S256"],
+          token_endpoint_auth_methods_supported: ["client_secret_basic"],
+        });
+      }
+      if (input === "https://auth.treg.to/register") {
+        registered = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return Response.json(
+          {
+            client_id: "dcr-client",
+            client_secret: "dcr-secret-value",
+            token_endpoint_auth_method: "client_secret_basic",
+          },
+          { status: 201 },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const added = await McpAppService.add(
+      as(admin, "admin"),
+      { url: TREG, name: "Treg", auth: { kind: "oauth" } },
+      null,
+    );
+    expect(added).toMatchObject({
+      authKind: "provider",
+      credentialKind: "oauth",
+      provider: "treg-mcp",
+      secret: null,
+      setupCommand: null,
+      connectPath: "/connect/treg-mcp?app=treg&return=%2F%3Fmcp%3Dtreg",
+      oauth: { issuer: "https://auth.treg.to", registered: "dcr" },
+      toolCount: null,
+    });
+    expect(registered).toMatchObject({
+      redirect_uris: [`${GATEWAY}/connect/treg-mcp/callback`],
+    });
+    const [spec] = await db.select().from(providers);
+    expect(JSON.parse(spec!.spec).auth).toMatchObject({
+      kind: "oauth2-user",
+      clientId: "TREG_MCP_CLIENT_ID",
+      clientSecret: "TREG_MCP_CLIENT_SECRET",
+      inject: "basic",
+      resource: TREG,
+      issuer: "https://auth.treg.to",
+    });
+    const [client] = await db.select().from(oauthClients);
+    expect(client).toMatchObject({
+      providerId: "treg-mcp",
+      clientId: "dcr-client",
+    });
+    expect(client!.clientSecretEnc).not.toContain("dcr-secret-value");
+    expect(client!.boundTo).toContain("https://auth.treg.to");
+    // The answer never carries the client's secret.
+    expect(JSON.stringify(added)).not.toContain("dcr-secret-value");
+    // Each member connects their own: the dialog reads it.
+    expect(
+      await McpAppService.connection(as(member, "member"), { appId: "treg" }),
+    ).toEqual({
+      providerName: "Treg MCP server",
+      connectPath: "/connect/treg-mcp?app=treg&return=%2F%3Fmcp%3Dtreg",
+      connection: null,
+    });
+    const shown = await McpAppService.get(as(admin, "admin"), {
+      id: added.rowId,
+    });
+    expect(shown.credential).toMatchObject({
+      kind: "oauth",
+      provider: "treg-mcp",
+      own: true,
+      state: "not_connected",
+      connections: 0,
+      viewer: null,
+    });
+  });
+
+  it("refuses an OAuth server it can't register with until a client is pasted, and takes a pasted one from the form alone", async () => {
+    setMcpOAuthFetchForTests(async (input) => {
+      if (input.includes("oauth-protected-resource")) {
+        return Response.json({
+          resource: TREG,
+          authorization_servers: ["https://auth.treg.to"],
+        });
+      }
+      if (
+        input.startsWith(
+          "https://auth.treg.to/.well-known/oauth-authorization-server",
+        )
+      ) {
+        return Response.json({
+          issuer: "https://auth.treg.to",
+          authorization_endpoint: "https://auth.treg.to/authorize",
+          token_endpoint: "https://auth.treg.to/token",
+          code_challenge_methods_supported: ["S256"],
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    await expect(
+      McpAppService.add(
+        as(admin, "admin"),
+        { url: TREG, auth: { kind: "oauth" } },
+        null,
+      ),
+    ).rejects.toMatchObject({
+      code: "REMOTE_MCP_OAUTH_NO_CLIENT",
+      message: expect.stringContaining(`${GATEWAY}/connect/treg-mcp/callback`),
+    });
+    expect(await db.select().from(apps)).toEqual([]);
+    expect(await db.select().from(providers)).toEqual([]);
+    // A tool never takes a pasted client.
+    await expect(
+      McpAppService.add(
+        as(admin, "admin"),
+        {
+          url: TREG,
+          auth: { kind: "oauth", clientId: "pasted", clientSecret: "shh" },
+        },
+        null,
+        { allowPastedClient: false },
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    const added = await McpAppService.add(
+      as(admin, "admin"),
+      {
+        url: TREG,
+        auth: { kind: "oauth", clientId: "pasted", clientSecret: "shh" },
+      },
+      null,
+    );
+    expect(added.oauth).toEqual({
+      issuer: "https://auth.treg.to",
+      registered: "pasted",
+    });
+    const [client] = await db.select().from(oauthClients);
+    expect(client).toMatchObject({ clientId: "pasted" });
+  });
+
+  it("refuses an OAuth server whose metadata can't be read", async () => {
+    setMcpOAuthFetchForTests(async () => new Response("nope", { status: 404 }));
+    await expect(
+      McpAppService.add(
+        as(admin, "admin"),
+        { url: TREG, auth: { kind: "oauth" } },
+        null,
+      ),
+    ).rejects.toMatchObject({ code: "REMOTE_MCP_OAUTH_DISCOVERY" });
+    expect(await db.select().from(apps)).toEqual([]);
+  });
+
+  it("refuses a cap on a remote MCP app: it isn't metered", async () => {
+    const { rowId } = await McpAppService.add(
+      as(owner, "owner"),
+      { url: TREG, name: "Treg", auth: { kind: "none" } },
+      null,
+    );
+    await expect(
+      AppCapService.setMonthlyCap(as(owner, "owner"), {
+        appRowId: rowId,
+        costUsd: 10,
+      }),
+    ).rejects.toMatchObject({
+      code: "APP_NOT_METERED",
+      message:
+        "Treg is an MCP server added by URL; it isn't metered, so it takes no cap.",
+    });
   });
 
   it("refuses an id in use, and brings a removed one back under its row id", async () => {
@@ -699,18 +1018,12 @@ describe("removing an MCP app", () => {
     expect((await row(rowId)).status).toBe("deleted");
   });
 
-  it("leaves a tombstone: access, the snapshot and what the server listed go; the credential's binding stays", async () => {
+  it("leaves a tombstone: access, the snapshot and what the server listed go; its provider row stays", async () => {
     const { rowId } = await McpAppService.add(
       as(admin, "admin"),
-      { url: TREG, auth: { kind: "none" } },
+      { url: TREG, auth: { kind: "bearer" } },
       null,
     );
-    await db.insert(remoteMcpCredentials).values({
-      name: "TREG_MCP_TOKEN",
-      origin: "https://treg.to",
-      boundBy: "ben@example.com",
-      boundAt: new Date(),
-    });
     await McpAppService.remove(as(owner, "owner"), { id: rowId });
     expect((await row(rowId)).status).toBe("deleted");
     expect(await grantees(rowId)).toEqual([]);
@@ -724,7 +1037,7 @@ describe("removing an MCP app", () => {
         .from(appToolCatalogs)
         .where(eq(appToolCatalogs.appRowId, rowId)),
     ).toEqual([]);
-    expect(await db.select().from(remoteMcpCredentials)).toHaveLength(1);
+    expect(await db.select().from(providers)).toHaveLength(1);
     // Removed: nothing to remove again, or to turn on.
     await expect(
       McpAppService.remove(as(owner, "owner"), { id: rowId }),
@@ -813,7 +1126,7 @@ describe("showing an MCP app", () => {
       origin: "https://treg.to",
       authKind: "none",
       authLabel: "no credential",
-      credential: { name: null, set: false, boundTo: null, state: "none" },
+      credential: { kind: "none", name: null, set: false, state: "none" },
       setupCommand: null,
       snapshot: { status: "ok", lastError: null, toolCount: 3 },
       remote: { url: TREG, rev: 1 },
@@ -913,54 +1226,53 @@ describe("showing an MCP app", () => {
     });
   });
 
-  it("says where a credential stands: not set, set, bound here, bound elsewhere", async () => {
+  it("says where a key stands: not set, set for another spec of its row, ready", async () => {
     const { rowId } = await McpAppService.add(
       as(admin, "admin"),
-      { url: TREG, auth: { kind: "bearer" } },
+      { url: TREG, name: "Treg", auth: { kind: "bearer" } },
       null,
     );
-    const credential = async () =>
-      McpAppService.get(as(admin, "admin"), { id: rowId });
+    const credential = async () => {
+      resetGatewayProvidersForTests();
+      return McpAppService.get(as(admin, "admin"), { id: rowId });
+    };
     expect(await credential()).toMatchObject({
-      authLabel: "bearer token",
       credential: {
+        kind: "api_key",
+        provider: "treg-mcp",
+        providerName: "Treg MCP server",
+        own: true,
         name: "TREG_MCP_TOKEN",
         set: false,
-        boundTo: null,
         state: "not_set",
+        connectPath: null,
       },
       setupCommand: "pnpm everyapp secret set TREG_MCP_TOKEN",
       snapshot: { status: null, fetchedAt: null, toolCount: 0 },
       tools: [],
     });
     hoisted.env["TREG_MCP_TOKEN"] = "s3cret";
-    // Set but unpinned: the Gateway sends it nowhere until `secret set` pins it.
+    // Set but not bound to the row as it is: sent nowhere until `secret set`.
     expect(await credential()).toMatchObject({
-      credential: { set: true, boundTo: null, state: "set" },
+      credential: { set: true, state: "bound_elsewhere" },
       setupCommand: "pnpm everyapp secret set TREG_MCP_TOKEN",
     });
-    await db.insert(remoteMcpCredentials).values({
-      name: "TREG_MCP_TOKEN",
-      origin: "https://treg.to",
-      boundBy: "gateway",
-      boundAt: new Date(),
-    });
-    expect(await credential()).toMatchObject({
-      credential: { boundTo: "https://treg.to", state: "bound" },
+    const [stored] = await db.select().from(providers);
+    const { providerBindingKey, parseProviderSpec } = await import(
+      "@every-app/sdk/internal"
+    );
+    const parsed = parseProviderSpec(JSON.parse(stored!.spec));
+    if (!parsed.ok) throw new Error("the row's spec should parse");
+    await db
+      .update(providers)
+      .set({ boundTo: providerBindingKey(parsed.capability) });
+    const ready = await credential();
+    expect(ready).toMatchObject({
+      credential: { set: true, state: "ready" },
       setupCommand: null,
     });
-    await db
-      .update(remoteMcpCredentials)
-      .set({ origin: "https://old.treg.to" })
-      .where(eq(remoteMcpCredentials.name, "TREG_MCP_TOKEN"));
-    const elsewhere = await credential();
-    expect(elsewhere).toMatchObject({
-      // The other origin is never told: on a hosted Gateway it may be another organization's.
-      credential: { boundTo: null, state: "bound_elsewhere" },
-      setupCommand: "pnpm everyapp secret set TREG_MCP_TOKEN",
-    });
     // The value itself is never in the answer.
-    expect(JSON.stringify(elsewhere)).not.toContain("s3cret");
+    expect(JSON.stringify(ready)).not.toContain("s3cret");
   });
 
   it("shows a built-in as such, and refuses a member and another organization's row", async () => {

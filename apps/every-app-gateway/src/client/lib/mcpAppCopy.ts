@@ -7,11 +7,14 @@
  * A person reads "MCP app"; the code's tier is "provider".
  */
 import type {
-  RemoteMcpAuthKind,
+  RemoteMcpCredentialKind,
   RemoteMcpRiskDefault,
   RemoteToolRiskSource,
   ToolRisk,
 } from "@every-app/sdk/internal";
+
+/** The Add form's credential choices: a kind the add turns into a provider row, or an existing provider. */
+export type AddCredentialChoice = RemoteMcpCredentialKind | "provider";
 
 const RISK_DEFAULT_ITEMS: readonly {
   value: RemoteMcpRiskDefault;
@@ -59,22 +62,41 @@ export const MCP_APP_COPY = {
       { value: "none", label: "None" },
       { value: "bearer", label: "Bearer token" },
       { value: "header", label: "Header" },
+      { value: "query", label: "Query parameter" },
       { value: "basic", label: "User and password" },
-      { value: "oauth", label: "OAuth (not supported yet)" },
-    ] as readonly { value: RemoteMcpAuthKind; label: string }[],
+      { value: "oauth", label: "OAuth (sign in)" },
+      { value: "provider", label: "Use a provider" },
+    ] as readonly { value: AddCredentialChoice; label: string }[],
     credentialHelp: {
       none: "A public server: nothing to set.",
       bearer: "Sent as Authorization: Bearer <token>.",
       header: "Sent in a header you name, like X-Api-Key.",
+      query: "Sent as a query parameter on the server's URL.",
       basic: "Set as user:password, sent as Authorization: Basic.",
       oauth:
-        "The Gateway can't sign in to a server with OAuth yet. The app is added and serves no tools until it can.",
-    } satisfies Record<RemoteMcpAuthKind, string>,
+        "Each member signs in to the server with their own account. The Gateway registers itself with the server and holds the tokens.",
+      provider:
+        "A provider already on this Gateway, whose key or sign-in the server takes.",
+    } satisfies Record<AddCredentialChoice, string>,
+    /** Where a static credential's value is set: never on this page. */
+    tokenSettingHelp: (setting: string) =>
+      `The value is the Gateway setting ${setting}. The operator sets it with the command shown next; it never goes through this page.`,
     headerLabel: "Header name",
     headerPlaceholder: "X-Api-Key",
-    secretLabel: "Credential setting name",
-    secretHelp:
-      "The Gateway setting that holds it. The operator sets the value with the command shown next; it never goes through this page.",
+    prefixLabel: "Prefix (optional)",
+    prefixHelp: "Text sent before the value, like Token followed by a space.",
+    paramLabel: "Parameter name",
+    paramPlaceholder: "api_key",
+    providerLabel: "Provider",
+    providersLoading: "Loading providers…",
+    providersNone:
+      "No API-key or OAuth provider is on this Gateway yet. Add one under Manage workspace → Providers.",
+    clientIntro:
+      "This server can't register the Gateway as a client. Register one in its console with this redirect URI, then paste its client id and secret:",
+    clientIdLabel: "Client ID",
+    clientSecretLabel: "Client secret (optional)",
+    clientSecretHelp:
+      "Sealed on the Gateway. Leave it empty for a public client.",
     riskLabel: "Risk default",
     riskItems: RISK_DEFAULT_ITEMS,
     submit: "Add server",
@@ -84,6 +106,9 @@ export const MCP_APP_COPY = {
       urlParse: "The URL doesn't parse.",
       noName: "No name could be read from the URL's host; give it one.",
       header: "Name the header, like X-Api-Key.",
+      param: "Name the query parameter, like api_key.",
+      provider: "Choose a provider.",
+      clientId: "Paste the client id.",
       failed: "The server couldn't be added. Try again.",
     },
   },
@@ -102,8 +127,10 @@ export const MCP_APP_COPY = {
         : `Added. ${count} tools are on this Gateway's /mcp as ${id}_<tool>.`,
     firstUse: "Added. The Gateway lists its tools on first use.",
     empty: "Added. The server lists no tools right now.",
-    oauth:
-      "Added. This server wants OAuth, which the Gateway doesn't support yet, so it serves no tools until then.",
+    connectTitle: (name: string) => `Connect ${name}`,
+    connectIntro:
+      "Added. Sign in to the server with your account: the Gateway lists its tools once someone has connected.",
+    connect: "Connect your account",
   },
   edit: {
     title: (name: string) => `Edit ${name}`,
@@ -113,17 +140,27 @@ export const MCP_APP_COPY = {
     credentialLabel: "Credential",
     credential: {
       none: "None: a public server.",
-      unsupported:
-        "OAuth: not supported yet. The server serves no tools until it is.",
       not_set: (name: string) =>
         `${name} is not set. Only the Gateway's operator can set it:`,
-      set: (name: string) =>
-        `${name} is set. The Gateway binds it to this server on first use.`,
-      bound: (name: string, origin: string) =>
-        `${name} is set, bound to ${origin}.`,
       bound_elsewhere: (name: string) =>
-        `${name} was set for another server, so nothing is sent to this one: the Gateway's operator runs secret set again.`,
+        `${name} was set for another server or auth, so nothing is sent to this one. The Gateway's operator sets it again:`,
+      ready: (name: string) => `${name} is set for this server.`,
+      no_client:
+        "The Gateway holds no OAuth client for this server. Add the server again, or add a client under Manage workspace → Providers.",
+      not_connected:
+        "Nobody has connected an account yet: its tools are listed once someone connects.",
+      connected: (count: number) =>
+        count === 1 ? "1 account connected." : `${count} accounts connected.`,
+      missing:
+        "Its provider isn't on this Gateway any more. Remove the app and add it again.",
     },
+    providerLine: (name: string, own: boolean) =>
+      own ? `${name}, this app's own provider.` : `Provider: ${name}.`,
+    connect: "Connect your account",
+    reconnect: "Reconnect",
+    connectedAs: (label: string | null) =>
+      label ? `You're connected as ${label}.` : "You're connected.",
+    connectionExpired: "Your connection expired.",
     statusLabel: "Status",
     on: "On: its tools are served.",
     off: "Off: its tools aren't served. Access and tokens are kept.",
@@ -138,7 +175,8 @@ export const MCP_APP_COPY = {
     refreshRemoved: (names: string[]) => `Removed: ${names.join(", ")}.`,
     refreshNoChange: "No change.",
     noTools: "No tools listed yet. Refresh tools lists them now.",
-    noToolsNeedsCredential: "Its tools are listed once its credential is set.",
+    noToolsNeedsCredential:
+      "Its tools are listed once its credential is set or an account is connected.",
     riskLabel: "Risk default",
     riskItems: RISK_DEFAULT_ITEMS,
     columns: {
@@ -201,7 +239,14 @@ export const MCP_APP_COPY = {
   useDialog: {
     genericExample: (name: string) =>
       `List what ${name} offers, then use one of its tools.`,
+    connect: (provider: string) => `Connect your ${provider} account`,
+    connectIntro:
+      "Its tools act as you on the server: connect your account first.",
+    connectedAs: (label: string | null) =>
+      label ? `Connected as ${label}.` : "Connected.",
+    expired: "The connection expired.",
+    reconnect: "Reconnect",
   },
-  // The status words ("Off", "Not supported yet") are AppStatusLabel's
+  // The status words ("Off") are AppStatusLabel's
   // (appStatus.ts), with every other app's.
 } as const;

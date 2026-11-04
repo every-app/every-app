@@ -60,6 +60,7 @@ function app(overrides: Partial<UsageAppRow> = {}): UsageAppRow {
     costCapSource: null,
     paused: false,
     callable: true,
+    metered: true,
     ...overrides,
   };
 }

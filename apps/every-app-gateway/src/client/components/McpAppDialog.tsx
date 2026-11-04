@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { PROVIDER_APPS, isProviderAppId } from "@every-app/sdk/internal";
 import { CodeBlock } from "@/client/components/CodeBlock";
@@ -9,10 +10,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/client/components/ui/dialog";
+import { Button } from "@/client/components/ui/button";
+import { CONNECT_AI_DOCS_URL } from "@/client/lib/connectAgentCopy";
 import { MCP_APP_COPY } from "@/client/lib/mcpAppCopy";
+import { getMcpAppConnection } from "@/serverFunctions/mcpApps";
+import type { McpAppConnectionStatus } from "@/types/mcpApp";
 
-/** The person's page on connecting Claude, ChatGPT and Claude Code. */
-export const CONNECT_AI_DOCS_URL = "https://everyapp.com/docs/connect-ai";
 /** The agent docs' section on MCP apps, for the agent that was told to use one. */
 export const MCP_APPS_DOCS_URL = "https://everyapp.com/docs/agent/mcp#mcp-apps";
 
@@ -41,6 +44,7 @@ function mcpAddress(): string | null {
  */
 export function McpAppDialog({ name, appId, onClose }: McpAppDialogProps) {
   const address = mcpAddress();
+  const connection = useMcpAppConnection(appId);
   // A built-in's own example; any other MCP app is a remote server the
   // Gateway knows nothing about beyond its tools, so the sentence is generic.
   const example = isProviderAppId(appId)
@@ -61,6 +65,7 @@ export function McpAppDialog({ name, appId, onClose }: McpAppDialogProps) {
             this Gateway's MCP address:
           </DialogDescription>
         </DialogHeader>
+        {connection ? <ConnectionLine status={connection} /> : null}
         {address ? (
           <CodeBlock code={address} successMessage="Address copied" />
         ) : null}
@@ -88,6 +93,55 @@ export function McpAppDialog({ name, appId, onClose }: McpAppDialogProps) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * A remote MCP app's OAuth connection for this member, read once on
+ * mount: null for a built-in, an app with no OAuth connection, or while
+ * (or if) the read fails, which leaves the dialog as it was.
+ */
+function useMcpAppConnection(appId: string): McpAppConnectionStatus | null {
+  const [status, setStatus] = useState<McpAppConnectionStatus | null>(null);
+  useEffect(() => {
+    if (isProviderAppId(appId)) return;
+    let live = true;
+    getMcpAppConnection({ data: { appId } })
+      .then((answer) => {
+        if (live) setStatus(answer);
+      })
+      .catch(() => {
+        if (live) setStatus(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [appId]);
+  return status;
+}
+
+/** Connected as whom, or the link to connect. */
+function ConnectionLine({ status }: { status: McpAppConnectionStatus }) {
+  const copy = MCP_APP_COPY.useDialog;
+  if (status.connection?.status === "active") {
+    return (
+      <p className="text-sm" data-testid="mcp-connection">
+        {copy.connectedAs(status.connection.label)}
+      </p>
+    );
+  }
+  const expired = status.connection?.status === "expired";
+  return (
+    <div className="flex flex-col gap-2 text-sm" data-testid="mcp-connection">
+      <p>{expired ? copy.expired : copy.connectIntro}</p>
+      <Button
+        className="self-start"
+        nativeButton={false}
+        render={<a href={status.connectPath} />}
+      >
+        {expired ? copy.reconnect : copy.connect(status.providerName)}
+      </Button>
+    </div>
   );
 }
 

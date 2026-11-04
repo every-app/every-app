@@ -2,7 +2,9 @@
  * `mcp add`'s one look at a server, against a fake fetch: the modern
  * `tools/list` answered as JSON and as SSE, the 2025 `initialize` when
  * that isn't a result, a 401 with and without OAuth's `resource_metadata`,
- * a redirect (never followed), no answer in time, and what it sends.
+ * a redirect (never followed), no answer in time, what it sends, and the
+ * check with a credential (headers, query parameters, a 2025 session's
+ * tools/list).
  */
 import { describe, expect, it } from "vitest";
 import { probeRemoteMcp } from "./remoteMcpProbe";
@@ -137,7 +139,8 @@ describe("probeRemoteMcp", () => {
         new Response("", {
           status: 401,
           headers: {
-            "www-authenticate": 'Bearer resource_metadata="https://treg.to/.well-known/oauth-protected-resource/mcp"',
+            "www-authenticate":
+              'Bearer resource_metadata="https://treg.to/.well-known/oauth-protected-resource/mcp", scope="mcp:read mcp:write"',
           },
         }),
     );
@@ -145,7 +148,48 @@ describe("probeRemoteMcp", () => {
       outcome: "needs-credential",
       status: 401,
       oauth: true,
+      resourceMetadata: "https://treg.to/.well-known/oauth-protected-resource/mcp",
+      scope: "mcp:read mcp:write",
     });
+  });
+
+  it("sends a credential's headers and query parameters when given one", async () => {
+    const { fetcher, seen } = fakeFetch(() => json({ jsonrpc: "2.0", id: 1, result: { tools: [{ name: "a" }] } }));
+    expect(
+      await probeRemoteMcp(URL_, {
+        version: "0.3.0",
+        fetch: fetcher,
+        credential: { headers: { "x-api-key": "k" }, query: { api_key: "q" } },
+      }),
+    ).toMatchObject({ outcome: "reachable", tools: 1 });
+    expect(seen[0]!.url).toBe("https://treg.to/mcp/?api_key=q");
+    expect(seen[0]!.headers["x-api-key"]).toBe("k");
+  });
+
+  it("with listTools, counts a 2025 server's tools in the session initialize opened", async () => {
+    const { fetcher, seen } = fakeFetch(
+      () => new Response("not found", { status: 404 }),
+      () =>
+        json(
+          { jsonrpc: "2.0", id: 2, result: { protocolVersion: "2025-06-18", serverInfo: { name: "old" } } },
+          200,
+          { "mcp-session-id": "s-1" },
+        ),
+      () => new Response(null, { status: 202 }),
+      () => json({ jsonrpc: "2.0", id: 3, result: { tools: [{ name: "a" }, { name: "b" }] } }),
+    );
+    expect(
+      await probeRemoteMcp(URL_, {
+        version: "0.3.0",
+        fetch: fetcher,
+        credential: { headers: { authorization: "Bearer k" }, query: {} },
+        listTools: true,
+      }),
+    ).toEqual({ outcome: "reachable", era: "2025-06-18", tools: 2, server: "old" });
+    expect(seen.map((each) => each.body["method"])).toEqual(["tools/list", "initialize", "notifications/initialized", "tools/list"]);
+    expect(seen[3]!.headers["mcp-session-id"]).toBe("s-1");
+    expect(seen[3]!.headers["mcp-protocol-version"]).toBe("2025-06-18");
+    expect(seen.every((each) => each.headers["authorization"] === "Bearer k")).toBe(true);
   });
 
   it("never follows a redirect: a 302 is reported with where it points", async () => {

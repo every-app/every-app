@@ -1,10 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { PROVIDER_APP_TIER, remoteMcpOf } from "@every-app/sdk/internal";
 import {
+  CAPABILITIES,
+  mcpOAuthProviderSpec,
+  mcpStaticProviderSpec,
+  parseProviderSpec,
+  PROVIDER_APP_TIER,
+  providerBindingKey,
+  providerRegistry,
+  remoteMcpOf,
+  type Capability,
+  type McpOAuthDiscovery,
+} from "@every-app/sdk/internal";
+import {
+  appNotMeteredMessage,
+  isMeteredAppRow,
   isRemoteMcpRow,
   mcpAppRemoveUpdate,
   mcpAppStatusUpdate,
   planRemoteMcpAppAdd,
+  planRemoteMcpProviderRow,
   remoteMcpAppUpdate,
   remoteMcpBlockOf,
   type RemoteMcpAddInput,
@@ -18,11 +32,58 @@ const ENV = {
   appBaseDomain: "apps.example.com",
 };
 
+function specCapability(
+  built: ReturnType<typeof mcpStaticProviderSpec>,
+): Capability {
+  if (!built.ok) throw new Error(built.problem);
+  const parsed = parseProviderSpec(built.spec);
+  if (!parsed.ok) throw new Error(JSON.stringify(parsed.problems));
+  return parsed.capability;
+}
+
+/** The app's own static row, as `mcp add --auth bearer` plans it. */
+const tregStatic = specCapability(
+  mcpStaticProviderSpec({
+    appId: "treg",
+    name: "Treg",
+    url: "https://treg.to/mcp/",
+    kind: "bearer",
+  }),
+);
+
+const discovery: McpOAuthDiscovery = {
+  resource: "https://treg.to/mcp/",
+  issuer: "https://auth.treg.to",
+  authorizationEndpoint: "https://auth.treg.to/authorize",
+  tokenEndpoint: "https://auth.treg.to/token",
+  registrationEndpoint: "https://auth.treg.to/register",
+  scopes: ["mcp"],
+  tokenEndpointAuthMethods: ["client_secret_basic"],
+  resourceMetadata: true,
+};
+
+const tregOAuth = specCapability(
+  mcpOAuthProviderSpec({
+    appId: "treg",
+    name: "Treg",
+    url: "https://treg.to/mcp/",
+    discovery,
+    client: { hasSecret: true, inject: "basic" },
+  }),
+);
+
+/** The registry the tests resolve against: the catalog, and `treg-mcp` as `own`. */
+function lookup(own: Capability = tregStatic) {
+  return (id: string): Capability | undefined =>
+    id === "treg-mcp" ? own : (CAPABILITIES as Record<string, Capability>)[id];
+}
+
 function input(overrides: Partial<RemoteMcpAddInput> = {}): RemoteMcpAddInput {
   return {
     organizationId: "org-1",
     url: "https://treg.to/mcp/",
-    auth: { kind: "bearer" },
+    auth: { kind: "provider" },
+    lookupProvider: lookup(),
     env: ENV,
     existingApp: () => null,
     actor: "ben@example.com",
@@ -75,27 +136,28 @@ describe("planRemoteMcpAppAdd", () => {
     });
     expect(remoteMcpOf(JSON.parse(plan.app.manifest!))).toEqual({
       url: "https://treg.to/mcp/",
-      auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
+      auth: { kind: "provider", provider: "treg-mcp" },
       risk: "annotations",
       tools: {},
       rev: 1,
     });
+    // The provider is listed as a deployed app lists one.
+    expect(JSON.parse(plan.app.manifest!).capabilities).toEqual({
+      "treg-mcp": { access: "read", why: expect.any(String) },
+    });
+    expect(plan.provider).toEqual({ id: "treg-mcp", capability: tregStatic });
     expect(plan).not.toHaveProperty("grants");
     expect(isRemoteMcpRow(plan.app)).toBe(true);
     expect(remoteMcpBlockOf(plan.app)).toEqual(plan.remote);
   });
 
-  it("takes a name, a description, a chosen id, a chosen secret name and a risk default", () => {
+  it("takes a name, a description, a chosen id, a named provider and a risk default", () => {
     const plan = planRemoteMcpAppAdd(
       input({
         id: "treg-prod",
         name: "Treg (production)",
         description: "Treg's data.",
-        auth: {
-          kind: "header",
-          secret: "TREG_SHARED_MCP_TOKEN",
-          header: "X-Api-Key",
-        },
+        auth: { kind: "provider", provider: "treg-mcp" },
         risk: "write",
       }),
     );
@@ -103,14 +165,110 @@ describe("planRemoteMcpAppAdd", () => {
     expect(plan.app.description).toBe("Treg's data.");
     expect(plan.app.appSlug).toBe("treg-prod");
     expect(plan.remote.auth).toEqual({
-      kind: "header",
-      secret: "TREG_SHARED_MCP_TOKEN",
-      header: "X-Api-Key",
+      kind: "provider",
+      provider: "treg-mcp",
     });
     expect(plan.remote.risk).toBe("write");
   });
 
-  it("refuses a URL the rules refuse, a bad id, a foreign secret name and a bad risk", () => {
+  it("writes no provider for a server without a credential", () => {
+    const plan = planRemoteMcpAppAdd(input({ auth: { kind: "none" } }));
+    expect(plan.remote.auth).toEqual({ kind: "none" });
+    expect(plan.provider).toBeNull();
+    expect(JSON.parse(plan.app.manifest!).capabilities).toBeUndefined();
+    expect(planRemoteMcpAppAdd(input({ auth: undefined })).remote.auth).toEqual(
+      { kind: "none" },
+    );
+  });
+
+  it("lists an OAuth provider with the scopes the connect asks for", () => {
+    const own = planRemoteMcpAppAdd(
+      input({ lookupProvider: lookup(tregOAuth), scopes: ["mcp"] }),
+    );
+    expect(own.remote.auth).toEqual({ kind: "provider", provider: "treg-mcp" });
+    expect(JSON.parse(own.app.manifest!).capabilities["treg-mcp"]).toEqual({
+      scopes: ["mcp"],
+      why: expect.any(String),
+    });
+  });
+
+  it("uses an existing provider on its own host, a reserved one included, and refuses it elsewhere", () => {
+    // ElevenLabs' hosted MCP with the catalog's key: the reserved host
+    // gives way to the provider that owns it.
+    const elevenlabs = CAPABILITIES["elevenlabs" as keyof typeof CAPABILITIES];
+    expect(elevenlabs).toBeDefined();
+    const plan = planRemoteMcpAppAdd(
+      input({
+        url: "https://api.elevenlabs.io/v1/mcp",
+        auth: { kind: "provider", provider: "elevenlabs" },
+      }),
+    );
+    expect(plan.id).toBe("elevenlabs");
+    expect(plan.remote.auth).toEqual({
+      kind: "provider",
+      provider: "elevenlabs",
+    });
+    // Without naming it, the host stays refused.
+    expect(() =>
+      planRemoteMcpAppAdd(
+        input({
+          url: "https://api.elevenlabs.io/v1/mcp",
+          auth: { kind: "none" },
+        }),
+      ),
+    ).toThrow(expect.objectContaining({ code: "REMOTE_MCP_URL_REFUSED" }));
+    // The app's own row never opens a reserved host.
+    expect(() =>
+      planRemoteMcpAppAdd(
+        input({
+          url: "https://api.elevenlabs.io/v1/mcp",
+          id: "treg",
+          auth: { kind: "provider" },
+        }),
+      ),
+    ).toThrow(expect.objectContaining({ code: "REMOTE_MCP_URL_REFUSED" }));
+    // A provider whose hosts don't include the URL's.
+    expect(() =>
+      planRemoteMcpAppAdd(
+        input({ auth: { kind: "provider", provider: "elevenlabs" } }),
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "REMOTE_MCP_PROVIDER_HOST",
+        message: expect.stringMatching(
+          /^elevenlabs sends its key to .*api\.elevenlabs\.io.*, not to treg\.to$/,
+        ),
+      }),
+    );
+  });
+
+  it("refuses a provider it can't find or can't use, and a registration from before providers", () => {
+    expect(() =>
+      planRemoteMcpAppAdd(
+        input({ auth: { kind: "provider", provider: "nope" } }),
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "REMOTE_MCP_INVALID",
+        message: expect.stringMatching(/no provider nope/),
+      }),
+    );
+    expect(() =>
+      planRemoteMcpAppAdd(
+        input({ auth: { kind: "provider", provider: "openai" } }),
+      ),
+    ).toThrow(expect.objectContaining({ code: "REMOTE_MCP_INVALID" }));
+    expect(() =>
+      planRemoteMcpAppAdd(input({ auth: { kind: "bearer" } })),
+    ).toThrow(
+      expect.objectContaining({
+        code: "REMOTE_MCP_INVALID",
+        message: expect.stringMatching(/predates provider credentials/),
+      }),
+    );
+  });
+
+  it("refuses a URL the rules refuse, a bad id and a bad risk", () => {
     expect(() =>
       planRemoteMcpAppAdd(input({ url: "http://treg.to/mcp" })),
     ).toThrow(
@@ -128,16 +286,6 @@ describe("planRemoteMcpAppAdd", () => {
         message: expect.stringMatching(/built-in/),
       }),
     );
-    expect(() =>
-      planRemoteMcpAppAdd(
-        input({ auth: { kind: "bearer", secret: "OPENAI_API_KEY" } }),
-      ),
-    ).toThrow(
-      expect.objectContaining({
-        code: "REMOTE_MCP_INVALID",
-        message: expect.stringMatching(/_MCP_TOKEN/),
-      }),
-    );
     expect(() => planRemoteMcpAppAdd(input({ risk: "maybe" }))).toThrow(
       expect.objectContaining({ code: "REMOTE_MCP_INVALID" }),
     );
@@ -146,27 +294,12 @@ describe("planRemoteMcpAppAdd", () => {
     ).toThrow(expect.objectContaining({ code: "REMOTE_MCP_URL_REFUSED" }));
   });
 
-  it("refuses a credential name another MCP app sends to a different origin", () => {
-    expect(() =>
-      planRemoteMcpAppAdd(
-        input({ secretUsedAt: () => "https://other.example" }),
-      ),
-    ).toThrow(
-      expect.objectContaining({ code: "REMOTE_MCP_SECRET_TAKEN", status: 409 }),
-    );
-    expect(
-      planRemoteMcpAppAdd(input({ secretUsedAt: () => "https://treg.to" })).id,
-    ).toBe("treg");
-    expect(planRemoteMcpAppAdd(input({ secretUsedAt: () => null })).id).toBe(
-      "treg",
-    );
-  });
-
   it("asks for a name when the URL's host gives none", () => {
     expect(() =>
       planRemoteMcpAppAdd(
         input({
           url: "http://localhost:8787/mcp",
+          auth: { kind: "none" },
           env: { gatewayUrl: "http://localhost:3000" },
         }),
       ),
@@ -180,6 +313,7 @@ describe("planRemoteMcpAppAdd", () => {
       input({
         url: "http://localhost:8787/mcp",
         id: "fake",
+        auth: { kind: "none" },
         env: { gatewayUrl: "http://localhost:3000" },
       }),
     );
@@ -218,7 +352,7 @@ describe("planRemoteMcpAppAdd", () => {
     );
   });
 
-  it("revives its own tombstone as new, under the old row id, with fresh grants", () => {
+  it("revives its own tombstone as new, under the old row id", () => {
     const tombstone = remoteRow({ status: "deleted", name: "Old" });
     const plan = planRemoteMcpAppAdd(
       input({ existingApp: () => tombstone, name: "Treg" }),
@@ -258,27 +392,6 @@ describe("planRemoteMcpAppAdd", () => {
         }),
       ).id,
     ).toBe("treg");
-  });
-
-  it("says where a taken credential name goes as the caller labelled it", () => {
-    expect(() =>
-      planRemoteMcpAppAdd(
-        input({ secretUsedAt: () => "https://other.example" }),
-      ),
-    ).toThrow(
-      expect.objectContaining({
-        message: expect.stringContaining("at https://other.example;"),
-      }),
-    );
-    expect(() =>
-      planRemoteMcpAppAdd(
-        input({ secretUsedAt: () => "another organization" }),
-      ),
-    ).toThrow(
-      expect.objectContaining({
-        message: expect.stringContaining("at another organization;"),
-      }),
-    );
   });
 
   it("continues the revision count when it revives a tombstone", () => {
@@ -352,7 +465,7 @@ describe("remoteMcpAppUpdate", () => {
     expect(updated.description).toBe("Treg's MCP.");
     expect(updated.remote).toMatchObject({
       url: "https://treg.to/mcp/",
-      auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
+      auth: { kind: "provider", provider: "treg-mcp" },
       tools: { a: { risk: "read" } },
     });
     const stored = JSON.parse(updated.manifest) as {
@@ -362,6 +475,10 @@ describe("remoteMcpAppUpdate", () => {
     };
     expect(stored.id).toBe("treg");
     expect(stored.name).toBe("Treg");
+    // The provider entry is kept as it was written.
+    expect((stored as { capabilities?: unknown }).capabilities).toEqual(
+      JSON.parse(row.manifest!).capabilities,
+    );
   });
 
   it("keeps rev when nothing about the catalog changed, and refuses an override the block can't hold", () => {
@@ -447,5 +564,152 @@ describe("mcpAppStatusUpdate and mcpAppRemoveUpdate", () => {
     expect(mcpAppRemoveUpdate(remoteRow({ status: "deleted" }))).toBeNull();
     expect(mcpAppRemoveUpdate(deployedRow)).toBeNull();
     expect(mcpAppRemoveUpdate(null)).toBeNull();
+  });
+});
+
+describe("planRemoteMcpProviderRow", () => {
+  const staticSpec = mcpStaticProviderSpec({
+    appId: "treg",
+    name: "Treg",
+    url: "https://treg.to/mcp/",
+    kind: "bearer",
+  });
+  if (!staticSpec.ok) throw new Error(staticSpec.problem);
+
+  it("inserts the app's own row, and keeps a row with the same spec, bound or not", () => {
+    const insert = planRemoteMcpProviderRow({
+      appId: "treg",
+      spec: staticSpec.spec,
+      existing: null,
+    });
+    expect(insert).toMatchObject({
+      action: "insert",
+      id: "treg-mcp",
+      bound: false,
+      bindingKey: providerBindingKey(tregStatic as never),
+    });
+    expect(JSON.parse(insert.spec)).toEqual(staticSpec.spec);
+    const keep = planRemoteMcpProviderRow({
+      appId: "treg",
+      spec: staticSpec.spec,
+      existing: {
+        id: "treg-mcp",
+        spec: JSON.stringify(staticSpec.spec),
+        boundTo: insert.bindingKey,
+      },
+    });
+    expect(keep).toMatchObject({ action: "keep", bound: true });
+  });
+
+  it("replaces a row whose spec differs; a moved credential unbinds, a renamed one doesn't", () => {
+    const header = mcpStaticProviderSpec({
+      appId: "treg",
+      name: "Treg",
+      url: "https://treg.to/mcp/",
+      kind: "header",
+      header: "X-Api-Key",
+    });
+    if (!header.ok) throw new Error(header.problem);
+    const bound = planRemoteMcpProviderRow({
+      appId: "treg",
+      spec: staticSpec.spec,
+      existing: null,
+    }).bindingKey;
+    const moved = planRemoteMcpProviderRow({
+      appId: "treg",
+      spec: header.spec,
+      existing: {
+        id: "treg-mcp",
+        spec: JSON.stringify(staticSpec.spec),
+        boundTo: bound,
+      },
+    });
+    expect(moved).toMatchObject({ action: "replace", bound: false });
+    const renamed = planRemoteMcpProviderRow({
+      appId: "treg",
+      spec: { ...staticSpec.spec, name: "Treg two MCP server" },
+      existing: {
+        id: "treg-mcp",
+        spec: JSON.stringify(staticSpec.spec),
+        boundTo: bound,
+      },
+    });
+    expect(renamed).toMatchObject({ action: "replace", bound: true });
+  });
+
+  it("refuses a hand-registered row of that id, and a spec the registry refuses", () => {
+    expect(() =>
+      planRemoteMcpProviderRow({
+        appId: "treg",
+        spec: staticSpec.spec,
+        existing: {
+          id: "treg-mcp",
+          spec: JSON.stringify({ ...staticSpec.spec, tags: [] }),
+        },
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        code: "REMOTE_MCP_INVALID",
+        message: expect.stringMatching(/registered by hand/),
+      }),
+    );
+    expect(() =>
+      planRemoteMcpProviderRow({
+        appId: "treg",
+        spec: staticSpec.spec,
+        existing: null,
+        refuseHost: (host) =>
+          host === "treg.to" ? "treg.to is this gateway's own host" : null,
+      }),
+    ).toThrow(expect.objectContaining({ code: "REMOTE_MCP_URL_REFUSED" }));
+    expect(() =>
+      planRemoteMcpProviderRow({
+        appId: "treg",
+        spec: staticSpec.spec,
+        existing: null,
+        rowSettings: new Set(["TREG_MCP_TOKEN"]),
+      }),
+    ).toThrow(expect.objectContaining({ code: "REMOTE_MCP_INVALID" }));
+  });
+
+  it("is a row the registry serves, its token setting the row's own", () => {
+    const registry = providerRegistry([
+      { id: "treg-mcp", spec: JSON.stringify(staticSpec.spec) },
+    ]);
+    expect(registry.rejected).toEqual([]);
+    expect(registry.settingNames().has("TREG_MCP_TOKEN")).toBe(true);
+    expect(registry.bound("treg-mcp")).toBe(false);
+  });
+});
+
+describe("isMeteredAppRow", () => {
+  it("meters deployed and built-in MCP apps, never a remote MCP app", () => {
+    expect(isMeteredAppRow(deployedRow)).toBe(true);
+    const builtIn = planProviderAppOn({
+      organizationId: "org-1",
+      id: "dataforseo",
+      existingApp: null,
+      actor: "ben@example.com",
+      now: NOW,
+    }).app;
+    expect(isMeteredAppRow(builtIn)).toBe(true);
+    expect(isMeteredAppRow(remoteRow())).toBe(false);
+    // An unreadable registration (from before provider credentials) neither.
+    expect(
+      isMeteredAppRow(
+        remoteRow({
+          manifest: JSON.stringify({
+            id: "treg",
+            remote: {
+              url: "https://treg.to/mcp/",
+              auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
+            },
+          }),
+        }),
+      ),
+    ).toBe(false);
+    expect(appNotMeteredMessage("Treg")).toBe(
+      "Treg is an MCP server added by URL; it isn't metered, so it takes no cap.",
+    );
   });
 });

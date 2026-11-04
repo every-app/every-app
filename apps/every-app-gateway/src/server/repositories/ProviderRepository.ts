@@ -89,4 +89,31 @@ async function removeUnbound(id: string): Promise<boolean> {
   return removed.length > 0;
 }
 
-export const ProviderRepository = { all, byId, insert, removeUnbound } as const;
+/**
+ * Replace a row's spec, keeping its binding (`bound_to`): the registry
+ * reads the row's key or client only while that still equals the new
+ * spec's binding key, so a spec that moved its hosts, auth or endpoints
+ * unbinds it until it is set again. Only for a remote MCP app's own row
+ * (`<appId>-mcp`, McpAppService), which `mcp add` replaces when its spec
+ * changed; false when the row is gone.
+ */
+async function replaceSpec(input: {
+  id: string;
+  spec: string;
+  now?: Date;
+}): Promise<boolean> {
+  const written = await db
+    .update(providers)
+    .set({ spec: input.spec, updatedAt: input.now ?? new Date() })
+    .where(eq(providers.id, input.id))
+    .returning({ id: providers.id });
+  return written.length > 0;
+}
+
+export const ProviderRepository = {
+  all,
+  byId,
+  insert,
+  replaceSpec,
+  removeUnbound,
+} as const;

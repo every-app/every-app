@@ -33,6 +33,39 @@ import { McpAppEditDialog } from "./McpAppEditDialog";
 const COPY = MCP_APP_COPY.edit;
 const ROW = "11111111-1111-4111-8111-111111111111";
 
+function apiKey(
+  overrides: Partial<NonNullable<McpAppDetails["credential"]>> = {},
+): NonNullable<McpAppDetails["credential"]> {
+  return {
+    kind: "api_key",
+    provider: "treg-mcp",
+    providerName: "Treg MCP server",
+    own: true,
+    name: "TREG_MCP_TOKEN",
+    set: true,
+    state: "ready",
+    connections: 0,
+    connectPath: null,
+    viewer: null,
+    ...overrides,
+  };
+}
+
+function oauth(
+  overrides: Partial<NonNullable<McpAppDetails["credential"]>> = {},
+): NonNullable<McpAppDetails["credential"]> {
+  return {
+    ...apiKey(),
+    kind: "oauth",
+    name: null,
+    set: false,
+    state: "connected",
+    connections: 2,
+    connectPath: "/connect/treg-mcp?app=treg&return=%2F%3Fmcp%3Dtreg",
+    ...overrides,
+  };
+}
+
 function details(overrides: Partial<McpAppDetails> = {}): McpAppDetails {
   return {
     id: ROW,
@@ -43,20 +76,15 @@ function details(overrides: Partial<McpAppDetails> = {}): McpAppDetails {
     kind: "remote",
     remote: {
       url: "https://treg.to/mcp/",
-      auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
+      auth: { kind: "provider", provider: "treg-mcp" },
       risk: "annotations",
       tools: { getUser: { enabled: false } },
       rev: 2,
     },
     origin: "https://treg.to",
-    authKind: "bearer",
+    authKind: "provider",
     authLabel: "bearer token",
-    credential: {
-      name: "TREG_MCP_TOKEN",
-      set: true,
-      boundTo: "https://treg.to",
-      state: "bound",
-    },
+    credential: apiKey({ set: true, state: "ready" }),
     setupCommand: null,
     snapshot: {
       status: "ok",
@@ -210,9 +238,8 @@ describe("the MCP app edit dialog", () => {
     expect(text()).toContain(COPY.title("Treg"));
     expect(text()).toContain("https://treg.to/mcp/");
     expect(text()).toContain("bearer token");
-    expect(text()).toContain(
-      COPY.credential.bound("TREG_MCP_TOKEN", "https://treg.to"),
-    );
+    expect(text()).toContain(COPY.credential.ready("TREG_MCP_TOKEN"));
+    expect(text()).toContain(COPY.providerLine("Treg MCP server", true));
     expect(text()).toContain(COPY.on);
     expect(button(COPY.turnOff)).toBeTruthy();
 
@@ -332,12 +359,7 @@ describe("the MCP app edit dialog", () => {
   it("shows the command for a credential that isn't set, and no tools until it is", async () => {
     await render(
       details({
-        credential: {
-          name: "TREG_MCP_TOKEN",
-          set: false,
-          boundTo: null,
-          state: "not_set",
-        },
+        credential: apiKey({ set: false, state: "not_set" }),
         setupCommand: "pnpm everyapp secret set TREG_MCP_TOKEN",
         snapshot: {
           status: null,
@@ -353,6 +375,46 @@ describe("the MCP app edit dialog", () => {
       "pnpm everyapp secret set TREG_MCP_TOKEN",
     );
     expect(text()).toContain(COPY.neverListed);
+    expect(text()).toContain(COPY.noToolsNeedsCredential);
+  });
+
+  it("for an OAuth app, says how many accounts are connected and links the admin to connect theirs", async () => {
+    await render(details({ credential: oauth() }));
+    expect(text()).toContain(COPY.credential.connected(2));
+    const link = [...dialog().querySelectorAll("a")].find(
+      (element) => element.textContent?.trim() === COPY.connect,
+    );
+    expect(link?.getAttribute("href")).toBe(
+      "/connect/treg-mcp?app=treg&return=%2F%3Fmcp%3Dtreg",
+    );
+  });
+
+  it("for an OAuth app the admin connected, says as whom", async () => {
+    await render(
+      details({
+        credential: oauth({
+          viewer: { status: "active", label: "ben@example.com" },
+        }),
+      }),
+    );
+    expect(text()).toContain(COPY.connectedAs("ben@example.com"));
+    expect(text()).not.toContain(COPY.connect);
+  });
+
+  it("says nobody has connected yet, and no tools until someone does", async () => {
+    await render(
+      details({
+        credential: oauth({ state: "not_connected", connections: 0 }),
+        snapshot: {
+          status: null,
+          fetchedAt: null,
+          lastError: null,
+          toolCount: 0,
+        },
+        tools: [],
+      }),
+    );
+    expect(text()).toContain(COPY.credential.not_connected);
     expect(text()).toContain(COPY.noToolsNeedsCredential);
   });
 });

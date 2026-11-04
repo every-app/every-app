@@ -8,12 +8,20 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { McpAppConnectionStatus } from "@/types/mcpApp";
+
+const mocks = vi.hoisted(() => ({
+  getMcpAppConnection: vi.fn(
+    async (): Promise<McpAppConnectionStatus | null> => null,
+  ),
+}));
+vi.mock("@/serverFunctions/mcpApps", () => ({
+  getMcpAppConnection: mocks.getMcpAppConnection,
+}));
+
 import { MCP_APP_COPY } from "@/client/lib/mcpAppCopy";
-import {
-  CONNECT_AI_DOCS_URL,
-  MCP_APPS_DOCS_URL,
-  McpAppDialog,
-} from "./McpAppDialog";
+import { CONNECT_AI_DOCS_URL } from "@/client/lib/connectAgentCopy";
+import { MCP_APPS_DOCS_URL, McpAppDialog } from "./McpAppDialog";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -24,6 +32,8 @@ let container: HTMLElement;
 let onClose: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  mocks.getMcpAppConnection.mockReset();
+  mocks.getMcpAppConnection.mockResolvedValue(null);
   onClose = vi.fn();
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -89,4 +99,63 @@ it("gives a remote MCP server (no built-in example) a generic sentence", () => {
     "“List what Treg offers, then use one of its tools.”",
   );
   expect(text()).not.toContain("Use Treg to");
+});
+
+const STATUS: McpAppConnectionStatus = {
+  providerName: "Treg MCP server",
+  connectPath: "/connect/treg-mcp?app=treg&return=%2F%3Fmcp%3Dtreg",
+  connection: null,
+};
+
+async function renderTreg(status: McpAppConnectionStatus | null) {
+  mocks.getMcpAppConnection.mockResolvedValue(status);
+  await act(async () => {
+    root.render(<McpAppDialog name="Treg" appId="treg" onClose={onClose} />);
+  });
+  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+}
+
+function link(label: string) {
+  return [...(dialog()?.querySelectorAll("a") ?? [])].find(
+    (element) => element.textContent?.trim() === label,
+  );
+}
+
+it("never asks about a connection for a built-in", () => {
+  act(() =>
+    root.render(
+      <McpAppDialog name="DataForSEO" appId="dataforseo" onClose={onClose} />,
+    ),
+  );
+  expect(mocks.getMcpAppConnection).not.toHaveBeenCalled();
+});
+
+it("links a member to connect their own account to an OAuth MCP app", async () => {
+  await renderTreg(STATUS);
+  expect(mocks.getMcpAppConnection).toHaveBeenCalledWith({
+    data: { appId: "treg" },
+  });
+  expect(
+    link(MCP_APP_COPY.useDialog.connect("Treg MCP server"))?.getAttribute(
+      "href",
+    ),
+  ).toBe(STATUS.connectPath);
+});
+
+it("says who is connected, and offers Reconnect once it expired", async () => {
+  await renderTreg({
+    ...STATUS,
+    connection: { status: "active", label: "ben@example.com" },
+  });
+  expect(text()).toContain(
+    MCP_APP_COPY.useDialog.connectedAs("ben@example.com"),
+  );
+  act(() => root.unmount());
+  root = createRoot(container);
+  await renderTreg({
+    ...STATUS,
+    connection: { status: "expired", label: null },
+  });
+  expect(text()).toContain(MCP_APP_COPY.useDialog.expired);
+  expect(link(MCP_APP_COPY.useDialog.reconnect)).toBeTruthy();
 });

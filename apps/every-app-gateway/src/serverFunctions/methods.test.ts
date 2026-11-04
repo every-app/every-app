@@ -64,6 +64,7 @@ const READS = [
   "getGroupApps",
   "getGroupMembers",
   "getMcpApp",
+  "getMcpAppConnection",
   "getMyApps",
   "getOnboardingStatus",
   "getUsage",

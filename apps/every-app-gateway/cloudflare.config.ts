@@ -132,14 +132,17 @@ function locallySetSecrets(
 }
 
 /**
- * Remote MCP apps' credentials (`<ID>_MCP_TOKEN`, docs/design/2026-10-mcp-by-url.md)
- * are named by registry rows, not here: in dev every such name set in
- * .dev.vars is declared, so the Worker sees it as a deployed one would.
- * The family rule is `isRemoteMcpSecretName` in
- * packages/sdk/src/internal/gatewaySettings.ts, kept as a regex here
- * since this file loads before the SDK is built.
+ * Remote MCP apps' credentials are settings of the app's own provider
+ * row, `<appId>-mcp` (docs/design/2026-11-mcp-apps-auth.md): `<ID>_MCP_TOKEN`
+ * for a static key, `<ID>_MCP_CLIENT_ID` and `<ID>_MCP_CLIENT_SECRET` for
+ * an OAuth client. They are named by registry rows, not here: in dev every
+ * such name set in .dev.vars is declared, so the Worker sees it as a
+ * deployed one would. Kept as a regex here since this file loads before
+ * the SDK is built (`remoteMcpTokenSetting` and its siblings in
+ * packages/sdk/src/internal/remoteMcp.ts).
  */
-const REMOTE_MCP_SECRET_PATTERN = /^[A-Z][A-Z0-9_]*_MCP_TOKEN$/;
+const REMOTE_MCP_SECRET_PATTERN =
+  /^[A-Z][A-Z0-9_]*_MCP_(TOKEN|CLIENT_ID|CLIENT_SECRET)$/;
 
 function locallySetRemoteMcpSecrets(
   values: Record<string, string | undefined>,

@@ -104,7 +104,7 @@ export type RegistrationErrorCode =
   | "REMOTE_MCP_INVALID"
   | "REMOTE_MCP_URL_REFUSED"
   | "REMOTE_MCP_EXISTS"
-  | "REMOTE_MCP_SECRET_TAKEN";
+  | "REMOTE_MCP_PROVIDER_HOST";
 
 /** A registration the rules refuse, with the HTTP status a server answers. */
 export class RegistrationError extends Error {
