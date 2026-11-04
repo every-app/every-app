@@ -47,6 +47,7 @@ import {
   catalogHash,
   isProviderAppId,
   parseRemoteMcpBlock,
+  remoteMcpServerNaming,
   requiredScopeForRisk,
   TOOLS_CALL_PATH,
   TOOLS_LIST_PATH,
@@ -59,6 +60,7 @@ import {
   PROVIDER_APP_TIER,
   type EveryAppUser,
   type RemoteMcpBlock,
+  type RemoteMcpServerInfo,
   type ToolCallResultV1,
   type ToolDescriptorV1,
   type ToolsErrorCodeV1,
@@ -76,6 +78,7 @@ import {
   providerAudience,
   providerIdentityVerify,
 } from "@/server/provider-apps";
+import { McpAppRepository } from "@/server/repositories/McpAppRepository";
 import { RemoteMcpRepository } from "@/server/repositories/RemoteMcpRepository";
 import { UsageRepository } from "@/server/repositories/UsageRepository";
 import type { UsageEvent } from "@/server/usage-event";
@@ -282,6 +285,58 @@ function rowListing(route: RemoteMcpRoute, block: RemoteMcpBlock): RowListing {
   return bounded(listings, route.rowId, { rev: block.rev, url: block.url });
 }
 
+/**
+ * Name and describe the row as its server describes itself (`serverInfo`),
+ * unless the registrar named or described it ({@link remoteMcpServerNaming}).
+ */
+async function adoptServerNaming(
+  route: RemoteMcpRoute,
+  block: RemoteMcpBlock,
+  serverInfo: RemoteMcpServerInfo | undefined,
+): Promise<void> {
+  const next = remoteMcpServerNaming({
+    id: route.appSlug,
+    url: block.url,
+    manifest: route.manifest,
+    serverInfo,
+  });
+  if (!next) return;
+  const stored = JSON.parse(route.manifest ?? "{}") as {
+    name?: unknown;
+    description?: unknown;
+  };
+  if (
+    typeof stored.name !== "string" ||
+    typeof stored.description !== "string"
+  ) {
+    return;
+  }
+  try {
+    const written = await McpAppRepository.adoptServerNaming(
+      route.rowId,
+      route.organizationId,
+      { name: stored.name, description: stored.description },
+      next,
+    );
+    if (written) {
+      logEvent("mcp.remote.named", {
+        app: route.appSlug,
+        appRowId: route.rowId,
+        name: next.name,
+      });
+    }
+  } catch (error) {
+    logEvent(
+      "mcp.remote.name_failed",
+      {
+        app: route.appSlug,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      "warn",
+    );
+  }
+}
+
 /** One sentence for the model about an upstream failure, never its body. */
 function upstreamFailure(
   name: string,
@@ -425,6 +480,7 @@ async function listing(
         ),
       ),
     );
+    waitUntil(adoptServerNaming(route, block, upstream.serverInfo));
     return listed;
   })().finally(() => {
     entry.listing$ = undefined;

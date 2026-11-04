@@ -678,7 +678,7 @@ everyapp mcp add https://api.elevenlabs.io/v1/mcp
 - `--client-id <id>`: With --auth oauth: a client registered with the server by hand, for a server that registers none itself
 - `--client-secret-from-env <VAR>`: --client-id's secret, from this environment variable
 - `--risk annotations|read|write`: How a tool's risk is decided: from the server's hints, unknown as write (annotations, the default), or every tool read or write
-- `--description <value>`: What the app is for, as Admin → Apps and everyapp_list_apps say it (default: from the URL)
+- `--description <value>`: What the app is for, as Admin → Apps and everyapp_list_apps say it (default: the server's own description)
 - `--from-env <VAR>`: With a static --auth: set the credential from this environment variable (as secret set --from-env)
 - `--force`: Add a server that asks for a credential with none (its tools won't list until it has one)
 - `--no-open`: Print the OAuth connect page without opening it in the browser

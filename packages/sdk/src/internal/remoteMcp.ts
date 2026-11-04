@@ -37,7 +37,12 @@ import {
 } from "./capabilities.js";
 import { isProviderAppId } from "./providerApps.js";
 import { PROVIDER_ID } from "./providerSpec.js";
-import { TOOL_NAME_PATTERN, isToolRisk, type ToolRisk } from "./tools.js";
+import {
+  TOOL_NAME_PATTERN,
+  canonicalJson,
+  isToolRisk,
+  type ToolRisk,
+} from "./tools.js";
 
 /** The kinds a stored `remote.auth` block may have. */
 export const REMOTE_MCP_AUTH_KINDS = ["none", "provider"] as const;
@@ -631,6 +636,99 @@ export function remoteMcpDefaultDescription(name: string, url: string): string {
     where = "";
   }
   return `${name}'s MCP server${where ? ` at ${where}` : ""}, served to your AI clients through this Gateway.`;
+}
+
+/** What a server says about itself in its MCP handshake (`serverInfo`). */
+export interface RemoteMcpServerInfo {
+  name?: string;
+  title?: string;
+  description?: string;
+}
+
+/** One line of a server's own text: no control characters, spaces collapsed, bounded. */
+function serverText(value: unknown, max: number): string {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max)
+    .trim();
+}
+
+/**
+ * The name and description a row takes from its server's `serverInfo`, or
+ * null when nothing changes. A row is named by the server unless the
+ * registrar named it: a name that is still the app id (none given) or the
+ * server's own last title gives way to the server's `title` (or a `name`
+ * that reads as one, not a code identifier like `mcp-server`); a
+ * description that is still the default sentence or the server's last one
+ * gives way to the server's `description`. What the server said last is
+ * kept in the manifest's `server`, so a later change on the server follows
+ * and a name or description the registrar set (Edit in Admin → Apps) is never
+ * overwritten.
+ */
+export function remoteMcpServerNaming(input: {
+  id: string;
+  url: string;
+  /** The stored manifest JSON. */
+  manifest: string | null;
+  serverInfo: RemoteMcpServerInfo | undefined;
+}): { manifest: string; name: string; description: string } | null {
+  let stored: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(input.manifest ?? "");
+    if (!isRecord(parsed)) return null;
+    stored = parsed;
+  } catch {
+    return null;
+  }
+  const name = typeof stored["name"] === "string" ? stored["name"] : input.id;
+  const description =
+    typeof stored["description"] === "string" ? stored["description"] : "";
+  const last = isRecord(stored["server"]) ? stored["server"] : {};
+  const info = input.serverInfo ?? {};
+  const rawName = serverText(info.name, NAME_MAX_LENGTH);
+  const serverName =
+    serverText(info.title, NAME_MAX_LENGTH) ||
+    (/[A-Z\s]/.test(rawName) ? rawName : "");
+  const serverDescription = serverText(
+    info.description,
+    DESCRIPTION_MAX_LENGTH,
+  );
+
+  const nameIsServers =
+    name === input.id ||
+    (last["title"] !== undefined && name === last["title"]);
+  const nextName = nameIsServers ? serverName || input.id : name;
+  const descriptionIsServers =
+    !description ||
+    description === remoteMcpDefaultDescription(name, input.url) ||
+    (last["description"] !== undefined && description === last["description"]);
+  const nextDescription = descriptionIsServers
+    ? serverDescription || remoteMcpDefaultDescription(nextName, input.url)
+    : description;
+  const server = {
+    ...(serverName ? { title: serverName } : {}),
+    ...(serverDescription ? { description: serverDescription } : {}),
+  };
+  if (
+    nextName === name &&
+    nextDescription === description &&
+    canonicalJson(server) === canonicalJson(last)
+  ) {
+    return null;
+  }
+  return {
+    manifest: JSON.stringify({
+      ...stored,
+      name: nextName,
+      description: nextDescription,
+      server,
+    }),
+    name: nextName,
+    description: nextDescription,
+  };
 }
 
 /**

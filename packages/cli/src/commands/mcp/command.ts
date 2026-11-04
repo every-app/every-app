@@ -96,7 +96,7 @@ const addCommand = buildCommand({
       description: {
         kind: "parsed",
         parse: String,
-        brief: "What the app is for, as Admin → Apps and everyapp_list_apps say it (default: from the URL)",
+        brief: "What the app is for, as Admin → Apps and everyapp_list_apps say it (default: the server's own description)",
         optional: true,
       },
       "from-env": {

@@ -86,7 +86,7 @@ No built-in ever returns a credential, and none sets one: keys go in with `every
 An MCP app is a set of tools the Gateway serves on its `/mcp` with no deployed app behind it. Its tools are `<id>_<tool>`, attributed to the member and audited like any other. DataForSEO is held to the app's cap; a remote app isn't metered (no cap, `APP_NOT_METERED`), though its calls are counted. The launcher lists them under "MCP apps"; their card opens "Use it from your agent".
 
 - **Built-in**: DataForSEO, a curated tool set on the Gateway's `DATAFORSEO_API_KEY`. `everyapp mcp on dataforseo`, then `everyapp secret set DATAFORSEO_API_KEY` (either order).
-- **Remote**: any MCP server by URL. `everyapp mcp add https://mcp.example.com/mcp` (`--name`, `--auth none|bearer|header|query|basic|oauth`, `--provider`, `--header`, `--client-id`, `--risk`, `--description`, `--from-env`). The Gateway lists the server's tools and forwards each call. Guide: `setup/remote-mcp.md`.
+- **Remote**: any MCP server by URL. `everyapp mcp add https://mcp.example.com/mcp` (`--name`, `--auth none|bearer|header|query|basic|oauth`, `--provider`, `--header`, `--client-id`, `--risk`, `--description`, `--from-env`). The Gateway lists the server's tools and forwards each call. The app's name and description are the server's own (`serverInfo`'s `title` and `description`, once it is listed) unless `--description` or Edit in Admin → Apps gives them. Guide: `setup/remote-mcp.md`.
 
 ### The credential: a provider
 

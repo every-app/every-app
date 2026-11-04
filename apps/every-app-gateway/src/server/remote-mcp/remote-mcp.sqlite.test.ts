@@ -157,6 +157,8 @@ let seen: Seen[];
 let answerCall: (name: string, args: unknown) => Response;
 /** Which era the fake Treg speaks. */
 let era: "modern" | "legacy";
+/** What the fake says about itself (`serverInfo`). */
+let serverInfo: Record<string, string>;
 let redirectTo: string | null;
 /** The Authorization values the fake Treg accepts. */
 let accepted: Set<string>;
@@ -211,7 +213,7 @@ async function fakeTreg(request: Request): Promise<Response> {
         result: {
           protocolVersion: "2025-11-25",
           capabilities: { tools: {} },
-          serverInfo: { name: "fake-treg", version: "1.0" },
+          serverInfo,
           instructions: "Read before you write.",
         },
       }),
@@ -225,7 +227,14 @@ async function fakeTreg(request: Request): Promise<Response> {
   }
   if (method === "notifications/initialized")
     return new Response(null, { status: 202 });
-  if (method === "tools/list") return rpc(id, { tools: TREG_TOOLS });
+  if (method === "tools/list") {
+    return rpc(id, {
+      tools: TREG_TOOLS,
+      ...(modern
+        ? { _meta: { "io.modelcontextprotocol/serverInfo": serverInfo } }
+        : {}),
+    });
+  }
   if (method === "tools/call") {
     return answerCall(String(params["name"]), params["arguments"]);
   }
@@ -552,6 +561,7 @@ beforeEach(async () => {
   accepted = new Set([`Bearer ${TOKEN}`]);
   seen = [];
   era = "modern";
+  serverInfo = { name: "fake-treg", version: "1.0" };
   redirectTo = null;
   answerCall = (name, args) =>
     rpc(1, {
@@ -659,6 +669,76 @@ describe("a remote MCP app on the gateway's /mcp", () => {
     ]);
     expect(seen.at(-1)!.headers["mcp-session-id"]).toBe("sess-1");
     expect(seen.at(-1)!.headers["mcp-protocol-version"]).toBe("2025-11-25");
+  });
+
+  it("names and describes the app as the server describes itself, in either era, unless an admin did", async () => {
+    const row = async () => {
+      const [app] = await db
+        .select({ name: apps.name, description: apps.description })
+        .from(apps)
+        .where(eq(apps.id, rowId));
+      return app;
+    };
+    // Added as `mcp add` adds it: named by its id alone, the default description.
+    const [stored] = await db.select().from(apps).where(eq(apps.id, rowId));
+    const unnamed = {
+      name: "treg",
+      description:
+        "treg's MCP server at https://treg.example, served to your AI clients through this Gateway.",
+    };
+    await db
+      .update(apps)
+      .set({
+        ...unnamed,
+        manifest: JSON.stringify({
+          ...JSON.parse(stored!.manifest ?? "{}"),
+          ...unnamed,
+        }),
+      })
+      .where(eq(apps.id, rowId));
+    serverInfo = {
+      name: "treg-mcp",
+      version: "2.0",
+      title: "Treg",
+      description: "Short links, with stats.",
+    };
+    const relist = async () => {
+      const [current] = await db.select().from(apps).where(eq(apps.id, rowId));
+      resetRemoteMcpForTests();
+      await syncAppTools({
+        rowId,
+        organizationId: orgId,
+        appSlug: "treg",
+        hostname: null,
+        workerName: null,
+        tier: current!.tier,
+        versionId: null,
+        manifest: current!.manifest,
+        name: current!.name,
+      });
+      await settle();
+    };
+    await relist();
+    expect(await row()).toEqual({
+      name: "Treg",
+      description: "Short links, with stats.",
+    });
+
+    // A 2025-era server says it in initialize; a rename follows.
+    era = "legacy";
+    serverInfo = { name: "treg-mcp", title: "Treg Links" };
+    await relist();
+    expect(await row()).toEqual({
+      name: "Treg Links",
+      description:
+        "Treg Links's MCP server at https://treg.example, served to your AI clients through this Gateway.",
+    });
+
+    // An admin's name stays.
+    await db.update(apps).set({ name: "Our links" }).where(eq(apps.id, rowId));
+    serverInfo = { title: "Treg 3" };
+    await relist();
+    expect((await row())?.name).toBe("Our links");
   });
 
   it("forwards a call with the credential to the registered URL only, and never to a redirect", async () => {

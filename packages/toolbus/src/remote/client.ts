@@ -63,6 +63,7 @@ const ERROR_HEAD_CHARS = 200;
 const META_PROTOCOL = "io.modelcontextprotocol/protocolVersion";
 const META_CLIENT_INFO = "io.modelcontextprotocol/clientInfo";
 const META_CLIENT_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities";
+const META_SERVER_INFO = "io.modelcontextprotocol/serverInfo";
 
 export type RemoteMcpErrorKind =
   /** A 3xx: the gateway follows no redirects. */
@@ -124,7 +125,8 @@ export interface UpstreamListing {
   tools: UpstreamTool[];
   /** The server's instructions from the handshake, if any. */
   instructions?: string;
-  serverInfo?: { name?: string; version?: string };
+  /** What the server says about itself (`serverInfo`), in either era. */
+  serverInfo?: ServerInfo;
   era: "2026-07-28" | "2025";
   /** The 2026-07-28 `ttlMs` on the listing, if the server sent one. */
   ttlMs?: number;
@@ -249,7 +251,7 @@ export class RemoteMcpClient {
   private readonly callMaxBytes: number;
   private era: Era | undefined;
   private instructions: string | undefined;
-  private serverInfo: { name?: string; version?: string } | undefined;
+  private serverInfo: ServerInfo | undefined;
   private nextId = 1;
 
   constructor(options: RemoteMcpClientOptions) {
@@ -352,6 +354,12 @@ export class RemoteMcpClient {
             : {}),
         });
       }
+      // 2026-07-28 has no handshake: the server describes itself on each answer.
+      const meta = result["_meta"];
+      const described = isPlainObject(meta)
+        ? serverInfoOf(meta[META_SERVER_INFO])
+        : undefined;
+      if (described) this.serverInfo = described;
       const ttl = result["ttlMs"];
       if (typeof ttl === "number" && Number.isFinite(ttl) && ttl > 0)
         ttlMs = ttl;
@@ -514,15 +522,8 @@ export class RemoteMcpClient {
     if (typeof result["instructions"] === "string" && result["instructions"]) {
       this.instructions = result["instructions"];
     }
-    if (isPlainObject(result["serverInfo"])) {
-      const info = result["serverInfo"];
-      this.serverInfo = {
-        ...(typeof info["name"] === "string" ? { name: info["name"] } : {}),
-        ...(typeof info["version"] === "string"
-          ? { version: info["version"] }
-          : {}),
-      };
-    }
+    const info = serverInfoOf(result["serverInfo"]);
+    if (info) this.serverInfo = info;
     const era: Era = {
       kind: "legacy",
       version,
@@ -812,6 +813,24 @@ export class RemoteMcpClient {
 type ReadAnswer =
   | { ok: true; text: string; messages: unknown[]; bytes: number }
   | { ok: false; bytes: number };
+
+/** What a server says about itself: its `serverInfo` (an MCP `Implementation`). */
+export interface ServerInfo {
+  name?: string;
+  version?: string;
+  title?: string;
+  description?: string;
+}
+
+function serverInfoOf(value: unknown): ServerInfo | undefined {
+  if (!isPlainObject(value)) return undefined;
+  const info: ServerInfo = {};
+  for (const key of ["name", "version", "title", "description"] as const) {
+    const field = value[key];
+    if (typeof field === "string" && field) info[key] = field;
+  }
+  return Object.keys(info).length > 0 ? info : undefined;
+}
 
 /**
  * The server's answer: a JSON body read whole within the cap, or an SSE

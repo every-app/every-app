@@ -110,6 +110,33 @@ async function updateRemoteApp(
     .where(and(eq(apps.id, id), eq(apps.organizationId, organizationId)));
 }
 
+/**
+ * Write the name and description a remote row took from its server, only
+ * while the row still has the ones they were worked out from: an admin's
+ * `mcp set` in between wins. Whether a row was written.
+ */
+async function adoptServerNaming(
+  id: string,
+  organizationId: string,
+  expected: { name: string; description: string },
+  change: { manifest: string; name: string; description: string },
+): Promise<boolean> {
+  const updated = await db
+    .update(apps)
+    .set({ ...change, updatedAt: new Date() })
+    .where(
+      and(
+        eq(apps.id, id),
+        eq(apps.organizationId, organizationId),
+        eq(apps.name, expected.name),
+        eq(apps.description, expected.description),
+        ne(apps.status, DELETED_APP_STATUS),
+      ),
+    )
+    .returning({ id: apps.id });
+  return updated.length > 0;
+}
+
 /** Turn an MCP app on (`active`) or off (`disabled`); a tombstone stays one. */
 async function setStatus(
   id: string,
@@ -195,6 +222,7 @@ export const McpAppRepository = {
   providerUsedByOtherOrganization,
   writeRemoteApp,
   updateRemoteApp,
+  adoptServerNaming,
   setStatus,
   findListedTools,
 } as const;

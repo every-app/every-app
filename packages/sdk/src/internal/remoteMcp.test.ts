@@ -27,6 +27,7 @@ import {
   remoteMcpProviderHosts,
   remoteMcpProviderId,
   remoteMcpRedirectUri,
+  remoteMcpServerNaming,
   remoteMcpTokenSetting,
   remoteMcpUrlProblem,
   remoteToolEnabled,
@@ -602,5 +603,76 @@ describe("the settings model", () => {
         provider: true,
       }),
     ).toEqual({ command: "pnpm everyapp mcp remove treg" });
+  });
+});
+
+describe("naming a row from its server", () => {
+  const fresh = () =>
+    JSON.stringify(remoteMcpAppManifest({ id: "treg", remote: block }));
+  const naming = (manifest: string, serverInfo?: Record<string, string>) =>
+    remoteMcpServerNaming({ id: "treg", url: block.url, manifest, serverInfo });
+
+  it("takes the server's title and description over the defaults", () => {
+    const next = naming(fresh(), {
+      name: "treg-mcp",
+      title: "Treg",
+      description: "Short links.\nWith stats.",
+    });
+    expect(next).toMatchObject({
+      name: "Treg",
+      description: "Short links. With stats.",
+    });
+    expect(JSON.parse(next!.manifest)).toMatchObject({
+      name: "Treg",
+      server: { title: "Treg", description: "Short links. With stats." },
+      remote: block,
+    });
+    // Nothing new: nothing to write.
+    expect(
+      naming(next!.manifest, {
+        title: "Treg",
+        description: "Short links.\nWith stats.",
+      }),
+    ).toBeNull();
+    // The server renamed itself: the row follows.
+    expect(naming(next!.manifest, { title: "Treg 2" })).toMatchObject({
+      name: "Treg 2",
+      description:
+        "Treg 2's MCP server at https://treg.to, served to your AI clients through this Gateway.",
+    });
+  });
+
+  it("names it from a name that reads as one, never a code identifier", () => {
+    expect(naming(fresh(), { name: "Treg Links" })?.name).toBe("Treg Links");
+    expect(naming(fresh(), { name: "mcp-server" })).toBeNull();
+    expect(naming(fresh(), undefined)).toBeNull();
+  });
+
+  it("keeps what the registrar gave", () => {
+    const given = JSON.stringify(
+      remoteMcpAppManifest({
+        id: "treg",
+        name: "Our links",
+        description: "The team's short links.",
+        remote: block,
+      }),
+    );
+    const next = naming(given, { title: "Treg", description: "Short links." });
+    expect(next).toMatchObject({
+      name: "Our links",
+      description: "The team's short links.",
+    });
+    // An edit after the server named it wins too.
+    const named = naming(fresh(), {
+      title: "Treg",
+      description: "Short links.",
+    })!;
+    const edited = JSON.stringify({
+      ...JSON.parse(named.manifest),
+      name: "Links",
+    });
+    expect(
+      naming(edited, { title: "Treg", description: "Short links." }),
+    ).toBeNull();
   });
 });
