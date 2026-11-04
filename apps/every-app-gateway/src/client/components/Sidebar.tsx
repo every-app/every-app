@@ -145,26 +145,6 @@ export function Sidebar() {
                       activeOptions: { exact: true },
                     }}
                   />
-                  {/* How to point Claude, ChatGPT or another agent at /mcp,
-                    for every role, from every page. The dialog lives
-                    outside the rail, which unmounts as the phone drawer
-                    closes. */}
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      className={navButtonClass}
-                      onClick={() => {
-                        setOpenMobile(false);
-                        setConnectOpen(true);
-                      }}
-                    >
-                      <span className="flex size-6 shrink-0 items-center justify-center">
-                        <Bot className="size-4" />
-                      </span>
-                      <span className="truncate">
-                        {CONNECT_AGENT_COPY.title}
-                      </span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -243,8 +223,12 @@ export function Sidebar() {
             ) : null}
           </nav>
         </SidebarContent>
-        <AccountFooter canManageApps={canManageOrganizationApps} />
+        <AccountFooter
+          canManageApps={canManageOrganizationApps}
+          onConnectAgent={() => setConnectOpen(true)}
+        />
       </UiSidebar>
+      {/* Outside the rail, which unmounts as the phone drawer closes. */}
       {connectOpen ? (
         <ConnectAgentDialog
           role={activeMemberRole?.role}
@@ -256,11 +240,18 @@ export function Sidebar() {
 }
 
 /**
- * The foot of the rail: Manage workspace for owners and admins, then the
- * account block, whose menu holds what is the person's own (their AI
- * connections, the docs, the theme, sign out), and the build stamp under it.
+ * The foot of the rail: Connect your agent for every role, Manage workspace
+ * for owners and admins, then the account block, whose menu holds what is the
+ * person's own (their AI connections, the docs, the theme, sign out), and the
+ * build stamp under it.
  */
-function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
+function AccountFooter({
+  canManageApps,
+  onConnectAgent,
+}: {
+  canManageApps: boolean;
+  onConnectAgent: () => void;
+}) {
   const { data: session } = useSession();
   const { setOpenMobile } = useSidebar();
   const email = session?.user.email;
@@ -299,17 +290,33 @@ function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
 
   return (
     <UiSidebarFooter className="gap-0 p-0 pb-safe">
-      {canManageApps ? (
-        <div className="px-3 pb-3">
-          <SidebarMenu>
+      <div className="px-3 pb-3">
+        <SidebarMenu>
+          {/* How to point Claude, ChatGPT or another agent at /mcp, from every
+            page. It opens a dialog, so it stays out of the navigation above. */}
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              className={navButtonClass}
+              onClick={() => {
+                setOpenMobile(false);
+                onConnectAgent();
+              }}
+            >
+              <span className="flex size-6 shrink-0 items-center justify-center">
+                <Bot className="size-4" />
+              </span>
+              <span className="truncate">{CONNECT_AGENT_COPY.title}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          {canManageApps ? (
             <SidebarNavLink
               icon={Settings}
               label="Manage workspace"
               linkProps={{ to: "/admin" }}
             />
-          </SidebarMenu>
-        </div>
-      ) : null}
+          ) : null}
+        </SidebarMenu>
+      </div>
       <div className="border-t border-sidebar-border px-3 pt-3">
         <SidebarMenu>
           {email ? (
