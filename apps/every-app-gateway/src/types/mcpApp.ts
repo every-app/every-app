@@ -70,7 +70,7 @@ export interface McpAppCredential {
   connections: number;
   /**
    * Where a member connects their account:
-   * `/connect/<provider>?app=<appId>&return=/?mcp=<appId>`, a path on the
+   * `/connect/<provider>?app=<appId>&return=/settings/accounts`, a path on the
    * Gateway. Null for a key or none.
    */
   connectPath: string | null;
@@ -150,7 +150,7 @@ export interface AddedRemoteMcpApp {
   setupCommand: string | null;
   /**
    * For an OAuth provider: where the adder connects their account
-   * (`/connect/<provider>?app=<appId>&return=/?mcp=<appId>`), a path on the
+   * (`/connect/<provider>?app=<appId>&return=/settings/accounts`), a path on the
    * Gateway.
    */
   connectPath: string | null;
@@ -177,13 +177,13 @@ export interface RefreshedMcpAppTools {
 
 /**
  * `getMcpAppConnection`'s answer, for any member with the app: whether an
- * OAuth MCP app is connected for them (the launcher's MCP app dialog).
+ * OAuth MCP app is connected for them (the MCP app dialog).
  * Null for an app that isn't an OAuth app.
  */
 export interface McpAppConnectionStatus {
   /** The provider's name ("Treg MCP server"). */
   providerName: string;
-  /** `/connect/<provider>?app=<appId>&return=/?mcp=<appId>`, a path on the Gateway. */
+  /** `/connect/<provider>?app=<appId>&return=/settings/accounts`, a path on the Gateway. */
   connectPath: string;
   /** The member's own connection, made in the app; null when there is none yet. */
   connection: McpAppViewerConnection | null;

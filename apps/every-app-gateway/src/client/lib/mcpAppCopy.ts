@@ -1,8 +1,8 @@
 /**
  * Every string of the MCP app screens, in one place like FIRST_SCREEN
  * (firstScreen.ts), so the copy is read and edited as a whole and the
- * tests read one source: the Add app chooser's "Add an MCP server" row,
- * its form and result, the MCP app edit dialog, the row menu, the remove
+ * tests read one source: the MCP apps section of Admin → Apps, the
+ * "Add an MCP server" form and result, the MCP app edit dialog, the row menu, the remove
  * confirmation and the launcher dialog's example for a remote server.
  * A person reads "MCP app"; the code's tier is "provider".
  */
@@ -39,10 +39,18 @@ const RISK_DEFAULT_ITEMS: readonly {
 ];
 
 export const MCP_APP_COPY = {
-  /** The Add app chooser's row, between the four apps and Build your own. */
-  chooserRow: {
-    title: "Add an MCP server",
-    line: "Any remote MCP server, served to your AI clients through this Gateway",
+  /** Admin → Apps' section under the apps table. */
+  section: {
+    title: "MCP apps",
+    hint: "Agents connected to this Gateway can use the tools in these apps.",
+    add: "Add MCP server",
+    nameColumn: "App",
+    whoColumn: "Who can use",
+    searchLabel: "Search MCP apps",
+    noMatch: (query: string) => `No MCP apps match "${query}"`,
+    empty: "No MCP apps yet",
+    addedBy: (actor: string) => `Added by ${actor}`,
+    connectedBy: (actor: string) => `Connected by ${actor}`,
   },
   addForm: {
     title: "Add an MCP server",
@@ -100,7 +108,6 @@ export const MCP_APP_COPY = {
     riskLabel: "Risk default",
     riskItems: RISK_DEFAULT_ITEMS,
     submit: "Add server",
-    back: "Back",
     errors: {
       url: "Give the server's URL.",
       urlParse: "The URL doesn't parse.",
@@ -231,12 +238,14 @@ export const MCP_APP_COPY = {
     confirm: "Remove",
     body: (people: string | null) =>
       `Its tools leave this Gateway's MCP address${people ? `, ${people} lose access to it` : ""}, and its tokens, its tools snapshot and its place in AI connections go. Its credential stays set on the Gateway.`,
-    againRemote: "To use it again, add it again from Add app.",
+    againRemote: "To use it again, add it again under MCP apps.",
     againBuiltinCommand: (id: string) => `pnpm everyapp mcp on ${id}`,
     againBuiltin: "turns it on again, for owners and admins first.",
   },
-  /** The launcher's "Use it from your agent" dialog, for a remote server. */
+  /** The "Use it from your agent" dialog: the Connect your agent steps, then this. */
   useDialog: {
+    title: (name: string) => `Use ${name} from your agent`,
+    ask: "Ask your agent",
     genericExample: (name: string) =>
       `List what ${name} offers, then use one of its tools.`,
     connect: (provider: string) => `Connect your ${provider} account`,

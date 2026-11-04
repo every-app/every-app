@@ -3,7 +3,11 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { z } from "zod";
 import { toast } from "sonner";
 import { useSession } from "@/client/hooks/useSession";
-import { DEPLOYING_POLL_MS, hasDeployingApp } from "@/client/lib/appStatus";
+import {
+  DEPLOYING_POLL_MS,
+  hasDeployingApp,
+  isMcpApp,
+} from "@/client/lib/appStatus";
 import {
   userAppsCollection,
   useQueryFailed,
@@ -35,7 +39,8 @@ function subscribe(onChange: () => void) {
 
 /**
  * The apps the person can open, pinned ones first and then by name: the one
- * order the library and the sidebar share. Browser-local preferences are
+ * order the library and the sidebar share. An MCP app has no page to open, so
+ * it is left out; Admin → Apps lists it. Browser-local preferences are
  * isolated by both user and organization.
  */
 export function useAppLibrary() {
@@ -94,11 +99,13 @@ export function useAppLibrary() {
     () =>
       isLoading
         ? []
-        : [...query.data].sort(
-            (a, b) =>
-              Number(pinnedIds.has(b.id)) - Number(pinnedIds.has(a.id)) ||
-              a.name.localeCompare(b.name),
-          ),
+        : query.data
+            .filter((app) => !isMcpApp(app))
+            .sort(
+              (a, b) =>
+                Number(pinnedIds.has(b.id)) - Number(pinnedIds.has(a.id)) ||
+                a.name.localeCompare(b.name),
+            ),
     [isLoading, query.data, pinnedIds],
   );
   // While an app is deploying, read the list again every few seconds: each

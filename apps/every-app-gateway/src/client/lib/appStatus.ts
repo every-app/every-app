@@ -58,11 +58,10 @@ type AppStatusInput = Pick<
  * says it needs is set (`setup`); until then it shows "Needs setup" and
  * the setup dialog opens in its place. An MCP app (tier "provider") never
  * opens: once its key is set it is Active, and its tools are served to AI
- * clients; the card opens the "Use it from your agent" dialog instead
- * ({@link mcpAppUsable}). An MCP app that is off reads "Off" (its access
- * and tokens are kept; Turn on serves it again). Either kind, at its monthly cap (`paused`),
- * shows "Paused" in place of Active and opens as it did: only its
- * provider calls are refused. The deploy and setup states come first,
+ * clients. An MCP app that is off reads "Off" (its access and tokens are
+ * kept; Turn on serves it again). An app at its monthly cap (`paused`) shows
+ * "Paused" in place of Active and opens as it did: only its provider calls are
+ * refused. The deploy and setup states come first,
  * since the person must act on them before a cap matters. An app
  * `binding` for longer than {@link DEPLOY_STALL_MS} (by `updatedAt`, at
  * `now`) reads "Deploy stalled" rather than "Deploying". Both open the
@@ -95,7 +94,6 @@ export function appStatus(
         opens: false,
       };
     }
-    if (app.paused) return paused(false);
     return { label: AppStatusLabel.Active, variant: "success", opens: false };
   }
   if (!app.hostname || app.status === "pending") {
@@ -116,7 +114,13 @@ export function appStatus(
           opens: false,
         };
       }
-      if (app.paused) return paused(true);
+      if (app.paused) {
+        return {
+          label: AppStatusLabel.Paused,
+          variant: "warning",
+          opens: true,
+        };
+      }
       return { label: AppStatusLabel.Active, variant: "success", opens: true };
     case "binding":
       return deployStalled(app, now)
@@ -131,10 +135,6 @@ export function appStatus(
     default:
       return { label: app.status, variant: "outline", opens: false };
   }
-}
-
-function paused(opens: boolean) {
-  return { label: AppStatusLabel.Paused, variant: "warning" as const, opens };
 }
 
 /** Whether a `binding` app has been so for {@link DEPLOY_STALL_MS} or more at `now`. */
@@ -181,7 +181,7 @@ export function appNeedsSetup(
   return appStatus(app).label === AppStatusLabel.NeedsSetup;
 }
 
-/** The kind the launcher calls "MCP apps": a page-less app, its tools on `/mcp`. */
+/** The kind Admin → Apps lists under "MCP apps": no page, its tools on `/mcp`. */
 export function isMcpApp(app: Pick<UserAccessApp, "tier">): boolean {
   return app.tier === PROVIDER_APP_TIER;
 }
@@ -204,19 +204,4 @@ export function isRemoteMcpApp(
   app: Pick<UserAccessApp, "tier"> & { manifest?: string | null },
 ): boolean {
   return isMcpApp(app) && hasRemoteMcpBlock(parsedManifest(app.manifest));
-}
-
-/** The chip beside an MCP app's name, on the card and in Admin → Apps. */
-export const MCP_APP_KIND_LABEL = "MCP";
-
-/**
- * An MCP app that is on and set up: its tools are served, so where a page
- * would open, the "Use it from your agent" dialog opens. A pause doesn't
- * change that: the tools stay served and only their provider calls are
- * refused, so the dialog still says how an agent reaches them.
- */
-export function mcpAppUsable(app: AppStatusInput): boolean {
-  if (!isMcpApp(app)) return false;
-  const { label } = appStatus(app);
-  return label === AppStatusLabel.Active || label === AppStatusLabel.Paused;
 }

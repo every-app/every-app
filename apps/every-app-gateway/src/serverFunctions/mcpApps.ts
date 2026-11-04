@@ -79,7 +79,7 @@ export const getMcpApp = createServerFn()
 
 /**
  * For any member: whether an OAuth MCP app is connected for them, and
- * where they connect it (the launcher's MCP app dialog). Null for an app
+ * where they connect it (the MCP app dialog). Null for an app
  * that takes no OAuth connection. Never a token.
  */
 export const getMcpAppConnection = createServerFn()

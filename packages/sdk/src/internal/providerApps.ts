@@ -6,8 +6,8 @@
  * serves the provider's tools on its `/mcp` under `<id>_<tool>` names, with
  * the key never leaving the Gateway, every call attributed to the member
  * who made it, counted and audited like an app's capability calls. The
- * launcher lists it under "MCP apps" and its card opens the "Use it from
- * your agent" dialog instead of a page (docs/design/2026-10-mcp-apps-ui.md).
+ * MCP apps section of Admin → Apps lists it, and its row menu opens the
+ * "Use it from your agent" dialog (docs/design/2026-10-mcp-apps-ui.md).
  *
  * A provider app is an `apps` row of tier {@link PROVIDER_APP_TIER} with no
  * hostname and no Worker name: the perimeter never routes it, and the

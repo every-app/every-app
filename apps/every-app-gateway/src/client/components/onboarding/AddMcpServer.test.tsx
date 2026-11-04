@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 /**
- * "Add an MCP server" in the Add app chooser, rendered for real (React in
- * a DOM): the row sits between the four apps and Build your own, the form
+ * "Add an MCP server", rendered for real (React in a DOM): the form
  * offers every credential kind, sends the server function the shape it
  * reads, asks for a client when the server can't register one, shows a
  * refusal in the rule's own words, and once added says what to do next.
@@ -34,10 +33,8 @@ vi.mock("@/serverFunctions/providers", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-import { FEATURED_APPS } from "@/client/lib/featuredApps";
-import { FIRST_SCREEN } from "@/client/lib/firstScreen";
 import { MCP_APP_COPY } from "@/client/lib/mcpAppCopy";
-import { AddAppDialog } from "./AddAppDialog";
+import { AddMcpServerDialog } from "./AddMcpServer";
 
 const COPY = MCP_APP_COPY.addForm;
 
@@ -75,9 +72,7 @@ beforeEach(async () => {
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root.render(
-      <AddAppDialog canRun onClose={vi.fn()} onMcpAppAdded={onAdded} />,
-    );
+    root.render(<AddMcpServerDialog onClose={vi.fn()} onAdded={onAdded} />);
   });
 });
 
@@ -136,29 +131,8 @@ async function press(element: HTMLElement) {
   await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 }
 
-async function openForm() {
-  await press(
-    button(MCP_APP_COPY.chooserRow.title + MCP_APP_COPY.chooserRow.line),
-  );
-}
-
-describe("the Add app chooser", () => {
-  it("lists Add an MCP server between the four apps and Build your own", () => {
-    const rows = [...dialog().querySelectorAll("li button")].map(
-      (row) => row.querySelector("span span")?.textContent,
-    );
-    expect(rows).toEqual([
-      ...FEATURED_APPS.map((app) => app.name),
-      MCP_APP_COPY.chooserRow.title,
-      FIRST_SCREEN.buildCard.title,
-    ]);
-    expect(text()).toContain(MCP_APP_COPY.chooserRow.line);
-  });
-});
-
 describe("the Add an MCP server form", () => {
-  it("asks for the URL, a name read from it, the credential and the risk default, and goes back to the list", async () => {
-    await openForm();
+  it("asks for the URL, a name read from it, the credential and the risk default", async () => {
     expect(text()).toContain(COPY.title);
     for (const label of [
       COPY.urlLabel,
@@ -174,13 +148,9 @@ describe("the Add an MCP server form", () => {
     expect(field(COPY.nameLabel).getAttribute("placeholder")).toBe("deepwiki");
     expect(text()).toContain(COPY.nameHelp("deepwiki"));
     expect(text()).toContain(COPY.riskItems[0]!.help);
-
-    await press(button(COPY.back));
-    expect(text()).toContain(FIRST_SCREEN.addApp.dialogTitle);
   });
 
   it("names the Gateway setting a static credential's value goes in, from the app's id", async () => {
-    await openForm();
     await type(COPY.urlLabel, "https://treg.to/mcp/");
     await choose(COPY.credentialLabel, "Bearer token");
     expect(text()).toContain(COPY.tokenSettingHelp("TREG_MCP_TOKEN"));
@@ -189,7 +159,6 @@ describe("the Add an MCP server form", () => {
   });
 
   it("refuses an empty URL and a name the rule refuses before sending anything", async () => {
-    await openForm();
     await press(button(COPY.submit));
     expect(text()).toContain(COPY.errors.url);
     await type(COPY.urlLabel, "https://treg.to/mcp/");
@@ -215,7 +184,6 @@ describe("the Add an MCP server form", () => {
         toolsStatus: null,
       }),
     );
-    await openForm();
     await type(COPY.urlLabel, "  https://docs.example.org/mcp ");
     await type(COPY.nameLabel, "docs");
     await choose(COPY.credentialLabel, "Header");
@@ -246,7 +214,6 @@ describe("the Add an MCP server form", () => {
         toolsStatus: null,
       }),
     );
-    await openForm();
     await type(COPY.urlLabel, "https://treg.to/mcp/");
     await choose(COPY.credentialLabel, "Bearer token");
     await press(button(COPY.submit));
@@ -269,7 +236,6 @@ describe("the Add an MCP server form", () => {
 
   it("says how many tools are on /mcp once a server with no credential is added, or that the Gateway lists them on first use", async () => {
     mocks.addRemoteMcpApp.mockResolvedValueOnce(added());
-    await openForm();
     await type(COPY.urlLabel, "https://treg.to/mcp/");
     await press(button(COPY.submit));
     expect(text()).toContain(MCP_APP_COPY.added.title("treg"));
@@ -282,7 +248,6 @@ describe("the Add an MCP server form", () => {
     mocks.addRemoteMcpApp.mockResolvedValueOnce(
       added({ toolCount: null, toolsStatus: null }),
     );
-    await openForm();
     await type(COPY.urlLabel, "https://treg.to/mcp/");
     await press(button(COPY.submit));
     expect(text()).toContain(MCP_APP_COPY.added.firstUse);
@@ -295,7 +260,6 @@ describe("the Add an MCP server form", () => {
         code: "REMOTE_MCP_URL_REFUSED",
       }),
     );
-    await openForm();
     await type(COPY.urlLabel, "http://treg.to/mcp/");
     await press(button(COPY.submit));
     const alert = dialog().querySelector('[role="alert"], [data-slot="alert"]');
@@ -306,7 +270,6 @@ describe("the Add an MCP server form", () => {
 
   it("sends a query parameter's name", async () => {
     mocks.addRemoteMcpApp.mockResolvedValue(added());
-    await openForm();
     await type(COPY.urlLabel, "https://treg.to/mcp/");
     await choose(COPY.credentialLabel, "Query parameter");
     await press(button(COPY.submit));
@@ -325,7 +288,6 @@ describe("the Add an MCP server form", () => {
 
   it("offers the registry's API-key and OAuth providers", async () => {
     mocks.addRemoteMcpApp.mockResolvedValue(added());
-    await openForm();
     await type(COPY.urlLabel, "https://mcp.linear.app/mcp");
     await choose(COPY.credentialLabel, "Use a provider");
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
@@ -362,7 +324,6 @@ describe("the Add an MCP server form", () => {
         { name: "PublicError", code: "REMOTE_MCP_OAUTH_NO_CLIENT" },
       ),
     );
-    await openForm();
     await type(COPY.urlLabel, "https://treg.to/mcp/");
     await choose(COPY.credentialLabel, "OAuth (sign in)");
     await press(button(COPY.submit));
@@ -382,7 +343,7 @@ describe("the Add an MCP server form", () => {
         authKind: "provider",
         credentialKind: "oauth",
         provider: "treg-mcp",
-        connectPath: "/connect/treg-mcp?app=treg&return=%2F%3Fmcp%3Dtreg",
+        connectPath: "/connect/treg-mcp?app=treg&return=%2Fsettings%2Faccounts",
         oauth: { issuer: "https://auth.treg.to", registered: "pasted" },
         toolCount: null,
         toolsStatus: null,
@@ -403,7 +364,7 @@ describe("the Add an MCP server form", () => {
       (element) => element.textContent?.trim() === MCP_APP_COPY.added.connect,
     );
     expect(link?.getAttribute("href")).toBe(
-      "/connect/treg-mcp?app=treg&return=%2F%3Fmcp%3Dtreg",
+      "/connect/treg-mcp?app=treg&return=%2Fsettings%2Faccounts",
     );
   });
 });

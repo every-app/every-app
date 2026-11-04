@@ -1,5 +1,5 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { ArrowLeft, CircleAlert } from "lucide-react";
+import { CircleAlert } from "lucide-react";
 import {
   remoteMcpIdFromUrl,
   remoteMcpIdProblem,
@@ -12,7 +12,9 @@ import { CodeBlock } from "@/client/components/CodeBlock";
 import { Alert, AlertDescription } from "@/client/components/ui/alert";
 import { Button } from "@/client/components/ui/button";
 import {
+  Dialog,
   DialogClose,
+  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -209,20 +211,38 @@ function useProviderChoices(active: boolean): ProviderChoice[] | null {
 }
 
 /**
- * "Add an MCP server" in the Add app chooser: the form (URL, name,
- * credential, risk default) and, once the Gateway has added it, what to
- * do next: the command that sets the credential for a server that takes
- * one, or how many tools are on /mcp now for one that doesn't. Rendered
- * inside the chooser's dialog, header and footer included.
+ * "Add an MCP server", from its section in Admin → Apps: the form and, once
+ * the Gateway has added the server, what to do next. Render it only while it
+ * is open.
  */
-export function AddMcpServerView({
-  onBack,
+export function AddMcpServerDialog({
+  onClose,
   onAdded,
 }: {
-  onBack: () => void;
-  /** After the Gateway added it: the lists read it again. */
-  onAdded?: (added: AddedRemoteMcpApp) => void;
+  onClose: () => void;
+  /** After the Gateway added it: the list reads it again. */
+  onAdded: () => void;
 }) {
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent showCloseButton={false} className="sm:max-w-xl">
+        <AddMcpServerView onAdded={onAdded} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * The form (URL, name, credential, risk default) and, once added, what to do
+ * next: the command that sets a static credential, the link that connects an
+ * account for OAuth, or how many tools are on /mcp now.
+ */
+function AddMcpServerView({ onAdded }: { onAdded: () => void }) {
   const [state, setState] = useState<FormState>({
     url: "",
     name: "",
@@ -285,7 +305,7 @@ export function AddMcpServerView({
         data: addMcpServerInput(state, chosenProvider?.kind, askClient),
       });
       setAdded(result);
-      onAdded?.(result);
+      onAdded();
     } catch (error) {
       if (
         state.kind === "oauth" &&
@@ -524,15 +544,6 @@ export function AddMcpServerView({
         </Alert>
       ) : null}
       <DialogFooter>
-        <Button
-          type="button"
-          variant="ghost"
-          className="sm:mr-auto"
-          onClick={onBack}
-        >
-          <ArrowLeft data-icon="inline-start" />
-          {COPY.back}
-        </Button>
         <DialogClose render={<Button type="button" variant="outline" />}>
           Close
         </DialogClose>

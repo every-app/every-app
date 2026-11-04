@@ -618,7 +618,7 @@ describe("mcp add with OAuth", () => {
     expect(JSON.parse(String(app!["manifest"])).capabilities).toEqual({
       "o-mcp": { scopes: ["mcp"], why: expect.any(String) },
     });
-    const connect = "https://example.com/connect/o-mcp?app=o&return=/?mcp=o";
+    const connect = "https://example.com/connect/o-mcp?app=o&return=/settings/accounts";
     expect(opened).toEqual([connect]);
     expect(done()).toMatchObject({
       data: {
@@ -644,7 +644,7 @@ describe("mcp add with OAuth", () => {
       }),
       O_MCP,
     );
-    expect(done()!["data"]["connect"]).toEqual({ url: "https://example.com/connect/o-mcp?app=o&return=/?mcp=o" });
+    expect(done()!["data"]["connect"]).toEqual({ url: "https://example.com/connect/o-mcp?app=o&return=/settings/accounts" });
   });
 
   it("keeps the client the row has when the server's metadata is the same, so people's connections keep working", async () => {
@@ -821,7 +821,7 @@ describe("mcp list", () => {
             status: "needs setup",
             auth: { kind: "provider", provider: "o-mcp" },
             credential: { kind: "oauth", provider: "o-mcp", connected: 0, client: { setting: "O_MCP_CLIENT_ID", set: true, bound: true } },
-            connect: { url: "https://example.com/connect/o-mcp?app=o&return=/?mcp=o" },
+            connect: { url: "https://example.com/connect/o-mcp?app=o&return=/settings/accounts" },
             key: null,
           },
           {
@@ -930,7 +930,7 @@ VALUES ('c1', ?, 'o-mcp', 'u-ada', (SELECT id FROM apps WHERE app_slug = 'o'), '
     expect(done()!["data"]).toMatchObject({
       status: "on",
       credential: { kind: "oauth", connected: 1, people: ["ada@example.org"] },
-      connect: { url: "https://example.com/connect/o-mcp?app=o&return=/?mcp=o" },
+      connect: { url: "https://example.com/connect/o-mcp?app=o&return=/settings/accounts" },
     });
     expect(done()!["message"]).toMatch(/Auth\s+OAuth, each member connects/);
     expect(done()!["message"]).toMatch(/Credential\s+OAuth: 1 connected \(ada@example.org\)/);

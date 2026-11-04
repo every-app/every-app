@@ -1,6 +1,7 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ComponentProps, type ReactNode } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Info } from "lucide-react";
+import { EmptyState } from "@/client/components/EmptyState";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
 import {
   DataTableSearch,
@@ -17,113 +18,79 @@ import {
 } from "@/client/components/ui/tooltip";
 import {
   AppStatusLabel,
-  MCP_APP_KIND_LABEL,
   appNeedsSetup,
   appStatus,
-  isMcpApp,
   isRemoteMcpApp,
 } from "@/client/lib/appStatus";
+import { FIRST_SCREEN } from "@/client/lib/firstScreen";
+import { MCP_APP_COPY } from "@/client/lib/mcpAppCopy";
 import type { AppWithAccessCount } from "@/types/app";
 import { AppActionsMenu } from "./AppActionsMenu";
 import { CountCell } from "./CountCell";
 import { deployedBy } from "./deployedBy";
-import { FIRST_SCREEN } from "@/client/lib/firstScreen";
 
 // The search box only shows once the catalog is long enough to need it.
 const SEARCH_THRESHOLD = 3;
 
+type AppColumn = ColumnDef<AppWithAccessCount>;
+type OnApp = (app: AppWithAccessCount) => void;
+
 type AppRowActions = {
   /** Opens the setup dialog, for an app that needs setup. */
-  onSetup: (app: AppWithAccessCount) => void;
-  /** Opens the "Use it from your agent" dialog, for an MCP app. */
-  onUseMcp: (app: AppWithAccessCount) => void;
-  onManageAccess: (app: AppWithAccessCount) => void;
-  onEdit: (app: AppWithAccessCount) => void;
+  onSetup: OnApp;
+  onManageAccess: OnApp;
+  onEdit: OnApp;
   /** Deletes an app; removes an MCP app (owners and admins, either way). */
-  onDelete: (app: AppWithAccessCount) => void;
-  /** Turns an MCP app off when it is on, and on when it is off. */
-  onToggleMcpStatus: (app: AppWithAccessCount) => void;
-  /** Opens the Add app chooser, the empty table's one action. */
-  onAddApp?: () => void;
+  onDelete: OnApp;
   isAdmin: boolean;
 };
 
-interface AppsTableProps extends AppRowActions {
-  apps: AppWithAccessCount[];
-  isLoading: boolean;
-  /** A load failure. With no rows it replaces the table. */
-  error?: ReactNode;
+type McpAppRowActions = AppRowActions & {
+  /** Opens the "Use it from your agent" dialog. */
+  onUseMcp: OnApp;
+  /** Turns an MCP app off when it is on, and on when it is off. */
+  onToggleMcpStatus: OnApp;
+};
+
+function NameLine({ app }: { app: AppWithAccessCount }) {
+  return (
+    <div className="flex min-w-0 items-center gap-1.5">
+      <p className="truncate font-medium">{app.name}</p>
+      {app.description ? (
+        <Tooltip>
+          <TooltipTrigger
+            delay={150}
+            aria-label={`About ${app.name}`}
+            className="shrink-0 cursor-help text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <Info className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipContent side="right">{app.description}</TooltipContent>
+        </Tooltip>
+      ) : null}
+    </div>
+  );
 }
 
-function AppNameCell({
-  app,
-  onUseMcp,
-}: {
-  app: AppWithAccessCount;
-  onUseMcp: (app: AppWithAccessCount) => void;
-}) {
-  const mcp = isMcpApp(app);
+function AppNameCell({ app }: { app: AppWithAccessCount }) {
   return (
     <>
-      <div className="flex min-w-0 items-center gap-1.5">
-        <p className="truncate font-medium">{app.name}</p>
-        {mcp ? (
-          // The kind, beside the name (never a status): it opens the
-          // dialog that says how an agent uses the app.
-          <Badge
-            variant="soft"
-            render={<button type="button" />}
-            aria-haspopup="dialog"
-            // The visible label first, then the action it opens.
-            aria-label={`MCP. Use ${app.name} from your agent`}
-            className="cursor-pointer hover:bg-primary/20"
-            onClick={() => onUseMcp(app)}
-          >
-            {MCP_APP_KIND_LABEL}
-          </Badge>
-        ) : null}
-        {app.description ? (
-          <Tooltip>
-            <TooltipTrigger
-              delay={150}
-              aria-label={`About ${app.name}`}
-              className="shrink-0 cursor-help text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <Info className="size-3.5" />
-            </TooltipTrigger>
-            <TooltipContent side="right">{app.description}</TooltipContent>
-          </Tooltip>
-        ) : null}
-      </div>
+      <NameLine app={app} />
       <p className="truncate text-xs text-muted-foreground">
         {app.appId}
-        {app.hostname
-          ? ` · ${app.hostname}`
-          : mcp
-            ? ` · agents call ${app.appId}_<tool>`
-            : null}
+        {app.hostname ? ` · ${app.hostname}` : null}
       </p>
     </>
   );
 }
 
-/**
- * When it last changed, and who deployed it in plain words; its mail
- * addresses and integrations are the Edit app dialog's, in full.
- */
-function UpdatedCell({ app }: { app: AppWithAccessCount }) {
+function McpAppNameCell({ app }: { app: AppWithAccessCount }) {
   return (
     <>
-      <DateCell value={app.updatedAt} />
-      {app.deployedByActor ? (
-        <p className="truncate text-xs">
-          {/* An MCP app has no deploy: the operator turned it on, or
-              someone added the remote server. */}
-          {isMcpApp(app)
-            ? `${isRemoteMcpApp(app) ? "Added" : "Turned on"} by ${app.deployedByActor}`
-            : deployedBy(app.deployedByActor)}
-        </p>
-      ) : null}
+      <NameLine app={app} />
+      <p className="truncate text-xs text-muted-foreground">
+        {app.appId} · agents call {app.appId}_&lt;tool&gt;
+      </p>
     </>
   );
 }
@@ -138,12 +105,12 @@ function UpdatedCell({ app }: { app: AppWithAccessCount }) {
  * takes the alignment of what holds it: left in the table's column, right
  * as a card's value under `md`.
  */
-function WhoCanOpenCell({
+function WhoCell({
   app,
   onManageAccess,
 }: {
   app: AppWithAccessCount;
-  onManageAccess: (app: AppWithAccessCount) => void;
+  onManageAccess: OnApp;
 }) {
   if (app.scope === "shared") {
     return (
@@ -167,127 +134,135 @@ function WhoCanOpenCell({
   );
 }
 
-function buildColumns({
-  onSetup,
-  onUseMcp,
-  onManageAccess,
-  onEdit,
-  onDelete,
-  onToggleMcpStatus,
-  isAdmin,
-}: AppRowActions): ColumnDef<AppWithAccessCount>[] {
-  return [
-    {
-      id: "app",
-      accessorFn: (app) => app.name,
-      header: ({ column }) => <SortableHeader column={column} label="App" />,
-      cell: ({ row }) => <AppNameCell app={row.original} onUseMcp={onUseMcp} />,
-      meta: { label: "App", cellClassName: "max-w-[320px]" },
-    },
-    {
-      id: "status",
-      accessorFn: (app) => appStatus(app).label,
-      header: ({ column }) => <SortableHeader column={column} label="Status" />,
-      meta: { label: "Status" },
-      cell: ({ row }) => {
-        const status = appStatus(row.original);
-        // The usual state is plain text; only an exception is a chip (as
-        // on the Users and Tokens tabs). An MCP app that is set up is
-        // Active like any other; its kind is the chip beside its name.
-        if (status.label === AppStatusLabel.Active) {
-          return <span className="text-muted-foreground">{status.label}</span>;
-        }
-        // "Needs setup" opens the dialog that says what, even for a shared
-        // app this organization can't fix (it says who does).
-        if (appNeedsSetup(row.original)) {
-          return (
-            <Badge
-              variant={status.variant}
-              render={<button type="button" />}
-              aria-haspopup="dialog"
-              className="cursor-pointer hover:bg-warning/25"
-              onClick={() => onSetup(row.original)}
-            >
-              {status.label}
-            </Badge>
-          );
-        }
-        return <Badge variant={status.variant}>{status.label}</Badge>;
-      },
-    },
-    {
-      id: "whoCanOpen",
-      accessorFn: (app) => app.accessCount,
-      header: ({ column }) => (
-        <SortableHeader column={column} label="Who can open" />
-      ),
-      meta: { label: "Who can open" },
-      cell: ({ row }) => (
-        <WhoCanOpenCell app={row.original} onManageAccess={onManageAccess} />
-      ),
-    },
-    {
-      accessorKey: "updatedAt",
-      header: ({ column }) => (
-        <SortableHeader column={column} label="Updated" />
-      ),
-      sortingFn: "datetime",
-      cell: ({ row }) => <UpdatedCell app={row.original} />,
-      meta: { label: "Updated", cellClassName: `${DATE_CELL} max-w-[240px]` },
-    },
-    {
-      id: "actions",
-      header: () => <span className="sr-only">Actions</span>,
-      enableSorting: false,
-      meta: { headerClassName: "w-10" },
-      // Another organization's shared app is listed, never managed here.
-      cell: ({ row }) =>
-        row.original.readOnly ? null : (
-          <AppActionsMenu
-            appName={row.original.name}
-            onSetup={
-              appNeedsSetup(row.original)
-                ? () => onSetup(row.original)
-                : undefined
-            }
-            onManageAccess={
-              row.original.scope === "shared"
-                ? undefined
-                : () => onManageAccess(row.original)
-            }
-            onEdit={() => onEdit(row.original)}
-            // An MCP app's Remove is the tombstone (`everyapp mcp remove`);
-            // Turn off keeps everything and stops serving it (`mcp off`).
-            onDelete={() => onDelete(row.original)}
-            mcp={
-              isMcpApp(row.original)
-                ? {
-                    onUseMcp: () => onUseMcp(row.original),
-                    on: row.original.status === "active",
-                    onToggle: () => onToggleMcpStatus(row.original),
-                  }
-                : undefined
-            }
-            isAdmin={isAdmin}
-          />
-        ),
-    },
-  ];
+function nameColumn(
+  label: string,
+  Cell: (props: { app: AppWithAccessCount }) => ReactNode,
+): AppColumn {
+  return {
+    id: "name",
+    accessorFn: (app) => app.name,
+    header: ({ column }) => <SortableHeader column={column} label={label} />,
+    cell: ({ row }) => <Cell app={row.original} />,
+    meta: { label, cellClassName: "max-w-[320px]" },
+  };
 }
 
-export function AppsTable({
+function statusColumn(onSetup: OnApp): AppColumn {
+  return {
+    id: "status",
+    accessorFn: (app) => appStatus(app).label,
+    header: ({ column }) => <SortableHeader column={column} label="Status" />,
+    meta: { label: "Status" },
+    cell: ({ row }) => {
+      const status = appStatus(row.original);
+      // The usual state is plain text; only an exception is a chip (as on
+      // the Users and Tokens tabs).
+      if (status.label === AppStatusLabel.Active) {
+        return <span className="text-muted-foreground">{status.label}</span>;
+      }
+      // "Needs setup" opens the dialog that says what, even for a shared
+      // app this organization can't fix (it says who does).
+      if (appNeedsSetup(row.original)) {
+        return (
+          <Badge
+            variant={status.variant}
+            render={<button type="button" />}
+            aria-haspopup="dialog"
+            className="cursor-pointer hover:bg-warning/25"
+            onClick={() => onSetup(row.original)}
+          >
+            {status.label}
+          </Badge>
+        );
+      }
+      return <Badge variant={status.variant}>{status.label}</Badge>;
+    },
+  };
+}
+
+function whoColumn(label: string, onManageAccess: OnApp): AppColumn {
+  return {
+    id: "who",
+    accessorFn: (app) => app.accessCount,
+    header: ({ column }) => <SortableHeader column={column} label={label} />,
+    meta: { label },
+    cell: ({ row }) => (
+      <WhoCell app={row.original} onManageAccess={onManageAccess} />
+    ),
+  };
+}
+
+/** When it last changed, and who is behind it in plain words. */
+function updatedColumn(
+  byLine: (actor: string, app: AppWithAccessCount) => string | null,
+): AppColumn {
+  return {
+    accessorKey: "updatedAt",
+    header: ({ column }) => <SortableHeader column={column} label="Updated" />,
+    sortingFn: "datetime",
+    cell: ({ row: { original: app } }) => (
+      <>
+        <DateCell value={app.updatedAt} />
+        {app.deployedByActor ? (
+          <p className="truncate text-xs">{byLine(app.deployedByActor, app)}</p>
+        ) : null}
+      </>
+    ),
+    meta: { label: "Updated", cellClassName: `${DATE_CELL} max-w-[240px]` },
+  };
+}
+
+function actionsColumn(
+  { onSetup, onManageAccess, onEdit, onDelete, isAdmin }: AppRowActions,
+  mcp?: (
+    app: AppWithAccessCount,
+  ) => ComponentProps<typeof AppActionsMenu>["mcp"],
+): AppColumn {
+  return {
+    id: "actions",
+    header: () => <span className="sr-only">Actions</span>,
+    enableSorting: false,
+    meta: { headerClassName: "w-10" },
+    // Another organization's shared app is listed, never managed here.
+    cell: ({ row: { original: app } }) =>
+      app.readOnly ? null : (
+        <AppActionsMenu
+          appName={app.name}
+          onSetup={appNeedsSetup(app) ? () => onSetup(app) : undefined}
+          onManageAccess={
+            app.scope === "shared" ? undefined : () => onManageAccess(app)
+          }
+          onEdit={() => onEdit(app)}
+          onDelete={() => onDelete(app)}
+          mcp={mcp?.(app)}
+          isAdmin={isAdmin}
+        />
+      ),
+  };
+}
+
+/** One table of the Apps tab: its rows, with a search once there are enough. */
+function CatalogTable({
   apps,
+  columns,
   isLoading,
   error,
-  onSetup,
-  onUseMcp,
-  onManageAccess,
-  onEdit,
-  onDelete,
-  onToggleMcpStatus,
-  onAddApp,
-  isAdmin,
-}: AppsTableProps) {
+  searchLabel,
+  noMatch,
+  empty,
+}: {
+  apps: AppWithAccessCount[];
+  columns: AppColumn[];
+  isLoading: boolean;
+  /** A load failure. With no rows it replaces the table. */
+  error?: ReactNode;
+  searchLabel: string;
+  noMatch: (query: string) => string;
+  empty: Pick<
+    ComponentProps<typeof EmptyState>,
+    "title" | "description" | "action"
+  >;
+}) {
   const [searchQuery, setSearchQuery] = useState("");
   const showSearch = apps.length > SEARCH_THRESHOLD;
   // A hidden search box must not keep filtering, e.g. after a delete.
@@ -304,29 +279,6 @@ export function AppsTable({
           )
         : apps,
     [apps, query],
-  );
-
-  // Stable columns and data keep TanStack Table from resetting every render.
-  const columns = useMemo(
-    () =>
-      buildColumns({
-        onSetup,
-        onUseMcp,
-        onManageAccess,
-        onEdit,
-        onDelete,
-        onToggleMcpStatus,
-        isAdmin,
-      }),
-    [
-      onSetup,
-      onUseMcp,
-      onManageAccess,
-      onEdit,
-      onDelete,
-      onToggleMcpStatus,
-      isAdmin,
-    ],
   );
 
   const table = useDataTable({
@@ -353,7 +305,7 @@ export function AppsTable({
             }
           >
             <DataTableSearch
-              label="Search apps"
+              label={searchLabel}
               value={searchQuery}
               onChange={setSearchQuery}
             />
@@ -361,22 +313,121 @@ export function AppsTable({
         ) : null
       }
       empty={
-        query
-          ? { kind: "filtered", title: `No apps match "${searchQuery.trim()}"` }
-          : {
-              title: FIRST_SCREEN.empty.adminTableTitle,
-              description: FIRST_SCREEN.empty.adminTableDescription,
-              action: onAddApp ? (
-                <Button
-                  variant="outline"
-                  aria-haspopup="dialog"
-                  onClick={onAddApp}
-                >
-                  {FIRST_SCREEN.addApp.button}
-                </Button>
-              ) : undefined,
-            }
+        query ? { kind: "filtered", title: noMatch(searchQuery.trim()) } : empty
       }
+    />
+  );
+}
+
+/** The apps of Admin → Apps: everything with a page to open. */
+export function AppsTable({
+  apps,
+  isLoading,
+  error,
+  onSetup,
+  onManageAccess,
+  onEdit,
+  onDelete,
+  onAddApp,
+  isAdmin,
+}: AppRowActions & {
+  apps: AppWithAccessCount[];
+  isLoading: boolean;
+  error?: ReactNode;
+  /** Opens the Add app chooser, the empty table's one action. */
+  onAddApp: () => void;
+}) {
+  // Stable columns and data keep TanStack Table from resetting every render.
+  const columns = useMemo(
+    () => [
+      nameColumn("App", AppNameCell),
+      statusColumn(onSetup),
+      whoColumn("Who can open", onManageAccess),
+      // Its mail addresses and integrations are the Edit app dialog's, in full.
+      updatedColumn((actor) => deployedBy(actor)),
+      actionsColumn({ onSetup, onManageAccess, onEdit, onDelete, isAdmin }),
+    ],
+    [onSetup, onManageAccess, onEdit, onDelete, isAdmin],
+  );
+  return (
+    <CatalogTable
+      apps={apps}
+      columns={columns}
+      isLoading={isLoading}
+      error={error}
+      searchLabel="Search apps"
+      noMatch={(query) => `No apps match "${query}"`}
+      empty={{
+        title: FIRST_SCREEN.empty.adminTableTitle,
+        description: FIRST_SCREEN.empty.adminTableDescription,
+        action: (
+          <Button variant="outline" aria-haspopup="dialog" onClick={onAddApp}>
+            {FIRST_SCREEN.addApp.button}
+          </Button>
+        ),
+      }}
+    />
+  );
+}
+
+/**
+ * The MCP apps of Admin → Apps: no page to open, so no one "opens" them and
+ * their menu says how an agent uses one. Remove is the tombstone (`everyapp mcp
+ * remove`); Turn off keeps everything and stops serving it (`mcp off`).
+ */
+export function McpAppsTable({
+  apps,
+  isLoading,
+  onSetup,
+  onUseMcp,
+  onManageAccess,
+  onEdit,
+  onDelete,
+  onToggleMcpStatus,
+  isAdmin,
+}: McpAppRowActions & {
+  apps: AppWithAccessCount[];
+  isLoading: boolean;
+}) {
+  const copy = MCP_APP_COPY.section;
+  const columns = useMemo(
+    () => [
+      nameColumn(copy.nameColumn, McpAppNameCell),
+      statusColumn(onSetup),
+      whoColumn(copy.whoColumn, onManageAccess),
+      // It has no deploy: someone added the remote server, or connected a
+      // built-in one.
+      updatedColumn((actor, app) =>
+        isRemoteMcpApp(app) ? copy.addedBy(actor) : copy.connectedBy(actor),
+      ),
+      actionsColumn(
+        { onSetup, onManageAccess, onEdit, onDelete, isAdmin },
+        (app) => ({
+          onUseMcp: () => onUseMcp(app),
+          on: app.status === "active",
+          onToggle: () => onToggleMcpStatus(app),
+        }),
+      ),
+    ],
+    [
+      copy,
+      onSetup,
+      onUseMcp,
+      onManageAccess,
+      onEdit,
+      onDelete,
+      onToggleMcpStatus,
+      isAdmin,
+    ],
+  );
+  return (
+    <CatalogTable
+      apps={apps}
+      columns={columns}
+      isLoading={isLoading}
+      searchLabel={copy.searchLabel}
+      noMatch={copy.noMatch}
+      empty={{ title: copy.empty }}
     />
   );
 }

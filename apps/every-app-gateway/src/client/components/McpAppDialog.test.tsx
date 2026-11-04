@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 /**
- * The "Use it from your agent" dialog rendered for real (React in a DOM):
- * it shows this Gateway's own MCP address with a copy button, the app's
- * tool prefix, the provider's example sentence and the two docs links,
- * and closes from its footer.
+ * The "Use it from your agent" dialog rendered for real (React in a DOM): the
+ * Connect your agent tabs and steps, then the sentence to ask as every client's
+ * last step, a close from its footer, and above the steps, for a server members
+ * sign in to, whether this person is connected.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -18,10 +18,27 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/serverFunctions/mcpApps", () => ({
   getMcpAppConnection: mocks.getMcpAppConnection,
 }));
+// The dialog's links are router Links; the test has no router.
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    to,
+    children,
+    ...props
+  }: {
+    to: string;
+    children: React.ReactNode;
+    className?: string;
+    onClick?: () => void;
+  }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
+}));
 
+import { CONNECT_AGENT_COPY } from "@/client/lib/connectAgentCopy";
 import { MCP_APP_COPY } from "@/client/lib/mcpAppCopy";
-import { CONNECT_AI_DOCS_URL } from "@/client/lib/connectAgentCopy";
-import { MCP_APPS_DOCS_URL, McpAppDialog } from "./McpAppDialog";
+import { McpAppDialog } from "./McpAppDialog";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -48,37 +65,71 @@ afterEach(() => {
 const dialog = () => document.body.querySelector('[role="dialog"]');
 const text = () => dialog()?.textContent ?? "";
 
-it("says where the app is reached and what to say, with the docs to go on with", () => {
+function renderDialog(name: string, appId: string) {
   act(() =>
     root.render(
-      <McpAppDialog name="DataForSEO" appId="dataforseo" onClose={onClose} />,
+      <McpAppDialog
+        name={name}
+        appId={appId}
+        role="member"
+        onClose={onClose}
+      />,
     ),
   );
-  expect(text()).toContain("Use DataForSEO from your agent");
-  expect(text()).toContain("DataForSEO has no page.");
-  // The address is this origin's, read on the client.
-  expect(dialog()?.querySelector("code")?.textContent).toBe(
-    `${window.location.origin}/mcp`,
+}
+
+function tab(label: string): HTMLElement {
+  const found = [
+    ...(dialog()?.querySelectorAll<HTMLElement>('[role="tab"]') ?? []),
+  ].find((element) => element.textContent === label);
+  if (!found) throw new Error(`no tab ${label}`);
+  return found;
+}
+
+/** The selected tab's steps: each one's text and what it offers to copy. */
+function steps() {
+  const selected = dialog()?.querySelector(
+    '[role="tab"][aria-selected="true"]',
   );
-  expect(
-    dialog()?.querySelector('[aria-label="Copy to clipboard"]'),
-  ).not.toBeNull();
-  expect(text()).toContain("Its tools start with dataforseo_. Try saying:");
-  expect(text()).toContain(
-    "“Use DataForSEO to find keyword ideas for a page about running shoes.”",
+  const panel = document.getElementById(
+    selected?.getAttribute("aria-controls") ?? "",
   );
-  const links = [...(dialog()?.querySelectorAll("a[href]") ?? [])].map((link) =>
-    link.getAttribute("href"),
+  return [...(panel?.querySelectorAll("ol > li") ?? [])].map((step) => ({
+    text: step.querySelector("p")?.textContent,
+    code: step.querySelector("code")?.textContent,
+  }));
+}
+
+it("ends every client's own steps with what to ask", () => {
+  renderDialog("DataForSEO", "dataforseo");
+  expect(text()).toContain(MCP_APP_COPY.useDialog.title("DataForSEO"));
+  for (const client of CONNECT_AGENT_COPY.clients) {
+    act(() => tab(client.label).click());
+    const shown = steps();
+    expect(shown.map((step) => step.text)).toEqual([
+      ...client.steps.map((step) => step.text),
+      MCP_APP_COPY.useDialog.ask,
+    ]);
+    expect(shown.at(-1)?.code).toBe(
+      "Use DataForSEO to find keyword ideas for a page about running shoes.",
+    );
+  }
+});
+
+it("starts from this Gateway's own address", () => {
+  renderDialog("DataForSEO", "dataforseo");
+  expect(steps()[0]?.code).toBe(`${window.location.origin}/mcp`);
+});
+
+it("gives a remote MCP server (no built-in example) a generic sentence", () => {
+  renderDialog("Treg", "treg");
+  expect(steps().at(-1)?.code).toBe(
+    "List what Treg offers, then use one of its tools.",
   );
-  expect(links).toEqual([CONNECT_AI_DOCS_URL, MCP_APPS_DOCS_URL]);
 });
 
 it("closes from the footer", () => {
-  act(() =>
-    root.render(
-      <McpAppDialog name="DataForSEO" appId="dataforseo" onClose={onClose} />,
-    ),
-  );
+  renderDialog("DataForSEO", "dataforseo");
   const close = [...(dialog()?.querySelectorAll("button") ?? [])].find(
     (button) => button.textContent === "Close",
   );
@@ -87,30 +138,18 @@ it("closes from the footer", () => {
   expect(onClose).toHaveBeenCalledOnce();
 });
 
-it("gives a remote MCP server (no built-in example) a generic sentence", () => {
-  act(() =>
-    root.render(<McpAppDialog name="Treg" appId="treg" onClose={onClose} />),
-  );
-  expect(text()).toContain("Its tools start with treg_. Try saying:");
-  expect(text()).toContain(
-    `“${MCP_APP_COPY.useDialog.genericExample("Treg")}”`,
-  );
-  expect(text()).toContain(
-    "“List what Treg offers, then use one of its tools.”",
-  );
-  expect(text()).not.toContain("Use Treg to");
-});
-
 const STATUS: McpAppConnectionStatus = {
   providerName: "Treg MCP server",
-  connectPath: "/connect/treg-mcp?app=treg&return=%2F%3Fmcp%3Dtreg",
+  connectPath: "/connect/treg-mcp?app=treg&return=%2Fsettings%2Faccounts",
   connection: null,
 };
 
 async function renderTreg(status: McpAppConnectionStatus | null) {
   mocks.getMcpAppConnection.mockResolvedValue(status);
   await act(async () => {
-    root.render(<McpAppDialog name="Treg" appId="treg" onClose={onClose} />);
+    root.render(
+      <McpAppDialog name="Treg" appId="treg" role="member" onClose={onClose} />,
+    );
   });
   await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 }
@@ -122,11 +161,7 @@ function link(label: string) {
 }
 
 it("never asks about a connection for a built-in", () => {
-  act(() =>
-    root.render(
-      <McpAppDialog name="DataForSEO" appId="dataforseo" onClose={onClose} />,
-    ),
-  );
+  renderDialog("DataForSEO", "dataforseo");
   expect(mocks.getMcpAppConnection).not.toHaveBeenCalled();
 });
 

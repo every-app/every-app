@@ -238,7 +238,7 @@ function authData(auth: RemoteMcpAuth): Record<string, unknown> {
 
 /** The Gateway's page where a person connects their account to an OAuth provider in the app, coming back to the app's dialog. */
 function connectUrl(gatewayUrl: string, provider: string, appId: string): string {
-  return `${gatewayUrl.replace(/\/+$/, "")}/connect/${provider}?app=${appId}&return=/?mcp=${appId}`;
+  return `${gatewayUrl.replace(/\/+$/, "")}/connect/${provider}?app=${appId}&return=/settings/accounts`;
 }
 
 /** A built-in's key as the commands report it: its name and whether it is set. */

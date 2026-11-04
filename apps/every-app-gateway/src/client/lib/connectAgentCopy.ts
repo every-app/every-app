@@ -11,7 +11,7 @@ export const CONNECT_AI_DOCS_URL = "https://everyapp.com/docs/connect-ai";
 
 type ConnectClientId = "claude" | "claude-code" | "codex" | "cursor" | "other";
 
-interface ConnectStep {
+export interface ConnectStep {
   /** What to do. */
   text: string;
   /** The command, file or address to paste, from this Gateway's /mcp address. */

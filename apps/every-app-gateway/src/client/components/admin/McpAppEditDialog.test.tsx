@@ -61,7 +61,7 @@ function oauth(
     set: false,
     state: "connected",
     connections: 2,
-    connectPath: "/connect/treg-mcp?app=treg&return=%2F%3Fmcp%3Dtreg",
+    connectPath: "/connect/treg-mcp?app=treg&return=%2Fsettings%2Faccounts",
     ...overrides,
   };
 }
@@ -385,7 +385,7 @@ describe("the MCP app edit dialog", () => {
       (element) => element.textContent?.trim() === COPY.connect,
     );
     expect(link?.getAttribute("href")).toBe(
-      "/connect/treg-mcp?app=treg&return=%2F%3Fmcp%3Dtreg",
+      "/connect/treg-mcp?app=treg&return=%2Fsettings%2Faccounts",
     );
   });
 

@@ -1,6 +1,6 @@
 /**
  * Remote MCP apps: any remote MCP server registered on a gateway by URL
- * (`everyapp mcp add <url>`, Admin → Apps → Add app → "Add an MCP server",
+ * (`everyapp mcp add <url>`, Admin → Apps → "Add MCP server",
  * `everyapp_mcp_add`), served to members' AI clients as an MCP app of the
  * Gateway's own, like a built-in provider app (./providerApps.ts) but with
  * its tools read from the server and each call forwarded to it

@@ -170,7 +170,7 @@ const removeCommand = buildCommand({
     flags: connectFlags,
   },
   docs: {
-    brief: "Remove an MCP app: it leaves /mcp and the home page, and everyone's access to it goes",
+    brief: "Remove an MCP app: it leaves /mcp and Admin → Apps, and everyone's access to it goes",
     fullDescription: [
       "Like deleting an app: the Gateway stops serving its tools within 30 seconds, and",
       "everyone's access to it, the personal tokens bound to it, its tools snapshot and its",
@@ -201,8 +201,7 @@ const onCommand = buildCommand({
       "An MCP app is a data provider (DataForSEO, built in) or any remote MCP server added with",
       `${CLI} mcp add <url>, offered as an app of the Gateway's own with no page and nothing to`,
       "deploy: the Gateway serves its tools on its /mcp under <id>_<tool> names, with its own key,",
-      "and counts and audits every call like an app's. It appears in Admin → Apps and under MCP",
-      "apps on the home page.",
+      "and counts and audits every call like an app's. It appears under MCP apps in Admin → Apps.",
       "",
       "A built-in's first on adds it: the owners and the admins can use it at once, and an",
       "admin grants other members with Manage access. On after off serves it again at once,",

@@ -9,7 +9,7 @@ import { useSession } from "@/client/hooks/useSession";
 import { useAppLibrary } from "@/client/hooks/useAppLibrary";
 import { AppIcon } from "@/client/components/AppIcon";
 import { preconnectTo } from "@/client/lib/appLaunchPrefetch";
-import { appNeedsSetup, appStatus, mcpAppUsable } from "@/client/lib/appStatus";
+import { appNeedsSetup, appStatus } from "@/client/lib/appStatus";
 import {
   ACCESS_SIGN_OUT_PATH,
   connectErrorPath,
@@ -160,11 +160,8 @@ export function Sidebar() {
                     {pinnedApps.map((app) => {
                       const status = appStatus(app);
                       // An app that needs setup leads to its setup dialog on
-                      // the home page, where the launcher opens it; an MCP
-                      // app likewise leads to its "Use it from your agent"
-                      // dialog there.
+                      // the home page, where the launcher opens it.
                       const needsSetup = appNeedsSetup(app);
-                      const mcp = mcpAppUsable(app);
                       // Open the connection to the app on hover, focus or
                       // touch (lib/appLaunchPrefetch).
                       const { hostname } = app;
@@ -175,7 +172,7 @@ export function Sidebar() {
                         <SidebarMenuItem key={app.id}>
                           <SidebarMenuButton
                             className={navButtonClass}
-                            disabled={!status.opens && !needsSetup && !mcp}
+                            disabled={!status.opens && !needsSetup}
                             render={
                               status.opens ? (
                                 <a
@@ -189,12 +186,6 @@ export function Sidebar() {
                                 <Link
                                   to="/"
                                   search={{ setup: app.appId }}
-                                  onClick={() => setOpenMobile(false)}
-                                />
-                              ) : mcp ? (
-                                <Link
-                                  to="/"
-                                  search={{ mcp: app.appId }}
                                   onClick={() => setOpenMobile(false)}
                                 />
                               ) : undefined

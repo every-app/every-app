@@ -11,7 +11,6 @@ import {
   hasDeployingApp,
   isMcpApp,
   isRemoteMcpApp,
-  mcpAppUsable,
 } from "./appStatus";
 
 const READY: UserAccessApp["setup"] = {
@@ -167,25 +166,6 @@ describe("appStatus for a paused app", () => {
     );
   });
 
-  it("shows Paused on an MCP app that is set up, which still never opens and still takes the agent dialog", () => {
-    const mcp = { tier: PROVIDER_APP_TIER, hostname: null };
-    expect(appStatus(app({ ...mcp, paused: true }))).toEqual({
-      label: AppStatusLabel.Paused,
-      variant: "warning",
-      opens: false,
-    });
-    expect(mcpAppUsable(app({ ...mcp, paused: true }))).toBe(true);
-    expect(appStatus(app({ ...mcp, setup: UNREADY, paused: true }))).toEqual({
-      label: AppStatusLabel.NeedsSetup,
-      variant: "warning",
-      opens: false,
-    });
-    expect(mcpAppUsable(app({ ...mcp, setup: UNREADY, paused: true }))).toBe(
-      false,
-    );
-    expect(appStatus(app({ ...mcp })).label).toBe(AppStatusLabel.Active);
-  });
-
   it("reads an app that carries no pause (Admin → Apps) as before", () => {
     const { paused: _paused, ...withoutPause } = app({});
     expect(appStatus(withoutPause).label).toBe(AppStatusLabel.Active);
@@ -218,18 +198,16 @@ describe("an MCP app", () => {
     };
   }
 
-  it("is Active once its key is set, and still never opens: the dialog opens instead", () => {
+  it("is Active once its key is set, and still never opens", () => {
     expect(appStatus(mcp())).toEqual({
       label: AppStatusLabel.Active,
       variant: "success",
       opens: false,
     });
     expect(isMcpApp(mcp())).toBe(true);
-    expect(mcpAppUsable(mcp())).toBe(true);
     expect(appNeedsSetup(mcp())).toBe(false);
     // An app with a page is never an MCP app, however ready.
     expect(isMcpApp(app({}))).toBe(false);
-    expect(mcpAppUsable(app({}))).toBe(false);
   });
 
   it("needs setup while its key is unset, and is Off when turned off", () => {
@@ -239,14 +217,12 @@ describe("an MCP app", () => {
       opens: false,
     });
     expect(appNeedsSetup(mcp({ setup: UNREADY }))).toBe(true);
-    expect(mcpAppUsable(mcp({ setup: UNREADY }))).toBe(false);
     for (const status of ["disabled", "deleted"]) {
       expect(appStatus(mcp({ status, setup: UNREADY }))).toEqual({
         label: AppStatusLabel.Off,
         variant: "secondary",
         opens: false,
       });
-      expect(mcpAppUsable(mcp({ status }))).toBe(false);
       expect(appNeedsSetup(mcp({ status, setup: UNREADY }))).toBe(false);
     }
     // An app with a page that is disabled still reads Disabled.
@@ -281,6 +257,5 @@ describe("an MCP app", () => {
     expect(isRemoteMcpApp(mcp())).toBe(false);
     expect(appStatus(remote("none")).label).toBe(AppStatusLabel.Active);
     expect(appStatus(remote("provider")).label).toBe(AppStatusLabel.Active);
-    expect(mcpAppUsable(remote("provider"))).toBe(true);
   });
 });

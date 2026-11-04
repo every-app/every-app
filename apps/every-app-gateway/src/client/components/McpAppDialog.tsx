@@ -1,98 +1,47 @@
 import { useEffect, useState } from "react";
-import { ExternalLink } from "lucide-react";
 import { PROVIDER_APPS, isProviderAppId } from "@every-app/sdk/internal";
-import { CodeBlock } from "@/client/components/CodeBlock";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/client/components/ui/dialog";
+import { ConnectAgentDialog } from "@/client/components/ConnectAgent";
 import { Button } from "@/client/components/ui/button";
-import { CONNECT_AI_DOCS_URL } from "@/client/lib/connectAgentCopy";
 import { MCP_APP_COPY } from "@/client/lib/mcpAppCopy";
 import { getMcpAppConnection } from "@/serverFunctions/mcpApps";
 import type { McpAppConnectionStatus } from "@/types/mcpApp";
 
-/** The agent docs' section on MCP apps, for the agent that was told to use one. */
-export const MCP_APPS_DOCS_URL = "https://everyapp.com/docs/agent/mcp#mcp-apps";
+const COPY = MCP_APP_COPY.useDialog;
 
 interface McpAppDialogProps {
   name: string;
-  /** The app's id: its tool prefix (`dataforseo_<tool>`). */
+  /** The app's id, which finds a built-in's own example. */
   appId: string;
+  role: string | undefined;
   onClose: () => void;
 }
 
 /**
- * The address an AI client connects to: this Gateway's own origin (the UI
- * is served from it) plus `/mcp`, one address across organizations. The
- * dialog only ever mounts from a click, so the window is there; the guard
- * keeps a server render honest.
+ * How to use an MCP app, from Admin → Apps: the Connect your agent steps,
+ * since it has no page and is reached through that one connection, then a
+ * sentence to ask. A server members sign in to says first whether this person
+ * is connected. Render it only while it is open.
  */
-function mcpAddress(): string | null {
-  return typeof window === "undefined" ? null : `${window.location.origin}/mcp`;
-}
-
-/**
- * What an MCP app is and how to use it, for whoever clicked its card: the
- * Gateway's MCP address to copy, the tools' prefix, a sentence to say to
- * an agent, and the two docs pages. Closes from the footer alone, like the
- * setup dialog. Render it only while it is open.
- */
-export function McpAppDialog({ name, appId, onClose }: McpAppDialogProps) {
-  const address = mcpAddress();
+export function McpAppDialog({
+  name,
+  appId,
+  role,
+  onClose,
+}: McpAppDialogProps) {
   const connection = useMcpAppConnection(appId);
   // A built-in's own example; any other MCP app is a remote server the
   // Gateway knows nothing about beyond its tools, so the sentence is generic.
   const example = isProviderAppId(appId)
     ? `Use ${name} to ${PROVIDER_APPS[appId].example}.`
-    : MCP_APP_COPY.useDialog.genericExample(name);
+    : COPY.genericExample(name);
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent showCloseButton={false} className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Use {name} from your agent</DialogTitle>
-          <DialogDescription>
-            {name} has no page. Claude, ChatGPT and Claude Code reach it through
-            this Gateway's MCP address:
-          </DialogDescription>
-        </DialogHeader>
-        {connection ? <ConnectionLine status={connection} /> : null}
-        {address ? (
-          <CodeBlock code={address} successMessage="Address copied" />
-        ) : null}
-        <div className="flex flex-col gap-2 text-sm">
-          <p>
-            Its tools start with{" "}
-            <span className="font-mono text-xs">{appId}_</span>. Try saying:
-          </p>
-          <p className="rounded-lg border border-border bg-muted px-3 py-2.5">
-            “{example}”
-          </p>
-          <p className="text-muted-foreground">
-            Agents can build skills on its tools, like any app's.
-          </p>
-        </div>
-        <DialogFooter showCloseButton>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm sm:mr-auto sm:self-center">
-            <DocsLink href={CONNECT_AI_DOCS_URL}>
-              Connect Claude or ChatGPT, in the docs
-            </DocsLink>
-            <DocsLink href={MCP_APPS_DOCS_URL}>
-              MCP apps, in the agent docs
-            </DocsLink>
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConnectAgentDialog
+      title={COPY.title(name)}
+      intro={connection ? <ConnectionLine status={connection} /> : null}
+      lastStep={{ text: COPY.ask, code: () => example }}
+      role={role}
+      onClose={onClose}
+    />
   );
 }
 
@@ -122,7 +71,7 @@ function useMcpAppConnection(appId: string): McpAppConnectionStatus | null {
 
 /** Connected as whom, or the link to connect. */
 function ConnectionLine({ status }: { status: McpAppConnectionStatus }) {
-  const copy = MCP_APP_COPY.useDialog;
+  const copy = COPY;
   if (status.connection?.status === "active") {
     return (
       <p className="text-sm" data-testid="mcp-connection">
@@ -142,19 +91,5 @@ function ConnectionLine({ status }: { status: McpAppConnectionStatus }) {
         {expired ? copy.reconnect : copy.connect(status.providerName)}
       </Button>
     </div>
-  );
-}
-
-function DocsLink({ href, children }: { href: string; children: string }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="inline-flex items-center gap-1 underline underline-offset-3 hover:text-foreground"
-    >
-      {children}
-      <ExternalLink className="size-3.5" aria-hidden />
-    </a>
   );
 }

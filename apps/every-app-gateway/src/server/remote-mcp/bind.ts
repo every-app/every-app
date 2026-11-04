@@ -104,14 +104,14 @@ function gatewayUrl(): string {
 
 /**
  * Where a member connects the provider for a remote MCP app, a path on
- * the Gateway: back to the launcher's dialog for the app afterwards.
+ * the Gateway: back to Connected accounts afterwards, which shows the
+ * connection (an MCP app has no page to return to).
  */
 export function remoteMcpConnectPath(
   provider: string,
   appSlug: string,
 ): string {
-  const back = `/?mcp=${encodeURIComponent(appSlug)}`;
-  return `/connect/${encodeURIComponent(provider)}?app=${encodeURIComponent(appSlug)}&return=${encodeURIComponent(back)}`;
+  return `/connect/${encodeURIComponent(provider)}?app=${encodeURIComponent(appSlug)}&return=${encodeURIComponent("/settings/accounts")}`;
 }
 
 /** The same, as a full URL for a message an AI client relays. */

@@ -684,7 +684,7 @@ everyapp mcp add https://api.elevenlabs.io/v1/mcp
 - `--no-open`: Print the OAuth connect page without opening it in the browser
 
 ### `everyapp mcp remove <id>`
-Remove an MCP app: it leaves /mcp and the home page, and everyone's access to it goes.
+Remove an MCP app: it leaves /mcp and Admin → Apps, and everyone's access to it goes.
 
 Like deleting an app: the Gateway stops serving its tools within 30 seconds, and everyone's access to it, the personal tokens bound to it, its tools snapshot and its place in AI connections go with it. Adding it again starts fresh. To stop serving it and keep all that, turn it off instead: everyapp mcp off <id>.
 
@@ -699,7 +699,7 @@ everyapp mcp remove treg
 ### `everyapp mcp on <id>`
 Turn an MCP app on: its tools reach members' AI clients through the Gateway's /mcp.
 
-An MCP app is a data provider (DataForSEO, built in) or any remote MCP server added with everyapp mcp add <url>, offered as an app of the Gateway's own with no page and nothing to deploy: the Gateway serves its tools on its /mcp under <id>_<tool> names, with its own key, and counts and audits every call like an app's. It appears in Admin → Apps and under MCP apps on the home page.
+An MCP app is a data provider (DataForSEO, built in) or any remote MCP server added with everyapp mcp add <url>, offered as an app of the Gateway's own with no page and nothing to deploy: the Gateway serves its tools on its /mcp under <id>_<tool> names, with its own key, and counts and audits every call like an app's. It appears under MCP apps in Admin → Apps.
 
 A built-in's first on adds it: the owners and the admins can use it at once, and an admin grants other members with Manage access. On after off serves it again at once, with everyone's access kept. The key is a Gateway setting the tools need (mcp list names it):
 ```sh

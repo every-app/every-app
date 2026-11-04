@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRight } from "lucide-react";
 import { CodeBlock } from "@/client/components/CodeBlock";
@@ -18,6 +18,7 @@ import {
 import {
   CONNECT_AGENT_COPY,
   CONNECT_AI_DOCS_URL,
+  type ConnectStep,
 } from "@/client/lib/connectAgentCopy";
 
 const COPY = CONNECT_AGENT_COPY;
@@ -42,10 +43,13 @@ function useMcpAddress(): string {
 export function ConnectAgentSteps({
   role,
   onNavigate,
+  lastStep,
 }: {
   role: string | undefined;
   /** Called when a link inside leaves for another page, to close a dialog. */
   onNavigate?: () => void;
+  /** A step after every client's own: what to do once it is connected. */
+  lastStep?: ConnectStep;
 }) {
   const address = useMcpAddress();
   return (
@@ -71,25 +75,27 @@ export function ConnectAgentSteps({
           className="flex flex-col gap-4"
         >
           <ol className="flex flex-col gap-4">
-            {client.steps.map((step, index) => (
-              <li
-                key={step.text}
-                className="relative grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-3 gap-y-2 not-last:before:absolute not-last:before:top-6 not-last:before:-bottom-3 not-last:before:left-[9.5px] not-last:before:w-px not-last:before:bg-border"
-              >
-                <span
-                  aria-hidden
-                  className="flex size-5 items-center justify-center rounded-full bg-foreground text-xs font-semibold text-background"
+            {[...client.steps, ...(lastStep ? [lastStep] : [])].map(
+              (step: ConnectStep, index) => (
+                <li
+                  key={step.text}
+                  className="relative grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-3 gap-y-2 not-last:before:absolute not-last:before:top-6 not-last:before:-bottom-3 not-last:before:left-[9.5px] not-last:before:w-px not-last:before:bg-border"
                 >
-                  {index + 1}
-                </span>
-                <p className="leading-5 font-medium">{step.text}</p>
-                {step.code && address ? (
-                  <div className="col-start-2">
-                    <CodeBlock code={step.code(address)} />
-                  </div>
-                ) : null}
-              </li>
-            ))}
+                  <span
+                    aria-hidden
+                    className="flex size-5 items-center justify-center rounded-full bg-foreground text-xs font-semibold text-background"
+                  >
+                    {index + 1}
+                  </span>
+                  <p className="leading-5 font-medium">{step.text}</p>
+                  {step.code && address ? (
+                    <div className="col-start-2">
+                      <CodeBlock code={step.code(address)} />
+                    </div>
+                  ) : null}
+                </li>
+              ),
+            )}
           </ol>
           {client.id === "other" && role ? (
             <TokenNote role={role} onNavigate={onNavigate} />
@@ -146,12 +152,20 @@ export function ConnectAgentDocsLink() {
 
 /**
  * The sidebar's "Connect your agent" dialog: the steps, then where to see or
- * revoke connections and the docs. Render it only while it is open.
+ * revoke connections and the docs. An MCP app's dialog is this one with its
+ * own title and last step (McpAppDialog). Render it only while it is open.
  */
 export function ConnectAgentDialog({
+  title = COPY.title,
+  intro,
+  lastStep,
   role,
   onClose,
 }: {
+  title?: string;
+  /** Above the steps. */
+  intro?: ReactNode;
+  lastStep?: ConnectStep;
   role: string | undefined;
   onClose: () => void;
 }) {
@@ -164,9 +178,14 @@ export function ConnectAgentDialog({
     >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{COPY.title}</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <ConnectAgentSteps role={role} onNavigate={onClose} />
+        {intro}
+        <ConnectAgentSteps
+          role={role}
+          onNavigate={onClose}
+          lastStep={lastStep}
+        />
         <DialogFooter showCloseButton>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground sm:mr-auto sm:self-center">
             <Link

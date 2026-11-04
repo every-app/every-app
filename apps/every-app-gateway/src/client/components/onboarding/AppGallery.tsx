@@ -11,8 +11,6 @@ import {
 import { FIRST_SCREEN } from "@/client/lib/firstScreen";
 
 interface AppGalleryProps {
-  /** The heading; "Add your first app" unless the workspace has an app already (an MCP app). */
-  heading?: string;
   /** Opens the app's dialog: its install command and what it needs. */
   onPickApp: (app: FeaturedApp) => void;
   /** Opens the Build your own dialog. */
@@ -25,11 +23,7 @@ interface AppGalleryProps {
  * them, and a fifth card for an app of their own. Each card opens a dialog;
  * nothing here installs anything.
  */
-export function AppGallery({
-  heading = FIRST_SCREEN.gallery.heading,
-  onPickApp,
-  onBuild,
-}: AppGalleryProps) {
+export function AppGallery({ onPickApp, onBuild }: AppGalleryProps) {
   return (
     <section aria-labelledby="app-gallery-heading" className="space-y-4">
       <div className="space-y-0.5">
@@ -37,7 +31,7 @@ export function AppGallery({
           id="app-gallery-heading"
           className="text-sm font-medium text-muted-foreground"
         >
-          {heading}
+          {FIRST_SCREEN.gallery.heading}
         </h2>
         <p className="text-sm text-muted-foreground">
           {FIRST_SCREEN.gallery.intro}

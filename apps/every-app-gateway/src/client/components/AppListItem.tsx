@@ -14,10 +14,8 @@ import { AppLibraryLayout } from "@/client/hooks/useAppLibrary";
 import { preconnectTo } from "@/client/lib/appLaunchPrefetch";
 import {
   AppStatusLabel,
-  MCP_APP_KIND_LABEL,
   appNeedsSetup,
   appStatus,
-  mcpAppUsable,
 } from "@/client/lib/appStatus";
 import type { UserAccessApp } from "@/types/app";
 
@@ -36,8 +34,6 @@ interface AppListItemProps {
   onTogglePin: () => void;
   /** Opens the setup dialog, for an app that needs setup. */
   onOpenSetup: () => void;
-  /** Opens the "Use it from your agent" dialog, for an MCP app that is set up. */
-  onUseMcp: () => void;
   layout: AppLibraryLayout;
 }
 
@@ -64,9 +60,7 @@ export const STALLED_CARD_SENTENCE =
 /**
  * The app is a normal link; pinning is a separate, keyboard-accessible
  * action. An app that needs setup is no link: the card (its badge
- * included) opens the setup dialog instead. An MCP app has no page: its
- * card carries an "MCP" chip where the open arrow would be and opens the
- * dialog that says how an agent uses it. A paused app (at its monthly
+ * included) opens the setup dialog instead. A paused app (at its monthly
  * cap) opens as it did, since only its provider calls are refused: its
  * one chip says Paused and its description says who raises the cap. A
  * deploying app is a link too, since a visit is what makes it live: its
@@ -78,13 +72,11 @@ export function AppListItem({
   pinned,
   onTogglePin,
   onOpenSetup,
-  onUseMcp,
   layout,
 }: AppListItemProps) {
   const status = appStatus(app);
   const routable = status.opens;
   const needsSetup = appNeedsSetup(app);
-  const mcp = mcpAppUsable(app);
   const paused = status.label === AppStatusLabel.Paused;
   const deploying =
     status.label === AppStatusLabel.Deploying ||
@@ -104,25 +96,11 @@ export function AppListItem({
   // (lib/appLaunchPrefetch); an app that opens always has a hostname.
   const { hostname } = app;
   const warm = hostname ? () => preconnectTo(hostname) : undefined;
-  // What sits beside the name when there is no arrow, one chip per card:
-  // Paused on an app that is at its cap, or Deploying on one still
-  // deploying (states the person should see, so they come before the
-  // kind), else the kind of an MCP app, else the state of an app that
-  // doesn't open.
-  // The kind in the badge's soft tint, so it never reads as a state.
+  // What sits beside the name when there is no arrow: Paused on an app that
+  // is at its cap, Deploying on one still deploying, else the state of an app
+  // that doesn't open.
   const chip =
-    paused || deploying ? (
-      <Badge
-        variant={status.variant}
-        className={cn("shrink-0", list && "md:hidden")}
-      >
-        {status.label}
-      </Badge>
-    ) : mcp ? (
-      <Badge variant="soft" className={cn("shrink-0", list && "md:hidden")}>
-        {MCP_APP_KIND_LABEL}
-      </Badge>
-    ) : !routable ? (
+    paused || deploying || !routable ? (
       <Badge
         variant={status.variant}
         className={cn("shrink-0", list && "md:hidden")}
@@ -218,10 +196,6 @@ export function AppListItem({
                 aria-hidden
               />
             </span>
-          ) : mcp && !paused ? (
-            <Badge variant="soft" className="hidden md:inline-flex">
-              {MCP_APP_KIND_LABEL}
-            </Badge>
           ) : (
             <Badge variant={status.variant} className="hidden md:inline-flex">
               {status.label}
@@ -245,7 +219,7 @@ export function AppListItem({
         className={cn(
           "group relative gap-0 py-0 transition-colors motion-reduce:transition-none",
           cardHeightClass(list),
-          routable || mcp ? "hover:border-foreground/25" : "bg-card/60",
+          routable ? "hover:border-foreground/25" : "bg-card/60",
           needsSetup && "hover:border-foreground/25",
         )}
       >
@@ -265,14 +239,6 @@ export function AppListItem({
             aria-label={`Set up ${app.name}`}
             aria-haspopup="dialog"
             onClick={onOpenSetup}
-            className={cn(overlayClass, "cursor-pointer")}
-          />
-        ) : mcp ? (
-          <button
-            type="button"
-            aria-label={`Use ${app.name} from your agent`}
-            aria-haspopup="dialog"
-            onClick={onUseMcp}
             className={cn(overlayClass, "cursor-pointer")}
           />
         ) : null}

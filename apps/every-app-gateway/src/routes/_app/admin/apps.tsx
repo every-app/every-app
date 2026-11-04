@@ -1,13 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Download, Plus } from "lucide-react";
 import { toast } from "sonner";
-import {
-  adminAppsCollection,
-  useQueryFailed,
-  userAppsCollection,
-} from "@/client/tanstack-db";
+import { adminAppsCollection, useQueryFailed } from "@/client/tanstack-db";
 import { AppSetupDialog } from "@/client/components/AppSetupDialog";
 import { ErrorState } from "@/client/components/ErrorState";
 import { McpAppDialog } from "@/client/components/McpAppDialog";
@@ -15,12 +11,13 @@ import {
   SettingsSection,
   SettingsTab,
 } from "@/client/components/SettingsLayout";
-import { AppsTable } from "@/client/components/admin/AppsTable";
+import { AppsTable, McpAppsTable } from "@/client/components/admin/AppsTable";
 import { EditAppModal } from "@/client/components/admin/EditAppModal";
 import { DeleteAppModal } from "@/client/components/admin/DeleteAppModal";
 import { ManageAppAccessModal } from "@/client/components/admin/ManageAppAccessModal";
 import { McpAppEditDialog } from "@/client/components/admin/McpAppEditDialog";
 import { AddAppDialog } from "@/client/components/onboarding/AddAppDialog";
+import { AddMcpServerDialog } from "@/client/components/onboarding/AddMcpServer";
 import { Button } from "@/client/components/ui/button";
 import { useAppInstallAvailable } from "@/client/app-install";
 import { getRuleErrorMessage } from "@/client/errors";
@@ -41,12 +38,6 @@ function refetchApps() {
   return adminAppsCollection.utils.refetch();
 }
 
-/** After an MCP app changed: this list and the launcher's read it again. */
-function refetchAppLists() {
-  void adminAppsCollection.utils.refetch();
-  void userAppsCollection.utils.refetch();
-}
-
 /** Turn an MCP app off when it is on, on when it is off (the row menu). */
 async function toggleMcpStatus(app: AppWithAccessCount) {
   const on = app.status === "active";
@@ -59,7 +50,7 @@ async function toggleMcpStatus(app: AppWithAccessCount) {
         ? MCP_APP_COPY.menu.turnedOff(app.name)
         : MCP_APP_COPY.menu.turnedOn(app.name),
     );
-    refetchAppLists();
+    void refetchApps();
   } catch (error) {
     toast.error(getRuleErrorMessage(error, MCP_APP_COPY.menu.statusFailed));
   }
@@ -80,6 +71,7 @@ function AppsPage() {
   const [accessApp, setAccessApp] = useState<AppWithAccessCount | null>(null);
   // The four apps and Build your own, once the home no longer shows them.
   const [addingApp, setAddingApp] = useState(false);
+  const [addingMcpServer, setAddingMcpServer] = useState(false);
   const [mcpApp, setMcpApp] = useState<AppWithAccessCount | null>(null);
 
   const {
@@ -89,6 +81,8 @@ function AppsPage() {
   } = useLiveQuery((q) => q.from({ app: adminAppsCollection }));
   // A failed fetch leaves the collection "ready" and empty: ask the query.
   const isError = isCollectionError || useQueryFailed(["admin", "apps"]);
+  const pageApps = useMemo(() => apps.filter((app) => !isMcpApp(app)), [apps]);
+  const mcpApps = useMemo(() => apps.filter((app) => isMcpApp(app)), [apps]);
   // The setup dialog's app, read from the live list: it closes by itself
   // once the app is ready. `openSetup` is stable, like the setters.
   const {
@@ -111,7 +105,7 @@ function AppsPage() {
       .then(
         () => {
           toast.success(MCP_APP_COPY.menu.removed(app.name));
-          refetchAppLists();
+          void refetchApps();
           setDeletingApp(null);
         },
         (error: unknown) =>
@@ -147,7 +141,7 @@ function AppsPage() {
         }
       >
         <AppsTable
-          apps={apps}
+          apps={pageApps}
           isLoading={isLoading}
           error={
             isError ? (
@@ -158,21 +152,52 @@ function AppsPage() {
             ) : undefined
           }
           onSetup={openSetup}
-          onUseMcp={setMcpApp}
           onManageAccess={setAccessApp}
           onEdit={setEditingApp}
           onDelete={setDeletingApp}
-          onToggleMcpStatus={toggleMcpStatus}
           onAddApp={() => setAddingApp(true)}
           isAdmin={isAdmin}
         />
       </SettingsSection>
 
+      {/* The apps' load failure above stands for both tables. */}
+      {isError ? null : (
+        <SettingsSection
+          title={MCP_APP_COPY.section.title}
+          hint={MCP_APP_COPY.section.hint}
+          action={
+            <Button
+              variant="outline"
+              aria-haspopup="dialog"
+              onClick={() => setAddingMcpServer(true)}
+            >
+              <Plus data-icon="inline-start" />
+              {MCP_APP_COPY.section.add}
+            </Button>
+          }
+        >
+          <McpAppsTable
+            apps={mcpApps}
+            isLoading={isLoading}
+            onSetup={openSetup}
+            onUseMcp={setMcpApp}
+            onManageAccess={setAccessApp}
+            onEdit={setEditingApp}
+            onDelete={setDeletingApp}
+            onToggleMcpStatus={toggleMcpStatus}
+            isAdmin={isAdmin}
+          />
+        </SettingsSection>
+      )}
+
       {addingApp ? (
-        <AddAppDialog
-          canRun={isAdmin}
-          onClose={() => setAddingApp(false)}
-          onMcpAppAdded={refetchAppLists}
+        <AddAppDialog canRun={isAdmin} onClose={() => setAddingApp(false)} />
+      ) : null}
+
+      {addingMcpServer ? (
+        <AddMcpServerDialog
+          onClose={() => setAddingMcpServer(false)}
+          onAdded={() => void refetchApps()}
         />
       ) : null}
 
@@ -192,6 +217,7 @@ function AppsPage() {
         <McpAppDialog
           name={mcpApp.name}
           appId={mcpApp.appId}
+          role={activeMemberRole?.role}
           onClose={() => setMcpApp(null)}
         />
       ) : null}
@@ -203,7 +229,7 @@ function AppsPage() {
           <McpAppEditDialog
             app={editingApp}
             onClose={() => setEditingApp(null)}
-            onChanged={refetchAppLists}
+            onChanged={() => void refetchApps()}
           />
         ) : (
           <EditAppModal app={editingApp} onClose={() => setEditingApp(null)} />

@@ -30,7 +30,7 @@ const toolOverrideSchema = z
   })
   .strict();
 
-/** Adding a remote MCP server by URL (Admin → Apps → Add app). */
+/** Adding a remote MCP server by URL (Admin → Apps → Add MCP server). */
 export const addRemoteMcpAppSchema = z.object({
   url: z.string().trim().min(1, "Give the server's URL").max(2048),
   /** The app id (the CLI's `--name`); derived from the URL's host when absent. */
