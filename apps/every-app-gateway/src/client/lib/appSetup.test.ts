@@ -12,7 +12,22 @@ import {
   withOAuthPresets,
   type SettingsManifestLike,
 } from "@every-app/sdk/internal";
-import { SetupAction, setupDialogModel } from "./appSetup";
+import {
+  inlineParts,
+  SetupAction,
+  setupDialogModel as model_,
+  type SetupUrls,
+} from "./appSetup";
+
+const URLS: SetupUrls = {
+  appUrl: "https://openseo.acme.com",
+  gatewayUrl: "https://acme.com",
+};
+
+const setupDialogModel = (
+  setup: Parameters<typeof model_>[0],
+  options: { name: string; canRun: boolean },
+) => model_(setup, { ...options, urls: URLS });
 
 const OPENSEO: SettingsManifestLike & { id: string } = {
   id: "openseo",
@@ -76,7 +91,7 @@ describe("setupDialogModel", () => {
     expect(model.title).toBe("Set up OpenSEO");
     // What is left to get; OpenRouter is already set.
     expect(model.gather).toBe("Get 1 key");
-    expect(model.needed).toEqual([
+    expect(model.always).toEqual([
       {
         id: "openrouter",
         label: "OpenRouter",
@@ -87,6 +102,7 @@ describe("setupDialogModel", () => {
           href: "https://openrouter.ai/settings/keys",
           host: "openrouter.ai",
         },
+        how: null,
         done: true,
       },
       {
@@ -99,14 +115,19 @@ describe("setupDialogModel", () => {
           href: "https://app.dataforseo.com/api-access",
           host: "app.dataforseo.com",
         },
+        how: null,
         done: false,
       },
     ]);
-    // What the admin could also set, for the feature that uses it.
-    expect(model.optional.map((row) => [row.label, row.why])).toEqual([
-      ["Context.dev", "JS rendering in audits."],
-    ]);
-    expect(model.optionalSummary).toBe("Context.dev");
+    // What the admin could also set: the feature, with the Gateway setting it needs.
+    expect(model.required).toEqual([]);
+    expect(
+      model.optional.map((feature) => [
+        feature.name,
+        feature.state,
+        feature.gateway.map((row) => [row.label, row.done]),
+      ]),
+    ).toEqual([["Rendering", "off", [["Context.dev", false]]]]);
     // Every setting here is the Gateway's, read live: nothing to re-read.
     expect(model.statusHint).toBe(false);
   });
@@ -130,7 +151,7 @@ describe("setupDialogModel", () => {
       { name: "Mission Control", canRun: true },
     );
     expect(model.gather).toBe("Have 2 settings ready");
-    expect(model.needed.map((row) => [row.label, row.takes])).toEqual([
+    expect(model.always.map((row) => [row.label, row.takes])).toEqual([
       ["POSTHOG_HOST", "an http or https URL"],
       ["REGION", "us or eu"],
     ]);
@@ -141,16 +162,19 @@ describe("setupDialogModel", () => {
       name: "Research Desk",
       canRun: true,
     });
-    expect(admin.needed.find((row) => !row.done)).toEqual({
+    expect(admin.always.find((row) => !row.done)).toEqual({
       id: "MAIN_SECRET",
       label: "MAIN_SECRET",
       names: [],
       why: "Signs share links.",
       takes: null,
       docs: null,
+      how: null,
       done: false,
     });
-    expect(admin.optional.map((row) => row.label)).toEqual(["WEBHOOK_SECRET"]);
+    expect(
+      admin.optional.map((feature) => feature.values.map((row) => row.label)),
+    ).toEqual([["WEBHOOK_SECRET"]]);
     expect(admin.statusHint).toBe(true);
     // A member can't run status: no hint.
     const member = setupDialogModel(setupOf(RESEARCH, ["OPENROUTER_API_KEY"]), {
@@ -164,12 +188,12 @@ describe("setupDialogModel", () => {
       name: "Research Desk",
       canRun: true,
     });
-    expect(gatewayOnly.needed.map((row) => [row.label, row.done])).toEqual([
+    expect(gatewayOnly.always.map((row) => [row.label, row.done])).toEqual([
       ["OpenRouter", false],
       ["MAIN_SECRET", true],
     ]);
-    expect(gatewayOnly.optional.map((row) => row.label)).toEqual([
-      "WEBHOOK_SECRET",
+    expect(gatewayOnly.optional.map((feature) => feature.name)).toEqual([
+      "Webhooks",
     ]);
     expect(gatewayOnly.statusHint).toBe(false);
   });
@@ -184,12 +208,12 @@ describe("setupDialogModel", () => {
       command: "pnpm everyapp configure openseo",
     });
     expect(model.title).toBe("OpenSEO needs setup");
-    expect(model.needed.map((row) => [row.label, row.done])).toEqual([
+    expect(model.always.map((row) => [row.label, row.done])).toEqual([
       ["OpenRouter", true],
       ["DataForSEO", false],
     ]);
     // Where a key comes from is for whoever sets it.
-    expect(model.needed.every((row) => row.docs === null)).toBe(true);
+    expect(model.always.every((row) => row.docs === null)).toBe(true);
     expect(model.optional).toEqual([]);
   });
 
@@ -207,34 +231,116 @@ describe("setupDialogModel", () => {
     });
   });
 
-  it("names the first optional settings in the folded line", () => {
+  it("groups a feature's values under it: steps with URLs filled, how, state, and its Gateway settings", () => {
+    const github: SettingsManifestLike & { id: string } = {
+      id: "crm",
+      secrets: [{ name: "MAIN_SECRET", why: "Signs share links." }],
+      capabilities: { slack: { access: "write" } },
+      features: {
+        github: {
+          name: "GitHub",
+          required: true,
+          why: "Links issues to deals.",
+          steps: [
+            "Make a GitHub App at [GitHub](https://github.com/settings/apps/new).",
+            "Set its webhook URL to `{appUrl}/webhooks/github`.",
+          ],
+          secrets: [
+            {
+              name: "GITHUB_KEY",
+              how: "The App's private key: {gatewayUrl}/x",
+              file: true,
+            },
+          ],
+          settings: [{ name: "GITHUB_OWNER" }],
+        },
+        slack: {
+          name: "Slack",
+          why: "Posts updates.",
+          capabilities: ["slack"],
+        },
+      },
+    };
+    const model = setupDialogModel(setupOf(github, ["GITHUB_OWNER"]), {
+      name: "OpenCRM",
+      canRun: true,
+    });
+    // Top-level first; the required feature's values aren't repeated there.
+    expect(model.always.map((row) => row.label)).toEqual(["MAIN_SECRET"]);
+    const [feature] = model.required;
+    expect(feature).toMatchObject({
+      id: "github",
+      name: "GitHub",
+      required: true,
+      state: "incomplete",
+      why: "Links issues to deals.",
+    });
+    expect(feature!.steps).toEqual([
+      [
+        { kind: "text", text: "Make a GitHub App at " },
+        {
+          kind: "link",
+          text: "GitHub",
+          href: "https://github.com/settings/apps/new",
+        },
+        { kind: "text", text: "." },
+      ],
+      [
+        { kind: "text", text: "Set its webhook URL to " },
+        { kind: "code", text: "https://openseo.acme.com/webhooks/github" },
+        { kind: "text", text: "." },
+      ],
+    ]);
+    expect(
+      feature!.values.map((row) => [row.label, row.done, row.how]),
+    ).toEqual([
+      [
+        "GITHUB_KEY",
+        false,
+        [
+          { kind: "text", text: "The App's private key: " },
+          {
+            kind: "link",
+            text: "https://acme.com/x",
+            href: "https://acme.com/x",
+          },
+        ],
+      ],
+      ["GITHUB_OWNER", true, null],
+    ]);
+    expect(model.optional.map((each) => [each.name, each.state])).toEqual([
+      ["Slack", "off"],
+    ]);
+    // A member sees the required feature's values, but no steps, no how.
+    const member = setupDialogModel(setupOf(github, []), {
+      name: "OpenCRM",
+      canRun: false,
+    });
+    expect(member.required[0]!.steps).toEqual([]);
+    expect(member.required[0]!.values.every((row) => row.how === null)).toBe(
+      true,
+    );
+    expect(member.optional).toEqual([]);
+  });
+
+  it("keeps an optional value no feature holds, from a manifest before features", () => {
     const model = setupDialogModel(
       setupOf(
         {
-          id: "crm",
-          capabilities: {
-            context: { access: "read" },
-            "google-workspace": { access: "write" },
-            "microsoft-365": { access: "write" },
-            slack: { access: "write" },
-          },
-          features: {
-            mail: {
-              name: "Mail",
-              capabilities: ["google-workspace", "microsoft-365"],
-            },
-            chat: { name: "Slack", capabilities: ["slack"] },
-            extras: {
-              name: "Extras",
-              secrets: ["GITHUB_TOKEN", "ERASURE_SECRET"],
-            },
-          },
+          id: "old",
+          secrets: ["MAIN_SECRET", { name: "EXTRA", optional: true } as never],
         },
         [],
       ),
-      { name: "OpenCRM", canRun: true },
+      { name: "Old", canRun: true },
     );
-    expect(model.optionalSummary).toBe("Google, Microsoft 365, Slack, +2 more");
+    expect(model.always.map((row) => row.label)).toEqual(["MAIN_SECRET"]);
+    expect(
+      model.optional.map((each) => [
+        each.name,
+        each.values.map((row) => row.label),
+      ]),
+    ).toEqual([["More settings", ["EXTRA"]]]);
   });
 
   it("says the platform is on it when nobody here can run the command", () => {
@@ -244,13 +350,25 @@ describe("setupDialogModel", () => {
     );
     expect(model.action).toEqual({ kind: SetupAction.Platform });
     expect(model.title).toBe("OpenSEO needs setup");
-    expect(model.needed.map((row) => row.label)).toEqual([
+    expect(model.always.map((row) => row.label)).toEqual([
       "OpenRouter",
       "DataForSEO",
     ]);
     // Nothing for this reader to set, the optional settings included.
-    expect(model.needed.every((row) => row.docs === null)).toBe(true);
+    expect(model.always.every((row) => row.docs === null)).toBe(true);
     expect(model.optional).toEqual([]);
     expect(model.statusHint).toBe(false);
+  });
+});
+
+describe("inlineParts", () => {
+  it("links http and https only, and leaves trailing punctuation outside a bare URL", () => {
+    expect(
+      inlineParts("See https://x.dev/a, then [b](javascript:alert(1)) **now**"),
+    ).toEqual([
+      { kind: "text", text: "See " },
+      { kind: "link", text: "https://x.dev/a", href: "https://x.dev/a" },
+      { kind: "text", text: ", then b) now" },
+    ]);
   });
 });

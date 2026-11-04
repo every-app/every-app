@@ -38,9 +38,22 @@ const SETUP: AppSetup = {
     },
   ],
   unmet: [],
-  features: [],
+  features: [
+    {
+      id: "rendering",
+      name: "Rendering",
+      required: false,
+      why: "Audits of JS sites.",
+      steps: ["Get a key at https://context.dev, then come back to {appUrl}."],
+      capabilities: ["context"],
+      providers: [],
+      state: "off",
+      settings: ["context"],
+    },
+  ],
   command: { command: "pnpm everyapp configure openseo" },
 };
+SETUP.settings[1]!.feature = "rendering";
 SETUP.unmet = [SETUP.settings[0]!];
 
 /** An app whose own secret is unset: the Worker's, which `status` re-reads. */
@@ -88,6 +101,7 @@ function render(canRun: boolean, setup: AppSetup = SETUP) {
     root.render(
       <AppSetupDialog
         name="OpenSEO"
+        hostname="openseo.acme.com"
         setup={setup}
         canRun={canRun}
         onClose={() => undefined}
@@ -115,7 +129,11 @@ it("gives an admin the steps: the unmet setting and its link, the command, and t
   expect(text).toContain("pnpm everyapp configure openseo");
   expect(text).toContain("Come back here: OpenSEO opens on its own");
   expect(text).not.toContain("Ask an admin to run:");
-  expect(text).toContain("Add later · 1 optional");
+  // The optional feature, folded while off, with "Set up" to open it.
+  expect(text).toContain("Optional");
+  expect(text).toContain("Rendering");
+  expect(text).toContain("Set up");
+  expect(text).not.toContain("Audits of JS sites.");
   // Gateway settings are read live: nothing for `status` to re-read.
   expect(text).not.toContain("pnpm everyapp status");
   const link = document.body.querySelector<HTMLAnchorElement>(
@@ -151,7 +169,7 @@ it("tells a member to ask an admin", () => {
   expect(text).toContain("Ask an admin to run:");
   expect(text).toContain("pnpm everyapp configure openseo");
   expect(text).not.toContain("Run this in a terminal");
-  expect(text).not.toContain("optional");
+  expect(text).not.toContain("Rendering");
   expect(text).not.toContain("pnpm everyapp status");
   expect(document.body.querySelector("a")).toBeNull();
 });
@@ -161,4 +179,64 @@ it("names an app's own secret once and says status re-reads the Worker", () => {
   expect(text.split("MAIN_SECRET").length - 1).toBe(1); // the row; the command names the app
   expect(text).toContain("pnpm everyapp configure research");
   expect(text).toContain("pnpm everyapp status");
+});
+
+it("shows a required feature open: steps with links and URLs filled, values, and the Gateway setting with Providers", () => {
+  const text = render(true, {
+    ...SETUP,
+    settings: [
+      ...SETUP.settings,
+      {
+        kind: "secret",
+        id: "GITHUB_KEY",
+        label: "GITHUB_KEY",
+        holder: "app",
+        names: ["GITHUB_KEY"],
+        need: { kind: "required" },
+        feature: "github",
+        how: "Under {gatewayUrl}/x.",
+        set: false,
+        blocking: true,
+      },
+      {
+        kind: "capability",
+        id: "slack",
+        label: "Slack",
+        holder: "gateway",
+        names: ["SLACK_CLIENT_ID"],
+        need: { kind: "required" },
+        feature: "github",
+        set: false,
+        blocking: true,
+      },
+    ],
+    features: [
+      ...SETUP.features,
+      {
+        id: "github",
+        name: "GitHub",
+        required: true,
+        why: "Links issues to deals.",
+        steps: ["Open [GitHub](https://github.com/settings/apps/new)."],
+        capabilities: ["slack"],
+        providers: [],
+        state: "off",
+        settings: ["GITHUB_KEY", "slack"],
+      },
+    ],
+  });
+  expect(text).toContain("Always needed");
+  expect(text).toContain("GitHub");
+  expect(text).toContain("Required");
+  expect(text).toContain("Links issues to deals.");
+  expect(text).toContain("Not set on the Gateway");
+  const step = document.body.querySelector<HTMLAnchorElement>(
+    'a[href="https://github.com/settings/apps/new"]',
+  );
+  expect(step?.textContent).toBe("GitHub");
+  expect(step?.target).toBe("_blank");
+  expect(text).toContain(`Under ${window.location.origin}/x`);
+  expect(
+    document.body.querySelector('a[href="/admin/providers"]')?.textContent,
+  ).toContain("Providers");
 });

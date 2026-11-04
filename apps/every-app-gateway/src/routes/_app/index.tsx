@@ -390,6 +390,7 @@ function App() {
       {setupApp ? (
         <AppSetupDialog
           name={setupApp.name}
+          hostname={setupApp.hostname}
           setup={setupApp.setup}
           // An owner or admin runs the command for their own organization's
           // app; a shared app of another organization is the platform's to

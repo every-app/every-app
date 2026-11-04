@@ -7,8 +7,9 @@ import {
   CircleCheck,
 } from "lucide-react";
 import { cn } from "cn";
-import type { AppSetup } from "@every-app/sdk/internal";
+import type { AppSetup, FeatureState } from "@every-app/sdk/internal";
 import { CodeBlock } from "@/client/components/CodeBlock";
+import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import {
   Collapsible,
@@ -24,43 +25,83 @@ import {
 } from "@/client/components/ui/dialog";
 import {
   PLATFORM_NOTE,
+  PROVIDERS_PATH,
   STATUS_COMMAND,
   SetupAction,
   setupDialogModel,
+  type InlinePart,
+  type SetupDialogFeature,
   type SetupDialogRow,
 } from "@/client/lib/appSetup";
 
 interface AppSetupDialogProps {
   name: string;
+  /** The app's hostname, for `{appUrl}` in its features' steps; null leaves it unfilled. */
+  hostname: string | null;
   setup: AppSetup;
   /** Whoever reads it can run the command: an owner or admin. */
   canRun: boolean;
   onClose: () => void;
 }
 
+const STATE_BADGE: Record<
+  FeatureState,
+  { label: string; variant: "success" | "warning" | "outline" }
+> = {
+  ready: { label: "Ready", variant: "success" },
+  incomplete: { label: "Incomplete", variant: "warning" },
+  off: { label: "Off", variant: "outline" },
+};
+
 /**
- * What an app needs set before it opens. Whoever can run the command gets
- * three steps: get the keys, run `everyapp configure <app>`, come back; a
- * member is told to ask an admin. Each setting ticks off as it lands
- * (the dialog renders from the live list, useSetupDialog), and the dialog
- * closes by itself once the app no longer needs setup. Closes from the
- * footer alone, like every other dialog.
+ * What an app needs set before it opens, grouped as `everyapp configure`
+ * walks it: what is always needed, then each feature with its steps and
+ * values. Whoever can run the command gets three steps: get the keys, run
+ * `everyapp configure <app>`, come back, then the optional features,
+ * folded while off; a member is told to ask an admin. Each setting ticks
+ * off as it lands (the dialog renders from the live list,
+ * useSetupDialog), and the dialog closes by itself once the app no longer
+ * needs setup. Closes from the footer alone, like every other dialog.
  */
 export function AppSetupDialog({
   name,
+  hostname,
   setup,
   canRun,
   onClose,
 }: AppSetupDialogProps) {
-  const model = setupDialogModel(setup, { name, canRun });
+  const model = setupDialogModel(setup, {
+    name,
+    canRun,
+    urls: {
+      appUrl: hostname
+        ? `${window.location.protocol}//${hostname}`
+        : "{appUrl}",
+      gatewayUrl: window.location.origin,
+    },
+  });
   const { action } = model;
+  const runs = action.kind === SetupAction.Run;
+  const grouped = model.required.length > 0 || model.optional.length > 0;
   const needed = (
-    <div className="flex flex-col gap-2">
-      <ul className="divide-y divide-border rounded-lg border border-border">
-        {model.needed.map((row) => (
-          <NeededRow key={row.id} row={row} />
-        ))}
-      </ul>
+    <div className="flex flex-col gap-4">
+      {model.always.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          {grouped ? (
+            <p className="text-xs font-medium text-muted-foreground">
+              Always needed
+            </p>
+          ) : null}
+          <ul className="divide-y divide-border rounded-lg border border-border">
+            {model.always.map((row) => (
+              <NeededRow key={row.id} row={row} />
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {model.required.map((feature) => (
+        <FeatureSection key={feature.id} feature={feature} runs={runs} />
+      ))}
     </div>
   );
   return (
@@ -108,10 +149,18 @@ export function AppSetupDialog({
             </>
           )}
           {model.optional.length > 0 ? (
-            <OptionalSettings
-              rows={model.optional}
-              summary={model.optionalSummary}
-            />
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-medium text-muted-foreground">
+                Optional
+              </p>
+              {model.optional.map((feature) => (
+                <OptionalFeature
+                  key={feature.id}
+                  feature={feature}
+                  runs={runs}
+                />
+              ))}
+            </div>
           ) : null}
         </div>
         <DialogFooter showCloseButton>
@@ -148,33 +197,171 @@ function Step({
   );
 }
 
+/** A feature's name with whether it is needed and its state. */
+function FeatureHeading({ feature }: { feature: SetupDialogFeature }) {
+  const state = STATE_BADGE[feature.state];
+  return (
+    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+      <span className="text-sm font-medium wrap-anywhere">{feature.name}</span>
+      <Badge variant="secondary" size="sm">
+        {feature.required ? "Required" : "Optional"}
+      </Badge>
+      <Badge variant={state.variant} size="sm">
+        {state.label}
+      </Badge>
+    </span>
+  );
+}
+
+/** Why, the numbered steps, its values, and the Gateway settings it needs. */
+function FeatureBody({
+  feature,
+  runs,
+}: {
+  feature: SetupDialogFeature;
+  runs: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-3 px-3 pb-3">
+      {feature.why ? (
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          {feature.why}
+        </p>
+      ) : null}
+      {feature.steps.length > 0 ? (
+        <ol className="flex list-decimal flex-col gap-1 pl-5 text-xs leading-relaxed marker:text-muted-foreground">
+          {feature.steps.map((step, index) => (
+            <li key={index}>
+              <Inline parts={step} />
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      {feature.values.length + feature.gateway.length > 0 ? (
+        <ul className="divide-y divide-border rounded-md border border-border">
+          {feature.values.map((row) => (
+            <NeededRow key={row.id} row={row} />
+          ))}
+          {feature.gateway.map((row) => (
+            <GatewayRow key={row.id} row={row} runs={runs} />
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+/** A feature the app can't open without: always open. */
+function FeatureSection({
+  feature,
+  runs,
+}: {
+  feature: SetupDialogFeature;
+  runs: boolean;
+}) {
+  return (
+    <section className="flex flex-col gap-2 rounded-lg border border-border">
+      <div className="px-3 pt-2.5">
+        <FeatureHeading feature={feature} />
+      </div>
+      <FeatureBody feature={feature} runs={runs} />
+    </section>
+  );
+}
+
+/** A feature the app works without: folded while off, with "Set up" to open it. */
+function OptionalFeature({
+  feature,
+  runs,
+}: {
+  feature: SetupDialogFeature;
+  runs: boolean;
+}) {
+  return (
+    <Collapsible
+      defaultOpen={feature.state === "incomplete"}
+      className="rounded-lg border border-dashed border-border"
+    >
+      <CollapsibleTrigger className="group/feature flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2.5 text-left outline-none hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50">
+        <ChevronRight
+          className="size-4 shrink-0 text-muted-foreground transition-transform group-data-panel-open/feature:rotate-90 motion-reduce:transition-none"
+          aria-hidden
+        />
+        <FeatureHeading feature={feature} />
+        {feature.state === "off" ? (
+          <span className="shrink-0 text-xs font-medium text-primary group-data-panel-open/feature:invisible">
+            Set up
+          </span>
+        ) : null}
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <FeatureBody feature={feature} runs={runs} />
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+/** A step's or a value's Markdown: text, code, and links that open in a new tab. */
+function Inline({ parts }: { parts: InlinePart[] }) {
+  return (
+    <span className="wrap-anywhere">
+      {parts.map((part, index) =>
+        part.kind === "link" ? (
+          <a
+            key={index}
+            href={part.href}
+            target="_blank"
+            rel="noreferrer"
+            className="text-foreground underline underline-offset-3 hover:text-primary"
+          >
+            {part.text}
+          </a>
+        ) : part.kind === "code" ? (
+          <code key={index} className="rounded bg-muted px-1 py-px font-mono">
+            {part.text}
+          </code>
+        ) : (
+          <span key={index}>{part.text}</span>
+        ),
+      )}
+    </span>
+  );
+}
+
+function SetMark({ done }: { done: boolean }) {
+  return done ? (
+    <CircleCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+  ) : (
+    <Circle
+      className="mt-0.5 size-4 shrink-0 text-muted-foreground/60"
+      aria-hidden
+    />
+  );
+}
+
+function SetLabel() {
+  return (
+    <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 text-xs text-success">
+      <Check className="size-3" aria-hidden />
+      Set
+    </span>
+  );
+}
+
 /**
- * A setting the app can't open without: open, with why and where to get
- * it, or ticked off once set.
+ * A setting the app needs: open, with why, where it lives and where to
+ * get it, or ticked off once set.
  */
 function NeededRow({ row }: { row: SetupDialogRow }) {
   return (
     <li className="flex items-start gap-3 p-3">
-      {row.done ? (
-        <CircleCheck
-          className="mt-0.5 size-4 shrink-0 text-success"
-          aria-hidden
-        />
-      ) : (
-        <Circle
-          className="mt-0.5 size-4 shrink-0 text-muted-foreground/60"
-          aria-hidden
-        />
-      )}
+      <SetMark done={row.done} />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <Label row={row} />
         {row.done ? null : <Details row={row} />}
       </div>
       {row.done ? (
-        <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 text-xs text-success">
-          <Check className="size-3" aria-hidden />
-          Set
-        </span>
+        <SetLabel />
       ) : row.docs ? (
         <Button
           variant="outline"
@@ -192,60 +379,41 @@ function NeededRow({ row }: { row: SetupDialogRow }) {
           {row.takes ? "Docs" : "Get key"}
           <ArrowUpRight aria-hidden />
         </Button>
-      ) : null}
+      ) : (
+        <span className="mt-0.5 shrink-0 text-xs text-muted-foreground">
+          Not set
+        </span>
+      )}
     </li>
   );
 }
 
-/** The settings the app works without, folded to one line. */
-function OptionalSettings({
-  rows,
-  summary,
-}: {
-  rows: SetupDialogRow[];
-  summary: string;
-}) {
+/**
+ * A Gateway setting a feature needs: set, or not yet, with where an owner
+ * or admin adds it (Manage workspace → Providers).
+ */
+function GatewayRow({ row, runs }: { row: SetupDialogRow; runs: boolean }) {
   return (
-    <Collapsible className="rounded-lg border border-dashed border-border">
-      <CollapsibleTrigger className="group/optional flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm outline-none hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50">
-        <ChevronRight
-          className="size-4 shrink-0 text-muted-foreground transition-transform group-data-panel-open/optional:rotate-90 motion-reduce:transition-none"
-          aria-hidden
-        />
-        <span className="shrink-0 font-medium">
-          Add later · {rows.length} optional
+    <li className="flex items-start gap-3 p-3">
+      <SetMark done={row.done} />
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="text-sm font-medium wrap-anywhere">{row.label}</span>
+        <span className="text-xs text-muted-foreground">
+          {row.done ? "Set on the Gateway" : "Not set on the Gateway"}
         </span>
-        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground group-data-panel-open/optional:invisible">
-          {summary}
-        </span>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <ul className="divide-y divide-border border-t border-dashed border-border">
-          {rows.map((row) => (
-            <li key={row.id} className="flex flex-col gap-1 px-3 py-2.5">
-              <div className="flex items-baseline gap-3">
-                <span className="min-w-0 flex-1">
-                  <Label row={row} />
-                </span>
-                {row.docs ? (
-                  <a
-                    href={row.docs.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    title={row.docs.href}
-                    className="inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground underline-offset-3 hover:text-foreground hover:underline"
-                  >
-                    {row.docs.host}
-                    <ArrowUpRight className="size-3" aria-hidden />
-                  </a>
-                ) : null}
-              </div>
-              <Details row={row} />
-            </li>
-          ))}
-        </ul>
-      </CollapsibleContent>
-    </Collapsible>
+      </div>
+      {row.done ? (
+        <SetLabel />
+      ) : runs ? (
+        <a
+          href={PROVIDERS_PATH}
+          className="mt-0.5 inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground underline-offset-3 hover:text-foreground hover:underline"
+        >
+          Providers
+          <ArrowUpRight className="size-3" aria-hidden />
+        </a>
+      ) : null}
+    </li>
   );
 }
 
@@ -264,13 +432,18 @@ function Label({ row }: { row: SetupDialogRow }) {
   );
 }
 
-/** Why the app needs it, what a plain setting takes, and its names. */
+/** Why the app needs it, where it lives, what a plain setting takes, and its names. */
 function Details({ row }: { row: SetupDialogRow }) {
   return (
     <>
       {row.why ? (
         <p className="text-xs leading-relaxed text-muted-foreground">
           {row.why}
+        </p>
+      ) : null}
+      {row.how ? (
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          <Inline parts={row.how} />
         </p>
       ) : null}
       {row.takes ? (

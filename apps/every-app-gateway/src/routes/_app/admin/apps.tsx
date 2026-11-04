@@ -175,6 +175,7 @@ function AppsPage() {
       {setupApp ? (
         <AppSetupDialog
           name={setupApp.name}
+          hostname={setupApp.hostname}
           setup={setupApp.setup}
           // Another organization's shared app is listed, never set up here:
           // the dialog says who does, and leaves out what else could be set.
