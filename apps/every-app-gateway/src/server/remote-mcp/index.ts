@@ -516,8 +516,8 @@ async function listTools(
   } catch (error) {
     logUpstreamFailure(route, "list", error);
     return toolsError(
-      500,
-      "misconfigured",
+      502,
+      "upstream_failed",
       upstreamFailure(route.name ?? route.appSlug, error, gated.credential),
     );
   }

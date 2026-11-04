@@ -115,7 +115,9 @@ export type ToolsErrorCodeV1 =
   | "forbidden"
   | "unauthenticated"
   | "method_not_allowed"
-  | "misconfigured";
+  | "misconfigured"
+  /** A proxied server failed (unreachable, timed out, refused): not a setup problem. */
+  | "upstream_failed";
 
 export interface ToolIssueV1 {
   message: string;

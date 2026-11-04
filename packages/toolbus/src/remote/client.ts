@@ -278,7 +278,9 @@ export class RemoteMcpClient {
       .filter((form) => form.length >= SECRET_MIN_CHARS)
       .sort((a, b) => b.length - a.length);
     this.clientInfo = options.clientInfo ?? DEFAULT_CLIENT_INFO;
-    this.fetchImpl = options.fetch ?? fetch;
+    // Bound: Workers throw "Illegal invocation" when the global fetch is
+    // called as a method of another object (`this.fetchImpl(...)`).
+    this.fetchImpl = options.fetch ?? fetch.bind(globalThis);
     this.listTimeoutMs = options.listTimeoutMs ?? LIST_TIMEOUT_MS;
     this.callTimeoutMs = options.callTimeoutMs ?? CALL_TIMEOUT_MS;
     this.callMaxBytes = options.callMaxBytes ?? CALL_MAX_BYTES;

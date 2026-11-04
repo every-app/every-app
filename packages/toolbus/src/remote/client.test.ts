@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createToolBusHttp } from "../http";
 import { ISSUER, gatewayView, testKeys, todoApp } from "../test-fixtures";
 import { MAX_LIST_PAGES, RemoteMcpClient, RemoteMcpError } from "./client";
@@ -84,6 +84,29 @@ async function bodyOf(
 }
 
 describe("the remote MCP client", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("calls the global fetch the way a Worker allows when none is given", async () => {
+    // Workers throw "Illegal invocation" when fetch is called as another
+    // object's method; the deployed Gateway passes no fetch of its own.
+    vi.stubGlobal("fetch", function (this: unknown) {
+      if (this !== undefined && this !== globalThis) {
+        throw new TypeError("Illegal invocation");
+      }
+      return Promise.resolve(
+        new Response("", {
+          status: 401,
+          headers: { "www-authenticate": "Bearer" },
+        }),
+      );
+    });
+    await expect(
+      new RemoteMcpClient({ url: URL_ }).listTools(),
+    ).rejects.toMatchObject({ kind: "unauthorized" });
+  });
+
   it("speaks the 2026-07-28 era first: lists and calls with the per-request headers and _meta, no session", async () => {
     const seen: Request[] = [];
     const client = new RemoteMcpClient({

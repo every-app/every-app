@@ -304,6 +304,10 @@ export async function fetchAppCatalog(
     body["v"] === TOOLS_PROTOCOL_VERSION &&
     isPlainObject(contractError)
   ) {
+    // A server the app proxies failed: its message already says how.
+    if (contractError["code"] === "upstream_failed") {
+      return { status: "error", error: String(contractError["message"]) };
+    }
     return {
       status: "error",
       error: `the app refused the catalog request (${String(contractError["code"])}): ${String(contractError["message"])}`,
