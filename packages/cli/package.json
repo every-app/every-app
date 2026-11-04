@@ -1,11 +1,10 @@
 {
   "name": "everyapp",
-  "private": true,
   "author": "",
   "description": "EveryApp CLI - Deploy and manage apps.",
   "license": "MIT",
   "type": "module",
-  "version": "0.3.0",
+  "version": "0.3.0-rc.13",
   "files": [
     "dist",
     "bin",
