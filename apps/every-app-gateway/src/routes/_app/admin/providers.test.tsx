@@ -84,7 +84,7 @@ const github = {
 const google = {
   id: "google-workspace",
   name: "Google Workspace",
-  source: "catalog",
+  source: "row",
   kind: "oauth",
   hosts: ["www.googleapis.com"],
   configured: true,
@@ -94,7 +94,7 @@ const google = {
     ...github.oauth,
     id: "google-workspace",
     name: "Google Workspace",
-    source: "catalog",
+    source: "row",
     client: { source: "env", clientId: "123.apps" },
     redirectUri: "https://apps.acme.com/connect/google-workspace/callback",
     connections: 0,
@@ -158,7 +158,6 @@ const presets = [
   {
     id: "google-workspace",
     name: "Google Workspace",
-    builtIn: true,
     description: "Search Console, Analytics, Gmail.",
     hint: null,
     console: "https://console.cloud.google.com/apis/credentials",
@@ -173,7 +172,6 @@ const presets = [
   {
     id: "github-oauth",
     name: "GitHub",
-    builtIn: false,
     description: "Repositories, issues, pull requests.",
     hint: "Register an OAuth App (not a GitHub App).",
     console: "https://github.com/settings/developers",
@@ -251,7 +249,7 @@ beforeEach(() => {
     if (typeof fn === "function") fn.mockReset();
   }
   mocks.listProviders.mockResolvedValue({
-    providers: [openrouter, google, slack, dataforseo, exa, email, github],
+    providers: [openrouter, google, dataforseo, exa, email, github],
   });
   mocks.getAiDefault.mockResolvedValue({
     resolution: { provider: "openrouter", configured: true },
@@ -331,7 +329,7 @@ describe("the grouped list", () => {
     const needed = group("Needed by an app")!.textContent ?? "";
     expect(needed).toContain("API key · needed by notes");
     expect(needed).toContain("Needs a key");
-    expect(body()).toContain("2 more built in: APIs, OAuth sign-ins");
+    expect(body()).toContain("1 more built in: APIs");
     expect(container.querySelector('[aria-label="All providers"]')).toBeNull();
     expect(body()).not.toContain("Slack");
     expect(body()).not.toContain("Gateway service");
@@ -366,16 +364,17 @@ describe("the grouped list", () => {
   });
 
   it("says nothing is set up on a fresh workspace, and still offers Show all", async () => {
-    mocks.listProviders.mockResolvedValue({ providers: [exa, slack, email] });
+    // An OAuth preset isn't listed until a deploy or an admin registers it.
+    mocks.listProviders.mockResolvedValue({ providers: [exa, email] });
     await render();
     expect(group("Set up")).toBeNull();
     expect(group("Needed by an app")).toBeNull();
     expect(body()).toContain("Nothing is set up yet.");
-    expect(body()).toContain("2 more built in: APIs, OAuth sign-ins");
+    expect(body()).toContain("1 more built in: APIs");
     await showAll();
     expect(
       container.querySelectorAll('[aria-label="All providers"] tbody tr'),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
   });
 
   it("expands to every provider but the Gateway services, and filters by name", async () => {
@@ -385,7 +384,7 @@ describe("the grouped list", () => {
       [
         ...container.querySelectorAll('[aria-label="All providers"] tbody tr'),
       ].map((row) => row.querySelector("p")?.textContent);
-    expect(rows()).toHaveLength(6);
+    expect(rows()).toHaveLength(5);
     expect(rows()).not.toContain("email");
     const search = container.querySelector<HTMLInputElement>(
       'input[aria-label="Search providers"]',
@@ -430,11 +429,11 @@ describe("the providers table", () => {
     ]);
   });
 
-  it("offers no Remove on a built-in client, and no menu on an API-key entry", async () => {
+  it("offers Remove on an OAuth preset's row, and no menu on a built-in API-key entry", async () => {
     await render();
     await showAll();
     await openRowMenu("Google Workspace");
-    expect(menuItems()).toEqual(["Replace client"]);
+    expect(menuItems()).toEqual(["Replace client", "Remove provider"]);
     expect(
       container.querySelector(
         'table button[aria-label="Actions for DataForSEO"]',
@@ -444,12 +443,13 @@ describe("the providers table", () => {
 });
 
 describe("Add OAuth provider", () => {
-  it("lists the presets with the built-in ones marked, then shows GitHub's redirect URI and takes the client", async () => {
+  it("lists the presets, then shows GitHub's redirect URI and takes the client", async () => {
     await render();
     await press(button("Add OAuth provider"));
     const dialog = document.body.querySelector('[role="dialog"]')!;
     const list = dialog.querySelector('[aria-label="Presets"]')!.textContent!;
-    expect(list).toContain("Google WorkspaceBuilt in");
+    expect(list).toContain("Google Workspace");
+    expect(list).not.toContain("Built in");
     expect(list).toContain("GitHub");
     expect(list).toContain("Custom");
 

@@ -87,9 +87,9 @@ export async function add(flags: GatewayCommandFlags & OAuthAddFlags, spec?: str
 }
 
 /**
- * `provider add`, by what it was given: `--oauth <value>` or a preset or
- * built-in OAuth client's id (addOAuth); a built-in API-key or AI
- * provider's id (addBuiltIn); a spec file or URL (addFromSpec).
+ * `provider add`, by what it was given: `--oauth <value>` or an OAuth
+ * preset's id (addOAuth); a built-in API-key or AI provider's id
+ * (addBuiltIn); a spec file or URL (addFromSpec).
  */
 export async function addAny(
   options: ProviderOptions & { flags: GatewayCommandFlags & OAuthAddFlags },
@@ -109,16 +109,16 @@ Nothing was changed.`,
     return;
   }
   if (!spec) {
-    throw new EveryAppError("PROVIDER_SPEC_INVALID", "Give the provider to add\nA built-in provider's id (provider list), a JSON spec file or https URL, or --oauth <preset>.", {
+    throw new EveryAppError("PROVIDER_SPEC_INVALID", "Give the provider to add\nA built-in provider's id (provider list), an OAuth preset's (provider presets), or a JSON spec file or https URL.", {
       rerun: `${CLI} provider list`,
       rerunNote: "names the built-in providers",
     });
   }
-  const builtIn = builtInOf(spec);
-  if (builtIn?.mode === "oauth_client" || Object.hasOwn(OAUTH_PRESETS, spec)) {
+  if (Object.hasOwn(OAUTH_PRESETS, spec)) {
     await addOAuth(options, spec);
     return;
   }
+  const builtIn = builtInOf(spec);
   if (builtIn) {
     await addBuiltIn(options, spec, builtIn);
     return;
@@ -639,17 +639,15 @@ function providersOf(
       source: row ? "row" : "catalog",
       ...(row ? { addedBy: row.addedBy, addedAt: row.addedAt } : {}),
       apps: appsUsing(apps, id, capability),
-      ...(isOAuthCapability(capability)
-        ? (oauthFacts(id, capability, { source: row ? "row" : "catalog", ...oauth }) as Partial<ListedProvider>)
-        : {}),
+      ...(isOAuthCapability(capability) ? (oauthFacts(id, capability, oauth) as Partial<ListedProvider>) : {}),
     });
   }
   return providers;
 }
 
 /**
- * `provider list`: the catalog's API-key, AI and OAuth entries and the
- * registered rows, with each setting's state (names only, as `secret
+ * `provider list`: the catalog's API-key and AI entries and the
+ * registered rows (every OAuth provider is one), with each setting's state (names only, as `secret
  * list` reads them), whether a row's key is bound, where each is from and
  * which apps list it. Rows the Gateway refuses are named under the table.
  */
@@ -719,8 +717,8 @@ export async function listProviders(options: ProviderOptions): Promise<void> {
 
 /**
  * The spec of `id` as `provider show` prints it: an API-key entry's whole
- * spec (`providerSpecOf`, what `provider add` takes), or for an AI
- * provider or a built-in OAuth client, what a person needs to set it up.
+ * spec or an OAuth row's (`providerSpecOf`, what `provider add` takes),
+ * or for a built-in AI provider, what a person needs to set it up.
  */
 function specOf(id: string, capability: Capability): Record<string, unknown> {
   const settings = [...capabilitySettings(capability)];
@@ -743,27 +741,9 @@ function specOf(id: string, capability: Capability): Record<string, unknown> {
         routes: [...capability.inferenceRoutes],
         ...(capability.setup ? { setup: capability.setup } : {}),
       };
-    case "oauth_client": {
-      // A registered OAuth provider's whole spec (what `provider add --oauth` took); a built-in client's setup facts.
-      if (!capability.setup) return providerSpecOf(id, capability);
-      const { flow } = capability;
-      return {
-        id,
-        kind: "oauth client",
-        name: capability.label,
-        docs: capability.console,
-        ...(capability.reference ? { scopesReference: capability.reference } : {}),
-        settings,
-        hosts: [...capability.api],
-        authorizeUrl: flow.authorizeUrl,
-        tokenUrl: flow.tokenUrl,
-        scopeSeparator: flow.scopeSeparator,
-        ...(flow.scopePrefix ? { scopePrefix: flow.scopePrefix } : {}),
-        identityScopes: [...flow.identityScopes],
-        tolerated: [...flow.tolerated],
-        setup: capability.setup,
-      };
-    }
+    case "oauth_client":
+      // A registered OAuth provider's whole spec (what `provider add --oauth` took).
+      return providerSpecOf(id, capability);
     case "service":
       return { id, name: capability.label };
   }
@@ -813,7 +793,7 @@ export async function showProvider(
   const spec = specOf(id, capability);
   let saved: string | null = null;
   if (flags.save) {
-    if (!row || capability.mode === "oauth_client") {
+    if (!row) {
       throw new EveryAppError(
         "PROVIDER_BUILTIN",
         `${id} is built in\neveryapp dev reaches it without a file. Nothing was written.`,
@@ -827,7 +807,6 @@ export async function showProvider(
   const bound = registry.bound(id);
   const oauth = isOAuthCapability(capability)
     ? oauthFacts(id, capability, {
-        source: row ? "row" : "catalog",
         gatewayUrl: gateway.gatewayUrl,
         gatewayNames,
         uploaded,
@@ -848,9 +827,7 @@ export async function showProvider(
               ? "its key is bound to these hosts"
               : "its key isn't set for these hosts yet"
         }.`
-      : oauth
-        ? `Built in; its client is ${client?.source === "env" ? "set" : client?.source === "uploaded" ? "uploaded under Admin → Providers" : "not set"}.`
-        : "Built in.",
+      : "Built in.",
     ...(oauth
       ? [
           `Redirect URI to register at ${String(oauth["console"])}: ${String(oauth["redirectUri"])}`,

@@ -1,7 +1,6 @@
 /**
  * The `oauth2-user` half of a provider spec: a registered OAuth provider,
- * a preset (./oauthPresets.ts) or a built-in one (./oauthBuiltIns.ts), as
- * JSON, turned into an {@link OAuthClientCapability} whose `flow` the
+ * one written from a preset (./oauthPresets.ts), as JSON, turned into an {@link OAuthClientCapability} whose `flow` the
  * Gateway runs. `parseProviderSpec` (./providerSpec.ts) hands the common
  * fields here once it sees `auth.kind: "oauth2-user"`. Nothing here reads
  * a value: a spec names Gateway settings, never holds one.
@@ -12,9 +11,6 @@
  * identity URL with the scopes it needs, and the scopes a token may carry
  * beyond what was asked (`tolerated`). Which scopes an app gets is its own
  * `everyapp.config.ts`, never the spec.
- *
- * Only type imports from ./capabilities.ts: the catalog builds its
- * built-in entries with {@link oauthCapabilityFromSpec} at load.
  */
 import type {
   OAuthClientCapability,
@@ -575,105 +571,6 @@ function oauthCapabilityOf(
     ...(common.example === undefined ? {} : { example: common.example }),
     ...(common.tags === undefined ? {} : { tags: common.tags }),
   };
-}
-
-/** The JSON shape of an `oauth2-user` spec, as the built-ins and presets write it. */
-export interface OAuthSpecJson {
-  readonly id: string;
-  readonly name: string;
-  readonly description?: string;
-  readonly docs: string;
-  readonly api?: string;
-  readonly hosts: readonly string[];
-  readonly auth: {
-    readonly kind: "oauth2-user";
-    readonly authorizeUrl: string;
-    readonly tokenUrl: string;
-    readonly revokeUrl?: string;
-    readonly revokeMethod?: "POST" | "DELETE";
-    readonly clientId: string;
-    readonly clientSecret?: string;
-    readonly inject?: OAuthClientInjection;
-    readonly pkce?: boolean;
-    readonly scopeSeparator?: OAuthScopeSeparator;
-    readonly scopePrefix?: string;
-    readonly authorizeParams?: Readonly<Record<string, string>>;
-    readonly tokenHeaders?: Readonly<Record<string, string>>;
-    readonly identity?: {
-      readonly url: string;
-      readonly label: string;
-      readonly id?: string;
-      readonly scopes?: readonly string[];
-    };
-    readonly tolerated?: readonly string[];
-  };
-  readonly hint?: string;
-  readonly example?: string;
-  readonly tags?: readonly string[];
-}
-
-/**
- * A spec already known to be good (a built-in, checked by its test) as
- * its capability, without the parse: what the catalog runs at load, where
- * calling the full parser would be an import cycle.
- */
-export function oauthCapabilityFromSpec(
-  spec: OAuthSpecJson,
-): OAuthClientCapability {
-  const { auth } = spec;
-  const flow: OAuthFlow = {
-    authorizeUrl: auth.authorizeUrl,
-    tokenUrl: auth.tokenUrl,
-    ...(auth.revokeUrl === undefined ? {} : { revokeUrl: auth.revokeUrl }),
-    ...(auth.revokeMethod === undefined
-      ? {}
-      : { revokeMethod: auth.revokeMethod }),
-    inject: auth.inject ?? "form",
-    pkce: auth.pkce ?? true,
-    scopeSeparator: auth.scopeSeparator ?? "space",
-    ...(auth.scopePrefix === undefined
-      ? {}
-      : { scopePrefix: auth.scopePrefix }),
-    ...(auth.authorizeParams === undefined
-      ? {}
-      : { authorizeParams: { ...auth.authorizeParams } }),
-    ...(auth.tokenHeaders === undefined
-      ? {}
-      : { tokenHeaders: { ...auth.tokenHeaders } }),
-    ...(auth.identity === undefined
-      ? {}
-      : {
-          identity: {
-            url: auth.identity.url,
-            label: auth.identity.label,
-            ...(auth.identity.id === undefined ? {} : { id: auth.identity.id }),
-          },
-        }),
-    identityScopes: [...(auth.identity?.scopes ?? [])],
-    tolerated: [...(auth.tolerated ?? [])],
-  };
-  return oauthCapabilityOf(
-    {
-      id: spec.id,
-      name: spec.name,
-      docs: spec.docs,
-      hosts: spec.hosts,
-      ...(spec.description === undefined
-        ? {}
-        : { description: spec.description }),
-      ...(spec.api === undefined ? {} : { reference: spec.api }),
-      ...(spec.hint === undefined ? {} : { hint: spec.hint }),
-      ...(spec.example === undefined ? {} : { example: spec.example }),
-      ...(spec.tags === undefined ? {} : { tags: spec.tags }),
-    },
-    {
-      clientId: auth.clientId,
-      ...(auth.clientSecret === undefined
-        ? {}
-        : { clientSecret: auth.clientSecret }),
-    },
-    flow,
-  );
 }
 
 /**

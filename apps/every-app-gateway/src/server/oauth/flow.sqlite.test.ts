@@ -5,7 +5,8 @@
  * in an app, the connection stored sealed as theirs in that app, an app's
  * call through the proxy with the held token, the refresh, the expiry, the
  * disconnect with a revoke; the state rules and the return rule; the
- * Google catalog entry with its client from D1; and an MCP server's row:
+ * Google preset registered as a deploy registers it, with its client from
+ * D1; and an MCP server's row:
  * `resource` on every leg, `iss` checked, scopes lenient for the app's own
  * row only. The generic
  * spec, the mint check and background use are in spec-flow.sqlite.test.ts.
@@ -56,7 +57,6 @@ import {
   OAUTH_PRESETS,
   parseProviderSpec,
   providerBindingKey,
-  CAPABILITIES,
 } from "@every-app/sdk/internal";
 import { eq } from "drizzle-orm";
 import { apps, events, providerConnections, userAppAccess } from "@/db/schema";
@@ -87,6 +87,7 @@ import {
   listConnections,
   listOAuthProviders,
   listProviders,
+  planPresetProviders,
   setOAuthClient,
 } from "./service";
 
@@ -333,7 +334,8 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     expect(JSON.stringify(added)).not.toContain("gh-client-secret");
     const listed = await listOAuthProviders(org("owner", owner));
     expect(listed.map((each) => each.id)).toContain("github-oauth");
-    expect(listed.map((each) => each.id)).toContain("google-workspace");
+    // A preset is listed once its row is.
+    expect(listed.map((each) => each.id)).not.toContain("google-workspace");
     expect(await eventTypes()).toEqual(["provider.added", "provider.updated"]);
     await expect(
       addOAuthProvider(org("member", member), null, { preset: "github-oauth" }),
@@ -346,6 +348,9 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
       const listed = await listProviders(org("owner", owner));
       return new Map(listed.map((each) => [each.id, each]));
     };
+    await addOAuthProvider(org("owner", owner), null, {
+      preset: "google-workspace",
+    });
     let providers = await byId();
     expect(providers.get("dataforseo")).toMatchObject({
       kind: "api_key",
@@ -791,11 +796,28 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     expect(after.status).toBe(409);
   });
 
-  it("runs the Google catalog entry on a client pasted in the UI: offline access asked, the identity read, Google's hosts reached through the proxy", async () => {
-    const googleFlow = CAPABILITIES["google-workspace"].flow;
+  it("registers Google from its preset as a deploy does, then runs it on a client pasted in the UI: offline access asked, the identity read, Google's hosts reached through the proxy", async () => {
+    // What a hosted deploy or a browser install of `seo` runs before it registers the app.
+    const plan = await planPresetProviders({
+      capabilities: {
+        "google-workspace": { scopes: ["webmasters.readonly"], why: "SEO." },
+        dataforseo: { access: "read" },
+      },
+    });
+    const googleCapability = plan.lookup.get("google-workspace");
+    if (googleCapability?.mode !== "oauth_client") throw new Error("preset");
+    expect((await gatewayProviders()).get("google-workspace")).toBeUndefined();
+    await plan.register({
+      organizationId: acme,
+      userId: owner,
+      email: "owner@example.com",
+    });
+    resetGatewayProvidersForTests();
+    const googleFlow = googleCapability.flow;
     const google = fakeOAuthProvider({
       authorizeUrl: googleFlow.authorizeUrl,
       tokenUrl: googleFlow.tokenUrl,
+      revokeUrl: googleFlow.revokeUrl,
       apiHost: "www.googleapis.com",
       clientId: "google-client-id",
       clientSecret: "google-client-secret",
@@ -829,7 +851,7 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     );
     expect(set).toMatchObject({
       id: "google-workspace",
-      source: "catalog",
+      source: "row",
       client: { source: "d1", clientId: "google-client-id" },
       bound: true,
       redirectUri: `${GATEWAY}/connect/google-workspace/callback`,
@@ -889,15 +911,29 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
       "invalid_integration_route",
     );
     expect(google.state.counters.api).toBe(1);
-    // Google is never revoked at Google on disconnect: its spec has no revoke URL.
+    // An idle connection: its access token expired an hour ago. Google
+    // answers invalid_token for that, so the disconnect revokes the grant
+    // from the refresh token instead.
+    expect(googleFlow.revokeUrl).toBe("https://oauth2.googleapis.com/revoke");
+    await db
+      .update(providerConnections)
+      .set({ expiresAt: new Date(Date.now() - 3_600_000) });
+    const issued = { ...google.state.tokens[0]! };
     const result = await disconnect(
       org("owner", owner),
       null,
       { providerId: "google-workspace" },
       fetchUpstream,
     );
-    expect(result).toMatchObject({ removed: true, revoked: false });
-    expect(google.state.counters.revoke).toBe(0);
+    expect(result).toMatchObject({ removed: true, revoked: true });
+    expect(google.state.revokeRequests).toEqual([
+      {
+        token: issued.refreshToken,
+        clientVia: "form",
+        tokenTypeHint: "refresh_token",
+      },
+    ]);
+    expect(google.accepts(issued.accessToken)).toBe(false);
   });
 
   it("reads a D1 client only while it was uploaded for the provider as it is now (`oauth.client-bound-to-endpoints`)", async () => {

@@ -8,7 +8,6 @@ import { cn } from "cn";
 import { ErrorState } from "@/client/components/ErrorState";
 import { useAppForm } from "@/client/components/form/useAppForm";
 import { Alert, AlertDescription } from "@/client/components/ui/alert";
-import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import {
   Dialog,
@@ -109,7 +108,7 @@ interface AddOAuthProviderDialogProps {
 
 /**
  * Adds an OAuth provider (docs/design/2026-10-oauth-providers.md section
- * 4): step one picks a preset (the catalog's clients marked built in, the
+ * 4): step one picks a preset (Google, Microsoft, Slack, GitHub and the other
  * shipped presets, or Custom), step two shows the redirect URI to register
  * at the provider's console and takes the client id and secret, plus, for
  * Custom, the provider's URLs and hosts. Scopes are each app's, in its
@@ -200,7 +199,6 @@ function PresetPicker({
             <PresetButton
               title={preset.name}
               description={preset.description ?? undefined}
-              badge={preset.builtIn ? "Built in" : undefined}
               onClick={() => onPick(preset.id)}
             />
           </li>
@@ -225,12 +223,10 @@ function PresetPicker({
 function PresetButton({
   title,
   description,
-  badge,
   onClick,
 }: {
   title: string;
   description?: string;
-  badge?: string;
   onClick: () => void;
 }) {
   return (
@@ -242,14 +238,7 @@ function PresetButton({
         "hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
       )}
     >
-      <span className="flex items-center gap-2 text-sm font-medium">
-        {title}
-        {badge ? (
-          <Badge variant="outline" size="sm">
-            {badge}
-          </Badge>
-        ) : null}
-      </span>
+      <span className="text-sm font-medium">{title}</span>
       {description ? (
         <span className="text-xs text-muted-foreground">{description}</span>
       ) : null}

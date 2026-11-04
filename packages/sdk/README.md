@@ -520,9 +520,10 @@ binding, the event is checked as the gateway would, printed as
 
 ### OAuth providers
 
-For a person's own account at a provider (Google, Microsoft 365, Slack built
-in; GitHub, Notion and others added from a preset with `everyapp provider
-add`), the gateway holds the client, runs the flow and keeps the tokens. The
+For a person's own account at a provider (Google, Microsoft 365, Slack,
+GitHub, Notion and the other presets: deploying an app that lists one
+registers it on the gateway), the gateway holds the client, runs the flow
+and keeps the tokens. The
 app lists the provider's own scopes, sends people to connect inside the app,
 and calls the provider's API; it never sees a token.
 
@@ -570,9 +571,10 @@ belongs to that person and this app: another app that needs the same
 provider connects for its own scopes. The gateway refuses a token that
 carries more scopes than the app lists.
 
-`integrationFetch` reaches the provider's API hosts only (a token endpoint or
-any other host throws a `TypeError` before anything is sent); the gateway
-puts the person's token on the call. Without a connection, or when the
+`integrationFetch` reaches https URLs only, and the gateway forwards a call
+to the provider's API hosts alone (a token endpoint or any other host is
+refused, `invalid_integration_route`); it puts the person's token on the
+call. Without a connection, or when the
 connection lacks a scope the app now lists, the gateway answers 409
 `integration_not_connected` with `connectPath` (and `missingScopes`): send
 the person to `connectUrl()`.

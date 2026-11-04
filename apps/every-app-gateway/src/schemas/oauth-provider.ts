@@ -29,7 +29,7 @@ const clientSecret = z
 
 export const addOAuthProviderSchema = z
   .object({
-    /** A preset id (`github-oauth`) or a catalog OAuth entry (`google-workspace`). */
+    /** A preset id (`google-workspace`, `github-oauth`). */
     preset: z.string().regex(PROVIDER_ID).optional(),
     /** A custom provider's spec (section 3 of the design). */
     spec: z.record(z.string(), z.unknown()).optional(),

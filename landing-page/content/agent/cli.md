@@ -496,11 +496,11 @@ everyapp secret set OPENROUTER_API_KEY
 
 Scripts and agents set it in the same run with --from-env (the variables of the settings' names) or piped NAME=value lines; never on the command line.
 
-A built-in provider (provider list names them) is only its key; an OAuth client (google-workspace, slack, microsoft-365) its client. An OAuth preset (provider presets: github-oauth) becomes a registered provider. Any other API is a spec: its id, name, the page the key comes from (docs), the only hosts the key is ever sent to and how (auth: bearer, header, query or basic), naming the Gateway setting that holds the key. The spec never holds the key. A URL is fetched on this machine. The rules a spec must pass: an id that isn't a built-in provider's, settings named after the id that nothing else reads, and public hosts that aren't the Gateway's own or its apps'. Run in an app's directory, it also writes .everyapp/providers/<id>.json for everyapp dev (your key goes in .dev.vars).
+A built-in provider (provider list names them) is only its key. An OAuth preset (provider presets: google-workspace, slack, github-oauth) becomes a registered provider, then takes its client; deploying an app that lists one registers it too. Any other API is a spec: its id, name, the page the key comes from (docs), the only hosts the key is ever sent to and how (auth: bearer, header, query or basic), naming the Gateway setting that holds the key. The spec never holds the key. A URL is fetched on this machine. The rules a spec must pass: an id that isn't a built-in provider's, settings named after the id that nothing else reads, and public hosts that aren't the Gateway's own or its apps'. Run in an app's directory, it also writes .everyapp/providers/<id>.json for everyapp dev (your key goes in .dev.vars).
 
 An OpenAI-compatible model provider is a spec with mode "ai": its baseUrl, the key's placement (auth), the models it serves and the defaultModel (embeddingsModel too, when it has one); the AI proxy serves it as a catalog AI provider, inference POSTs alone. Apps list it under providers and call /api/ai/<id>/v1/chat/completions; everyapp ai default <id> makes it the Gateway's default model provider.
 
---oauth takes an OAuth spec file (auth.kind oauth2-user), or a preset or built-in client by name. Apps list the provider's own scopes in everyapp.config.ts; people connect in each app. --verbose adds the manifest entry.
+--oauth takes an OAuth spec file (auth.kind oauth2-user), or a preset by name. Apps list the provider's own scopes in everyapp.config.ts; people connect in each app. --verbose adds the manifest entry.
 
 ```sh
 everyapp provider add google-workspace
@@ -513,9 +513,9 @@ everyapp provider add https://example.com/providers/stripe.json --replace
 everyapp provider add --oauth ./acme.json --from-env
 ```
 
-- `<provider>`: A built-in provider's id (openrouter, google-workspace, github-oauth), or a spec: a JSON file or an https URL to one (64 KiB at most)
+- `<provider>`: A built-in provider's id (openrouter), an OAuth preset's (google-workspace, github-oauth), or a spec: a JSON file or an https URL to one (64 KiB at most)
 - `--replace`: Replace the provider registered under the spec's id; its key must be set again
-- `--oauth <preset>`: An OAuth provider: a preset (provider presets names them: github-oauth), a built-in client (google-workspace), or a JSON spec file with auth.kind oauth2-user
+- `--oauth <preset>`: An OAuth provider: a preset (provider presets names them: google-workspace, github-oauth), or a JSON spec file with auth.kind oauth2-user
 - `--client-id <id>`: An OAuth provider's client id (public); the secret comes from the prompt, piped NAME=value lines or --from-env
 - `--from-env`: Set the key or client from the environment variables of its setting names (OPENROUTER_API_KEY; GITHUB_OAUTH_CLIENT_ID, GITHUB_OAUTH_CLIENT_SECRET); nothing is asked
 
@@ -554,7 +554,7 @@ everyapp provider remove stripe
 - `--force`: Remove it even though deployed apps list it (their calls to it stop)
 
 ### `everyapp provider presets`
-List the OAuth presets provider add --oauth takes: GitHub, Notion, Linear and more, and the built-in clients.
+List the OAuth presets provider add takes: Google, Microsoft 365, Slack, GitHub and more.
 
 Each with its API hosts and the console where its client is made. Apps list the provider's own scopes in everyapp.config.ts. Nothing is read from the Gateway.
 

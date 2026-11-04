@@ -4,9 +4,10 @@
  * section for each way to connect it (an API key, people's accounts through
  * an OAuth client, sign-in), from
  *
- *  - the built-in catalog (`CAPABILITIES`): API-key, AI and OAuth client entries;
- *  - the OAuth presets (`oauthPresetIds()`/`oauthPreset()`): providers an
- *    operator adds with `everyapp provider add --oauth <id>`;
+ *  - the built-in catalog (`CAPABILITIES`): API-key and AI entries;
+ *  - the OAuth presets (`oauthPresetIds()`/`oauthPreset()`): the OAuth
+ *    providers, each registered when an app that lists it is deployed or an
+ *    operator adds it (`everyapp provider add <id>`);
  *  - the sign-in providers (`SIGN_IN_PROVIDER_LIST`);
  *
  * and the hand-written steps, categories and app notes of providerGuides.ts.
@@ -22,6 +23,7 @@ import {
   isSettableGatewaySetting,
   oauthPreset,
   oauthPresetIds,
+  oauthSetupGuide,
   signInCallbackPath,
   type AiProviderCapability,
   type ApiKeyCapability,
@@ -53,7 +55,7 @@ const requestUrl = (title: string) =>
 export const HAND_WRITTEN_PROVIDER_PAGES = ["custom.mdx"] as const;
 
 type KeyEntry = readonly [string, ApiKeyCapability | AiProviderCapability];
-type ClientEntry = { id: string; client: OAuthClientCapability; preset: boolean };
+type ClientEntry = { id: string; client: OAuthClientCapability };
 
 interface Company {
   slug: string;
@@ -85,8 +87,6 @@ export function providerCompanies(): Company[] {
     const capability = CAPABILITIES[id] as Capability;
     if (capability.mode === "api_key" || capability.mode === "ai") {
       at(id, capability.label).keys.push([id, capability]);
-    } else if (capability.mode === "oauth_client") {
-      at(id, shortLabel(capability.label)).clients.push({ id, client: capability, preset: false });
     } else if (id === "email") {
       at(id, capability.label).service = id;
     }
@@ -94,8 +94,7 @@ export function providerCompanies(): Company[] {
   for (const id of oauthPresetIds()) {
     const client = oauthPreset(id);
     if (!client || client.mode !== "oauth_client") continue;
-    if (companies.get(companyOf(id))?.clients.some((entry) => entry.id === id)) continue;
-    at(id, client.label).clients.push({ id, client, preset: true });
+    at(id, client.label).clients.push({ id, client });
   }
   for (const provider of SIGN_IN_PROVIDER_LIST) {
     at(provider.id, provider.id === "oidc" ? "Single sign-on (OIDC)" : provider.label).signIn = provider;
@@ -409,10 +408,13 @@ function summaryOf(company: Company): string {
 function setupGuideOf(company: Company): string[] {
   const guides = new Set<string>();
   for (const [, capability] of company.keys) if (capability.setup) guides.add(capability.setup);
-  for (const { client } of company.clients) if (client.setup) guides.add(client.setup);
+  for (const { id } of company.clients) {
+    const guide = oauthSetupGuide(id);
+    if (guide) guides.add(guide);
+  }
   if (company.service) {
     const service = CAPABILITIES[company.service as keyof typeof CAPABILITIES] as Capability;
-    if (service.setup) guides.add(service.setup);
+    if (service.mode !== "oauth_client" && service.setup) guides.add(service.setup);
   }
   if (company.signIn) guides.add(company.signIn.setup);
   return [...guides];

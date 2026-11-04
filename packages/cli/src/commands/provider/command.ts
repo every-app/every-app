@@ -26,7 +26,7 @@ const addCommand = buildCommand({
       parameters: [
         {
           placeholder: "provider",
-          brief: "A built-in provider's id (openrouter, google-workspace, github-oauth), or a spec: a JSON file or an https URL to one (64 KiB at most)",
+          brief: "A built-in provider's id (openrouter), an OAuth preset's (google-workspace, github-oauth), or a spec: a JSON file or an https URL to one (64 KiB at most)",
           parse: String,
           optional: true,
         },
@@ -42,7 +42,7 @@ const addCommand = buildCommand({
         kind: "parsed",
         parse: String,
         placeholder: "preset",
-        brief: "An OAuth provider: a preset (provider presets names them: github-oauth), a built-in client (google-workspace), or a JSON spec file with auth.kind oauth2-user",
+        brief: "An OAuth provider: a preset (provider presets names them: google-workspace, github-oauth), or a JSON spec file with auth.kind oauth2-user",
         optional: true,
       },
       "client-id": {
@@ -73,9 +73,9 @@ const addCommand = buildCommand({
       "Scripts and agents set it in the same run with --from-env (the variables of the settings'",
       "names) or piped NAME=value lines; never on the command line.",
       "",
-      "A built-in provider (provider list names them) is only its key; an OAuth client",
-      "(google-workspace, slack, microsoft-365) its client. An OAuth preset (provider",
-      "presets: github-oauth) becomes a registered provider. Any other API is a spec: its id, name,",
+      "A built-in provider (provider list names them) is only its key. An OAuth preset (provider",
+      "presets: google-workspace, slack, github-oauth) becomes a registered provider, then takes its",
+      "client; deploying an app that lists one registers it too. Any other API is a spec: its id, name,",
       "the page the key comes from (docs), the only hosts the key is ever sent to and how (auth:",
       "bearer, header, query or basic), naming the Gateway setting that holds the key. The spec",
       "never holds the key. A URL is fetched on this machine. The rules a spec must pass: an id",
@@ -89,8 +89,8 @@ const addCommand = buildCommand({
       "under providers and call /api/ai/<id>/v1/chat/completions; everyapp ai default <id> makes",
       "it the Gateway's default model provider.",
       "",
-      "--oauth takes an OAuth spec file (auth.kind oauth2-user), or a preset or built-in client by",
-      "name. Apps list the provider's own scopes in everyapp.config.ts; people connect in each app.",
+      "--oauth takes an OAuth spec file (auth.kind oauth2-user), or a preset by name. Apps list",
+      "the provider's own scopes in everyapp.config.ts; people connect in each app.",
       "--verbose adds the manifest entry.",
       "",
       "Examples:",
@@ -113,7 +113,7 @@ const presetsCommand = buildCommand({
   },
   parameters: { positional: { kind: "tuple", parameters: [] }, flags: { json: jsonFlag, verbose: verboseFlag } },
   docs: {
-    brief: "List the OAuth presets provider add --oauth takes: GitHub, Notion, Linear and more, and the built-in clients",
+    brief: "List the OAuth presets provider add takes: Google, Microsoft 365, Slack, GitHub and more",
     fullDescription: [
       "Each with its API hosts and the console where its client is made. Apps list the",
       "provider's own scopes in everyapp.config.ts. Nothing is read from the Gateway.",

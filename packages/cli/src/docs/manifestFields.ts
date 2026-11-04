@@ -13,6 +13,7 @@ import {
   capabilityEntrySchema,
   ManifestSchemaStrict,
 } from "@every-app/perimeter/manifest";
+import { CATALOG, withOAuthPresets } from "@every-app/sdk/internal";
 
 interface ZodNode {
   _zod: { def: { type: string } & Record<string, unknown> };
@@ -101,7 +102,7 @@ export function manifestFields(): ManifestFields {
   // An OAuth provider's entry is `{ scopes, why }`: its shape also holds the
   // keys it refuses (access, background, ...), each with what to write
   // instead, which are not fields to document. Take `scopes` alone.
-  const oauthEntry = capabilityEntrySchema("google-workspace") as unknown as {
+  const oauthEntry = capabilityEntrySchema("google-workspace", withOAuthPresets(CATALOG)) as unknown as {
     shape: Record<string, ZodNode>;
   };
   out.paths.push("capabilities.<id>.scopes");

@@ -1,8 +1,9 @@
 /**
- * The built-in provider catalog as the docs show it, generated from the
- * catalog itself (`CAPABILITIES` in packages/sdk/src/internal/capabilities.ts),
- * so a provider added there reaches every page with `docs:update` and the
- * tests beside this file fail CI until it has:
+ * The built-in provider catalog and the OAuth presets as the docs show
+ * them, generated from the code (`CAPABILITIES` in
+ * packages/sdk/src/internal/capabilities.ts, `OAUTH_PRESETS` in
+ * oauthPresets.ts), so a provider added there reaches every page with
+ * `docs:update` and the tests beside this file fail CI until it has:
  *
  *  - the catalog table of the agent page providers.md ({@link providersCatalog});
  *  - the whole of the everyapp skill's setup/providers.md ({@link setupProvidersPage}).
@@ -19,6 +20,9 @@ import {
   capabilitySettings,
   isSettableGatewaySetting,
   oauthClientSecretSetCommand,
+  oauthPreset,
+  oauthPresetIds,
+  oauthSetupGuide,
   writeMethodsOf,
   type AiProviderCapability,
   type ApiKeyAuth,
@@ -39,7 +43,9 @@ function ofMode<C extends Capability>(mode: C["mode"]): Array<Entry<C>> {
 
 const apiKeys = ofMode<ApiKeyCapability>("api_key");
 const aiProviders = ofMode<AiProviderCapability>("ai");
-const oauthClients = ofMode<OAuthClientCapability>("oauth_client");
+const oauthClients: Array<Entry<OAuthClientCapability>> = oauthPresetIds().map(
+  (id) => [id, oauthPreset(id) as OAuthClientCapability] as const,
+);
 const services = catalog.filter(([, capability]) => capability.mode === "service").map(([id]) => id);
 
 const code = (text: string) => `\`${text}\``;
@@ -139,8 +145,9 @@ function keySource(capability: ApiKeyCapability | AiProviderCapability): string 
 }
 
 /** The guide file of an entry, relative to setup/: `dataforseo.md`. */
-function guideOf(capability: Capability): string | undefined {
-  return capability.setup?.replace(/^setup\//, "");
+function guideOf(id: string, capability: Capability): string | undefined {
+  const setup = capability.mode === "oauth_client" ? oauthSetupGuide(id) : capability.setup;
+  return setup?.replace(/^setup\//, "");
 }
 
 function marked(name: string, body: string[]): string {
@@ -157,7 +164,7 @@ function marked(name: string, body: string[]): string {
 
 /** The counts a reader checks the table against. */
 function counts(): string {
-  return `${apiKeys.length + aiProviders.length + oauthClients.length} providers: ${apiKeys.length} API-key, ${aiProviders.length} AI, ${oauthClients.length} OAuth clients`;
+  return `${apiKeys.length + aiProviders.length} providers (${apiKeys.length} API-key, ${aiProviders.length} AI) and ${oauthClients.length} OAuth presets`;
 }
 
 /** providers.md's catalog block: every API-key and AI entry, then the OAuth clients and services by id. */
@@ -179,12 +186,12 @@ export function providersCatalog(): string {
     "| --- | --- | --- | --- | --- | --- |",
     ...rows,
     "",
-    `OAuth clients (${code("oauth_client")}: the Gateway runs the flow; a person connects in each app, for the provider scopes that app lists): ${list(oauthClients.map(([id]) => id))}. Their consoles and redirect URIs are on [the provider pages](/docs/providers). Gateway services (${code("service")}: no host, no spec): ${list(services)}.`,
+    `OAuth presets (${code("oauth_client")}: registered when an app that lists one is deployed; the Gateway runs the flow; a person connects in each app, for the provider scopes that app lists): ${list(oauthClients.map(([id]) => id))}. Their consoles and redirect URIs are on [the provider pages](/docs/providers). Gateway services (${code("service")}: no host, no spec): ${list(services)}.`,
   ]);
 }
 
 function keySection(id: string, capability: ApiKeyCapability | AiProviderCapability): string[] {
-  const guide = guideOf(capability);
+  const guide = guideOf(id, capability);
   const settable = settableOf(capability);
   const what =
     capability.mode === "api_key"
@@ -220,7 +227,7 @@ function keySection(id: string, capability: ApiKeyCapability | AiProviderCapabil
 }
 
 function oauthSection(id: string, capability: OAuthClientCapability): string[] {
-  const guide = guideOf(capability);
+  const guide = guideOf(id, capability);
   const { flow } = capability;
   const spelled = flow.scopePrefix
     ? `short (joined onto ${code(flow.scopePrefix)}) or in full`
@@ -235,7 +242,7 @@ function oauthSection(id: string, capability: OAuthClientCapability): string[] {
     `- **Redirect URI to register:** ${code(`https://<gateway host>/connect/${id}/callback`)}`,
     `- **Hosts the token goes to:** ${list(capability.api)}, over https`,
     `- **Scopes an app lists:** the provider's own, ${spelled}, as ${code(`${JSON.stringify(id)}: { scopes: [...], why: "..." }`)}${flow.identityScopes.length > 0 ? `; the Gateway adds ${list(flow.identityScopes)} to every connect` : ""}${capability.reference ? `; the provider's list: ${capability.reference}` : ""}`,
-    `- **Set it:** ${code(oauthClientSecretSetCommand(capability))}`,
+    `- **Set it:** deploy an app that lists it (or ${code(`pnpm everyapp provider add ${id}`)}), then ${code(oauthClientSecretSetCommand(capability))} or paste the client in Manage workspace → Providers`,
     `- **Guide:** ${guide ? `[${guide}](${guide})` : "none beyond this section"}`,
     "",
   ];
@@ -248,7 +255,7 @@ export const GENERATED_SETUP_MARKER = "<!-- generated:";
 export function setupProvidersPage(): string {
   const kindName = { api_key: "API key", ai: "AI", oauth_client: "OAuth client" } as const;
   const index = [...apiKeys, ...aiProviders, ...oauthClients].map(([id, capability]) => {
-    const guide = guideOf(capability);
+    const guide = guideOf(id, capability);
     return row([`[${code(id)}](#${id})`, capability.label, kindName[capability.mode], settingsOf(capability), guide ? `[${guide}](${guide})` : ""]);
   });
   return [
@@ -284,7 +291,7 @@ export function setupProvidersPage(): string {
     "## AI providers",
     "",
     ...aiProviders.flatMap(([id, capability]) => keySection(id, capability)),
-    "## OAuth clients",
+    "## OAuth presets",
     "",
     ...oauthClients.flatMap(([id, capability]) => oauthSection(id, capability)),
   ]

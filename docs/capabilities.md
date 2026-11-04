@@ -40,8 +40,10 @@ them with this document's `capabilities` and
 ## The four kinds
 
 One catalog (`CAPABILITIES` in `packages/sdk/src/internal/capabilities.ts`)
-defines every provider the gateway holds a credential for, built in; its
-`mode` is the kind. Three kinds are capabilities: they take the same
+defines the API-key, AI and service providers every gateway has; its
+`mode` is the kind. OAuth providers are registered rows, written from the
+presets in `packages/sdk/src/internal/oauthPresets.ts`. Three kinds are
+capabilities: they take the same
 manifest entry, `capabilities: { <id>: { access, why, docs } }`
 (`access`, or for an OAuth provider `scopes`, the provider's own scope
 strings, instead ([OAuth providers](#oauth-providers)), and `why`, `docs`
@@ -64,7 +66,7 @@ AI proxy's inference routes may use it.
 | -------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------- | ------------------------------- |
 | `api_key`      | `dataforseo`, `context`, and the providers a gateway registers ([Provider registry](#provider-registry)) | puts its key on calls to the provider's own hosts, with the methods its entry allows (read methods; write methods under a write grant, where the provider offers write) | `integrationFetch({ env, provider, for })` on the provider's real URLs                   | `read` (a registered provider may offer `write`) |                                 |
 | `ai`           | `openai`, `openrouter`, `workers-ai` ([AI providers](#ai-providers)) | puts its key on inference calls to the provider's origin, with the AI proxy's rules (inference routes, `store: false`, the model allowlist) | `createGatewayFetch({ env, for })` on `/api/ai/<id>/...`; listed under `providers`, not `capabilities` | | none here: `GET /api/integrations/<id>` is 400 |
-| `oauth_client` | Google, Microsoft 365 and Slack ([OAuth providers](#oauth-providers)); GitHub and others are presets, rows once an operator adds one | runs the flow, keeps each person's tokens per app, and puts the person's token on calls to the provider's API hosts | `connectUrl({ env, provider })` to connect; `integrationFetch({ env, provider, for })` on the provider's real URLs | none: `scopes` | `scopes`, `connectPath`, `connection` |
+| `oauth_client` | Google, Microsoft 365, Slack, GitHub and others ([OAuth providers](#oauth-providers)): presets, each a row once an app that lists it is deployed or an operator adds it | runs the flow, keeps each person's tokens per app, and puts the person's token on calls to the provider's API hosts | `connectUrl({ env, provider })` to connect; `integrationFetch({ env, provider, for })` on the provider's real URLs | none: `scopes` | `scopes`, `connectPath`, `connection` |
 | `service`      | `email` ([Gateway services](#gateway-services-email)) | does the work itself: sends the mail from its sender, within its budgets          | `sendEmail({ env, for, message })`, which posts to `/api/integrations/email/send`        | `write` | `sender`, `senders`, `provider` |
 | `service`      | `members` ([Gateway services](#gateway-services-members)) | does the work itself: reads its own directory of who can open the app          | `listMembers({ env, for })`, which gets `/api/integrations/members/list`        | `read` |  |
 
@@ -124,8 +126,7 @@ Everything the gateway holds for apps, in one table:
 | `context`                   | `api_key`           | `CONTEXT_API_KEY`                                                                                                          | `CONTEXT_API_KEY`                                                                                              | OpenSEO                                              |
 | `email`                     | `service`           | `EMAIL_FROM` and `EMAIL_FROM_NAME` (or `EMAIL_FROM` alone as `Name <address>`), and one provider: Cloudflare Email Sending (the `EMAIL` binding; outside Workers `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) or Resend (`RESEND_API_KEY`); `EMAIL_PROVIDER` picks one when both are set | `EMAIL_FROM EMAIL_FROM_NAME` (or `EMAIL_FROM` alone as `Name <address>`; and `RESEND_API_KEY`, `EMAIL_PROVIDER`), after setting up the sending domain ([runbook](runbooks/email-sending-setup.md)); an app's own senders with `everyapp email set --sender` | openmail, OpenAnalytics, and the gateway's own mail |
 | `members`                   | `service`           | none: the gateway reads its own directory                                                                                   | nothing to set                                                                                                 | OpenAnalytics (whom reports go to)                   |
-| `slack`                     | `oauth_client`      | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | generated [below](#oauth-providers)                                                        | OpenCRM |
-| `google-workspace`, `microsoft-365` | `oauth_client` | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`; `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | generated [below](#oauth-providers) | OpenMail (Gmail); OpenCRM (mail and calendar capture); OpenSEO (Search Console and Analytics) |
+| `google-workspace`, `microsoft-365`, `slack` | `oauth_client` (a row, from its preset) | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`; `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET`; `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | generated [below](#oauth-providers), or pasted in Manage workspace → Providers | OpenMail (Gmail); OpenCRM (mail and calendar capture); OpenSEO (Search Console and Analytics) |
 | a provider this gateway registered | `api_key` (a row) | its own, each starting with its id (`STRIPE_API_KEY` for `stripe`) | the names `everyapp provider add` prints; `secret set` names the hosts and binds the key to them ([Provider registry](#provider-registry)) | the apps that list it |
 
 X is not in the table: OAuth 1.0a signs every API call with the user's token
@@ -415,13 +416,14 @@ An OAuth provider is a capability too (`oauth_client`): the Gateway holds
 the provider's client, runs the authorization-code flow, keeps the tokens
 sealed in D1, refreshes them, and puts a person's token on an app's calls to
 the provider's API. The app never sees a token or the client
-(`docs/design/2026-11-oauth-simplify.md`). Google (`google-workspace`),
-Microsoft 365 (`microsoft-365`) and Slack (`slack`, its bot token) are built
-in as JSON specs (`packages/sdk/src/internal/oauthBuiltIns.ts`); GitHub,
-Notion, Linear, GitLab, Atlassian, HubSpot, Zoom, Dropbox and Spotify are
-presets an operator adds as rows (`pnpm everyapp provider add --oauth
-github-oauth`), and any other provider is a spec with `auth.kind:
-"oauth2-user"`. What differs between providers is data in the spec: the
+(`docs/design/2026-11-oauth-simplify.md`). Every OAuth provider is a
+registered row. Google (`google-workspace`), Microsoft 365
+(`microsoft-365`), Slack (`slack`, its bot token), GitHub, Notion, Linear,
+GitLab, Atlassian, HubSpot, Zoom, Dropbox and Spotify are presets
+(`packages/sdk/src/internal/oauthPresets.ts`): deploying or installing an
+app that lists one writes its row, and an operator can add one first
+(`pnpm everyapp provider add google-workspace`). Any other provider is a
+spec with `auth.kind: "oauth2-user"`. What differs between providers is data in the spec: the
 endpoints, the API hosts, how scopes are separated and prefixed, extra
 authorize parameters, how the account is named, and the scopes the Gateway
 adds to every connect. The agent page is
@@ -522,29 +524,56 @@ connections. A person disconnects in Settings → Connected accounts, which
 lists each connection with its app; an owner or admin disconnects anyone's
 in Manage workspace → Providers.
 
-<!-- oauth-clients:begin (generated from packages/sdk/src/internal/capabilities.ts by capabilitiesDoc.test.ts) -->
+<!-- oauth-clients:begin (generated from packages/sdk/src/internal/oauthPresets.ts by capabilitiesDoc.test.ts) -->
 
-| Capability | Provider | Gateway secrets | Developer console | API hosts the token is sent to |
+| Preset | Provider | Gateway secrets | Developer console | API hosts the token is sent to |
 | --- | --- | --- | --- | --- |
-| `slack` | Slack | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | https://api.slack.com/apps | `slack.com` |
 | `google-workspace` | Google | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET` | https://console.cloud.google.com/apis/credentials | `gmail.googleapis.com`, `www.googleapis.com`, `searchconsole.googleapis.com`, `analyticsdata.googleapis.com`, `analyticsadmin.googleapis.com`, `openidconnect.googleapis.com` |
 | `microsoft-365` | Microsoft 365 | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade | `graph.microsoft.com` |
+| `slack` | Slack | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | https://api.slack.com/apps | `slack.com` |
+| `github-oauth` | GitHub | `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` | https://github.com/settings/developers | `api.github.com` |
+| `notion-oauth` | Notion | `NOTION_OAUTH_CLIENT_ID`, `NOTION_OAUTH_CLIENT_SECRET` | https://www.notion.so/my-integrations | `api.notion.com` |
+| `linear-oauth` | Linear | `LINEAR_OAUTH_CLIENT_ID`, `LINEAR_OAUTH_CLIENT_SECRET` | https://linear.app/settings/api/applications | `api.linear.app` |
+| `gitlab-oauth` | GitLab | `GITLAB_OAUTH_CLIENT_ID`, `GITLAB_OAUTH_CLIENT_SECRET` | https://gitlab.com/-/user_settings/applications | `gitlab.com` |
+| `atlassian` | Atlassian (Jira and Confluence) | `ATLASSIAN_CLIENT_ID`, `ATLASSIAN_CLIENT_SECRET` | https://developer.atlassian.com/console/myapps/ | `api.atlassian.com` |
+| `hubspot-oauth` | HubSpot | `HUBSPOT_OAUTH_CLIENT_ID`, `HUBSPOT_OAUTH_CLIENT_SECRET` | https://developers.hubspot.com/ | `api.hubapi.com` |
+| `zoom` | Zoom | `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET` | https://marketplace.zoom.us/develop/create | `api.zoom.us` |
+| `dropbox` | Dropbox | `DROPBOX_OAUTH_CLIENT_ID`, `DROPBOX_OAUTH_CLIENT_SECRET` | https://www.dropbox.com/developers/apps | `api.dropboxapi.com`, `content.dropboxapi.com` |
+| `spotify` | Spotify | `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` | https://developer.spotify.com/dashboard | `api.spotify.com` |
 
-The commands, one per client you offer (each prompts for the values):
+The commands, one per client you offer, once its provider is registered (each prompts for the values):
 
 ```bash
-pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET
 pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET
 pnpm everyapp secret set MICROSOFT_365_CLIENT_ID MICROSOFT_365_CLIENT_SECRET
+pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET
+pnpm everyapp secret set GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET
+pnpm everyapp secret set NOTION_OAUTH_CLIENT_ID NOTION_OAUTH_CLIENT_SECRET
+pnpm everyapp secret set LINEAR_OAUTH_CLIENT_ID LINEAR_OAUTH_CLIENT_SECRET
+pnpm everyapp secret set GITLAB_OAUTH_CLIENT_ID GITLAB_OAUTH_CLIENT_SECRET
+pnpm everyapp secret set ATLASSIAN_CLIENT_ID ATLASSIAN_CLIENT_SECRET
+pnpm everyapp secret set HUBSPOT_OAUTH_CLIENT_ID HUBSPOT_OAUTH_CLIENT_SECRET
+pnpm everyapp secret set ZOOM_CLIENT_ID ZOOM_CLIENT_SECRET
+pnpm everyapp secret set DROPBOX_OAUTH_CLIENT_ID DROPBOX_OAUTH_CLIENT_SECRET
+pnpm everyapp secret set SPOTIFY_CLIENT_ID SPOTIFY_CLIENT_SECRET
 ```
 
 How each provider spells scopes. An app lists the provider's own scopes (`scopes` on its capability entry), short (joined onto the prefix) or in full; the Gateway adds the identity scopes to every connect:
 
-| Capability | Separator | Scope prefix | Identity scopes |
+| Preset | Separator | Scope prefix | Identity scopes |
 | --- | --- | --- | --- |
-| `slack` | comma | none | none |
 | `google-workspace` | space | `https://www.googleapis.com/auth/` | `openid`, `email` |
 | `microsoft-365` | space | `https://graph.microsoft.com/` | `User.Read`, `offline_access` |
+| `slack` | comma | none | none |
+| `github-oauth` | comma | none | none |
+| `notion-oauth` | space | none | none |
+| `linear-oauth` | comma | none | none |
+| `gitlab-oauth` | space | none | `read_user` |
+| `atlassian` | space | none | `read:me`, `offline_access` |
+| `hubspot-oauth` | space | none | none |
+| `zoom` | space | none | `user:read:user` |
+| `dropbox` | space | none | none |
+| `spotify` | space | none | none |
 
 <!-- oauth-clients:end -->
 

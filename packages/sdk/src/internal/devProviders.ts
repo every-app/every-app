@@ -8,7 +8,9 @@
  * file when it builds the dev Worker and hands them over as one text
  * binding, {@link DEV_PROVIDERS_ENV}, and `integrationFetch()`'s local
  * fallback resolves an id outside the catalog from it, with the
- * developer's own key from `.dev.vars` under the spec's setting names.
+ * developer's own key from `.dev.vars` under the spec's setting names. An
+ * OAuth preset's id needs no file: its preset is the spec (a deploy writes
+ * the same row).
  *
  * The binding is JSON: `[{ "file": ".everyapp/providers/stripe.json",
  * "spec": <the file's JSON, or its text when it isn't JSON> }]`. Each spec
@@ -16,6 +18,7 @@
  * doesn't parse is ignored until an app asks for its id, which then gets
  * a ConfigurationError naming the file.
  */
+import { oauthPreset } from "./oauthPresets.js";
 import {
   describeSpecProblems,
   parseProviderSpec,
@@ -43,7 +46,7 @@ export function devProviderFile(id: string): string {
 
 /** A registered provider resolved for local development, or why it can't be. */
 export type DevProviderLookup =
-  | { found: true; capability: RegistrableCapability; file: string }
+  | { found: true; capability: RegistrableCapability; file?: string }
   | { found: false; problem: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -101,6 +104,8 @@ export function resolveDevProvider(
     }
     return { found: true, capability: parsed.capability, file: entry.file };
   }
+  const preset = problem ? null : oauthPreset(id);
+  if (preset) return { found: true, capability: preset };
   return {
     found: false,
     problem: problem

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { CAPABILITIES, type OAuthClientCapability } from "./capabilities";
+import type { OAuthClientCapability } from "./capabilities";
+import { oauthPreset } from "./oauthPresets";
 import { oauthClientCredentials } from "./oauthClient";
 
 /** A provider's capability with its own setting names. */
 const PLAIN: OAuthClientCapability = {
-  ...CAPABILITIES["google-workspace"],
+  ...(oauthPreset("google-workspace") as OAuthClientCapability),
   label: "Plain",
   secrets: { clientId: "PLAIN_CLIENT_ID", clientSecret: "PLAIN_CLIENT_SECRET" },
 };

@@ -72,7 +72,7 @@ export type {
 export type {
   ApiKeyCapabilityId,
   CapabilityId,
-  OAuthClientCapabilityId,
+  OAuthPresetId,
   EmailAddressInput,
   EmailAttachmentInput,
   SendEmailMessage,

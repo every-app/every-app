@@ -116,7 +116,7 @@ Everything listed at the top level is required: the app shows Needs setup until 
 
 ### capabilities
 
-`capabilities`: Gateway-held APIs by id. An API-key provider or service takes `capabilities.<id>.access` (`read` or `write`); an OAuth provider takes `capabilities.<id>.scopes` (the provider's own short scope names) and a required `capabilities.<id>.why`. All take `capabilities.<id>.docs`. The deployed entry is the grant; calls outside it are refused. Built-ins include `email`, `members`, `dataforseo`, `context`, `slack`, `google-workspace` and `microsoft-365`; the full catalog is on [providers](/docs/agent/providers).
+`capabilities`: Gateway-held APIs by id. An API-key provider or service takes `capabilities.<id>.access` (`read` or `write`); an OAuth provider takes `capabilities.<id>.scopes` (the provider's own short scope names) and a required `capabilities.<id>.why`. All take `capabilities.<id>.docs`. The deployed entry is the grant; calls outside it are refused. Built-ins include `email`, `members`, `dataforseo` and `context`; OAuth presets include `google-workspace`, `microsoft-365` and `slack`, each registered when the app deploys; the full list is on [providers](/docs/agent/providers).
 
 ### secrets
 

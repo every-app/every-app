@@ -7,12 +7,7 @@
  * OAuth client; the handlers hand the service the actor.
  */
 import { describe, expect, it, vi } from "vitest";
-import {
-  CAPABILITIES,
-  CAPABILITY_IDS,
-  isOAuthProvider,
-  oauthPresetIds,
-} from "@every-app/sdk/internal";
+import { oauthPresetIds } from "@every-app/sdk/internal";
 
 const mocks = vi.hoisted(() => ({
   publicErrorMiddleware: { name: "publicErrorMiddleware" },
@@ -232,19 +227,18 @@ describe("provider server functions", () => {
   });
 
   describe("listOAuthPresets", () => {
-    it("names every shipped preset and every built-in OAuth client, built in first, with no value", async () => {
+    it("names every shipped preset, Google, Microsoft and Slack first, with no value", async () => {
       const result = (await serverFns["listOAuthPresets"]!.serverHandler({
         context,
       })) as { presets: OAuthPresetSummary[] };
       const ids = result.presets.map((preset) => preset.id);
-      const builtIn = CAPABILITY_IDS.filter((id) =>
-        isOAuthProvider(CAPABILITIES[id]),
-      );
-      expect(builtIn.length).toBeGreaterThan(0);
-      expect(ids.slice(0, builtIn.length)).toEqual(builtIn);
-      expect(ids.slice(builtIn.length)).toEqual(oauthPresetIds());
+      expect(ids).toEqual(oauthPresetIds());
+      expect(ids.slice(0, 3)).toEqual([
+        "google-workspace",
+        "microsoft-365",
+        "slack",
+      ]);
       for (const preset of result.presets) {
-        expect(preset.builtIn).toBe(builtIn.includes(preset.id as never));
         expect(preset.redirectUri).toBe(
           `https://gw.test/connect/${preset.id}/callback`,
         );

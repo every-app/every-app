@@ -29,7 +29,8 @@ import {
   registerApp,
   startDeploy,
 } from "./run";
-import { gatewayProviders } from "@/server/providers";
+import { PublicError } from "@/server/errors";
+import { planPresetProviders } from "@/server/oauth/service";
 
 // server.ts routes this prefix here.
 const DEPLOY_API_PREFIX = "/api/v1/";
@@ -56,6 +57,33 @@ function assertBoundApp(
   }
 }
 
+/**
+ * The OAuth presets the manifest lists that this Gateway has no row for
+ * (planPresetProviders): the lookup to check the manifest against, and
+ * `register`, run once the deploy goes ahead. On a hosted gateway such a
+ * manifest is refused (PROVIDER_HOSTED): its operator registers them.
+ */
+async function presetPlan(manifest: unknown) {
+  let plan: Awaited<ReturnType<typeof planPresetProviders>>;
+  try {
+    plan = await planPresetProviders(manifest);
+  } catch (error) {
+    if (error instanceof PublicError) {
+      throw new DeployError(error.code, 409, error.message);
+    }
+    throw error;
+  }
+  return {
+    lookup: plan.lookup,
+    register: (caller: DeployCaller) =>
+      plan.register({
+        organizationId: caller.organizationId,
+        userId: caller.userId,
+        email: caller.email,
+      }),
+  };
+}
+
 async function registerRoute(request: Request, caller: DeployCaller) {
   let body: { appId?: unknown; manifest?: unknown };
   try {
@@ -70,13 +98,12 @@ async function registerRoute(request: Request, caller: DeployCaller) {
   if (typeof body.appId !== "string") {
     throw new DeployError("INVALID_REQUEST", 400, "appId is required.");
   }
-  const manifest = parseManifest(
-    body.manifest ?? { id: body.appId },
-    body.appId,
-    await gatewayProviders(),
-  );
+  const raw = body.manifest ?? { id: body.appId };
+  const presets = await presetPlan(raw);
+  const manifest = parseManifest(raw, body.appId, presets.lookup);
   const existing = await findOrgApp(caller.organizationId, manifest.id);
   assertBoundApp(caller, existing);
+  await presets.register(caller);
   const plan = await registerApp(caller, manifest);
   logEvent("deploy_api.app_registered", {
     org: caller.organizationId,
@@ -92,11 +119,8 @@ async function deployRoute(
   appId: string,
 ) {
   const bundle = await parseDeployUpload(request);
-  const manifest = parseManifest(
-    bundle.manifest,
-    appId,
-    await gatewayProviders(),
-  );
+  const presets = await presetPlan(bundle.manifest);
+  const manifest = parseManifest(bundle.manifest, appId, presets.lookup);
   const existing = await findOrgApp(caller.organizationId, appId);
   if (!existing || existing.status === "deleted") {
     throw new DeployError(
@@ -106,6 +130,7 @@ async function deployRoute(
     );
   }
   assertBoundApp(caller, existing);
+  await presets.register(caller);
   const jobId = await startDeploy({
     organizationId: caller.organizationId,
     userId: caller.userId,

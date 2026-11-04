@@ -23,12 +23,16 @@ below; a setting set here wins.
 | `SLACK_CLIENT_ID`     | required | The app's **Client ID** (Basic Information → App Credentials), as shown. Public. |
 | `SLACK_CLIENT_SECRET` | required | The app's **Client Secret** from the same section, as shown. The Gateway puts it on `oauth.v2.access` only. |
 
-Set both: the Gateway offers Slack only when it holds the two.
+Set both: the Gateway offers Slack only when it holds the two. Both set
+as Worker secrets while the Gateway had no `slack` row (an older CLI) are
+read only once `secret set` binds them to the row: set them again, or
+`secret unset` both to use a client pasted in Admin.
 
 An app lists Slack's own bot scopes as written (no prefix), comma-joined on
 the wire: `"slack": { scopes: ["channels:read", "chat:write"], why }`. The
-Gateway asks for exactly those (Slack's built-in spec,
-`packages/sdk/src/internal/oauthBuiltIns.ts`, adds none) and refuses a bot
+Gateway asks for exactly those (Slack's preset,
+`packages/sdk/src/internal/oauthPresets.ts`, adds none; the deploy of an
+app that lists `slack` registers it as a row) and refuses a bot
 token whose `scope` carries more, at connect and at every refresh. Slack's
 scopes add up per workspace installation of one Slack app: if two apps on
 this client list different scopes, a reinstall for one can carry the
@@ -285,4 +289,4 @@ an internal app installed in its own workspace.
 - https://community.n8n.io/t/slack-oauth-redirect-uri-did-not-match-any-configured-uris-self-hosted-on-windows/271936 (the redirect error's wording, with its `Passed URI:` line)
 - https://developers.cloudflare.com/workers/observability/logs/real-time-logs/ (Workers & Pages → Overview → the Worker → Logs → Live)
 - https://api.slack.com/apps (the console; `?new_app=1` opens the create dialog)
-- Local: `packages/sdk/src/internal/oauthBuiltIns.ts` (the `slack` spec: comma-separated, no prefix, PKCE off, the bot token only), `docs/design/2026-11-oauth-simplify.md` (per-app connections, the shared-client limit) and docs/capabilities.md ("OAuth clients")
+- Local: `packages/sdk/src/internal/oauthPresets.ts` (the `slack` spec: comma-separated, no prefix, PKCE off, the bot token only), `docs/design/2026-11-oauth-simplify.md` (per-app connections, the shared-client limit) and docs/capabilities.md ("OAuth clients")

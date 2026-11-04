@@ -19,6 +19,7 @@ import {
   CAPABILITY_IDS,
   capabilitySettings,
 } from "../internal/capabilities";
+import { oauthPreset, oauthPresetIds } from "../internal/oauthPresets";
 import { devAccessTokenName } from "../server/integrationFetch";
 
 const FILE = fileURLToPath(
@@ -42,22 +43,21 @@ function source(): string {
     ]),
   );
   // The AI providers are listed under `providers`, so never here. An
-  // OAuth provider's client is the Gateway's alone: in dev a token the
+  // OAuth preset's client is the Gateway's alone: in dev a token the
   // developer got themselves stands in for the connection.
-  const capabilities = Object.fromEntries(
-    CAPABILITY_IDS.flatMap((id) => {
+  const capabilities = Object.fromEntries([
+    ...CAPABILITY_IDS.flatMap((id) => {
       const capability = CAPABILITIES[id];
       if (capability.mode === "ai") return [];
-      if (capability.mode === "oauth_client") {
-        return [[id, [devAccessTokenName(id)]]];
-      }
       return [[id, [...capabilitySettings(capability)]]];
     }),
-  );
+    ...oauthPresetIds().map((id) => [id, [devAccessTokenName(id)]]),
+  ]);
   const all = [
-    ...new Set(
-      CAPABILITY_IDS.flatMap((id) => capabilitySettings(CAPABILITIES[id])),
-    ),
+    ...new Set([
+      ...CAPABILITY_IDS.flatMap((id) => capabilitySettings(CAPABILITIES[id])),
+      ...oauthPresetIds().flatMap((id) => capabilitySettings(oauthPreset(id)!)),
+    ]),
   ];
   return `${HEADER}
 /**
@@ -67,14 +67,15 @@ function source(): string {
  * setting, a host setting), by manifest id. With no Gateway in
  * development, the SDK reaches them with the developer's own values under
  * the same names, and \`everyAppWorker()\` declares the ones set locally.
- * An OAuth provider's is the token that stands in for a connection in dev
+ * An OAuth preset's is the token that stands in for a connection in dev
  * (\`<PREFIX>_ACCESS_TOKEN\`), never its client.
  */
 export const DEV_GATEWAY_KEYS = ${JSON.stringify({ providers, capabilities })} as const;
 
 /**
- * Every setting a catalog entry reads, in catalog order, each once: what
- * the Gateway's cloudflare.config.ts declares for local dev.
+ * Every setting a catalog entry or an OAuth preset reads, in catalog
+ * order, each once: what the Gateway's cloudflare.config.ts declares for
+ * local dev.
  */
 export const CATALOG_GATEWAY_SETTINGS = ${JSON.stringify(all)} as const;
 `;

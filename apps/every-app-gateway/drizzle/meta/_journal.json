@@ -211,6 +211,13 @@
       "when": 1793704213362,
       "tag": "0031_drop_remote_mcp_credentials",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1793704273362,
+      "tag": "0032_oauth_presets_registered",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,8 @@
 /**
  * docs/capabilities.md's "API-key providers" and "OAuth clients" tables are
- * generated from the catalog, so the operator's checklist can't drift from
- * what the gateway enforces. When this fails, regenerate them:
+ * generated from the catalog and the OAuth presets, so the operator's
+ * checklist can't drift from what the gateway enforces. When this fails,
+ * regenerate them:
  *
  *   UPDATE_DOCS=1 pnpm -C packages/sdk exec vitest run src/internal/capabilitiesDoc.test.ts
  */
@@ -15,11 +16,12 @@ import {
   type ApiKeyCapability,
   type OAuthClientCapability,
 } from "./capabilities";
+import { oauthPreset, oauthPresetIds } from "./oauthPresets";
 import { writeMethodsOf } from "./providerSpec";
 
 const DOC = new URL("../../../../docs/capabilities.md", import.meta.url);
 const BEGIN =
-  "<!-- oauth-clients:begin (generated from packages/sdk/src/internal/capabilities.ts by capabilitiesDoc.test.ts) -->";
+  "<!-- oauth-clients:begin (generated from packages/sdk/src/internal/oauthPresets.ts by capabilitiesDoc.test.ts) -->";
 const END = "<!-- oauth-clients:end -->";
 const API_KEY_BEGIN =
   "<!-- api-key-providers:begin (generated from packages/sdk/src/internal/capabilities.ts by capabilitiesDoc.test.ts) -->";
@@ -94,10 +96,8 @@ function generatedApiKeyProviders(): string {
   ].join("\n");
 }
 
-const clients = Object.entries(CAPABILITIES).flatMap(([id, capability]) =>
-  capability.mode === "oauth_client"
-    ? [[id, capability as OAuthClientCapability] as const]
-    : [],
+const clients = oauthPresetIds().map(
+  (id) => [id, oauthPreset(id) as OAuthClientCapability] as const,
 );
 
 function generated(): string {
@@ -128,11 +128,11 @@ function generated(): string {
   return [
     BEGIN,
     "",
-    "| Capability | Provider | Gateway secrets | Developer console | API hosts the token is sent to |",
+    "| Preset | Provider | Gateway secrets | Developer console | API hosts the token is sent to |",
     "| --- | --- | --- | --- | --- |",
     ...rows.map((row) => `| ${row} |`),
     "",
-    "The commands, one per client you offer (each prompts for the values):",
+    "The commands, one per client you offer, once its provider is registered (each prompts for the values):",
     "",
     "```bash",
     ...commands,
@@ -140,7 +140,7 @@ function generated(): string {
     "",
     "How each provider spells scopes. An app lists the provider's own scopes (`scopes` on its capability entry), short (joined onto the prefix) or in full; the Gateway adds the identity scopes to every connect:",
     "",
-    "| Capability | Separator | Scope prefix | Identity scopes |",
+    "| Preset | Separator | Scope prefix | Identity scopes |",
     "| --- | --- | --- | --- |",
     ...scopes.map((row) => `| ${row} |`),
     "",

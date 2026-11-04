@@ -12,20 +12,24 @@ import { logEvent } from "@every-app/perimeter";
 import { parseSecretNames } from "@every-app/perimeter/registry";
 import {
   aiRequiredSettings,
-  CAPABILITY_IDS,
   capabilitySettings,
   checkProviderRow,
   describeSpecProblems,
+  isPresetRow,
   OAUTH_PRESETS,
+  oauthPreset,
   parseProviderSpec,
   providerBindingKey,
   secretNames,
+  unregisteredPresetIds,
   type Capability,
+  type CapabilityLookup,
   type OAuthClientCapability,
   type ProviderRegistry,
   type ProviderRow,
 } from "@every-app/sdk/internal";
 import { gatewaySettingIsSet } from "@/server/ai-default";
+import { resolveDeploymentMode } from "@/server/deployment-mode";
 import { appSettingsReport } from "@/server/app-setup";
 import { emit } from "@/server/events/bus";
 import { catalogue, type EventActor } from "@/server/events/catalogue";
@@ -152,12 +156,6 @@ function requireAdmin(org: OrgContext): void {
   }
 }
 
-function isBuiltinId(id: string): boolean {
-  return (
-    id === "everyapp" || (CAPABILITY_IDS as readonly string[]).includes(id)
-  );
-}
-
 function manifestOf(text: string | null): Record<string, unknown> | null {
   if (!text) return null;
   try {
@@ -260,7 +258,7 @@ function hostsOf(capability: Capability): string[] {
   }
 }
 
-/** Every OAuth provider on this gateway: the catalog's clients and the registered rows. */
+/** Every OAuth provider on this gateway: its registered rows. */
 export async function listOAuthProviders(
   org: OrgContext,
 ): Promise<OAuthProviderSummary[]> {
@@ -400,12 +398,6 @@ async function checkNewRow(
   capability: Capability,
   rows: ProviderRow[],
 ): Promise<void> {
-  if (isBuiltinId(id)) {
-    throw new PublicError(
-      "PROVIDER_BUILTIN",
-      `${id} is a built-in provider; a registered one can't take its id`,
-    );
-  }
   if (rows.some((row) => row.id === id)) {
     throw new PublicError(
       "PROVIDER_EXISTS",
@@ -442,6 +434,87 @@ async function checkNewRow(
       );
     }
   }
+}
+
+/**
+ * The OAuth presets `manifest` lists under `capabilities` that this
+ * Gateway has no row for: checked as new rows now, and the lookup that
+ * serves them as their rows would, for the manifest's check; `register`
+ * writes the rows, once the deploy or install goes ahead. What a hosted
+ * deploy and a browser install run, as `everyapp deploy` does from the
+ * terminal, so an app that lists `google-workspace` needs no step but its
+ * client. Refusals are the new-row rules' (PublicError).
+ *
+ * Self-hosted only. Rows are gateway-wide, so on a hosted gateway a
+ * tenant's deploy registers nothing (the rule `registersProviders` and
+ * the providers server functions follow): a manifest that lists a preset
+ * with no row is refused (PROVIDER_HOSTED) until the platform's operator
+ * registers it with `everyapp provider add`.
+ */
+export async function planPresetProviders(
+  manifest: unknown,
+  base?: CapabilityLookup,
+): Promise<{
+  lookup: CapabilityLookup;
+  register: (who: {
+    organizationId: string;
+    userId: string;
+    email: string;
+  }) => Promise<void>;
+}> {
+  const registry = base ?? (await gatewayProviders());
+  const listed =
+    manifest && typeof manifest === "object"
+      ? capabilityIdsOf(manifest as Record<string, unknown>)
+      : [];
+  const ids = unregisteredPresetIds(listed, registry);
+  if (ids.length === 0) return { lookup: registry, register: async () => {} };
+  if (resolveDeploymentMode(env.GATEWAY_DEPLOYMENT_MODE) !== "self_hosted") {
+    throw new PublicError(
+      "PROVIDER_HOSTED",
+      `${ids.join(", ")} ${ids.length === 1 ? "isn't" : "aren't"} registered on this Gateway. On a hosted gateway the platform's operator registers providers.`,
+    );
+  }
+  const rows = await ProviderRepository.all();
+  const planned = new Map<string, OAuthClientCapability>();
+  for (const id of ids) {
+    if (rows.some((row) => row.id === id)) continue;
+    const capability = oauthPreset(id);
+    if (capability?.mode !== "oauth_client") continue;
+    await checkNewRow(id, capability, rows);
+    planned.set(id, capability);
+  }
+  return {
+    lookup: {
+      get: (id) => registry.get(id) ?? planned.get(id),
+      ids: () => [...registry.ids(), ...planned.keys()],
+    },
+    register: async (who) => {
+      for (const [id, capability] of planned) {
+        const written = await ProviderRepository.insert({
+          id,
+          spec: JSON.stringify(OAUTH_PRESETS[id]),
+          addedBy: who.email,
+        });
+        // Another deploy wrote it meanwhile: its row serves.
+        if (!written) continue;
+        logEvent("provider.added", {
+          provider: id,
+          org: who.organizationId,
+          user_id: who.userId,
+          via: "preset",
+        });
+        await emit(async () => ({
+          organizationId: who.organizationId,
+          actor: await userActor(who.userId),
+          ...catalogue.providerAdded({
+            provider: { id, name: capability.label, kind: "oauth" },
+          }),
+        }));
+      }
+      if (planned.size > 0) invalidateGatewayProviders();
+    },
+  };
 }
 
 async function storeClient(
@@ -484,10 +557,11 @@ async function storeClient(
 }
 
 /**
- * Add an OAuth provider: a preset becomes a registered row (a catalog
- * OAuth entry takes the client only), a spec of the `oauth2-user` kind
- * becomes a row; with a client id (and secret), the client is sealed into
- * D1 at once. Returns the provider as the list shows it.
+ * Add an OAuth provider: a preset becomes a registered row (one already
+ * registered, as a deploy registers the presets its app lists, takes the
+ * client only), a spec of the `oauth2-user` kind becomes a row; with a
+ * client id (and secret), the client is sealed into D1 at once. Returns
+ * the provider as the list shows it.
  */
 export async function addOAuthProvider(
   org: OrgContext,
@@ -509,7 +583,10 @@ export async function addOAuthProvider(
   let rowSpec: unknown = null;
   if (input.preset) {
     const existing = (await gatewayProviders()).get(input.preset);
-    if (existing?.mode === "oauth_client" && isBuiltinId(input.preset)) {
+    if (
+      existing?.mode === "oauth_client" &&
+      isPresetRow(input.preset, existing)
+    ) {
       id = input.preset;
       capability = existing;
     } else {
@@ -687,12 +764,6 @@ export async function removeProvider(
 ): Promise<void> {
   requireAdmin(org);
   const who = await actorFor(org, actor);
-  if (isBuiltinId(providerId)) {
-    throw new PublicError(
-      "PROVIDER_BUILTIN",
-      `${providerId} is built in; only a registered provider can be removed`,
-    );
-  }
   const rows = await ProviderRepository.all();
   const row = rows.find((each) => each.id === providerId);
   if (!row) {
@@ -915,7 +986,7 @@ export async function disconnect(
       revoked = await revokeAtProvider({
         capability,
         client,
-        accessToken: tokens.accessToken,
+        tokens,
         fetchUpstream,
         log: { provider: connection.providerId, org: org.orgId },
       });

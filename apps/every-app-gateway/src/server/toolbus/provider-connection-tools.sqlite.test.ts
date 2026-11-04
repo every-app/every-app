@@ -474,13 +474,11 @@ describe("the connection tools on /mcp", () => {
       provider: { id: "github-oauth", kind: "oauth" },
     });
 
+    // Added again (as after a deploy registered it): the row as it is, no second event.
     expect(
-      await refusal(
-        "everyapp_provider_add",
-        { preset: "github-oauth" },
-        admin(),
-      ),
-    ).toMatch(/^PROVIDER_EXISTS: /);
+      await data("everyapp_provider_add", { preset: "github-oauth" }, admin()),
+    ).toMatchObject({ provider: { id: "github-oauth" }, bound: false });
+    expect((await providerEvents("provider.added")).length).toBe(1);
     expect(
       await refusal(
         "everyapp_provider_add",
@@ -517,8 +515,9 @@ describe("the connection tools on /mcp", () => {
     expect(presets.map((preset) => preset["id"])).toContain("github-oauth");
     expect(
       presets.find((preset) => preset["id"] === "google-workspace"),
-    ).toMatchObject({
-      builtIn: true,
-    });
+    ).toMatchObject({ name: "Google" });
+    expect(
+      presets.find((preset) => preset["id"] === "google-workspace"),
+    ).not.toHaveProperty("builtIn");
   });
 });

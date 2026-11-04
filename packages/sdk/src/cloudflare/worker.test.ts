@@ -47,7 +47,17 @@ import { DEV_ISSUER, DEV_PUBLIC_KEY_PEM } from "../dev/index";
 import { aiProviderSettings, DEV_AI_PROVIDERS } from "../internal/aiProviders";
 import { appSettings } from "../internal/appSettings";
 import { isReservedAppSecretName } from "../internal/gatewaySettings";
-import { CAPABILITIES, capabilitySettings } from "../internal/capabilities";
+import {
+  CAPABILITIES,
+  CATALOG,
+  capabilitySettings,
+  type Capability,
+} from "../internal/capabilities";
+import {
+  oauthPreset,
+  oauthPresetIds,
+  withOAuthPresets,
+} from "../internal/oauthPresets";
 import { EMAIL_SENDERS_ENV } from "../internal/email";
 // The worker keeps its own copy of the name; the SDK's dev fallback reads this one.
 import { DEV_PROVIDERS_ENV } from "../internal/devProviders";
@@ -663,14 +673,20 @@ describe("everyAppWorker crons and the app's own secrets", () => {
   it("knows every setting of every provider and capability the SDK reaches in dev", () => {
     // The proxy entry (AI Gateway) fronts the gateway's calls only: dev
     // goes direct, so its settings are never dev settings.
-    const reached = Object.entries(CAPABILITIES).filter(
-      ([, capability]) =>
-        !(
-          capability.mode === "ai" &&
-          "kind" in capability &&
-          capability.kind === "proxy"
-        ),
-    );
+    const reached: [string, Capability][] = [
+      ...Object.entries(CAPABILITIES).filter(
+        ([, capability]) =>
+          !(
+            capability.mode === "ai" &&
+            "kind" in capability &&
+            capability.kind === "proxy"
+          ),
+      ),
+      ...oauthPresetIds().map((id): [string, Capability] => [
+        id,
+        oauthPreset(id)!,
+      ]),
+    ];
     const aiKeys = Object.values(DEV_AI_PROVIDERS).flatMap(aiProviderSettings);
     // In dev an OAuth provider's token stands in for the connection; its
     // client is the Gateway's alone.
@@ -699,7 +715,7 @@ describe("everyAppWorker crons and the app's own secrets", () => {
       providers: Object.keys(DEV_AI_PROVIDERS),
       // Every capability; the AI providers are listed under `providers`.
       capabilities: Object.fromEntries(
-        Object.entries(CAPABILITIES).flatMap(
+        reached.flatMap(
           ([id, capability]): [string, EveryAppCapabilityEntry][] =>
             capability.mode === "ai"
               ? []
@@ -725,7 +741,7 @@ describe("everyAppWorker crons and the app's own secrets", () => {
     // which the Gateway's view leaves out and only the dev fallback asks
     // for (Workers AI's URL; `everyapp dev` adds it back).
     const modelled = new Set(
-      appSettings(everything).flatMap((setting) => [
+      appSettings(everything, withOAuthPresets(CATALOG)).flatMap((setting) => [
         ...setting.names,
         ...setting.alsoReads,
       ]),

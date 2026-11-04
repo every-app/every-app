@@ -147,8 +147,6 @@ describe("usage counting at the AppGateway entrypoint (SQLite)", () => {
         JWT_PUBLIC_KEY: publicKeyPem,
         OPENAI_API_KEY: "gateway-provider-key",
         DATAFORSEO_API_KEY: "login@example.com:secret",
-        GOOGLE_WORKSPACE_CLIENT_ID: "gw-google-id",
-        GOOGLE_WORKSPACE_CLIENT_SECRET: "gw-google-secret",
       },
       registry: new InMemoryAppRegistry([app]),
       organizations: OrganizationRepository,

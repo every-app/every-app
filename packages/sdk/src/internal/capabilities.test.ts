@@ -8,7 +8,7 @@ import {
   integrationProxyPath,
   isAccountWidePath,
   isCapabilityId,
-  oauthClientSecretSetCommand,
+  CATALOG,
   parseIntegrationProxyPath,
   serviceRoutePath,
   type AiProviderId,
@@ -17,10 +17,9 @@ import {
   type ApiKeyCapabilityId,
   type Capability,
   type CapabilitySecret,
-  type OAuthClientCapability,
-  type OAuthClientCapabilityId,
   type ServiceCapabilityId,
 } from "./capabilities";
+import { withOAuthPresets } from "./oauthPresets";
 import { isInstallOwnedGatewaySetting } from "./gatewaySettings";
 import { providerSettingPrefix } from "./providerRegistry";
 
@@ -409,15 +408,11 @@ describe("the capability registry", () => {
       "dataforseo" | "context" | "stripe" | "exa"
     >().toExtend<ApiKeyCapabilityId>();
     expectTypeOf<"openai" | "anthropic" | "gemini">().toExtend<AiProviderId>();
-    // @ts-expect-error an OAuth client is not an API-key capability
+    // @ts-expect-error an OAuth provider is a preset, not a catalog capability
     expectTypeOf<"slack">().toExtend<ApiKeyCapabilityId>();
-    expectTypeOf<OAuthClientCapabilityId>().toEqualTypeOf<
-      "slack" | "google-workspace" | "microsoft-365"
-    >();
-    expectTypeOf<"SLACK_CLIENT_SECRET">().toExtend<CapabilitySecret>();
-    // The social networks are presets now: no gateway reserves their names.
+    // The OAuth providers are presets: no gateway reserves their names.
     // @ts-expect-error not a catalog setting
-    expectTypeOf<"LINKEDIN_CLIENT_SECRET">().toExtend<CapabilitySecret>();
+    expectTypeOf<"SLACK_CLIENT_SECRET">().toExtend<CapabilitySecret>();
     expectTypeOf<"EMAIL_FROM">().toExtend<CapabilitySecret>();
     expectTypeOf<"CLOUDFLARE_ACCOUNT_ID">().toExtend<CapabilitySecret>();
     expectTypeOf<"DATAFORSEO_API_KEY">().toExtend<CapabilitySecret>();
@@ -471,80 +466,31 @@ describe("the capability registry", () => {
 });
 
 describe("the OAuth providers", () => {
-  const ids = CAPABILITY_IDS.filter(
-    (id): id is OAuthClientCapabilityId =>
-      CAPABILITIES[id].mode === "oauth_client",
-  );
-  const client = (id: OAuthClientCapabilityId): OAuthClientCapability =>
-    CAPABILITIES[id];
-
-  it("are Slack, Google and Microsoft, with 6 gateway settings", () => {
-    expect(ids).toEqual(["slack", "google-workspace", "microsoft-365"]);
-    const settings = ids.flatMap((id) => capabilitySettings(client(id)));
-    expect(settings).toHaveLength(6);
-    expect(new Set(settings).size).toBe(6);
-    expect(client("slack").secrets).toEqual({
-      clientId: "SLACK_CLIENT_ID",
-      clientSecret: "SLACK_CLIENT_SECRET",
-    });
-  });
-
-  it.each(ids)(
-    "%s is a flow and API hosts, with no scopes, access or routes of its own",
-    (id) => {
-      const capability = client(id);
-      for (const field of [
-        "access",
-        "token",
-        "authorize",
-        "scopePolicy",
-        "readMethods",
-        "writeMethods",
-      ]) {
-        expect(capability, field).not.toHaveProperty(field);
-      }
-      expect(capability.api.length).toBeGreaterThan(0);
-      for (const host of capability.api) {
-        // A bare lowercase host: no scheme, port, path or credentials.
-        expect(new URL(`https://${host}`).host).toBe(host);
-        expect(host).toMatch(/^[a-z0-9.-]+$/);
-      }
-      const { flow } = capability;
-      for (const url of [
-        flow.authorizeUrl,
-        flow.tokenUrl,
-        capability.console,
-        ...(flow.revokeUrl ? [flow.revokeUrl] : []),
-      ]) {
-        expect(new URL(url).protocol, url).toBe("https:");
-      }
-      // The identity URL gets the token: it must be one of the API hosts.
-      if (flow.identity) {
-        expect(capability.api).toContain(new URL(flow.identity.url).host);
-      }
-      expect(capability.secrets.clientSecret).toBeDefined();
-      expect(capability.setup).toMatch(/^setup\/.+\.md$/);
-    },
-  );
-
-  it("names the command that gives the gateway each client", () => {
-    expect(oauthClientSecretSetCommand(client("slack"))).toBe(
-      "pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET",
-    );
+  it("are none of the catalog's: each is a registered row, from a preset or a spec", () => {
+    expect(
+      CAPABILITY_IDS.filter(
+        (id) => (CAPABILITIES[id] as Capability).mode === "oauth_client",
+      ),
+    ).toEqual([]);
   });
 });
 
 describe("OAuth provider paths", () => {
-  /** What the gateway makes of an app's call to `url` through `provider`. */
-  const parse = (provider: OAuthClientCapabilityId, url: string) => {
+  /** What the gateway makes of an app's call to `url` through `provider`, its preset registered. */
+  const parse = (provider: string, url: string) => {
     const path = new URL(
       integrationProxyPath(provider, new URL(url)),
       "http://gateway.internal",
     );
-    return parseIntegrationProxyPath(path.pathname, path.search);
+    return parseIntegrationProxyPath(
+      path.pathname,
+      path.search,
+      undefined,
+      withOAuthPresets(CATALOG),
+    );
   };
 
-  it.each<[OAuthClientCapabilityId, string]>([
+  it.each<[string, string]>([
     ["google-workspace", "https://gmail.googleapis.com/gmail/v1/users/me"],
     [
       "google-workspace",
@@ -560,7 +506,7 @@ describe("OAuth provider paths", () => {
     });
   });
 
-  it.each<[OAuthClientCapabilityId, string]>([
+  it.each<[string, string]>([
     // The token and authorize endpoints are the Gateway's alone.
     ["google-workspace", "https://oauth2.googleapis.com/token"],
     ["google-workspace", "https://accounts.google.com/o/oauth2/v2/auth"],

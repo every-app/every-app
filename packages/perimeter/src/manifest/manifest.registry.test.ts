@@ -30,7 +30,7 @@ describe("the strict validator and the provider registry", () => {
         capabilities: { northwind: { access: "read" } },
       }),
     ).toThrow(
-      /capabilities\.northwind: unknown capability \(the gateway offers: dataforseo, context, email, members, slack, google-workspace/,
+      /capabilities\.northwind: unknown capability \(the gateway offers: dataforseo, context, email, members, stripe/,
     );
     expect(() =>
       validateManifestStrict({

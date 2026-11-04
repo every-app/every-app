@@ -675,19 +675,17 @@ describe("OAuth providers", () => {
     expect(forwarded.headers.get(USER)).toBeNull();
   });
 
-  it("refuses a host outside the provider's API hosts, the token endpoint included, before the binding", async () => {
+  it("leaves the host to the gateway, which holds the provider's row, and reaches https only", async () => {
     const { env, bindingFetch } = bindingEnv();
     const google = integrationFetch({ env, provider: "google-workspace" });
-    await expect(
-      google("https://oauth2.googleapis.com/token", { method: "POST" }),
-    ).rejects.toThrow(/only reaches .*gmail\.googleapis\.com/);
-    await expect(google("https://attacker.example/x")).rejects.toThrow(
-      TypeError,
-    );
     await expect(
       google("http://gmail.googleapis.com/gmail/v1/users/me/profile"),
     ).rejects.toThrow(TypeError);
     expect(bindingFetch).not.toHaveBeenCalled();
+    await google("https://oauth2.googleapis.com/token", { method: "POST" });
+    expect(
+      new URL((bindingFetch.mock.calls[0]?.[0] as Request).url).pathname,
+    ).toBe("/api/integrations/google-workspace/oauth2.googleapis.com/token");
   });
 
   it("names a member's connection with for: { background: true, userId }, never the person being served, even mid-request", async () => {

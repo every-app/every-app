@@ -113,10 +113,10 @@ checkout and `node_modules/everyapp/skills/everyapp/setup/` in every app, with a
 in `setup/README.md`; an agent reads the guide before it asks anyone for
 a value. A provider's or a capability's guide comes from the SDK
 registries (`DEV_AI_PROVIDERS[id].setup`, a capability's `setup`: openai,
-openrouter, workers-ai, dataforseo, context, email, google-workspace,
-microsoft-365, slack and youtube, which shares `setup/google.md`; the AI
-routes share `setup/openai.md`; `members` and the other 14 social clients
-have none), and the manifest can't change it. An app's own values have
+openrouter, workers-ai, dataforseo, context and email; an OAuth preset's,
+`oauthSetupGuide()`: google-workspace, microsoft-365 and slack; the AI
+routes share `setup/openai.md`; `members` and the other presets have
+none), and the manifest can't change it. An app's own values have
 no guide: their feature's steps and their `how` say it.
 
 ## 3. The manifest

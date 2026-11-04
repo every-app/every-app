@@ -421,7 +421,10 @@ describe("the provider tools on /mcp", () => {
     expect(answer.data["registered"]).toBe(2);
     expect(mine.map((provider) => provider.id)).toContain("dataforseo");
     expect(mine.map((provider) => provider.id)).toContain("openai");
-    expect(mine.map((provider) => provider.id)).toContain("google-workspace");
+    // An OAuth preset is listed once its row is.
+    expect(mine.map((provider) => provider.id)).not.toContain(
+      "google-workspace",
+    );
     expect(mine.map((provider) => provider.id)).not.toContain("email");
     expect(mine.slice(-2).map((provider) => provider.id)).toEqual([
       "contoso",
@@ -672,12 +675,12 @@ describe("the provider tools on /mcp", () => {
     ).toBe(
       "PROVIDER_IN_USE: billing lists fabrikam under capabilities; removing it would stop its calls at once (from the terminal: everyapp provider remove fabrikam --force)",
     );
-    expect(
-      await refusal("everyapp_provider_remove", { id: "dataforseo" }, admin()),
-    ).toMatch(/^PROVIDER_BUILTIN: dataforseo is built in/);
-    expect(
-      await refusal("everyapp_provider_remove", { id: "everyapp" }, admin()),
-    ).toMatch(/^PROVIDER_BUILTIN: /);
+    // A built-in id has no row.
+    for (const id of ["dataforseo", "everyapp"]) {
+      expect(
+        await refusal("everyapp_provider_remove", { id }, admin()),
+      ).toMatch(/^PROVIDER_NOT_FOUND: /);
+    }
     expect(
       await refusal("everyapp_provider_remove", { id: "nope" }, admin()),
     ).toBe(

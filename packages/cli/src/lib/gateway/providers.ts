@@ -20,9 +20,9 @@
 import {
   capabilitySettings,
   checkProviderRow,
-  CAPABILITY_IDS,
   describeSpecProblems,
   gatewayHostRefusal,
+  OAUTH_PRESETS,
   parseProviderSpec,
   providerBindingKey,
   providerRegistry,
@@ -31,6 +31,7 @@ import {
   type ProviderRegistry,
   type ProviderRow,
   type RegisteredProvider,
+  unregisteredPresetIds,
 } from "@every-app/sdk/internal";
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
@@ -98,11 +99,6 @@ export function providerRowsNaming(
   return registry
     .rows()
     .filter((row) => capabilitySettings(row.capability).some((name) => names.includes(name)));
-}
-
-/** The ids `everyapp` and the catalog's, which no row may take. */
-function isBuiltinId(id: string): boolean {
-  return id === "everyapp" || (CAPABILITY_IDS as readonly string[]).includes(id);
 }
 
 interface AddProviderInput {
@@ -232,6 +228,32 @@ VALUES (?1, ?2, ?3, ?4, ?4, NULL, NULL) ON CONFLICT(id) DO NOTHING RETURNING id`
   return { id, capability, replaced: Boolean(existing) };
 }
 
+/**
+ * Register the OAuth presets among `ids` (the capabilities of an app
+ * being deployed) that this Gateway has no row for, each from its preset,
+ * as `provider add` writes it: the deploy needs no step of its own for
+ * Google or GitHub, and the operator only sets the client. A row another
+ * run wrote meanwhile is left as it is. The ids registered.
+ */
+export async function registerPresetProviders(
+  db: D1Database,
+  ids: readonly string[],
+  input: Pick<AddProviderInput, "deployer" | "install" | "now">,
+): Promise<string[]> {
+  if (!ids.some((id) => Object.hasOwn(OAUTH_PRESETS, id))) return [];
+  const registry = await gatewayRegistry(db, input.install);
+  const added: string[] = [];
+  for (const id of unregisteredPresetIds(ids, registry)) {
+    try {
+      await addProvider(db, { ...input, spec: OAUTH_PRESETS[id] });
+      added.push(id);
+    } catch (error) {
+      if (!(error instanceof EveryAppError && error.code === "PROVIDER_EXISTS")) throw error;
+    }
+  }
+  return added;
+}
+
 interface RemovedProvider {
   id: string;
   name: string;
@@ -246,8 +268,8 @@ interface RemovedProvider {
 }
 
 /**
- * Remove a registered provider. A built-in id is PROVIDER_BUILTIN, an id
- * with no row PROVIDER_NOT_FOUND, and a row a registered app's stored
+ * Remove a registered provider. An id with no row is PROVIDER_NOT_FOUND,
+ * and a row a registered app's stored
  * manifest lists under `capabilities` PROVIDER_IN_USE (naming the apps)
  * unless `force`. The Gateway settings it named stay: `secret unset`
  * removes them, and no row reads them again without a new `secret set`.
@@ -258,12 +280,6 @@ export async function removeProvider(
   deployer: Deployer,
   { force = false, now = Date.now() }: { force?: boolean; now?: number } = {},
 ): Promise<RemovedProvider> {
-  if (isBuiltinId(id)) {
-    throw new EveryAppError("PROVIDER_BUILTIN", `${id} is built in\nOnly a provider registered with ${CLI} provider add can be removed.`, {
-      rerun: `${CLI} provider list`,
-      rerunNote: "shows which are registered",
-    });
-  }
   const row = (await readProviderRows(db)).find((each) => each.id === id);
   if (!row) {
     throw new EveryAppError("PROVIDER_NOT_FOUND", `No provider ${id} is registered on this Gateway`, {

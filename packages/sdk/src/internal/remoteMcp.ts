@@ -342,12 +342,14 @@ export function reservedUpstreamHosts(): string[] {
     "openrouter.ai",
     "gateway.ai.cloudflare.com",
     "api.cloudflare.com",
+    // The token endpoints of the Google, Microsoft and Slack presets.
+    "oauth2.googleapis.com",
+    "login.microsoftonline.com",
+    "slack.com",
   ]);
   for (const capability of Object.values(CAPABILITIES)) {
     if (capability.mode === "api_key") {
       for (const host of capability.hosts) hosts.add(host);
-    } else if (capability.mode === "oauth_client") {
-      hosts.add(new URL(capability.flow.tokenUrl).hostname);
     }
   }
   return [...hosts].sort();

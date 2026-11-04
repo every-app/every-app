@@ -15,6 +15,12 @@ vi.mock("../repositories/AppRepository", () => ({
   },
 }));
 
+// The registry with Google's row, as a deploy of an app that lists it leaves it.
+vi.mock("@/server/providers", async () => {
+  const { CATALOG, withOAuthPresets } = await import("@every-app/sdk/internal");
+  return { gatewayProviders: async () => withOAuthPresets(CATALOG) };
+});
+
 import { AppService } from "./AppService";
 
 const CTX = { orgId: "org-1", userId: "user-1" } as never;

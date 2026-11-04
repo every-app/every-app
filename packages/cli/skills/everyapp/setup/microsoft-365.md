@@ -21,12 +21,15 @@ below; a setting set here wins.
 | `MICROSOFT_365_CLIENT_ID`     | required | The registration's **Application (client) ID** (a GUID, shown on its Overview page). Not a secret. |
 | `MICROSOFT_365_CLIENT_SECRET` | required | A client secret's **Value** (Certificates & secrets), shown once when created; expires in at most 24 months. |
 
-Fixed by the built-in spec (`packages/sdk/src/internal/oauthBuiltIns.ts`, `microsoft-365`, labelled **Microsoft
-365** in errors and logs): the multi-tenant `common` endpoints,
+Fixed by the preset (`packages/sdk/src/internal/oauthPresets.ts`, `microsoft-365`, labelled **Microsoft
+365** in errors and logs), which the Gateway registers as a row when an app that lists it is deployed
+or installed (or `pnpm everyapp provider add microsoft-365`): the multi-tenant `common` endpoints,
 `https://login.microsoftonline.com/common/oauth2/v2.0/authorize` and `…/token`, so the registration MUST support
 "any organizational directory and personal Microsoft accounts" (manifest
 `signInAudience: AzureADandPersonalMicrosoftAccount`); the redirect URI is the Gateway's,
 `https://<gateway host>/connect/microsoft-365/callback`, the same for every app.
+Both names already set as Worker secrets while the Gateway had no row (an older CLI) are read only once
+`secret set` binds them to the row: set them again, or `secret unset` both to use a client pasted in Admin.
 
 An app lists Graph's own permission names, short (`Mail.Read`, joined onto `https://graph.microsoft.com/`) or in
 full: `"microsoft-365": { scopes: ["Mail.Read"], why }`. The Gateway adds `User.Read` (to name the account) and
@@ -254,5 +257,5 @@ secret exists.
 - https://learn.microsoft.com/en-us/cli/azure/install-azure-cli-macos, https://learn.microsoft.com/en-us/cli/azure/authenticate-azure-cli-interactively, https://learn.microsoft.com/en-us/cli/azure/reference-index (`az login` flags)
 - https://learn.microsoft.com/en-us/cli/azure/ad/app, https://learn.microsoft.com/en-us/cli/azure/ad/app/credential, https://learn.microsoft.com/en-us/cli/azure/ad/app/permission (Azure CLI 2.91, flags as used above)
 - https://developers.cloudflare.com/workers/observability/logs/real-time-logs/ and https://developers.cloudflare.com/workers/observability/logs/workers-logs/ (the dashboard's Logs and Observability pages)
-- `packages/sdk/src/internal/oauthBuiltIns.ts` (`microsoft-365`: the `common` endpoints, the `https://graph.microsoft.com/` prefix, `User.Read` and `offline_access` as identity scopes) and `packages/sdk/src/internal/oauthScopes.ts` (`requestedScopes()`, the mint check `scopeExcess()`); `docs/capabilities.md`, "OAuth clients" (the generated table)
+- `packages/sdk/src/internal/oauthPresets.ts` (`microsoft-365`: the `common` endpoints, the `https://graph.microsoft.com/` prefix, `User.Read` and `offline_access` as identity scopes) and `packages/sdk/src/internal/oauthScopes.ts` (`requestedScopes()`, the mint check `scopeExcess()`); `docs/capabilities.md`, "OAuth clients" (the generated table)
 - `docs/design/2026-11-oauth-simplify.md` (per-app connections, the provider's own scopes, the shared-client limit)

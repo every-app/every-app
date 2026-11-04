@@ -4,15 +4,10 @@
  * through `providerSpecOf`, and every field is held to its rule.
  */
 import { describe, expect, it } from "vitest";
-import { CAPABILITIES, CAPABILITY_IDS, type OAuthFlow } from "./capabilities";
+import { CAPABILITY_IDS, type OAuthClientCapability } from "./capabilities";
 import { isSettableGatewaySetting } from "./gatewaySettings";
 import { REMOVED_OAUTH_FIELDS } from "./oauthSpec";
-import {
-  OAUTH_PRESETS,
-  isOAuthProvider,
-  oauthPreset,
-  oauthPresetIds,
-} from "./oauthPresets";
+import { OAUTH_PRESETS, oauthPreset, oauthPresetIds } from "./oauthPresets";
 import {
   checkProviderRow,
   providerBindingKey,
@@ -67,7 +62,7 @@ describe("parseProviderSpec with auth.kind oauth2-user", () => {
     for (const field of ["access", "token", "authorize", "scopePolicy"]) {
       expect(capability, field).not.toHaveProperty(field);
     }
-    expect(isOAuthProvider(capability)).toBe(true);
+    expect(capability.mode).toBe("oauth_client");
     expect(
       parseProviderSpec(providerSpecOf("github-oauth", capability)),
     ).toEqual(parsed);
@@ -325,6 +320,9 @@ describe("resource and issuer (MCP servers' OAuth)", () => {
 describe("the presets", () => {
   it("every preset parses, is an OAuth provider, and takes no catalog id", () => {
     expect(oauthPresetIds()).toEqual([
+      "google-workspace",
+      "microsoft-365",
+      "slack",
       "github-oauth",
       "notion-oauth",
       "linear-oauth",
@@ -342,7 +340,7 @@ describe("the presets", () => {
       expect(parsed.ok, `${id}: ${JSON.stringify(parsed)}`).toBe(true);
       expect(CAPABILITY_IDS.includes(id as never), id).toBe(false);
       const capability = oauthPreset(id);
-      expect(isOAuthProvider(capability ?? undefined), id).toBe(true);
+      expect(capability?.mode, id).toBe("oauth_client");
       if (!parsed.ok) continue;
       // Each preset passes the row rules on a gateway with no other rows.
       expect(
@@ -385,18 +383,21 @@ describe("the presets", () => {
     }
   });
 
-  it("the catalog's Google, Microsoft and Slack carry a flow", () => {
+  it("Google, Microsoft and Slack are presets with a flow, none in the catalog", () => {
     for (const id of ["google-workspace", "microsoft-365", "slack"]) {
-      expect(isOAuthProvider(CAPABILITIES[id as never]), id).toBe(true);
+      expect(oauthPreset(id)?.mode, id).toBe("oauth_client");
+      expect(CAPABILITY_IDS.includes(id as never), id).toBe(false);
     }
-    expect(CAPABILITIES["google-workspace"].flow.authorizeParams).toEqual({
+    const google = (oauthPreset("google-workspace") as OAuthClientCapability)
+      .flow;
+    expect(google.authorizeParams).toEqual({
       access_type: "offline",
       prompt: "consent",
     });
-    expect(
-      (CAPABILITIES["google-workspace"].flow as OAuthFlow).revokeUrl,
-    ).toBeUndefined();
-    expect(CAPABILITIES["slack"].flow.pkce).toBe(false);
+    expect(google.revokeUrl).toBe("https://oauth2.googleapis.com/revoke");
+    expect((oauthPreset("slack") as OAuthClientCapability).flow.pkce).toBe(
+      false,
+    );
   });
 });
 

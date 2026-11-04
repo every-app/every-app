@@ -1,3 +1,4 @@
+import { CATALOG, withOAuthPresets } from "@every-app/sdk/internal";
 import { describe, it, expect, expectTypeOf } from "vitest";
 import {
   validateManifest,
@@ -28,6 +29,9 @@ import {
   isAiGatewayId,
   bindingNamesOf,
 } from "./manifest";
+
+/** A Gateway's registry with every OAuth preset registered, as deploying an app that lists one leaves it. */
+const PRESETS = { capabilities: withOAuthPresets(CATALOG) };
 
 describe("validateManifest", () => {
   it("accepts a minimal manifest", () => {
@@ -508,7 +512,8 @@ describe("capabilities manifest field", () => {
       },
     };
     expect(
-      validateManifestStrict({ id: "mail", capabilities }).capabilities,
+      validateManifestStrict({ id: "mail", capabilities }, PRESETS)
+        .capabilities,
     ).toEqual(capabilities);
     expectTypeOf<CapabilityRequest["scopes"]>().toEqualTypeOf<
       string[] | undefined
@@ -518,14 +523,18 @@ describe("capabilities manifest field", () => {
   it("accepts an OAuth provider with no scopes, and up to forty", () => {
     const empty = { slack: { scopes: [], why: "Names the workspace." } };
     expect(
-      validateManifestStrict({ id: "hello", capabilities: empty }).capabilities,
+      validateManifestStrict({ id: "hello", capabilities: empty }, PRESETS)
+        .capabilities,
     ).toEqual(empty);
     const forty = Array.from({ length: 40 }, (_, n) => `scope.${n}`);
     expect(() =>
-      validateManifestStrict({
-        id: "hello",
-        capabilities: { slack: { scopes: forty, why: "Everything." } },
-      }),
+      validateManifestStrict(
+        {
+          id: "hello",
+          capabilities: { slack: { scopes: forty, why: "Everything." } },
+        },
+        PRESETS,
+      ),
     ).not.toThrow();
   });
 
@@ -533,7 +542,7 @@ describe("capabilities manifest field", () => {
     [
       "an unknown capability",
       { nope: { access: "read" } },
-      /capabilities\.nope: unknown capability \(the gateway offers: dataforseo, context, email, members, slack, google-workspace, microsoft-365, stripe, .*, newsapi\)/,
+      /capabilities\.nope: unknown capability \(the gateway offers: dataforseo, context, email, members, stripe, .*, newsapi, google-workspace, microsoft-365, slack, .*, spotify\)/,
     ],
     [
       "an access level the capability doesn't offer",
@@ -731,9 +740,9 @@ describe("capabilities manifest field", () => {
       /capabilities\.slack\.scopes: scopes lists at most 40 scopes/,
     ],
   ])("refuses %s", (_case, capabilities, problem) => {
-    expect(() => validateManifestStrict({ id: "seo", capabilities })).toThrow(
-      problem,
-    );
+    expect(() =>
+      validateManifestStrict({ id: "seo", capabilities }, PRESETS),
+    ).toThrow(problem);
   });
 
   it("accepts email as a declaration only", () => {
@@ -871,9 +880,9 @@ describe("secrets manifest field", () => {
       /secrets\.0: OPENAI_API_KEY is a Gateway setting, which `everyapp secret set OPENAI_API_KEY` sets on the Gateway for every app; list `openai` under providers instead/,
     ],
     [
-      "an OAuth client's secret, whatever its case, naming the capability",
-      ["slack_client_secret"],
-      /secrets\.0: slack_client_secret is a Gateway setting, which `everyapp secret set SLACK_CLIENT_SECRET` sets on the Gateway for every app; list `slack` under capabilities instead/,
+      "an API-key provider's key, whatever its case, naming the capability",
+      ["dataforseo_api_key"],
+      /secrets\.0: dataforseo_api_key is a Gateway setting, which `everyapp secret set DATAFORSEO_API_KEY` sets on the Gateway for every app; list `dataforseo` under capabilities instead/,
     ],
     [
       "a Gateway switch no capability owns",
@@ -1163,11 +1172,11 @@ describe("features", () => {
   const strictWith =
     (features: unknown, extra: Record<string, unknown> = {}) =>
     () =>
-      validateManifestStrict({ ...base, ...extra, features });
+      validateManifestStrict({ ...base, ...extra, features }, PRESETS);
 
   it("accepts a feature with steps, settings, secrets and the capabilities it needs, in both schemas", () => {
     const manifest = { ...base, features: { github: GITHUB } };
-    expect(validateManifestStrict(manifest)).toEqual(manifest);
+    expect(validateManifestStrict(manifest, PRESETS)).toEqual(manifest);
     expect(validateManifest(manifest)).toEqual(manifest);
     // A feature with only a capability is a feature too.
     expect(

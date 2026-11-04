@@ -14,6 +14,11 @@ import {
   type AppSetting,
   type SettingHolder,
 } from "./appSettings.js";
+import { CATALOG } from "./capabilities.js";
+import { withOAuthPresets } from "./oauthPresets.js";
+
+/** The catalog with every OAuth preset as its row would be. */
+const PRESETS = withOAuthPresets(CATALOG);
 
 /** `isSet` from a list of names set on each holder; null for an app whose names were never recorded. */
 function setOn(
@@ -127,29 +132,32 @@ describe("the manifest's declarations", () => {
 
 describe("appSettings", () => {
   it("lists every setting in manifest order with its holder, names and default docs", () => {
-    const settings = appSettings({
-      providers: ["workers-ai", { id: "openrouter", why: "SAM." }],
-      capabilities: {
-        dataforseo: { access: "read", why: "Keyword data." },
-        context: { access: "read" },
-        email: { access: "write" },
-        members: { access: "read" },
-        slack: { access: "write" },
-        "google-workspace": {
-          access: "write",
-          docs: "https://example.com/google",
+    const settings = appSettings(
+      {
+        providers: ["workers-ai", { id: "openrouter", why: "SAM." }],
+        capabilities: {
+          dataforseo: { access: "read", why: "Keyword data." },
+          context: { access: "read" },
+          email: { access: "write" },
+          members: { access: "read" },
+          slack: { access: "write" },
+          "google-workspace": {
+            access: "write",
+            docs: "https://example.com/google",
+          },
+        },
+        secrets: ["MAIN_SECRET"],
+        features: {
+          rendering: { name: "Rendering", capabilities: ["context"] },
+          google: { name: "Google", capabilities: ["google-workspace"] },
+          github: {
+            name: "GitHub",
+            secrets: [{ name: "GITHUB_TOKEN", why: "Raises the rate limit." }],
+          },
         },
       },
-      secrets: ["MAIN_SECRET"],
-      features: {
-        rendering: { name: "Rendering", capabilities: ["context"] },
-        google: { name: "Google", capabilities: ["google-workspace"] },
-        github: {
-          name: "GitHub",
-          secrets: [{ name: "GITHUB_TOKEN", why: "Raises the rate limit." }],
-        },
-      },
-    });
+      PRESETS,
+    );
     expect(
       settings.map((setting) => [
         setting.kind,
@@ -278,33 +286,36 @@ describe("appSettings", () => {
   });
 
   it("gives each value its feature's need: required, optional, or required at the top level; a default is optional", () => {
-    const settings = appSettings({
-      providers: ["openai", "openrouter"],
-      capabilities: {
-        slack: { access: "write" },
-        dataforseo: { access: "read" },
-      },
-      secrets: [{ name: "TOP", generate: true }],
-      settings: [{ name: "REGION", why: "Where.", default: "us" }],
-      features: {
-        github: {
-          name: "GitHub",
-          required: true,
-          settings: [{ name: "GITHUB_APP_ID", how: "App ID on {appUrl}" }],
-          secrets: [{ name: "GITHUB_KEY", file: true }],
-          capabilities: ["dataforseo"],
+    const settings = appSettings(
+      {
+        providers: ["openai", "openrouter"],
+        capabilities: {
+          slack: { access: "write" },
+          dataforseo: { access: "read" },
         },
-        slack: {
-          name: "Slack",
-          secrets: [
-            { name: "SLACK_SIGNING_SECRET", generate: true, how: "Paste it" },
-          ],
-          settings: [{ name: "SLACK_MODE", default: "socket" }],
-          capabilities: ["slack"],
-          providers: ["openrouter"],
+        secrets: [{ name: "TOP", generate: true }],
+        settings: [{ name: "REGION", why: "Where.", default: "us" }],
+        features: {
+          github: {
+            name: "GitHub",
+            required: true,
+            settings: [{ name: "GITHUB_APP_ID", how: "App ID on {appUrl}" }],
+            secrets: [{ name: "GITHUB_KEY", file: true }],
+            capabilities: ["dataforseo"],
+          },
+          slack: {
+            name: "Slack",
+            secrets: [
+              { name: "SLACK_SIGNING_SECRET", generate: true, how: "Paste it" },
+            ],
+            settings: [{ name: "SLACK_MODE", default: "socket" }],
+            capabilities: ["slack"],
+            providers: ["openrouter"],
+          },
         },
       },
-    });
+      PRESETS,
+    );
     expect(
       settings.map((setting) => [
         setting.id,
@@ -382,18 +393,21 @@ describe("evaluateAppSettings", () => {
     providers: ["openrouter"],
     capabilities: { email: { access: "write" } },
   });
-  const crm = appSettings({
-    providers: ["openrouter"],
-    capabilities: {
-      context: { access: "read" },
-      slack: { access: "write" },
+  const crm = appSettings(
+    {
+      providers: ["openrouter"],
+      capabilities: {
+        context: { access: "read" },
+        slack: { access: "write" },
+      },
+      secrets: ["TOKEN_ENCRYPTION_KEY"],
+      features: {
+        slack: { name: "Slack", capabilities: ["slack"] },
+        github: { name: "GitHub", secrets: ["GITHUB_TOKEN"] },
+      },
     },
-    secrets: ["TOKEN_ENCRYPTION_KEY"],
-    features: {
-      slack: { name: "Slack", capabilities: ["slack"] },
-      github: { name: "GitHub", secrets: ["GITHUB_TOKEN"] },
-    },
-  });
+    PRESETS,
+  );
 
   it("is ready when every required setting is set", () => {
     const report = evaluateAppSettings(
@@ -431,9 +445,10 @@ describe("evaluateAppSettings", () => {
   });
 
   it("counts a setting set only when every one of its names is", () => {
-    const slack = appSettings({
-      capabilities: { slack: { access: "write" } },
-    });
+    const slack = appSettings(
+      { capabilities: { slack: { access: "write" } } },
+      PRESETS,
+    );
     const report = evaluateAppSettings(slack, setOn(["SLACK_CLIENT_ID"], []));
     expect(report.ready).toBe(false);
     expect(report.unmet.map((setting) => setting.id)).toEqual(["slack"]);
@@ -500,7 +515,7 @@ describe("feature states", () => {
     },
   };
   const evaluate = (gateway: string[], app: string[] | null) =>
-    evaluateAppSettings(appSettings(manifest), setOn(gateway, app), {
+    evaluateAppSettings(appSettings(manifest, PRESETS), setOn(gateway, app), {
       features: featureEntries(manifest),
     });
   const states = (report: ReturnType<typeof evaluate>) =>

@@ -4,7 +4,7 @@
 
 For a coding agent setting up a provider the Gateway's built-in catalog has. Each provider is a section under its id, so `setup/providers.md#<id>` points at it. Where the provider has a file of its own in this folder (its **Guide**), follow that file and read this section as its summary. Read [README.md](README.md) first: its rules hold here too, above all that a key never goes through the chat.
 
-A provider registered on one Gateway (`pnpm everyapp provider add`) is not in this file: `pnpm everyapp provider show <id>` prints its whole spec (its hint, settings, hosts, where the key comes from and its smoke request). The catalog has 61 providers: 49 API-key, 9 AI, 3 OAuth clients.
+A provider registered on one Gateway (`pnpm everyapp provider add`) is not in this file: `pnpm everyapp provider show <id>` prints its whole spec (its hint, settings, hosts, where the key comes from and its smoke request). The catalog has 58 providers (49 API-key, 9 AI) and 12 OAuth presets.
 
 The smoke request needs the key, so it runs where the key is: the person's terminal, with the variable they read in hidden, or through the app that uses it. It is one call that costs nothing (unless marked charged).
 
@@ -78,9 +78,18 @@ The three ways of [README.md](README.md), one line each (the rules, and the code
 | [`mistral`](#mistral) | Mistral AI | AI | `MISTRAL_API_KEY` |  |
 | [`groq`](#groq) | Groq | AI | `GROQ_API_KEY` |  |
 | [`cohere`](#cohere) | Cohere | AI | `COHERE_API_KEY` |  |
-| [`slack`](#slack) | Slack | OAuth client | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | [slack.md](slack.md) |
-| [`google-workspace`](#google-workspace) | Google | OAuth client | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET` | [google.md](google.md) |
-| [`microsoft-365`](#microsoft-365) | Microsoft 365 | OAuth client | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | [microsoft-365.md](microsoft-365.md) |
+| [`google-workspace`](#google-workspace) | Google | OAuth client | `GOOGLE_WORKSPACE_CLIENT_ID` (set by `everyapp setup`), `GOOGLE_WORKSPACE_CLIENT_SECRET` (set by `everyapp setup`) | [google.md](google.md) |
+| [`microsoft-365`](#microsoft-365) | Microsoft 365 | OAuth client | `MICROSOFT_365_CLIENT_ID` (set by `everyapp setup`), `MICROSOFT_365_CLIENT_SECRET` (set by `everyapp setup`) | [microsoft-365.md](microsoft-365.md) |
+| [`slack`](#slack) | Slack | OAuth client | `SLACK_CLIENT_ID` (set by `everyapp setup`), `SLACK_CLIENT_SECRET` (set by `everyapp setup`) | [slack.md](slack.md) |
+| [`github-oauth`](#github-oauth) | GitHub | OAuth client | `GITHUB_OAUTH_CLIENT_ID` (set by `everyapp setup`), `GITHUB_OAUTH_CLIENT_SECRET` (set by `everyapp setup`) |  |
+| [`notion-oauth`](#notion-oauth) | Notion | OAuth client | `NOTION_OAUTH_CLIENT_ID` (set by `everyapp setup`), `NOTION_OAUTH_CLIENT_SECRET` (set by `everyapp setup`) |  |
+| [`linear-oauth`](#linear-oauth) | Linear | OAuth client | `LINEAR_OAUTH_CLIENT_ID` (set by `everyapp setup`), `LINEAR_OAUTH_CLIENT_SECRET` (set by `everyapp setup`) |  |
+| [`gitlab-oauth`](#gitlab-oauth) | GitLab | OAuth client | `GITLAB_OAUTH_CLIENT_ID` (set by `everyapp setup`), `GITLAB_OAUTH_CLIENT_SECRET` (set by `everyapp setup`) |  |
+| [`atlassian`](#atlassian) | Atlassian (Jira and Confluence) | OAuth client | `ATLASSIAN_CLIENT_ID` (set by `everyapp setup`), `ATLASSIAN_CLIENT_SECRET` (set by `everyapp setup`) |  |
+| [`hubspot-oauth`](#hubspot-oauth) | HubSpot | OAuth client | `HUBSPOT_OAUTH_CLIENT_ID` (set by `everyapp setup`), `HUBSPOT_OAUTH_CLIENT_SECRET` (set by `everyapp setup`) |  |
+| [`zoom`](#zoom) | Zoom | OAuth client | `ZOOM_CLIENT_ID` (set by `everyapp setup`), `ZOOM_CLIENT_SECRET` (set by `everyapp setup`) |  |
+| [`dropbox`](#dropbox) | Dropbox | OAuth client | `DROPBOX_OAUTH_CLIENT_ID` (set by `everyapp setup`), `DROPBOX_OAUTH_CLIENT_SECRET` (set by `everyapp setup`) |  |
+| [`spotify`](#spotify) | Spotify | OAuth client | `SPOTIFY_CLIENT_ID` (set by `everyapp setup`), `SPOTIFY_CLIENT_SECRET` (set by `everyapp setup`) |  |
 
 Gateway services have no key of this kind: `email`, `members` (sending mail is [email.md](email.md); the members list needs nothing).
 
@@ -1073,40 +1082,148 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Set it:** `pnpm everyapp secret set COHERE_API_KEY`, or `pnpm everyapp configure <app id>` for everything an app needs
 - **Guide:** none beyond this section
 
-## OAuth clients
-
-### slack
-
-**Slack** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
-
-- **Settings:** `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`
-- **Where the client comes from:** https://api.slack.com/apps
-- **Redirect URI to register:** `https://<gateway host>/connect/slack/callback`
-- **Hosts the token goes to:** `slack.com`, over https
-- **Scopes an app lists:** the provider's own, as the provider names them, as `"slack": { scopes: [...], why: "..." }`; the provider's list: https://api.slack.com/scopes
-- **Set it:** `pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET`
-- **Guide:** [slack.md](slack.md)
+## OAuth presets
 
 ### google-workspace
 
 **Google** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
 
-- **Settings:** `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`
+- **Settings:** `GOOGLE_WORKSPACE_CLIENT_ID` (set by `everyapp setup`), `GOOGLE_WORKSPACE_CLIENT_SECRET` (set by `everyapp setup`)
 - **Where the client comes from:** https://console.cloud.google.com/apis/credentials
 - **Redirect URI to register:** `https://<gateway host>/connect/google-workspace/callback`
 - **Hosts the token goes to:** `gmail.googleapis.com`, `www.googleapis.com`, `searchconsole.googleapis.com`, `analyticsdata.googleapis.com`, `analyticsadmin.googleapis.com`, `openidconnect.googleapis.com`, over https
 - **Scopes an app lists:** the provider's own, short (joined onto `https://www.googleapis.com/auth/`) or in full, as `"google-workspace": { scopes: [...], why: "..." }`; the Gateway adds `openid`, `email` to every connect; the provider's list: https://developers.google.com/identity/protocols/oauth2/scopes
-- **Set it:** `pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET`
+- **Set it:** deploy an app that lists it (or `pnpm everyapp provider add google-workspace`), then `pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET` or paste the client in Manage workspace → Providers
 - **Guide:** [google.md](google.md)
 
 ### microsoft-365
 
 **Microsoft 365** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
 
-- **Settings:** `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET`
+- **Settings:** `MICROSOFT_365_CLIENT_ID` (set by `everyapp setup`), `MICROSOFT_365_CLIENT_SECRET` (set by `everyapp setup`)
 - **Where the client comes from:** https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
 - **Redirect URI to register:** `https://<gateway host>/connect/microsoft-365/callback`
 - **Hosts the token goes to:** `graph.microsoft.com`, over https
 - **Scopes an app lists:** the provider's own, short (joined onto `https://graph.microsoft.com/`) or in full, as `"microsoft-365": { scopes: [...], why: "..." }`; the Gateway adds `User.Read`, `offline_access` to every connect; the provider's list: https://learn.microsoft.com/graph/permissions-reference
-- **Set it:** `pnpm everyapp secret set MICROSOFT_365_CLIENT_ID MICROSOFT_365_CLIENT_SECRET`
+- **Set it:** deploy an app that lists it (or `pnpm everyapp provider add microsoft-365`), then `pnpm everyapp secret set MICROSOFT_365_CLIENT_ID MICROSOFT_365_CLIENT_SECRET` or paste the client in Manage workspace → Providers
 - **Guide:** [microsoft-365.md](microsoft-365.md)
+
+### slack
+
+**Slack** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+
+- **Settings:** `SLACK_CLIENT_ID` (set by `everyapp setup`), `SLACK_CLIENT_SECRET` (set by `everyapp setup`)
+- **Where the client comes from:** https://api.slack.com/apps
+- **Redirect URI to register:** `https://<gateway host>/connect/slack/callback`
+- **Hosts the token goes to:** `slack.com`, over https
+- **Scopes an app lists:** the provider's own, as the provider names them, as `"slack": { scopes: [...], why: "..." }`; the provider's list: https://api.slack.com/scopes
+- **Set it:** deploy an app that lists it (or `pnpm everyapp provider add slack`), then `pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **Guide:** [slack.md](slack.md)
+
+### github-oauth
+
+**GitHub** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+
+- **Settings:** `GITHUB_OAUTH_CLIENT_ID` (set by `everyapp setup`), `GITHUB_OAUTH_CLIENT_SECRET` (set by `everyapp setup`)
+- **Where the client comes from:** https://github.com/settings/developers
+- **Redirect URI to register:** `https://<gateway host>/connect/github-oauth/callback`
+- **Hosts the token goes to:** `api.github.com`, over https
+- **Scopes an app lists:** the provider's own, as the provider names them, as `"github-oauth": { scopes: [...], why: "..." }`; the provider's list: https://docs.github.com/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps
+- **Set it:** deploy an app that lists it (or `pnpm everyapp provider add github-oauth`), then `pnpm everyapp secret set GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **Guide:** none beyond this section
+
+### notion-oauth
+
+**Notion** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+
+- **Settings:** `NOTION_OAUTH_CLIENT_ID` (set by `everyapp setup`), `NOTION_OAUTH_CLIENT_SECRET` (set by `everyapp setup`)
+- **Where the client comes from:** https://www.notion.so/my-integrations
+- **Redirect URI to register:** `https://<gateway host>/connect/notion-oauth/callback`
+- **Hosts the token goes to:** `api.notion.com`, over https
+- **Scopes an app lists:** the provider's own, as the provider names them, as `"notion-oauth": { scopes: [...], why: "..." }`; the provider's list: https://developers.notion.com/reference
+- **Set it:** deploy an app that lists it (or `pnpm everyapp provider add notion-oauth`), then `pnpm everyapp secret set NOTION_OAUTH_CLIENT_ID NOTION_OAUTH_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **Guide:** none beyond this section
+
+### linear-oauth
+
+**Linear** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+
+- **Settings:** `LINEAR_OAUTH_CLIENT_ID` (set by `everyapp setup`), `LINEAR_OAUTH_CLIENT_SECRET` (set by `everyapp setup`)
+- **Where the client comes from:** https://linear.app/settings/api/applications
+- **Redirect URI to register:** `https://<gateway host>/connect/linear-oauth/callback`
+- **Hosts the token goes to:** `api.linear.app`, over https
+- **Scopes an app lists:** the provider's own, as the provider names them, as `"linear-oauth": { scopes: [...], why: "..." }`; the provider's list: https://developers.linear.app/docs/oauth/authentication
+- **Set it:** deploy an app that lists it (or `pnpm everyapp provider add linear-oauth`), then `pnpm everyapp secret set LINEAR_OAUTH_CLIENT_ID LINEAR_OAUTH_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **Guide:** none beyond this section
+
+### gitlab-oauth
+
+**GitLab** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+
+- **Settings:** `GITLAB_OAUTH_CLIENT_ID` (set by `everyapp setup`), `GITLAB_OAUTH_CLIENT_SECRET` (set by `everyapp setup`)
+- **Where the client comes from:** https://gitlab.com/-/user_settings/applications
+- **Redirect URI to register:** `https://<gateway host>/connect/gitlab-oauth/callback`
+- **Hosts the token goes to:** `gitlab.com`, over https
+- **Scopes an app lists:** the provider's own, as the provider names them, as `"gitlab-oauth": { scopes: [...], why: "..." }`; the Gateway adds `read_user` to every connect; the provider's list: https://docs.gitlab.com/integration/oauth_provider/#view-all-authorized-applications
+- **Set it:** deploy an app that lists it (or `pnpm everyapp provider add gitlab-oauth`), then `pnpm everyapp secret set GITLAB_OAUTH_CLIENT_ID GITLAB_OAUTH_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **Guide:** none beyond this section
+
+### atlassian
+
+**Atlassian (Jira and Confluence)** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+
+- **Settings:** `ATLASSIAN_CLIENT_ID` (set by `everyapp setup`), `ATLASSIAN_CLIENT_SECRET` (set by `everyapp setup`)
+- **Where the client comes from:** https://developer.atlassian.com/console/myapps/
+- **Redirect URI to register:** `https://<gateway host>/connect/atlassian/callback`
+- **Hosts the token goes to:** `api.atlassian.com`, over https
+- **Scopes an app lists:** the provider's own, as the provider names them, as `"atlassian": { scopes: [...], why: "..." }`; the Gateway adds `read:me`, `offline_access` to every connect; the provider's list: https://developer.atlassian.com/cloud/jira/platform/scopes-for-oauth-2-3LO-and-forge-apps/
+- **Set it:** deploy an app that lists it (or `pnpm everyapp provider add atlassian`), then `pnpm everyapp secret set ATLASSIAN_CLIENT_ID ATLASSIAN_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **Guide:** none beyond this section
+
+### hubspot-oauth
+
+**HubSpot** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+
+- **Settings:** `HUBSPOT_OAUTH_CLIENT_ID` (set by `everyapp setup`), `HUBSPOT_OAUTH_CLIENT_SECRET` (set by `everyapp setup`)
+- **Where the client comes from:** https://developers.hubspot.com/
+- **Redirect URI to register:** `https://<gateway host>/connect/hubspot-oauth/callback`
+- **Hosts the token goes to:** `api.hubapi.com`, over https
+- **Scopes an app lists:** the provider's own, as the provider names them, as `"hubspot-oauth": { scopes: [...], why: "..." }`; the provider's list: https://developers.hubspot.com/docs/api/working-with-oauth
+- **Set it:** deploy an app that lists it (or `pnpm everyapp provider add hubspot-oauth`), then `pnpm everyapp secret set HUBSPOT_OAUTH_CLIENT_ID HUBSPOT_OAUTH_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **Guide:** none beyond this section
+
+### zoom
+
+**Zoom** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+
+- **Settings:** `ZOOM_CLIENT_ID` (set by `everyapp setup`), `ZOOM_CLIENT_SECRET` (set by `everyapp setup`)
+- **Where the client comes from:** https://marketplace.zoom.us/develop/create
+- **Redirect URI to register:** `https://<gateway host>/connect/zoom/callback`
+- **Hosts the token goes to:** `api.zoom.us`, over https
+- **Scopes an app lists:** the provider's own, as the provider names them, as `"zoom": { scopes: [...], why: "..." }`; the Gateway adds `user:read:user` to every connect; the provider's list: https://developers.zoom.us/docs/integrations/oauth-scopes-overview/
+- **Set it:** deploy an app that lists it (or `pnpm everyapp provider add zoom`), then `pnpm everyapp secret set ZOOM_CLIENT_ID ZOOM_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **Guide:** none beyond this section
+
+### dropbox
+
+**Dropbox** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+
+- **Settings:** `DROPBOX_OAUTH_CLIENT_ID` (set by `everyapp setup`), `DROPBOX_OAUTH_CLIENT_SECRET` (set by `everyapp setup`)
+- **Where the client comes from:** https://www.dropbox.com/developers/apps
+- **Redirect URI to register:** `https://<gateway host>/connect/dropbox/callback`
+- **Hosts the token goes to:** `api.dropboxapi.com`, `content.dropboxapi.com`, over https
+- **Scopes an app lists:** the provider's own, as the provider names them, as `"dropbox": { scopes: [...], why: "..." }`; the provider's list: https://developers.dropbox.com/oauth-guide
+- **Set it:** deploy an app that lists it (or `pnpm everyapp provider add dropbox`), then `pnpm everyapp secret set DROPBOX_OAUTH_CLIENT_ID DROPBOX_OAUTH_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **Guide:** none beyond this section
+
+### spotify
+
+**Spotify** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+
+- **Settings:** `SPOTIFY_CLIENT_ID` (set by `everyapp setup`), `SPOTIFY_CLIENT_SECRET` (set by `everyapp setup`)
+- **Where the client comes from:** https://developer.spotify.com/dashboard
+- **Redirect URI to register:** `https://<gateway host>/connect/spotify/callback`
+- **Hosts the token goes to:** `api.spotify.com`, over https
+- **Scopes an app lists:** the provider's own, as the provider names them, as `"spotify": { scopes: [...], why: "..." }`; the provider's list: https://developer.spotify.com/documentation/web-api/concepts/scopes
+- **Set it:** deploy an app that lists it (or `pnpm everyapp provider add spotify`), then `pnpm everyapp secret set SPOTIFY_CLIENT_ID SPOTIFY_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **Guide:** none beyond this section

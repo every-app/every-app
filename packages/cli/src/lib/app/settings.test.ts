@@ -9,10 +9,13 @@ import { stripVTControlCharacters } from "node:util";
 import {
   appSettings,
   CAPABILITIES,
+  CATALOG,
   DEV_AI_PROVIDERS,
+  oauthPresetIds,
   parseProviderSpec,
   providerBindingKey,
   providerRegistry,
+  withOAuthPresets,
 } from "@every-app/sdk/internal";
 import { describe, expect, it } from "vitest";
 import {
@@ -169,6 +172,7 @@ describe("the STATUS vocabulary", () => {
       appId: "social",
       gatewayNames: ["SLACK_CLIENT_ID"],
       secretNames: ["MAIN_SECRET"],
+      lookup: withOAuthPresets(CATALOG),
     });
     const rows = settingsRows("social", report.settings);
     const client = "SLACK_CLIENT_ID+SLACK_CLIENT_SECRET";
@@ -279,6 +283,7 @@ describe("describeUnmet", () => {
       appId: "analytics",
       gatewayNames: [],
       secretNames: [],
+      lookup: withOAuthPresets(CATALOG),
     });
     expect(describeUnmetSettings(setup.unmet)).toEqual([
       "OpenRouter: OPENROUTER_API_KEY",
@@ -375,15 +380,19 @@ describe("the setup guides the registries name", () => {
     const everything = {
       providers: Object.keys(DEV_AI_PROVIDERS),
       // Every capability; the AI providers are listed under `providers`.
-      capabilities: Object.fromEntries(
-        Object.entries(CAPABILITIES).flatMap(([id, capability]) =>
-          capability.mode === "ai"
-            ? []
-            : [[id, capability.mode === "oauth_client" ? { scopes: [] } : { access: capability.access[0] }]],
+      capabilities: Object.fromEntries([
+        ...Object.entries(CAPABILITIES).flatMap(([id, capability]) =>
+          capability.mode === "ai" ? [] : [[id, { access: capability.access[0] }]],
         ),
-      ),
+        ...oauthPresetIds().map((id) => [id, { scopes: [] }]),
+      ]),
     };
-    const guides = [...new Set(appSettings(everything).flatMap((setting) => (setting.setup ? [setting.setup] : [])))];
+    const guides = [
+      ...new Set(
+        appSettings(everything, withOAuthPresets(CATALOG)).flatMap((setting) => (setting.setup ? [setting.setup] : [])),
+      ),
+    ];
+    expect(guides).toContain("setup/google.md");
     expect(guides.length).toBeGreaterThan(0);
     for (const guide of guides) {
       expect(fs.existsSync(path.join(skill, guide)), guide).toBe(true);

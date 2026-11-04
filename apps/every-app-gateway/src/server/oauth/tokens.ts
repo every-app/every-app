@@ -361,21 +361,31 @@ export async function accessTokenFor({
  * Revoke a connection's tokens at the provider, when its flow names a
  * revoke endpoint: `{client_id}` in the URL is replaced, the client goes
  * on as the token rule says, the token in the form body (`token`), or for
- * GitHub's DELETE in a JSON body (`access_token`). True when the provider
- * answered 2xx. Never throws.
+ * GitHub's DELETE in a JSON body (`access_token`). The form sends the
+ * access token while it is live and, when that is refused or the access
+ * token has expired, the refresh token with `token_type_hint=refresh_token`
+ * (RFC 7009): Google answers `invalid_token` for an expired access token,
+ * and revokes the whole grant from its refresh token. True when the
+ * provider answered 2xx. Never throws.
  */
 export async function revokeAtProvider({
   capability,
   client,
-  accessToken,
+  tokens,
   fetchUpstream,
   log,
+  now = Date.now(),
 }: {
   capability: OAuthClientCapability;
   client: ResolvedOAuthClient;
-  accessToken: string;
+  tokens: {
+    accessToken: string;
+    refreshToken: string | null;
+    expiresAt: number | null;
+  };
   fetchUpstream: Fetch;
   log: { provider: string; org?: string };
+  now?: number;
 }): Promise<boolean> {
   const flow = capability.flow;
   if (!flow.revokeUrl) return false;
@@ -384,45 +394,66 @@ export async function revokeAtProvider({
     "{client_id}",
     encodeURIComponent(client.clientId),
   );
-  const headers = new Headers({ accept: "application/json" });
-  let body: string;
-  if (method === "DELETE") {
-    headers.set("content-type", "application/json");
-    body = JSON.stringify({ access_token: accessToken });
-  } else {
-    headers.set("content-type", "application/x-www-form-urlencoded");
-    const form = new URLSearchParams({ token: accessToken });
-    if (flow.inject !== "basic") {
-      form.set("client_id", client.clientId);
-      if (client.clientSecret) form.set("client_secret", client.clientSecret);
-    }
-    body = form.toString();
-  }
-  if (flow.inject === "basic" || method === "DELETE") {
-    headers.set(
-      "authorization",
-      `Basic ${base64Utf8(`${encodeURIComponent(client.clientId)}:${encodeURIComponent(client.clientSecret ?? "")}`)}`,
-    );
-  }
-  try {
-    const response = await fetchUpstream(
-      new Request(url, { method, headers, body, redirect: "manual" }),
-    );
-    await response.body?.cancel();
-    if (!response.ok) {
-      logEvent(
-        "oauth.revoke_refused",
-        { ...log, status: response.status },
-        "warn",
+  const send = async (
+    token: "access" | "refresh",
+    body: string,
+  ): Promise<boolean> => {
+    const headers = new Headers({
+      accept: "application/json",
+      "content-type":
+        method === "DELETE"
+          ? "application/json"
+          : "application/x-www-form-urlencoded",
+    });
+    if (flow.inject === "basic" || method === "DELETE") {
+      headers.set(
+        "authorization",
+        `Basic ${base64Utf8(`${encodeURIComponent(client.clientId)}:${encodeURIComponent(client.clientSecret ?? "")}`)}`,
       );
     }
-    return response.ok;
-  } catch (error) {
-    logEvent(
-      "oauth.revoke_failed",
-      { ...log, error: error instanceof Error ? error.name : "unknown" },
-      "warn",
-    );
-    return false;
+    try {
+      const response = await fetchUpstream(
+        new Request(url, { method, headers, body, redirect: "manual" }),
+      );
+      await response.body?.cancel();
+      if (!response.ok) {
+        logEvent(
+          "oauth.revoke_refused",
+          { ...log, token, status: response.status },
+          "warn",
+        );
+      }
+      return response.ok;
+    } catch (error) {
+      logEvent(
+        "oauth.revoke_failed",
+        {
+          ...log,
+          token,
+          error: error instanceof Error ? error.name : "unknown",
+        },
+        "warn",
+      );
+      return false;
+    }
+  };
+  if (method === "DELETE") {
+    return send("access", JSON.stringify({ access_token: tokens.accessToken }));
   }
+  const form = (fields: Record<string, string>): string => {
+    const params = new URLSearchParams(fields);
+    if (flow.inject !== "basic") {
+      params.set("client_id", client.clientId);
+      if (client.clientSecret) params.set("client_secret", client.clientSecret);
+    }
+    return params.toString();
+  };
+  const expired = tokens.expiresAt !== null && tokens.expiresAt <= now;
+  if (!expired && (await send("access", form({ token: tokens.accessToken }))))
+    return true;
+  if (!tokens.refreshToken) return false;
+  return send(
+    "refresh",
+    form({ token: tokens.refreshToken, token_type_hint: "refresh_token" }),
+  );
 }

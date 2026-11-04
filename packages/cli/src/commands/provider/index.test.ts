@@ -25,6 +25,7 @@ import { readInstall, writeInstall } from "@/lib/gateway/install";
 import { GATEWAY_SCHEMA } from "@/lib/gateway/schema";
 import { register } from "@/lib/gateway/registry";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
+import { registerPresetProviders } from "@/lib/gateway/providers";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import { createHumanSink, createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
@@ -353,9 +354,10 @@ describe("provider list", () => {
 
     const providers = done()!["data"]["providers"] as Array<Record<string, any>>;
     const ids = providers.map((provider) => provider["id"]);
-    // The catalog first (no services), then the rows.
-    expect(ids).toEqual(expect.arrayContaining(["openai", "openrouter", "dataforseo", "slack", "northwind"]));
+    // The catalog first (no services), then the rows. An OAuth preset is a row once registered.
+    expect(ids).toEqual(expect.arrayContaining(["openai", "openrouter", "dataforseo", "northwind"]));
     expect(ids).not.toContain("email");
+    expect(ids).not.toContain("slack");
     expect(providers.at(-1)).toEqual({
       id: "northwind",
       name: "Northwind",
@@ -378,12 +380,6 @@ describe("provider list", () => {
       source: "catalog",
       apps: ["shop"],
     });
-    expect(providers.find((provider) => provider["id"] === "slack")).toMatchObject({
-      kind: "oauth client",
-      hosts: ["slack.com"],
-    });
-    // The social networks are presets: rows only once an operator adds one.
-    expect(ids).not.toContain("linkedin");
     expect(done()).toMatchObject({
       message: `${providers.length} providers: ${providers.length - 1} built in, 1 registered`,
       data: { mcp: "pnpm everyapp mcp list" },
@@ -451,7 +447,7 @@ describe("provider show", () => {
     expect(done()!["data"]["next"]).toBeUndefined();
   });
 
-  it("prints a built-in provider's spec: an API key's whole, an AI provider's and an OAuth client's setup fields", async () => {
+  it("prints a built-in provider's spec: an API key's whole, an AI provider's setup fields; an OAuth preset's row its whole spec", async () => {
     await show("dataforseo");
     expect(done()!["data"]).toMatchObject({
       provider: { id: "dataforseo", name: "DataForSEO", auth: { kind: "basic", secret: "DATAFORSEO_API_KEY", as: "pair" } },
@@ -469,28 +465,22 @@ describe("provider show", () => {
       hosts: ["openrouter.ai"],
       setup: "setup/openrouter.md",
     });
+    // An OAuth preset isn't there until its row is.
+    await expect(show("google-workspace")).rejects.toMatchObject({ code: "PROVIDER_NOT_FOUND" });
+    await registerPresetProviders(db(), ["google-workspace", "slack"], {
+      deployer: { actor: "dev@example.com", email: "dev@example.com" },
+      install: { gatewayHost: "example.com", appBaseDomain: "example.com" },
+    });
     events = [];
     await show("slack");
-    expect(done()!["data"]["provider"]).toMatchObject({
-      id: "slack",
-      kind: "oauth client",
-      settings: ["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET"],
-      hosts: ["slack.com"],
-      tokenUrl: "https://slack.com/api/oauth.v2.access",
-      scopeSeparator: "comma",
-      identityScopes: [],
-      tolerated: [],
+    expect(done()!["data"]).toMatchObject({
+      provider: { id: "slack", hosts: ["slack.com"], auth: { kind: "oauth2-user", tokenUrl: "https://slack.com/api/oauth.v2.access" } },
+      source: "row",
     });
-    // Scope sets, access and methods are gone: the app lists the provider's own scopes.
-    for (const gone of ["scopeSets", "tokenEndpoints", "authorize", "access"]) {
-      expect(done()!["data"]["provider"]).not.toHaveProperty(gone);
-    }
     events = [];
     await show("google-workspace");
     expect(done()!["data"]["provider"]).toMatchObject({
-      scopeSeparator: "space",
-      scopePrefix: "https://www.googleapis.com/auth/",
-      identityScopes: ["openid", "email"],
+      auth: { scopeSeparator: "space", scopePrefix: "https://www.googleapis.com/auth/", revokeUrl: "https://oauth2.googleapis.com/revoke" },
     });
     expect(done()!["data"]["scopes"]).toMatchObject({ separator: "space", identity: ["openid", "email"] });
   });
@@ -525,8 +515,8 @@ describe("provider show", () => {
 });
 
 describe("provider remove", () => {
-  it("refuses a built-in id, an id with no row, and a row a registered app lists unless --force", async () => {
-    await expect(remove("dataforseo")).rejects.toMatchObject({ code: "PROVIDER_BUILTIN" });
+  it("refuses an id with no row (a built-in one has none), and a row a registered app lists unless --force", async () => {
+    await expect(remove("dataforseo")).rejects.toMatchObject({ code: "PROVIDER_NOT_FOUND" });
     await expect(remove("northwind")).rejects.toMatchObject({
       code: "PROVIDER_NOT_FOUND",
       message: "No provider northwind is registered on this Gateway",
@@ -627,7 +617,7 @@ describe("provider events", () => {
     await registerApp("shop", { capabilities: { northwind: { access: "read" } } });
 
     // Refused: a built-in id, an id with no row, a row an app lists without --force.
-    await expect(remove("dataforseo")).rejects.toMatchObject({ code: "PROVIDER_BUILTIN" });
+    await expect(remove("dataforseo")).rejects.toMatchObject({ code: "PROVIDER_NOT_FOUND" });
     await expect(remove("northwind-connect")).rejects.toMatchObject({ code: "PROVIDER_NOT_FOUND" });
     await expect(remove("northwind")).rejects.toMatchObject({ code: "PROVIDER_IN_USE" });
     expect((await eventRows()).map((event) => event.type)).toEqual(["provider.added"]);
@@ -767,19 +757,17 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, 'v1.sealed.access', 'v1.sealed.refresh
       },
     ]);
 
-  it("lists the presets and the built-in clients without reaching the Gateway", async () => {
+  it("lists the presets without reaching the Gateway, Google, Microsoft and Slack first", async () => {
     createCf.mockClear();
     await listPresets({ out: out() });
     expect(createCf).not.toHaveBeenCalled();
     const presets = done()!["data"]["presets"] as Array<Record<string, any>>;
     expect(presets.find((preset) => preset["id"] === "github-oauth")).toMatchObject({
       name: "GitHub",
-      builtIn: false,
       settings: ["GITHUB_OAUTH_CLIENT_ID", "GITHUB_OAUTH_CLIENT_SECRET"],
       console: expect.stringMatching(/^https:\/\/github\.com\//),
     });
     expect(presets.find((preset) => preset["id"] === "google-workspace")).toMatchObject({
-      builtIn: true,
       scopes: { separator: "space", prefix: "https://www.googleapis.com/auth/", identity: ["openid", "email"] },
     });
     expect(presets.find((preset) => preset["id"] === "github-oauth")).toMatchObject({
@@ -787,8 +775,8 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, 'v1.sealed.access', 'v1.sealed.refresh
       scopes: { separator: "comma", identity: [], tolerated: [] },
     });
     expect(presets.find((preset) => preset["id"] === "github-oauth")).not.toHaveProperty("scopeSets");
-    // The built-in clients come first.
-    expect(presets.findIndex((preset) => preset["builtIn"])).toBe(0);
+    expect(presets.slice(0, 3).map((preset) => preset["id"])).toEqual(["google-workspace", "microsoft-365", "slack"]);
+    for (const preset of presets) expect(preset).not.toHaveProperty("builtIn");
     expect(done()!["data"]["next"][0]["command"]).toBe("pnpm everyapp provider add --oauth github-oauth");
   });
 
@@ -819,7 +807,6 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, 'v1.sealed.access', 'v1.sealed.refresh
         id: "github-oauth",
         name: "GitHub",
         kind: "oauth",
-        source: "row",
         replaced: false,
         redirectUri: "https://example.com/connect/github-oauth/callback",
         apiHosts: ["api.github.com"],
@@ -881,20 +868,27 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, 'v1.sealed.access', 'v1.sealed.refresh
     });
   });
 
-  it("takes a built-in client without a row, a custom spec file, and refuses what isn't an OAuth preset", async () => {
+  it("registers Google from its preset, keeps the row a deploy wrote, takes a custom spec file, and refuses what isn't an OAuth preset", async () => {
     await addOAuthProvider("google-workspace");
-    expect(await rows()).toEqual([]);
+    expect(await rows()).toEqual([
+      expect.objectContaining({ id: "google-workspace", spec: JSON.stringify(OAUTH_PRESETS["google-workspace"]), bound_to: null }),
+    ]);
     expect(done()).toMatchObject({
-      message: expect.stringContaining("Google (google-workspace) is on example.com."),
+      message: expect.stringContaining("Registered Google (google-workspace) on example.com."),
       data: {
         id: "google-workspace",
         kind: "oauth",
-        source: "catalog",
         redirectUri: "https://example.com/connect/google-workspace/callback",
-        settings: [...capabilitySettings(CAPABILITIES["google-workspace"])],
+        settings: [...capabilitySettings(oauthPreset("google-workspace")!)],
         client: { source: "none" },
       },
     });
+    // Added again (as after a deploy registered it): the row stays, the client alone is set.
+    events = [];
+    await addOAuthProvider("google-workspace");
+    expect(steps("provider.add")[0]).toMatchObject({ data: { id: "google-workspace", registered: true } });
+    expect(done()!["message"]).toContain("Google (google-workspace) is on example.com.");
+    await db().run([{ sql: "DELETE FROM providers WHERE id = 'google-workspace'" }]);
 
     const auth = { ...(GITHUB["auth"] as Record<string, unknown>) };
     delete auth["identity"];
@@ -986,6 +980,7 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, 'v1.sealed.access', 'v1.sealed.refresh
     const userId = await devUserId();
     await seedConnection("github-oauth", "shop", userId, "ben");
     await seedConnection("github-oauth", "notes", userId, "ben-notes");
+    await addOAuthProvider("google-workspace");
     await seedConnection("google-workspace", "shop", userId, "ben-google");
 
     events = [];
@@ -1134,12 +1129,17 @@ describe("provider add, one step: the key or client asked for in the same run", 
       GOOGLE_WORKSPACE_CLIENT_SECRET: "GOCSPX-shh",
     });
     const shown = await human(run("google-workspace", { interactive: true, ask }));
-    expect(shown).toBe(
+    expect(shown.replace(/ on \d{4}-\d{2}-\d{2};/g, " on <date>;")).toBe(
       [
-        "Google (google-workspace) is on example.com.",
+        "Registered Google (google-workspace) on example.com.",
         ...GOOGLE_STEPS,
         "7. Paste the Client ID and Client Secret.",
         "Docs: https://everyapp.com/docs/providers/google",
+        // A registered row's settings: secret set says where they go.
+        ...["GOOGLE_WORKSPACE_CLIENT_ID", "GOOGLE_WORKSPACE_CLIENT_SECRET"].map(
+          (name) =>
+            `${name} is Google's, registered by dev@example.com on <date>; the key is sent to oauth2.googleapis.com, gmail.googleapis.com, www.googleapis.com, searchconsole.googleapis.com, analyticsdata.googleapis.com, analyticsadmin.googleapis.com and openidconnect.googleapis.com.`,
+        ),
         "Set GOOGLE_WORKSPACE_CLIENT_ID and GOOGLE_WORKSPACE_CLIENT_SECRET on the Gateway ✓",
         "Apps can now list google-workspace. Live now, no deploy needed.",
         "",
@@ -1186,7 +1186,7 @@ describe("provider add, one step: the key or client asked for in the same run", 
   it("unattended, says the steps and the command next; the manifest entry and scope rules only with --verbose", async () => {
     expect(await human(run("google-workspace"))).toBe(
       [
-        "Google (google-workspace) is on example.com.",
+        "Registered Google (google-workspace) on example.com.",
         ...GOOGLE_STEPS,
         "7. Set the Client ID and Client Secret with the command below.",
         "Docs: https://everyapp.com/docs/providers/google",

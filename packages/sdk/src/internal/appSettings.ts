@@ -47,6 +47,7 @@ import {
   isInstallOwnedGatewaySetting,
   isSettableGatewaySetting,
 } from "./gatewaySettings.js";
+import { oauthSetupGuide } from "./oauthPresets.js";
 import { hasRemoteMcpBlock, remoteMcpBlockProblem } from "./remoteMcp.js";
 
 /** A provider as `providers` lists it: its id, or an entry with why and docs. */
@@ -802,7 +803,10 @@ export function appSettings(
         storedOptional(gatewayNeedOf(features, "capabilities", id), entry),
         {
           docs: capabilityDocs(capability),
-          setup: capability.setup,
+          setup:
+            capability.mode === "oauth_client"
+              ? oauthSetupGuide(id)
+              : capability.setup,
           ...providerHint(capability, names),
         },
       ),

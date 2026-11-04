@@ -25,10 +25,8 @@
  */
 import { WorkerEntrypoint } from "cloudflare:workers";
 import {
-  CAPABILITIES,
   oauthPreset,
   oauthPresetIds,
-  type Capability,
   type OAuthClientCapability,
 } from "@every-app/sdk/internal";
 import {
@@ -126,19 +124,15 @@ function tokenEndpointOf(capability: OAuthClientCapability): {
 }
 
 /**
- * Every token endpoint the catalog's OAuth clients and the presets name:
- * a preset counts whether or not this gateway added it, so a dispatched
- * app can't reach one with a client of its own either way.
+ * Every token endpoint the OAuth presets name: a preset counts whether or
+ * not this gateway registered it, so a dispatched app can't reach one with
+ * a client of its own either way.
  */
-const TOKEN_ENDPOINTS: readonly { host: string; path: string }[] = [
-  ...Object.values<Capability>(CAPABILITIES).flatMap((capability) =>
-    capability.mode === "oauth_client" ? [tokenEndpointOf(capability)] : [],
-  ),
-  ...oauthPresetIds().flatMap((id) => {
+const TOKEN_ENDPOINTS: readonly { host: string; path: string }[] =
+  oauthPresetIds().flatMap((id) => {
     const preset = oauthPreset(id);
     return preset?.mode === "oauth_client" ? [tokenEndpointOf(preset)] : [];
-  }),
-];
+  });
 
 /**
  * A path with a leading API version as any version (`/v25.0/oauth/...`

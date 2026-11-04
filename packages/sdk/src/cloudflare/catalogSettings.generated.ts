@@ -9,7 +9,7 @@
  * setting, a host setting), by manifest id. With no Gateway in
  * development, the SDK reaches them with the developer's own values under
  * the same names, and `everyAppWorker()` declares the ones set locally.
- * An OAuth provider's is the token that stands in for a connection in dev
+ * An OAuth preset's is the token that stands in for a connection in dev
  * (`<PREFIX>_ACCESS_TOKEN`), never its client.
  */
 export const DEV_GATEWAY_KEYS = {
@@ -35,9 +35,6 @@ export const DEV_GATEWAY_KEYS = {
       "EMAIL_PROVIDER",
     ],
     members: [],
-    slack: ["SLACK_ACCESS_TOKEN"],
-    "google-workspace": ["GOOGLE_WORKSPACE_ACCESS_TOKEN"],
-    "microsoft-365": ["MICROSOFT_365_ACCESS_TOKEN"],
     stripe: ["STRIPE_API_KEY"],
     lemonsqueezy: ["LEMONSQUEEZY_API_KEY"],
     paddle: ["PADDLE_API_KEY"],
@@ -88,12 +85,25 @@ export const DEV_GATEWAY_KEYS = {
     elevenlabs: ["ELEVENLABS_API_KEY"],
     assemblyai: ["ASSEMBLYAI_API_KEY"],
     newsapi: ["NEWSAPI_API_KEY"],
+    "google-workspace": ["GOOGLE_WORKSPACE_ACCESS_TOKEN"],
+    "microsoft-365": ["MICROSOFT_365_ACCESS_TOKEN"],
+    slack: ["SLACK_ACCESS_TOKEN"],
+    "github-oauth": ["GITHUB_OAUTH_ACCESS_TOKEN"],
+    "notion-oauth": ["NOTION_OAUTH_ACCESS_TOKEN"],
+    "linear-oauth": ["LINEAR_OAUTH_ACCESS_TOKEN"],
+    "gitlab-oauth": ["GITLAB_OAUTH_ACCESS_TOKEN"],
+    atlassian: ["ATLASSIAN_ACCESS_TOKEN"],
+    "hubspot-oauth": ["HUBSPOT_OAUTH_ACCESS_TOKEN"],
+    zoom: ["ZOOM_ACCESS_TOKEN"],
+    dropbox: ["DROPBOX_ACCESS_TOKEN"],
+    spotify: ["SPOTIFY_ACCESS_TOKEN"],
   },
 } as const;
 
 /**
- * Every setting a catalog entry reads, in catalog order, each once: what
- * the Gateway's cloudflare.config.ts declares for local dev.
+ * Every setting a catalog entry or an OAuth preset reads, in catalog
+ * order, each once: what the Gateway's cloudflare.config.ts declares for
+ * local dev.
  */
 export const CATALOG_GATEWAY_SETTINGS = [
   "OPENAI_API_KEY",
@@ -109,12 +119,6 @@ export const CATALOG_GATEWAY_SETTINGS = [
   "EMAIL_REST_API_TOKEN",
   "RESEND_API_KEY",
   "EMAIL_PROVIDER",
-  "SLACK_CLIENT_ID",
-  "SLACK_CLIENT_SECRET",
-  "GOOGLE_WORKSPACE_CLIENT_ID",
-  "GOOGLE_WORKSPACE_CLIENT_SECRET",
-  "MICROSOFT_365_CLIENT_ID",
-  "MICROSOFT_365_CLIENT_SECRET",
   "STRIPE_API_KEY",
   "LEMONSQUEEZY_API_KEY",
   "PADDLE_API_KEY",
@@ -174,4 +178,28 @@ export const CATALOG_GATEWAY_SETTINGS = [
   "ELEVENLABS_API_KEY",
   "ASSEMBLYAI_API_KEY",
   "NEWSAPI_API_KEY",
+  "GOOGLE_WORKSPACE_CLIENT_ID",
+  "GOOGLE_WORKSPACE_CLIENT_SECRET",
+  "MICROSOFT_365_CLIENT_ID",
+  "MICROSOFT_365_CLIENT_SECRET",
+  "SLACK_CLIENT_ID",
+  "SLACK_CLIENT_SECRET",
+  "GITHUB_OAUTH_CLIENT_ID",
+  "GITHUB_OAUTH_CLIENT_SECRET",
+  "NOTION_OAUTH_CLIENT_ID",
+  "NOTION_OAUTH_CLIENT_SECRET",
+  "LINEAR_OAUTH_CLIENT_ID",
+  "LINEAR_OAUTH_CLIENT_SECRET",
+  "GITLAB_OAUTH_CLIENT_ID",
+  "GITLAB_OAUTH_CLIENT_SECRET",
+  "ATLASSIAN_CLIENT_ID",
+  "ATLASSIAN_CLIENT_SECRET",
+  "HUBSPOT_OAUTH_CLIENT_ID",
+  "HUBSPOT_OAUTH_CLIENT_SECRET",
+  "ZOOM_CLIENT_ID",
+  "ZOOM_CLIENT_SECRET",
+  "DROPBOX_OAUTH_CLIENT_ID",
+  "DROPBOX_OAUTH_CLIENT_SECRET",
+  "SPOTIFY_CLIENT_ID",
+  "SPOTIFY_CLIENT_SECRET",
 ] as const;

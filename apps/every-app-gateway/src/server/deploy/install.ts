@@ -36,6 +36,8 @@ import {
 } from "@/server/organization/orgContext";
 import { platformPolicy } from "@/server/platform-policy";
 import { gatewayProviders } from "@/server/providers";
+import { PublicError } from "@/server/errors";
+import { planPresetProviders } from "@/server/oauth/service";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { OrganizationRepository } from "@/server/repositories/OrganizationRepository";
 import { isUserBanned } from "@/server/user-ban";
@@ -331,11 +333,21 @@ export function serveInstall(request: Request): Promise<Response> {
     const bundled = selfHosted
       ? await planBundledProviders(release.bundle)
       : null;
-    const lookup = bundled?.lookup ?? (await gatewayProviders());
+    // The OAuth presets the release lists that this Gateway has no row
+    // for, served for the check and registered once it installs
+    // (self-hosted; a hosted gateway refuses them, PROVIDER_HOSTED).
+    const presets = await planPresetProviders(
+      release.bundle.manifest,
+      bundled?.lookup ?? (await gatewayProviders()),
+    ).catch((error: unknown) => {
+      if (error instanceof PublicError)
+        throw new DeployError(error.code, 409, error.message);
+      throw error;
+    });
     const manifest = parseManifest(
       release.bundle.manifest,
       release.appId,
-      lookup,
+      presets.lookup,
     );
     // Refused before the app is registered: a release that can't go
     // leaves no row behind. startDeploy checks again.
@@ -393,6 +405,11 @@ export function serveInstall(request: Request): Promise<Response> {
         "Confirm the bundled providers and their destination hosts before installing.",
       );
     await bundled?.register(caller.email);
+    await presets.register({
+      organizationId: caller.organizationId,
+      userId: caller.userId,
+      email: caller.email,
+    });
     // Registered as the deploy API's POST /apps registers it, then deployed.
     const plan = await registerApp(caller, manifest);
     logEvent("app_install.started", {

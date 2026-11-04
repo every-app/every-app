@@ -21,19 +21,15 @@
 import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import {
-  CAPABILITIES,
   capabilitySettings,
-  CAPABILITY_IDS,
   checkProviderRow,
   describeSpecProblems,
-  isOAuthProvider,
   oauthPreset,
   oauthPresetIds,
   parseProviderSpec,
   secretNames,
   type ApiKeyAuth,
   type Capability,
-  type OAuthClientCapability,
   type ProviderRow,
   type RegisteredProvider,
 } from "@every-app/sdk/internal";
@@ -65,13 +61,6 @@ type Handler = (
 
 /** The longest spec `add` takes, as `everyapp provider add <url>` reads one. */
 const SPEC_MAX_BYTES = 64 * 1024;
-
-/** The ids no row may take: the catalog's and the gateway's own. */
-function isBuiltinId(id: string): boolean {
-  return (
-    id === "everyapp" || (CAPABILITY_IDS as readonly string[]).includes(id)
-  );
-}
 
 /** A tool error the caller can act on, `CODE: message`. */
 function refuse(code: string, message: string): JsonObject {
@@ -234,33 +223,23 @@ function listed(
   }
 }
 
-/** The OAuth presets `provider_add { preset }` takes: the catalog's clients with a flow (built in), then the SDK's presets. */
+/** The OAuth presets `provider_add { preset }` takes. */
 function presetsListed(): JsonObject[] {
-  const one = (
-    id: string,
-    capability: OAuthClientCapability,
-    builtIn: boolean,
-  ): JsonObject => ({
-    id,
-    name: capability.label,
-    builtIn,
-    console: capability.console,
-    hosts: [...capability.api],
-    settings: [...capabilitySettings(capability)],
-    ...(capability.hint ? { hint: capability.hint } : {}),
-  });
-  const builtIn = Object.entries(CAPABILITIES)
-    .filter(([, capability]) => isOAuthProvider(capability as Capability))
-    .map(([id, capability]) =>
-      one(id, capability as OAuthClientCapability, true),
-    );
-  const presets = oauthPresetIds().flatMap((id) => {
+  return oauthPresetIds().flatMap((id) => {
     const capability = oauthPreset(id);
     return capability && capability.mode === "oauth_client"
-      ? [one(id, capability, false)]
+      ? [
+          {
+            id,
+            name: capability.label,
+            console: capability.console,
+            hosts: [...capability.api],
+            settings: [...capabilitySettings(capability)],
+            ...(capability.hint ? { hint: capability.hint } : {}),
+          },
+        ]
       : [];
   });
-  return [...builtIn, ...presets];
 }
 
 export const PROVIDER_HANDLERS: Record<string, Handler> = {
@@ -308,8 +287,8 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
       return refuse("INVALID_INPUT", "give one of spec or preset, not both");
     }
     if (preset !== null) {
-      // A preset or a built-in client, through the service Admin → Providers
-      // uses: the row (none for a built-in), the events, the same refusals.
+      // A preset, through the service Admin → Providers uses: the row (none
+      // when a deploy registered it already), the events, the same refusals.
       let summary: OAuthProviderSummary;
       try {
         summary = await addOAuthProvider(ctx, await actorFor(ctx), {
@@ -456,12 +435,6 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
 
   async provider_remove(ctx, args) {
     const id = typeof args["id"] === "string" ? args["id"] : "";
-    if (isBuiltinId(id)) {
-      return refuse(
-        "PROVIDER_BUILTIN",
-        `${id} is built in; only a provider registered on this Gateway can be removed`,
-      );
-    }
     const rows = await ProviderRepository.all();
     const row = rows.find((each) => each.id === id);
     if (!row) {

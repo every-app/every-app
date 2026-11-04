@@ -34,7 +34,7 @@
  */
 import http from "node:http";
 import { ManifestError } from "@every-app/perimeter/manifest";
-import { devProviderFile, isCapabilityId } from "@every-app/sdk/internal";
+import { devProviderFile, isCapabilityId, OAUTH_PRESETS } from "@every-app/sdk/internal";
 import type { SessionAuthenticator } from "@every-app/perimeter/dev";
 import { getFreePort, waitForHttp, waitForUrl } from "./proxy";
 import {
@@ -410,14 +410,14 @@ async function loadManifest(cwd: string): Promise<EveryAppCliManifest> {
 /**
  * dev can't ask a Gateway which providers it registered, so it validates
  * with any well-formed capability id and says so for each id outside the
- * built-in catalog: reached locally from `.everyapp/providers/<id>.json`
+ * built-in catalog and the OAuth presets: reached locally from `.everyapp/providers/<id>.json`
  * (with the key in .dev.vars) when that file has its spec, and checked
  * against the Gateway's registry by the deploy.
  */
 function warnOutsideCatalog(manifest: EveryAppCliManifest, cwd: string, out: EventSink): void {
   const lookup = devProviderLookup(cwd);
   for (const id of Object.keys(manifest.capabilities ?? {})) {
-    if (isCapabilityId(id)) continue;
+    if (isCapabilityId(id) || Object.hasOwn(OAUTH_PRESETS, id)) continue;
     const file = devProviderFile(id);
     const found = lookup.get(id) !== undefined;
     out.emit({

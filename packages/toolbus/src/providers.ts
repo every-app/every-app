@@ -15,7 +15,7 @@
  * one hides them, Unknown tool on call). `add` takes the spec object or a
  * preset id alone, never a URL to fetch and never a replace of a row that
  * is there; `remove` takes the id alone and refuses a row whose key is
- * bound, a row an app lists and a built-in. No value passes through
+ * bound, a row an app lists and an id with no row. No value passes through
  * either: a spec names its secrets, the key or client is set from the
  * terminal (`everyapp secret set`) or pasted under Admin → Providers.
  *
@@ -56,7 +56,7 @@ export const PROVIDER_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "provider_add",
     title: "Register an API provider",
     description:
-      "Register a provider on this Gateway: an API provider from its spec `{ id, name, docs, hosts, auth: { kind: bearer | header | query | basic, secret: SETTING_NAME, … }, hint?, secrets?, access?, writeMethods?, accountWidePaths?, data?, smoke?, cost?, rate? }`, an OAuth provider from a spec with `auth: { kind: oauth2-user, authorizeUrl, tokenUrl, clientId: SETTING_NAME, clientSecret?: SETTING_NAME, … }` (no scopes: each app lists its own), or an OAuth preset by id (`{ preset: \"github-oauth\" }`; `everyapp_provider_list` names them; a built-in client such as `google-workspace` writes no row). A spec names its settings and never carries a value: a client id or secret is set from the terminal (`everyapp secret set NAME`) or pasted under Admin → Providers, never through a tool. The id must not be a built-in provider's, its settings must start with its own id (`STRIPE_` for `stripe`) and be nobody else's, and its hosts must be the provider's own public https hosts. An id that is registered already is refused: this tool never replaces a row (`everyapp provider add --replace` from the terminal does). For an OAuth provider the answer carries the redirect URI to register at the provider's console and where people connect. Owners and admins, on a self-hosted Gateway.",
+      "Register a provider on this Gateway: an API provider from its spec `{ id, name, docs, hosts, auth: { kind: bearer | header | query | basic, secret: SETTING_NAME, … }, hint?, secrets?, access?, writeMethods?, accountWidePaths?, data?, smoke?, cost?, rate? }`, an OAuth provider from a spec with `auth: { kind: oauth2-user, authorizeUrl, tokenUrl, clientId: SETTING_NAME, clientSecret?: SETTING_NAME, … }` (no scopes: each app lists its own), or an OAuth preset by id (`{ preset: \"google-workspace\" }`; `everyapp_provider_list` names them; deploying an app that lists a preset registers it too). A spec names its settings and never carries a value: a client id or secret is set from the terminal (`everyapp secret set NAME`) or pasted under Admin → Providers, never through a tool. The id must not be a built-in provider's, its settings must start with its own id (`STRIPE_` for `stripe`) and be nobody else's, and its hosts must be the provider's own public https hosts. A spec whose id is registered already is refused: this tool never replaces a row (`everyapp provider add --replace` from the terminal does); a preset registered already is answered as it is. For an OAuth provider the answer carries the redirect URI to register at the provider's console and where people connect. Owners and admins, on a self-hosted Gateway.",
     inputSchema: {
       type: "object",
       properties: {
@@ -68,7 +68,7 @@ export const PROVIDER_TOOLS: readonly WorkspaceToolDefinition[] = [
         preset: {
           type: "string",
           description:
-            "An OAuth preset id from `everyapp_provider_list`'s `presets` (github-oauth, notion-oauth, …), or a built-in client's id (google-workspace, slack, microsoft-365, discord). One of spec or preset.",
+            "An OAuth preset id from `everyapp_provider_list`'s `presets` (google-workspace, microsoft-365, slack, github-oauth, …). One of spec or preset.",
           minLength: 2,
           maxLength: PROVIDER_ID_MAX,
         },
@@ -83,7 +83,7 @@ export const PROVIDER_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "provider_remove",
     title: "Remove a registered API provider",
     description:
-      "Remove an API provider registered on this Gateway, by its id. Refused for a built-in provider, for a row whose key is set (remove it from the terminal: `everyapp provider remove <id>`, then `everyapp secret unset`), and for a row an app's deployed manifest lists under `capabilities` (naming the apps). The Gateway settings the row named stay until `everyapp secret unset`. Owners and admins, on a self-hosted Gateway.",
+      "Remove a provider registered on this Gateway (an OAuth preset's row among them), by its id. Refused for a row whose key is set (remove it from the terminal: `everyapp provider remove <id>`, then `everyapp secret unset`), and for a row an app's deployed manifest lists under `capabilities` (naming the apps). The Gateway settings the row named stay until `everyapp secret unset`. Owners and admins, on a self-hosted Gateway.",
     inputSchema: {
       type: "object",
       properties: {

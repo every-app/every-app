@@ -58,7 +58,14 @@ import { installApp } from "@every-app/perimeter/install";
 import path from "node:path";
 import { cliVersion } from "@/lib/version";
 import { manifestTierProblems, validateManifestStrict, type GatewayNames } from "@every-app/perimeter/manifest";
-import { capabilityIdsOf, providerIds, type AppSetup, type ProviderRegistry } from "@every-app/sdk/internal";
+import {
+  capabilityIdsOf,
+  providerIds,
+  withOAuthPresets,
+  type AppSetup,
+  type CapabilityLookup,
+  type ProviderRegistry,
+} from "@every-app/sdk/internal";
 import {
   awaitLive,
   bindIfNeeded,
@@ -108,7 +115,7 @@ import { afterMigration, EveryAppError, type Rollback } from "@/lib/errors";
 import { directoryExists } from "@/lib/file-operations";
 import { connectToGateway } from "@/lib/gateway/connect";
 import { acquireAppLease, LeasePurpose } from "@/lib/gateway/lease";
-import { gatewayRegistry } from "@/lib/gateway/providers";
+import { gatewayRegistry, registerPresetProviders } from "@/lib/gateway/providers";
 import {
   findRegisteredApp,
   installOrganization,
@@ -328,10 +335,25 @@ async function deploySteps(
     registerProviders: options.registerProviders,
     confirm: options.confirm,
   });
-  // The manifest against what this Gateway offers: the catalog and the
-  // providers registered on it, before anything is registered or built.
-  const providers = await gatewayRegistry(registry, install);
-  checkCapabilitiesOffered(manifest, providers, gatewayUrl);
+  // The manifest against what this Gateway offers: the catalog, the
+  // providers registered on it and the OAuth presets the next step
+  // registers, before anything is registered or built.
+  let providers = await gatewayRegistry(registry, install);
+  checkCapabilitiesOffered(manifest, withOAuthPresets(providers), gatewayUrl);
+  // The OAuth presets the app lists (`google-workspace`, `github-oauth`),
+  // registered from their presets when this Gateway has no row for them:
+  // the operator then only sets each client.
+  const presets = await registerPresetProviders(registry, Object.keys(manifest.capabilities ?? {}), { deployer, install });
+  if (presets.length > 0) {
+    out.emit({
+      type: "step",
+      step: "app.providers",
+      status: "ok",
+      message: `Registered ${listed(presets)} on ${gatewayUrl.replace(/^https:\/\//, "")} from ${presets.length === 1 ? "its preset" : "their presets"}`,
+      data: { presets },
+    });
+    providers = await gatewayRegistry(registry, install);
+  }
   // A person's first line, before anything can stop the run: where this
   // goes, and whether the app has ever been live (a first deploy that
   // stopped part way is still the first).
@@ -753,7 +775,7 @@ async function warnIfNeedsSetup({
  */
 function checkCapabilitiesOffered(
   manifest: EveryAppCliManifest,
-  providers: ProviderRegistry,
+  providers: CapabilityLookup,
   gatewayUrl: string,
 ): void {
   // The AI providers under `providers` too: the catalog's `ai` entries and

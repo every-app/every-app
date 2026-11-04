@@ -1,7 +1,7 @@
 /**
  * The one set of scope rules (./oauthScopes.ts), on made-up flows: each
- * rule driven by a spec field alone. The built-in providers' own cases
- * are in oauthBuiltIns.test.ts.
+ * rule driven by a spec field alone. The presets' own cases
+ * are in oauthPresets.test.ts.
  */
 import { describe, expect, it } from "vitest";
 import type { OAuthFlow } from "./capabilities";

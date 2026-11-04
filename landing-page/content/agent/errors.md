@@ -378,7 +378,7 @@ The MCP app is on, but its key isn't set, or was set for other hosts. Set it wit
 ### PROVIDER_NOT_FOUND
 Not a built-in provider, preset, file or URL, or not registered here (`everyapp provider list`).
 ### PROVIDER_PRESET_UNKNOWN
-`--oauth` takes an OAuth preset, a built-in client or a spec. `everyapp provider list` shows them.
+`--oauth` takes an OAuth preset or a spec. `everyapp provider presets` shows the presets.
 ### PROVIDER_SECRET_TAKEN
 A setting in the spec isn't the provider's: settings start with the id upper-cased (`STRIPE_` for `stripe`) and can't be another provider's.
 ### PROVIDER_SPEC_DIFFERS

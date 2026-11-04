@@ -6,7 +6,7 @@ description: "What an API provider is, the built-in catalog and the providers a 
 An **API provider** is an API the Gateway holds a key (or an OAuth client) for and brokers calls to: DataForSEO, Stripe, Google. An app lists it in `everyapp.config.ts` and calls the provider's real URLs; the Gateway adds the credential, so the app never holds it. One key per Gateway serves every app. Providers come from two places:
 
 - the **built-in catalog** in the SDK (the table at the end), and
-- a Gateway's own **rows**, registered with `everyapp provider add <spec>` for an API the catalog lacks. A row never shadows a catalog id.
+- a Gateway's own **rows**, registered with `everyapp provider add <spec>` for an API the catalog lacks. A row never shadows a catalog id. Every OAuth provider is a row, most written from a preset when an app that lists it deploys.
 
 Kinds: `api_key` (the Gateway puts the key on calls to the provider's hosts; listed under `capabilities`), `ai` (an OpenAI-compatible model provider behind the AI proxy; listed under `providers`, see [ai](/docs/agent/ai)), `oauth_client` (people connect their own account in each app; `capabilities` with `scopes`), and `service` (`email`, `members`: the Gateway does the work).
 
@@ -59,12 +59,12 @@ The rules (`PROVIDER_SPEC_INVALID` lists every problem): a spec names settings a
 
 For APIs that act on a person's own account (Google, Microsoft 365, Slack, GitHub, Notion):
 
-1. An owner or admin adds the provider once and gives the Gateway its OAuth client: `everyapp provider add --oauth github-oauth`, which prints the redirect URI (`https://<gateway>/connect/<id>/callback`) to register in the provider's console and then asks for the client. Or paste it in **Manage workspace → Providers**, where the secret is sealed in D1. A client set as Worker secrets (`GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`) wins over a pasted one.
+1. The provider is a registered row. Deploying or installing an app that lists a preset's id (`google-workspace`, `github-oauth`) writes its row; an owner or admin can add it first with `everyapp provider add github-oauth`, which prints the redirect URI (`https://<gateway>/connect/<id>/callback`) to register in the provider's console and then asks for the client. Or paste it in **Manage workspace → Providers**, where the secret is sealed in D1. A client set as Worker secrets (`GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`) wins over a pasted one.
 2. The app lists the provider's own scopes it needs: `capabilities: { "github-oauth": { scopes: ["repo"], why: "…" } }`.
 3. A person connects **in that app**: the app sends them to `connectUrl({ env, provider, returnTo })`, and the provider's consent shows exactly those scopes. The connection belongs to that person and that app.
 4. The app calls the provider's URLs with `integrationFetch()`, whether the person is there or not (background work names them with `for: { background: true, userId }`). The Gateway refreshes the token and refuses any token carrying more scopes than the app lists. With no connection, or one missing a scope the app now lists, the answer is `409 integration_not_connected` with a `connectPath` to send the person to.
 
-Built in: `google-workspace`, `microsoft-365`, `slack`. Presets (`everyapp provider presets`): `github-oauth`, `notion-oauth`, `linear-oauth`, `gitlab-oauth`, `atlassian`, `hubspot-oauth`, `zoom`, `dropbox`, `spotify`. Any other OAuth 2 API is a spec with `auth.kind: "oauth2-user"`.
+Presets (`everyapp provider presets`): `google-workspace`, `microsoft-365`, `slack`, `github-oauth`, `notion-oauth`, `linear-oauth`, `gitlab-oauth`, `atlassian`, `hubspot-oauth`, `zoom`, `dropbox`, `spotify`. Any other OAuth 2 API is a spec with `auth.kind: "oauth2-user"`.
 
 ### The spec: `auth.kind: "oauth2-user"`
 
@@ -91,7 +91,7 @@ An app that needs a provider outside the catalog commits its spec as `.everyapp/
 ```sh
 everyapp provider add openrouter        # a catalog provider: where the key comes from, then asks for it
 everyapp provider add stripe.json       # register a spec (file or https URL), then its key
-everyapp provider add --oauth github-oauth [--client-id <id>]
+everyapp provider add github-oauth [--client-id <id>]   # an OAuth preset: its row, then its client
 everyapp provider list                  # catalog and rows: settings set, apps listing each
 everyapp provider show stripe [--save]  # the spec as JSON
 everyapp provider remove stripe [--force]
@@ -111,7 +111,7 @@ Keys can also be set alone with `everyapp secret set STRIPE_API_KEY`. `--from-en
 <!-- prettier-ignore-start -->
 <!-- providers-catalog:begin (generated from packages/sdk/src/internal/capabilities.ts by packages/cli/src/docs/providersCatalog.ts; pnpm -C packages/cli docs:update) -->
 
-The built-in catalog has 61 providers: 49 API-key, 9 AI, 3 OAuth clients. Where each key comes from, and a smoke request, are in the everyapp skill's `setup/providers.md` and on [the provider pages](/docs/providers).
+The built-in catalog has 58 providers (49 API-key, 9 AI) and 12 OAuth presets. Where each key comes from, and a smoke request, are in the everyapp skill's `setup/providers.md` and on [the provider pages](/docs/providers).
 
 | Id | Name | Kind | Settings | Hosts | How the key is sent |
 | --- | --- | --- | --- | --- | --- |
@@ -174,7 +174,7 @@ The built-in catalog has 61 providers: 49 API-key, 9 AI, 3 OAuth clients. Where 
 | `groq` | Groq | `ai` | `GROQ_API_KEY` | `api.groq.com` | `Authorization: Bearer <GROQ_API_KEY>` |
 | `cohere` | Cohere | `ai` | `COHERE_API_KEY` | `api.cohere.com` | `Authorization: Bearer <COHERE_API_KEY>` |
 
-OAuth clients (`oauth_client`: the Gateway runs the flow; a person connects in each app, for the provider scopes that app lists): `slack`, `google-workspace`, `microsoft-365`. Their consoles and redirect URIs are on [the provider pages](/docs/providers). Gateway services (`service`: no host, no spec): `email`, `members`.
+OAuth presets (`oauth_client`: registered when an app that lists one is deployed; the Gateway runs the flow; a person connects in each app, for the provider scopes that app lists): `google-workspace`, `microsoft-365`, `slack`, `github-oauth`, `notion-oauth`, `linear-oauth`, `gitlab-oauth`, `atlassian`, `hubspot-oauth`, `zoom`, `dropbox`, `spotify`. Their consoles and redirect URIs are on [the provider pages](/docs/providers). Gateway services (`service`: no host, no spec): `email`, `members`.
 
 <!-- providers-catalog:end -->
 <!-- prettier-ignore-end -->

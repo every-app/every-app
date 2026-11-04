@@ -1,5 +1,9 @@
+import { CATALOG, withOAuthPresets } from "@every-app/sdk/internal";
 import { describe, expect, it } from "vitest";
 import { appCapabilities } from "./appCapabilities";
+
+/** The catalog and Google's row, as a deploy of an app that lists it leaves them. */
+const REGISTRY = withOAuthPresets(CATALOG);
 
 /** A stored manifest snapshot listing the given capabilities. */
 function manifest(capabilities: unknown): string {
@@ -17,6 +21,7 @@ describe("appCapabilities", () => {
         context: { access: "read", why: "Reads the pages you track" },
         dataforseo: { access: "read" },
       }),
+      REGISTRY,
     );
     expect(google).toMatchObject({
       id: "google-workspace",

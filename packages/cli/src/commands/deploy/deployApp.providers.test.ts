@@ -199,3 +199,26 @@ describe("the providers an app bundles", () => {
     expect(await rows()).toEqual([]);
   });
 });
+
+describe("the OAuth presets an app lists", () => {
+  it("registers each one this Gateway has no row for, unasked, and leaves it on the next deploy", async () => {
+    const manifest: EveryAppCliManifest = {
+      id: "shop",
+      resources: { d1: ["DB"] },
+      capabilities: { "google-workspace": { scopes: ["gmail.readonly"], why: "Reads mail." } },
+    };
+    const result = await deploy({ manifest });
+    expect(result.live).toBe(true);
+    expect(await rows()).toEqual(["google-workspace"]);
+    expect(steps("app.providers").at(-1)).toMatchObject({
+      message: "Registered google-workspace on example.com from its preset",
+      data: { presets: ["google-workspace"] },
+    });
+    // The client is the one thing left: the setup warning names it.
+    expect(warnings().map((w) => w["code"])).toContain("APP_NEEDS_SETUP");
+
+    await deploy({ manifest });
+    expect(steps("app.providers")).toEqual([]);
+    expect(await rows()).toEqual(["google-workspace"]);
+  });
+});

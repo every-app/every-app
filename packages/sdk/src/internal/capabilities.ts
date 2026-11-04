@@ -16,9 +16,10 @@
  *    proxy's rules: inference routes only, the model allowlist, the usage
  *    tap. Never a capability: its key would reach the account's credits
  *    and keys on the same host.
- *  - `oauth_client`: an OAuth provider (Google, Microsoft, Slack built
- *    in; GitHub and others as presets, ./oauthPresets.ts) whose client the
- *    gateway holds and whose flow it runs. A person connects in an app,
+ *  - `oauth_client`: an OAuth provider whose client the gateway holds and
+ *    whose flow it runs. None is in the catalog: each is a registered row,
+ *    written from a preset (./oauthPresets.ts: Google, Microsoft, Slack,
+ *    GitHub and the rest) or an operator's spec. A person connects in an app,
  *    for exactly the provider scopes the app's manifest entry lists
  *    (`scopes`); the gateway keeps the tokens and puts the person's token
  *    on the app's calls to the provider's `api` hosts. Each provider is a
@@ -388,8 +389,6 @@ export interface OAuthClientCapability {
   secrets: { clientId: string; clientSecret?: string };
   /** Where the operator registers the client (the spec's `docs`). */
   console: string;
-  /** The everyapp skill's setup guide for the client, when one exists. */
-  setup?: string;
   /** The only hosts the held token is ever sent to, over https. */
   api: readonly string[];
   flow: OAuthFlow;
@@ -409,35 +408,6 @@ export type Capability =
   | GatewayServiceCapability;
 
 import { CATALOG_ENTRIES } from "./catalog/index.js";
-import { BUILT_IN_OAUTH_SPECS } from "./oauthBuiltIns.js";
-import { oauthCapabilityFromSpec, type OAuthSpecJson } from "./oauthSpec.js";
-
-/**
- * A built-in OAuth provider's catalog entry from its spec, its setting
- * names kept literal so `CapabilitySecret` names them.
- */
-function builtInOAuth<
-  const S extends OAuthSpecJson & {
-    auth: { clientId: string; clientSecret: string };
-  },
->(
-  spec: S,
-  setup: string,
-): OAuthClientCapability & {
-  secrets: {
-    clientId: S["auth"]["clientId"];
-    clientSecret: S["auth"]["clientSecret"];
-  };
-} {
-  return {
-    ...oauthCapabilityFromSpec(spec),
-    secrets: {
-      clientId: spec.auth.clientId,
-      clientSecret: spec.auth.clientSecret,
-    },
-    setup,
-  };
-}
 
 export const CAPABILITIES = {
   // The AI providers, in the order the AI proxy's table had them.
@@ -690,17 +660,6 @@ export const CAPABILITIES = {
     settings: [],
     optionalSettings: [],
   },
-  // The OAuth providers every Gateway has built in, from their JSON specs
-  // (./oauthBuiltIns.ts): what differs between them is data there.
-  slack: builtInOAuth(BUILT_IN_OAUTH_SPECS.slack, "setup/slack.md"),
-  "google-workspace": builtInOAuth(
-    BUILT_IN_OAUTH_SPECS["google-workspace"],
-    "setup/google.md",
-  ),
-  "microsoft-365": builtInOAuth(
-    BUILT_IN_OAUTH_SPECS["microsoft-365"],
-    "setup/microsoft-365.md",
-  ),
   // The first fifty beyond the entries above (catalog/*.ts, PR 3 of the
   // provider registry), after them so the derived lists keep their order.
   ...CATALOG_ENTRIES,
@@ -723,9 +682,6 @@ export type AiProviderId = CapabilityIdOf<"ai">;
 /** Capabilities the gateway performs itself, each with its SDK helper. */
 export type ServiceCapabilityId = CapabilityIdOf<"service">;
 
-/** The built-in OAuth providers whose APIs apps reach with `integrationFetch()`. */
-export type OAuthClientCapabilityId = CapabilityIdOf<"oauth_client">;
-
 /** The Gateway settings an `auth` block names: the key, and a Basic username held as a setting. */
 type AuthSettingsOf<A> =
   | (A extends { secret: infer S extends string } ? S : never)
@@ -736,15 +692,13 @@ type SettingsOf<C> = C extends {
   optionalSettings: readonly (infer O extends string)[];
 }
   ? S | O
-  : C extends { secrets: infer S; flow: unknown }
-    ? S[keyof S] & string
-    : C extends { auth: infer A }
-      ?
-          | AuthSettingsOf<A>
-          | (C extends { alsoNeeds: readonly (infer N extends string)[] }
-              ? N
-              : never)
-      : never;
+  : C extends { auth: infer A }
+    ?
+        | AuthSettingsOf<A>
+        | (C extends { alsoNeeds: readonly (infer N extends string)[] }
+            ? N
+            : never)
+    : never;
 
 /** The gateway settings capabilities read: keys, clients, senders, transports. */
 export type CapabilitySecret = SettingsOf<(typeof CAPABILITIES)[CapabilityId]>;
@@ -944,7 +898,7 @@ export const INTEGRATION_PROXY_PREFIX = "/api/integrations";
  * a provider with several API hosts needs no other channel.
  */
 export function integrationProxyPath(
-  id: ApiKeyCapabilityId | OAuthClientCapabilityId | (string & {}),
+  id: ApiKeyCapabilityId | (string & {}),
   upstream: URL,
 ): string {
   return `${INTEGRATION_PROXY_PREFIX}/${id}/${upstream.host}${upstream.pathname}${upstream.search}`;

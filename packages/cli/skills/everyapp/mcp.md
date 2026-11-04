@@ -191,12 +191,12 @@ Provider tools (Gateway connector only; one audit row per call like the
          owners and admins on a self-hosted Gateway also get
          `everyapp_provider_add` (`{ spec }`: the spec object, never a URL,
          never a replace of a row that is there) and
-         `everyapp_provider_remove` (`{ id }`: refuses a built-in, a row
-         whose key is set, and a row an app lists). A hosted Gateway
-         hides the two writers. `everyapp_provider_add` also takes `{ preset }`, an
-         OAuth preset (github-oauth, notion-oauth, …; the list tool's
-         `presets`) or a built-in client (google-workspace), and answers
-         the redirect URI to register at the provider's console. Every
+         `everyapp_provider_remove` (`{ id }`: refuses a row whose key is
+         set, and a row an app lists). A hosted Gateway hides the two
+         writers. `everyapp_provider_add` also takes `{ preset }`, an
+         OAuth preset (google-workspace, github-oauth, …; the list tool's
+         `presets`; one registered already is answered as it is), and
+         answers the redirect URI to register at the provider's console. Every
          member gets `everyapp_provider_connections` (their own
          connections, one per app they connected in, with the scopes each
          holds; `all: true` the organization's, owners and admins) and

@@ -70,12 +70,14 @@ import { generateKeyPairSync } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { createCloudflareRest } from "@/server/deploy/cf-rest";
 import { everyAppWorker } from "@every-app/sdk/cloudflare";
+import { OAUTH_PRESETS } from "@every-app/sdk/internal";
 import {
   apps,
   deployJobs,
   events,
   members,
   organizations,
+  providers,
   users,
 } from "@/db/schema";
 import { Route as InstallRoute } from "@/routes/api/admin/apps/install";
@@ -83,6 +85,7 @@ import { Route as ContextRoute } from "@/routes/api/admin/apps/install/context";
 import { Route as JobRoute } from "@/routes/api/admin/deploys/$id";
 import server, { clearHostnameCacheForTests } from "@/server";
 import { clearOrgContextCacheForTests } from "@/server/organization/orgContext";
+import { resetGatewayProvidersForTests } from "@/server/providers";
 import { UserPatService } from "@/server/services/UserPatService";
 import { packRelease, releaseFiles } from "@/test/app-release";
 import { createTestDb } from "@/test/sqlite-db";
@@ -128,6 +131,10 @@ const TODO = {
     d1: ["DB"],
     durableObjects: [{ name: "USER_SYNC", className: "UserSyncDO" }],
   },
+};
+/** A manifest's `capabilities` naming the google-workspace preset. */
+const WITH_GOOGLE = {
+  "google-workspace": { scopes: ["gmail.readonly"], why: "Reads your mail." },
 };
 
 let account: FakeAccount;
@@ -362,6 +369,7 @@ beforeEach(async () => {
   sessionAge.clear();
   clearHostnameCacheForTests();
   clearOrgContextCacheForTests();
+  resetGatewayProvidersForTests();
   vi.spyOn(console, "log").mockImplementation(() => undefined);
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
   vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -732,6 +740,18 @@ describe("install from GitHub (SQLite, fake GitHub and Cloudflare)", () => {
     await expectNothingRegistered();
   });
 
+  it("registers no provider row for a tenant: a release naming a preset the operator hasn't registered is refused", async () => {
+    releases.set(
+      REPO,
+      packRelease(files(builtWorker(), { ...TODO, capabilities: WITH_GOOGLE })),
+    );
+    const response = await install();
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: "PROVIDER_HOSTED" });
+    expect(await db.select().from(providers)).toEqual([]);
+    await expectNothingRegistered();
+  });
+
   it("runs one deploy of an app at a time", async () => {
     expect(((await (await install()).json()) as any).job.status).toBe(
       "succeeded",
@@ -962,5 +982,54 @@ describe("self-hosted Gateway app installs (the gate and the install organizatio
     expect(await unchosen.json()).toMatchObject({
       error: "APP_INSTALL_FORBIDDEN",
     });
+  });
+
+  it("registers the presets a release names once it installs, and nothing on review", async () => {
+    // A self-hosted install takes only a production build.
+    releases.set(
+      REPO,
+      packRelease(
+        releaseFiles({
+          manifest: { ...TODO, capabilities: WITH_GOOGLE },
+          worker: builtWorker(),
+          modules: MODULES,
+          migrations: { "0000_init.sql": MIGRATION },
+          extra: {
+            ".cloudflare/output/v0/config.json": JSON.stringify({
+              version: 0,
+              buildContext: { mode: "production", isPreview: false },
+            }),
+          },
+        }),
+      ),
+    );
+    const review = await handlers(InstallRoute)["POST"]!({
+      request: adminRequest("/api/admin/apps/install", "user-alice", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          repoUrl: REPO,
+          organizationId: acme,
+          review: true,
+        }),
+      }),
+    });
+    expect(review.status).toBe(200);
+    expect(await review.json()).toMatchObject({
+      release: { appId: "todo", installed: null },
+    });
+    expect(await db.select().from(providers)).toEqual([]);
+    await expectNothingRegistered();
+
+    await install(REPO, "user-alice", acme);
+    const [google] = await db.select().from(providers);
+    expect(google).toMatchObject({
+      id: "google-workspace",
+      addedBy: "alice@example.com",
+      boundTo: null,
+    });
+    expect(JSON.parse(google!.spec)).toEqual(
+      JSON.parse(JSON.stringify(OAUTH_PRESETS["google-workspace"])),
+    );
   });
 });

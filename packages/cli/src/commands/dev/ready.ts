@@ -14,6 +14,7 @@ import {
   isCapabilityId,
   providerRegistry,
   providerSettingPrefix,
+  withOAuthPresets,
   type AppSetting,
   type CapabilityLookup,
   type SettingsManifestLike,
@@ -269,12 +270,13 @@ function devSettings(manifest: SettingsManifestLike, lookup: CapabilityLookup): 
 }
 
 /**
- * The catalog, and each provider registered on a Gateway that the app
- * keeps a spec of for local runs (`.everyapp/providers/<id>.json`, which
+ * The catalog, each provider registered on a Gateway that the app keeps a
+ * spec of for local runs (`.everyapp/providers/<id>.json`, which
  * `provider add` in the app's directory and `provider show <id> --save`
- * write): what the SDK's dev fallback reaches, so the settings a local run
- * needs include a registered provider's key. A file that doesn't parse is
- * left out (the SDK names it when the app calls the provider).
+ * write), and the OAuth presets: what the SDK's dev fallback reaches, so
+ * the settings a local run needs include a registered provider's key. A
+ * file that doesn't parse is left out (the SDK names it when the app calls
+ * the provider).
  */
 export function devProviderLookup(cwd: string): CapabilityLookup {
   const dir = path.join(cwd, DEV_PROVIDERS_DIR);
@@ -282,7 +284,7 @@ export function devProviderLookup(cwd: string): CapabilityLookup {
   try {
     files = fs.readdirSync(dir).filter((name) => name.endsWith(".json")).sort();
   } catch {
-    return CATALOG;
+    return withOAuthPresets(CATALOG);
   }
   const rows = files.flatMap((name) => {
     try {
@@ -296,7 +298,7 @@ export function devProviderLookup(cwd: string): CapabilityLookup {
       return [];
     }
   });
-  return rows.length > 0 ? providerRegistry(rows) : CATALOG;
+  return withOAuthPresets(rows.length > 0 ? providerRegistry(rows) : CATALOG);
 }
 
 /**

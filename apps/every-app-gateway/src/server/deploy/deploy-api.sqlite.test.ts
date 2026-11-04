@@ -52,6 +52,7 @@ import { eq, sql } from "drizzle-orm";
 import { decodeJwt } from "jose";
 import { createCloudflareRest } from "@/server/deploy/cf-rest";
 import { everyAppWorker } from "@every-app/sdk/cloudflare";
+import { OAUTH_PRESETS } from "@every-app/sdk/internal";
 import {
   apps,
   appToolCatalogs,
@@ -59,11 +60,13 @@ import {
   events,
   members,
   organizations,
+  providers,
   userAccessTokens,
   users,
 } from "@/db/schema";
 import server, { clearHostnameCacheForTests } from "@/server";
 import { clearOrgContextCacheForTests } from "@/server/organization/orgContext";
+import { resetGatewayProvidersForTests } from "@/server/providers";
 import { DeployJobRepository } from "@/server/repositories/DeployJobRepository";
 import { UserPatService } from "@/server/services/UserPatService";
 import { createTestDb } from "@/test/sqlite-db";
@@ -279,6 +282,7 @@ beforeEach(async () => {
   tamper = null;
   clearHostnameCacheForTests();
   clearOrgContextCacheForTests();
+  resetGatewayProvidersForTests();
   vi.spyOn(console, "log").mockImplementation(() => undefined);
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
   vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -742,7 +746,46 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
     expect((await row())?.status).toBe("pending");
   });
 
+  it("registers no provider row for a tenant: a manifest naming a preset the operator hasn't registered is refused", async () => {
+    const withGoogle = {
+      ...TODO,
+      capabilities: {
+        "google-workspace": {
+          scopes: ["gmail.readonly"],
+          why: "Reads your mail.",
+        },
+      },
+    };
+    const registered = await api(`/api/v1/orgs/${acme}/apps`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ appId: "todo", manifest: withGoogle }),
+    });
+    expect(registered.status).toBe(409);
+    expect(await registered.json()).toMatchObject({
+      error: "PROVIDER_HOSTED",
+    });
+    expect(await row()).toBeUndefined();
+
+    expect((await register()).status).toBe(201);
+    const deployed = await deploy(upload(builtWorker(), withGoogle));
+    expect(deployed.status).toBe(409);
+    expect(await deployed.json()).toMatchObject({ error: "PROVIDER_HOSTED" });
+    expect(await db.select().from(providers)).toEqual([]);
+    expect(await db.select().from(deployJobs)).toEqual([]);
+    expect(script()).toBeUndefined();
+  });
+
   it("refuses a manifest listing an OAuth provider without its scopes, before anything is registered", async () => {
+    // The platform's operator registered Google (`everyapp provider add`).
+    await db.insert(providers).values({
+      id: "google-workspace",
+      spec: JSON.stringify(OAUTH_PRESETS["google-workspace"]),
+      addedBy: "operator@example.com",
+      addedAt: new Date(),
+      updatedAt: new Date(),
+    });
+    resetGatewayProvidersForTests();
     // The hosted API runs the lenient validator; an OAuth entry is held to
     // the strict one's shape before a row holds it.
     const withoutScopes = {

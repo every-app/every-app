@@ -89,6 +89,7 @@ interface FakeOAuthProviderState {
   revokeRequests: {
     token: string | null;
     clientVia: "form" | "basic" | "none";
+    tokenTypeHint?: string;
   }[];
   codes: IssuedCode[];
   tokens: IssuedToken[];
@@ -413,9 +414,11 @@ export function fakeOAuthProvider(
     const params = await bodyParams(request);
     const basic = basicAuth(request.headers.get("authorization"));
     const value = params.get("token") ?? params.get("access_token");
+    const hint = params.get("token_type_hint");
     state.revokeRequests.push({
       token: value,
       clientVia: basic ? "basic" : params.has("client_id") ? "form" : "none",
+      ...(hint ? { tokenTypeHint: hint } : {}),
     });
     const clientId = basic?.id ?? params.get("client_id");
     if (clientId !== options.clientId) return oauthError("invalid_client", 401);

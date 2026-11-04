@@ -50,7 +50,7 @@ The value comes from exactly one source: `--from-env VAR`, a piped stdin, or a h
 
 ### API-key providers and OAuth clients
 
-Every catalog provider's settings, like `DATAFORSEO_API_KEY`, `CONTEXT_API_KEY`, `STRIPE_API_KEY`, and the OAuth clients `GOOGLE_WORKSPACE_CLIENT_ID`/`GOOGLE_WORKSPACE_CLIENT_SECRET`, `MICROSOFT_365_CLIENT_ID`/`MICROSOFT_365_CLIENT_SECRET` and `SLACK_CLIENT_ID`/`SLACK_CLIENT_SECRET`. The full list, with hosts and how each key is sent, is the catalog on [providers](/docs/agent/providers). `everyapp provider add <id>` asks for a provider's settings.
+Every catalog provider's settings, like `DATAFORSEO_API_KEY`, `CONTEXT_API_KEY`, `STRIPE_API_KEY`, and a registered OAuth provider's client, like `GOOGLE_WORKSPACE_CLIENT_ID`/`GOOGLE_WORKSPACE_CLIENT_SECRET` once deploying an app that lists `google-workspace` has written its row. The full list, with hosts and how each key is sent, is the catalog on [providers](/docs/agent/providers). `everyapp provider add <id>` asks for a provider's settings.
 
 ### Email
 

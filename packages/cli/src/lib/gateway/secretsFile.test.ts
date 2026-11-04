@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   aiProviderSettings,
   CAPABILITIES,
-  capabilitySettings,
   DEV_AI_PROVIDERS,
   isSettableGatewaySetting,
 } from "@every-app/sdk/internal";
@@ -38,13 +37,6 @@ describe("gateway settings `secret set` changes", () => {
         expect(isSettableGatewaySetting(capability.auth.secret)).toBe(true);
         continue;
       }
-      // An OAuth client's id, secret and instance are all the operator's.
-      if (capability.mode === "oauth_client") {
-        for (const setting of capabilitySettings(capability)) {
-          expect(isSettableGatewaySetting(setting), setting).toBe(true);
-        }
-        continue;
-      }
       // A service's sender is the operator's; its REST transport's account
       // is the gateway's own, set at install.
       for (const setting of capability.settings) {
@@ -59,23 +51,15 @@ describe("gateway settings `secret set` changes", () => {
     }
   });
 
-  it("include the 6 names of the 3 OAuth clients, and no preset's", () => {
-    const names = Object.values(CAPABILITIES).flatMap((capability) =>
-      capability.mode === "oauth_client" ? capabilitySettings(capability) : [],
-    );
-    expect(names).toHaveLength(6);
-    expect(new Set(names).size).toBe(6);
-    for (const name of names) {
-      expect(isSettableGatewaySetting(name), name).toBe(true);
-    }
-    expect(names).toEqual(
-      expect.arrayContaining([
-        "SLACK_CLIENT_ID",
-        "GOOGLE_WORKSPACE_CLIENT_SECRET",
-        "MICROSOFT_365_CLIENT_ID",
-      ]),
-    );
-    for (const name of ["LINKEDIN_CLIENT_ID", "FACEBOOK_APP_ID", "MASTODON_URL"]) {
+  it("include no OAuth preset's names: a preset's row holds them once it is registered", () => {
+    for (const name of [
+      "SLACK_CLIENT_ID",
+      "GOOGLE_WORKSPACE_CLIENT_SECRET",
+      "MICROSOFT_365_CLIENT_ID",
+      "LINKEDIN_CLIENT_ID",
+      "FACEBOOK_APP_ID",
+      "MASTODON_URL",
+    ]) {
       expect(isSettableGatewaySetting(name), name).toBe(false);
     }
   });

@@ -1,12 +1,25 @@
 /**
- * The built-in OAuth providers as data (./oauthBuiltIns.ts): each spec
- * parses like a registered row, is exactly its catalog entry, and round
- * trips; and the one set of scope rules (./oauthScopes.ts) reads each
- * provider's spelling from its spec alone.
+ * The OAuth presets as data (./oauthPresets.ts): each spec parses like a
+ * registered row and round-trips, none is in the catalog, and the one set
+ * of scope rules (./oauthScopes.ts) reads each provider's spelling from
+ * its spec alone.
  */
 import { describe, expect, it } from "vitest";
-import { CAPABILITIES, type OAuthFlow } from "./capabilities";
-import { BUILT_IN_OAUTH_SPECS, type BuiltInOAuthId } from "./oauthBuiltIns";
+import {
+  CATALOG,
+  capabilitySettings,
+  oauthClientSecretSetCommand,
+  type OAuthClientCapability,
+  type OAuthFlow,
+} from "./capabilities";
+import {
+  isPresetRow,
+  oauthPreset,
+  oauthPresetIds,
+  oauthSetupGuide,
+  unregisteredPresetIds,
+  withOAuthPresets,
+} from "./oauthPresets";
 import {
   canonicalScopes,
   grantedScopes,
@@ -15,42 +28,128 @@ import {
   requestedScopes,
   scopeExcess,
 } from "./oauthScopes";
-import { parseProviderSpec, providerSpecOf } from "./providerSpec";
 
-const IDS = Object.keys(BUILT_IN_OAUTH_SPECS) as BuiltInOAuthId[];
-const flow = (id: BuiltInOAuthId): OAuthFlow => CAPABILITIES[id].flow;
+const IDS = oauthPresetIds();
+const client = (id: string): OAuthClientCapability =>
+  oauthPreset(id) as OAuthClientCapability;
+const flow = (id: string): OAuthFlow => client(id).flow;
 
-describe("the built-in specs", () => {
-  it("are Google, Microsoft and Slack, under their catalog ids", () => {
-    expect([...IDS].sort()).toEqual([
+describe("the presets", () => {
+  it("are Google, Microsoft and Slack first, then the rest, none in the catalog", () => {
+    expect(IDS.slice(0, 3)).toEqual([
       "google-workspace",
       "microsoft-365",
       "slack",
     ]);
+    expect(IDS).toContain("github-oauth");
+    for (const id of IDS) expect(CATALOG.get(id), id).toBeUndefined();
   });
 
   it.each(IDS)(
-    "%s parses as a registered row would, equals its catalog entry minus setup, and round-trips",
+    "%s is a flow and API hosts, with no scopes, access or routes of its own",
     (id) => {
-      const spec = BUILT_IN_OAUTH_SPECS[id];
-      const parsed = parseProviderSpec(spec);
-      if (!parsed.ok) throw new Error(JSON.stringify(parsed.problems));
-      expect(parsed.id).toBe(id);
-      const { setup, ...entry } = CAPABILITIES[id];
-      expect(setup).toMatch(/^setup\/.+\.md$/);
-      expect(parsed.capability).toEqual(entry);
-      const again = parseProviderSpec(providerSpecOf(id, parsed.capability));
-      if (!again.ok) throw new Error(JSON.stringify(again.problems));
-      expect(again.capability).toEqual(parsed.capability);
+      const capability = client(id);
+      for (const field of [
+        "access",
+        "token",
+        "authorize",
+        "scopePolicy",
+        "readMethods",
+        "writeMethods",
+      ]) {
+        expect(capability, field).not.toHaveProperty(field);
+      }
+      expect(capability.api.length).toBeGreaterThan(0);
+      for (const host of capability.api) {
+        // A bare lowercase host: no scheme, port, path or credentials.
+        expect(new URL(`https://${host}`).host).toBe(host);
+        expect(host).toMatch(/^[a-z0-9.-]+$/);
+      }
+      const { flow } = capability;
+      for (const url of [
+        flow.authorizeUrl,
+        flow.tokenUrl,
+        capability.console,
+        ...(flow.revokeUrl ? [flow.revokeUrl] : []),
+      ]) {
+        expect(new URL(url).protocol, url).toBe("https:");
+      }
+      // The identity URL gets the token: it must be one of the API hosts.
+      if (flow.identity) {
+        expect(capability.api).toContain(new URL(flow.identity.url).host);
+      }
+      expect(capability.secrets.clientSecret).toBeDefined();
+      expect(flow.authorizeParams ?? {}).not.toHaveProperty(
+        // Would widen a token past the app's scopes.
+        "include_granted_scopes",
+      );
     },
   );
 
-  it("never send include_granted_scopes, which would widen a token past the app's scopes", () => {
-    for (const id of IDS) {
-      expect(flow(id).authorizeParams ?? {}).not.toHaveProperty(
-        "include_granted_scopes",
-      );
-    }
+  it("name their settings after their ids, each preset its own", () => {
+    const settings = IDS.flatMap((id) => capabilitySettings(client(id)));
+    expect(new Set(settings).size).toBe(settings.length);
+    expect(client("slack").secrets).toEqual({
+      clientId: "SLACK_CLIENT_ID",
+      clientSecret: "SLACK_CLIENT_SECRET",
+    });
+    expect(oauthClientSecretSetCommand(client("slack"))).toBe(
+      "pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET",
+    );
+  });
+
+  it("revoke Google's grant at its revoke endpoint, a POST form", () => {
+    expect(flow("google-workspace").revokeUrl).toBe(
+      "https://oauth2.googleapis.com/revoke",
+    );
+    expect(flow("google-workspace").revokeMethod).toBeUndefined();
+  });
+
+  it("point Google, Microsoft and Slack at their setup guides", () => {
+    expect(oauthSetupGuide("google-workspace")).toBe("setup/google.md");
+    expect(oauthSetupGuide("microsoft-365")).toBe("setup/microsoft-365.md");
+    expect(oauthSetupGuide("slack")).toBe("setup/slack.md");
+    expect(oauthSetupGuide("github-oauth")).toBeUndefined();
+  });
+});
+
+describe("a preset's row", () => {
+  it("is the preset's while its client would go where the preset says, never under another spec", () => {
+    expect(isPresetRow("google-workspace", client("google-workspace"))).toBe(
+      true,
+    );
+    const moved = {
+      ...client("google-workspace"),
+      flow: {
+        ...flow("google-workspace"),
+        tokenUrl: "https://tokens.example.com/token",
+      },
+    };
+    expect(isPresetRow("google-workspace", moved)).toBe(false);
+    expect(isPresetRow("acme", client("google-workspace"))).toBe(false);
+  });
+});
+
+describe("presets before a Gateway registers them", () => {
+  it("names the presets an app lists that a registry lacks, once each", () => {
+    const registry = withOAuthPresets(CATALOG);
+    expect(
+      unregisteredPresetIds(
+        ["google-workspace", "dataforseo", "slack", "google-workspace"],
+        CATALOG,
+      ),
+    ).toEqual(["google-workspace", "slack"]);
+    expect(unregisteredPresetIds(["google-workspace"], registry)).toEqual([]);
+  });
+
+  it("looks a preset up as its row would be, after the catalog", () => {
+    const lookup = withOAuthPresets(CATALOG);
+    expect(lookup.get("google-workspace")).toEqual(
+      oauthPreset("google-workspace"),
+    );
+    expect(lookup.get("dataforseo")).toBe(CATALOG.get("dataforseo"));
+    expect(lookup.get("nope")).toBeUndefined();
+    expect(lookup.ids()).toEqual([...CATALOG.ids(), ...IDS]);
   });
 });
 

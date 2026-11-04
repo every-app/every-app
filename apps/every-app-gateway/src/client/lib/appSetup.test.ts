@@ -6,8 +6,10 @@ import { describe, expect, it } from "vitest";
 import {
   appSettings,
   appSetupOf,
+  CATALOG,
   evaluateAppSettings,
   featureEntries,
+  withOAuthPresets,
   type SettingsManifestLike,
 } from "@every-app/sdk/internal";
 import { SetupAction, setupDialogModel } from "./appSetup";
@@ -48,8 +50,9 @@ function setupOf(
   set: readonly string[],
   withCommand = true,
 ) {
+  // The registry as a deploy leaves it: an OAuth preset the app lists is a row.
   const report = evaluateAppSettings(
-    appSettings(manifest),
+    appSettings(manifest, withOAuthPresets(CATALOG)),
     (_holder, name) => set.includes(name),
     { features: featureEntries(manifest) },
   );

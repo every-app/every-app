@@ -1,8 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import {
-  CAPABILITIES,
-  CAPABILITY_IDS,
-  isOAuthProvider,
   oauthPreset,
   oauthPresetIds,
   type OAuthClientCapability,
@@ -71,12 +68,10 @@ export const listOAuthProviders = createServerFn()
     providers: await oauth.listOAuthProviders(context.org),
   }));
 
-/** One preset the Add dialog offers: a shipped spec, or a catalog client with a Gateway flow. */
+/** One preset the Add dialog offers: a shipped spec. */
 export interface OAuthPresetSummary {
   id: string;
   name: string;
-  /** A catalog entry (Google, Microsoft, Slack): adding it uploads a client only. */
-  builtIn: boolean;
   description: string | null;
   hint: string | null;
   /** Where the client is made. */
@@ -92,12 +87,10 @@ export interface OAuthPresetSummary {
 function summarize(
   id: string,
   capability: OAuthClientCapability,
-  builtIn: boolean,
 ): OAuthPresetSummary {
   return {
     id,
     name: capability.label,
-    builtIn,
     description: capability.description ?? null,
     hint: capability.hint ?? null,
     console: capability.console,
@@ -112,28 +105,20 @@ function summarize(
 }
 
 /**
- * The presets the Add dialog offers: the catalog's OAuth clients first
- * (built in; adding one uploads a client, no row), then
- * the shipped presets (`OAUTH_PRESETS`: GitHub, Notion, …; adding one
- * writes a row). Static per release, so the page reads it once.
+ * The presets the Add dialog offers (`OAUTH_PRESETS`: Google, Microsoft,
+ * Slack, GitHub, …): adding one writes its row, or takes the client of
+ * one a deploy registered. Static per release, so the page reads it once.
  */
 export const listOAuthPresets = createServerFn()
   .middleware([publicErrorMiddleware, organizationAdminMiddleware])
-  .handler(async () => {
-    const builtIn = CAPABILITY_IDS.flatMap((id) => {
-      const capability = CAPABILITIES[id];
-      return isOAuthProvider(capability)
-        ? [summarize(id, capability as OAuthClientCapability, true)]
-        : [];
-    });
-    const presets = oauthPresetIds().flatMap((id) => {
+  .handler(async () => ({
+    presets: oauthPresetIds().flatMap((id) => {
       const capability = oauthPreset(id);
       return capability?.mode === "oauth_client"
-        ? [summarize(id, capability, false)]
+        ? [summarize(id, capability)]
         : [];
-    });
-    return { presets: [...builtIn, ...presets] };
-  });
+    }),
+  }));
 
 /** Add an OAuth provider from a preset or a custom spec, with its client when given. */
 export const addOAuthProvider = createServerFn({ method: "POST" })

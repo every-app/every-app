@@ -147,8 +147,9 @@ function ProviderStatus({ provider }: { provider: Provider }) {
 }
 
 /**
- * How the page groups the list: what is set up (or registered here),
- * what an installed app needs and lacks, and the rest of the catalog
+ * How the page groups the list: what is set up, what an installed app
+ * needs and lacks (an OAuth preset a deploy registered, until its client
+ * is set), the other rows registered here, and the rest of the catalog
  * behind Show all. Gateway services (email, members) are internals and
  * never list.
  */
@@ -163,8 +164,9 @@ function partitionProviders(providers: readonly Provider[]): {
   const needed: Provider[] = [];
   const rest: Provider[] = [];
   for (const provider of listed) {
-    if (provider.configured || provider.source === "row") setUp.push(provider);
+    if (provider.configured) setUp.push(provider);
     else if (provider.apps.some((app) => app.needs)) needed.push(provider);
+    else if (provider.source === "row") setUp.push(provider);
     else rest.push(provider);
   }
   return { setUp, needed, rest, listed };

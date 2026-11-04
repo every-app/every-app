@@ -4,6 +4,7 @@ import {
   ConfigurationError,
   GATEWAY_ERROR_HEADER,
   INTEGRATION_PROXY_PREFIX,
+  oauthPreset,
   apiKeyHosts,
   authorizationFor,
   capabilitySettings,
@@ -16,7 +17,7 @@ import {
   type CapabilityId,
   type EmailCapabilityStatus,
   type OAuthClientCapability,
-  type OAuthClientCapabilityId,
+  type OAuthPresetId,
   EMAIL_SENDERS_ENV,
   chooseEmailProvider,
   parseEmailList,
@@ -46,12 +47,12 @@ export interface IntegrationFetchOptions {
   /**
    * A provider the app lists in its manifest's `capabilities`: one whose
    * key the gateway holds, or an OAuth provider whose connections it
-   * holds. The built-in catalog's ids complete; a provider registered on
-   * the gateway (`everyapp provider add`) is any other id, reached
-   * through the binding, which checks it. The `email` capability is sent
-   * with `sendEmail()` instead.
+   * holds. The catalog's ids and the OAuth presets' complete; a provider
+   * registered on the gateway (an OAuth preset's row among them) is
+   * reached through the binding, which checks it. The `email` capability
+   * is sent with `sendEmail()` instead.
    */
-  provider: ApiKeyCapabilityId | OAuthClientCapabilityId | (string & {});
+  provider: ApiKeyCapabilityId | OAuthPresetId | (string & {});
   /**
    * Whom the call is for. Left out, the request `everyApp()` is serving
    * (its person, while the identity is good) or the organization
@@ -464,7 +465,7 @@ export type OAuthClientIntegrationStatus = IntegrationStatus & {
 /** The status of a capability: email's carries its senders, an OAuth provider's the connection. */
 export type IntegrationStatusOf<P extends string> = P extends "email"
   ? EmailIntegrationStatus
-  : P extends OAuthClientCapabilityId
+  : P extends OAuthPresetId
     ? OAuthClientIntegrationStatus
     : IntegrationStatus;
 
@@ -580,7 +581,9 @@ async function readIntegrationStatus<P extends CapabilityId | (string & {})>({
   // `.everyapp/providers/<id>.json`.
   const integration =
     binding && typeof binding.fetch === "function"
-      ? CATALOG.get(String(provider))
+      ? (CATALOG.get(String(provider)) ??
+        oauthPreset(String(provider)) ??
+        undefined)
       : (CATALOG.get(String(provider)) ??
         devRegisteredProvider(String(provider), values));
   if (integration?.mode === "ai") {

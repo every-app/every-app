@@ -403,7 +403,7 @@ describe("everyapp install <release>", () => {
     expect(refused).toMatchObject({
       code: "RELEASE_INVALID",
       message: expect.stringMatching(
-        /^acme\/todo v1\.4\.0 \(built with everyapp 0\.3\.0-rc\.3\) is refused by this everyapp \(.+\): .*Remove access/,
+        /^acme\/todo v1\.4\.0 \(built with everyapp 0\.3\.0-rc\.3\) is refused by this everyapp \(.+\): .*an OAuth provider takes scopes, not both/,
       ),
       fix: "the app needs a new release: ask the maintainers of https://github.com/acme/todo, or clone it and run pnpm everyapp deploy from its directory",
       data: { builtWith: "0.3.0-rc.3" },

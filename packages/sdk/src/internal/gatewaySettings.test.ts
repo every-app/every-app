@@ -111,11 +111,8 @@ describe("gatewaySettingOwner", () => {
       kind: "capability",
       id: "dataforseo",
     });
-    expect(gatewaySettingOwner("SLACK_CLIENT_SECRET")).toEqual({
-      kind: "capability",
-      id: "slack",
-    });
     // A preset's names are no one's until a row holds them.
+    expect(gatewaySettingOwner("SLACK_CLIENT_SECRET")).toBeNull();
     expect(gatewaySettingOwner("LINKEDIN_CLIENT_SECRET")).toBeNull();
     expect(gatewaySettingOwner("RESEND_API_KEY")).toEqual({
       kind: "capability",

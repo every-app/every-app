@@ -9,6 +9,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { oauthPreset, providerBindingKey } from "@every-app/sdk/internal";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
 import { CancelledError } from "@/lib/errors";
@@ -642,7 +643,14 @@ describe("configure from a script", () => {
     };
     const dir = appDir(manifest);
     await deploy(dir, manifest);
+    // Set, and bound to the row the deploy registered from its preset, as `secret set` leaves it.
     gateway().secrets["GOOGLE_WORKSPACE_CLIENT_ID"] = "id-set-before";
+    await db().run([
+      {
+        sql: "UPDATE providers SET bound_to = ? WHERE id = 'google-workspace'",
+        params: [providerBindingKey(oauthPreset("google-workspace")!)],
+      },
+    ]);
 
     const run = configureAt(
       dir,

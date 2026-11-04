@@ -1,8 +1,8 @@
 /**
  * The OAuth side of `everyapp provider`
  * (docs/design/2026-11-oauth-simplify.md): `add --oauth` registers a
- * preset, a spec file or a built-in client and can set its client in the
- * same run; `presets` lists what the picker offers; `connections` and
+ * preset or a spec file and can set its client in the same run; `presets`
+ * lists what the picker offers; `connections` and
  * `disconnect` read and delete the connections the Gateway holds in D1,
  * each one person's in one app, for the scopes that app lists.
  *
@@ -15,7 +15,7 @@ import { stripVTControlCharacters } from "node:util";
 import {
   CAPABILITIES,
   capabilitySettings,
-  isOAuthProvider,
+  isPresetRow,
   OAUTH_PRESETS,
   oauthPreset,
   oauthPresetIds,
@@ -116,7 +116,6 @@ export function oauthFacts(
   id: string,
   capability: OAuthClientCapability,
   context: {
-    source: "catalog" | "row";
     gatewayUrl: string;
     gatewayNames: readonly string[];
     uploaded: ReadonlyMap<string, UploadedClient>;
@@ -137,19 +136,10 @@ export function oauthFacts(
   };
 }
 
-/** The catalog's OAuth entries the Gateway runs the flow for (`google-workspace`, `slack`, …), as presets. */
-function builtInOAuthIds(): string[] {
-  return Object.entries(CAPABILITIES)
-    .filter(([, capability]) => isOAuthProvider(capability as Capability))
-    .map(([id]) => id);
-}
-
 /** One preset as `provider presets` lists it. */
 interface ListedPreset {
   id: string;
   name: string;
-  /** A built-in client (no row is written; its client alone is set) or a preset that becomes a row. */
-  builtIn: boolean;
   console: string;
   hosts: string[];
   settings: string[];
@@ -157,11 +147,10 @@ interface ListedPreset {
   hint?: string;
 }
 
-function presetOf(id: string, capability: OAuthClientCapability, builtIn: boolean): ListedPreset {
+function presetOf(id: string, capability: OAuthClientCapability): ListedPreset {
   return {
     id,
     name: capability.label,
-    builtIn,
     console: capability.console,
     hosts: [...capability.api],
     settings: [...capabilitySettings(capability)],
@@ -170,14 +159,9 @@ function presetOf(id: string, capability: OAuthClientCapability, builtIn: boolea
   };
 }
 
-/** Every preset: the catalog's OAuth entries with a flow first, then the SDK's presets, in picker order. */
+/** Every preset, in picker order. */
 function allPresets(): ListedPreset[] {
-  return [
-    ...builtInOAuthIds().map((id) =>
-      presetOf(id, CAPABILITIES[id as keyof typeof CAPABILITIES] as OAuthClientCapability, true),
-    ),
-    ...oauthPresetIds().map((id) => presetOf(id, oauthPreset(id) as OAuthClientCapability, false)),
-  ];
+  return oauthPresetIds().map((id) => presetOf(id, oauthPreset(id) as OAuthClientCapability));
 }
 
 /**
@@ -187,45 +171,37 @@ function allPresets(): ListedPreset[] {
 export async function listPresets(options: Pick<ProviderOptions, "out">): Promise<void> {
   const presets = allPresets();
   const table = formatTable(
-    ["ID", "NAME", "KIND", "HOSTS", "CONSOLE"],
+    ["ID", "NAME", "HOSTS", "CONSOLE"],
     presets.map((preset) => [
       preset.id,
       preset.name,
-      preset.builtIn ? "built in" : "preset",
       preset.hosts.join(", ") || chalk.dim("-"),
       preset.console,
     ]),
   );
   options.out.emit({
     type: "done",
-    message: `${presets.length} OAuth presets: ${presets.filter((preset) => preset.builtIn).length} built in, ${presets.filter((preset) => !preset.builtIn).length} to register`,
+    message: `${presets.length} OAuth presets`,
     display: [
       ...table,
       "",
-      chalk.dim(`Add one: ${CLI} provider add --oauth <id>; a built-in one takes its client only, a preset becomes a registered provider.`),
+      chalk.dim(`Add one: ${CLI} provider add <id>. Deploying an app that lists one registers it too.`),
       chalk.dim("Apps list the provider's own scopes in everyapp.config.ts: { scopes: [...], why: \"...\" }."),
     ].join("\n"),
     data: { presets, next: [{ command: `${CLI} provider add --oauth github-oauth`, note: "registers GitHub and prints the redirect URI to register at its console" }] },
   });
 }
 
-/** What `--oauth <value>` named: a preset, a built-in client, or a spec file or URL. */
-type OAuthSource =
-  | { kind: "preset"; id: string; spec: unknown }
-  | { kind: "catalog"; id: string; capability: OAuthClientCapability }
-  | { kind: "spec"; spec: unknown };
+/** What `--oauth <value>` named: a preset, or a spec file or URL. */
+type OAuthSource = { kind: "preset"; id: string; spec: unknown } | { kind: "spec"; spec: unknown };
 
 async function resolveOAuthSource(value: string, options: OAuthAddOptions): Promise<OAuthSource> {
   const preset = OAUTH_PRESETS[value];
   if (preset) return { kind: "preset", id: value, spec: preset };
-  const builtIn = (CAPABILITIES as Record<string, Capability>)[value];
-  if (builtIn && isOAuthProvider(builtIn)) {
-    return { kind: "catalog", id: value, capability: builtIn as OAuthClientCapability };
-  }
-  if (builtIn) {
+  if (Object.hasOwn(CAPABILITIES, value)) {
     throw new EveryAppError("PROVIDER_PRESET_UNKNOWN", `${value} is a built-in provider, not an OAuth one`, {
       rerun: `${CLI} provider presets`,
-      rerunNote: "names every preset and built-in client",
+      rerunNote: "names every preset",
     });
   }
   if (/[./\\]/.test(value)) {
@@ -249,10 +225,10 @@ async function resolveOAuthSource(value: string, options: OAuthAddOptions): Prom
 }
 
 /**
- * `provider add --oauth <preset | built-in | spec>` (and `provider add
- * <id>` of one): a preset or a spec becomes a registered row (as
- * `provider add` writes one; `--replace` applies); a built-in client
- * (`google-workspace`) writes no row. Then the one thing to do at the
+ * `provider add --oauth <preset | spec>` (and `provider add <preset>`): a
+ * preset or a spec becomes a registered row (as `provider add` writes one;
+ * `--replace` applies); a preset already registered (a deploy registers
+ * the presets its app lists) is left as it is. Then the one thing to do at the
  * provider's console (register the redirect URI) and the docs page, and
  * the client set in the same run (credentials.ts): from `--client-id`,
  * piped `NAME=value` lines or `--from-env`, else asked for at the
@@ -272,17 +248,22 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
   let id: string;
   let capability: OAuthClientCapability;
   let replaced = false;
-  let rowSource: "catalog" | "row";
-  if (source.kind === "catalog") {
-    id = source.id;
-    capability = source.capability;
-    rowSource = "catalog";
+  let registered = false;
+  const existing =
+    source.kind === "preset" && !flags.replace
+      ? (await gatewayRegistry(gateway.db, gateway.install)).rows().find((row) => row.id === source.id)
+      : undefined;
+  // Only the preset's own row takes the client: a row of another spec under its id is the operator's.
+  if (existing?.capability.mode === "oauth_client" && isPresetRow(existing.id, existing.capability)) {
+    id = existing.id;
+    capability = existing.capability;
+    registered = true;
     out.emit({
       type: "step",
       step: "provider.add",
       status: "ok",
-      message: `${capability.label} (${id}) is built in: no row to write, its client alone is set`,
-      data: { id, builtIn: true },
+      message: `${capability.label} (${id}) is registered on ${gatewayHost} already: its client alone is set`,
+      data: { id, registered: true },
     });
   } else {
     const named = source.kind === "preset" ? source.id : "the provider";
@@ -300,7 +281,6 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
     id = added.id;
     capability = added.capability;
     replaced = added.replaced;
-    rowSource = "row";
     out.emit({
       type: "step",
       step: "provider.add",
@@ -325,15 +305,14 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
   ]);
   const before = clientSourceOf(capability, gatewayNames, uploaded, id);
   // A row's client is set again after it is written: secret set binds it to the row's hosts.
-  const needed = before !== "none" ? [] : rowSource === "row" ? settings : settings.filter((name) => !gatewayNames.includes(name));
+  const needed = before !== "none" ? [] : settings;
   const name = shortName(capability.label);
   const given = await givenValues(settings, `${name}'s client`, flags, options, capability.secrets.clientId);
   const interactive = options.interactive ?? canPromptInTerminal(flags.json ?? false);
   const docs = providerDocsUrl(id);
-  const header =
-    rowSource === "catalog"
-      ? `${name} (${id}) is on ${gatewayHost}.`
-      : `${replaced ? "Replaced" : "Registered"} ${name} (${id}) on ${gatewayHost}.`;
+  const header = registered
+    ? `${name} (${id}) is on ${gatewayHost}.`
+    : `${replaced ? "Replaced" : "Registered"} ${name} (${id}) on ${gatewayHost}.`;
   // No punctuation right after a URL: terminals link it too.
   const register = `Register this redirect URI at ${capability.console}\n   ${redirectUri}`;
   const guide = providerConnectSteps(id, redirectUri);
@@ -352,7 +331,7 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
     out,
     ...(options.createCf ? { createCf: options.createCf } : {}),
     whose: `${name}'s client`,
-    standing: `the provider ${rowSource === "row" ? "is registered" : "is built in"}`,
+    standing: "the provider is registered",
     settings,
     needed,
     given,
@@ -363,7 +342,6 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
   });
   const set = outcome === "set";
   const facts = oauthFacts(id, capability, {
-    source: rowSource,
     gatewayUrl: gateway.gatewayUrl,
     gatewayNames: set ? [...gatewayNames, ...settings] : gatewayNames,
     uploaded,
@@ -393,7 +371,6 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
       id,
       name: capability.label,
       kind: "oauth",
-      source: rowSource,
       replaced,
       settings,
       docs,
@@ -592,6 +569,6 @@ export async function disconnectProvider(
 }
 
 /** The OAuth entries a `provider` listing can describe: the registry's `oauth_client` entries. */
-export function isOAuthCapability(capability: RegistrableCapability | Capability): capability is OAuthClientCapability {
+export function isOAuthCapability(capability: Capability): capability is OAuthClientCapability {
   return capability.mode === "oauth_client";
 }

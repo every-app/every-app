@@ -1,0 +1,41 @@
+-- Google, Microsoft 365 and Slack were built into the catalog; every OAuth
+-- provider is a registered row now, written from its preset
+-- (packages/sdk/src/internal/oauthPresets.ts) when an app that lists it is
+-- deployed or installed. A Gateway that already uses one (an installed app
+-- lists it, or it has a client pasted under Admin -> Providers or a
+-- connection for it) gets that row here, with the preset's spec, bound to it:
+-- a client set from the terminal was set for the built-in, whose endpoints
+-- the preset keeps, so the Gateway goes on reading it. Connections, sealed
+-- tokens and manifests keep their ids.
+
+INSERT INTO `providers` (`id`, `spec`, `added_by`, `added_at`, `updated_at`, `bound_to`, `bound_at`)
+SELECT 'google-workspace', '{"id":"google-workspace","name":"Google","description":"Gmail, Calendar, Drive, Search Console, Analytics and the other Google APIs, as the person who connects.","docs":"https://console.cloud.google.com/apis/credentials","api":"https://developers.google.com/identity/protocols/oauth2/scopes","hosts":["gmail.googleapis.com","www.googleapis.com","searchconsole.googleapis.com","analyticsdata.googleapis.com","analyticsadmin.googleapis.com","openidconnect.googleapis.com"],"auth":{"kind":"oauth2-user","authorizeUrl":"https://accounts.google.com/o/oauth2/v2/auth","tokenUrl":"https://oauth2.googleapis.com/token","revokeUrl":"https://oauth2.googleapis.com/revoke","clientId":"GOOGLE_WORKSPACE_CLIENT_ID","clientSecret":"GOOGLE_WORKSPACE_CLIENT_SECRET","inject":"form","pkce":true,"scopeSeparator":"space","scopePrefix":"https://www.googleapis.com/auth/","authorizeParams":{"access_type":"offline","prompt":"consent"},"identity":{"url":"https://openidconnect.googleapis.com/v1/userinfo","label":"email","id":"sub","scopes":["openid","email"]},"tolerated":["profile","https://www.googleapis.com/auth/userinfo.email","https://www.googleapis.com/auth/userinfo.profile"]},"hint":"A Web application OAuth client in Google Cloud, with the Gateway''s callback as its redirect URI and the scopes your apps list on its consent screen."}', 'everyapp', CAST(strftime('%s', 'now') AS INTEGER) * 1000, CAST(strftime('%s', 'now') AS INTEGER) * 1000, '{"kind":"oauth2-user","authorizeUrl":"https://accounts.google.com/o/oauth2/v2/auth","tokenUrl":"https://oauth2.googleapis.com/token","revokeUrl":"https://oauth2.googleapis.com/revoke","inject":"form","clientId":"GOOGLE_WORKSPACE_CLIENT_ID","clientSecret":"GOOGLE_WORKSPACE_CLIENT_SECRET","hosts":["analyticsadmin.googleapis.com","analyticsdata.googleapis.com","gmail.googleapis.com","openidconnect.googleapis.com","searchconsole.googleapis.com","www.googleapis.com"]}', CAST(strftime('%s', 'now') AS INTEGER) * 1000
+WHERE NOT EXISTS (SELECT 1 FROM `providers` WHERE `id` = 'google-workspace')
+  AND (
+    EXISTS (SELECT 1 FROM `apps` WHERE `status` <> 'deleted' AND json_valid(`manifest`) AND json_type(`manifest`, '$.capabilities."google-workspace"') IS NOT NULL)
+    OR EXISTS (SELECT 1 FROM `oauth_clients` WHERE `provider_id` = 'google-workspace')
+    OR EXISTS (SELECT 1 FROM `provider_connections` WHERE `provider_id` = 'google-workspace')
+  );--> statement-breakpoint
+
+INSERT INTO `providers` (`id`, `spec`, `added_by`, `added_at`, `updated_at`, `bound_to`, `bound_at`)
+SELECT 'microsoft-365', '{"id":"microsoft-365","name":"Microsoft 365","description":"Outlook mail and calendar, OneDrive and the rest of Microsoft Graph, as the person who connects.","docs":"https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade","api":"https://learn.microsoft.com/graph/permissions-reference","hosts":["graph.microsoft.com"],"auth":{"kind":"oauth2-user","authorizeUrl":"https://login.microsoftonline.com/common/oauth2/v2.0/authorize","tokenUrl":"https://login.microsoftonline.com/common/oauth2/v2.0/token","clientId":"MICROSOFT_365_CLIENT_ID","clientSecret":"MICROSOFT_365_CLIENT_SECRET","inject":"form","pkce":true,"scopeSeparator":"space","scopePrefix":"https://graph.microsoft.com/","identity":{"url":"https://graph.microsoft.com/v1.0/me","label":"userPrincipalName","id":"id","scopes":["User.Read","offline_access"]},"tolerated":["openid","profile","email"]},"hint":"An app registration in Entra for accounts in any organization and personal accounts, with the Gateway''s callback as a Web redirect URI. If two apps share this client with different scopes, Microsoft may hand back both apps'' scopes and the Gateway refuses the token: give each app its own client."}', 'everyapp', CAST(strftime('%s', 'now') AS INTEGER) * 1000, CAST(strftime('%s', 'now') AS INTEGER) * 1000, '{"kind":"oauth2-user","authorizeUrl":"https://login.microsoftonline.com/common/oauth2/v2.0/authorize","tokenUrl":"https://login.microsoftonline.com/common/oauth2/v2.0/token","revokeUrl":null,"inject":"form","clientId":"MICROSOFT_365_CLIENT_ID","clientSecret":"MICROSOFT_365_CLIENT_SECRET","hosts":["graph.microsoft.com"]}', CAST(strftime('%s', 'now') AS INTEGER) * 1000
+WHERE NOT EXISTS (SELECT 1 FROM `providers` WHERE `id` = 'microsoft-365')
+  AND (
+    EXISTS (SELECT 1 FROM `apps` WHERE `status` <> 'deleted' AND json_valid(`manifest`) AND json_type(`manifest`, '$.capabilities."microsoft-365"') IS NOT NULL)
+    OR EXISTS (SELECT 1 FROM `oauth_clients` WHERE `provider_id` = 'microsoft-365')
+    OR EXISTS (SELECT 1 FROM `provider_connections` WHERE `provider_id` = 'microsoft-365')
+  );--> statement-breakpoint
+
+INSERT INTO `providers` (`id`, `spec`, `added_by`, `added_at`, `updated_at`, `bound_to`, `bound_at`)
+SELECT 'slack', '{"id":"slack","name":"Slack","description":"Channels, members and messages, as the Slack app.","docs":"https://api.slack.com/apps","api":"https://api.slack.com/scopes","hosts":["slack.com"],"auth":{"kind":"oauth2-user","authorizeUrl":"https://slack.com/oauth/v2/authorize","tokenUrl":"https://slack.com/api/oauth.v2.access","revokeUrl":"https://slack.com/api/auth.revoke","clientId":"SLACK_CLIENT_ID","clientSecret":"SLACK_CLIENT_SECRET","inject":"form","pkce":false,"scopeSeparator":"comma","identity":{"url":"https://slack.com/api/auth.test","label":"team","id":"team_id"}},"hint":"A Slack app with the Gateway''s callback as its redirect URL and the bot scopes your apps list. The Gateway takes its Client ID and Client Secret, not a bot token (xoxb-)."}', 'everyapp', CAST(strftime('%s', 'now') AS INTEGER) * 1000, CAST(strftime('%s', 'now') AS INTEGER) * 1000, '{"kind":"oauth2-user","authorizeUrl":"https://slack.com/oauth/v2/authorize","tokenUrl":"https://slack.com/api/oauth.v2.access","revokeUrl":"https://slack.com/api/auth.revoke","inject":"form","clientId":"SLACK_CLIENT_ID","clientSecret":"SLACK_CLIENT_SECRET","hosts":["slack.com"]}', CAST(strftime('%s', 'now') AS INTEGER) * 1000
+WHERE NOT EXISTS (SELECT 1 FROM `providers` WHERE `id` = 'slack')
+  AND (
+    EXISTS (SELECT 1 FROM `apps` WHERE `status` <> 'deleted' AND json_valid(`manifest`) AND json_type(`manifest`, '$.capabilities."slack"') IS NOT NULL)
+    OR EXISTS (SELECT 1 FROM `oauth_clients` WHERE `provider_id` = 'slack')
+    OR EXISTS (SELECT 1 FROM `provider_connections` WHERE `provider_id` = 'slack')
+  );--> statement-breakpoint
+
+-- Google's preset adds its revoke endpoint, which is part of what a client
+-- is bound to: a client pasted for the built-in is rebound to the row.
+UPDATE `oauth_clients` SET `bound_to` = '{"kind":"oauth2-user","authorizeUrl":"https://accounts.google.com/o/oauth2/v2/auth","tokenUrl":"https://oauth2.googleapis.com/token","revokeUrl":"https://oauth2.googleapis.com/revoke","inject":"form","clientId":"GOOGLE_WORKSPACE_CLIENT_ID","clientSecret":"GOOGLE_WORKSPACE_CLIENT_SECRET","hosts":["analyticsadmin.googleapis.com","analyticsdata.googleapis.com","gmail.googleapis.com","openidconnect.googleapis.com","searchconsole.googleapis.com","www.googleapis.com"]}'
+WHERE `provider_id` = 'google-workspace' AND `bound_to` = '{"kind":"oauth2-user","authorizeUrl":"https://accounts.google.com/o/oauth2/v2/auth","tokenUrl":"https://oauth2.googleapis.com/token","revokeUrl":null,"inject":"form","clientId":"GOOGLE_WORKSPACE_CLIENT_ID","clientSecret":"GOOGLE_WORKSPACE_CLIENT_SECRET","hosts":["analyticsadmin.googleapis.com","analyticsdata.googleapis.com","gmail.googleapis.com","openidconnect.googleapis.com","searchconsole.googleapis.com","www.googleapis.com"]}';

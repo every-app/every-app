@@ -25,9 +25,14 @@ below; a setting set here wins.
 | `GOOGLE_WORKSPACE_CLIENT_ID`     | required | The client's id, ending in `.apps.googleusercontent.com`; public, not a secret    |
 | `GOOGLE_WORKSPACE_CLIENT_SECRET` | required | The client's secret, shown once at creation; starts with `GOCSPX-` in practice (secret scanners key on the prefix; Google does not document the format) |
 
-Both belong to the `google-workspace` provider (built in, its spec in
-`packages/sdk/src/internal/oauthBuiltIns.ts`; the table in
-`docs/capabilities.md`, "OAuth clients"). An app lists Google's own
+Both belong to the `google-workspace` provider, a row the Gateway
+registers from its preset (`packages/sdk/src/internal/oauthPresets.ts`)
+when an app that lists it is deployed or installed, or with
+`pnpm everyapp provider add google-workspace`; until then `secret set`
+doesn't know the names. Both names already set as Worker secrets while
+the Gateway had no row (an older CLI) are read only once `secret set`
+binds them to the row: set them again, or `secret unset` both to use a
+client pasted in Admin, which an unbound Worker secret blocks. An app lists Google's own
 scopes, short (`gmail.modify`, joined onto
 `https://www.googleapis.com/auth/`) or in full:
 `"google-workspace": { scopes: ["gmail.modify", "gmail.send"], why }`.
