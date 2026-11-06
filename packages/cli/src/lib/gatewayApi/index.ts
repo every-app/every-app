@@ -145,7 +145,8 @@ async function resolveGateway(options: GatewayApiOptions, store: LinkedDevStore)
     }
   }
   const find = options.findGateway ?? findThroughCloudflare;
-  return find(flags, out);
+  // "" is no flag, as requestedGatewayUrl reads it, never the default Gateway's name.
+  return find({ ...flags, gateway: flags.gateway || undefined }, out);
 }
 
 /** The Gateway the Cloudflare login finds (a name in `--gateway` picks among several). */

@@ -11,6 +11,7 @@ import { readInstall } from "@/lib/gateway/install";
 import { markDeployed, register } from "@/lib/gateway/registry";
 import { openRelease, RELEASE_TARBALL } from "@/lib/gateway/release";
 import { gatewayReleaseSource } from "@/lib/gateway/source";
+import { requestedGatewayUrl } from "@/lib/gateway/connect";
 import { gatewayNames } from "@every-app/perimeter/manifest";
 import { ensureGatewayResources, removeLeftoverActivationQueue } from "@/lib/gateway/resources";
 import { mintSetupLink } from "@/lib/gateway/setup-link";
@@ -25,7 +26,7 @@ import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
 import { turnAccessOn } from "../access";
-import { runGatewayDeploy, runSetup, setupDeps, type SetupDeps, type SetupFlags } from "./runSetup";
+import { runGatewayDeploy, runSetup, setupDeps, type GatewayDeployFlags, type SetupDeps, type SetupFlags } from "./runSetup";
 
 const GW = "apps.example.com";
 
@@ -136,6 +137,98 @@ const gatewayD1 = () =>
 const mintElsewhere = () => mintSetupLink({ db: gatewayD1(), gatewayUrl: `https://${GW}` });
 
 const links = () => events.filter((event) => event.action === "claim_owner");
+
+describe("update with several Gateways and nothing naming one", () => {
+  const nobody = () => ({ seams: { ...deps().seams!, owner: nobodyOpensIt } });
+
+  /** `update` with a newer release on offer: anything short of a stop uploads it. */
+  async function update(flags: GatewayDeployFlags = {}, overrides: Partial<SetupDeps> = {}) {
+    const newer = await buildGatewayRelease({ builtAt: "2026-10-31T00:00:00.000Z" });
+    const out: EventSink = createNdjsonSink((line) => events.push(JSON.parse(line)));
+    return runGatewayDeploy(
+      { json: true, ...flags },
+      out,
+      deps({ openRelease: () => openRelease(newer), source: () => releaseSource(newer), ...overrides }),
+    );
+  }
+
+  beforeEach(async () => {
+    vi.stubEnv("EVERYAPP_GATEWAY_URL", "");
+    vi.stubEnv("CLOUDFLARE_ACCOUNT_ID", "");
+    await setup({ domain: GW });
+    await setup({ domain: "demo.example.com", name: "demo" }, nobody());
+  });
+
+  /** The choices `update` offers, and the flags of each one's rerun. */
+  async function choices() {
+    const argv = process.argv;
+    process.argv = [...argv.slice(0, 2), "update", "--json"];
+    try {
+      const stopped = await update().then(
+        () => {
+          throw new Error("updated a Gateway nobody named");
+        },
+        (error: { action?: string; data?: { choices: Array<{ label: string; rerun: string; gatewayWorker: string }> } }) => error,
+      );
+      expect(stopped).toMatchObject({ action: "choose_account" });
+      return stopped.data!.choices.map((choice) => ({
+        ...choice,
+        gateway: /--gateway (\S+)/.exec(choice.rerun)?.[1],
+        accountId: /--account-id (\S+)/.exec(choice.rerun)?.[1],
+      }));
+    } finally {
+      process.argv = argv;
+    }
+  }
+
+  it("offers reruns --gateway accepts, each naming its Gateway once", async () => {
+    const offered = await choices();
+
+    expect(offered).toHaveLength(2);
+    for (const choice of offered) {
+      expect(choice.rerun.match(/--gateway/g)).toHaveLength(1);
+      expect(requestedGatewayUrl(choice.gateway)).toBe(choice.gateway);
+    }
+  });
+
+  it("tells two Gateways in one account apart", async () => {
+    const labels = (await choices()).map((choice) => choice.label);
+
+    expect(new Set(labels).size).toBe(2);
+    expect(labels.join(" ")).toContain("demo.example.com");
+  });
+
+  it("updates the Gateway each rerun names, and only that one", async () => {
+    const versions = (worker: string) => account.workers.get(worker)!.versions.length;
+    const [main, demo] = await choices();
+    expect(main).toMatchObject({ gatewayWorker: "every-app-gateway" });
+    expect(demo).toMatchObject({ gatewayWorker: "every-app-gateway-demo" });
+    const before = { main: versions("every-app-gateway"), demo: versions("every-app-gateway-demo") };
+
+    // Nobody claimed demo: the update uploads, then stops at its owner link.
+    await expect(update({ gateway: demo!.gateway, "account-id": demo!.accountId }, nobody())).rejects.toMatchObject({
+      action: "claim_owner",
+    });
+    expect(versions("every-app-gateway-demo")).toBe(before.demo + 1);
+    expect(versions("every-app-gateway")).toBe(before.main);
+
+    await expect(update({ gateway: main!.gateway, "account-id": main!.accountId })).resolves.toMatchObject({
+      gateway: "upgraded",
+    });
+    expect(versions("every-app-gateway")).toBe(before.main + 1);
+    expect(versions("every-app-gateway-demo")).toBe(before.demo + 1);
+  });
+
+  it("updates the default Gateway by its own name", async () => {
+    const versions = (worker: string) => account.workers.get(worker)!.versions.length;
+    const before = { main: versions("every-app-gateway"), demo: versions("every-app-gateway-demo") };
+
+    await expect(update({ gateway: "every-app-gateway" })).resolves.toMatchObject({ gateway: "upgraded" });
+
+    expect(versions("every-app-gateway")).toBe(before.main + 1);
+    expect(versions("every-app-gateway-demo")).toBe(before.demo);
+  });
+});
 
 describe("everyapp setup", () => {
   it("takes an empty account to a live gateway on a subdomain and its owner", async () => {

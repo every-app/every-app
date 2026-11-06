@@ -197,3 +197,51 @@ describe("toolAnswer", () => {
     expect(toolAnswer(GATEWAY, "x", { content: [{ type: "text", text: "hello" }] })).toEqual({ text: "hello" });
   });
 });
+
+describe("--gateway with nothing in it", () => {
+  it("reads as no flag when the Cloudflare login finds the Gateway, as on every other command", async () => {
+    const findGateway = vi.fn(async (_flags: { gateway?: string }) => GATEWAY);
+
+    await openGatewayApi({
+      flags: { gateway: "" },
+      out: out(),
+      env: { EVERYAPP_TOKEN: "epat_abc" },
+      store: store(),
+      fetchImpl: (async () => new Response("{}")) as typeof fetch,
+      findGateway,
+    });
+
+    expect(findGateway).toHaveBeenCalledOnce();
+    expect(findGateway.mock.calls[0]![0]).toMatchObject({ gateway: undefined });
+  });
+
+  it("hands on blank space, for connecting to refuse", async () => {
+    const findGateway = vi.fn(async (_flags: { gateway?: string }) => GATEWAY);
+
+    await openGatewayApi({
+      flags: { gateway: "   " },
+      out: out(),
+      env: { EVERYAPP_TOKEN: "epat_abc" },
+      store: store(),
+      fetchImpl: (async () => new Response("{}")) as typeof fetch,
+      findGateway,
+    });
+
+    expect(findGateway.mock.calls[0]![0]).toMatchObject({ gateway: "   " });
+  });
+
+  it("still hands on a name", async () => {
+    const findGateway = vi.fn(async (_flags: { gateway?: string }) => GATEWAY);
+
+    await openGatewayApi({
+      flags: { gateway: "demo" },
+      out: out(),
+      env: { EVERYAPP_TOKEN: "epat_abc" },
+      store: store(),
+      fetchImpl: (async () => new Response("{}")) as typeof fetch,
+      findGateway,
+    });
+
+    expect(findGateway.mock.calls[0]![0]).toMatchObject({ gateway: "demo" });
+  });
+});
