@@ -1,5 +1,13 @@
 /** The flags several commands take, said the same way everywhere. */
 
+export const placementFlag = {
+  kind: "parsed",
+  parse: String,
+  brief:
+    "Where the Gateway Worker runs from now on: smart, off, or a cloud region near its database (aws:, gcp: or azure:, such as aws:ap-south-1). Always uploads the Gateway; later uploads from this everyapp keep it",
+  optional: true,
+} as const;
+
 export const gatewayFlag = {
   kind: "parsed",
   parse: String,

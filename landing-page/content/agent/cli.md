@@ -254,6 +254,7 @@ The flags people use: --domain, --account-id, and --yes for a script (it answers
 - `--name <name>`: A second Gateway in the same Cloudflare account, by name (1 to 16 lowercase letters or digits): its Worker is every-app-gateway-<name> and its apps every-<name>--…; setup finds or installs that one only. Without it, the Gateway is every-app-gateway, as always
 - `--release <value>`: The Gateway release to deploy: a GitHub repository URL (its latest release) or release page, a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz (default: this checkout's build, or without a checkout, the published release for this everyapp version)
 - `--force-dns`: Publish new hostnames even where a DNS record answers them (one at a hostname is replaced)
+- `--placement <value>`: Where the Gateway Worker runs from now on: smart, off, or a cloud region near its database (aws:, gcp: or azure:, such as aws:ap-south-1). Always uploads the Gateway; later uploads from this everyapp keep it
 - `--redeploy` (hidden): Upload the Gateway even when it is up to date (after a change in the dashboard, such as a key rotation)
 - `--no-access`: Leave Cloudflare Access off (not recommended): by default setup puts it in front of the Gateway once the owner exists. Remembered, so a later unattended setup leaves it off too; everyapp access on turns it on
 - `--team <value>`: The Zero Trust team's name, when the Cloudflare account has none yet: people sign in at <name>.cloudflareaccess.com, and it can't be changed later (ignored once a team exists)
@@ -268,10 +269,13 @@ Deploys a newer Gateway over the one your Cloudflare login finds, where it is, k
 1. Logs in to Cloudflare (cf auth login, or CLOUDFLARE_API_TOKEN) and finds the Gateway in the login's accounts (--account-id when there is one in more than one)
 2. Upgrades it (migrations first, with a restore point). When it runs that Gateway already, binds and publishes every registered app if the live Gateway doesn't, and otherwise says it is up to date. A live Gateway newer than this one is replaced with a warning (GATEWAY_DOWNGRADE): that is how a rollback goes; in a checkout, git pull to go forward
 
-A checkout's Gateway is named by its version when it is that version's release (the gateway-v<version> tag), and by the checkout's commit otherwise. With --json, each step is an NDJSON event.
+A checkout's Gateway is named by its version when it is that version's release (the gateway-v<version> tag), and by the checkout's commit otherwise.
+
+--placement asks Cloudflare to run the Gateway Worker somewhere other than where each request arrives, such as near its database. It uploads the Gateway even when it is up to date, and later uploads from this everyapp keep it. One from an older everyapp doesn't, so pass it again after that. With --json, each step is an NDJSON event.
 
 - `--release <value>`: The Gateway release to deploy: a GitHub repository URL (its latest release) or release page, a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz (default: this checkout's build, or without a checkout, the published release for this everyapp version)
 - `--force-dns`: Publish new hostnames even where a DNS record answers them (one at a hostname is replaced)
+- `--placement <value>`: Where the Gateway Worker runs from now on: smart, off, or a cloud region near its database (aws:, gcp: or azure:, such as aws:ap-south-1). Always uploads the Gateway; later uploads from this everyapp keep it
 - `--redeploy` (hidden): Upload the Gateway even when it is up to date (after a change in the dashboard, such as a key rotation)
 - `--yes`: Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)
 

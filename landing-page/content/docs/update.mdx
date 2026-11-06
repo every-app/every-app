@@ -32,6 +32,24 @@ everyapp update
 
 Your people, apps and data stay, and Cloudflare Access is updated to match. Deploying an app never updates the Gateway; only `everyapp update` does. `everyapp status` shows which release is running.
 
+## Run the Gateway near its database
+
+Every request passes through the Gateway, and the Gateway reads its database on the way. If your people are far from that database, those reads take longer. In your browser's network panel, `gw` under **Server-Timing** is the time a request spent in the Gateway.
+
+You can ask Cloudflare to run the Gateway somewhere else:
+
+```bash
+everyapp update --placement smart
+```
+
+- `smart` lets Cloudflare choose from your traffic. It can take up to 15 minutes, needs steady requests from more than one location, and only considers places the Gateway already runs, so it may never get near your database.
+- A [cloud region](https://developers.cloudflare.com/workers/configuration/placement/) picks the place yourself, starting with `aws:`, `gcp:` or `azure:`, such as `aws:ap-south-1`. Cloudflare reports where your database is as a broad area such as `APAC`, so choose a region inside it.
+- `off` goes back to Cloudflare's default, wherever each request arrives.
+
+Every request to the Gateway and your apps goes through that place, including their pages and files, so it can be slower for people far from it.
+
+`everyapp status` shows your choice, and later updates and deploys keep it. An upload from an older `everyapp`, such as an app pinned to one, doesn't, and `status` can't tell: run the command again after it. `everyapp setup --placement` takes the same values for a new Gateway.
+
 ## Remove an app
 
 ```bash
