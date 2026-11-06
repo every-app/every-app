@@ -9,7 +9,8 @@ import { cfD1Database } from "@/lib/cf/d1";
 import type { FakeCfResponse } from "@/lib/cf/fakeCf";
 import type { CfRunner } from "@/lib/cf/runner";
 import { FakeCloudflare } from "@/test/fakeCloudflare";
-import { connectToGateway } from "./connect";
+import { createNdjsonSink } from "@/lib/output/events";
+import { connectToGateway, existingGateway, requestedGatewayUrl } from "./connect";
 import { discoverGateway, refuseUnchecked, requireGateway } from "./discover";
 import { writeInstall } from "./install";
 import { forgetThisRunsPickForTests } from "./pick";
@@ -573,6 +574,134 @@ describe("two Gateways in one account", () => {
     }
     const byDefault = await connectToGateway({ gateway: "every-app-gateway", createCf, interactive: false });
     expect(byDefault.names.worker).toBe("every-app-gateway");
+  });
+});
+
+describe("--gateway by name, as the commands pass it", () => {
+  const out = createNdjsonSink(() => undefined);
+
+  beforeEach(async () => {
+    const acme = await account("acct-1", "Acme", "apps.acme.com");
+    await addGateway(acme, "every-app-gateway-demo", "demo.acme.com");
+    accounts = [acme];
+  });
+
+  // Every command hands these what requestedGatewayUrl gave it.
+  describe.each<[string, (gateway: string | undefined) => Promise<unknown>]>([
+    ["connectToGateway", (gateway) => connectToGateway({ gateway, createCf, interactive: false })],
+    ["existingGateway", (gateway) => existingGateway({ json: true, out, createCf, gateway })],
+  ])("%s", (_, resolve) => {
+    it("takes the default Gateway by its own name, every-app-gateway", async () => {
+      await expect(resolve(requestedGatewayUrl("every-app-gateway"))).resolves.toEqual(
+        expect.objectContaining({ names: expect.objectContaining({ worker: "every-app-gateway" }) }),
+      );
+    });
+
+    it.each(["demo", "every-app-gateway-demo", "DEMO"])("takes a named Gateway by %s", async (flag) => {
+      await expect(resolve(requestedGatewayUrl(flag))).resolves.toEqual(
+        expect.objectContaining({ names: expect.objectContaining({ worker: "every-app-gateway-demo" }) }),
+      );
+    });
+
+    it("still needs a choice among several with no --gateway at all", async () => {
+      await expect(resolve(requestedGatewayUrl(undefined))).rejects.toMatchObject({ action: "choose_account" });
+    });
+  });
+
+  it("connects to the default Gateway from the \"\" requestedGatewayUrl gives for its name", async () => {
+    expect(requestedGatewayUrl("every-app-gateway")).toBe("");
+    await expect(connectToGateway({ gateway: "", createCf, interactive: false })).resolves.toMatchObject({
+      names: { worker: "every-app-gateway" },
+    });
+  });
+
+  it.each(["   ", "every-app-gateway-", "-", "every-app-gateway-toolongnametobeagatewayname"])(
+    "refuses %j, which names no Gateway, rather than taking it for the default",
+    (flag) => {
+      expect(() => requestedGatewayUrl(flag)).toThrowError(expect.objectContaining({ code: "INVALID_GATEWAY_URL" }));
+    },
+  );
+
+  it("reads --gateway \"\" as no flag, as it always has", () => {
+    expect(requestedGatewayUrl("")).toBeUndefined();
+  });
+});
+
+describe("the reruns offered among several Gateways", () => {
+  /** The reruns a run with these arguments is offered. */
+  async function reruns(...args: string[]) {
+    const argv = process.argv;
+    process.argv = [...argv.slice(0, 2), ...args];
+    try {
+      const stopped = (await discover().catch((error: unknown) => error)) as {
+        action?: string;
+        data: { choices: Array<{ rerun: string }> };
+      };
+      expect(stopped).toMatchObject({ action: "choose_account" });
+      return stopped.data.choices.map((choice) => choice.rerun);
+    } finally {
+      process.argv = argv;
+    }
+  }
+
+  describe("in one account", () => {
+    beforeEach(async () => {
+      const acme = await account("acct-1", "Acme", "apps.acme.com");
+      await addGateway(acme, "every-app-gateway-demo", "demo.acme.com");
+      accounts = [acme];
+    });
+
+    const wanted = [
+      "pnpm everyapp update --json --account-id acct-1 --gateway https://apps.acme.com",
+      "pnpm everyapp update --json --account-id acct-1 --gateway https://demo.acme.com",
+    ];
+
+    it("names each by account and URL", async () => {
+      await expect(reruns("update", "--json")).resolves.toEqual(wanted);
+    });
+
+    it.each([
+      ["--gateway x", ["--gateway", "https://old.example.com"]],
+      ["--gateway=x", ["--gateway=https://old.example.com"]],
+      ["--account-id x", ["--account-id", "acct-1"]],
+      ["--account-id=x", ["--account-id=acct-1"]],
+      ["both", ["--gateway=https://old.example.com", "--account-id=acct-1"]],
+    ])("replaces what the run had: %s", async (_, had) => {
+      await expect(reruns("update", ...had, "--json")).resolves.toEqual(wanted);
+    });
+
+    it("keeps everything else the run had", async () => {
+      await expect(reruns("update", "--release", "a.tgz", "--gateway", "x.dev", "--json")).resolves.toEqual([
+        "pnpm everyapp update --release a.tgz --json --account-id acct-1 --gateway https://apps.acme.com",
+        "pnpm everyapp update --release a.tgz --json --account-id acct-1 --gateway https://demo.acme.com",
+      ]);
+    });
+  });
+
+  describe("across accounts", () => {
+    beforeEach(async () => {
+      accounts = await Promise.all([
+        account("acct-1", "Personal", "apps.me.dev"),
+        account("acct-2", "Acme", "apps.acme.com"),
+      ]);
+    });
+
+    it("needs only the account when the run named no Gateway", async () => {
+      await expect(reruns("status", "--json")).resolves.toEqual([
+        "pnpm everyapp status --json --account-id acct-1",
+        "pnpm everyapp status --json --account-id acct-2",
+      ]);
+    });
+
+    it.each([
+      ["--gateway x", ["--gateway", "demo"]],
+      ["--gateway=x", ["--gateway=demo"]],
+    ])("gives the URL when the run named one with %s: the account alone may not pick it", async (_, named) => {
+      await expect(reruns("status", ...named, "--json")).resolves.toEqual([
+        "pnpm everyapp status --json --account-id acct-1 --gateway https://apps.me.dev",
+        "pnpm everyapp status --json --account-id acct-2 --gateway https://apps.acme.com",
+      ]);
+    });
   });
 });
 

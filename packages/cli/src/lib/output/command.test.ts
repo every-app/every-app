@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { invocation, thisCommand, thisCommandWithout } from "./command";
+import { invocation, thisCommand, thisCommandInstead, thisCommandWithout } from "./command";
 
 describe("invocation", () => {
   it("is how the person ran everyapp: through their package manager, or directly", () => {
@@ -65,6 +65,36 @@ describe("thisCommandWithout", () => {
     );
     expect(thisCommandWithout("--domain", ["setup", "--domain=apps.example.com"])).toBe(
       "pnpm everyapp setup",
+    );
+  });
+});
+
+describe("thisCommandInstead", () => {
+  const replaced = ["--account-id", "--gateway"];
+
+  it("adds the flags to a run that had none of them", () => {
+    expect(thisCommandInstead(replaced, ["--account-id", "a"], ["status", "--json"])).toBe(
+      "pnpm everyapp status --json --account-id a",
+    );
+  });
+
+  it("replaces each flag in either spelling, leaving no stray value", () => {
+    expect(
+      thisCommandInstead(replaced, ["--account-id", "a", "--gateway", "https://b.dev"], [
+        "update",
+        "--gateway",
+        "https://old.dev",
+        "--account-id=old",
+        "--json",
+      ]),
+    ).toBe("pnpm everyapp update --json --account-id a --gateway https://b.dev");
+  });
+});
+
+describe("thisCommandWithout a flag that has no value", () => {
+  it("keeps the flag after it", () => {
+    expect(thisCommandWithout("--gateway", ["db", "restore", "--gateway", "--json"])).toBe(
+      "pnpm everyapp db restore --json",
     );
   });
 });

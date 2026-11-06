@@ -269,7 +269,6 @@ export async function runGatewayDeploy(
   const byUrl = requested !== undefined && requested.includes("://");
   const { whoami, discovery } = await loginAndDiscover(flags, out, deps, {
     host: byUrl ? new URL(requested).host.toLowerCase() : undefined,
-    hostFlag: "--gateway",
     anyAccount: false,
     ...(requested !== undefined && !byUrl ? { name: requested || null } : {}),
   });
@@ -293,7 +292,8 @@ async function loginAndDiscover(
   deps: SetupDeps,
   bySetup?: {
     host: string | undefined;
-    hostFlag: string;
+    /** setup's --domain: its choices name the host, which --gateway wouldn't take as it is. */
+    hostFlag?: string;
     anyAccount: boolean;
     /** setup: only Gateways of this name (null: the default's). */
     onlyName?: string | null;

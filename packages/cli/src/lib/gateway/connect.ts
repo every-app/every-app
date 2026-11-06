@@ -92,11 +92,15 @@ function isGatewayName(value: string): boolean {
   return !value.includes("://") && !value.includes(".") && !value.includes("/");
 }
 
-/** The name `--gateway` gives: `demo`, `every-app-gateway-demo` or `every-app-gateway` (the default, as ""). */
+/**
+ * The name `--gateway` gives: `demo`, `every-app-gateway-demo` or
+ * `every-app-gateway` (the default, as ""). What this gave is read again
+ * where a command connects, so "" is the default too; blank space is no name.
+ */
 function gatewayNameFrom(value: string): string {
   const trimmed = value.trim().toLowerCase();
   const name = trimmed === "every-app-gateway" ? "" : trimmed.replace(/^every-app-gateway-/, "");
-  const problem = name === "" ? (trimmed === "every-app-gateway" ? null : "a Gateway name is 1 to 16 lowercase letters or digits") : gatewayNameProblem(name);
+  const problem = name === "" ? (value === "" || trimmed === "every-app-gateway" ? null : "a Gateway name is 1 to 16 lowercase letters or digits") : gatewayNameProblem(name);
   if (problem) {
     throw new EveryAppError(
       "INVALID_GATEWAY_URL",

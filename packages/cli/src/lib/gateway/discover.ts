@@ -43,7 +43,7 @@ import { isCfError, isNetworkDrop } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
 import type { CfWhoami } from "@/lib/cf/schemas";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
-import { CLI, thisCommand, thisCommandWithout } from "@/lib/output/command";
+import { CLI, thisCommand, thisCommandInstead, thisCommandWithout } from "@/lib/output/command";
 import { choose, tellPerson } from "@/lib/output/prompt";
 import chalk from "chalk";
 import { readInstall, type InstallRecord } from "./install";
@@ -222,12 +222,15 @@ async function discover({
 
 /**
  * Several Gateways and nothing to pick one by: one command per Gateway,
- * ready to run (no single rerun fits). By host (the flag the command
- * names it with, --gateway or setup's --domain) when the Gateway has one,
- * else by account and name.
+ * ready to run (no single rerun fits). By host (setup's --domain) when the
+ * Gateway has one, else by account, and by URL or name too when the account
+ * alone wouldn't pick it. What it picks by replaces what the run had.
  */
 function chooseGateway(found: FoundGateway[], whoami: CfWhoami, hostFlag?: string): ActionRequiredError {
   const accounts = new Set(found.map((gateway) => gateway.account.id));
+  const choosing = (...flags: string[]) => thisCommandInstead(["--account-id", "--gateway"], flags);
+  // The run named one (a name may be in several accounts): the rerun must too.
+  const named = process.argv.slice(2).some((arg) => arg === "--gateway" || arg.startsWith("--gateway="));
   return new ActionRequiredError(
     "choose_account",
     `Choose which Gateway to use\n${whoami.email ?? "This login"} sees ${
@@ -255,14 +258,14 @@ function chooseGateway(found: FoundGateway[], whoami: CfWhoami, hostFlag?: strin
             label: byHost ? account : [account, gatewayHost ?? gateway.names.worker].join(" · "),
             rerun: byHost
               ? `${thisCommandWithout(hostFlag)} ${hostFlag} ${gatewayHost}`
-              : sameAccount
-                ? thisCommand([
+              : sameAccount || named
+                ? choosing(
                     "--account-id",
                     gateway.account.id,
                     "--gateway",
                     gatewayHost ? `https://${gatewayHost}` : gateway.names.worker,
-                  ])
-                : thisCommand(["--account-id", gateway.account.id]),
+                  )
+                : choosing("--account-id", gateway.account.id),
           };
         }),
       },

@@ -41,18 +41,34 @@ export function thisCommand(
   return [CLI, ...args.map(quote)].join(" ");
 }
 
-/** This run's command without `flag` and its value (`--gateway x`, `--gateway=x`). */
+/** `argv` without `flag` and its value (`--gateway x`, `--gateway=x`); a flag after it isn't its value. */
+function argsWithout(flag: string, argv: readonly string[]): string[] {
+  const args: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    if (arg === flag) {
+      if (!argv[i + 1]?.startsWith("-")) i++;
+    } else if (!arg.startsWith(`${flag}=`)) args.push(arg);
+  }
+  return args;
+}
+
+/** This run's command without `flag` and its value. */
 export function thisCommandWithout(
   flag: string,
   argv: readonly string[] = process.argv.slice(2),
 ): string {
-  const args: string[] = [];
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]!;
-    if (arg === flag) i++;
-    else if (!arg.startsWith(`${flag}=`)) args.push(arg);
-  }
-  return thisCommand([], { argv: args });
+  return thisCommand([], { argv: argsWithout(flag, argv) });
+}
+
+/** This run's command with `flags` in place of whatever it had of `replaced`, in either spelling. */
+export function thisCommandInstead(
+  replaced: readonly string[],
+  flags: readonly string[],
+  argv: readonly string[] = process.argv.slice(2),
+): string {
+  const args = replaced.reduce<readonly string[]>((kept, flag) => argsWithout(flag, kept), argv);
+  return [CLI, ...[...args, ...flags].map(quote)].join(" ");
 }
 
 /** An argument as a POSIX shell reads it back. */
