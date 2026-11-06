@@ -304,6 +304,7 @@ export async function reportStatus({
       ...(gateway.names.name ? { gatewayName: gateway.names.name, gatewayWorker: gateway.names.worker } : {}),
       accountId: account.id,
       mode: install.deploymentMode,
+      ...(install.placement ? { placement: install.placement } : {}),
       release: {
         version: install.releaseVersion,
         sha256: install.releaseSha256,

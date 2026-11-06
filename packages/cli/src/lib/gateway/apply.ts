@@ -73,6 +73,7 @@ import {
 import { readInstall, writeInstall, type InstallRecord } from "./install";
 import { acquireGatewayLease, LeasePurpose, type Lease } from "./lease";
 import { gatewayDomains, patchGatewayBuildOutput } from "./patchBuildOutput";
+import type { GatewayPlacement } from "./placement";
 import {
   compareReleaseOrder,
   describeOrigin,
@@ -124,6 +125,8 @@ export interface ApplyGatewayOptions {
    * the one it has.
    */
   deploymentMode?: DeploymentMode;
+  /** Where the Worker runs from now on (--placement); without one, the install row's. */
+  placement?: GatewayPlacement;
   /** The gateway lease the caller holds (a reconcile picks its release under it). */
   heldLease?: Lease;
   sleep?: (ms: number) => Promise<void>;
@@ -293,6 +296,8 @@ export async function applyGateway(
     // upgrade may have finished while this one waited for the lease.
     const install = await readInstall(db);
     if (install?.liveVersionId) checkDowngrade(options.out, reason, candidate(release), install);
+    // Every upload carries it: one without would drop what the operator chose.
+    const placement = options.placement ?? install?.placement ?? undefined;
     // A Worker holding the row's hostname while the row names no version:
     // this install's own upload, from a run that stopped after it. Skipping
     // assertReplaceable's question isn't a silent takeover: one edited in
@@ -367,7 +372,7 @@ export async function applyGateway(
     // A mode the install row records is the gateway's for good: a Worker
     // that comes back (deleted by hand) gets the one it was installed with.
     const deploymentMode = install?.deploymentMode ?? options.deploymentMode;
-    return await deploy({ ...options, deploymentMode }, domainChecks, workerExists, {
+    return await deploy({ ...options, deploymentMode, placement }, domainChecks, workerExists, {
       liveDomains: install?.liveDomains ?? [],
       liveVersionId: install?.liveVersionId ?? null,
     }, lease);
@@ -579,6 +584,7 @@ async function withPatchedRelease<T>(
       appWorkers: apps.appWorkers,
       // Only hosts one label below the base: see DomainChecks.domainsFor.
       appHosts: publishedAppHosts(apps.appHosts, options.appBaseDomain),
+      placement: options.placement,
     });
     return await use(workdir);
   } finally {
@@ -604,15 +610,16 @@ function record(
   publication: Publication,
   firstSecrets: Pick<InstallRecord, "jwtPublicKey" | "deploymentMode">,
 ): Promise<void> {
-  return writeInstall(
-    options.db,
-    installRecord(options, {
+  return writeInstall(options.db, {
+    ...installRecord(options, {
       liveVersionId: versionId,
       liveDomains: publication.liveDomains,
       liveAppWorkers: desired.appWorkers,
       ...firstSecrets,
     }),
-  );
+    // Only with an upload: a value that never reached Cloudflare isn't where the Gateway runs.
+    placement: options.placement,
+  });
 }
 
 /** This install, with this release, and what is live. */

@@ -297,13 +297,15 @@ const withCapitalThe = (text: string) => text.replace(/^the /, "The ");
 function uploadNetworkFailed(error: unknown, { workerName }: CfDeployOptions, tries: number): EveryAppError {
   const cause = errorMessage(error).split("\n")[0] ?? "";
   const gateway = gatewayNameOf(workerName) !== null;
+  // A plain `update` wouldn't carry this run's --placement: only the rerun does.
+  const placing = process.argv.slice(2).some((arg) => arg === "--placement" || arg.startsWith("--placement="));
   return new EveryAppError(
     "UPLOAD_NETWORK_FAILED",
     `The network dropped while uploading ${gateway ? "the Gateway" : workerName} (${tries} tries)\n${cause}. Whatever this command already did is kept, and running it again carries on from there.`,
     {
       retryable: true,
       rerun: thisCommand(),
-      rerunNote: gateway
+      rerunNote: gateway && !placing
         ? `once you're back online; or ${CLI} update brings the Gateway in step`
         : "once you're back online",
       data: { workerName, tries, cause },

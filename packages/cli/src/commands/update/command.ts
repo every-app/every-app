@@ -1,6 +1,6 @@
 import { buildCommand } from "@stricli/core";
 import { CLI } from "@/lib/output/command";
-import { accountFlag, forceDnsFlag, gatewayFlag, jsonFlag, verboseFlag, yesFlag } from "../flags";
+import { accountFlag, forceDnsFlag, gatewayFlag, jsonFlag, placementFlag, verboseFlag, yesFlag } from "../flags";
 
 export const updateCommand = buildCommand({
   loader: async () => {
@@ -20,6 +20,7 @@ export const updateCommand = buildCommand({
         optional: true,
       },
       "force-dns": forceDnsFlag,
+      placement: placementFlag,
       redeploy: {
         kind: "boolean",
         brief:
@@ -53,6 +54,11 @@ export const updateCommand = buildCommand({
       "",
       "A checkout's Gateway is named by its version when it is that version's release (the",
       "gateway-v<version> tag), and by the checkout's commit otherwise.",
+      "",
+      "--placement asks Cloudflare to run the Gateway Worker somewhere other than where each",
+      "request arrives, such as near its database. It uploads the Gateway even when it is up to",
+      "date, and later uploads from this everyapp keep it. One from an older everyapp doesn't, so",
+      "pass it again after that.",
       "With --json, each step is an NDJSON event.",
     ].join("\n"),
   },

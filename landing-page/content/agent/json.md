@@ -75,7 +75,7 @@ Nothing prompts. A yes/no question is `CONFIRMATION_REQUIRED` (pass `--yes` once
 
 `data.durationMs` is always there. `data.next` lists what to run next: command strings, or `{ command, note }`. `data.facts` holds the labelled lines a person sees. The command's own result:
 
-- `status`: the whole report. It has `gatewayUrl`, `apps[]` (each with `status`, `publicRoutes` and `setup`), `access` (`{ on }`), `fixes[]` as `{ code, severity, message, run, note?, fix? }` ([status](/docs/agent/status)) and `next[]` as `{ code, command?, url?, note, why }`. The next-step codes are `AI_KEY`, `PROVIDER_OFFER`, `PROVIDER_KEY`, `ACCESS_OFF`, `INVITE`, `CONNECT_AI`, `CREATE_APP` and `EMAIL_UNSET`.
+- `status`: the whole report. It has `gatewayUrl`, `placement` (only once one was chosen), `apps[]` (each with `status`, `publicRoutes` and `setup`), `access` (`{ on }`), `fixes[]` as `{ code, severity, message, run, note?, fix? }` ([status](/docs/agent/status)) and `next[]` as `{ code, command?, url?, note, why }`. The next-step codes are `AI_KEY`, `PROVIDER_OFFER`, `PROVIDER_KEY`, `ACCESS_OFF`, `INVITE`, `CONNECT_AI`, `CREATE_APP` and `EMAIL_UNSET`.
 - `db query`: `{ database, results: [[row, …] per statement], meta: [{ duration, changes }] }`.
 - `secret list`: names only, never values. The Gateway's names and settable names, and each app's `setup`.
 - `secret set`: `gateway.bound` lists the provider rows (a remote MCP app's `<id>-mcp` among them) whose key is now bound to their hosts.

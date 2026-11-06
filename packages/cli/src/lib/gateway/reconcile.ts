@@ -60,6 +60,8 @@ interface ReconcileGatewayOptions {
   unsetSecrets?: readonly string[];
   /** Deploy even when the live bindings already match. */
   force?: boolean;
+  /** Where the Worker runs from now on (--placement); without one, the install row's. */
+  placement?: ApplyGatewayOptions["placement"];
   sleep?: ApplyGatewayOptions["sleep"];
   leaseWaitMs?: number;
 }
@@ -138,6 +140,7 @@ export async function reconcileGateway(
         confirm: options.confirm,
         cliVersion: options.cliVersion,
         stagedSecrets: options.stagedSecrets,
+        placement: options.placement,
         heldLease: lease,
         sleep: options.sleep,
       });

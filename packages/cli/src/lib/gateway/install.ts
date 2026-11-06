@@ -16,6 +16,7 @@ import type { D1Database } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
 import { textOrNull } from "@/lib/output/text";
+import type { GatewayPlacement } from "./placement";
 import { parseReleaseOrigin, type ReleaseOrder, type ReleaseOrigin } from "./release";
 import { DEPLOYMENT_MODES, type DeploymentMode } from "./secretsFile";
 
@@ -40,7 +41,8 @@ const CREATE_INSTALL_TABLE = `CREATE TABLE IF NOT EXISTS _everyapp_install (
   jwt_public_key TEXT,
   deployment_mode TEXT,
   release_origin TEXT,
-  release_git_sha TEXT
+  release_git_sha TEXT,
+  placement TEXT
 )`;
 
 /**
@@ -51,7 +53,7 @@ const CREATE_INSTALL_TABLE = `CREATE TABLE IF NOT EXISTS _everyapp_install (
  * check (its job is to bring an outdated Gateway up to date), and the table
  * is the CLI's own, not a migration's.
  */
-const ADDED_COLUMNS = ["release_origin", "release_git_sha"] as const;
+const ADDED_COLUMNS = ["release_origin", "release_git_sha", "placement"] as const;
 
 export interface InstallRecord {
   accountId: string;
@@ -100,6 +102,12 @@ export interface InstallRecord {
    * write without one keeps the one recorded. Null before the first upload.
    */
   deploymentMode: DeploymentMode | null;
+  /**
+   * Where the Gateway Worker runs (./placement.ts), which every upload
+   * carries. A write without one keeps the one recorded, so `off`, not null,
+   * is how it is cleared. Null when none was ever chosen.
+   */
+  placement?: GatewayPlacement | null;
 }
 
 function list(value: unknown): string[] {
@@ -116,12 +124,12 @@ const mode = (value: unknown): DeploymentMode | null =>
     ? (value as DeploymentMode)
     : null;
 
-/** Thrown when an install row is required but this gateway has none. */
-export function notDeployedByEveryapp(): EveryAppError {
+/** Thrown when an install row is required but this gateway has none; `placement` is --placement, kept for the rerun. */
+export function notDeployedByEveryapp(placement?: GatewayPlacement): EveryAppError {
   return new EveryAppError(
     "GATEWAY_NOT_INSTALLED",
     "The Gateway's install didn't finish\nSetup stopped before it recorded the install.",
-    { rerun: `${CLI} setup`, rerunNote: "asks for the hostname again" },
+    { rerun: `${CLI} setup${placement ? ` --placement ${placement}` : ""}`, rerunNote: "asks for the hostname again" },
   );
 }
 
@@ -163,6 +171,7 @@ export async function readInstall(
     updatedBy: textOrNull(row["updated_by"]),
     jwtPublicKey: textOrNull(row["jwt_public_key"]),
     deploymentMode: mode(row["deployment_mode"]),
+    placement: textOrNull(row["placement"]),
   };
 }
 
@@ -191,6 +200,7 @@ export async function writeInstall(
     record.deploymentMode,
     record.releaseOrigin ? JSON.stringify(record.releaseOrigin) : null,
     record.releaseGitSha,
+    record.placement ?? null,
   ];
   const [, columns = []] = await db.run([
     { sql: CREATE_INSTALL_TABLE },
@@ -209,8 +219,8 @@ export async function writeInstall(
   app_base_domain, oauth_kv_id, release_version, release_sha256, release_schema,
   release_committed_at, source_tree_sha256, live_version_id, live_domains,
   live_app_workers, updated_at, updated_by, jwt_public_key, deployment_mode,
-  release_origin, release_git_sha)
-VALUES ('install', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
+  release_origin, release_git_sha, placement)
+VALUES ('install', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
 ON CONFLICT(id) DO UPDATE SET account_id = excluded.account_id,
   zone_id = excluded.zone_id, zone_name = excluded.zone_name,
   gateway_host = excluded.gateway_host, app_base_domain = excluded.app_base_domain,
@@ -223,7 +233,8 @@ ON CONFLICT(id) DO UPDATE SET account_id = excluded.account_id,
   updated_by = excluded.updated_by,
   jwt_public_key = COALESCE(excluded.jwt_public_key, _everyapp_install.jwt_public_key),
   deployment_mode = COALESCE(excluded.deployment_mode, _everyapp_install.deployment_mode),
-  release_origin = excluded.release_origin, release_git_sha = excluded.release_git_sha`,
+  release_origin = excluded.release_origin, release_git_sha = excluded.release_git_sha,
+  placement = COALESCE(excluded.placement, _everyapp_install.placement)`,
       params: values,
     },
   ]);
