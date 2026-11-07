@@ -90,6 +90,10 @@ export function createEmailInstaller<CfRunner>(
    * written; null when the app has no routes and asks for none. Asks (at a
    * terminal) before Email Routing is turned on for a domain that doesn't
    * route mail yet, unless `enableRouting` (`--enable-email-routing`).
+   * Refuses a domain whose MX records deliver its mail somewhere else
+   * (Google Workspace, Fastmail...), which turning Email Routing on would
+   * replace, unless `replaceMx` (`--replace-mx`): neither the question nor
+   * `--enable-email-routing` is enough for that.
    */
   async function planEmailRoutes({
     cf,
@@ -99,6 +103,7 @@ export function createEmailInstaller<CfRunner>(
     addresses,
     interactive,
     enableRouting = false,
+    replaceMx = false,
     confirm = confirmAtTerminal,
   }: {
     cf: CfRunner;
@@ -109,6 +114,8 @@ export function createEmailInstaller<CfRunner>(
     addresses: readonly string[];
     interactive: boolean;
     enableRouting?: boolean;
+    /** Turn Email Routing on even over MX records that deliver the domain's mail elsewhere. */
+    replaceMx?: boolean;
     confirm?: Confirm;
   }): Promise<EmailRoutesPlan | null> {
     const owned = (await readOwnedResources(gatewayDb, workerName)).filter(
@@ -170,6 +177,37 @@ export function createEmailInstaller<CfRunner>(
       (a, b) =>
         Number(a.domain !== a.zone.name) - Number(b.domain !== b.zone.name),
     );
+
+    // Mail that already arrives somewhere else: turning Email Routing on
+    // replaces the domain's MX records, and every address there stops
+    // getting mail where it does now. Only an explicit --replace-mx does it.
+    const elsewhere: Array<{ domain: string; mx: string[] }> = [];
+    for (const { zone, domain } of enable) {
+      const mx = (await dnsRecordsAt(cf, zone.id, domain))
+        .filter(
+          (record) =>
+            record.type === "MX" && !isCloudflareMx(record.content ?? ""),
+        )
+        .map((record) => (record.content ?? "").replace(/\.$/, ""));
+      if (mx.length > 0) elsewhere.push({ domain, mx });
+    }
+    if (elsewhere.length > 0 && !replaceMx) {
+      const lines = elsewhere.map(
+        ({ domain, mx }) => `${domain} gets its mail at ${mx.join(", ")}.`,
+      );
+      const one = elsewhere.length === 1;
+      throw new EveryAppError(
+        "EMAIL_MX_ELSEWHERE",
+        `${lines.join("\n")}\nTurning Email Routing on replaces ${one ? "those MX records" : "their MX records"}: mail to every address there would stop arriving where it does now. Nothing was changed.`,
+        {
+          fix: `receive on a subdomain without mail of its own instead (e.g. --inbound hello@mail.${elsewhere[0]!.domain}); only if that mail should move to Cloudflare, rerun with --replace-mx`,
+          data: {
+            domains: elsewhere.map(({ domain }) => domain),
+            mx: elsewhere,
+          },
+        },
+      );
+    }
 
     // What is on each address now.
     const recordedRules = new Set(
@@ -253,6 +291,10 @@ export function createEmailInstaller<CfRunner>(
       await confirmOrCancel(confirm, `Turn on Email Routing for ${list}?`, {
         context: [
           `Email Routing is off for ${list}. ${locks.replace("the domain's", "its")}`,
+          ...elsewhere.map(
+            ({ domain, mx }) =>
+              `This replaces the MX records that deliver ${domain}'s mail to ${mx.join(", ")}: that mail stops arriving there.`,
+          ),
         ],
       });
     }
@@ -501,10 +543,13 @@ export function createEmailInstaller<CfRunner>(
     if (domain === zone.name) return settings.enabled;
     const records = await dnsRecordsAt(cf, zone.id, domain);
     return records.some(
-      (record) =>
-        record.type === "MX" &&
-        /\.mx\.cloudflare\.net\.?$/i.test(record.content ?? ""),
+      (record) => record.type === "MX" && isCloudflareMx(record.content ?? ""),
     );
+  }
+
+  /** An MX record Email Routing adds (route1.mx.cloudflare.net and the rest). */
+  function isCloudflareMx(content: string): boolean {
+    return /\.mx\.cloudflare\.net\.?$/i.test(content);
   }
 
   /** Each zone's settings, rules and catch-all, read once. */

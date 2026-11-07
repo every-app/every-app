@@ -35,8 +35,8 @@ answer with the exact command, flag or field it gives, naming the page.
   one, repeat one, invent one, or put one on a command line.
 - **Ask first** before any flag that deletes or takes over (`--purge`,
   `--force-dns`, `--allow-delete-*`, `--yes`, `--enable-email-routing`,
-  `--no-access`), before `db restore`, and never run `teardown` on a
-  person's account.
+  `--replace-mx`, `--no-access`), before `db restore`, and never run
+  `teardown` on a person's account.
 - **Only a person can** approve the Cloudflare login, open the owner link,
   pick the account or a workers.dev name, pay, buy a domain, or confirm at a
   terminal. Stop, tell them in one or two lines what to do, and resume with

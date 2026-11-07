@@ -251,7 +251,12 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
    (an apex catch-all) or one address; the zone must be in `<account id>`.
    `EMAIL_ROUTING_DISABLED`: Email Routing is off for that domain; tell the
    person what turning it on does (above) and rerun with
-   `--enable-email-routing` only when they said yes. Then
+   `--enable-email-routing` only when they said yes.
+   `EMAIL_MX_ELSEWHERE`: the domain already gets its mail elsewhere (the
+   message names its MX hosts, e.g. Google Workspace); turning routing on
+   would cut that mail off. Offer a subdomain without mail of its own
+   (`--inbound hello@mail.<domain>`); `--replace-mx` only when the person
+   says that domain's mail should move to Cloudflare. Then
    `pnpm everyapp status --json`: `data.fixes` has no `EMAIL_*` code (all
    four are about inbound routes; each names what to run, usually
    `pnpm everyapp deploy --json`). The checks and the manual path:

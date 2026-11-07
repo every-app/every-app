@@ -139,6 +139,7 @@ Someone else's published app: everyapp install <url>. To publish this one: every
 - `--allow-delete-workflows`: Deploy even though Workflows were removed, deleting them and their instances
 - `--force-dns`: Publish the app's new hostname even where a DNS record answers it (one at the hostname is replaced)
 - `--enable-email-routing`: Turn on Email Routing for the domains the app's inbound addresses (everyapp email set --inbound) name that don't route mail yet (locks their MX and SPF records to Cloudflare)
+- `--replace-mx`: Turn on Email Routing even for a domain whose MX records deliver its mail elsewhere (Google Workspace...): they are replaced, and that mail stops arriving there
 - `--register-providers`: Register the providers the app bundles, which tell the Gateway where to send their keys (--yes doesn't)
 - `--no-wait`: Don't wait for the app to go live (a new hostname's certificate included); the Gateway makes it live within a minute, or on its first visit
 - `--yes`: With no Gateway yet, install one at apps.<zone> without asking (never registers the providers the app bundles, cf's questions, or the one before replacing a Worker changed outside everyapp)
@@ -289,6 +290,7 @@ No Gateway in any account the login sees, and none named? At a terminal it offer
 - `--allow-delete-workflows`: Deploy even though Workflows were removed, deleting them and their instances
 - `--force-dns`: Publish the app's new hostname even where a DNS record answers it (one at the hostname is replaced)
 - `--enable-email-routing`: Turn on Email Routing for the domains the app's inbound addresses (everyapp email set --inbound) name that don't route mail yet (locks their MX and SPF records to Cloudflare)
+- `--replace-mx`: Turn on Email Routing even for a domain whose MX records deliver its mail elsewhere (Google Workspace...): they are replaced, and that mail stops arriving there
 - `--register-providers`: Register the providers the app bundles, which tell the Gateway where to send their keys (--yes doesn't)
 - `--no-wait`: Don't wait for the app to go live (a new hostname's certificate included); the Gateway makes it live within a minute, or on its first visit
 - `--dry-run`: Download and check the release, as an install would before deploying, and deploy nothing: no Gateway and no Cloudflare login
@@ -794,7 +796,7 @@ Set senders or inbound addresses, without a deploy.
 
 Each flag replaces its whole list; a list you don't name is kept. The Gateway picks up a change within 30 seconds, without a deploy. Addresses set before the app's first upload are routed by its next deploy.
 
-Requirements: --sender everyapp.config.ts lists capabilities.email; each domain is set up for Email Sending --inbound everyapp.config.ts declares email: { inbound: true }; the domain is on Cloudflare DNS
+Requirements: --sender everyapp.config.ts lists capabilities.email; each domain is set up for Email Sending --inbound everyapp.config.ts declares email: { inbound: true }; the domain is on Cloudflare DNS and doesn't get its mail elsewhere already (its MX records), unless --replace-mx
 
 ```sh
 everyapp email set --sender '*@mail.example.com'
@@ -805,6 +807,7 @@ everyapp email set --inbound '*@example.com' --enable-email-routing
 - `--sender <pattern>` (repeatable): Address the app may send as: '*@<domain>' or one address (repeat, up to 20)
 - `--inbound <address>` (repeatable): Address whose mail goes to the app: '*@<apex>' or one address (repeat, up to 50)
 - `--enable-email-routing`: Turn on Email Routing for inbound domains without asking
+- `--replace-mx`: Turn on Email Routing even for a domain whose MX records deliver its mail elsewhere (Google Workspace...): they are replaced, and that mail stops arriving there
 - `--manifest <path>`: Path to everyapp.config.ts, if it isn't in this directory
 
 ### `everyapp email unset <senders|inbound>...`

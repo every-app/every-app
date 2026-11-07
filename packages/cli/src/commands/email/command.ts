@@ -51,6 +51,12 @@ const setCommand = buildCommand({
         optional: true,
         brief: "Turn on Email Routing for inbound domains without asking",
       },
+      "replace-mx": {
+        kind: "boolean",
+        optional: true,
+        brief:
+          "Turn on Email Routing even for a domain whose MX records deliver its mail elsewhere (Google Workspace...): they are replaced, and that mail stops arriving there",
+      },
       ...appFlags,
     },
   },
@@ -64,6 +70,7 @@ const setCommand = buildCommand({
       "Requirements:",
       "  --sender   everyapp.config.ts lists capabilities.email; each domain is set up for Email Sending",
       "  --inbound  everyapp.config.ts declares email: { inbound: true }; the domain is on Cloudflare DNS",
+      "             and doesn't get its mail elsewhere already (its MX records), unless --replace-mx",
       "",
       "Examples:",
       `  ${CLI} email set --sender '*@mail.example.com'`,

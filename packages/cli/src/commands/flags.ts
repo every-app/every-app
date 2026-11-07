@@ -104,6 +104,12 @@ export const appTakeoverFlags = {
       "Turn on Email Routing for the domains the app's inbound addresses (everyapp email set --inbound) name that don't route mail yet (locks their MX and SPF records to Cloudflare)",
     optional: true,
   },
+  "replace-mx": {
+    kind: "boolean",
+    brief:
+      "Turn on Email Routing even for a domain whose MX records deliver its mail elsewhere (Google Workspace...): they are replaced, and that mail stops arriving there",
+    optional: true,
+  },
   "register-providers": {
     kind: "boolean",
     brief:
@@ -127,6 +133,7 @@ export interface AppDeployFlags extends GatewayCommandFlags {
   "allow-delete-workflows"?: boolean;
   "force-dns"?: boolean;
   "enable-email-routing"?: boolean;
+  "replace-mx"?: boolean;
   "register-providers"?: boolean;
   "no-wait"?: boolean;
 }

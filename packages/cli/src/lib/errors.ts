@@ -46,6 +46,7 @@ const TAKEOVER_FLAGS: Readonly<Record<string, string>> = {
   DURABLE_OBJECT_REMOVED: "--allow-delete-durable-object-data",
   WORKFLOW_REMOVED: "--allow-delete-workflows",
   EMAIL_ROUTING_DISABLED: "--enable-email-routing",
+  EMAIL_MX_ELSEWHERE: "--replace-mx",
   CONFIRMATION_REQUIRED: "--yes",
 };
 

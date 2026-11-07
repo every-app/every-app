@@ -139,6 +139,7 @@ export async function startAppInstall({
     replaceChangedWorkers?: boolean;
     registerProviders?: boolean;
     enableEmailRouting?: boolean;
+    replaceMx?: boolean;
   };
 }): Promise<InstallJob> {
   const response = await installRequest(

@@ -183,6 +183,8 @@ An `--inbound` address is invalid (the message says why). When lowercasing fixes
 The app doesn't declare `email: { inbound: true }` and export `email()`. Add both, deploy, then run this again.
 ### EMAIL_INBOUND_UNDECLARED
 Inbound addresses are stored but the app doesn't declare inbound mail. Declare `email: { inbound: true }` and deploy, or `everyapp email unset inbound`.
+### EMAIL_MX_ELSEWHERE
+An inbound domain already gets its mail somewhere else (its MX records point at Google Workspace or another provider), and turning Email Routing on would replace them: that mail would stop arriving there. Receive on a subdomain without mail of its own instead; rerun with `--replace-mx` only if the person said that mail should move to Cloudflare. `--enable-email-routing` alone doesn't.
 ### EMAIL_NOTHING_TO_SET
 `email set` needs `--sender`, `--inbound`, or both.
 ### EMAIL_NOT_DECLARED

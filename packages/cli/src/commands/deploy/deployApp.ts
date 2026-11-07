@@ -173,6 +173,11 @@ interface DeployAppOptions {
    */
   enableEmailRouting?: boolean;
   /**
+   * Turn Email Routing on even for a domain whose MX records deliver its
+   * mail elsewhere, replacing them (`--replace-mx`).
+   */
+  replaceMx?: boolean;
+  /**
    * Wait for the app to go live, its new hostname's certificate included
    * (default true; `--no-wait`). Without the wait, it goes live on its
    * first visit.
@@ -496,6 +501,7 @@ async function deploySteps(
         interactive,
         confirm: options.confirm,
         enableEmailRouting: options.enableEmailRouting,
+        replaceMx: options.replaceMx,
         allowDeleteDurableObjectData: options.allowDeleteDurableObjectData,
         allowDeleteWorkflows: options.allowDeleteWorkflows,
       },

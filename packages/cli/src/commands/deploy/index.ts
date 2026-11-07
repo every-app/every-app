@@ -28,6 +28,7 @@ export async function deploy(flags: AppDeployFlags): Promise<void> {
       allowDeleteWorkflows: flags["allow-delete-workflows"],
       forceDns: flags["force-dns"],
       enableEmailRouting: flags["enable-email-routing"],
+      replaceMx: flags["replace-mx"],
       waitForLive: !flags["no-wait"],
       registerProviders: flags["register-providers"],
       offerInstall: { yes: flags.yes },

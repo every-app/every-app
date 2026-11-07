@@ -64,6 +64,7 @@ export async function install(flags: AppDeployFlags & { "dry-run"?: boolean }, s
         allowDeleteWorkflows: flags["allow-delete-workflows"],
         forceDns: flags["force-dns"],
         enableEmailRouting: flags["enable-email-routing"],
+        replaceMx: flags["replace-mx"],
         waitForLive: !flags["no-wait"],
         registerProviders: flags["register-providers"],
         offerInstall: { yes: flags.yes },

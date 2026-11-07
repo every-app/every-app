@@ -55,6 +55,7 @@ export interface AppInstallConfiguration {
   replaceChangedWorkers?: boolean;
   registerProviders?: boolean;
   enableEmailRouting?: boolean;
+  replaceMx?: boolean;
 }
 
 function installationFields(manifest: Manifest) {
@@ -179,6 +180,7 @@ export function parseInstallConfiguration(
     "replaceChangedWorkers",
     "registerProviders",
     "enableEmailRouting",
+    "replaceMx",
   ])
     if (input[name] !== undefined && typeof input[name] !== "boolean")
       throw new DeployError("INVALID_REQUEST", 400, `Invalid option ${name}.`);
@@ -189,6 +191,7 @@ export function parseInstallConfiguration(
     replaceChangedWorkers: input.replaceChangedWorkers === true,
     registerProviders: input.registerProviders === true,
     enableEmailRouting: input.enableEmailRouting === true,
+    replaceMx: input.replaceMx === true,
   };
 }
 
@@ -380,6 +383,7 @@ async function installSelfHosted(input: {
       sendersSettable: false,
       interactive: false,
       enableEmailRouting: configuration.enableEmailRouting,
+      replaceMx: configuration.replaceMx,
       allowDeleteDurableObjectData: configuration.allowDeleteDurableObjectData,
       allowDeleteWorkflows: configuration.allowDeleteWorkflows,
     },

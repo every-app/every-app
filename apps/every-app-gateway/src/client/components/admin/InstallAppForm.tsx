@@ -175,6 +175,7 @@ export function InstallAppForm({
           replaceChangedWorkers: authorizedChanges.WORKER_CHANGED,
           registerProviders: authorizedChanges.REGISTER_PROVIDERS,
           enableEmailRouting: authorizedChanges.EMAIL_ROUTING_DISABLED,
+          replaceMx: authorizedChanges.EMAIL_MX_ELSEWHERE,
         },
       });
     },
@@ -398,7 +399,9 @@ export function InstallAppForm({
                     ? "Delete the removed Workflows and their instances permanently."
                     : job.error?.code === "EMAIL_ROUTING_DISABLED"
                       ? "Enable Cloudflare Email Routing for these domains, changing their MX and SPF records."
-                      : "Delete the removed Durable Object data permanently."}
+                      : job.error?.code === "EMAIL_MX_ELSEWHERE"
+                        ? "Replace these domains' MX records: their mail stops arriving where it does now."
+                        : "Delete the removed Durable Object data permanently."}
               </label>
               <Button
                 type="button"
@@ -485,6 +488,7 @@ const CONFIRMABLE_FAILURES = [
   "WORKFLOW_REMOVED",
   "WORKER_CHANGED",
   "EMAIL_ROUTING_DISABLED",
+  "EMAIL_MX_ELSEWHERE",
 ];
 
 /** The install API's refusals that only a new sign-in clears. */

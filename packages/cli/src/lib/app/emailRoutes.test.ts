@@ -168,6 +168,62 @@ describe("planEmailRoutes", () => {
     expect(agreed?.enable).toEqual([{ zone: { id: "zone-1", name: "example.com" }, domain: "example.com" }]);
   });
 
+  it("refuses a domain whose MX records deliver its mail elsewhere, --enable-email-routing or not", async () => {
+    account.dnsRecords.push(
+      { zoneId: "zone-1", name: "example.com", type: "MX", content: "aspmx.l.google.com." },
+      { zoneId: "zone-1", name: "example.com", type: "MX", content: "alt1.aspmx.l.google.com" },
+    );
+    const questions: string[] = [];
+    const confirm = async (question: string) => {
+      questions.push(question);
+      return true;
+    };
+    for (const extra of [{}, { enableRouting: true }, { interactive: true, confirm }]) {
+      const error = await plan(["*@example.com"], extra).catch((e) => e);
+      expect(error).toMatchObject({
+        code: "EMAIL_MX_ELSEWHERE",
+        authorize: true,
+        rerun: expect.stringContaining("--replace-mx"),
+        message: expect.stringContaining("example.com gets its mail at aspmx.l.google.com, alt1.aspmx.l.google.com."),
+        data: {
+          domains: ["example.com"],
+          mx: [{ domain: "example.com", mx: ["aspmx.l.google.com", "alt1.aspmx.l.google.com"] }],
+        },
+      });
+    }
+    // Refused before any question, and nothing changed.
+    expect(questions).toEqual([]);
+    expect(account.emailRoutingOf("zone-1").enabled).toBe(false);
+
+    // A subdomain with no mail of its own is fine.
+    const subdomain = await plan(["support@mail.example.com"], { enableRouting: true });
+    expect(subdomain?.enable.map((entry) => entry.domain)).toEqual(["mail.example.com"]);
+  });
+
+  it("replaces another provider's MX records only with --replace-mx, and says so when it asks", async () => {
+    account.dnsRecords.push({ zoneId: "zone-1", name: "example.com", type: "MX", content: "aspmx.l.google.com" });
+    const asked: Array<readonly string[] | undefined> = [];
+    const planned = await plan(["support@example.com"], {
+      interactive: true,
+      replaceMx: true,
+      confirm: async (_question, context) => {
+        asked.push(context);
+        return true;
+      },
+    });
+    expect(planned?.enable.map((entry) => entry.domain)).toEqual(["example.com"]);
+    expect(asked).toEqual([
+      [
+        "Email Routing is off for example.com. Turning it on locks its MX and SPF records to Cloudflare.",
+        "This replaces the MX records that deliver example.com's mail to aspmx.l.google.com: that mail stops arriving there.",
+      ],
+    ]);
+    // Unattended, it still needs --enable-email-routing as well.
+    await expect(plan(["support@example.com"], { replaceMx: true })).rejects.toMatchObject({
+      code: "EMAIL_ROUTING_DISABLED",
+    });
+  });
+
   it("tells a subdomain that routes mail by its MX records", async () => {
     account.emailRoutingOf("zone-1").enabled = true;
     const missing = await plan(["support@mail.example.com"], { enableRouting: true });

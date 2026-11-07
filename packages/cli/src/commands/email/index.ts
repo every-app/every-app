@@ -77,7 +77,13 @@ interface EmailOptions {
 /** The step a change runs under: its spinner says what it does. */
 const EMAIL_STEP = "email.update";
 
-export async function set(flags: EmailFlags & { sender?: string[]; inbound?: string[]; "enable-email-routing"?: boolean },
+export async function set(
+  flags: EmailFlags & {
+    sender?: string[];
+    inbound?: string[];
+    "enable-email-routing"?: boolean;
+    "replace-mx"?: boolean;
+  },
 ): Promise<void> {
   await runCommand(flags, (out) =>
     setEmail({
@@ -86,6 +92,7 @@ export async function set(flags: EmailFlags & { sender?: string[]; inbound?: str
       senders: flags.sender?.length ? flags.sender : undefined,
       inbound: flags.inbound?.length ? flags.inbound : undefined,
       enableRouting: flags["enable-email-routing"],
+      replaceMx: flags["replace-mx"],
     }),
   );
 }
@@ -141,6 +148,7 @@ export async function setEmail(
     senders?: readonly string[];
     inbound?: readonly string[];
     enableRouting?: boolean;
+    replaceMx?: boolean;
   },
 ): Promise<void> {
   const { senders, inbound } = options;
@@ -350,6 +358,7 @@ async function changeEmail(
     /** `set --sender`: a hosted Gateway takes no app senders. */
     hostedCheck: boolean;
     enableRouting?: boolean;
+    replaceMx?: boolean;
   },
 ): Promise<void> {
   const { out, manifest, change } = options;
@@ -395,6 +404,7 @@ async function changeEmail(
             addresses: next.inbound,
             interactive: options.interactive ?? canPromptInTerminal(options.flags.json ?? false),
             enableRouting: options.enableRouting,
+            replaceMx: options.replaceMx,
             confirm: options.confirm,
           })
         : null;

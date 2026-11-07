@@ -197,6 +197,8 @@ export interface AppInstallInput {
   interactive: boolean;
   confirm?: Confirm;
   enableEmailRouting?: boolean;
+  /** Turn Email Routing on even over MX records that deliver a domain's mail elsewhere (`--replace-mx`). */
+  replaceMx?: boolean;
   allowDeleteDurableObjectData?: boolean;
   allowDeleteWorkflows?: boolean;
 }
@@ -301,6 +303,7 @@ export async function installApp<C>(
     addresses: declaresInbound ? storedEmail.inbound : [],
     interactive: input.interactive,
     enableRouting: input.enableEmailRouting,
+    replaceMx: input.replaceMx,
     confirm: input.confirm,
   });
   const resources = await ports.resources.provisionAppResources({

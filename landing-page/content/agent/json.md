@@ -47,6 +47,7 @@ On `error` and `action_required` events, `data` may carry:
   - `--allow-delete-durable-object-data` for `DURABLE_OBJECT_REMOVED`;
   - `--allow-delete-workflows` for `WORKFLOW_REMOVED`;
   - `--enable-email-routing` for `EMAIL_ROUTING_DISABLED`;
+  - `--replace-mx` for `EMAIL_MX_ELSEWHERE`;
   - `--yes` for `CONFIRMATION_REQUIRED`.
 - `needsTerminal: true`: only a person at a terminal can run `rerun`, so it has no `--json`. Hand it over; don't add `--json`.
 - `choices`: instead of `rerun`, when the way on is one of several commands. It's an array of `{ rerun, label, … }`. Pick one with the person.

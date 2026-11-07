@@ -230,6 +230,14 @@ only link.
   changes nothing, and `--enable-email-routing` (a flag of `email set`,
   `deploy` and `install`) turns it on without asking. Routing is turned on only for
   the domains the inbound addresses name.
+- **A domain whose mail goes elsewhere** (MX records that aren't
+  Cloudflare's, e.g. Google Workspace on the apex): turning routing on would
+  replace them and cut that mail off, so the command refuses with
+  `EMAIL_MX_ELSEWHERE`, naming the MX hosts, and changes nothing, even with
+  `--enable-email-routing` or a yes at the terminal. Use a subdomain without
+  mail of its own (`--inbound hello@mail.example.com`); `--replace-mx` (on
+  `email set`, `deploy` and `install`) is the explicit override, for when that
+  domain's mail should move to Cloudflare.
 - **Then** (at once for `email set`, after the upload for `deploy`) it
   creates a rule per address
   (`{"name":"everyapp:<worker>","matchers":[{"type":"literal","field":"to","value":"support@mail.example.com"}],"actions":[{"type":"worker","value":["<worker>"]}]}`)

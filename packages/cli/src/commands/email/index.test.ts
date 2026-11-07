@@ -564,6 +564,30 @@ describe("email set refuses before anything is read or changed", () => {
     expect(account.emailRoutingOf("zone-1").rules.size).toBe(1);
   });
 
+  it("won't take over a domain whose mail goes elsewhere without --replace-mx", async () => {
+    const dir = appDir(INBOX);
+    await deploy(dir, INBOX);
+    account.dnsRecords.push({ zoneId: "zone-1", name: "example.com", type: "MX", content: "aspmx.l.google.com" });
+    const argv = process.argv;
+    process.argv = [...argv.slice(0, 2), "email", "set", "--inbound", "*@example.com", "--enable-email-routing"];
+    try {
+      await expect(set(dir, { inbound: ["*@example.com"], enableRouting: true })).rejects.toMatchObject({
+        code: "EMAIL_MX_ELSEWHERE",
+        authorize: true,
+        rerun: "pnpm everyapp email set --inbound '*@example.com' --enable-email-routing --replace-mx",
+      });
+    } finally {
+      process.argv = argv;
+    }
+    expect(row()).toEqual({ email_senders: null, email_inbound: null });
+    expect(account.emailRoutingOf("zone-1").enabled).toBe(false);
+
+    events = [];
+    await set(dir, { inbound: ["*@example.com"], enableRouting: true, replaceMx: true });
+    expect(account.emailRoutingOf("zone-1").enabled).toBe(true);
+    expect(row().email_inbound).toBe('["*@example.com"]');
+  });
+
   it("stops unattended before anything changes when routing is off", async () => {
     const dir = appDir(INBOX);
     await deploy(dir, INBOX);
