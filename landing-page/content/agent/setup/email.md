@@ -1,4 +1,7 @@
-# Email sending for the Gateway
+---
+title: "Email sending for the Gateway"
+description: "Step-by-step guide: let the Gateway and its apps send mail (Cloudflare Email Sending or Resend): onboarding the domain, EMAIL_FROM and EMAIL_FROM_NAME, app senders and inbound addresses, the check."
+---
 
 Lets the Gateway send its own mail (invitations, password resets, sign-up
 verification) and every app's, through one provider for the whole Gateway:
@@ -77,14 +80,14 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
   `names: ["EMAIL_FROM", "EMAIL_FROM_NAME"]`, `need.kind: "required"`, `setup: "setup/email.md"`:
   the path `status` (under "<app> needs setup") and `secret list <app id>`
   (under the unmet setting) print as `Guide:
-  node_modules/everyapp/skills/everyapp/setup/email.md`, and `secret list --json` carries
+  https://everyapp.com/docs/agent/setup/email.md`, and `secret list --json` carries
   per unmet setting; how an agent lands here), and `data.app.setup.command`
   is `pnpm everyapp configure <app id>`, which asks for `EMAIL_FROM` and
   `EMAIL_FROM_NAME` among what the app still needs (visible, checked
   prompts; step 8 says what to type). An app
   that lists `email` in an optional feature (Open Analytics) has the entry in
   `settings` with `set: false`, never in `unmet`: it opens without a
-  sender, and this file applies when they want its mail (`configure` names
+  sender, and this guide applies when they want its mail (`configure` names
   it under that feature instead of asking: `pnpm everyapp secret set
   EMAIL_FROM EMAIL_FROM_NAME`). The older
   `data.gateway.needed` (each `{ name, required, set }`) and
@@ -105,7 +108,7 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
   four show as set). Any set: ask before replacing. `EMAIL_REST_API_TOKEN`
   set on a deployed Gateway: it outranks the binding; ask whether that is meant.
 - Every `cf …` below is the CLI's pinned cf, the one `pnpm everyapp login
-  --json` signs in: README's "Where you are" says how to run it.
+  --json` signs in: the setup rules' "Where you are" says how to run it.
 - `cf zones list --name <your domain>`: one zone, `status` active, in
   `<account id>`. None: the person adds the domain to Cloudflare first (the
   domain page in the public docs).
@@ -186,10 +189,10 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
    `every-app-gateway` > Permission **Sending access** > Domain: leave it
    unrestricted if any app will send as its own domain (step 9), else the
    domain from step 4 (both are editable there later; the key's value is
-   not) > create. The key (`re_…`) is shown once. README's first way: with
+   not) > create. The key (`re_…`) is shown once. The setup rules' first way: with
    it on screen, they open a second terminal in the `every-app` folder, run
    `pnpm everyapp secret set RESEND_API_KEY`, paste at the hidden prompt,
-   and tell you. Or README's third way: exported before they started you,
+   and tell you. Or the setup rules' third way: exported before they started you,
    you run `pnpm everyapp secret set RESEND_API_KEY --from-env RESEND_API_KEY --json`;
    else they read it in hidden in their own terminal (`read -rs
    RESEND_API_KEY && export RESEND_API_KEY`; never a typed `export …=`,
@@ -197,12 +200,12 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
    `unset RESEND_API_KEY`.
 7. **You:** pin the provider only when both are set up, or the person wants
    it explicit: `echo resend | pnpm everyapp secret set EMAIL_PROVIDER --json`
-   (README's second way; `resend` is not a secret). Look for `done`.
+   (the setup rules' second way; `resend` is not a secret). Look for `done`.
 
    **The sender, either provider**
 
 8. **You:** the address and name chosen in step 1, one value per pipe
-   (README's second way; two names in one pipe is `SECRET_SEVERAL_NAMES`):
+   (the setup rules' second way; two names in one pipe is `SECRET_SEVERAL_NAMES`):
    `echo "noreply@<your domain>" | pnpm everyapp secret set EMAIL_FROM --json`
    then `echo "Acme" | pnpm everyapp secret set EMAIL_FROM_NAME --json`, with
    their address and name in place of the examples. Or, when the person
@@ -297,7 +300,7 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
    send one mail from the app.
 5. Logs, when a send fails: cf 1.0.0-beta.14 has no `workers tail` (`cf
    workers --help`; `cf o11y telemetry live-tail` only prepares a websocket),
-   so use the dashboard, README's path:
+   so use the dashboard, the setup rules' path:
    **Workers & Pages** → `every-app-gateway` → **Observability** (**Logs** on older accounts) → **Live**,
    then trigger the send. A failure
    is one line, "Email delivery failed", with `event: "email.send.failed"`,
@@ -315,7 +318,7 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
 
 | error or symptom                                                                  | meaning                                                                             | what to do                                                                                              |
 | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `SECRET_VALUE_REQUIRED`                                                           | nothing was piped and there is no terminal                                          | one of README's three ways                                                                              |
+| `SECRET_VALUE_REQUIRED`                                                           | nothing was piped and there is no terminal                                          | one of the setup rules' three ways                                                                              |
 | `SECRET_VALUE_REQUIRED` from `pnpm everyapp configure <app id> --json`           | nothing was piped (with `--from-env`, stdin isn't read), no variable of a missing name was found, and there is no terminal; the message names what the app still needs (`EMAIL_FROM` and `EMAIL_FROM_NAME` among them while unset) | `NAME=value` lines on stdin (`EMAIL_FROM="Acme <noreply@<your domain>>"`, quoted), or the person's terminal (step 8) |
 | `SECRET_SEVERAL_NAMES`                                                            | a pipe or `--from-env` with two names                                               | one `secret set` per name                                                                               |
 | `SECRET_EMPTY`                                                                    | the `--from-env` variable isn't set in the shell that ran the command (exported in theirs, not before you started) | they run it in their terminal, or the hidden prompt (step 6)                              |
@@ -365,4 +368,4 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
 
 - Cloudflare: https://developers.cloudflare.com/email-service/ (beta, Workers Paid, verified destinations free), https://developers.cloudflare.com/email-service/configuration/domains/ (onboarding, the records it adds), https://developers.cloudflare.com/email-service/get-started/send-emails/ (the dashboard path and deep link, the `EMAIL` binding), https://developers.cloudflare.com/api/resources/email_sending/subresources/subdomains/ (the subdomain's `tag`), https://developers.cloudflare.com/email-service/api/send-emails/workers-api/ (the `E_*` codes), https://developers.cloudflare.com/email-service/api/send-emails/rest-api/ (the numeric codes), https://developers.cloudflare.com/email-service/platform/limits/ (quota, verified destination addresses, 50 recipients, 5 MiB), https://developers.cloudflare.com/email-service/platform/pricing/ (Workers Paid, 3,000 a month, $0.35 per 1,000), https://developers.cloudflare.com/workers/platform/pricing/ ($5 a month), https://developers.cloudflare.com/workers/observability/logs/real-time-logs/ (Logs > Live), https://developers.cloudflare.com/workers/wrangler/commands/workers/ (`wrangler tail`)
 - Resend: https://resend.com/pricing, https://resend.com/docs/api-reference/rate-limit (10 a second per team), https://resend.com/docs/api-reference/errors (error names), https://resend.com/docs/add-a-domain, https://resend.com/docs/dashboard/domains/manage-domains (statuses), https://resend.com/docs/knowledge-base/cloudflare (Sign in to Cloudflare, record names, DNS only, Verify DNS Records), https://resend.com/docs/create-an-api-key, https://resend.com/docs/api-reference/api-keys/create-api-key (Sending access, domain restriction, shown once), https://resend.com/docs/dashboard/api-keys/introduction (permission and domain editable in the Dashboard)
-- Local, 2026-10-23: `cf email-sending subdomains {create,preview,delete,dns status,dns fix} --help`, `cf email-sending limits get` (its fields), `cf dns records create --help` and `cf workers --help` of cf 1.0.0-beta.14 (`packages/cli/package.json` pins it, `lib/cf/bin.ts` runs it, `pnpm --filter everyapp exec cf --version` prints it); docs/runbooks/email-sending-setup.md, docs/capabilities.md and the CLI's error paths (`commands/secret`, `commands/email`, `lib/gateway/registry.ts`, `commands/status/problems.ts`) in the checkout; 2026-10-24: `packages/sdk/src/internal/email.ts` (`parseEmailSender`: the combined form, a name required) and the Gateway's `server/email/sendEmail.ts` (`configuredSender`, `isEmailConfigured`), `commands/deploy/deployApp.ts` and `commands/email/index.ts` (the `email set --sender` next step), `commands/configure/index.ts` (`configure <app>`: the visible prompts for `EMAIL_FROM` and `EMAIL_FROM_NAME`, `NAME=value` lines on stdin), the runbook's "Sender configuration" as of #389; `packages/sdk/src/internal/capabilities.ts` (the `email` entry: `settings: ["EMAIL_FROM"]`, the rest `optionalSettings`; later on 2026-10-24 `EMAIL_FROM_NAME` moved into `settings`, the shape the top of this file describes) and `appSettings.ts`, `packages/cli/src/lib/app/settings.ts` (`gatewayNeeds`, `gatewayMissing`) and `commands/secret/index.ts` (`secret list <app>`), the Gateway's `server/app-setup.ts` (readiness from `isEmailConfigured`) and `server/app-needs-setup.ts` (the closed app), after #383, #395, #396 and #397 merged
+- Local, 2026-10-23: `cf email-sending subdomains {create,preview,delete,dns status,dns fix} --help`, `cf email-sending limits get` (its fields), `cf dns records create --help` and `cf workers --help` of cf 1.0.0-beta.14 (`packages/cli/package.json` pins it, `lib/cf/bin.ts` runs it, `pnpm --filter everyapp exec cf --version` prints it); docs/runbooks/email-sending-setup.md, docs/capabilities.md and the CLI's error paths (`commands/secret`, `commands/email`, `lib/gateway/registry.ts`, `commands/status/problems.ts`) in the checkout; 2026-10-24: `packages/sdk/src/internal/email.ts` (`parseEmailSender`: the combined form, a name required) and the Gateway's `server/email/sendEmail.ts` (`configuredSender`, `isEmailConfigured`), `commands/deploy/deployApp.ts` and `commands/email/index.ts` (the `email set --sender` next step), `commands/configure/index.ts` (`configure <app>`: the visible prompts for `EMAIL_FROM` and `EMAIL_FROM_NAME`, `NAME=value` lines on stdin), the runbook's "Sender configuration" as of #389; `packages/sdk/src/internal/capabilities.ts` (the `email` entry: `settings: ["EMAIL_FROM"]`, the rest `optionalSettings`; later on 2026-10-24 `EMAIL_FROM_NAME` moved into `settings`, the shape the top of this guide describes) and `appSettings.ts`, `packages/cli/src/lib/app/settings.ts` (`gatewayNeeds`, `gatewayMissing`) and `commands/secret/index.ts` (`secret list <app>`), the Gateway's `server/app-setup.ts` (readiness from `isEmailConfigured`) and `server/app-needs-setup.ts` (the closed app), after #383, #395, #396 and #397 merged

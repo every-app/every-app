@@ -1,9 +1,12 @@
-# The default model
+---
+title: "The default model"
+description: "Step-by-step guide: give apps that say ai: { chat: true } a default model with one provider's key (OpenRouter first), pick it with everyapp ai default, check it."
+---
 
 An app that says `ai: { chat: true }` in its manifest (OpenMail,
 OpenCRM's research agent) takes the workspace's default chat model,
 through `/api/ai/default/…`; it never names a provider. One key, set
-once, makes every such app work. This file sets that one key and, when
+once, makes every such app work. This guide sets that one key and, when
 the person wants a particular provider or model, the one setting
 (`<provider>[/<model>]`). At the end the person has one model provider's key on the
 Gateway, `pnpm everyapp ai show` saying what the default resolves to,
@@ -13,7 +16,7 @@ and every app that needs "a chat model" open.
 
 | NAME                                                     | Required or optional                         | What it holds                                                                                              |
 | -------------------------------------------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| one provider's key (`OPENROUTER_API_KEY` first in the order) | required by every app whose manifest says `ai.chat` | the provider's key as its file says ([openrouter.md](openrouter.md), [workers-ai.md](workers-ai.md), [openai.md](openai.md), or [providers.md](providers.md) under `anthropic`, `groq`, `mistral`, `gemini`) |
+| one provider's key (`OPENROUTER_API_KEY` first in the order) | required by every app whose manifest says `ai.chat` | the provider's key as its file says ([openrouter.md](/docs/agent/setup/openrouter), [workers-ai.md](/docs/agent/setup/workers-ai), [openai.md](/docs/agent/setup/openai), or [providers.md](/docs/agent/setup/providers) under `anthropic`, `groq`, `mistral`, `gemini`) |
 | the setting (`pnpm everyapp ai default <provider>[/<model>]`) | optional                                     | which provider (and model) the default is; without it the order decides                                     |
 
 The order the Gateway resolves the default in, the first whose settings
@@ -22,15 +25,15 @@ are set: `openrouter` (one key, many models, the price in every answer),
 weaker models), `openai`, `anthropic`, `groq`, `mistral`, `gemini`. The
 setting wins over the order. Cloudflare AI Gateway is never
 the default: it fronts whichever provider resolves
-([ai-gateway.md](ai-gateway.md)).
+([ai-gateway.md](/docs/agent/setup/ai-gateway)).
 
 ## Costs and plans
 
 The provider's: OpenRouter is prepaid in USD at the providers' own
-prices ([openrouter.md](openrouter.md)); Workers AI bills the Cloudflare
-account per token ([workers-ai.md](workers-ai.md)); the others each have
+prices ([openrouter.md](/docs/agent/setup/openrouter)); Workers AI bills the Cloudflare
+account per token ([workers-ai.md](/docs/agent/setup/workers-ai)); the others each have
 a plan of their own, named in their section of
-[providers.md](providers.md). The model the Gateway fills in when an app
+[providers.md](/docs/agent/setup/providers). The model the Gateway fills in when an app
 names none is a cheap capable one per provider (OpenRouter
 `anthropic/claude-haiku-5.5`, Workers AI
 `@cf/meta/llama-4-scout-17b-16e-instruct`, OpenAI `gpt-6-luna`, Groq
@@ -50,8 +53,8 @@ Usage and in `pnpm everyapp workspace usage --json` (`byModel`).
 ## Before you start
 
 1. `pnpm everyapp status --json`: `data.installed` and `data.claimed`
-   true; otherwise [gateway.md](gateway.md) first.
-2. Whether this file applies: an app in `data.apps[]` whose `setup.unmet`
+   true; otherwise [gateway.md](/docs/agent/setup/gateway) first.
+2. Whether this guide applies: an app in `data.apps[]` whose `setup.unmet`
    has a setting with `kind: "ai-default"` (label "A chat model (…)"),
    or whose `setup.settings` lists one. Its `names` is the key the order
    asks for first and its `hint` names the alternatives. No such app:
@@ -69,10 +72,10 @@ Usage and in `pnpm everyapp workspace usage --json` (`byModel`).
    whose spend the Gateway counts in dollars. Workers AI when they want
    no provider account at all. A single vendor when they already have a
    key there.
-2. **Set that provider's key**, by its own file: [openrouter.md](openrouter.md)
-   (`OPENROUTER_API_KEY`), [workers-ai.md](workers-ai.md)
-   (`WORKERS_AI_API_TOKEN`), [openai.md](openai.md) (`OPENAI_API_KEY`),
-   or the provider's section of [providers.md](providers.md)
+2. **Set that provider's key**, by its own file: [openrouter.md](/docs/agent/setup/openrouter)
+   (`OPENROUTER_API_KEY`), [workers-ai.md](/docs/agent/setup/workers-ai)
+   (`WORKERS_AI_API_TOKEN`), [openai.md](/docs/agent/setup/openai) (`OPENAI_API_KEY`),
+   or the provider's section of [providers.md](/docs/agent/setup/providers)
    (`ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`,
    `GEMINI_API_KEY`). Each ends with `pnpm everyapp secret set <NAME>`,
    the value from the person's terminal, or `pnpm everyapp configure
@@ -88,7 +91,7 @@ Usage and in `pnpm everyapp workspace usage --json` (`byModel`).
    clears it. Each change queues the `ai.default_changed` event.
    Embeddings always use the provider's catalog model. The same setting
    is Manage workspace → Usage → AI default in the browser.
-4. **Optionally put AI Gateway in front**: [ai-gateway.md](ai-gateway.md)
+4. **Optionally put AI Gateway in front**: [ai-gateway.md](/docs/agent/setup/ai-gateway)
    (`pnpm everyapp ai gateway on`), for logs, caching and limits on
    every model call; it changes no app and no key.
 

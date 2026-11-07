@@ -264,7 +264,7 @@ describe("appSettings", () => {
     expect(byId["email"]!.docs).toBeUndefined();
     expect(byId["GITHUB_TOKEN"]!.why).toBe("Raises the rate limit.");
     expect(byId["GITHUB_TOKEN"]!.docs).toBeUndefined();
-    // The everyapp skill's setup guides: the registries' for Gateway settings.
+    // The agent docs' setup guides: the registries' for Gateway settings.
     expect(byId["dataforseo"]!.setup).toBe("setup/dataforseo.md");
     expect(byId["workers-ai"]!.setup).toBe("setup/workers-ai.md");
     expect(byId["email"]!.setup).toBe("setup/email.md");

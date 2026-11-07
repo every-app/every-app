@@ -1,12 +1,15 @@
-# Agent tools (MCP)
+---
+title: "Agent tools: write, connect and debug them"
+description: "How an app's AI tools work end to end: defineTools() in src/tools.ts field by field (names, risk, context, results, errors, limits), how the Gateway snapshots and serves them, MCP apps, the dev connector, connecting a person, and troubleshooting missing tools, 401s and 403s."
+---
 
 An app never speaks MCP. It describes its tools with `defineTools()` in
 src/tools.ts and passes them to `everyApp(handler, { tools })`; the Gateway
 snapshots that catalog and serves AI clients at `https://<gateway>/mcp` (every
 app the caller can use, tools named `<app-id>_<tool>`). An app's own host
 serves no MCP: point clients at the Gateway. Never add an MCP server, an /mcp route, a login
-or a token check to an app. Full reference: https://everyapp.com/docs/agent/mcp.md (in a
-checkout landing-page/content/agent/mcp.md); the person's steps: https://everyapp.com/docs/connect-ai.
+or a token check to an app. The connector, its credentials and the built-in tools in brief:
+[mcp](/docs/agent/mcp); the person's steps: [/docs/connect-ai](/docs/connect-ai).
 
 ## Define tools: src/tools.ts
 
@@ -107,7 +110,7 @@ call, and decides each tool's risk from the server's annotations (no hint
 counts as `write`; `mcp tool <id> <tool> --risk …` overrides one). `mcp off`
 stops serving and keeps access; `mcp remove` deletes it. Never wrap a
 remote MCP server in an app of your own to put it behind the Gateway: add it
-(setup/remote-mcp.md, SKILL.md "MCP apps").
+([setup/remote-mcp](/docs/agent/setup/remote-mcp), [mcp](/docs/agent/mcp#mcp-apps)).
 
 ## What the Gateway does with them
 
@@ -299,7 +302,7 @@ makes the client's next request fail `invalid_token`. Removing or
 deactivating a person ends all of theirs; tokens are revoked on Admin, Tokens.
 
 Other servers worth having beside the Gateway's (Cloudflare's API server for
-the owner, read before write; nothing else): [setup/gateway.md](setup/gateway.md),
+the owner, read before write; nothing else): [setup/gateway](/docs/agent/setup/gateway),
 "Optional: MCP servers worth having beside EveryApp". Offer one in a line;
 never add it unasked.
 
@@ -359,5 +362,5 @@ clients bring an OAuth or personal token.
 - packages/toolbus/src/server.ts, http.ts, builtins.ts, policy.ts, dev/index.ts
 - apps/every-app-gateway/src/server/toolbus/catalog-sync.ts, gateway-mcp.ts; src/server/app-activation.ts, deploy/run.ts; src/server/mcp-auth/routes.ts, config.ts, validate.ts, consent.ts, registration-limit.ts
 - apps/every-app-gateway/src/routes/_app/admin/tokens.tsx, settings/connections.tsx; src/client/components/Sidebar.tsx, oauth/ConsentForm.tsx, admin/CreateUserTokenModal.tsx
-- packages/perimeter/src/gateway.ts; packages/cli/src/commands/dev/devAppGateway.ts, ready.ts; packages/cli/src/commands/deploy/deployApp.ts; packages/cli/src/lib/app/skill.ts
+- packages/perimeter/src/gateway.ts; packages/cli/src/commands/dev/devAppGateway.ts, ready.ts; packages/cli/src/commands/deploy/deployApp.ts
 - starter/src/tools.ts, entry.worker.ts, server/todos.ts, README.md; docs/runbooks/mcp-oauth.md; landing-page/content/agent/mcp.md; landing-page/content/docs/connect-ai.mdx

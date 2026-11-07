@@ -22,12 +22,10 @@ dist
 
 .source
 
-# Written by scripts/sync-agent-docs.js: the security documents mirrored into
-# the agent docs, the build skill as two pages, every agent page as the
-# Markdown the site serves, the pages index
+# Written by scripts/sync-agent-docs.js: the security page mirrored into
+# the agent docs, every agent page as the Markdown the site serves, the
+# pages index
 content/agent/repo/
-content/agent/build.md
-content/agent/patterns.md
 public/docs/
 src/lib/agent-pages.generated.json
 

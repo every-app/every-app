@@ -1,4 +1,7 @@
-# Google (Gmail, Calendar, Search Console, Analytics and the other Google APIs) for the Gateway
+---
+title: "Google (Gmail, Calendar, Search Console, Analytics and the other Google APIs)"
+description: "Step-by-step guide: one Google OAuth client (GOOGLE_WORKSPACE_CLIENT_ID and _SECRET) on the Gateway, the consent screen, the scopes apps ask for, each member connecting their account."
+---
 
 One OAuth client in a Google Cloud project the person owns, held by the
 Gateway, lets each member connect their own Google account inside each app
@@ -101,17 +104,17 @@ scope) need the verification and no assessment.
    (`optional`: in `settings` with `set: false`, never in `unmet`, and
    `pnpm everyapp configure <app>` offers it after the required ones;
    `required`: in `unmet`, the app closed until both are set), `setup:
-   "setup/google.md"` (this file). While its `set` is false this file
+   "setup/google.md"` (this file). While its `set` is false this guide
    applies. With `set: true`: ask before replacing (a new secret for the
    same client is harmless, see Rotate; a different client id makes every
    member connect again in every app). `APP_NOT_FOUND`: deploy the app
    first.
 2. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true,
    and the Gateway's host (step 1 builds the redirect URI from it). Not
-   installed, or no owner: [gateway.md](gateway.md) first.
+   installed, or no owner: [gateway.md](/docs/agent/setup/gateway) first.
 3. Note the scopes: the union of what every app that lists
    `google-workspace` names in its `everyapp.config.ts` (the list at the
-   top of this file for the EveryApp apps; another app's is in its
+   top of this guide for the EveryApp apps; another app's is in its
    manifest, or `pnpm everyapp secret list <app id> --json`'s setting).
    They decide steps 3 and 5. Ask whether a Cloud project or a Web client
    exists for this already: then step 6 adds the redirect URI to it.
@@ -192,7 +195,7 @@ before step 8.
    scope justification; Google answers by email over several weeks. Until
    then stay in Testing (weekly reconnects, 100 test users); the run
    resumes at Verify when Google's mail comes. Skip for *Internal*.
-8. **You,** only after the person says the file is there: the README's "a
+8. **You,** only after the person says the file is there: the setup rules' "a
    command produced it" way, pipe each value from the file, never read the
    file yourself. `ls ~/Downloads/client_secret_*.json` (or the folder they
    named): more than one file, ask which (the newest:
@@ -237,7 +240,7 @@ before step 8.
    exchanged the code with the secret and Google granted no more than the
    app asked. `pnpm everyapp provider connections --all --json` lists the
    connection with its app and scopes.
-4. Logs: the dashboard, README's path:
+4. Logs: the dashboard, the setup rules' path:
    **Workers & Pages** → `every-app-gateway` → **Observability** (**Logs** on older accounts) → **Live**
    (the stored Workers Logs are on the same page); filter
    `capability: "google-workspace"`. Each API call is one

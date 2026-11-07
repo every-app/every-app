@@ -159,6 +159,8 @@ A DNS record already answers a hostname to publish. Delete it (Cloudflare → DN
 `--force-dns` replaced the DNS records at a new hostname.
 ### DNS_UNREADABLE
 The login can't read the zone's DNS records. Give the token Zone → DNS → Read; the `rerun` adds `--force-dns`: ask first.
+### DOCS_PAGE_NOT_FOUND
+`everyapp docs <page>` names no page, on the site or in the bundled copy. `everyapp docs` lists them; a setup guide is `setup/<name>`.
 ### DOMAIN_CHANGE_UNSUPPORTED
 The Gateway can't move to another address. Rerun without `--domain`; to move, remove everything and set up again.
 ### DOMAIN_REQUIRED

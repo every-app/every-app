@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
 import { commandPaths } from "@/app";
 import { commandDocs } from "./cliReference";
 import { manifestFields } from "./manifestFields";
-import { AGENT_DOCS_DIR, PENDING_ROUTES, SKILL_PAGES, mirroredDocuments } from "./pages";
+import { AGENT_DOCS_DIR, PENDING_ROUTES, mirroredDocuments } from "./pages";
 
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -53,12 +53,10 @@ const DOCUMENTS = [
   ...filesIn("docs/adr", /\.md$/),
   ...filesIn("landing-page/content/docs", /\.mdx$/),
   "landing-page/content/docs/setup-prompt.txt",
-  // Not the generated cli.md, nor the skill pages the site build writes (the skill is checked below).
-  ...filesIn("landing-page/content/agent", /\.md$/).filter(
-    (path) => !path.endsWith("/cli.md") && !SKILL_PAGES.has(posix.basename(path, ".md")),
-  ),
+  // Not the generated cli.md.
+  ...filesIn("landing-page/content/agent", /\.md$/).filter((path) => !path.endsWith("/cli.md")),
+  ...filesIn("landing-page/content/agent/setup", /\.md$/),
   ...filesIn("packages/cli/skills/everyapp", /\.md$/),
-  ...filesIn("packages/cli/skills/everyapp/setup", /\.md$/),
   ...filesIn("packages/cli/skills/build-every-app", /\.md$/),
   "starter/README.md",
   "starter/AGENTS.md",
@@ -349,7 +347,8 @@ const MANIFEST_PAGES = [
   "docs/manifest-settings.md",
   "packages/cli/skills/everyapp/SKILL.md",
   "packages/cli/skills/build-every-app/SKILL.md",
-  "packages/cli/skills/build-every-app/patterns.md",
+  "landing-page/content/agent/build.md",
+  "landing-page/content/agent/patterns.md",
   "landing-page/content/docs/create-an-app.mdx",
   "starter/README.md",
   "starter/AGENTS.md",
@@ -418,14 +417,8 @@ describe("the user docs link", () => {
           }
           const dir = isAgent ? agentDocs : userDocs;
           const page = rest === "" ? "index" : rest;
-          // build and patterns are written from the skill by the site build.
-          const skill = isAgent ? SKILL_PAGES.get(page) : undefined;
-          if (skill) {
-            if (!existsSync(at(skill))) broken.push(`${file}:${line.n} → ${target}`);
-            continue;
-          }
-          // A page, or a folder with an index page (/docs/apps is apps/index.mdx).
-          const exists = [`${page}.md`, `${page}.mdx`, `${page}/index.mdx`].some((name) =>
+          // A page, or a folder with an index page (/docs/apps is apps/index.mdx, /docs/agent/setup is setup/index.md).
+          const exists = [`${page}.md`, `${page}.mdx`, `${page}/index.md`, `${page}/index.mdx`].some((name) =>
             existsSync(posix.join(dir, name)),
           );
           if (!exists) broken.push(`${file}:${line.n} → ${target}`);

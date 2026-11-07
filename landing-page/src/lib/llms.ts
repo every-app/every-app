@@ -126,7 +126,7 @@ export async function llmsIndex(): Promise<string> {
     "",
     `Every page is served as Markdown at its URL with \`.md\` appended (for example ${SITE_URL}/docs/agent/manifest.md); fetch the page you need rather than everything. The user guides and the agent pages in one file: ${SITE_URL}/llms-full.txt (the documents mirrored from the repository under /docs/agent/repo are fetched one at a time). The command line tool is \`everyapp\` (\`npm install -g everyapp\`; \`pnpm everyapp\` inside a checkout of the EveryApp repository); add \`--json\` when an agent drives it (${SITE_URL}/docs/agent/json.md).`,
     "",
-    `Two skills ship with the CLI, in its package at \`node_modules/everyapp/skills/<name>\`, and every app \`everyapp create\` makes links them from \`.agents/skills/<name>\` and \`.claude/skills/<name>\`: \`everyapp\`, which drives the CLI, and \`build-every-app\`, which builds an app the way the open apps and the starter do; the build skill is served here as ${SITE_URL}/docs/agent/build.md and its patterns index as ${SITE_URL}/docs/agent/patterns.md.`,
+    `Two skills ship with the CLI, in its package at \`node_modules/everyapp/skills/<name>\`, and every app \`everyapp create\` makes links them from \`.agents/skills/<name>\` and \`.claude/skills/<name>\`: \`everyapp\`, which drives the CLI, and \`build-every-app\`, which builds an app the way the open apps and the starter do. They are short and point here; building an app is ${SITE_URL}/docs/agent/build.md and ${SITE_URL}/docs/agent/patterns.md, and each integration has a step-by-step guide under ${SITE_URL}/docs/agent/setup/guides.md. Offline, \`everyapp docs <page>\` prints a page from the copy the CLI bundles.`,
     "",
     asSection(user, "User guides"),
     "",
@@ -138,8 +138,9 @@ export async function llmsIndex(): Promise<string> {
 /**
  * `/llms-full.txt`: the user guides, then every agent docs page written
  * for agents, each set in its sidebar's order. The documents mirrored from
- * the repository (`repo/…`: the security page) are left out; an agent
- * fetches one by its URL.
+ * the repository (`repo/…`: the security page) and the step-by-step setup
+ * guides (`setup/<guide>`, read one at a time, as `Guide:` lines name them)
+ * are left out; an agent fetches one by its URL.
  */
 export async function llmsFull(): Promise<string> {
   const user = await Promise.all(
@@ -150,7 +151,11 @@ export async function llmsFull(): Promise<string> {
   const pages = pagesInOrder(
     agentSource.getPages(),
     agentSource.getPageTree(),
-  ).filter((page) => page.slugs[0] !== "repo");
+  ).filter(
+    (page) =>
+      page.slugs[0] !== "repo" &&
+      !(page.slugs[0] === "setup" && page.slugs.length > 1),
+  );
   const agentDocs = await Promise.all(
     pages.map((page) => agentLlms.page(page)),
   );

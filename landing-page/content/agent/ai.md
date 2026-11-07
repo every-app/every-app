@@ -53,7 +53,7 @@ OpenRouter is first because it's one prepaid key in front of many models and rep
 | `everyapp ai default <provider[/model]\|off>` | Set or clear the workspace setting (`AI_DEFAULT_INVALID` for an argument that isn't `provider[/model]`; the Gateway's refusals come back as `GATEWAY_TOOL_ERROR`). |
 | `everyapp ai gateway on [--id <id>]`, `everyapp ai gateway off` | Put Cloudflare AI Gateway in front, or take it away (under the Cloudflare login). |
 
-`show` and `default` are the Gateway's tools, run as you like the `workspace` commands ([workspace](/docs/agent/workspace)). From an AI client: `everyapp_ai_show`, `everyapp_ai_default`. Keys go in with `everyapp provider add openrouter` or `everyapp secret set OPENROUTER_API_KEY`; guides `setup/openrouter.md`, `setup/openai.md`, `setup/workers-ai.md`. A change queues `ai.default_changed`.
+`show` and `default` are the Gateway's tools, run as you like the `workspace` commands ([workspace](/docs/agent/workspace)). From an AI client: `everyapp_ai_show`, `everyapp_ai_default`. Keys go in with `everyapp provider add openrouter` or `everyapp secret set OPENROUTER_API_KEY`; guides [setup/openrouter](/docs/agent/setup/openrouter), [setup/openai](/docs/agent/setup/openai), [setup/workers-ai](/docs/agent/setup/workers-ai). A change queues `ai.default_changed`.
 
 ## Cloudflare AI Gateway in front
 

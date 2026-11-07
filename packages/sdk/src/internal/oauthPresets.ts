@@ -373,7 +373,7 @@ export type OAuthPresetId = keyof typeof PRESETS;
 /** Every preset by id, in the order the picker shows them. */
 export const OAUTH_PRESETS: Readonly<Record<string, OAuthPresetSpec>> = PRESETS;
 
-/** The everyapp skill's guides for a preset's client, where one exists. */
+/** The agent docs' setup guides for a preset's client, where one exists. */
 const SETUP_GUIDES: Readonly<Record<string, string>> = {
   "google-workspace": "setup/google.md",
   "microsoft-365": "setup/microsoft-365.md",

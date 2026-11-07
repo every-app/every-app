@@ -280,23 +280,28 @@ export function describeUnmet(setting: AppSetupSetting, urls?: SetupUrls): strin
 }
 
 /**
- * Where the everyapp skill is, relative to an app or the EveryApp checkout:
- * the CLI package's own copy, which every app (and the checkout's root) has
- * installed. An app's `.claude/skills/everyapp` is a link to it.
+ * Where the agent docs are served. A setup guide's `setup` ("setup/
+ * dataforseo.md") is a path under it, as the Markdown an agent fetches;
+ * `everyapp docs setup/dataforseo` prints the same page offline.
  */
-export const SKILL_DIR = "node_modules/everyapp/skills/everyapp";
+export const AGENT_DOCS_URL = "https://everyapp.com/docs/agent";
+
+/** The URL of a setup guide's Markdown, from the `setup` a registry entry names ("setup/dataforseo.md"). */
+export function guideUrl(setup: string): string {
+  return `${AGENT_DOCS_URL}/${setup.replace(/^\/+/, "")}`;
+}
 
 /**
- * Where an agent reads how to set a Gateway setting up: the everyapp
- * skill's guide when the registry names one ("Guide: node_modules/
- * everyapp/skills/everyapp/setup/dataforseo.md"), else for a provider (a
+ * Where an agent reads how to set a Gateway setting up: the agent docs'
+ * setup guide when the registry names one ("Guide: https://everyapp.com/
+ * docs/agent/setup/dataforseo.md"), else for a provider (a
  * registered row has no guide) the command that prints its whole spec
  * ("Guide: pnpm everyapp provider show stripe"). Null for an app's own
  * value: its feature's steps and its `how` say it.
  */
 export function guideLine(setting: Pick<AppSetupSetting, "setup" | "kind" | "id" | "holder">): string | null {
   if (setting.holder === "app") return null;
-  if (setting.setup) return `Guide: ${SKILL_DIR}/${setting.setup}`;
+  if (setting.setup) return `Guide: ${guideUrl(setting.setup)}`;
   if (setting.kind === "capability" || setting.kind === "provider") {
     return `Guide: ${CLI} provider show ${setting.id}`;
   }

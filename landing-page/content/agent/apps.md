@@ -12,7 +12,7 @@ These apps run behind a Gateway as the person's own. The user page for each is u
 3. `everyapp status --json`: the app leaves **Needs setup** once its required settings are set.
 4. To update, run the same `install` again. The deploy saves a restore point before migrating.
 
-A Gateway key serves every app that lists it: one `OPENROUTER_API_KEY` or `EMAIL_FROM` covers them all. Each key has a guide in the everyapp skill (`setup/openrouter.md`, `setup/dataforseo.md`, `setup/context.md`, `setup/email.md`, `setup/google.md`, `setup/microsoft-365.md`).
+A Gateway key serves every app that lists it: one `OPENROUTER_API_KEY` or `EMAIL_FROM` covers them all. Each key has a setup guide ([setup/openrouter](/docs/agent/setup/openrouter), [setup/dataforseo](/docs/agent/setup/dataforseo), [setup/context](/docs/agent/setup/context), [setup/email](/docs/agent/setup/email), [setup/google](/docs/agent/setup/google), [setup/microsoft-365](/docs/agent/setup/microsoft-365)).
 
 | id | Name | Repository | R2 | Who opens it after install |
 |---|---|---|---|---|

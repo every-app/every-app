@@ -1,4 +1,7 @@
-# OpenRouter for the Gateway
+---
+title: "OpenRouter for the Gateway"
+description: "Step-by-step guide: an OpenRouter key (OPENROUTER_API_KEY) on the Gateway, the model provider most apps use: the account, credits, the key, the check, rotation."
+---
 
 OpenRouter is one API key in front of many model providers (OpenAI,
 Anthropic, Meta, Moonshot and others), prepaid in US dollars. The Gateway
@@ -10,7 +13,7 @@ and web research (Perplexity's Sonar models). openmail uses it when
 its Worker was deployed with `AI_PROVIDER=openrouter` (its
 `cloudflare.config.ts` still defaults the variable to `workers-ai` until
 the inbox's PR #6 merges; the other provider is
-[workers-ai.md](workers-ai.md)). At
+[workers-ai.md](/docs/agent/setup/workers-ai)). At
 the end the person has an OpenRouter account with credits, one key with a
 spending limit and no expiry, the key on the Gateway, and a model answering
 inside the app.
@@ -64,7 +67,7 @@ try the apps.
    now, from any directory, and the app uses it on its first deploy). The
    `OPENROUTER_API_KEY` entry in `data.app.setup.unmet` (`names`,
    `need.kind` `required`, `holder` `gateway`, `setup`
-   `setup/openrouter.md`) means this file applies, and the app doesn't open
+   `setup/openrouter.md`) means this guide applies, and the app doesn't open
    until it is set: the Gateway lists it as needing setup, sends a browser
    opening `https://<app>.<app base domain>` to its setup dialog and
    answers anything else 503 `app_needs_setup`. `data.app.setup.command`
@@ -77,13 +80,13 @@ try the apps.
    true, "set": false }` and `data.gateway.missing` names it while unset.
    This is how an agent lands here: `status` (under "<app> needs setup") and
    `secret list <app id>` (under the unmet setting) print `Guide:
-   node_modules/everyapp/skills/everyapp/setup/openrouter.md`, and `secret list --json`
+   https://everyapp.com/docs/agent/setup/openrouter.md`, and `secret list --json`
    carries the path as the entry's `setup` (in the
-   checkout: `packages/cli/skills/everyapp/setup/openrouter.md`).
+   checkout: `landing-page/content/agent/setup/openrouter.md`).
    openmail: its manifest requires `openrouter` and lists
    `workers-ai` in an optional feature, so `OPENROUTER_API_KEY` is in `unmet` and
    `WORKERS_AI_API_TOKEN` only in `settings` with `set: false`: the inbox opens with this key and its
-   email sender ([email.md](email.md)); [workers-ai.md](workers-ai.md) only
+   email sender ([email.md](/docs/agent/setup/email)); [workers-ai.md](/docs/agent/setup/workers-ai) only
    for a Worker built with `AI_PROVIDER=workers-ai`. An app that doesn't
    need OpenRouter: stop here.
 2. `pnpm everyapp status --json`: in the `done` event, `data.installed` and
@@ -92,7 +95,7 @@ try the apps.
    `"id": "openmail"` and `"bound": true`, carrying the same `setup`;
    while a required setting is missing `data.fixes` has `APP_NEEDS_SETUP`
    for the app (severity `warning`, headline "<app> needs setup", `run` the
-   same command). Not installed or no owner: [gateway.md](gateway.md) first.
+   same command). Not installed or no owner: [gateway.md](/docs/agent/setup/gateway) first.
 
 ## Steps
 
@@ -137,7 +140,7 @@ try the apps.
    or, with a reset, until it resets. Expiration: No expiration, or write
    the date down as the rotation deadline (an expired key fails with 401).
    Create. The key is shown once: copy it now and keep the tab open until
-   step 6 is verified. Alternative, README way two, when the person
+   step 6 is verified. Alternative, the setup rules' way two, when the person
    exported a management key (made at
    https://openrouter.ai/settings/management-keys) before starting you:
    `curl -s -X POST https://openrouter.ai/api/v1/keys -H "Authorization: Bearer $OPENROUTER_MANAGEMENT_KEY" -H 'Content-Type: application/json' -d '{"name":"every-app gateway <gateway host>","limit":20,"limit_reset":"monthly"}' | jq -r '.key' | pnpm everyapp secret set OPENROUTER_API_KEY --json`
@@ -145,7 +148,7 @@ try the apps.
    top-level `key`; `data.hash` names it later). A management key can
    create and delete every key and read spend, so prefer the console unless
    they already have one.
-6. **Person:** README way one, the person types it. In a second terminal, in
+6. **Person:** the setup rules' way one, the person types it. In a second terminal, in
    the `every-app` folder: `pnpm everyapp configure <app id>` (`openseo`,
    `crm` or `openmail`: the app that needs it; the key is set once,
    for every app), which asks for this key among the app's other unset
@@ -154,7 +157,7 @@ try the apps.
    it is for and where it comes from; `secret set` asks `Value for
    OPENROUTER_API_KEY`); paste, Enter. It prints
    `Set OPENROUTER_API_KEY on the Gateway`. Then they tell you.
-   Alternative, README way three, when the key is in a variable the person
+   Alternative, the setup rules' way three, when the key is in a variable the person
    exported before starting you:
    `pnpm everyapp configure <app id> --from-env --json` (the `done` event's
    `data.set` holds `OPENROUTER_API_KEY`; `data.changed.gateway.versions`
@@ -230,7 +233,7 @@ try the apps.
    logs one JSON line `{"evt":"ai.proxy.usage","provider":"openrouter","model":...,"status":...,"usage":...}`
    and a failed connection `{"evt":"ai.proxy.upstream_failed",...}`.
    Workers Logs is on for the Gateway Worker: in the Cloudflare dashboard,
-   README's path: **Workers & Pages** → `every-app-gateway` → **Observability** (**Logs** on older accounts) → **Live**,
+   the setup rules' path: **Workers & Pages** → `every-app-gateway` → **Observability** (**Logs** on older accounts) → **Live**,
    or the stored logs on the same page (kept 7 days on Workers Paid). `cf workers tail` does not exist in cf 1.0.0-beta.14
    (`cf workers --help`); `cf o11y telemetry live-tail --help` and `cf o11y
    telemetry query --help` are the CLI way, not covered here. `status` is
@@ -241,7 +244,7 @@ try the apps.
 
 | Error or symptom                                                                 | Meaning                                                                                              | What to do                                                                                                       |
 | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `SECRET_VALUE_REQUIRED`                                                          | `secret set --json` ran with nothing piped and no terminal                                           | one of README's three ways; its `data.rerun` is the `--from-env OPENROUTER_API_KEY` form                        |
+| `SECRET_VALUE_REQUIRED`                                                          | `secret set --json` ran with nothing piped and no terminal                                           | one of the setup rules' three ways; its `data.rerun` is the `--from-env OPENROUTER_API_KEY` form                        |
 | `SECRET_VALUE_REQUIRED` from `pnpm everyapp configure <app id> --json`          | nothing was piped (with `--from-env`, stdin isn't read), no variable of a missing name was found, and there is no terminal; the message names what the app still needs | the person's terminal (step 6), `NAME=value` lines on stdin, or the hidden read then its `data.rerun`, `pnpm everyapp configure <app id> --from-env` |
 | `SECRET_EMPTY`                                                                   | the `--from-env` variable is empty in your shell (exported in theirs, not before you started)        | the person runs the `--from-env` command in their terminal, or the hidden prompt (step 6)                       |
 | `SECRET_SEVERAL_NAMES`                                                           | `--from-env` or a pipe with more than one name                                                       | one name per call                                                                                                |
@@ -252,7 +255,7 @@ try the apps.
 | `model_not_allowed` (403)                                                        | the app's manifest `ai.models` doesn't list the model it asked for (openmail's `AGENT_MODEL`)   | use a listed model, or add it to `ai.models` and redeploy; OpenSEO lists none, so any model passes               |
 | `ai_route_not_allowed` (403)                                                     | the app called a path that isn't inference                                                           | only the four routes under Settings; nothing to set                                                              |
 | `ai_upstream_failed` (502)                                                       | the Gateway couldn't reach openrouter.ai                                                             | retry; read the `ai.proxy.upstream_failed` log line                                                              |
-| `integration_not_configured`                                                     | a different capability's setting is missing: DataForSEO, Context or email sending, not OpenRouter    | [dataforseo.md](dataforseo.md), [context.md](context.md), [email.md](email.md)                                   |
+| `integration_not_configured`                                                     | a different capability's setting is missing: DataForSEO, Context or email sending, not OpenRouter    | [dataforseo.md](/docs/agent/setup/dataforseo), [context.md](/docs/agent/setup/context), [email.md](/docs/agent/setup/email)                                   |
 | OpenRouter 401 "User not found."                                                 | the key is wrong, disabled, deleted, or pasted with a stray character                                | create a new key (Rerun, rotate, remove)                                                                         |
 | OpenRouter 401 "API key expired"                                                 | the key's Expiration (step 5) passed (wording from the management-key docs; unverified for an inference key) | a new key with No expiration (Rotate)                                                                    |
 | OpenRouter 401 "Missing Authentication header" / "No cookie auth credentials found" | the header was sent empty (the variable isn't exported in that terminal) or not at all; the key wasn't judged | redo the export in one terminal, then Verify 2; or step 6                                               |
@@ -283,7 +286,7 @@ try the apps.
   setup again: the Gateway closes them until the key is back (OpenSEO, Open
   CRM and openmail alike, and the inbox's `AI_PROVIDER=workers-ai` build
   changes nothing: the manifest, not the build, says what is required;
-  `status` says so, with this file's path). An app that lists the provider in
+  `status` says so, with this guide's path). An app that lists the provider in
   an optional feature keeps opening and gets `ai_provider_not_configured` on
   each call instead.
 

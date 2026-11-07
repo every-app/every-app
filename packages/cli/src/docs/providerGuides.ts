@@ -9,7 +9,7 @@
  * the next time `pnpm -C packages/cli docs:update` runs.
  *
  * Steps are short and plain: what to open, what to click, what to copy.
- * They summarize the everyapp skill's setup guides (packages/cli/skills/everyapp/setup)
+ * They summarize the agent docs' setup guides (landing-page/content/agent/setup)
  * where one exists; each page links that guide for the full version.
  */
 

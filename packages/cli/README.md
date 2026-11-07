@@ -7,5 +7,5 @@ Nothing is published while we work from the repository (`.github/RELEASE.md`), s
 Every command but `dev` takes `--json` (NDJSON events on stdout; exit 0 done, 1 error, 2 action required) and `--help` lists its flags.
 
 - Every command, explained: https://everyapp.com/docs/commands
-- What coding agents read: [`skills/everyapp/SKILL.md`](skills/everyapp/SKILL.md), linked into each new app by `everyapp create` (`.claude/skills/everyapp` → `node_modules/everyapp/skills/everyapp`)
+- What coding agents read: [`skills/everyapp/SKILL.md`](skills/everyapp/SKILL.md), linked into each new app by `everyapp create` (`.claude/skills/everyapp` → `node_modules/everyapp/skills/everyapp`). It points at the agent docs (https://everyapp.com/llms.txt), which the package also bundles (copied in at build) for `everyapp docs <page>` offline
 - How it is tested: [`../../docs/TESTING.md`](../../docs/TESTING.md)

@@ -40,7 +40,7 @@ export const SIGNIN_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "signin_show",
     title: "Show one sign-in provider",
     description:
-      "Show one sign-in provider as `everyapp signin show <id>` does: its status, each setting's name, what to paste there and whether it is set (never a value), the redirect URL to register, where the OAuth app is made and what it is called there, the scopes asked for, which claim becomes the email, the caveats, the setup guide in the everyapp skill, the command that sets it up from a terminal, and for one that needs setup what is wrong. Owners and admins.",
+      "Show one sign-in provider as `everyapp signin show <id>` does: its status, each setting's name, what to paste there and whether it is set (never a value), the redirect URL to register, where the OAuth app is made and what it is called there, the scopes asked for, which claim becomes the email, the caveats, the setup guide in the agent docs, the command that sets it up from a terminal, and for one that needs setup what is wrong. Owners and admins.",
     inputSchema: {
       type: "object",
       properties: {

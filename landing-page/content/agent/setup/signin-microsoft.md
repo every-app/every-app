@@ -1,14 +1,17 @@
-# Sign in with Microsoft on the Gateway
+---
+title: "Sign in with Microsoft on the Gateway"
+description: "Step-by-step guide: Continue with Microsoft on the Gateway's sign-in page (an Entra app registration, the tenant, everyapp signin add microsoft), the check, rotation."
+---
 
-Read [README.md](README.md) first: the rules every setup follows.
+Read [the setup rules](/docs/agent/setup/guides) first: the rules every setup follows.
 
 Puts **Continue with Microsoft** on the Gateway's sign-in page, beside the
 password: work or school accounts from the person's Microsoft Entra
 directory (Microsoft 365), or any Microsoft account. At the end the person
 has an app registration in Entra, its settings on the Gateway, and has
 signed in with Microsoft once. `pnpm everyapp signin show microsoft --json`
-names this file as `setup`, and the CLI prints
-`Guide: node_modules/everyapp/skills/everyapp/setup/signin-microsoft.md`.
+names this guide as `setup`, and the CLI prints
+`Guide: https://everyapp.com/docs/agent/setup/signin-microsoft.md`.
 
 Who gets in doesn't change: Microsoft only says who someone is. A member
 signs in; someone with a pending invitation for that exact address joins
@@ -18,7 +21,7 @@ account connects Microsoft once, by signing in with the password when the
 page asks. The rules: `docs/runbooks/sign-in-providers.md`, "Who gets in".
 
 Not the Outlook mail and calendar client apps use (`MICROSOFT_365_*`,
-[microsoft-365.md](microsoft-365.md)): make a separate registration here.
+[microsoft-365.md](/docs/agent/setup/microsoft-365)): make a separate registration here.
 
 **Which tenant decides which addresses count as verified.** Recommended:
 the registration is single tenant and `MICROSOFT_SIGNIN_TENANT` is the
@@ -64,10 +67,10 @@ The client secret expires (24 months at most; Microsoft recommends under
 
 1. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true;
    `data.gatewayUrl` gives `<gateway host>`. Not installed or no owner:
-   [gateway.md](gateway.md) first. `data.access.on` true: see Verify 4.
+   [gateway.md](/docs/agent/setup/gateway) first. `data.access.on` true: see Verify 4.
 2. `pnpm everyapp signin show microsoft --json` (changes nothing; `Unknown
    command signin`: `git pull` in the `every-app` folder). `data.status`
-   `off`: this file applies; `needs setup`: `data.missing` names what is
+   `off`: this guide applies; `needs setup`: `data.missing` names what is
    left (step 5); `on`: ask before replacing. `data.callbackUrl` is the
    redirect URL, `https://<gateway host>/api/auth/callback/microsoft`;
    `data.set` says whether `MICROSOFT_SIGNIN_TENANT` is set.
@@ -130,7 +133,7 @@ The client secret expires (24 months at most; Microsoft recommends under
    consent screen → **Accept** → the Gateway, signed in.
 4. Behind Cloudflare Access: nothing else changes, but the Microsoft
    address must be the one Access knows the person by.
-5. Logs (README's Verify 4): `signin.config_problem` names a malformed
+5. Logs (the setup rules' Verify 4): `signin.config_problem` names a malformed
    setting (a tenant that isn't a GUID or one of the three words).
 
 ## If it fails

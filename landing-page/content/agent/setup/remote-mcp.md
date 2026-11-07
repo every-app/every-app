@@ -1,4 +1,7 @@
-# A remote MCP server as an MCP app
+---
+title: "A remote MCP server as an MCP app"
+description: "Step-by-step guide: add any remote MCP server by URL as an MCP app (everyapp mcp add): no credential, a static key (<ID>_MCP_TOKEN) or OAuth with each member connecting; check, refresh, remove."
+---
 
 Any remote MCP server that speaks Streamable HTTP (a docs search, a
 company's API, a SaaS tool's MCP endpoint) can become an MCP app of the
@@ -55,7 +58,7 @@ bound it.
 
 1. `pnpm everyapp status --json`: `data.installed` and `data.claimed` are
    true; `data.gatewayUrl` is `https://<gateway host>`. Not installed, or no
-   owner: [gateway.md](gateway.md) first.
+   owner: [gateway.md](/docs/agent/setup/gateway) first.
 2. The server's MCP address and how it authenticates, from its docs: an
    `https://` URL (often ending in `/mcp`) that speaks Streamable HTTP. The
    Gateway follows no redirects, so use the address the server answers at.
@@ -106,7 +109,7 @@ One step per message: give the step, wait for the words it ends with
 5. **Person:** connect an AI client to the Gateway if theirs isn't yet:
    `claude mcp add --transport http everyapp https://<gateway host>/mcp`,
    then `/mcp` → **everyapp** → **Authenticate** in Claude Code (other clients:
-   the same URL; mcp.md beside this folder, "Connecting a person").
+   the same URL; [tools](/docs/agent/tools#connecting-a-person)).
 
 ## Verify
 
@@ -133,7 +136,7 @@ One step per message: give the step, wait for the words it ends with
    `pnpm everyapp mcp tool <id> <tool> --risk read|write --json`
    (`--risk annotations` drops the override), or leave a tool out entirely
    with `--off`; the Gateway lists the tools again on first use.
-4. Logs, when a call fails: README's path (**Workers & Pages** →
+4. Logs, when a call fails: the setup rules' path (**Workers & Pages** →
    `every-app-gateway` → **Observability** → **Live**). The remote proxy logs
    each failed upstream call as `mcp.remote.upstream_failed` with the status
    (never the credential).

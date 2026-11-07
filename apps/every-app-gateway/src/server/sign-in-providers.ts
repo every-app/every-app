@@ -71,7 +71,7 @@ export interface ListedSignInProvider {
   scopes: string[];
   emailClaim: string;
   notes: string[];
-  /** The everyapp skill's guide, relative to the skill. */
+  /** The setup guide, relative to the agent docs (https://everyapp.com/docs/agent/). */
   setup: string;
   /** What `everyapp signin add` is, for this provider. */
   command: string;

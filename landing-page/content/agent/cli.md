@@ -393,7 +393,7 @@ Says where to create the OAuth app and the redirect URL to register with it (htt
 
 A provider says who someone is; the Gateway still decides who gets in: a member, or someone with a pending invitation for that exact, verified email. Nobody else.
 
-Safe to repeat: running it again replaces the values given (a rotated secret, a new client). An optional setting not given stays as it is; everyapp secret unset <NAME> removes one. The everyapp skill's setup/signin-<id>.md walks through each provider's console.
+Safe to repeat: running it again replaces the values given (a rotated secret, a new client). An optional setting not given stays as it is; everyapp secret unset <NAME> removes one. Each provider's console, step by step: the setup guides at https://everyapp.com/docs/agent/setup/guides.
 
 ```sh
 everyapp signin add google
@@ -1346,3 +1346,18 @@ echo '{"query":"contacts"}' | everyapp call everyapp_search_tools - --json
 - `<tool>`: The tool's name, as --list shows it (everyapp_workspace_users, crm_list_contacts)
 - `<json>`: The tool's arguments as one JSON object (default {}); - reads them from stdin
 - `--list`: List every tool you can call, with its title, instead of calling one
+
+### `everyapp docs [<page>]`
+Print a page of the agent docs, from everyapp.com or, offline, the copy bundled with everyapp.
+
+The agent docs are the reference coding agents answer from: every command, the --json protocol, every error code, everyapp.config.ts, and a setup guide per integration. They live at https://everyapp.com/docs/agent (https://everyapp.com/llms.txt lists them) and change without an everyapp upgrade. This prints one as Markdown: from the site when it answers, else from the copy this everyapp was built with (it says so; that copy may be older).
+
+```sh
+everyapp docs
+everyapp docs manifest
+everyapp docs setup/openrouter
+everyapp docs errors --offline
+```
+
+- `<page>`: The agent docs page: manifest, setup/openrouter, errors (a URL or .md works too); none lists them
+- `--offline`: Read the copy bundled with this everyapp; don't try everyapp.com

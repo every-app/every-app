@@ -1,8 +1,9 @@
 /**
- * The build-every-app skill (skills/build-every-app/SKILL.md and the
- * patterns index beside it) stays honest about what it points at: the
- * frontmatter a harness reads, the two addresses every agent is sent to
- * (llms.txt and the patterns page), the agent pages it names, every
+ * The build-every-app skill (skills/build-every-app/SKILL.md, a short
+ * router) and the two agent pages it sends every agent to first, build and
+ * patterns (landing-page/content/agent), stay honest about what they point
+ * at: the frontmatter a harness reads, the addresses every agent is sent to
+ * (llms.txt, the build and patterns pages), the agent pages it names, every
  * `pnpm everyapp …` a route the CLI has, every `starter/` path a file of the
  * starter, every path into one of the four open apps a file of that app's
  * checkout when the checkout is on this machine (skipped, with the reason,
@@ -21,14 +22,14 @@ import { asksForSecretInChat } from "../../../test/shared/chat-secret.mjs";
 
 const root = checkoutRoot();
 const skillDir = path.join(root, "packages", "cli", "skills", "build-every-app");
-const read = (name: string) => {
-  const file = path.join(skillDir, name);
-  return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
-};
-const skill = read("SKILL.md");
-const patterns = read("patterns.md");
+const agentDocs = path.join(root, "landing-page", "content", "agent");
+const read = (file: string) => (fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "");
+const skill = read(path.join(skillDir, "SKILL.md"));
+const build = read(path.join(agentDocs, "build.md"));
+const patterns = read(path.join(agentDocs, "patterns.md"));
 const files = [
   { name: "SKILL.md", text: skill },
+  { name: "build.md", text: build },
   { name: "patterns.md", text: patterns },
 ];
 
@@ -74,8 +75,8 @@ function checkoutFor(app: string): { dir: string; commit: string } | { skipped: 
   return { dir, commit };
 }
 
-/** The agent pages "Read first" sends the agent to, by their slug. */
-const AGENT_PAGES = ["manifest", "identity", "secrets", "mcp", "dev", "deploy", "email"];
+/** The agent pages the skill sends the agent to by job, by their slug. */
+const AGENT_PAGES = ["build", "patterns", "manifest", "identity", "secrets", "tools", "dev", "deploy", "email", "security-review"];
 
 const FORBIDDEN_PHRASES = ["paste the key", "paste it here", "send me the", "what is your key"];
 
@@ -114,33 +115,34 @@ function tableRowNames(text: string): string[] {
 }
 
 describe("the build-every-app skill", () => {
-  it("has the frontmatter a harness picks it by, and stays short", () => {
+  it("has the frontmatter a harness picks it by, and stays a short router", () => {
     expect(skill, `${skillDir}/SKILL.md is missing`).not.toBe("");
     expect(skill).toMatch(/^---\nname: build-every-app\ndescription: .{40,}\n---\n/);
-    // About 1,000 words (the simplification audit of 2026-11, B1): the six
-    // rules, where things are, the shape of an app. Detail goes to
-    // patterns.md or the agent pages, not here.
-    expect(skill.split(/\s+/).filter(Boolean).length).toBeLessThan(1100);
+    // A few rules that rarely change and pointers: an app's copy only changes
+    // when it upgrades the CLI, so the detail is on the agent pages.
+    expect(skill.split(/\s+/).filter(Boolean).length).toBeLessThan(600);
+    expect(fs.readdirSync(skillDir), "the skill is one file").toEqual(["SKILL.md"]);
   });
 
-  it("sends the agent to llms.txt, the agent pages for the job, the everyapp skill and the patterns index", () => {
+  it("sends the agent to llms.txt, the agent pages for the job and the everyapp skill", () => {
     expect(skill).toContain("https://everyapp.com/llms.txt");
-    expect(skill).toContain("https://everyapp.com/docs/agent/patterns");
-    expect(skill).toContain(".agents/skills/build-every-app/patterns.md");
     expect(skill).toContain("everyapp skill");
+    expect(skill).toContain("pnpm everyapp docs");
     for (const slug of AGENT_PAGES) {
-      expect(skill, `SKILL.md names the ${slug} page`).toMatch(new RegExp(`\\b${slug}\\b`));
-      expect(fs.existsSync(path.join(root, "landing-page", "content", "agent", `${slug}.md`)), slug).toBe(true);
+      expect(skill, `SKILL.md links the ${slug} page`).toContain(`https://everyapp.com/docs/agent/${slug}.md`);
+      expect(fs.existsSync(path.join(agentDocs, `${slug}.md`)), slug).toBe(true);
     }
-    expect(patterns, `${skillDir}/patterns.md is missing`).not.toBe("");
+    expect(build, `${agentDocs}/build.md is missing`).not.toBe("");
+    expect(patterns, `${agentDocs}/patterns.md is missing`).not.toBe("");
   });
 
   it("leaves the patterns to patterns.md, a look-up table whose every row cites a file", () => {
-    expect(tableRowNames(skill), "SKILL.md repeats no patterns table").toEqual([]);
+    expect(tableRowNames(build), "build.md repeats no patterns table").toEqual([]);
     const rows = patterns.split("\n").filter((line) => /^\|/.test(line) && !/^\|\s*-/.test(line) && !/^\|\s*Pattern\s*\|/.test(line));
     expect(rows.length).toBeGreaterThanOrEqual(40);
     expect(rows.length).toBeLessThanOrEqual(65);
-    const uncited = rows.filter((row) => !/`[^`\s]+\/[^`\s]+`/.test(row.split("|")[2] ?? ""));
+    // A file in backticks, or the agent page that has the detail.
+    const uncited = rows.filter((row) => !/`[^`\s]+\/[^`\s]+`|\]\(\/docs\/agent\/[^)]+\)/.test(row.split("|")[2] ?? ""));
     expect(uncited, "rows whose Copy from cell cites no file").toEqual([]);
   });
 
@@ -196,19 +198,19 @@ describe("the skill and the patterns index", () => {
     expect(problems).toEqual([]);
   });
 
-  it("names only starter files in SKILL.md's app-relative paths", () => {
+  it("names only starter files in build.md's app-relative paths", () => {
     // "The shape of an app" and the rules name files as they sit in an app
     // (`src/…`, `drizzle/`, `*.config.ts`, `*.d.ts`): each is a file or
-    // directory of the starter, so a starter rename can't leave the skill stale.
+    // directory of the starter, so a starter rename can't leave the page stale.
     const seen = new Set<string>();
     const problems: string[] = [];
-    for (const { line, span } of spans(skill)) {
+    for (const { line, span } of [...spans(build), ...spans(skill)]) {
       const raw = span.trim().replace(/[.,;:)]+$/, "");
       if (!/^(?:src|drizzle)\/|\.config\.ts$|\.d\.ts$/.test(raw) || /[\s<>*{}…]/.test(raw)) continue;
       const cited = raw.replace(/\/$/, "");
       if (seen.has(cited)) continue;
       seen.add(cited);
-      if (!fs.existsSync(path.join(root, "starter", cited))) problems.push(`SKILL.md:${line} ${cited}`);
+      if (!fs.existsSync(path.join(root, "starter", cited))) problems.push(`build.md or SKILL.md:${line} ${cited}`);
     }
     expect(seen.size).toBeGreaterThanOrEqual(15);
     expect(problems).toEqual([]);

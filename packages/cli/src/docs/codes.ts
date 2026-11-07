@@ -41,7 +41,8 @@ function sourceFiles(root: string): string[] {
     for (const entry of readdirSync(dir)) {
       const full = path.join(dir, entry);
       if (statSync(full).isDirectory()) {
-        if (entry !== "test" && entry !== "__fixtures__" && entry !== "docs") walk(full);
+        // src/docs is this generator; commands/docs is a command like any other.
+        if (entry !== "test" && entry !== "__fixtures__" && !(entry === "docs" && dir === root)) walk(full);
       } else if (full.endsWith(".ts") && !full.endsWith(".test.ts")) {
         files.push(full);
       }

@@ -15,7 +15,7 @@
  *   node packages/cli/test/build-skill/run.mjs <scenario|all> [--model sonnet|opus]
  *     [--max-rounds 6] [--turn-timeout-s 900] [--scratch-only] [--full-settings] [--keep-going]
  */
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -267,11 +267,15 @@ function buildScratch({ runDir, rootDir, appDir, appId, scenario }) {
       "- This folder is the every-app checkout. Run every everyapp command from here as `pnpm everyapp …` (never `npx everyapp`).",
       "- Before running everyapp, read the everyapp skill: `.agents/skills/everyapp/SKILL.md` (a link to `node_modules/everyapp/skills/everyapp`).",
       "- Apps live under `apps/<id>/`; each has its `everyapp.config.ts`. To build or change one, read its `.agents/skills/build-every-app/SKILL.md`.",
+      "- The agent docs the skills point at: `pnpm everyapp docs <page>` (this run has no network for them).",
       "",
     ].join("\n"),
   );
   fs.writeFileSync(path.join(rootDir, "CLAUDE.md"), "@AGENTS.md\n");
-  // The checkout's own install of the CLI, and the skills linked from where agents look.
+  // The checkout's own install of the CLI, and the skills linked from where agents look. The agent
+  // docs the skills point at are bundled into it, as a published package has them, so the fake's
+  // `everyapp docs <page>` prints this branch's pages (the live site may not have them yet).
+  execFileSync(process.execPath, [path.join(path.dirname(skillsDir), "scripts", "bundle-docs.mjs")], { stdio: "ignore" });
   fs.symlinkSync(path.dirname(skillsDir), path.join(rootDir, "node_modules", "everyapp"), "dir");
   linkSkills(rootDir, skills);
 

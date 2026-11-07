@@ -25,6 +25,7 @@ import { dbRoutes } from "./commands/db/command";
 import { deleteCommand } from "./commands/delete/command";
 import { deployCommand } from "./commands/deploy/command";
 import { deployTokenRoutes } from "./commands/deployToken/command";
+import { docsCommand } from "./commands/docs/command";
 import { devRoutes } from "./commands/dev/command";
 import { emailRoutes } from "./commands/email/command";
 import { eventsRoutes } from "./commands/events/command";
@@ -70,6 +71,7 @@ const routes = buildRouteMap({
     events: eventsRoutes,
     workspace: workspaceRoutes,
     call: callCommand,
+    docs: docsCommand,
   },
   // `everyapp provider …` was `mcp`'s name until 2026-10-24; it is the
   // provider registry's group now, and its hidden `on|off` run `mcp on|off`

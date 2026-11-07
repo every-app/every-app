@@ -3,7 +3,7 @@ title: Driving setup for a person
 description: How an agent sets EveryApp up for a person end to end with --json: what only the person can do, prerequisites, the setup steps, Cloudflare Access, create, deploy and share, updates, verification, recovery and the safety rules.
 ---
 
-This is the agent's side of [/docs/gateway](/docs/gateway), [/docs/create-an-app](/docs/create-an-app) and [/docs/people](/docs/people). The step-by-step file the everyapp skill ships is `setup/gateway.md`. Commands are `everyapp …` (`npm install -g everyapp`); always add `--json` ([the protocol](/docs/agent/json)).
+This is the agent's side of [/docs/gateway](/docs/gateway), [/docs/create-an-app](/docs/create-an-app) and [/docs/people](/docs/people). The step-by-step guide is [setup/gateway](/docs/agent/setup/gateway); every integration has one ([setup guides](/docs/agent/setup/guides)). Commands are `everyapp …` (`npm install -g everyapp`); always add `--json` ([the protocol](/docs/agent/json)).
 
 A fresh `setup` takes 5 to 20 minutes: 5 to 10 for the Gateway upload and its certificate, then up to 15 waiting for the person to open the owner link. Use a long timeout or run it in the background and read its output.
 
@@ -38,7 +38,7 @@ For unattended runs (CI), set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`
 
 After the owner exists, setup turns **Cloudflare Access** on by default: a second sign-in at Cloudflare in front of the Gateway and every app. Recommend keeping it. `--no-access` (or `everyapp access off`) leaves it off. Access asks the Gateway who is a member, so invitations need nothing in Access; deploys keep apps' public routes let through. [access](/docs/agent/access)
 
-Then offer, one at a time: an AI key (`everyapp provider add openrouter`), email (`everyapp secret set EMAIL_FROM EMAIL_FROM_NAME` after onboarding the domain to Email Sending; guide `setup/email.md`), inviting people, connecting their AI client to `https://<gateway>/mcp`, and a first app. `everyapp status --json` lists what's left in `data.next`.
+Then offer, one at a time: an AI key (`everyapp provider add openrouter`), email (`everyapp secret set EMAIL_FROM EMAIL_FROM_NAME` after onboarding the domain to Email Sending; guide [setup/email](/docs/agent/setup/email)), inviting people, connecting their AI client to `https://<gateway>/mcp`, and a first app. `everyapp status --json` lists what's left in `data.next`.
 
 ## Create, run, deploy, share
 
@@ -53,7 +53,7 @@ Then offer, one at a time: an AI key (`everyapp provider add openrouter`), email
 
 ## Keeping things up to date
 
-`npm install -g everyapp@latest`, then `everyapp update` moves the Gateway to the release for that version (in a checkout: `git pull`, `pnpm install`, `pnpm everyapp update`). Deploying an app never changes the Gateway. Apps update by deploying again, or `everyapp install` again for a release; an app's agent skills come with its `everyapp` dependency (`node_modules/everyapp/skills`). After an everyapp update, a command against a Gateway whose database is behind stops with `GATEWAY_OUTDATED` until `everyapp update` runs. An update from a checkout older than the live Gateway deploys it anyway with the warning `GATEWAY_DOWNGRADE` (a rollback); `git pull`, then `update`, to go forward again.
+`npm install -g everyapp@latest`, then `everyapp update` moves the Gateway to the release for that version (in a checkout: `git pull`, `pnpm install`, `pnpm everyapp update`). Deploying an app never changes the Gateway. Apps update by deploying again, or `everyapp install` again for a release; an app's agent skills come with its `everyapp` dependency (`node_modules/everyapp/skills`) and point at these pages, which change without an upgrade. After an everyapp update, a command against a Gateway whose database is behind stops with `GATEWAY_OUTDATED` until `everyapp update` runs. An update from a checkout older than the live Gateway deploys it anyway with the warning `GATEWAY_DOWNGRADE` (a rollback); `git pull`, then `update`, to go forward again.
 
 ## Verifying
 
@@ -73,6 +73,10 @@ Then offer, one at a time: an AI key (`everyapp provider add openrouter`), email
 - Never ask for a key, token or password in the chat, and never put one on a command line. Hand the person `everyapp configure <app>` or `everyapp secret set NAME` to run in their terminal.
 - Never post the owner link, an invite link or a reset link anywhere public.
 - Never add a takeover flag (`--force-dns`, `--allow-delete-*`, `--yes`, `--enable-email-routing`, `--register-providers`) without the person's yes to that exact thing.
+- Never add `--yes` to delete, or to a production write (`CONFIRMATION_REQUIRED`), without the person's yes.
 - Never `delete --purge` or `db restore` unless the person asked.
-- Never run `teardown` on a person's account; it's for dedicated test accounts.
+- Never run `teardown` on a person's account; it's for a dedicated test account the person names. Run it with `--dry-run --json` first, and never add `--confirm` unless they explicitly asked.
+- Never add `--no-access` unless the person says so. On `ACCESS_TEAM_REQUIRED`, ask them for the team name (it's permanent), then rerun with `--team <name>`.
+- Don't suggest Gateway app installs from the browser (off by default). Only when the person asks, they run `everyapp deploy-token add` at a terminal themselves.
+- Never vendor the SDK or CLI into an app (no tarballs, no committed `file:` or `link:` specifiers): pin a published version. To try unreleased platform code, `pnpm link` it locally without committing; a published rc ships it (`docs/runbooks/app-releases.md` in the EveryApp repository).
 - Never change a Worker in the dashboard: the next deploy then needs a confirmation at a terminal.

@@ -1,6 +1,9 @@
-# Sign in with any OpenID Connect issuer (your SSO) on the Gateway
+---
+title: "Sign in with any OpenID Connect issuer (SSO) on the Gateway"
+description: "Step-by-step guide: Continue with SSO on the Gateway's sign-in page from any OpenID Connect issuer (Okta, Entra, Google Workspace, Authentik\u2026), everyapp signin add oidc, the check."
+---
 
-Read [README.md](README.md) first: the rules every setup follows.
+Read [the setup rules](/docs/agent/setup/guides) first: the rules every setup follows.
 
 Puts **Continue with SSO** (or a label the person picks, such as
 `Continue with Okta`) on the Gateway's sign-in page, beside the password,
@@ -8,8 +11,8 @@ through the company's identity provider: Okta, Keycloak, Auth0, Authentik,
 Google Workspace as an issuer, and the like. At the end the person has a
 web-application client at their identity provider, its settings on the
 Gateway, and has signed in through it once.
-`pnpm everyapp signin show oidc --json` names this file as `setup`, and the
-CLI prints `Guide: node_modules/everyapp/skills/everyapp/setup/signin-oidc.md`.
+`pnpm everyapp signin show oidc --json` names this guide as `setup`, and the
+CLI prints `Guide: https://everyapp.com/docs/agent/setup/signin-oidc.md`.
 
 Who gets in doesn't change: the issuer only says who someone is, and only
 an ID token with `email_verified: true` counts. A member signs in;
@@ -18,10 +21,10 @@ invited role; everyone else is refused ("You don't have an account on this
 gateway.") and nothing is created. The rules:
 `docs/runbooks/sign-in-providers.md`, "Who gets in".
 
-Not this file: Cloudflare Access for SaaS (also an OIDC issuer, but with
-its own `CLOUDFLARE_ACCESS_OIDC_*` settings; [access.md](access.md) and
+Not this guide: Cloudflare Access for SaaS (also an OIDC issuer, but with
+its own `CLOUDFLARE_ACCESS_OIDC_*` settings; [access.md](/docs/agent/setup/access) and
 `docs/runbooks/cloudflare-access.md`). Microsoft Entra ID: prefer
-[signin-microsoft.md](signin-microsoft.md), which handles Entra's
+[signin-microsoft.md](/docs/agent/setup/signin-microsoft), which handles Entra's
 verified-email rules; Entra's ID tokens carry no `email_verified` claim
 (not among its optional claims), so here every sign-in would be refused.
 
@@ -57,10 +60,10 @@ not checked here: unverified).
 
 1. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true;
    `data.gatewayUrl` gives `<gateway host>`. Not installed or no owner:
-   [gateway.md](gateway.md) first. `data.access.on` true: see Verify 4.
+   [gateway.md](/docs/agent/setup/gateway) first. `data.access.on` true: see Verify 4.
 2. `pnpm everyapp signin show oidc --json` (changes nothing; `Unknown
    command signin`: `git pull` in the `every-app` folder). `data.status`
-   `off`: this file applies; `needs setup`: `data.missing` says what is
+   `off`: this guide applies; `needs setup`: `data.missing` says what is
    left (step 4); `on`: ask before replacing. `data.callbackUrl` is
    `https://<gateway host>/api/auth/callback/oidc`.
 3. Ask which identity provider, and the label they want on the button.
@@ -79,7 +82,7 @@ not checked here: unverified).
    `https://<tenant>.<region>.auth0.com/` (with the slash); Authentik
    `https://<host>/application/o/<slug>/`; Google Workspace
    `https://accounts.google.com` (a Web application client as in
-   [signin-google.md](signin-google.md), Internal audience). The page
+   [signin-google.md](/docs/agent/setup/signin-google), Internal audience). The page
    shows the client ID and secret; keep it open.
 3. **You:** check the issuer, nothing secret in it:
    ```sh
@@ -115,7 +118,7 @@ not checked here: unverified).
    moment (and cached for an hour), not when the Gateway starts.
 4. Behind Cloudflare Access: nothing else changes, but the identity
    provider's address must be the one Access knows the person by.
-5. Logs (README's Verify 4): `signin.config_problem` names a malformed
+5. Logs (the setup rules' Verify 4): `signin.config_problem` names a malformed
    setting (an issuer that isn't an https URL, a label too long).
 
 ## If it fails

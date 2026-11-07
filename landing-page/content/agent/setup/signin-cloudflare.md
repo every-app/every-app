@@ -1,13 +1,16 @@
-# Sign in with Cloudflare on the Gateway
+---
+title: "Sign in with Cloudflare on the Gateway"
+description: "Step-by-step guide: Continue with Cloudflare on the Gateway's sign-in page (an OAuth client, everyapp signin add cloudflare), the check, rotation."
+---
 
-Read [README.md](README.md) first: the rules every setup follows.
+Read [the setup rules](/docs/agent/setup/guides) first: the rules every setup follows.
 
 Puts **Continue with Cloudflare** on the Gateway's sign-in page, beside
 the password, for the members of the person's Cloudflare account. At the
 end the person has a private OAuth client in that account, its two
 settings on the Gateway, and has signed in with Cloudflare once.
-`pnpm everyapp signin show cloudflare --json` names this file as `setup`,
-and the CLI prints `Guide: node_modules/everyapp/skills/everyapp/setup/signin-cloudflare.md`.
+`pnpm everyapp signin show cloudflare --json` names this guide as `setup`,
+and the CLI prints `Guide: https://everyapp.com/docs/agent/setup/signin-cloudflare.md`.
 
 Who gets in doesn't change: Cloudflare only says who someone is. A member
 of the Gateway signs in; someone with a pending invitation for that exact
@@ -24,7 +27,7 @@ is permanent and would let any Cloudflare user present an address nobody
 checked. Everyone outside the Cloudflare account uses another provider, a
 password, or Access's one-time PIN.
 
-Not the same as Access's "Sign in with Cloudflare" ([access.md](access.md)):
+Not the same as Access's "Sign in with Cloudflare" ([access.md](/docs/agent/setup/access)):
 that one is a login *in front of* the Gateway, at Cloudflare's edge, for
 every page and app. This one is a button *on* the Gateway's sign-in page,
 like Google's. Both can be on; with Access on, this button is rarely needed.
@@ -57,10 +60,10 @@ Administrator or OAuth Client Write role on the account.
 
 1. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true;
    `data.gatewayUrl` gives `<gateway host>`. Not installed or no owner:
-   [gateway.md](gateway.md) first. `data.access.on` true: see Verify 4.
+   [gateway.md](/docs/agent/setup/gateway) first. `data.access.on` true: see Verify 4.
 2. `pnpm everyapp signin show cloudflare --json` (changes nothing;
    `Unknown command signin`: `git pull` in the `every-app` folder).
-   `data.status` `off`: this file applies; `needs setup`: `data.missing`
+   `data.status` `off`: this guide applies; `needs setup`: `data.missing`
    says what is left (step 3); `on`: ask before replacing.
    `data.callbackUrl` is `https://<gateway host>/api/auth/callback/cloudflare`.
 3. Ask who should use it: only people who are members of their Cloudflare
@@ -105,7 +108,7 @@ Administrator or OAuth Client Write role on the account.
    → allow → the Gateway, signed in.
 4. Behind Cloudflare Access: nothing else changes, but the Cloudflare
    address must be the one Access knows the person by.
-5. Logs (README's Verify 4): `signin.config_problem` for a malformed or
+5. Logs (the setup rules' Verify 4): `signin.config_problem` for a malformed or
    missing setting.
 
 ## If it fails

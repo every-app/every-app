@@ -1,25 +1,26 @@
 # The setup skills, run end to end
 
-A harness that runs each file of the everyapp skill's `setup/` directory
-(`packages/cli/skills/everyapp/setup/*.md`) the way it will be used: a
+A harness that runs each setup guide of the agent docs
+(`landing-page/content/agent/setup/*.md`, which the everyapp skill points
+at) the way it will be used: a
 coding agent (`claude -p`) in a checkout, a person answering in the chat,
 and `pnpm everyapp` on the other side. The everyapp it talks to is a fake
 (`fake-everyapp.mjs`) that speaks the real CLI's NDJSON contract and
 records every call; the person is scripted by the scenario; the Gateway,
 Cloudflare and every provider are make-believe. What it checks is the
-skill file, not the CLI: did the agent read status first, list the secrets
+guide, not the CLI: did the agent read status first, list the secrets
 before and after, send the person to the right console, keep the key out
 of the chat, and verify at the end.
 
 It needs the `claude` CLI logged in (it spends real tokens: a few cents per
 scenario on sonnet) and it is **not run in CI**. CI runs the static test
-beside the skill code, `packages/cli/src/lib/app/setupSkills.test.ts`,
-which keeps the files honest without a model: every file in the README's
-table exists and is listed, every `secret set NAME` is a Gateway setting
+`packages/cli/src/lib/app/setupSkills.test.ts`,
+which keeps the guides honest without a model: every guide in
+setup/guides.md's table exists and is listed, every `secret set NAME` is a Gateway setting
 the CLI accepts, every `pnpm everyapp …` is a route the CLI has (`commandPaths()` in
 `src/app.ts`; `access` included since PR #379 merged on 2026-10-24), no file asks for a value in the chat
-or puts one on a command line, and each file has the sections the
-README's contract requires.
+or puts one on a command line, and each guide has the sections
+setup/guides.md's contract requires.
 
 The build-every-app skill has a harness of the same kind,
 `../build-skill/` (a fresh app from the starter, a person asking for a
@@ -56,7 +57,9 @@ For each scenario, under `/tmp/setup-skills-runs/<scenario>-<n>/`:
    resolves to it, from the root and from each app's directory, without
    any output of pnpm's own), a copy of `packages/cli/skills/everyapp`
    in `node_modules/everyapp/skills/everyapp/` with `.claude/skills/everyapp`
-   and `.agents/skills/everyapp` linked to it, as `everyapp create` does, an
+   and `.agents/skills/everyapp` linked to it, as `everyapp create` does,
+   the agent docs in `node_modules/everyapp/docs/agent/` (as the package
+   bundles them; the fake's `everyapp docs <page>` prints them), an
    `AGENTS.md` and `CLAUDE.md` like the starter template's, and for each
    app the scenario deploys, `apps/<id>/everyapp.config.ts` with the
    manifest the scenario gives (id, providers, capabilities), so "in the
@@ -78,7 +81,7 @@ For each scenario, under `/tmp/setup-skills-runs/<scenario>-<n>/`:
    `APP_NEEDS_SETUP` fix (severity `warning`, "<app> needs setup", `run`
    the one `secret set`) per app with unmet required settings, its
    `message` listing each unmet setting with `Guide:
-   node_modules/everyapp/skills/everyapp/setup/<name>.md`, which the human `status`
+   https://everyapp.com/docs/agent/setup/<name>.md`, which the human `status`
    prints as the real one does. `secret set NAME --app <id>` and `secret
    unset --app <id>` reach an app's own secret from anywhere; an app with
    `deployed: false` is registered but never uploaded (`status` says
@@ -99,7 +102,7 @@ For each scenario, under `/tmp/setup-skills-runs/<scenario>-<n>/`:
    stay out of the session. `cf` and `wrangler` on the child's PATH are
    stubs that log every call and refuse it, except the read-only checks
    the setup files name: `cf --version` answers the pinned
-   `1.0.0-beta.14` (so the agent uses the stub bare, as the setup README
+   `1.0.0-beta.14` (so the agent uses the stub bare, as the setup rules
    says to when a cf on PATH answers that), and `cf auth whoami`,
    `cf zones list`, `cf accounts subscriptions get`, `cf email-sending
    subdomains list` and `cf dns records list` answer with JSON shaped
@@ -192,7 +195,7 @@ Every expectation in the scenario's `expect` held:
 Warnings (not failures) list commands the CLI refused (exit 251/252: the
 agent typed a route that doesn't exist, worth a look), and whether the
 scenario's setup file was missing when the run started: the run goes
-ahead so you can see what the agent does from README.md and SKILL.md
+ahead so you can see what the agent does from setup/guides.md and SKILL.md
 alone.
 
 ## Where results land

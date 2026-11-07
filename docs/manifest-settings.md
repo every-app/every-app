@@ -106,11 +106,12 @@ and "Get it at" and an agent reads in `AppSetup` (§5). For a provider
 registered on the Gateway (`everyapp provider add`, the agent docs'
 providers page) it is the only setup text there is.
 
-A setting may also carry `setup`: the everyapp skill's guide to setting it
-up end to end, relative to the skill (`setup/dataforseo.md`). The guides
-are the skill's own, under `packages/cli/skills/everyapp/setup/` in the
-checkout and `node_modules/everyapp/skills/everyapp/setup/` in every app, with an index
-in `setup/README.md`; an agent reads the guide before it asks anyone for
+A setting may also carry `setup`: the agent docs' guide to setting it
+up end to end, relative to the agent docs (`setup/dataforseo.md` is
+https://everyapp.com/docs/agent/setup/dataforseo.md). The guides are
+`landing-page/content/agent/setup/` in the checkout, bundled into the CLI
+package for `everyapp docs setup/<name>`, with an index in
+`setup/guides.md`; an agent reads the guide before it asks anyone for
 a value. A provider's or a capability's guide comes from the SDK
 registries (`DEV_AI_PROVIDERS[id].setup`, a capability's `setup`: openai,
 openrouter, workers-ai, dataforseo, context and email; an OAuth preset's,
@@ -281,7 +282,7 @@ client on the Gateway Worker, once for every app; the app's own secrets on
 its Worker; changes live at once, no deploy), the SETTING, WHERE, STATUS
 table (names only, never values), a hidden prompt per required unset
 setting with "Label: why", the provider's hint, "Get it at <docs>" and
-"Guide: node_modules/everyapp/skills/everyapp/setup/<file>.md" above it (a plain setting such as
+"Guide: https://everyapp.com/docs/agent/setup/<file>.md" above it (a plain setting such as
 `EMAIL_FROM` gets a visible prompt with what it takes, and is checked; a
 setting with several names, an OAuth client's id and secret, reads unset
 while one is missing and is asked only for the missing one),
@@ -454,7 +455,7 @@ through getting the key or client (a provider registered on the Gateway
 has no guide: `pnpm everyapp provider show <id>` prints its spec, and
 `status`, `secret list` and `configure` print
 `Guide: pnpm everyapp provider show <id>` for it). Then get the value in without it ever passing
-through the chat, one of the three ways the skill's `setup/README.md`
+through the chat, one of the three ways the agent docs' `setup/guides.md`
 gives: tell the person to run `setup.command.command`
 (`pnpm everyapp configure <app>`, or `pnpm everyapp secret set NAME` for
 one name) in their own terminal, where a hidden prompt asks for each

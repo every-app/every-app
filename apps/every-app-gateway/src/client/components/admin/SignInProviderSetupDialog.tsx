@@ -122,8 +122,15 @@ export function SignInProviderSetupDialog({
         </div>
         <DialogFooter showCloseButton>
           <p className="text-xs text-muted-foreground sm:mr-auto sm:self-center">
-            Step by step for an agent: the everyapp skill&apos;s{" "}
-            <span className="font-mono">{model.guide}</span>
+            Step by step for an agent:{" "}
+            <a
+              className="font-mono underline underline-offset-2"
+              href={`https://everyapp.com/docs/agent/${model.guide.replace(/\.md$/, "")}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {model.guide.replace(/\.md$/, "")}
+            </a>
           </p>
         </DialogFooter>
       </DialogContent>

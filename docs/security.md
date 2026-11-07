@@ -250,8 +250,9 @@ boundaries (`scripts/security-review/scan-instructions.md`), its
 false-positive rules (`scripts/security-review/false-positives.md`) and this
 page; `packages/cli/src/lib/securityReview.test.ts` pins its behaviour with a
 fake `claude`. It is advisory, runs where you run, and has no CI job. Apps
-get their own checklist in the everyapp skill
-(`packages/cli/skills/everyapp/security-review.md`).
+get their own checklist in the agent docs
+(`landing-page/content/agent/security-review.md`, served at
+https://everyapp.com/docs/agent/security-review).
 
 ## Reporting a problem
 

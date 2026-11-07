@@ -111,7 +111,7 @@ Keys can also be set alone with `everyapp secret set STRIPE_API_KEY`. `--from-en
 <!-- prettier-ignore-start -->
 <!-- providers-catalog:begin (generated from packages/sdk/src/internal/capabilities.ts by packages/cli/src/docs/providersCatalog.ts; pnpm -C packages/cli docs:update) -->
 
-The built-in catalog has 58 providers (49 API-key, 9 AI) and 12 OAuth presets. Where each key comes from, and a smoke request, are in the everyapp skill's `setup/providers.md` and on [the provider pages](/docs/providers).
+The built-in catalog has 58 providers (49 API-key, 9 AI) and 12 OAuth presets. Where each key comes from, and a smoke request, are on [setup/providers](/docs/agent/setup/providers) and on [the provider pages](/docs/providers).
 
 | Id | Name | Kind | Settings | Hosts | How the key is sent |
 | --- | --- | --- | --- | --- | --- |

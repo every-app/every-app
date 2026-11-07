@@ -6,7 +6,7 @@
  * `docs:update` and the tests beside this file fail CI until it has:
  *
  *  - the catalog table of the agent page providers.md ({@link providersCatalog});
- *  - the whole of the everyapp skill's setup/providers.md ({@link setupProvidersPage}).
+ *  - the whole of the setup guide setup/providers.md in the agent docs ({@link setupProvidersPage}).
  *
  * Each block on a page sits between `<!-- <name>:begin … -->` and
  * `<!-- <name>:end -->` markers, inside a prettier-ignore range so the
@@ -145,6 +145,11 @@ function keySource(capability: ApiKeyCapability | AiProviderCapability): string 
 }
 
 /** The guide file of an entry, relative to setup/: `dataforseo.md`. */
+/** A guide's link, by its file name (`email.md` → the agent docs' setup/email). */
+function guideLink(guide: string): string {
+  return `[${guide}](/docs/agent/setup/${guide.replace(/\.md$/, "")})`;
+}
+
 function guideOf(id: string, capability: Capability): string | undefined {
   const setup = capability.mode === "oauth_client" ? oauthSetupGuide(id) : capability.setup;
   return setup?.replace(/^setup\//, "");
@@ -180,7 +185,7 @@ export function providersCatalog(): string {
     ]),
   );
   return marked("providers-catalog", [
-    `The built-in catalog has ${counts()}. Where each key comes from, and a smoke request, are in the everyapp skill's \`setup/providers.md\` and on [the provider pages](/docs/providers).`,
+    `The built-in catalog has ${counts()}. Where each key comes from, and a smoke request, are on [setup/providers](/docs/agent/setup/providers) and on [the provider pages](/docs/providers).`,
     "",
     "| Id | Name | Kind | Settings | Hosts | How the key is sent |",
     "| --- | --- | --- | --- | --- | --- |",
@@ -221,7 +226,7 @@ function keySection(id: string, capability: ApiKeyCapability | AiProviderCapabil
     `- **Rate:** ${rateOf(capability)}`,
     `- **Verified:** ${verifiedOf(capability)}`,
     `- **Set it:** ${code(`pnpm everyapp secret set ${settable.join(" ")}`)}, or ${code("pnpm everyapp configure <app id>")} for everything an app needs`,
-    `- **Guide:** ${guide ? `[${guide}](${guide})` : "none beyond this section"}`,
+    `- **Guide:** ${guide ? guideLink(guide) : "none beyond this section"}`,
     "",
   ];
 }
@@ -243,35 +248,38 @@ function oauthSection(id: string, capability: OAuthClientCapability): string[] {
     `- **Hosts the token goes to:** ${list(capability.api)}, over https`,
     `- **Scopes an app lists:** the provider's own, ${spelled}, as ${code(`${JSON.stringify(id)}: { scopes: [...], why: "..." }`)}${flow.identityScopes.length > 0 ? `; the Gateway adds ${list(flow.identityScopes)} to every connect` : ""}${capability.reference ? `; the provider's list: ${capability.reference}` : ""}`,
     `- **Set it:** deploy an app that lists it (or ${code(`pnpm everyapp provider add ${id}`)}), then ${code(oauthClientSecretSetCommand(capability))} or paste the client in Manage workspace → Providers`,
-    `- **Guide:** ${guide ? `[${guide}](${guide})` : "none beyond this section"}`,
+    `- **Guide:** ${guide ? guideLink(guide) : "none beyond this section"}`,
     "",
   ];
 }
 
-/** The first line of setup/providers.md: setupSkills.test.ts exempts a file that starts with it from the headings contract. */
+/** The line after setup/providers.md's frontmatter: setupSkills.test.ts exempts a guide that has it from the headings contract. */
 export const GENERATED_SETUP_MARKER = "<!-- generated:";
 
-/** The everyapp skill's setup/providers.md, whole. */
+/** The agent docs' setup/providers.md, whole. */
 export function setupProvidersPage(): string {
   const kindName = { api_key: "API key", ai: "AI", oauth_client: "OAuth client" } as const;
   const index = [...apiKeys, ...aiProviders, ...oauthClients].map(([id, capability]) => {
     const guide = guideOf(id, capability);
-    return row([`[${code(id)}](#${id})`, capability.label, kindName[capability.mode], settingsOf(capability), guide ? `[${guide}](${guide})` : ""]);
+    return row([`[${code(id)}](#${id})`, capability.label, kindName[capability.mode], settingsOf(capability), guide ? guideLink(guide) : ""]);
   });
   return [
+    "---",
+    'title: "Every catalog provider: its settings, its key and one check"',
+    'description: "Generated from the built-in catalog: every API-key, AI and OAuth-preset provider the Gateway knows, a section per id with its settings, where the key comes from, how the Gateway sends it, a smoke request, cost and its guide."',
+    "---",
+    "",
     `${GENERATED_SETUP_MARKER} pnpm -C packages/cli docs:update writes this file from the built-in catalog (packages/sdk/src/internal/capabilities.ts, through packages/cli/src/docs/providersCatalog.ts). Edit the catalog, never this file: a test fails CI when it is stale. -->`,
     "",
-    "# Every catalog provider: its settings, its key and one check",
+    "For a coding agent setting up a provider the Gateway's built-in catalog has. Each provider is a section under its id, so `setup/providers.md#<id>` points at it. Where the provider has a guide of its own (its **Guide**), follow that guide and read this section as its summary. Read [the setup rules](/docs/agent/setup/guides) first: its rules hold here too, above all that a key never goes through the chat.",
     "",
-    "For a coding agent setting up a provider the Gateway's built-in catalog has. Each provider is a section under its id, so `setup/providers.md#<id>` points at it. Where the provider has a file of its own in this folder (its **Guide**), follow that file and read this section as its summary. Read [README.md](README.md) first: its rules hold here too, above all that a key never goes through the chat.",
-    "",
-    `A provider registered on one Gateway (\`pnpm everyapp provider add\`) is not in this file: \`pnpm everyapp provider show <id>\` prints its whole spec (its hint, settings, hosts, where the key comes from and its smoke request). The catalog has ${counts()}.`,
+    `A provider registered on one Gateway (\`pnpm everyapp provider add\`) is not on this page: \`pnpm everyapp provider show <id>\` prints its whole spec (its hint, settings, hosts, where the key comes from and its smoke request). The catalog has ${counts()}.`,
     "",
     "The smoke request needs the key, so it runs where the key is: the person's terminal, with the variable they read in hidden, or through the app that uses it. It is one call that costs nothing (unless marked charged).",
     "",
     "## How a value gets in",
     "",
-    "The three ways of [README.md](README.md), one line each (the rules, and the codes a failure carries, are there):",
+    "The three ways of [the setup rules](/docs/agent/setup/guides), one line each (the rules, and the codes a failure carries, are there):",
     "",
     "- **The person types it**, in their own terminal in the `every-app` folder: `pnpm everyapp configure <app id>` (everything the app needs) or `pnpm everyapp secret set NAME` (one name), each value at a hidden prompt.",
     "- **A command produced it**: pipe it straight in, `… | pnpm everyapp secret set NAME --json`, so it is never shown.",
@@ -283,7 +291,7 @@ export function setupProvidersPage(): string {
     "| --- | --- | --- | --- | --- |",
     ...index,
     "",
-    `Gateway services have no key of this kind: ${list(services)} (sending mail is [email.md](email.md); the members list needs nothing).`,
+    `Gateway services have no key of this kind: ${list(services)} (sending mail is [setup/email](/docs/agent/setup/email); the members list needs nothing).`,
     "",
     "## API-key providers",
     "",

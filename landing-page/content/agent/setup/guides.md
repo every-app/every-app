@@ -1,4 +1,7 @@
-# Setting up what the Gateway holds, end to end
+---
+title: "Setup guides: the index and their rules"
+description: "The index of the step-by-step setup guides (one per integration the Gateway holds) and the rules every guide follows: the three ways a value goes in, never through the chat, how an agent finds which guide applies."
+---
 
 For a coding agent setting up one integration for a person: the provider's
 side (an account, a plan, an app registration), the key or OAuth client it
@@ -12,27 +15,27 @@ click when they have to do something themselves.
 
 | Integration                                   | File                                   | Gateway settings                                                                | Used by                                                                 |
 | --------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Cloudflare account, the Gateway and its owner | [gateway.md](gateway.md)               | set by `everyapp setup`    | everything                                                              |
-| Cloudflare Access in front of the Gateway     | [access.md](access.md)                 | `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD`, `CLOUDFLARE_ACCESS_APPS_AUD` (set by `everyapp access on`; optional: `EMAIL_PASSWORD_SIGN_IN`) | sign-in, every app                                          |
-| Email sending (Cloudflare Email Sending or Resend) | [email.md](email.md)               | `EMAIL_FROM`, `EMAIL_FROM_NAME`; `RESEND_API_KEY`, `EMAIL_PROVIDER`, `EMAIL_REST_API_TOKEN` | invitations, password resets, openmail, Open Analytics (optional), any app that sends |
-| DataForSEO                                    | [dataforseo.md](dataforseo.md)         | `DATAFORSEO_API_KEY`                                                            | OpenSEO; the DataForSEO MCP app (`pnpm everyapp mcp on dataforseo`) |
-| Any remote MCP server, as an MCP app          | [remote-mcp.md](remote-mcp.md)         | `<ID>_MCP_TOKEN`, or OAuth (each member connects); none for a public one        | the MCP app added with `pnpm everyapp mcp add <url>`                     |
-| Context.dev                                   | [context.md](context.md)               | `CONTEXT_API_KEY`                                                               | Open CRM; OpenSEO (optional: rendered audits)                           |
-| OpenRouter                                    | [openrouter.md](openrouter.md)         | `OPENROUTER_API_KEY`                                                            | OpenSEO, Open CRM, openmail                                        |
-| OpenAI                                        | [openai.md](openai.md)                 | `OPENAI_API_KEY`                                                                | apps listing the `openai` provider                                      |
-| Workers AI                                    | [workers-ai.md](workers-ai.md)         | `WORKERS_AI_API_TOKEN` (`CLOUDFLARE_ACCOUNT_ID` is set by `everyapp setup`)     | openmail (optional)                                                |
-| The default model (any one key)               | [ai.md](ai.md)                         | one provider's key (OpenRouter first); the setting with `everyapp ai default`   | every app whose manifest says `ai: { chat: true }` (openmail, OpenCRM) |
-| Cloudflare AI Gateway in front of the models  | [ai-gateway.md](ai-gateway.md)         | `AI_GATEWAY_ID` (set by `everyapp ai gateway on`; optional `AI_GATEWAY_API_KEY`) | every AI provider call, once it is on                                   |
-| Google (Gmail, Calendar, Search Console and Analytics) | [google.md](google.md)        | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`                  | Open CRM                                                                |
-| Microsoft 365 (Outlook mail and calendar)     | [microsoft-365.md](microsoft-365.md)   | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET`                        | Open CRM                                                                |
-| Slack (OAuth client)                          | [slack.md](slack.md)                   | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`                                        | Open CRM                                                                |
-| Every catalog provider, one section each (generated) | [providers.md](providers.md)    | each provider's own, named there                                                | apps listing the provider                                               |
-| Sign in with Google                           | [signin-google.md](signin-google.md)   | `GOOGLE_SIGNIN_CLIENT_ID`, `GOOGLE_SIGNIN_CLIENT_SECRET`                        | the Gateway's sign-in page (Continue with Google)                       |
-| Sign in with Microsoft                        | [signin-microsoft.md](signin-microsoft.md) | `MICROSOFT_SIGNIN_CLIENT_ID`, `MICROSOFT_SIGNIN_CLIENT_SECRET` (optional: `MICROSOFT_SIGNIN_TENANT`) | the Gateway's sign-in page (Continue with Microsoft)          |
-| Sign in with GitHub                           | [signin-github.md](signin-github.md)   | `GITHUB_SIGNIN_CLIENT_ID`, `GITHUB_SIGNIN_CLIENT_SECRET`                        | the Gateway's sign-in page (Continue with GitHub)                       |
-| Sign in with Apple                            | [signin-apple.md](signin-apple.md)     | `APPLE_SIGNIN_CLIENT_ID`, `APPLE_SIGNIN_CLIENT_SECRET`                          | the Gateway's sign-in page (Continue with Apple)                        |
-| Sign in with Cloudflare                       | [signin-cloudflare.md](signin-cloudflare.md) | `CLOUDFLARE_SIGNIN_CLIENT_ID`, `CLOUDFLARE_SIGNIN_CLIENT_SECRET`          | the Gateway's sign-in page (Continue with Cloudflare)                   |
-| Sign in with any OpenID Connect issuer (SSO)  | [signin-oidc.md](signin-oidc.md)       | `OIDC_SIGNIN_ISSUER`, `OIDC_SIGNIN_CLIENT_ID`, `OIDC_SIGNIN_CLIENT_SECRET` (optional: `OIDC_SIGNIN_LABEL`) | the Gateway's sign-in page (Continue with SSO, or its label) |
+| Cloudflare account, the Gateway and its owner | [gateway.md](/docs/agent/setup/gateway)               | set by `everyapp setup`    | everything                                                              |
+| Cloudflare Access in front of the Gateway     | [access.md](/docs/agent/setup/access)                 | `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD`, `CLOUDFLARE_ACCESS_APPS_AUD` (set by `everyapp access on`; optional: `EMAIL_PASSWORD_SIGN_IN`) | sign-in, every app                                          |
+| Email sending (Cloudflare Email Sending or Resend) | [email.md](/docs/agent/setup/email)               | `EMAIL_FROM`, `EMAIL_FROM_NAME`; `RESEND_API_KEY`, `EMAIL_PROVIDER`, `EMAIL_REST_API_TOKEN` | invitations, password resets, openmail, Open Analytics (optional), any app that sends |
+| DataForSEO                                    | [dataforseo.md](/docs/agent/setup/dataforseo)         | `DATAFORSEO_API_KEY`                                                            | OpenSEO; the DataForSEO MCP app (`pnpm everyapp mcp on dataforseo`) |
+| Any remote MCP server, as an MCP app          | [remote-mcp.md](/docs/agent/setup/remote-mcp)         | `<ID>_MCP_TOKEN`, or OAuth (each member connects); none for a public one        | the MCP app added with `pnpm everyapp mcp add <url>`                     |
+| Context.dev                                   | [context.md](/docs/agent/setup/context)               | `CONTEXT_API_KEY`                                                               | Open CRM; OpenSEO (optional: rendered audits)                           |
+| OpenRouter                                    | [openrouter.md](/docs/agent/setup/openrouter)         | `OPENROUTER_API_KEY`                                                            | OpenSEO, Open CRM, openmail                                        |
+| OpenAI                                        | [openai.md](/docs/agent/setup/openai)                 | `OPENAI_API_KEY`                                                                | apps listing the `openai` provider                                      |
+| Workers AI                                    | [workers-ai.md](/docs/agent/setup/workers-ai)         | `WORKERS_AI_API_TOKEN` (`CLOUDFLARE_ACCOUNT_ID` is set by `everyapp setup`)     | openmail (optional)                                                |
+| The default model (any one key)               | [ai.md](/docs/agent/setup/ai)                         | one provider's key (OpenRouter first); the setting with `everyapp ai default`   | every app whose manifest says `ai: { chat: true }` (openmail, OpenCRM) |
+| Cloudflare AI Gateway in front of the models  | [ai-gateway.md](/docs/agent/setup/ai-gateway)         | `AI_GATEWAY_ID` (set by `everyapp ai gateway on`; optional `AI_GATEWAY_API_KEY`) | every AI provider call, once it is on                                   |
+| Google (Gmail, Calendar, Search Console and Analytics) | [google.md](/docs/agent/setup/google)        | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`                  | Open CRM                                                                |
+| Microsoft 365 (Outlook mail and calendar)     | [microsoft-365.md](/docs/agent/setup/microsoft-365)   | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET`                        | Open CRM                                                                |
+| Slack (OAuth client)                          | [slack.md](/docs/agent/setup/slack)                   | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`                                        | Open CRM                                                                |
+| Every catalog provider, one section each (generated) | [providers.md](/docs/agent/setup/providers)    | each provider's own, named there                                                | apps listing the provider                                               |
+| Sign in with Google                           | [signin-google.md](/docs/agent/setup/signin-google)   | `GOOGLE_SIGNIN_CLIENT_ID`, `GOOGLE_SIGNIN_CLIENT_SECRET`                        | the Gateway's sign-in page (Continue with Google)                       |
+| Sign in with Microsoft                        | [signin-microsoft.md](/docs/agent/setup/signin-microsoft) | `MICROSOFT_SIGNIN_CLIENT_ID`, `MICROSOFT_SIGNIN_CLIENT_SECRET` (optional: `MICROSOFT_SIGNIN_TENANT`) | the Gateway's sign-in page (Continue with Microsoft)          |
+| Sign in with GitHub                           | [signin-github.md](/docs/agent/setup/signin-github)   | `GITHUB_SIGNIN_CLIENT_ID`, `GITHUB_SIGNIN_CLIENT_SECRET`                        | the Gateway's sign-in page (Continue with GitHub)                       |
+| Sign in with Apple                            | [signin-apple.md](/docs/agent/setup/signin-apple)     | `APPLE_SIGNIN_CLIENT_ID`, `APPLE_SIGNIN_CLIENT_SECRET`                          | the Gateway's sign-in page (Continue with Apple)                        |
+| Sign in with Cloudflare                       | [signin-cloudflare.md](/docs/agent/setup/signin-cloudflare) | `CLOUDFLARE_SIGNIN_CLIENT_ID`, `CLOUDFLARE_SIGNIN_CLIENT_SECRET`          | the Gateway's sign-in page (Continue with Cloudflare)                   |
+| Sign in with any OpenID Connect issuer (SSO)  | [signin-oidc.md](/docs/agent/setup/signin-oidc)       | `OIDC_SIGNIN_ISSUER`, `OIDC_SIGNIN_CLIENT_ID`, `OIDC_SIGNIN_CLIENT_SECRET` (optional: `OIDC_SIGNIN_LABEL`) | the Gateway's sign-in page (Continue with SSO, or its label) |
 
 The six sign-in providers are set with `pnpm everyapp signin add <id>`
 rather than `secret set`: in the person's terminal it asks for each
@@ -40,7 +43,7 @@ setting (the client secret at a hidden prompt), and unattended the secret
 comes from `--client-secret-from-env VAR`, never the command line.
 
 A provider of the built-in catalog without a file of its own above is a
-section of [providers.md](providers.md) under its id
+section of [providers.md](/docs/agent/setup/providers) under its id
 (`setup/providers.md#<id>`: its settings, where the key comes from, how
 the Gateway sends it, a smoke request, cost and rate), generated from the
 catalog by `pnpm -C packages/cli docs:update`; one with a file has a
@@ -70,7 +73,7 @@ same: their files set the client and the scopes to allow on it.
 
 Which integrations a person needs: the apps they deploy decide. The four
 EveryApp apps (OpenSEO, OpenCRM, OpenAnalytics, OpenMail) are
-installed from their GitHub releases by [gateway.md](gateway.md)'s last
+installed from their GitHub releases by [gateway.md](/docs/agent/setup/gateway)'s last
 step, each unless the person skips it; the keys they then ask for are the
 files below. From any
 directory, `pnpm everyapp secret list <app id> --json` (the id as `status`
@@ -88,10 +91,11 @@ the app Worker's names were never recorded, which never blocks),
 `blocking`, and when known `why`, `how` (an app value's: where it lives),
 `hint` (what the key is and where it comes from, from the provider's
 entry), `docs` (where the key comes from) and, for a Gateway setting,
-`setup`: the file here that sets it up, relative to the everyapp skill
-(`setup/dataforseo.md`; in an app
-`node_modules/everyapp/skills/everyapp/setup/dataforseo.md`, in this
-checkout `packages/cli/skills/everyapp/setup/dataforseo.md`). An app's own
+`setup`: the guide that sets it up, relative to the agent docs
+(`setup/dataforseo.md` is
+`https://everyapp.com/docs/agent/setup/dataforseo.md`, offline
+`everyapp docs setup/dataforseo`, in an EveryApp checkout
+`landing-page/content/agent/setup/dataforseo.md`). An app's own
 values have their feature's `steps` and their `how` instead:
 `pnpm everyapp configure <app id> --json` returns them filled in as
 `data.features`. An unset setting of an optional feature is in `settings`
@@ -105,7 +109,7 @@ checkout root with no app named, `data.apps[]` has every app's `id` and
 `run` the command above). Under each unmet setting that has a guide,
 `status` (under "<app> needs setup"; the same lines are in
 `data.fixes[].message`) and `secret list <app id>` (under its unmet settings)
-print `Guide: node_modules/everyapp/skills/everyapp/setup/<name>.md`, once per guide, and
+print `Guide: https://everyapp.com/docs/agent/setup/<name>.md`, once per guide, and
 `secret list --json` names it as the setting's `setup`: that is how an agent lands on
 one of these files. A provider registered on the Gateway has no file, so
 its line is `Guide: pnpm everyapp provider show <id>` instead. On the Gateway's home such an app shows
@@ -167,7 +171,7 @@ the file applies):
 1. `pnpm everyapp status --json`: `data.installed` and `data.claimed` are
    true, `data.gatewayUrl` is the Gateway (its host is `<gateway host>`
    below; `data.appBaseDomain` is where apps live, `<app>.<app base domain>`).
-   Not installed, or no owner: [gateway.md](gateway.md) first. `status`,
+   Not installed, or no owner: [gateway.md](/docs/agent/setup/gateway) first. `status`,
    `secret list` and `email show` all need the Cloudflare login and an
    installed Gateway. Each logs in by itself: with nothing logged in it
    emits `action_required cloudflare_login` with `waiting: true` (show
@@ -178,7 +182,7 @@ the file applies):
    stops with `install_gateway` (exit 2; its `data.rerun` is the setup
    command), while `secret list` and `email show` end with the error
    `GATEWAY_NOT_FOUND` (exit 1); the fix for both is
-   [gateway.md](gateway.md). In the report, `data.access` is `{ on }`
+   [gateway.md](/docs/agent/setup/gateway). In the report, `data.access` is `{ on }`
    when Cloudflare Access can be checked, else null (a hosted
    Gateway, no Worker yet, or cf couldn't list the Worker's settings: then
    `data.fixes` has `ACCESS_UNKNOWN`). Each `data.fixes` entry carries
@@ -191,7 +195,7 @@ the file applies):
    with `severity: "error"` is different: the other commands refuse the
    Gateway until `pnpm everyapp update` runs, so run it first.
 2. `pnpm everyapp secret list <app id> --json`, from anywhere (the app's
-   directory is no longer required): this file applies when its setting
+   directory is no longer required): this guide applies when its setting
    is in `data.app.setup.unmet` (each entry's `names`, `need.kind`,
    `holder` and `setup` say what goes where and which file), or, for an
    optional feature's, in `settings` with `set: false`; `data.app.setup.command`

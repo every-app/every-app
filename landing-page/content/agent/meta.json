@@ -1,6 +1,6 @@
 {
   "title": "Docs for coding agents",
-  "description": "References for the coding agent that sets up, builds and operates EveryApp apps for a person: every command, the --json protocol, every error code, everyapp.config.ts, the SDK, deploys, secrets, MCP, providers, Access and sign-in.",
+  "description": "References for the coding agent that sets up, builds and operates EveryApp apps for a person: every command, the --json protocol, every error code, everyapp.config.ts, the SDK, deploys, secrets, MCP and agent tools, providers, Access, sign-in, and a step-by-step setup guide per integration.",
   "pages": [
     "index",
     "---Drive it---",
@@ -21,8 +21,10 @@
     "email",
     "events",
     "mcp",
+    "tools",
     "native",
     "deploy",
+    "security-review",
     "---Operate---",
     "providers",
     "ai",

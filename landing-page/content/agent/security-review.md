@@ -1,4 +1,7 @@
-# Reviewing an app's changes for security problems
+---
+title: "Reviewing an app's changes for security problems"
+description: "The review an agent runs on an app's own changes before a pull request that touches identity, public routes, tools, secrets or queries: the app's boundaries, how to run it in Claude Code or any agent, what is not a finding, and what to do with one."
+---
 
 The Gateway in front of an app does the sign-in and passes identity in; the
 app does the rest. Review the app's pending changes before a pull request
@@ -9,7 +12,7 @@ by the agent that made the change, with no CI job and no API key.
 
 What the review looks for (what the Gateway promises and what the app must
 do itself is the security page, `docs/security.md` in the EveryApp
-checkout, served at https://everyapp.com/docs/agent/repo/threat-model):
+checkout, served at [security](/docs/agent/repo/threat-model)):
 
 - A route, server function or tool that reads who the user is from anything
   but the SDK (`everyApp()`, `getEveryAppUser()`, `requireEveryAppUser()`, a
@@ -35,7 +38,7 @@ checkout, served at https://everyapp.com/docs/agent/repo/threat-model):
 
 - In Claude Code: `/security-review` (its built-in review of the branch's
   pending changes), telling it to judge the diff against the boundaries
-  above (point it at this file). It reads the code; it does not need to run
+  above (point it at this page: https://everyapp.com/docs/agent/security-review.md). It reads the code; it does not need to run
   anything.
 - Any other agent: read `git diff <base>...HEAD` plus the working tree
   against the list above, and report each finding as file, line, severity

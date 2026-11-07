@@ -289,10 +289,10 @@ describe("describeUnmet", () => {
       "OpenRouter: OPENROUTER_API_KEY",
       OPENROUTER_HINT,
       "Get it at https://openrouter.ai/settings/keys",
-      "Guide: node_modules/everyapp/skills/everyapp/setup/openrouter.md",
+      "Guide: https://everyapp.com/docs/agent/setup/openrouter.md",
       "Google: GOOGLE_WORKSPACE_CLIENT_ID and GOOGLE_WORKSPACE_CLIENT_SECRET",
       "Get it at https://console.cloud.google.com/apis/credentials",
-      "Guide: node_modules/everyapp/skills/everyapp/setup/google.md",
+      "Guide: https://everyapp.com/docs/agent/setup/google.md",
       "MAIN_SECRET",
       "SIGNING_KEY",
       "Paste it at {appUrl}/settings",
@@ -324,7 +324,7 @@ describe("describeUnmet", () => {
       "DataForSEO: DATAFORSEO_API_KEY",
       expect.stringMatching(/^The API login and password/),
       "Get it at https://app.dataforseo.com/api-access",
-      "Guide: node_modules/everyapp/skills/everyapp/setup/dataforseo.md",
+      "Guide: https://everyapp.com/docs/agent/setup/dataforseo.md",
     ]);
   });
 });
@@ -375,8 +375,8 @@ describe("a gateway's registered providers", () => {
 });
 
 describe("the setup guides the registries name", () => {
-  it("exist in the everyapp skill, one file per guide", () => {
-    const skill = path.resolve(__dirname, "../../../skills/everyapp");
+  it("exist in the agent docs, one page per guide", () => {
+    const agentDocs = path.resolve(__dirname, "../../../../../landing-page/content/agent");
     const everything = {
       providers: Object.keys(DEV_AI_PROVIDERS),
       // Every capability; the AI providers are listed under `providers`.
@@ -395,7 +395,7 @@ describe("the setup guides the registries name", () => {
     expect(guides).toContain("setup/google.md");
     expect(guides.length).toBeGreaterThan(0);
     for (const guide of guides) {
-      expect(fs.existsSync(path.join(skill, guide)), guide).toBe(true);
+      expect(fs.existsSync(path.join(agentDocs, guide)), guide).toBe(true);
     }
   });
 });

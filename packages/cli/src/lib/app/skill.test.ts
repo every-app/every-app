@@ -47,8 +47,10 @@ describe("the skills in a new app", () => {
       expect(fs.readFileSync(path.join(appDir, ".claude", "skills", name, "SKILL.md"), "utf8")).toBe(shipped);
       expect(fs.readFileSync(path.join(appDir, ".agents", "skills", name, "SKILL.md"), "utf8")).toBe(shipped);
     }
-    expect(fs.existsSync(path.join(appDir, ".agents", "skills", "everyapp", "setup", "README.md"))).toBe(true);
-    expect(fs.existsSync(path.join(appDir, ".claude", "skills", "build-every-app", "patterns.md"))).toBe(true);
+    // Each skill is one short file that points at the agent docs; the detail is on the site.
+    for (const name of result.skills) {
+      expect(fs.readdirSync(path.join(appDir, ".agents", "skills", name))).toEqual(["SKILL.md"]);
+    }
   });
 
   it("leaves the app's own skills alone and replaces an old copy with the link", async () => {

@@ -3,7 +3,7 @@ title: Development vs production
 description: What everyapp dev starts, the dev identity, what matches production and what differs locally (AI, capabilities, email, resources), linked dev against a real Gateway, and the pitfalls.
 ---
 
-`everyapp dev` (the app's `pnpm dev` script) runs the app's dev server (`cf dev`, or the manifest's `dev` command) on an internal loopback port, and a small local Gateway in front of it that runs the real perimeter: public-route policy, header stripping, CSRF, and a real RS256 identity token. It never ends on its own: an agent starts it in the background and reads the `App` line (with `--json`, the `dev.ready` step; in linked mode the sign-in URL is in the `dev.link` event).
+`everyapp dev` (the app's `pnpm dev` script) runs the app's dev server (`cf dev`, or the manifest's `dev` command) on an internal loopback port, and a small local Gateway in front of it that runs the real perimeter: public-route policy, header stripping, CSRF, and a real RS256 identity token. It never ends on its own: an agent starts it in the background and reads the `App` line (with `--json`, the `dev.ready` step; in linked mode the sign-in URL is in the `dev.link` event). Stop it with SIGINT (Ctrl-C).
 
 ## What it does
 

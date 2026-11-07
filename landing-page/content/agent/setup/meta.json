@@ -1,0 +1,28 @@
+{
+  "title": "Setup",
+  "description": "Driving setup for a person, and a step-by-step guide per integration the Gateway holds.",
+  "pages": [
+    "guides",
+    "gateway",
+    "access",
+    "email",
+    "ai",
+    "openrouter",
+    "openai",
+    "workers-ai",
+    "ai-gateway",
+    "dataforseo",
+    "context",
+    "remote-mcp",
+    "google",
+    "microsoft-365",
+    "slack",
+    "providers",
+    "signin-google",
+    "signin-microsoft",
+    "signin-github",
+    "signin-apple",
+    "signin-cloudflare",
+    "signin-oidc"
+  ]
+}

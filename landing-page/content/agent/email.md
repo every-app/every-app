@@ -14,7 +14,7 @@ The manifest declares what the app does: `capabilities: { email: { access: "writ
 
 ## Operator setup
 
-Guide: `setup/email.md` in the everyapp skill.
+Guide: [setup/email](/docs/agent/setup/email).
 
 1. Onboard the sending domain to one provider. For Cloudflare Email Sending, use the dashboard (Compute & AI → Email Service → Email Sending → Onboard Domain) or `cf email-sending subdomains create`. For Resend, verify the domain there.
 2. Set the sender: `everyapp secret set EMAIL_FROM EMAIL_FROM_NAME`. `EMAIL_FROM` is an address or `Name <address>`; a display name is required one way or the other.

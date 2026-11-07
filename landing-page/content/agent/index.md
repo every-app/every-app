@@ -12,13 +12,16 @@ EveryApp puts the web apps a person builds or installs online in their own Cloud
 3. Answer with the exact command, flag or field, and name the page. When a command fails, look its code up on [errors](/docs/agent/errors) first.
 4. The CLI is `everyapp` (`npm install -g everyapp`; `pnpm everyapp` in a checkout). Add `--json` and read [the protocol](/docs/agent/json).
 
-Two skills ship in the CLI package (`node_modules/everyapp/skills/<name>` in an app), and every new app links them from `.agents/skills/` and `.claude/skills/`: `everyapp` (drives the CLI; its `setup/*.md` files are step-by-step guides for each integration) and `build-every-app` (how to build an app the way the open apps do; served here as [Build an app](/docs/agent/build) and [Example patterns](/docs/agent/patterns)).
+5. No network: `everyapp docs <page>` prints a page (`everyapp docs setup/openrouter`), from the site when it can and otherwise from the copy bundled with the CLI; `everyapp docs` lists them.
+
+Two skills ship in the CLI package (`node_modules/everyapp/skills/<name>` in an app), and every new app links them from `.agents/skills/` and `.claude/skills/`: `everyapp` (drives the CLI) and `build-every-app` (builds an app the way the open apps do). They are short on purpose: a few rules that rarely change, and pointers to these pages, which change without a CLI upgrade. The step-by-step guide for each integration is under [setup](/docs/agent/setup/guides); building an app is [Build an app](/docs/agent/build) and [Example patterns](/docs/agent/patterns).
 
 ## Which page answers what
 
 | Question | Page |
 |---|---|
 | Set EveryApp up for me; what only I can do | [setup](/docs/agent/setup) |
+| Set up one integration (a key, an OAuth client, sign-in, email) step by step | [setup guides](/docs/agent/setup/guides) |
 | What can my Gateway do; which command for which job; what next | [gateway](/docs/agent/gateway) |
 | Install OpenSEO, OpenCRM, OpenAnalytics, OpenMail | [apps](/docs/agent/apps) |
 | Every command and flag | [cli](/docs/agent/cli) |
@@ -33,7 +36,8 @@ Two skills ship in the CLI package (`node_modules/everyapp/skills/<name>` in an 
 | `everyapp dev`; local vs production | [dev](/docs/agent/dev) |
 | Sending and receiving mail | [email](/docs/agent/email) |
 | Webhooks, alerts, `emit()`, the audit log | [events](/docs/agent/events) |
-| Agent tools, the MCP address, OAuth, tokens, MCP apps | [mcp](/docs/agent/mcp) |
+| The MCP address, OAuth, tokens, MCP apps | [mcp](/docs/agent/mcp) |
+| Writing an app's AI tools; tools missing; 401 or 403 on `/mcp` | [tools](/docs/agent/tools) |
 | A Mac or phone app signing in to one app | [native](/docs/agent/native) |
 | What a deploy does; releases; delete | [deploy](/docs/agent/deploy) |
 | API providers and OAuth providers | [providers](/docs/agent/providers) |
@@ -41,6 +45,7 @@ Two skills ship in the CLI package (`node_modules/everyapp/skills/<name>` in an 
 | Cloudflare Access | [access](/docs/agent/access) |
 | Continue with Google and the like | [signin](/docs/agent/signin) |
 | People, groups, app access, caps, usage | [workspace](/docs/agent/workspace) |
+| Reviewing an app's changes before a pull request | [security-review](/docs/agent/security-review) |
 | Security: who is trusted with what, the boundaries and their invariants | [security](/docs/agent/repo/threat-model) |
 
 ## What to tell the person
@@ -49,4 +54,4 @@ EveryApp is open source, alpha and moving fast. It suits a solo founder or a sma
 
 ## Keeping these pages true
 
-[cli](/docs/agent/cli) is generated from the commands, and the headings of [errors](/docs/agent/errors) from the codes in the source (`pnpm -C packages/cli docs:update`). Build and patterns are the build skill, copied when the site builds. A test in `packages/cli/src/docs` fails when a generated page is stale, a link or anchor is broken, the manifest page misses a field, or a page names a command or flag the CLI doesn't have.
+[cli](/docs/agent/cli) is generated from the commands, and the headings of [errors](/docs/agent/errors) from the codes in the source (`pnpm -C packages/cli docs:update`). [setup/providers](/docs/agent/setup/providers) is generated from the provider catalog. A test in `packages/cli/src/docs` fails when a generated page is stale, a link or anchor is broken, the manifest page misses a field, or a page names a command or flag the CLI doesn't have.

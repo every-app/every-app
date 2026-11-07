@@ -1,4 +1,7 @@
-# OpenAI for the Gateway
+---
+title: "OpenAI for the Gateway"
+description: "Step-by-step guide: an OpenAI key (OPENAI_API_KEY) on the Gateway for apps that list the openai provider: the account, billing, the key, the check, rotation."
+---
 
 One `OPENAI_API_KEY` on the Gateway lets every app whose `everyapp.config.ts`
 lists `providers: ["openai"]` call OpenAI's inference endpoints through the
@@ -63,7 +66,7 @@ gives no API credit.
    --json` reads that file instead of the registry and works before the
    first deploy too): the `OPENAI_API_KEY` entry in `data.app.setup.unmet`
    (`names` `["OPENAI_API_KEY"]`, `need.kind` `required`, `holder`
-   `gateway`, `setup` `setup/openai.md`) means this file applies, and the app doesn't open until
+   `gateway`, `setup` `setup/openai.md`) means this guide applies, and the app doesn't open until
    it is set: the Gateway lists it as needing setup, sends a browser opening
    `https://<app>.<app base domain>` to its setup dialog and answers
    anything else 503 `app_needs_setup`. `data.app.setup.command` is
@@ -74,20 +77,20 @@ gives no API credit.
    replacing it; the old value can't be read back, so replacing means a new
    key. A manifest that writes the provider as `{ id: "openai", optional:
    true }` puts it in `settings` with `need.kind` `optional` and never in
-   `unmet`: the app opens without it, and this file still applies while
+   `unmet`: the app opens without it, and this guide still applies while
    `set` is false. The older fields still say the same:
    `data.gateway.needed` has `{"name":"OPENAI_API_KEY","required":true,"set":false}`,
    and `data.gateway.missing` lists what is still to set. This is how an agent
    lands here: `status` (under "<app> needs setup") and `secret list <app id>`
    (under the unmet setting) print `Guide:
-   node_modules/everyapp/skills/everyapp/setup/openai.md`, and `secret list --json` carries the path as the entry's `setup` (in the
-   checkout: `packages/cli/skills/everyapp/setup/openai.md`).
+   https://everyapp.com/docs/agent/setup/openai.md`, and `secret list --json` carries the path as the entry's `setup` (in the
+   checkout: `landing-page/content/agent/setup/openai.md`).
 2. `pnpm everyapp status --json`: `data.installed` and `data.claimed` are
    true, `data.gatewayUrl` is `https://<gateway host>`; the app's entry in
    `data.apps` carries the same `setup`, and while a required setting is
    missing `data.fixes` has `APP_NEEDS_SETUP` for it (severity `warning`,
    headline "<app> needs setup", `run` the same command). Not installed, or
-   no owner: [gateway.md](gateway.md) first.
+   no owner: [gateway.md](/docs/agent/setup/gateway) first.
 3. Same output as 1, `data.app.deployed`: false means the app isn't deployed
    yet (from anywhere, an app that was never deployed ends `secret list
    <app id>` with the error `APP_NOT_FOUND`, "<app> isn't deployed to this
@@ -153,7 +156,7 @@ when they want a project of their own.
    service account's key works only in a project from step 4 (none can be
    added to the Default project) and gets full project permissions, with
    no Permissions choice at creation.
-6. **Person:** Set it, the README's first way (the value is on a dashboard
+6. **Person:** Set it, the setup rules' first way (the value is on a dashboard
    they are looking at). In a second terminal, in the `every-app` folder:
    `pnpm everyapp configure <app id>`, which asks for this key among the
    app's other unset settings, or `pnpm everyapp secret set OPENAI_API_KEY` for just this one; paste at
@@ -161,7 +164,7 @@ when they want a project of their own.
    `Set OPENAI_API_KEY on the Gateway`, then "Live now. No deploy needed."
    (`secret set`: "Live now on <gateway host>. No deploy needed."). Wait
    for "done".
-   Alternative, the README's third way, when the person exported
+   Alternative, the setup rules' third way, when the person exported
    `OPENAI_API_KEY` before starting you: **You:**
    `pnpm everyapp configure <app id> --from-env --json` (the `done` event's
    `data.set` holds `OPENAI_API_KEY`) or
@@ -183,7 +186,7 @@ when they want a project of their own.
 2. Smoke check, in the person's terminal, with the key exported there
    (never in yours; it bills nothing). If they typed it at the prompt in
    step 6 and have no variable, skip to 3; or they read it in hidden in
-   their own terminal (README's third way: `read -rs OPENAI_API_KEY &&
+   their own terminal (the setup rules' third way: `read -rs OPENAI_API_KEY &&
    export OPENAI_API_KEY`, paste, Enter; never a typed `export …=`, which
    the shell history keeps) and `unset` it after.
 
@@ -213,7 +216,7 @@ when they want a project of their own.
    `createGatewayFetch({ env, for })` to
    `http://every-app-gateway.internal/api/ai/openai/v1/chat/completions`.
 4. The Gateway's logs, when the app's error isn't clear: Cloudflare
-   dashboard, README's path: **Workers & Pages** → `every-app-gateway` → **Observability** (**Logs** on older accounts) → **Live**
+   dashboard, the setup rules' path: **Workers & Pages** → `every-app-gateway` → **Observability** (**Logs** on older accounts) → **Live**
    streams now (nothing stored, 10 viewers at most); Workers Logs is on
    for the Gateway, so the same page keeps them too. Each OpenAI call logs
    `ai.proxy.usage` with `provider`, `appId`, `route`, `model`, `status`,
@@ -228,10 +231,10 @@ when they want a project of their own.
 
 | Error or symptom                                                                | Meaning                                                                                                                            | What to do                                                                                                                                                                                                                                                       |
 | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SECRET_VALUE_REQUIRED` from `secret set`                                       | nothing was piped and there is no terminal to ask in                                                                               | one of README's three ways: the person's terminal, a pipe, or `--from-env`                                                                                                                                                                                       |
+| `SECRET_VALUE_REQUIRED` from `secret set`                                       | nothing was piped and there is no terminal to ask in                                                                               | one of the setup rules' three ways: the person's terminal, a pipe, or `--from-env`                                                                                                                                                                                       |
 | `SECRET_VALUE_REQUIRED` from `pnpm everyapp configure <app id> --json`         | nothing was piped (with `--from-env`, stdin isn't read), no variable of a missing name was found, and there is no terminal; the message names what the app still needs | the person's terminal (step 6), `NAME=value` lines on stdin, or the hidden read then its `data.rerun`, `pnpm everyapp configure <app id> --from-env`                                                                                                  |
 | `SECRET_SEVERAL_NAMES`                                                          | several names with `--from-env` or a pipe, which carry one value                                                                   | one call per name                                                                                                                                                                                                                                                |
-| `SECRET_EMPTY`                                                                  | the `--from-env` variable is unset or empty in your process                                                                        | the person reads it in hidden (README's third way) in the shell that runs the command, or types it at the prompt                                                                                                                                                  |
+| `SECRET_EMPTY`                                                                  | the `--from-env` variable is unset or empty in your process                                                                        | the person reads it in hidden (the setup rules' third way) in the shell that runs the command, or types it at the prompt                                                                                                                                                  |
 | `SECRET_NOT_DECLARED` with `data.didYouMean`                                    | the name is misspelt                                                                                                               | rerun with the name in `data.didYouMean` and the same value source (`--from-env VAR --json`, or the same pipe); `data.rerun` carries only the names, so run as is it stops with `SECRET_VALUE_REQUIRED`                                                           |
 | `CONFIRMATION_REQUIRED` from `secret unset --json`                              | no `--yes`, and no terminal to ask in                                                                                              | that is the ask: show it to the person; rerun with `--yes` only if they say so                                                                                                                                                                                   |
 | a browser opening the app is sent to `https://<gateway host>/?setup=<app id>`; any other request gets 503 with the body `{"error":"app_needs_setup","app":"<app id>"}` | the Gateway's setup gate: a required setting of the app is still unset (this key, or another the manifest requires) | `data.app.setup.command`, `pnpm everyapp configure <app id>` (step 6), then Verify step 1 |
@@ -269,7 +272,7 @@ when they want a project of their own.
   the name, `done` has `data.removed: false`. Then revoke the key at
   https://platform.openai.com/api-keys: a key the Gateway no longer holds
   is still a key. Apps whose manifest requires `openai` then need setup again: the Gateway closes
-  them until the setting is back (`status` says so, with this file's
+  them until the setting is back (`status` says so, with this guide's
   path); an app that lists the provider in an optional feature keeps opening and
   answers 503 `ai_provider_not_configured` on each call instead.
 

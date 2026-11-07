@@ -10,8 +10,7 @@
  *    below), relative links between repository documents become site links
  *    where the target is mirrored and GitHub links otherwise, and a `<` that
  *    would read as an HTML tag outside code is escaped, since the pages
- *    render as plain Markdown. Then write build.md and patterns.md from the
- *    build-every-app skill.
+ *    render as plain Markdown.
  *
  * 2. Write every agent page as the Markdown the site serves for it, into
  *    public/docs/agent/<page>.md (and public/docs/agent.md for the home
@@ -55,7 +54,7 @@ const SITE_URL = "https://everyapp.com";
  * for llms.txt, a metaTitle or metaDescription where search results need a
  * shorter one, and for a document the code has moved past, a `note` the
  * page opens with (the source stays as its authors wrote it). Only the
- * security page is mirrored, under the `threat-model` slug that vendored
+ * security page is mirrored, under the `threat-model` slug that older
  * skills link to; links to any other repository document become GitHub
  * links.
  */
@@ -195,58 +194,6 @@ console.log(
   `Mirrored ${present.length} repository documents into ${relative(process.cwd(), outDir)}`,
 );
 
-// 1b: the build skill as two pages, build.md and patterns.md, so the skill
-// every created app links and /docs/agent/build are one text.
-
-const SKILL = "packages/cli/skills/build-every-app";
-
-/** The frontmatter fields of a skill file and the body after it, without its H1. */
-function skillFile(name) {
-  const text = readFileSync(join(repoRoot, SKILL, name), "utf8");
-  const match = text.match(/^---\n([\s\S]*?)\n---\n/);
-  const fields = {};
-  for (const line of (match?.[1] ?? "").split("\n")) {
-    const colon = line.indexOf(":");
-    if (colon > 0)
-      fields[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
-  }
-  const body = (match ? text.slice(match[0].length) : text)
-    .replace(/^\s*# [^\n]*\n/, "")
-    .replace(/^\n+/, "")
-    .replace(/\s+$/, "");
-  return { fields, body };
-}
-
-const skillPage = (title, description, preface, body) =>
-  `---\ntitle: ${JSON.stringify(title)}\ndescription: ${JSON.stringify(description)}\n---\n\n${preface}\n\n${body}\n`;
-
-{
-  const skill = skillFile("SKILL.md");
-  writeFileSync(
-    join(contentDir, "build.md"),
-    skillPage(
-      "Build an app",
-      skill.fields.description ?? "How to build or change an EveryApp app.",
-      `This page is the \`build-every-app\` skill (\`${SKILL}/SKILL.md\` in the checkout), which ships in the CLI package (\`node_modules/everyapp/skills/build-every-app\` in an app) and which \`everyapp create\` links from \`.agents/skills/build-every-app\` and \`.claude/skills/build-every-app\`; its patterns index is [Example patterns](/docs/agent/patterns).`,
-      skill.body.replace(
-        /`patterns\.md`/g,
-        "[patterns.md](/docs/agent/patterns)",
-      ),
-    ),
-  );
-  const patterns = skillFile("patterns.md");
-  writeFileSync(
-    join(contentDir, "patterns.md"),
-    skillPage(
-      "Example patterns",
-      "How the apps on EveryApp do each thing and the file to copy from, in the starter or one of the open apps.",
-      `This page is \`patterns.md\` of the \`build-every-app\` skill (\`${SKILL}/patterns.md\` in the checkout), the index [Build an app](/docs/agent/build) reads before the first edit. Each app's repository is \`https://github.com/every-app/<name>\`.`,
-      patterns.body,
-    ),
-  );
-  console.log("Wrote build.md and patterns.md from the build-every-app skill");
-}
-
 // 2 and 3: the served Markdown of every agent page, and the pages index.
 
 /** `title: "x"` or `title: x` from a page's frontmatter. */
@@ -359,9 +306,12 @@ for (const path of walk(contentDir)) {
   const target = join(publicDir, path);
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, served);
-  // `/docs/agent.md` is the home page too, like `/docs/agent/index.md`.
+  // `/docs/agent.md` is the home page too, like `/docs/agent/index.md`, and
+  // a folder's index is `<folder>.md` too (`/docs/agent/setup.md`).
   if (path === "index.md")
     writeFileSync(join(here, "..", "public", "docs", "agent.md"), served);
+  else if (path.endsWith("/index.md"))
+    writeFileSync(join(publicDir, path.replace(/\/index\.md$/, ".md")), served);
 }
 writeFileSync(pagesFile, `${JSON.stringify({ files }, null, 2)}\n`);
 console.log(

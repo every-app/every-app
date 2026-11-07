@@ -150,7 +150,7 @@ export interface ApiKeyCapability extends ProviderDetails {
   auth: ApiKeyAuth;
   /** Where an operator gets the key: the provider's API access page. */
   docs: string;
-  /** The everyapp skill's setup guide for it, relative to the skill (`setup/dataforseo.md`); a row has none. */
+  /** Its setup guide, relative to the agent docs (`setup/dataforseo.md`: https://everyapp.com/docs/agent/setup/dataforseo.md); a row has none. */
   setup?: string;
   /** The only hosts the key is ever sent to, always over https; may be empty when `hostSetting` names the host. */
   hosts: readonly string[];
@@ -302,7 +302,7 @@ export interface GatewayServiceCapability {
   settings: readonly string[];
   /** Settings it reads when set (another transport), ready or not. */
   optionalSettings: readonly string[];
-  /** The everyapp skill's setup guide, when there is anything to set up. */
+  /** The setup guide in the agent docs, when there is anything to set up. */
   setup?: string;
 }
 

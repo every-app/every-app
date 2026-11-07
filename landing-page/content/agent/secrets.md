@@ -46,7 +46,7 @@ The value comes from exactly one source: `--from-env VAR`, a piped stdin, or a h
 
 ### AI providers
 
-`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `WORKERS_AI_API_TOKEN` (with the account), and the other AI providers in the catalog. `AI_GATEWAY_API_KEY` and `AI_GATEWAY_ID` put Cloudflare AI Gateway in front (`everyapp ai gateway on`). OpenAI paths beyond inference need no Gateway setting: the app's manifest grants them with `ai.routes`. Which provider an app gets is [ai](/docs/agent/ai). Guides: `setup/openrouter.md`, `setup/openai.md`, `setup/workers-ai.md`.
+`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `WORKERS_AI_API_TOKEN` (with the account), and the other AI providers in the catalog. `AI_GATEWAY_API_KEY` and `AI_GATEWAY_ID` put Cloudflare AI Gateway in front (`everyapp ai gateway on`). OpenAI paths beyond inference need no Gateway setting: the app's manifest grants them with `ai.routes`. Which provider an app gets is [ai](/docs/agent/ai). Guides: [setup/openrouter](/docs/agent/setup/openrouter), [setup/openai](/docs/agent/setup/openai), [setup/workers-ai](/docs/agent/setup/workers-ai).
 
 ### API-key providers and OAuth clients
 

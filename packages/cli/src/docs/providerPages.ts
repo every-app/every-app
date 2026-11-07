@@ -45,7 +45,6 @@ import {
 
 /** The repository, as the public reads it (the landing page's sync script links the same). */
 const GITHUB = "https://github.com/every-app/every-app";
-const SETUP_GUIDES = `${GITHUB}/blob/main/packages/cli/skills/everyapp/setup`;
 /** The issue form for asking for a provider or a fuller guide (.github/ISSUE_TEMPLATE/provider-request.yml). */
 export const PROVIDER_REQUEST_TEMPLATE = "provider-request.yml";
 const requestUrl = (title: string) =>
@@ -448,7 +447,7 @@ function companyPage(company: Company): string {
     out.push(
       "## More help",
       "",
-      `Ask your coding agent to set ${prose(company.name)} up: the everyapp skill has the full guide (${guides.map((path) => `[${code(path)}](${SETUP_GUIDES}/${path.replace(/^setup\//, "")})`).join(", ")}).`,
+      `Ask your coding agent to set ${prose(company.name)} up: the agent docs have the full guide (${guides.map((path) => `[${code(path.replace(/\.md$/, ""))}](/docs/agent/${path.replace(/\.md$/, "")})`).join(", ")}).`,
       "",
     );
   }

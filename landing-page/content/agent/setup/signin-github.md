@@ -1,12 +1,15 @@
-# Sign in with GitHub on the Gateway
+---
+title: "Sign in with GitHub on the Gateway"
+description: "Step-by-step guide: Continue with GitHub on the Gateway's sign-in page (a GitHub OAuth app, everyapp signin add github), the check, rotation."
+---
 
-Read [README.md](README.md) first: the rules every setup follows.
+Read [the setup rules](/docs/agent/setup/guides) first: the rules every setup follows.
 
 Puts **Continue with GitHub** on the Gateway's sign-in page, beside the
 password. At the end the person has a GitHub OAuth App, its two settings
 on the Gateway, and has signed in with GitHub once.
-`pnpm everyapp signin show github --json` names this file as `setup`, and
-the CLI prints `Guide: node_modules/everyapp/skills/everyapp/setup/signin-github.md`.
+`pnpm everyapp signin show github --json` names this guide as `setup`, and
+the CLI prints `Guide: https://everyapp.com/docs/agent/setup/signin-github.md`.
 
 Who gets in doesn't change: GitHub only says who someone is, by their
 primary address, and only when GitHub marks it verified. A member signs
@@ -46,10 +49,10 @@ organization owner keeps it from depending on one person.
 
 1. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true;
    `data.gatewayUrl` gives `<gateway host>`. Not installed or no owner:
-   [gateway.md](gateway.md) first. `data.access.on` true: see Verify 4.
+   [gateway.md](/docs/agent/setup/gateway) first. `data.access.on` true: see Verify 4.
 2. `pnpm everyapp signin show github --json` (changes nothing; `Unknown
    command signin`: `git pull` in the `every-app` folder). `data.status`
-   `off`: this file applies; `needs setup`: `data.missing` says what is
+   `off`: this guide applies; `needs setup`: `data.missing` says what is
    left (step 4); `on`: ask before replacing. `data.callbackUrl` is
    `https://<gateway host>/api/auth/callback/github`.
 3. Ask whether the app should belong to their own account or to an
@@ -94,7 +97,7 @@ organization owner keeps it from depending on one person.
    Gateway, signed in.
 4. Behind Cloudflare Access: nothing else changes, but the GitHub primary
    address must be the one Access knows the person by.
-5. Logs (README's Verify 4): `signin.config_problem` for a malformed or
+5. Logs (the setup rules' Verify 4): `signin.config_problem` for a malformed or
    missing setting.
 
 ## If it fails

@@ -28,3 +28,6 @@ dist
 
 # The starter template, packed in from ../../starter at build (scripts/bundle-starter.mjs).
 /starter
+
+# The agent docs, copied in from ../../landing-page/content/agent at build (scripts/bundle-docs.mjs).
+/docs

@@ -50,7 +50,7 @@ interface SignInSetupDialogModel {
   commandHeading: string;
   command: string;
   notes: string[];
-  /** The everyapp skill's guide. */
+  /** The setup guide, relative to the agent docs (`setup/signin-google.md`). */
   guide: string;
 }
 

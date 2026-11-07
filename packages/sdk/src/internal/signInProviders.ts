@@ -71,7 +71,7 @@ export interface SignInProvider {
   readonly scopes: readonly string[];
   /** Which claim becomes the email, and what makes it count as verified. */
   readonly emailClaim: string;
-  /** The everyapp skill's setup guide, relative to the skill. */
+  /** The setup guide, relative to the agent docs (https://everyapp.com/docs/agent/). */
   readonly setup: `setup/signin-${SignInProviderId}.md`;
   /** Caveats worth a line in every listing. */
   readonly notes: readonly string[];

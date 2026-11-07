@@ -22,7 +22,7 @@ The redirect URL is always `https://<gateway>/api/auth/callback/<id>`. An email 
 
 ## Setting one up
 
-Guides: `setup/signin-google.md`, `setup/signin-microsoft.md`, `setup/signin-github.md`, `setup/signin-apple.md`, `setup/signin-cloudflare.md`, `setup/signin-oidc.md`.
+Guides: [setup/signin-google](/docs/agent/setup/signin-google), [setup/signin-microsoft](/docs/agent/setup/signin-microsoft), [setup/signin-github](/docs/agent/setup/signin-github), [setup/signin-apple](/docs/agent/setup/signin-apple), [setup/signin-cloudflare](/docs/agent/setup/signin-cloudflare), [setup/signin-oidc](/docs/agent/setup/signin-oidc).
 
 1. The person creates the OAuth app at the provider with the redirect URL. Only they can. `everyapp signin show <id> --json` gives the console, what to create and the URL.
 2. `everyapp signin add <id>` asks for the client id and the hidden secret. Unattended: `everyapp signin add github --client-id Iv1.0123 --client-secret-from-env GITHUB_SECRET --json`. Other flags: `--issuer` and `--label` (oidc), `--tenant` (microsoft).

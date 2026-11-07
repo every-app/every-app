@@ -462,17 +462,18 @@ first live deploy", under the ports (in its history at `673bed8c8`).
 
 ---
 
-### The setup skills
+### The setup guides
 
-The everyapp skill's setup files (`packages/cli/skills/everyapp/setup/*.md`,
-one per integration a Gateway holds for apps) have two checks:
+The setup guides of the agent docs (`landing-page/content/agent/setup/*.md`,
+one per integration a Gateway holds for apps, which the everyapp skill
+points at) have two checks:
 
 ```bash
-# Static, in CI: every file in setup/README.md's table exists and is listed,
+# Static, in CI: every guide in setup/guides.md's table exists and is listed,
 # every `secret set NAME` is a Gateway setting the CLI accepts, every
 # `pnpm everyapp …` is a route the CLI has (commandPaths() in src/app.ts),
 # no file asks for a value in the chat or puts one on a command line, and
-# each file has the sections the README's contract requires
+# each guide has the sections setup/guides.md's contract requires
 ( cd packages/cli && pnpm exec vitest run src/lib/app/setupSkills.test.ts )
 
 # End to end, by hand: `claude -p` in a scratch checkout against a fake

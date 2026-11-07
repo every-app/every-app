@@ -1,6 +1,9 @@
-# Cloudflare Access for the Gateway
+---
+title: "Cloudflare Access for the Gateway"
+description: "Step-by-step guide: turn Cloudflare Access on in front of the Gateway and every app (the Zero Trust team, the one-time PIN, Sign in with Cloudflare), check it, recover from a lockout, turn it off."
+---
 
-Read [README.md](README.md) first: the rules every setup follows.
+Read [the setup rules](/docs/agent/setup/guides) first: the rules every setup follows.
 
 Cloudflare Access puts a second door in front of the Gateway and every app
 host (`<app>.<app base domain>`: OpenSEO, Open CRM, OpenAnalytics,
@@ -63,7 +66,7 @@ plan.
 
 ## Before you start
 
-1. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true (claimed means an owner exists; `on` refuses before that with `ACCESS_NOBODY_ALLOWED`); `data.mode` is `self_hosted` (a hosted Gateway refuses `on`: `ACCESS_HOSTED`); `data.gatewayUrl` gives `<gateway host>`. `data.access` is `{ on }`: `on` true means the Worker holds all three settings, so Access is on already, go to Verify. `data.access` null means a hosted Gateway, no Worker yet, or that cf couldn't read the settings (`ACCESS_UNKNOWN` in `data.fixes`). Not installed or no owner: [gateway.md](gateway.md) first. `action_required cloudflare_login` with `waiting: true`: show `data.url` and `data.code`, keep reading. Several accounts: add `--account-id <account id>` to every command.
+1. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true (claimed means an owner exists; `on` refuses before that with `ACCESS_NOBODY_ALLOWED`); `data.mode` is `self_hosted` (a hosted Gateway refuses `on`: `ACCESS_HOSTED`); `data.gatewayUrl` gives `<gateway host>`. `data.access` is `{ on }`: `on` true means the Worker holds all three settings, so Access is on already, go to Verify. `data.access` null means a hosted Gateway, no Worker yet, or that cf couldn't read the settings (`ACCESS_UNKNOWN` in `data.fixes`). Not installed or no owner: [gateway.md](/docs/agent/setup/gateway) first. `action_required cloudflare_login` with `waiting: true`: show `data.url` and `data.code`, keep reading. Several accounts: add `--account-id <account id>` to every command.
 2. `pnpm everyapp access show --json` (changes nothing): `data.team` null means the account has no Zero Trust team and `on` will need `--team`.
 3. Apps with public routes (a tracking script, a webhook): `on` reads them from the deployed manifests, and later deploys keep them current. `status --json` lists each app's as `data.apps[].publicRoutes`.
 
@@ -104,7 +107,7 @@ plan.
 | error or symptom | meaning | what to do |
 | --- | --- | --- |
 | `ACCESS_PERMISSION_MISSING` | the Cloudflare login or token can't manage Access | `cf auth logout`, then the next command logs in again with the Access permissions; a token needs Access: Apps and Policies (edit) and Access: Organizations, Identity Providers, and Groups (edit) (`data.url`) |
-| `ACCESS_NOBODY_ALLOWED` | the Gateway has no owner yet | claim it first ([gateway.md](gateway.md)), then rerun |
+| `ACCESS_NOBODY_ALLOWED` | the Gateway has no owner yet | claim it first ([gateway.md](/docs/agent/setup/gateway)), then rerun |
 | `GATEWAY_OUTDATED` | the live Gateway can't answer Access's membership question yet | `pnpm everyapp update`, then rerun |
 | `ACCESS_TEAM_REQUIRED` | no Zero Trust team and no terminal to ask at | ask the person (step 1); rerun with `--team <name>` |
 | `ACCESS_TEAM_INVALID` | not lowercase letters, digits and dashes | another name |

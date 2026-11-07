@@ -99,16 +99,6 @@ export function anchorsOf(markdown: string): Set<string> {
   return anchors;
 }
 
-/**
- * Pages landing-page/scripts/sync-agent-docs.js writes at build time from
- * the build-every-app skill (gitignored, so absent from a clean checkout),
- * by slug → the repository path of the skill file they are made from.
- */
-export const SKILL_PAGES: ReadonlyMap<string, string> = new Map([
-  ["build", "packages/cli/skills/build-every-app/SKILL.md"],
-  ["patterns", "packages/cli/skills/build-every-app/patterns.md"],
-]);
-
 /** ANSI colors out of a help text. */
 export function plain(text: string): string {
   // eslint-disable-next-line no-control-regex

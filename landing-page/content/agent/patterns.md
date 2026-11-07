@@ -1,6 +1,9 @@
-# Example patterns
+---
+title: "Example patterns"
+description: "How the apps on EveryApp do each thing and the file to copy from, in the starter or one of the open apps."
+---
 
-A look-up table: find the job, open the file, copy it. `starter/` is the template `everyapp create` copies (in an app, the same path without `starter/`). `open-crm/`, `open-analytics/`, `open-seo/` and `open-mail/` are the four open apps at `https://github.com/every-app/<name>`; a path is relative to that repository. Every field, flag and refusal code is on the agent pages (https://everyapp.com/llms.txt).
+A look-up table: find the job, open the file, copy it. `starter/` is the template `everyapp create` copies (in an app, the same path without `starter/`). `open-crm/`, `open-analytics/`, `open-seo/` and `open-mail/` are the four open apps at `https://github.com/every-app/<name>`; a path is relative to that repository. Every field, flag and refusal code is on the agent pages (https://everyapp.com/llms.txt). [Build an app](/docs/agent/build) reads this table before the first edit.
 
 ## Identity
 
@@ -31,7 +34,7 @@ A look-up table: find the job, open the file, copy it. `starter/` is the templat
 | `resources.workflows` and `workers` | `open-seo/everyapp.config.ts` | A helper Worker declared with its service binding |
 | An R2 bucket | `open-crm/cloudflare.config.ts` | The account enables R2 once (`R2_NOT_ENABLED`) |
 | Postgres through Hyperdrive | `open-seo/src/db/pg/client.ts`, `open-seo/drizzle/pg.config.ts` | The person writes the URL into `.everyapp/secrets.env`; a client per request |
-| Artifacts and every other resource kind | `landing-page/content/agent/manifest.md`; `packages/sdk/src/cloudflare/worker.ts` | Queues, Vectorize, Images, Browser and the rest: the manifest page has each entry and its handler |
+| Artifacts and every other resource kind | [manifest](/docs/agent/manifest); `packages/sdk/src/cloudflare/worker.ts` | Queues, Vectorize, Images, Browser and the rest: the manifest page has each entry and its handler |
 | `migrations` | `open-crm/everyapp.config.ts` (drizzle); `open-analytics/everyapp.config.ts` (plain SQL) | The starter's default needs no `migrations` field |
 | `public` | `starter/everyapp.config.ts`; `open-crm/everyapp.config.ts` | Comment why each route is open |
 | `providers` and `ai.models` | `open-mail/everyapp.config.ts` | Every model id the code can send |
@@ -39,8 +42,8 @@ A look-up table: find the job, open the file, copy it. `starter/` is the templat
 | `capabilities`: an OAuth provider | `open-mail/everyapp.config.ts` | `{ scopes, why }`: the provider's own scopes, the fewest that work |
 | `capabilities.email` and `capabilities.members` | `starter/everyapp.config.ts`; `open-analytics/everyapp.config.ts` | `listMembers()` in `starter/src/serverFunctions/home.ts` |
 | `secrets` | `open-analytics/everyapp.config.ts` | Top level means required; a `why` that says how to make the value, or `generate: true` for a random key |
-| `settings` | `landing-page/content/agent/manifest.md` | A per-install value that isn't a secret; never baked into `cloudflare.config.ts` |
-| `features`: values set up together, or ones the app works without | `landing-page/content/agent/manifest.md#features` | `{ name, why, required?, steps, settings, secrets, capabilities }`: numbered steps with URLs (`{appUrl}` for webhooks), each value's `how` (where it is, what permission), `generate: true` for a webhook secret, `file: true` for a .pem. Optional is the default and all or nothing |
+| `settings` | [manifest](/docs/agent/manifest#what-the-app-needs-set-providers-capabilities-secrets-settings-features) | A per-install value that isn't a secret; never baked into `cloudflare.config.ts` |
+| `features`: values set up together, or ones the app works without | [manifest](/docs/agent/manifest#features) | `{ name, why, required?, steps, settings, secrets, capabilities }`: numbered steps with URLs (`{appUrl}` for webhooks), each value's `how` (where it is, what permission), `generate: true` for a webhook secret, `file: true` for a .pem. Optional is the default and all or nothing |
 | `access: "everyone"` | `open-crm/everyapp.config.ts` | The default is admins only |
 | `build`, `dev` and `compatibilityDate` | `open-analytics/everyapp.config.ts` | `dev` must listen on `PORT` |
 | `cloudflare.config.ts` beyond the manifest | `open-crm/cloudflare.config.ts` | Crons and flags that are the same for every install |
@@ -52,7 +55,7 @@ A look-up table: find the job, open the file, copy it. `starter/` is the templat
 | Sending email | `open-mail/workers/everyapp/email.ts`; `open-analytics/src/lib/notifications/edge/delivery.ts` | `sendEmail()`; a refusal is a state, not a crash |
 | Receiving email | `open-mail/workers/app.ts`, `open-mail/workers/everyapp/inbound.ts` | An `email()` export beside `everyApp()`; `email: { inbound: true }` |
 | AI through the Gateway | `open-mail/workers/everyapp/gateway.ts` | `createGatewayFetch({ env })` as the client's `fetch`, `aiBaseUrl(provider)` as its base URL; `aiBaseUrl()` with `model: "default"` takes the workspace's default model |
-| Every AI failure as a sentence | `landing-page/content/agent/identity.md` | `refusalFromError(error)` after a failed call; on a `*_not_configured` code, show the Gateway's `setup` sentence |
+| Every AI failure as a sentence | [identity](/docs/agent/identity) | `refusalFromError(error)` after a failed call; on a `*_not_configured` code, show the Gateway's `setup` sentence |
 | Whose call it is | `starter/src/server/events.ts` | Crons, Workflow steps and alarms pass `for: { background: true }` on each Gateway call |
 
 ## Agents, Workflows and a second Worker
@@ -102,5 +105,5 @@ A look-up table: find the job, open the file, copy it. `starter/` is the templat
 | --- | --- | --- |
 | `.dev.vars` | `open-crm/.dev.vars.example` | Name each variable and where it comes from, no values |
 | The manifest and env in the Worker | `starter/src/env.d.ts`, `starter/src/serverFunctions/home.ts` | `env.EVERYAPP_MANIFEST`; `cf workers types` writes `Env` |
-| Call the app as someone else | `landing-page/content/agent/dev.md` | `pnpm everyapp dev token --role member` |
+| Call the app as someone else | [dev](/docs/agent/dev) | `pnpm everyapp dev token --role member` |
 | Release and install | `starter/.github/workflows/release.yml`, `docs/runbooks/app-releases.md` | `pnpm everyapp release`; anyone installs with `pnpm everyapp install <repository url>` |

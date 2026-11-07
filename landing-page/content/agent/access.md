@@ -3,7 +3,7 @@ title: Cloudflare Access
 description: Cloudflare Access in front of a self-hosted Gateway and its apps (on by default), everyapp access on|off|show, the policy that asks the Gateway who is a member, the paths let through, who gets in, MCP and native clients behind Access, OIDC sign-in, and recovery.
 ---
 
-Cloudflare Access puts a second sign-in, at Cloudflare, in front of the Gateway and every app: Sign in with Cloudflare for members of the operator's Cloudflare account, a one-time PIN emailed to everyone else. It's on by default: `setup` turns it on once the owner exists, unless `--no-access`. The Gateway also checks Access's signed header itself on every request, so it is defense in depth, not the only gate. Free for 50 people. Self-hosted Gateways only (`ACCESS_HOSTED`). The guide an agent follows is `setup/access.md` in the everyapp skill.
+Cloudflare Access puts a second sign-in, at Cloudflare, in front of the Gateway and every app: Sign in with Cloudflare for members of the operator's Cloudflare account, a one-time PIN emailed to everyone else. It's on by default: `setup` turns it on once the owner exists, unless `--no-access`. The Gateway also checks Access's signed header itself on every request, so it is defense in depth, not the only gate. Free for 50 people. Self-hosted Gateways only (`ACCESS_HOSTED`). The guide an agent follows is [setup/access](/docs/agent/setup/access).
 
 The Gateway's member list is the one list behind every check. Access's policy asks the Gateway who may pass (members and invitees), so inviting someone needs no change in Access, and removing or deactivating someone takes effect in the Gateway at once and in Access at their next Access sign-in.
 

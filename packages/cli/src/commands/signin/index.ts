@@ -31,7 +31,7 @@ import {
   type SignInSettingRole,
 } from "@every-app/sdk/internal";
 import chalk from "chalk";
-import { listGatewaySecretNames, SKILL_DIR } from "@/lib/app/settings";
+import { guideUrl, listGatewaySecretNames } from "@/lib/app/settings";
 import type { CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
@@ -145,8 +145,8 @@ async function queueSignInEvent(
 /** "Sign in with Google". */
 const titleOf = (provider: SignInProvider) => `Sign in with ${provider.label}`;
 
-/** The guide's path in an app that has the everyapp skill. */
-const guideOf = (provider: SignInProvider) => `${SKILL_DIR}/${provider.setup}`;
+/** The setup guide's URL in the agent docs. */
+const guideOf = (provider: SignInProvider) => guideUrl(provider.setup);
 
 /** The status as the commands say it: on, needs setup (the SDK's incomplete) or off. */
 type Status = "on" | "needs setup" | "off";

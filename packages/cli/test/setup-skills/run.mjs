@@ -26,6 +26,8 @@ const checkoutRoot = path.resolve(here, "..", "..", "..", "..");
 /** What the stub `cf --version` answers: the CLI's pin, which fake-everyapp reports in setup.toolchain too. */
 const FAKE_CF_VERSION = "1.0.0-beta.14";
 const skillSource = path.join(checkoutRoot, "packages", "cli", "skills", "everyapp");
+/** The agent docs, setup guides included, which the skill points at and `everyapp docs` prints offline. */
+const docsSource = path.join(checkoutRoot, "landing-page", "content", "agent");
 const scenariosDir = path.join(here, "scenarios");
 const runsRoot = runsRootFor("setup-skills-runs");
 const shim = path.join(here, "fake-everyapp.mjs");
@@ -73,7 +75,7 @@ async function runScenario(name) {
   const runDir = nextRunDir(runsRoot, name);
   const appDir = path.join(runDir, "every-app");
   const skillFile = scenario.skillFile ?? `${name}.md`;
-  const skillFilePresent = fs.existsSync(path.join(skillSource, "setup", skillFile));
+  const skillFilePresent = fs.existsSync(path.join(docsSource, "setup", skillFile));
   buildScratch(runDir, scenario);
   // Files the person "has" outside the checkout (a client JSON a console let
   // them download): under the run directory, never in every-app/. A reply
@@ -108,7 +110,7 @@ async function runScenario(name) {
     stopped: null,
   };
   process.stdout.write(`\n== ${name} (${options.model}) → ${runDir}\n`);
-  if (!skillFilePresent) process.stdout.write(`   note: setup/${skillFile} is missing; the agent works from README.md and SKILL.md alone\n`);
+  if (!skillFilePresent) process.stdout.write(`   note: setup/${skillFile} is missing; the agent works from setup/guides.md and SKILL.md alone\n`);
 
   const session = startClaude({ cwd: appDir, runDir, log, model: options.model, maxTurns: options.maxTurns, fullSettings: options.fullSettings, pathPrepend: path.join(runDir, "bin") });
   const started = Date.now();
@@ -229,6 +231,12 @@ function buildScratch(runDir, scenario) {
   // The skill where an install puts it (the CLI package's own copy), and the
   // links `everyapp create` makes where coding agents look.
   fs.cpSync(skillSource, path.join(appDir, "node_modules", "everyapp", "skills", "everyapp"), { recursive: true });
+  // The agent docs where the published package bundles them, for `everyapp docs` (the fake
+  // prints them; the live site may not have this branch's pages yet).
+  fs.cpSync(docsSource, path.join(appDir, "node_modules", "everyapp", "docs", "agent"), {
+    recursive: true,
+    filter: (file) => !path.relative(docsSource, file).startsWith("repo"),
+  });
   for (const base of [".claude/skills", ".agents/skills"]) {
     fs.mkdirSync(path.join(appDir, base), { recursive: true });
     fs.symlinkSync("../../node_modules/everyapp/skills/everyapp", path.join(appDir, base, "everyapp"), "dir");
@@ -240,6 +248,7 @@ function buildScratch(runDir, scenario) {
       "",
       "- This folder is the every-app checkout. Run every everyapp command from here as `pnpm everyapp …` (never `npx everyapp`).",
       "- Before running everyapp, read the everyapp skill: `.agents/skills/everyapp/SKILL.md` (a link to `node_modules/everyapp/skills/everyapp`).",
+      "- The agent docs it points at: `pnpm everyapp docs <page>` (this run has no network for them).",
       "- Apps live under `apps/<id>/`; each has its `everyapp.config.ts`.",
       "",
     ].join("\n"),

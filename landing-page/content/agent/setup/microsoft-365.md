@@ -1,4 +1,7 @@
-# Microsoft 365 (Outlook, Calendar and Microsoft Graph OAuth client) for the Gateway
+---
+title: "Microsoft 365 (Outlook, Calendar and Microsoft Graph OAuth client)"
+description: "Step-by-step guide: one Microsoft Entra app registration (MICROSOFT_365_CLIENT_ID and _SECRET) on the Gateway for Outlook mail and calendar, the scopes, each member connecting."
+---
 
 An OAuth client registered in Microsoft Entra, held by the Gateway, so that
 each member can connect their own Microsoft account (work or school, or a
@@ -76,11 +79,11 @@ a `429` carries `Retry-After`, which Open CRM honors.
    setting, set only when both are), `need.kind` as the app's manifest declares it (`optional`: in `settings`
    with `set: false`, never in `unmet`, and `pnpm everyapp configure <app>` offers it after the required ones;
    `required`: in `unmet`, the app closed until both are set), `setup: "setup/microsoft-365.md"` (this file).
-   While its `set` is false this file applies. With `set: true`: ask before replacing; a value can't be read back,
+   While its `set` is false this guide applies. With `set: true`: ask before replacing; a value can't be read back,
    so replacing means a new secret in Entra. Note the permissions each app lists in its `everyapp.config.ts`
    (Open CRM: `Mail.Read`): step 4 registers their union.
 2. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true, and the Gateway's host (step 1 builds
-   the redirect URI from it). Not installed, or no owner: [gateway.md](gateway.md) first.
+   the redirect URI from it). Not installed, or no owner: [gateway.md](/docs/agent/setup/gateway) first.
 3. An existing registration: the person opens
    https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade and looks for one made
    for the Gateway. Reuse it (steps 3 to 5 check its settings) rather than registering twice.
@@ -130,9 +133,9 @@ secret exists.
    Gateway`; **Expires:** 24 months is the maximum (Microsoft recommends less; put the date in the calendar).
    Click **Add**. The row's **Value** column is the secret, shown only while they stay on the page. Then, in a
    second terminal in the `every-app` folder: `pnpm everyapp secret set MICROSOFT_365_CLIENT_SECRET` (the hidden
-   prompt; paste; nothing is echoed). README's first way: the person types it. Wait until they see `Set MICROSOFT_365_CLIENT_SECRET on the Gateway`
+   prompt; paste; nothing is echoed). The setup rules' first way: the person types it. Wait until they see `Set MICROSOFT_365_CLIENT_SECRET on the Gateway`
    and `Live now on <gateway host>. No deploy needed.`
-   *Alternative, with `az`, README's second way (a command produced it; never run the `az` part on its own):*
+   *Alternative, with `az`, the setup rules' second way (a command produced it; never run the `az` part on its own):*
    `az ad app credential reset --id <client id> --years 2 --display-name "EveryApp Gateway" --append --query password -o tsv | pnpm everyapp secret set MICROSOFT_365_CLIENT_SECRET --json`
    `--append` keeps existing secrets (without it the command deletes them all first). Look for `"type": "done"`.
 6. **You:** Set the client id (not a secret): `echo "<client id>" | pnpm everyapp secret set MICROSOFT_365_CLIENT_ID --json`,
@@ -151,7 +154,7 @@ secret exists.
    Then `pnpm everyapp status --json`: the app's `setup.ready` is true and `data.fixes` has no `APP_NEEDS_SETUP`
    for it.
 2. Smoke check, only if the person still has the secret in a variable they exported in their own terminal
-   (README's third way) and says so; otherwise skip to 3. Never ask them to copy the secret again for this: the
+   (the setup rules' third way) and says so; otherwise skip to 3. Never ask them to copy the secret again for this: the
    **Value** was shown once, at step 5, and 3 exercises the pair through the Gateway anyway. (They `unset` the
    variable after.) It checks the id and secret pair against the registration's home tenant (its **Directory
    (tenant) ID** on Overview, or a verified domain of the tenant):
@@ -173,7 +176,7 @@ secret exists.
    `pnpm everyapp provider connections --all --json` lists the connection with its app and scopes. No Connect
    button: the app's `integrationStatus()` says `configured: false`, the Gateway doesn't hold both settings (step 1
    of this section).
-4. The Gateway's logs, when a connect fails after consent: the dashboard, README's path:
+4. The Gateway's logs, when a connect fails after consent: the dashboard, the setup rules' path:
    **Workers & Pages** → `every-app-gateway` → **Observability** (**Logs** on older accounts) → **Live**
    (the Gateway deploys with Workers Logs on, so the stored logs are on the same page). `cf workers` has no
    tail; Workers Logs are under `cf o11y telemetry`: `cf o11y telemetry query --help` (a query over them) and
@@ -190,7 +193,7 @@ secret exists.
 | `integration_not_connected` (409)                                                | The person hasn't connected in this app, the connection expired, or the app now lists a permission it lacks (`missingScopes`) | The person connects (again) in the app at `connectPath` |
 | After consent, the Gateway's error page says Microsoft granted permissions the app doesn't list; or a connection expires at refresh for the same reason | Two apps on this one registration and one person: Microsoft issued a token carrying what the person consented to for either app, and the Gateway refuses rather than narrow it | For good, a client per app: a provider of its own for the second app (a copy of this spec under another id and setting names, `pnpm everyapp provider show microsoft-365` prints it, added with `pnpm everyapp provider add --oauth <file>`), its own registration, and that id in the app's manifest. Meanwhile the member removes the app at https://myapplications.microsoft.com and connects again |
 | `integration_upstream_failed` (502), log `integration.proxy.upstream_failed`      | The Gateway couldn't reach Microsoft | Try again |
-| `SECRET_VALUE_REQUIRED`                                                          | Nothing was piped and there is no terminal                                                     | One of README's three ways; `data.rerun` shows the `--from-env` form                                         |
+| `SECRET_VALUE_REQUIRED`                                                          | Nothing was piped and there is no terminal                                                     | One of the setup rules' three ways; `data.rerun` shows the `--from-env` form                                         |
 | `SECRET_SEVERAL_NAMES`                                                           | Two names with one piped or `--from-env` value                                                 | One `secret set` per name                                                                                    |
 | `SECRET_EMPTY`                                                                   | The `--from-env` variable isn't exported in this shell                                         | The person exports it in the terminal that runs the command                                                  |
 | `SECRET_NOT_DECLARED` with `data.didYouMean`                                     | The name is misspelled (case or underscores)                                                   | rerun with the name in `data.didYouMean` and the same value source (`--from-env VAR --json`, or the same pipe); `data.rerun` carries only the names, so run as is it stops with `SECRET_VALUE_REQUIRED` |

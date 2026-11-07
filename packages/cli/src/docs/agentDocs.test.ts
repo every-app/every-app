@@ -35,7 +35,6 @@ import { manifestFields } from "./manifestFields";
 import { providersCatalog, setupProvidersPage, withBlock } from "./providersCatalog";
 import {
   AGENT_DOCS_DIR,
-  SKILL_PAGES,
   UPDATE_DOCS,
   anchorsOf,
   backticked,
@@ -48,12 +47,16 @@ const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const at = (path: string) => posix.join(ROOT, path);
 const STALE = "is out of date with the code: run `pnpm -C packages/cli docs:update` and commit the result";
 
-/** The hand-written and generated agent pages (the repo/ mirror and the skill pages are written by the site build). */
+/** The folders of the agent docs with pages of their own (the repo/ mirror is written by the site build). */
+const FOLDERS = ["", "setup/"];
+
+/** The hand-written and generated agent pages, by slug (`manifest`, `setup/index`, `setup/gateway`). */
 const slugs = () =>
-  readdirSync(fileURLToPath(AGENT_DOCS_DIR))
-    .filter((name) => name.endsWith(".md"))
-    .map((name) => name.replace(/\.md$/, ""))
-    .filter((slug) => !SKILL_PAGES.has(slug));
+  FOLDERS.flatMap((folder) =>
+    readdirSync(fileURLToPath(new URL(folder || ".", AGENT_DOCS_DIR)))
+      .filter((name) => name.endsWith(".md"))
+      .map((name) => `${folder}${name.replace(/\.md$/, "")}`),
+  );
 
 function expectGenerated(slug: string, generated: string): void {
   if (UPDATE_DOCS) {
@@ -89,21 +92,28 @@ describe("the generated pages", () => {
     expectBlock("providers", "providers-catalog", providersCatalog());
   });
 
-  it("the everyapp skill's setup/providers.md is what the provider catalog generates", () => {
-    expectGenerated("../../../packages/cli/skills/everyapp/setup/providers", setupProvidersPage());
+  it("setup/providers.md is what the provider catalog generates", () => {
+    expectGenerated("setup/providers", setupProvidersPage());
   });
 });
 
 describe("the pages", () => {
-  it("are all in the sidebar (meta.json), which names only pages that exist", () => {
-    const meta = JSON.parse(readFileSync(fileURLToPath(new URL("meta.json", AGENT_DOCS_DIR)), "utf8")) as {
-      pages: string[];
-    };
-    // Separators (`---Build---`), the link back to the user docs and the mirrored `repo` folder aren't pages.
-    const listed = meta.pages.filter((entry) => !/^---.*---$/.test(entry) && !entry.startsWith("[") && entry !== "repo");
-    const pages = [...slugs(), ...SKILL_PAGES.keys()];
-    expect(listed.filter((slug) => !pages.includes(slug)), "slugs in meta.json without a page").toEqual([]);
-    expect(pages.filter((slug) => !listed.includes(slug)), "pages missing from meta.json").toEqual([]);
+  it("are all in the sidebar (each folder's meta.json), which names only pages that exist", () => {
+    for (const folder of FOLDERS) {
+      const meta = JSON.parse(readFileSync(fileURLToPath(new URL(`${folder}meta.json`, AGENT_DOCS_DIR)), "utf8")) as {
+        pages: string[];
+      };
+      // Separators (`---Build---`), the link back to the user docs and the mirrored `repo` folder aren't pages;
+      // a folder is listed by its name, and its index page is the folder's own.
+      const folders = FOLDERS.filter(Boolean).map((sub) => sub.slice(0, -1));
+      const listed = meta.pages.filter((entry) => !/^---.*---$/.test(entry) && !entry.startsWith("[") && entry !== "repo" && !folders.includes(entry));
+      const pages = slugs()
+        .filter((slug) => slug.startsWith(folder) && !slug.slice(folder.length).includes("/"))
+        .map((slug) => slug.slice(folder.length))
+        .filter((slug) => !(folder && slug === "index"));
+      expect(listed.filter((slug) => !pages.includes(slug)), `slugs in ${folder}meta.json without a page`).toEqual([]);
+      expect(pages.filter((slug) => !listed.includes(slug)), `pages missing from ${folder}meta.json`).toEqual([]);
+    }
   });
 
   it("each have a title and a description, which llms.txt lists", () => {
@@ -124,10 +134,11 @@ function anchorsOfPage(path: string): Set<string> | null {
       const source = mirroredDocuments().get(rest.slice("repo/".length));
       return source && existsSync(at(source)) ? anchorsOf(readFileSync(at(source), "utf8")) : null;
     }
-    const skill = SKILL_PAGES.get(rest);
-    if (skill) return anchorsOf(readFileSync(at(skill), "utf8"));
-    const file = fileURLToPath(new URL(`${rest}.md`, AGENT_DOCS_DIR));
-    return existsSync(file) ? anchorsOf(readFileSync(file, "utf8")) : null;
+    for (const name of [`${rest}.md`, `${rest}/index.md`]) {
+      const file = fileURLToPath(new URL(name, AGENT_DOCS_DIR));
+      if (existsSync(file)) return anchorsOf(readFileSync(file, "utf8"));
+    }
+    return null;
   }
   const page = path === "" ? "index" : path;
   for (const name of [`${page}.mdx`, `${page}/index.mdx`]) {
@@ -254,12 +265,17 @@ describe("the names the hand-written pages give", () => {
     expect(codes.size, "the code inventory read the source").toBeGreaterThan(100);
     const tools = new Set(listBuiltinTools().map((tool) => tool.name));
     const source = sourceText();
-    // cli.md is generated from the commands. The skills cite apps' and other
-    // services' own codes, so only their everyapp_* tool names are checked.
+    // cli.md is generated from the commands. The setup guides and the skills
+    // cite apps' and other services' own codes, so only their everyapp_*
+    // tool names are checked.
     const pages = slugs()
       .filter((slug) => slug !== "cli")
-      .map((slug) => ({ where: `landing-page/content/agent/${slug}.md`, text: readPage(slug), codes: true }));
-    for (const dir of ["packages/cli/skills/everyapp", "packages/cli/skills/everyapp/setup", "packages/cli/skills/build-every-app"]) {
+      .map((slug) => ({
+        where: `landing-page/content/agent/${slug}.md`,
+        text: readPage(slug),
+        codes: !slug.startsWith("setup/") || slug === "setup/index",
+      }));
+    for (const dir of ["packages/cli/skills/everyapp", "packages/cli/skills/build-every-app"]) {
       for (const name of readdirSync(at(dir)).filter((file) => file.endsWith(".md"))) {
         const where = posix.join(dir, name);
         pages.push({ where, text: readFileSync(at(where), "utf8"), codes: false });

@@ -51,8 +51,8 @@ const VALUE_FLAGS = new Set([
   "from-env", "app", "gateway", "account-id", "domain", "team", "email",
   "sender", "inbound", "manifest", "worker", "binding", "file", "out", "name", "template",
 ]);
-/** Where the real CLI says a setup guide lives, in an app that has the skill (lib/app/settings.ts SKILL_DIR). */
-const SKILL_DIR = "node_modules/everyapp/skills/everyapp";
+/** Where the real CLI says a setup guide lives (lib/app/settings.ts AGENT_DOCS_URL). */
+const AGENT_DOCS_URL = "https://everyapp.com/docs/agent";
 
 /** An expected failure, reported as an `error` event with its code and next step. */
 class FakeError extends Error {
@@ -121,7 +121,7 @@ async function dispatch() {
     db: ["migrate", "query", "restore"],
     ...(accessEnabled ? { access: ["on", "off", "show"] } : {}),
   };
-  const commands = ["login", "setup", "update", "install", "status", "create", "dev", "deploy", "release", "delete", ...Object.keys(groups)];
+  const commands = ["login", "setup", "update", "install", "status", "create", "dev", "deploy", "release", "delete", "docs", ...Object.keys(groups)];
   if (!commands.includes(cmd)) return unknownCommand([], cmd, commands);
   if (cmd in groups) {
     if (!sub || help && !sub) {
@@ -148,12 +148,44 @@ async function dispatch() {
       return sub === "show" ? emailShow(state) : sub === "set" ? emailSet(state) : emailUnset(state, rest);
     case "access":
       return sub === "on" ? accessOn(state) : sub === "off" ? accessOff(state) : accessShow(state);
+    case "docs":
+      return docsPage(sub);
     default:
       return notSimulated(cmd, sub);
   }
 }
 
 // ---------------------------------------------------------------- commands
+
+/**
+ * `everyapp docs [page]` as the real one prints it offline: the agent docs
+ * the run copied into `node_modules/everyapp/docs/agent` (the published
+ * package's bundled copy), found from the checkout root or an app below it.
+ */
+function docsPage(raw) {
+  let dir = process.cwd();
+  while (!fs.existsSync(path.join(dir, "node_modules", "everyapp", "docs", "agent")) && path.dirname(dir) !== dir) dir = path.dirname(dir);
+  const docsDir = path.join(dir, "node_modules", "everyapp", "docs", "agent");
+  const page = (raw ?? "").replace(/^https?:\/\/[^/]+/, "").replace(/[?#].*$/, "").replace(/^\/+/, "").replace(/^docs\/agent\/?/, "").replace(/\.md$/, "");
+  if (!page) {
+    const pages = [];
+    const walk = (sub) => {
+      for (const name of fs.readdirSync(path.join(docsDir, sub)).sort()) {
+        const rel = sub ? `${sub}/${name}` : name;
+        if (fs.statSync(path.join(docsDir, rel)).isDirectory()) walk(rel);
+        else if (name.endsWith(".md")) pages.push(rel.replace(/\.md$/, ""));
+      }
+    };
+    if (fs.existsSync(docsDir)) walk("");
+    out.emit({ type: "done", message: `${pages.length} agent docs pages`, display: pages.join("\n"), data: { pages } });
+    return 0;
+  }
+  const file = [`${page}.md`, `${page}/index.md`].map((name) => path.join(docsDir, name)).find((candidate) => fs.existsSync(candidate));
+  if (!file) throw new FakeError("DOCS_PAGE_NOT_FOUND", `There is no agent docs page "${page}"`, { fix: `${CLI} docs lists them all` });
+  const markdown = fs.readFileSync(file, "utf8");
+  out.emit({ type: "done", message: page, display: markdown, data: { page, source: "bundled", markdown } });
+  return 0;
+}
 
 function login(state) {
   out.emit({
@@ -1046,7 +1078,7 @@ function settingsRows(appId, settings) {
  * Each unmet setting for whoever sets it (describeUnmetSettings): "<label>:
  * <why>" (the names when there is no why and the label doesn't name them),
  * "Get it at <docs>", and under the first that has one, its guide
- * ("Guide: node_modules/everyapp/skills/everyapp/setup/dataforseo.md"), once per guide.
+ * ("Guide: https://everyapp.com/docs/agent/setup/dataforseo.md"), once per guide.
  */
 function describeUnmetSettings(unmet) {
   const guides = new Set();
@@ -1056,7 +1088,7 @@ function describeUnmetSettings(unmet) {
     const lines = [what ? `${setting.label}: ${what}` : setting.label, ...(setting.docs ? [`Get it at ${setting.docs}`] : [])];
     if (!setting.setup || guides.has(setting.setup)) return lines;
     guides.add(setting.setup);
-    return [...lines, `Guide: ${SKILL_DIR}/${setting.setup}`];
+    return [...lines, `Guide: ${AGENT_DOCS_URL}/${setting.setup}`];
   });
 }
 

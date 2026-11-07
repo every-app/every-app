@@ -198,10 +198,9 @@ export interface AppSetting {
   docs?: string;
   /**
    * What an agent reads to set a Gateway setting up end to end: the
-   * registry's guide in the everyapp skill, relative to the skill
-   * (`setup/dataforseo.md`; in an app
-   * `node_modules/everyapp/skills/everyapp/setup/…`, in the checkout
-   * `packages/cli/skills/everyapp/setup/…`). An app's own value has its
+   * registry's setup guide, relative to the agent docs (`setup/dataforseo.md`
+   * is https://everyapp.com/docs/agent/setup/dataforseo.md; in the checkout
+   * `landing-page/content/agent/setup/…`). An app's own value has its
    * feature's steps and its `how` instead.
    */
   setup?: string;

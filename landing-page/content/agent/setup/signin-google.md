@@ -1,12 +1,15 @@
-# Sign in with Google on the Gateway
+---
+title: "Sign in with Google on the Gateway"
+description: "Step-by-step guide: Continue with Google on the Gateway's sign-in page (a Google OAuth client, everyapp signin add google), the check, rotation."
+---
 
-Read [README.md](README.md) first: the rules every setup follows.
+Read [the setup rules](/docs/agent/setup/guides) first: the rules every setup follows.
 
 Puts **Continue with Google** on the Gateway's sign-in page, beside the
 password. At the end the person has an OAuth client in a Google Cloud
 project, its two settings on the Gateway, and has signed in with Google
-once. `pnpm everyapp signin show google --json` names this file as
-`setup`, and the CLI prints `Guide: node_modules/everyapp/skills/everyapp/setup/signin-google.md`.
+once. `pnpm everyapp signin show google --json` names this guide as
+`setup`, and the CLI prints `Guide: https://everyapp.com/docs/agent/setup/signin-google.md`.
 
 Who gets in doesn't change: Google only says who someone is (an email it
 verified). A member signs in; someone with a pending invitation for that
@@ -19,7 +22,7 @@ the account menu). The full rules: `docs/runbooks/sign-in-providers.md`,
 "Who gets in".
 
 This is not the Google client apps use for Gmail and Calendar
-(`GOOGLE_WORKSPACE_*`, [google.md](google.md)). Make a separate client
+(`GOOGLE_WORKSPACE_*`, [google.md](/docs/agent/setup/google)). Make a separate client
 here. When that other client's project is *External* and still in Testing
 (its Gmail scope waits on Google's verification), make this one in a
 separate project too: publishing is per project, and this one must be
@@ -56,12 +59,12 @@ app's name and logo: unverified).
 
 1. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true;
    `data.gatewayUrl` gives `<gateway host>`. Not installed, or no owner:
-   [gateway.md](gateway.md) first (nobody signs in with a provider before
+   [gateway.md](/docs/agent/setup/gateway) first (nobody signs in with a provider before
    the Gateway is claimed). `data.access.on` true: see Verify 4.
 2. `pnpm everyapp signin show google --json` (changes nothing). `Unknown
    command signin` (exit 251): the checkout predates sign-in providers;
    `git pull` in the `every-app` folder, then again. Read `data.status`:
-   `off`, this file applies; `needs setup`, `data.missing` names what is
+   `off`, this guide applies; `needs setup`, `data.missing` names what is
    left (go to step 3); `on`, it works already: ask before replacing (a new
    secret for the same client is harmless, see Rotate). `data.callbackUrl`
    is the redirect URL, `https://<gateway host>/api/auth/callback/google`.
@@ -125,7 +128,7 @@ app's name and logo: unverified).
 4. Behind Cloudflare Access (`data.access.on`): nothing else changes, but
    the Google account's address must be the one Access knows the person
    by; otherwise the page says Access knows them by another email.
-5. Logs (README's Verify 4): `signin.config_problem` names a malformed or
+5. Logs (the setup rules' Verify 4): `signin.config_problem` names a malformed or
    missing setting, the reason the button stays off.
 
 ## If it fails

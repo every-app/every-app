@@ -111,9 +111,9 @@ surface and the rollout are in
 [docs/manifest-settings.md](manifest-settings.md).
 
 A coding agent sets each of these up end to end, the provider's side
-included, from the everyapp skill's setup files:
-[`packages/cli/skills/everyapp/setup/README.md`](../packages/cli/skills/everyapp/setup/README.md)
-(one file per integration; in an app, `node_modules/everyapp/skills/everyapp/setup/`, linked from `.claude/skills/everyapp`).
+included, from the setup guides in the agent docs:
+[`landing-page/content/agent/setup/guides.md`](../landing-page/content/agent/setup/guides.md)
+(one page per integration, served at https://everyapp.com/docs/agent/setup/guides; offline, `everyapp docs setup/guides`).
 
 Everything the gateway holds for apps, in one table:
 

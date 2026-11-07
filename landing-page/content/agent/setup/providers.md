@@ -1,16 +1,19 @@
+---
+title: "Every catalog provider: its settings, its key and one check"
+description: "Generated from the built-in catalog: every API-key, AI and OAuth-preset provider the Gateway knows, a section per id with its settings, where the key comes from, how the Gateway sends it, a smoke request, cost and its guide."
+---
+
 <!-- generated: pnpm -C packages/cli docs:update writes this file from the built-in catalog (packages/sdk/src/internal/capabilities.ts, through packages/cli/src/docs/providersCatalog.ts). Edit the catalog, never this file: a test fails CI when it is stale. -->
 
-# Every catalog provider: its settings, its key and one check
+For a coding agent setting up a provider the Gateway's built-in catalog has. Each provider is a section under its id, so `setup/providers.md#<id>` points at it. Where the provider has a guide of its own (its **Guide**), follow that guide and read this section as its summary. Read [the setup rules](/docs/agent/setup/guides) first: its rules hold here too, above all that a key never goes through the chat.
 
-For a coding agent setting up a provider the Gateway's built-in catalog has. Each provider is a section under its id, so `setup/providers.md#<id>` points at it. Where the provider has a file of its own in this folder (its **Guide**), follow that file and read this section as its summary. Read [README.md](README.md) first: its rules hold here too, above all that a key never goes through the chat.
-
-A provider registered on one Gateway (`pnpm everyapp provider add`) is not in this file: `pnpm everyapp provider show <id>` prints its whole spec (its hint, settings, hosts, where the key comes from and its smoke request). The catalog has 58 providers (49 API-key, 9 AI) and 12 OAuth presets.
+A provider registered on one Gateway (`pnpm everyapp provider add`) is not on this page: `pnpm everyapp provider show <id>` prints its whole spec (its hint, settings, hosts, where the key comes from and its smoke request). The catalog has 58 providers (49 API-key, 9 AI) and 12 OAuth presets.
 
 The smoke request needs the key, so it runs where the key is: the person's terminal, with the variable they read in hidden, or through the app that uses it. It is one call that costs nothing (unless marked charged).
 
 ## How a value gets in
 
-The three ways of [README.md](README.md), one line each (the rules, and the codes a failure carries, are there):
+The three ways of [the setup rules](/docs/agent/setup/guides), one line each (the rules, and the codes a failure carries, are there):
 
 - **The person types it**, in their own terminal in the `every-app` folder: `pnpm everyapp configure <app id>` (everything the app needs) or `pnpm everyapp secret set NAME` (one name), each value at a hidden prompt.
 - **A command produced it**: pipe it straight in, `… | pnpm everyapp secret set NAME --json`, so it is never shown.
@@ -20,8 +23,8 @@ The three ways of [README.md](README.md), one line each (the rules, and the code
 
 | Id | Name | Kind | Settings | Guide |
 | --- | --- | --- | --- | --- |
-| [`dataforseo`](#dataforseo) | DataForSEO | API key | `DATAFORSEO_API_KEY` | [dataforseo.md](dataforseo.md) |
-| [`context`](#context) | Context.dev | API key | `CONTEXT_API_KEY` | [context.md](context.md) |
+| [`dataforseo`](#dataforseo) | DataForSEO | API key | `DATAFORSEO_API_KEY` | [dataforseo.md](/docs/agent/setup/dataforseo) |
+| [`context`](#context) | Context.dev | API key | `CONTEXT_API_KEY` | [context.md](/docs/agent/setup/context) |
 | [`stripe`](#stripe) | Stripe | API key | `STRIPE_API_KEY` |  |
 | [`lemonsqueezy`](#lemonsqueezy) | Lemon Squeezy | API key | `LEMONSQUEEZY_API_KEY` |  |
 | [`paddle`](#paddle) | Paddle | API key | `PADDLE_API_KEY` |  |
@@ -69,18 +72,18 @@ The three ways of [README.md](README.md), one line each (the rules, and the code
 | [`elevenlabs`](#elevenlabs) | ElevenLabs | API key | `ELEVENLABS_API_KEY` |  |
 | [`assemblyai`](#assemblyai) | AssemblyAI | API key | `ASSEMBLYAI_API_KEY` |  |
 | [`newsapi`](#newsapi) | NewsAPI | API key | `NEWSAPI_API_KEY` |  |
-| [`openai`](#openai) | OpenAI | AI | `OPENAI_API_KEY` | [openai.md](openai.md) |
-| [`openrouter`](#openrouter) | OpenRouter | AI | `OPENROUTER_API_KEY` | [openrouter.md](openrouter.md) |
-| [`workers-ai`](#workers-ai) | Workers AI | AI | `WORKERS_AI_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (set by `everyapp setup`) | [workers-ai.md](workers-ai.md) |
-| [`ai-gateway`](#ai-gateway) | Cloudflare AI Gateway | AI | `AI_GATEWAY_API_KEY`, `CLOUDFLARE_ACCOUNT_ID` (set by `everyapp setup`), `AI_GATEWAY_ID` | [ai-gateway.md](ai-gateway.md) |
+| [`openai`](#openai) | OpenAI | AI | `OPENAI_API_KEY` | [openai.md](/docs/agent/setup/openai) |
+| [`openrouter`](#openrouter) | OpenRouter | AI | `OPENROUTER_API_KEY` | [openrouter.md](/docs/agent/setup/openrouter) |
+| [`workers-ai`](#workers-ai) | Workers AI | AI | `WORKERS_AI_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (set by `everyapp setup`) | [workers-ai.md](/docs/agent/setup/workers-ai) |
+| [`ai-gateway`](#ai-gateway) | Cloudflare AI Gateway | AI | `AI_GATEWAY_API_KEY`, `CLOUDFLARE_ACCOUNT_ID` (set by `everyapp setup`), `AI_GATEWAY_ID` | [ai-gateway.md](/docs/agent/setup/ai-gateway) |
 | [`anthropic`](#anthropic) | Anthropic | AI | `ANTHROPIC_API_KEY` |  |
 | [`gemini`](#gemini) | Google Gemini | AI | `GEMINI_API_KEY` |  |
 | [`mistral`](#mistral) | Mistral AI | AI | `MISTRAL_API_KEY` |  |
 | [`groq`](#groq) | Groq | AI | `GROQ_API_KEY` |  |
 | [`cohere`](#cohere) | Cohere | AI | `COHERE_API_KEY` |  |
-| [`google-workspace`](#google-workspace) | Google | OAuth client | `GOOGLE_WORKSPACE_CLIENT_ID` (set by `everyapp setup`), `GOOGLE_WORKSPACE_CLIENT_SECRET` (set by `everyapp setup`) | [google.md](google.md) |
-| [`microsoft-365`](#microsoft-365) | Microsoft 365 | OAuth client | `MICROSOFT_365_CLIENT_ID` (set by `everyapp setup`), `MICROSOFT_365_CLIENT_SECRET` (set by `everyapp setup`) | [microsoft-365.md](microsoft-365.md) |
-| [`slack`](#slack) | Slack | OAuth client | `SLACK_CLIENT_ID` (set by `everyapp setup`), `SLACK_CLIENT_SECRET` (set by `everyapp setup`) | [slack.md](slack.md) |
+| [`google-workspace`](#google-workspace) | Google | OAuth client | `GOOGLE_WORKSPACE_CLIENT_ID` (set by `everyapp setup`), `GOOGLE_WORKSPACE_CLIENT_SECRET` (set by `everyapp setup`) | [google.md](/docs/agent/setup/google) |
+| [`microsoft-365`](#microsoft-365) | Microsoft 365 | OAuth client | `MICROSOFT_365_CLIENT_ID` (set by `everyapp setup`), `MICROSOFT_365_CLIENT_SECRET` (set by `everyapp setup`) | [microsoft-365.md](/docs/agent/setup/microsoft-365) |
+| [`slack`](#slack) | Slack | OAuth client | `SLACK_CLIENT_ID` (set by `everyapp setup`), `SLACK_CLIENT_SECRET` (set by `everyapp setup`) | [slack.md](/docs/agent/setup/slack) |
 | [`github-oauth`](#github-oauth) | GitHub | OAuth client | `GITHUB_OAUTH_CLIENT_ID` (set by `everyapp setup`), `GITHUB_OAUTH_CLIENT_SECRET` (set by `everyapp setup`) |  |
 | [`notion-oauth`](#notion-oauth) | Notion | OAuth client | `NOTION_OAUTH_CLIENT_ID` (set by `everyapp setup`), `NOTION_OAUTH_CLIENT_SECRET` (set by `everyapp setup`) |  |
 | [`linear-oauth`](#linear-oauth) | Linear | OAuth client | `LINEAR_OAUTH_CLIENT_ID` (set by `everyapp setup`), `LINEAR_OAUTH_CLIENT_SECRET` (set by `everyapp setup`) |  |
@@ -91,7 +94,7 @@ The three ways of [README.md](README.md), one line each (the rules, and the code
 | [`dropbox`](#dropbox) | Dropbox | OAuth client | `DROPBOX_OAUTH_CLIENT_ID` (set by `everyapp setup`), `DROPBOX_OAUTH_CLIENT_SECRET` (set by `everyapp setup`) |  |
 | [`spotify`](#spotify) | Spotify | OAuth client | `SPOTIFY_CLIENT_ID` (set by `everyapp setup`), `SPOTIFY_CLIENT_SECRET` (set by `everyapp setup`) |  |
 
-Gateway services have no key of this kind: `email`, `members` (sending mail is [email.md](email.md); the members list needs nothing).
+Gateway services have no key of this kind: `email`, `members` (sending mail is [setup/email](/docs/agent/setup/email); the members list needs nothing).
 
 ## API-key providers
 
@@ -110,7 +113,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Rate:** not recorded
 - **Verified:** 2026-10-25, live
 - **Set it:** `pnpm everyapp secret set DATAFORSEO_API_KEY`, or `pnpm everyapp configure <app id>` for everything an app needs
-- **Guide:** [dataforseo.md](dataforseo.md)
+- **Guide:** [dataforseo.md](/docs/agent/setup/dataforseo)
 
 ### context
 
@@ -126,7 +129,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Rate:** not recorded
 - **Verified:** 2026-10-25, live
 - **Set it:** `pnpm everyapp secret set CONTEXT_API_KEY`, or `pnpm everyapp configure <app id>` for everything an app needs
-- **Guide:** [context.md](context.md)
+- **Guide:** [context.md](/docs/agent/setup/context)
 
 ### stripe
 
@@ -944,7 +947,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Rate:** not recorded
 - **Verified:** 2026-10-25, live
 - **Set it:** `pnpm everyapp secret set OPENAI_API_KEY`, or `pnpm everyapp configure <app id>` for everything an app needs
-- **Guide:** [openai.md](openai.md)
+- **Guide:** [openai.md](/docs/agent/setup/openai)
 
 ### openrouter
 
@@ -961,7 +964,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Rate:** not recorded
 - **Verified:** 2026-10-25, live
 - **Set it:** `pnpm everyapp secret set OPENROUTER_API_KEY`, or `pnpm everyapp configure <app id>` for everything an app needs
-- **Guide:** [openrouter.md](openrouter.md)
+- **Guide:** [openrouter.md](/docs/agent/setup/openrouter)
 
 ### workers-ai
 
@@ -978,7 +981,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Rate:** not recorded
 - **Verified:** 2026-10-25, live
 - **Set it:** `pnpm everyapp secret set WORKERS_AI_API_TOKEN`, or `pnpm everyapp configure <app id>` for everything an app needs
-- **Guide:** [workers-ai.md](workers-ai.md)
+- **Guide:** [workers-ai.md](/docs/agent/setup/workers-ai)
 
 ### ai-gateway
 
@@ -995,7 +998,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Rate:** not recorded
 - **Verified:** 2026-10-25, docs
 - **Set it:** `pnpm everyapp secret set AI_GATEWAY_API_KEY AI_GATEWAY_ID`, or `pnpm everyapp configure <app id>` for everything an app needs
-- **Guide:** [ai-gateway.md](ai-gateway.md)
+- **Guide:** [ai-gateway.md](/docs/agent/setup/ai-gateway)
 
 ### anthropic
 
@@ -1094,7 +1097,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Hosts the token goes to:** `gmail.googleapis.com`, `www.googleapis.com`, `searchconsole.googleapis.com`, `analyticsdata.googleapis.com`, `analyticsadmin.googleapis.com`, `openidconnect.googleapis.com`, over https
 - **Scopes an app lists:** the provider's own, short (joined onto `https://www.googleapis.com/auth/`) or in full, as `"google-workspace": { scopes: [...], why: "..." }`; the Gateway adds `openid`, `email` to every connect; the provider's list: https://developers.google.com/identity/protocols/oauth2/scopes
 - **Set it:** deploy an app that lists it (or `pnpm everyapp provider add google-workspace`), then `pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET` or paste the client in Manage workspace → Providers
-- **Guide:** [google.md](google.md)
+- **Guide:** [google.md](/docs/agent/setup/google)
 
 ### microsoft-365
 
@@ -1106,7 +1109,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Hosts the token goes to:** `graph.microsoft.com`, over https
 - **Scopes an app lists:** the provider's own, short (joined onto `https://graph.microsoft.com/`) or in full, as `"microsoft-365": { scopes: [...], why: "..." }`; the Gateway adds `User.Read`, `offline_access` to every connect; the provider's list: https://learn.microsoft.com/graph/permissions-reference
 - **Set it:** deploy an app that lists it (or `pnpm everyapp provider add microsoft-365`), then `pnpm everyapp secret set MICROSOFT_365_CLIENT_ID MICROSOFT_365_CLIENT_SECRET` or paste the client in Manage workspace → Providers
-- **Guide:** [microsoft-365.md](microsoft-365.md)
+- **Guide:** [microsoft-365.md](/docs/agent/setup/microsoft-365)
 
 ### slack
 
@@ -1118,7 +1121,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Hosts the token goes to:** `slack.com`, over https
 - **Scopes an app lists:** the provider's own, as the provider names them, as `"slack": { scopes: [...], why: "..." }`; the provider's list: https://api.slack.com/scopes
 - **Set it:** deploy an app that lists it (or `pnpm everyapp provider add slack`), then `pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET` or paste the client in Manage workspace → Providers
-- **Guide:** [slack.md](slack.md)
+- **Guide:** [slack.md](/docs/agent/setup/slack)
 
 ### github-oauth
 

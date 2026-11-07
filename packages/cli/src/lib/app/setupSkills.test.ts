@@ -1,13 +1,14 @@
 /**
- * The setup files of the everyapp skill (skills/everyapp/setup/*.md) stay
- * honest about the CLI they describe: every file the index names exists
- * and every file is indexed; every `secret set NAME` names a Gateway
+ * The setup guides of the agent docs (landing-page/content/agent/setup/*.md,
+ * which the everyapp skill points at) stay honest about the CLI they
+ * describe: every guide the index (setup/guides.md) names exists and every
+ * guide is indexed; every `secret set NAME` names a Gateway
  * setting the CLI accepts (or, with `--app <id>`, an app's own secret);
  * every `pnpm everyapp …` is a route the CLI has;
  * no file asks for a value through the chat or puts one on a command
- * line; and each file has the sections the README's contract requires.
+ * line; and each guide has the sections setup/guides.md's contract requires.
  * The end-to-end harness in test/setup-skills/ (not run here) drives
- * `claude -p` through the same files.
+ * `claude -p` through the same guides.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -19,20 +20,20 @@ import { GENERATED_SETUP_MARKER } from "@/docs/providersCatalog";
 import { checkoutRoot } from "@/lib/checkout";
 import { asksForSecretInChat } from "../../../test/shared/chat-secret.mjs";
 
-const setupDir = path.join(checkoutRoot(), "packages", "cli", "skills", "everyapp", "setup");
-const readmeFile = path.join(setupDir, "README.md");
+const setupDir = path.join(checkoutRoot(), "landing-page", "content", "agent", "setup");
+const readmeFile = path.join(setupDir, "guides.md");
 const readme = fs.existsSync(readmeFile) ? fs.readFileSync(readmeFile, "utf8") : "";
 
-/** The setup files beside the README, each with its lines. */
+/** The setup guides beside the index (not index.md, the page on driving setup), each with its text. */
 const files = (fs.existsSync(setupDir) ? fs.readdirSync(setupDir) : [])
-  .filter((name) => name.endsWith(".md") && name !== "README.md")
+  .filter((name) => name.endsWith(".md") && name !== "guides.md" && name !== "index.md")
   .sort()
   .map((name) => ({ name, text: fs.readFileSync(path.join(setupDir, name), "utf8") }));
 
-/** README.md and the setup files: the rules about commands and values hold in all of them. */
-const allFiles = [...(readme ? [{ name: "README.md", text: readme }] : []), ...files];
+/** guides.md and the setup guides: the rules about commands and values hold in all of them. */
+const allFiles = [...(readme ? [{ name: "guides.md", text: readme }] : []), ...files];
 
-/** The sections every hand-written setup file has, in the README's contract. */
+/** The sections every hand-written setup guide has, in setup/guides.md's contract. */
 const REQUIRED_HEADINGS = [
   "Settings",
   "Costs and plans",
@@ -97,8 +98,8 @@ function valueAfterSecretSet(line: string): string | null {
 describe("the setup index", () => {
   it("links every setup file, and every linked file exists", () => {
     expect(readme, `${readmeFile} is missing`).not.toBe("");
-    const linked = [...readme.matchAll(/\[([a-z0-9-]+\.md)\]\(([a-z0-9-]+\.md)\)/g)].map((match) => match[2]!);
-    expect(linked.length, "the README's table links no files").toBeGreaterThan(0);
+    const linked = [...readme.matchAll(/\[([a-z0-9-]+\.md)\]\(\/docs\/agent\/setup\/([a-z0-9-]+)\)/g)].map((match) => `${match[2]!}.md`);
+    expect(linked.length, "setup/guides.md's table links no guides").toBeGreaterThan(0);
     const missing = linked.filter((name) => !fs.existsSync(path.join(setupDir, name)));
     const unlisted = files.map((file) => file.name).filter((name) => !linked.includes(name));
     expect({ missing, unlisted }).toEqual({ missing: [], unlisted: [] });
@@ -158,13 +159,13 @@ describe("every setup file", () => {
     expect(problems).toEqual([]);
   });
 
-  it("has every section the README's contract requires", () => {
+  it("has every section setup/guides.md's contract requires", () => {
     const problems: string[] = [];
     for (const file of files) {
       // setup/providers.md is generated from the catalog (docs/providersCatalog.ts): one section per
       // provider, each pointing at the provider's own file where there is one, so the nine sections of
       // a hand-written guide aren't its shape. agentDocs.test.ts holds it to the catalog instead.
-      if (file.text.startsWith(GENERATED_SETUP_MARKER)) continue;
+      if (file.text.includes(`\n${GENERATED_SETUP_MARKER}`)) continue;
       const headings = [...file.text.matchAll(/^#{1,6}\s+(.+?)\s*$/gm)].map((match) => match[1]!.toLowerCase());
       for (const required of REQUIRED_HEADINGS) {
         if (!headings.some((heading) => heading.startsWith(required.toLowerCase()))) {

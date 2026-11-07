@@ -54,6 +54,7 @@ All run as `everyapp …` (with `--json` for an agent); every flag is on [cli](/
 | Cloudflare Access | `everyapp access on`, `everyapp access off`, `everyapp access show` ([access](/docs/agent/access)) |
 | Sign-in providers | `everyapp signin add <id>`, `everyapp signin list`, `everyapp signin show <id>`, `everyapp signin remove <id>` |
 | The workspace | `everyapp workspace …` ([workspace](/docs/agent/workspace)); any Gateway tool by name: `everyapp call <tool> [json]`, `everyapp call --list` |
+| Read an agent docs page, online or off | `everyapp docs <page>` (`everyapp docs` lists them) |
 | Empty a dedicated test account | `everyapp teardown --account-id <id> --dry-run`: refuses any account not on `EVERYAPP_TEST_ACCOUNTS`; never a person's Gateway |
 
 Not a command: making a personal access token (Manage workspace → Tokens), and connecting an AI client (the client's own `mcp add`; [mcp](/docs/agent/mcp#connecting-clients)).

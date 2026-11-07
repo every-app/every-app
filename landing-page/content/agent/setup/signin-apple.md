@@ -1,6 +1,9 @@
-# Sign in with Apple on the Gateway
+---
+title: "Sign in with Apple on the Gateway"
+description: "Step-by-step guide: Continue with Apple on the Gateway's sign-in page (a Services ID, the key, APPLE_SIGNIN_CLIENT_ID and _SECRET with everyapp signin add apple), the check, rotation."
+---
 
-Read [README.md](README.md) first: the rules every setup follows.
+Read [the setup rules](/docs/agent/setup/guides) first: the rules every setup follows.
 
 Puts **Continue with Apple** on the Gateway's sign-in page, beside the
 password. At the end the person has an App ID, a Services ID and a Sign in
@@ -8,7 +11,7 @@ with Apple key in their Apple Developer account, the Gateway holds the
 Services ID and a client secret signed with that key, and they have signed
 in with Apple once. `pnpm everyapp signin show apple --json` names this
 file as `setup`, and the CLI prints
-`Guide: node_modules/everyapp/skills/everyapp/setup/signin-apple.md`.
+`Guide: https://everyapp.com/docs/agent/setup/signin-apple.md`.
 
 Who gets in doesn't change: Apple only says who someone is. A member signs
 in; someone with a pending invitation for that exact address joins with
@@ -54,10 +57,10 @@ Account Holder or an Admin of the team can set up the identifiers.
 
 1. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true;
    `data.gatewayUrl` gives `<gateway host>`. Not installed or no owner:
-   [gateway.md](gateway.md) first. `data.access.on` true: see Verify 4.
+   [gateway.md](/docs/agent/setup/gateway) first. `data.access.on` true: see Verify 4.
 2. `pnpm everyapp signin show apple --json` (changes nothing; `Unknown
    command signin`: `git pull` in the `every-app` folder). `data.status`
-   `off`: this file applies; `on`: it works, and only the secret may need
+   `off`: this guide applies; `on`: it works, and only the secret may need
    renewing (Rotate). `data.callbackUrl` is the Return URL,
    `https://<gateway host>/api/auth/callback/apple`.
 3. Ask whether they have a paid Apple Developer membership, and their
@@ -127,7 +130,7 @@ Account Holder or an Admin of the team can set up the identifiers.
    false means the ring predates the Apple bypass; `pnpm everyapp access on --json`
    adds it (also after `pnpm everyapp update`). A ring made by hand without
    that bypass blocks Apple sign-in.
-5. Logs (README's Verify 4): `signin.config_problem` for a malformed or
+5. Logs (the setup rules' Verify 4): `signin.config_problem` for a malformed or
    missing setting.
 
 ## If it fails

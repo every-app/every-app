@@ -1,4 +1,7 @@
-# Cloudflare AI Gateway in front of the model providers
+---
+title: "Cloudflare AI Gateway in front of the model providers"
+description: "Step-by-step guide: put Cloudflare AI Gateway in front of every model call (everyapp ai gateway on, AI_GATEWAY_ID, the optional authenticated gateway key), check it and turn it off."
+---
 
 Cloudflare AI Gateway is a proxy for model calls in the Gateway's own
 Cloudflare account: a log of every call, caching, rate limits, retries
@@ -47,10 +50,10 @@ credits) is not used: the Gateway always sends the provider's key, and
 ## Before you start
 
 1. `pnpm everyapp status --json`: `data.installed` and `data.claimed`
-   true; otherwise [gateway.md](gateway.md) first.
+   true; otherwise [gateway.md](/docs/agent/setup/gateway) first.
 2. `pnpm everyapp ai show --json`: `done.data.aiGateway.on` false means
    it isn't on; `done.data.via` says `direct`. At least one model
-   provider configured ([ai.md](ai.md)) so there is something to front.
+   provider configured ([ai.md](/docs/agent/setup/ai)) so there is something to front.
 3. The Cloudflare login the CLI uses can create AI Gateways in the
    account (the account owner's login, or a token with AI Gateway Write).
 

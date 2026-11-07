@@ -5,7 +5,8 @@
  * skills: `.claude/skills/<name>` (Claude Code) and `.agents/skills/<name>`
  * (Codex and others). Each is a relative link to
  * `node_modules/everyapp/skills/<name>`, the copy inside the CLI package the
- * app pins, so the skills always match that CLI and never go stale; the
+ * app pins, so the skills always match that CLI. They are short and point
+ * at the agent docs on everyapp.com, which change without an upgrade. The
  * links resolve once `pnpm install` has run. Both tools follow a linked skill
  * directory (checked with Claude Code 2.1.316 and Codex 0.165.0). Where a
  * link can't be made (Windows without Developer Mode or admin rights), create

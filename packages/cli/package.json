@@ -9,6 +9,7 @@
   "files": [
     "dist",
     "bin",
+    "docs",
     "skills",
     "starter"
   ],
@@ -21,7 +22,7 @@
   "scripts": {
     "types:check": "tsc --noEmit",
     "prebuild": "tsc",
-    "build": "node scripts/bundle-starter.mjs && tsup --silent",
+    "build": "node scripts/bundle-starter.mjs && node scripts/bundle-docs.mjs && tsup --silent",
     "dev": "tsup --watch",
     "install:global": "pnpm run build && npm link --ignore-scripts",
     "knip": "knip",

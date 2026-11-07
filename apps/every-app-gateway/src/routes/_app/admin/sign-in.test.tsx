@@ -192,7 +192,12 @@ describe("Manage workspace → Sign-in", () => {
     ).toContain("Not set");
     expect(open.textContent).toContain("pnpm everyapp signin add github");
     expect(open.textContent).toContain("with this gateway's Cloudflare login");
-    expect(open.textContent).toContain("setup/signin-github.md");
+    expect(open.textContent).toContain("setup/signin-github");
+    expect(
+      open.querySelector(
+        'a[href="https://everyapp.com/docs/agent/setup/signin-github"]',
+      ),
+    ).not.toBeNull();
     expect(
       open.querySelector('a[href="https://github.com/settings/developers"]'),
     ).not.toBeNull();

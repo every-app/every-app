@@ -1,4 +1,7 @@
-# Slack for the Gateway
+---
+title: "Slack for the Gateway"
+description: "Step-by-step guide: one Slack app's OAuth client (SLACK_CLIENT_ID and _SECRET) on the Gateway, the scopes apps ask for, each member connecting their workspace."
+---
 
 One Slack app, registered once at api.slack.com, whose OAuth client the
 Gateway holds. A member connects Slack inside each app that lists `slack`,
@@ -72,7 +75,7 @@ an internal app installed in its own workspace.
    `settings` with `set: false`, never in `unmet`, and
    `pnpm everyapp configure <app>` offers it after the required ones;
    `required`: in `unmet`, the app closed until both are set), `setup:
-   "setup/slack.md"` (this file). While its `set` is false this file
+   "setup/slack.md"` (this file). While its `set` is false this guide
    applies. With `set: true`: ask before replacing (a new app, or a
    regenerated secret). Not deployed yet: `APP_NOT_FOUND`; a bare
    `pnpm everyapp secret list --json` from the checkout still says whether
@@ -143,7 +146,7 @@ an internal app installed in its own workspace.
    for an app where the client is optional, Yes to `Set the N optional
    settings too?`, Enter skipping the others) or
    `pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET`
-   for just these two (README's first way; no `--json`, so it prompts).
+   for just these two (the setup rules' first way; no `--json`, so it prompts).
    Paste the Client ID at the first prompt; click **Show** next to Client
    Secret and paste it at the second. Nothing is echoed. Give 2a and 3a in
    one message and wait once, until they say both values are in (a create
@@ -154,7 +157,7 @@ an internal app installed in its own workspace.
    pick the workspace, **Generate**; copy the **Access Token** (it starts
    `xoxe.xoxp-`, expires 12 hours later, and adds "Slack Tooling Tokens
    Vendor" to the workspace). In their terminal, in the `every-app` folder,
-   read it in hidden (README's third way), never on a command line or in a
+   read it in hidden (the setup rules' third way), never on a command line or in a
    typed `export …=`, which the shell history keeps: bash or zsh
    `read -rs SLACK_CONFIG_TOKEN && export SLACK_CONFIG_TOKEN`, fish
    `read -s -x SLACK_CONFIG_TOKEN`; they paste the token and press Enter;
@@ -182,7 +185,7 @@ an internal app installed in its own workspace.
    jq -r '.credentials.client_id // empty' /tmp/slack-app.json | pnpm everyapp secret set SLACK_CLIENT_ID --json; rm -f /tmp/slack-app.json
    ```
 
-   README's second way. `jq -e '.ok'` printing `false`: `jq '.error'`
+   the setup rules' second way. `jq -e '.ok'` printing `false`: `jq '.error'`
    names why (step 1, or the name is taken); stop and
    `rm -f /tmp/slack-app.json`. `// empty` keeps a missing field from
    going in as the string `null`: the pipe is empty and `secret set` stops
@@ -237,7 +240,7 @@ an internal app installed in its own workspace.
 | After **Allow**, the Gateway's error page says Slack granted scopes the app doesn't list | The workspace's installation of this Slack app carries scopes another app on the same client asked for, so the Gateway refused the token | A Slack app per app: a provider of its own for the second app (a copy of this spec under another id and setting names, `pnpm everyapp provider show slack` prints it, added with `pnpm everyapp provider add --oauth <file>`), its own Slack app, and that id in the app's manifest |
 | `invalid_scope` on Slack's page                                                | A scope an app lists doesn't exist, or is a user scope                                   | Fix the app's `scopes` (bot scopes only), deploy, connect again                                          |
 | `access_denied`                                                                | The person clicked Cancel on Slack's page                                                | Connect again and **Allow**                                                                              |
-| `SECRET_VALUE_REQUIRED`                                                        | Nothing was piped (path B: the field was missing, so `// empty` piped nothing) and there is no terminal to prompt at | `jq '.error' /tmp/slack-app.json`; or one of README's three ways (its `data.rerun` shows the `--from-env` form) |
+| `SECRET_VALUE_REQUIRED`                                                        | Nothing was piped (path B: the field was missing, so `// empty` piped nothing) and there is no terminal to prompt at | `jq '.error' /tmp/slack-app.json`; or one of the setup rules' three ways (its `data.rerun` shows the `--from-env` form) |
 | `SECRET_SEVERAL_NAMES`                                                         | A pipe or `--from-env` with two names                                                    | One name per call (the fix in `data.fix`)                                                                |
 | `SECRET_NOT_DECLARED` with `data.didYouMean`                                   | The name differs from a known one in case or underscores only                            | rerun with the name in `data.didYouMean` and the same value source (`--from-env VAR --json`, or the same pipe); `data.rerun` carries only the names, so run as is it stops with `SECRET_VALUE_REQUIRED` |
 | Slack's page: "redirect_uri did not match any configured URIs", then `Passed URI: …` | The Gateway's callback isn't registered on the Slack app exactly                     | Register `https://<gateway host>/connect/slack/callback` (https only, no `#`) under OAuth & Permissions → Redirect URLs; Verify 2 |

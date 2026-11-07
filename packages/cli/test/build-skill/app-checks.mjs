@@ -224,14 +224,16 @@ function skipNonCode(source, i) {
 }
 
 /**
- * The skill's two files, by any path (`.claude/skills/…`, `.agents/skills/…`, `node_modules/everyapp/skills/…`).
- * Not anchored: a Bash command goes on after the path (run 2 read patterns.md
- * with `grep -B2 -A12 "orgId" .agents/skills/build-every-app/patterns.md | head -80`).
+ * The skill, by any path (`.claude/skills/…`, `.agents/skills/…`, `node_modules/everyapp/skills/…`),
+ * and the patterns page it points at: `everyapp docs patterns`, its bundled
+ * copy (`docs/agent/patterns.md`) or its URL. Not anchored: a Bash command
+ * goes on after the path (run 2 read patterns.md with
+ * `grep -B2 -A12 "orgId" .agents/skills/build-every-app/patterns.md | head -80`).
  */
 export const SKILL_FILE = /skills\/build-every-app\/SKILL\.md\b/;
-export const PATTERNS_FILE = /skills\/build-every-app\/patterns\.md\b/;
+export const PATTERNS_FILE = /skills\/build-every-app\/patterns\.md\b|docs\/agent\/patterns\b|everyapp docs patterns\b/;
 
-const READ_VERBS = /\b(?:cat|sed|head|tail|less|more|bat|awk|grep|rg)\b/;
+const READ_VERBS = /\b(?:cat|sed|head|tail|less|more|bat|awk|grep|rg|everyapp docs|curl)\b/;
 
 /**
  * The first tool call that read a file matching `file` (a RegExp over the
@@ -243,6 +245,7 @@ export function firstRead(toolUses, { file, skill = null }) {
     const input = use.input ?? {};
     if (use.name === "Read" && typeof input.file_path === "string" && file.test(input.file_path)) return use;
     if (use.name === "Bash" && typeof input.command === "string" && READ_VERBS.test(input.command) && file.test(input.command)) return use;
+    if (use.name === "WebFetch" && typeof input.url === "string" && file.test(input.url)) return use;
     if (skill && use.name === "Skill" && typeof input.skill === "string" && input.skill.includes(skill)) return use;
   }
   return null;

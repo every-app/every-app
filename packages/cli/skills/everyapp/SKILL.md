@@ -1,140 +1,78 @@
 ---
 name: everyapp
-description: Create, run, deploy and manage private web apps on Cloudflare with everyapp (EveryApp). Use before running any everyapp command, to deploy an app, set a secret, query its database, check the Gateway, or answer any "how do I" question about EveryApp.
+description: Create, run, deploy and manage private web apps on Cloudflare with everyapp (EveryApp). Use before running any everyapp command, to set up the Gateway or an integration (an AI key, email, Google, sign-in), deploy or install an app, set a secret, query an app's database, manage people and MCP apps, or answer any "how do I" question about EveryApp.
 ---
 
-everyapp: self-hosted platform for private web apps on Cloudflare. The command
-is `everyapp`: `pnpm everyapp` in an app's directory (its package.json pins the
-CLI) and in a checkout of the EveryApp repository (which builds the Gateway from
-the tree); `npm install -g everyapp` or `npx everyapp@latest` anywhere else.
+# everyapp
 
-This file routes; the agent docs hold the detail. https://everyapp.com/llms.txt
-lists every page with a one-line summary; a page is Markdown at its URL plus
-.md (https://everyapp.com/docs/agent/manifest.md); in a checkout they are
-landing-page/content/agent/*.md. Pages: setup (driving setup for a person:
-what only they can do), apps (the open apps, their install commands and what
-each needs set), cli (every command and flag), json (the --json protocol),
-errors (every code, one line each), troubleshooting (by symptom), status (the report and its fixes),
-manifest (everyapp.config.ts), identity (headers, token, env, SDK), secrets
-(secrets vs Gateway settings vs capabilities), dev (dev vs production), email,
-events (webhooks, email alerts, the event families, emit()), mcp (tools,
-connector, OAuth), native (Mac and phone apps; bearer routes), deploy (the
-pipeline, release and install), providers (API providers and registering one),
-access (Cloudflare Access), signin (sign-in providers), ai (the default model
-provider, AI Gateway), workspace (people, groups, caps, usage from the terminal
-and from an AI client), gateway (everything a Gateway offers, the CLI by job),
-build (the build-every-app skill as a page), patterns (its look-up table),
-repo/threat-model (the security page).
+EveryApp puts a person's private web apps on their own Cloudflare account,
+behind one Gateway that signs people in, holds every key and serves the apps'
+tools at `https://<gateway>/mcp`. The command is `everyapp`: `pnpm everyapp`
+in an app (its package.json pins the CLI) and in an EveryApp checkout;
+`npm install -g everyapp` anywhere else.
 
-Answering "how do I": fetch the page for the subject and answer from it with
-the exact command or manifest field, naming the page. A failed command: look
-its code up on errors (anchor: the code, lowercased) before trying anything
-else. Never guess a flag: cli has them all. Building or changing an app: read
-the build-every-app skill beside this one.
+This skill is short on purpose. The detail lives in the agent docs, which
+change without a CLI upgrade: read the page for the job before you act, and
+answer with the exact command, flag or field it gives, naming the page.
 
-## Driving the CLI
+- Every page, one line each: https://everyapp.com/llms.txt
+- A page as Markdown: `https://everyapp.com/docs/agent/<page>.md`
+- No network: `pnpm everyapp docs <page>` (the copy bundled with the CLI;
+  `pnpm everyapp docs` lists them)
 
-Pass --json. One JSON event per line; "done" = success; exit 2 = show the user
-the last action_required (url, code), then run its data.rerun; exit 1 = show
-the error; if data.authorize is set, ask before using data.rerun. waiting: true
-= keep reading (5 min for the device login, up to 15 for the owner link).
+## Rules that don't change
 
-| Job                                    | Command (with --json)                                                                   | Page      |
-| -------------------------------------- | --------------------------------------------------------------------------------------- | --------- |
-| What is online, what to fix, what next | `everyapp status` (data.fixes, data.next, data.apps[].setup)                            | status    |
-| Install, upgrade or repair the Gateway | `everyapp setup --domain <host>` (5-20 min: background it)                              | setup     |
-| A new app                              | `everyapp create <id>` (from a checkout `../<id>`, its own repository)                  | build     |
-| Run it locally                         | `everyapp dev` (long-running, no --json: background it, read the URL; stop with SIGINT) | dev       |
-| Put it live                            | `everyapp deploy` from the app's directory (safe to repeat)                             | deploy    |
-| Someone else's app, no clone           | `everyapp install https://github.com/<owner>/<repo>`                                    | deploy    |
-| Publish an app                         | `everyapp release` (`--publish` in its Release workflow)                                | deploy    |
-| The database                           | `everyapp db query "<sql>" [--local]`, `db migrate`, `db restore`                       | cli       |
-| Set up an app's values                 | `everyapp configure <app>` (one name: `secret set NAME`)                                | secrets   |
-| Email senders and inbound              | `everyapp email set --sender "*@<domain>" --inbound <address>`                          | email     |
-| Cloudflare Access                      | `everyapp access on` (rerun after inviting someone)                                     | access    |
-| MCP apps                               | `everyapp mcp on dataforseo`, `mcp add <url> --auth bearer`                             | mcp       |
-| API providers                          | `everyapp provider add <spec.json or id>`                                               | providers |
-| The workspace                          | `everyapp workspace --help` (rename, role, invite, groups, apps, caps, usage)           | workspace |
-| Events out                             | `everyapp events add <url> --events 'cap.*'` (data.secret shown once: hand it over)     | events    |
-| The default model                      | `everyapp ai show`, `ai default <provider>`                                             | ai        |
-| Remove an app                          | `everyapp delete <id>`                                                                  | cli       |
+- **Pass `--json`** and follow the protocol: one event per line, `done` is
+  success, exit 2 means a person must act (show the last `action_required`,
+  then run its `data.rerun`), exit 1 is an error. With `data.authorize`, ask
+  before using the rerun.
+- **A failed command:** look its code up on the errors page before anything
+  else. **Never guess a flag:** the cli page has them all.
+- **Values never pass through the chat.** A key, token or client secret goes
+  in only by the person typing it at a hidden prompt in their own terminal
+  (`everyapp configure <app>`, `everyapp secret set NAME`), by a pipe from a
+  command that produced it, or by `--from-env`. Never ask for one, print
+  one, repeat one, invent one, or put one on a command line.
+- **Ask first** before any flag that deletes or takes over (`--purge`,
+  `--force-dns`, `--allow-delete-*`, `--yes`, `--enable-email-routing`,
+  `--no-access`), before `db restore`, and never run `teardown` on a
+  person's account.
+- **Only a person can** approve the Cloudflare login, open the owner link,
+  pick the account or a workers.dev name, pay, buy a domain, or confirm at a
+  terminal. Stop, tell them in one or two lines what to do, and resume with
+  `data.rerun` when they say it's done.
+- **Deploy with `everyapp deploy`,** never `cf deploy` or `wrangler deploy`,
+  and never change a Worker in the dashboard.
+- **The Gateway signs people in.** An app never builds its own login and
+  never reads who the user is from a header, cookie or parameter a client
+  sent. Building or changing an app: read the build-every-app skill.
+- **Never vendor the SDK or CLI into an app:** pin a published version.
 
-The workspace, events and `ai show|default` commands are the Gateway's own
-tools, run as the person: EVERYAPP_TOKEN (a personal access token), or the
-browser sign-in `everyapp login --gateway <url>` keeps (hand its URL to the
-person; it waits). A refusal is GATEWAY_TOOL_ERROR, its code in data.code.
-`everyapp call <tool> '<json>'` runs any tool by name (`call --list`).
-`workspace invite-link` and `workspace reset-link` print a link under the
-Cloudflare login: hand it to the person.
+## Where to read, by job
 
-An app's AI tools are defineTools() in src/tools.ts, served at
-https://<gateway>/mcp as <app>_<tool>: mcp.md beside this file says how to
-write, connect and debug them.
-
-`mcp add <url>` looks at the server first and writes nothing until it knows
-the credential: none when it answers without one; OAuth when its 401 names
-OAuth metadata (each member connects their own account at the connect page add
-prints); else --auth bearer|header|query|basic (the key <ID>_MCP_TOKEN, sent
-only to the URL's host) or --provider <id>. MCP servers added by URL aren't
-metered: a cap is refused (APP_NOT_METERED). Guide: setup/remote-mcp.md.
-
-## Values never pass through the chat
-
-A key, token or client secret goes in through one of three ways: the person
-runs `everyapp configure <app>` (or `secret set NAME`) in their own terminal
-and types it at the hidden prompt; NAME=value lines on stdin from a command's
-output; or --from-env for variables the person exported before starting you.
-Never a value on the command line (VALUE_ON_COMMAND_LINE); never ask for,
-print, repeat or invent one. An app whose data.apps[].setup.ready is false
-doesn't open: show each unmet setting's why and docs, read a Gateway
-setting's setup guide (node_modules/everyapp/skills/everyapp/<setup>, the
-setup/ folder beside this file) and, for the app's own values, each
-feature's steps and each value's how (`configure <app> --json` returns them
-filled in as data.features), then hand over setup.command. Postgres URLs go in
-.everyapp/secrets.env, which the person writes.
-
-Step-by-step setup of what the Gateway holds (the provider's side, the key or
-OAuth client, the check): setup/README.md beside this file first, then the
-file it names, each read on its own: setup/gateway.md, access.md, email.md,
-ai.md, ai-gateway.md, dataforseo.md, context.md, openrouter.md, openai.md,
-workers-ai.md, google.md, microsoft-365.md, slack.md, remote-mcp.md, the
-signin-*.md guides, and providers.md#<id> for any other catalog provider; a
-provider registered on one Gateway has none: `everyapp provider show <id>`.
-
-## Ask first
-
-- Never add --purge, --force-dns, --allow-delete-* or --yes
-  to delete, --yes to a production write (CONFIRMATION_REQUIRED), or
-  --enable-email-routing, unless the user said so. `db restore` only when asked.
-- Teardown deletes everything EveryApp made in one account: only on a dedicated
-  test account the user names, --dry-run --json first, and never --confirm
-  unless the user explicitly asked.
-- Setup puts Cloudflare Access in front by default; never add --no-access
-  unless the person says so. ACCESS_TEAM_REQUIRED: ask the person for a team
-  name (permanent), then rerun with --team <name>.
-- Never vendor the SDK or CLI into an app (no tarballs, no committed `file:`
-  or `link:`): pin a published version; `pnpm link` locally to try unreleased
-  code, and an rc ships it (deploy page).
-- Gateway app installs from the browser are off by default: don't suggest
-  them. Only when the person asks, they run `everyapp deploy-token add` at a
-  terminal themselves.
-
-Only a person can: approve the Cloudflare login, open the owner link, pick a
-workers.dev subdomain, pay for Workers Paid, buy a domain, pick the account
-(choose_account), and confirm in a terminal a Worker changed outside everyapp
-(rerun_interactive, data.needsTerminal: hand them the command without --json).
-Handing off: stop, tell the person in one or two lines what to do (the url and
-code, what to click, what to come back with), and resume with data.rerun when
-they say it is done. The setup page has the words for each handoff.
-
-## Security
-
-The Gateway signs people in and passes identity to the app in a header the SDK
-verifies; never read who the user is from a client-supplied header, cookie or
-parameter. Routes are private unless listed under `public` in
-everyapp.config.ts. Before a pull request that touches identity, public routes,
-tools, secrets or queries, review the changes against security-review.md beside
-this file (`/security-review` in Claude Code; any other agent reads git diff
-against it). Fix what it finds, or say in the pull request why a finding is a
-false positive. What the Gateway promises: docs/security.md in the checkout
-(https://everyapp.com/docs/agent/repo/threat-model).
+| Job | Page |
+| --- | --- |
+| Set EveryApp up for a person; what only they can do; safety rules | https://everyapp.com/docs/agent/setup.md |
+| Set up one integration step by step (AI key, email, Google, Slack, sign-in, remote MCP, Access) | https://everyapp.com/docs/agent/setup/guides.md, then the one guide it names |
+| A `Guide:` line in `status`, `configure` or `secret list` output | the URL it prints (offline: `pnpm everyapp docs setup/<name>`) |
+| What is online, what to fix, Needs setup | https://everyapp.com/docs/agent/status.md |
+| Which command for which job; what to suggest next | https://everyapp.com/docs/agent/gateway.md |
+| Every command and flag | https://everyapp.com/docs/agent/cli.md |
+| The `--json` protocol, actions, reruns | https://everyapp.com/docs/agent/json.md |
+| An error code | https://everyapp.com/docs/agent/errors.md (anchor: the code, lowercased) |
+| Something's wrong, no code | https://everyapp.com/docs/agent/troubleshooting.md |
+| The open apps and their installs | https://everyapp.com/docs/agent/apps.md |
+| `everyapp.config.ts`: capabilities, features, public and bearer routes | https://everyapp.com/docs/agent/manifest.md |
+| Secrets vs settings vs capabilities; `configure` | https://everyapp.com/docs/agent/secrets.md |
+| Deploys, releases, installs, delete, the database | https://everyapp.com/docs/agent/deploy.md |
+| `everyapp dev`; local vs production | https://everyapp.com/docs/agent/dev.md |
+| API and OAuth providers | https://everyapp.com/docs/agent/providers.md |
+| The default model; AI Gateway | https://everyapp.com/docs/agent/ai.md |
+| Email senders and inbound | https://everyapp.com/docs/agent/email.md |
+| The MCP address, OAuth, tokens, MCP apps | https://everyapp.com/docs/agent/mcp.md |
+| An app's AI tools; tools missing; 401 or 403 on `/mcp` | https://everyapp.com/docs/agent/tools.md |
+| People, groups, app access, caps, usage | https://everyapp.com/docs/agent/workspace.md |
+| Webhooks, email alerts, the audit log | https://everyapp.com/docs/agent/events.md |
+| Cloudflare Access; sign-in providers | https://everyapp.com/docs/agent/access.md, https://everyapp.com/docs/agent/signin.md |
+| Reviewing an app's changes before a pull request | https://everyapp.com/docs/agent/security-review.md |
+| What the Gateway promises (security) | https://everyapp.com/docs/agent/repo/threat-model.md |

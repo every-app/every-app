@@ -30,7 +30,7 @@ export interface DevAiProviderSpec {
   auth: ApiKeyAuth;
   /** Where an operator gets the key: the provider's API keys page. */
   docs: string;
-  /** The everyapp skill's setup guide for it, relative to the skill (`setup/openai.md`). */
+  /** Its setup guide, relative to the agent docs (`setup/openai.md`: https://everyapp.com/docs/agent/setup/openai.md). */
   setup?: string;
   /** Gateway settings the provider's URL needs besides the key, under the same names. */
   alsoNeeds?: readonly string[];

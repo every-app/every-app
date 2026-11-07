@@ -481,7 +481,7 @@ describe("everyapp status", () => {
       code: "APP_NEEDS_SETUP",
       severity: "warning",
       message:
-        "crm needs setup\nOpenRouter: Drafts replies.\nAn API key from OpenRouter's keys page; the Gateway puts it on every call as a bearer token.\nGet it at https://openrouter.ai/settings/keys\nGuide: node_modules/everyapp/skills/everyapp/setup/openrouter.md\nTOKEN_ENCRYPTION_KEY",
+        "crm needs setup\nOpenRouter: Drafts replies.\nAn API key from OpenRouter's keys page; the Gateway puts it on every call as a bearer token.\nGet it at https://openrouter.ai/settings/keys\nGuide: https://everyapp.com/docs/agent/setup/openrouter.md\nTOKEN_ENCRYPTION_KEY",
       run: "pnpm everyapp configure crm",
     });
     // todo goes live on its first visit; the setup problem counts with the missing owner.
@@ -509,7 +509,7 @@ describe("everyapp status", () => {
         // What the provider's entry says the key is (its hint).
         "  An API key from OpenRouter's keys page; the Gateway puts it on every call as a bearer token.",
         "  Get it at https://openrouter.ai/settings/keys",
-        "  Guide: node_modules/everyapp/skills/everyapp/setup/openrouter.md",
+        "  Guide: https://everyapp.com/docs/agent/setup/openrouter.md",
         "  TOKEN_ENCRYPTION_KEY",
         "  Run: pnpm everyapp configure crm",
       ].join("\n"),
