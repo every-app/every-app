@@ -11,6 +11,7 @@ import { LoopbackServer } from "./loopback";
 import { OAuthClient, errorMessage, type Fetch } from "./oauth";
 import { AccessTokenAuthProvider, OAuthAuthProvider, type AuthProvider, type Credentials } from "./providers";
 import { CALLBACK_PATH } from "./redirect";
+import { locateApp, type Located } from "./locate";
 import { SignInFlow, touchClient } from "./signin";
 import type { SecretStore } from "./store";
 import { typedAppUrl } from "./url";
@@ -110,6 +111,11 @@ export class AuthService extends EventEmitter<{ change: [AuthSnapshot] }> {
     }
   }
 
+  /** The first screen's address, a Gateway's or the app's own: where to sign in (locate.ts). */
+  locate(text: string): Promise<Located> {
+    return locateApp(text, SCRIBE.backend.appId, this.oauth, SCRIBE.label);
+  }
+
   async signIn(appUrlText: string): Promise<void> {
     const appUrl = typedAppUrl(appUrlText);
     if (!appUrl) return this.set({ error: TYPE_APP_URL });
@@ -167,7 +173,7 @@ export class AuthService extends EventEmitter<{ change: [AuthSnapshot] }> {
     } catch (error) {
       const needsEveryAppSignIn = error instanceof ApiError && error.kind === "accessLogin";
       const message =
-        error instanceof ApiError && error.kind === "signedOut" ? "Scribe refused that token." : errorMessage(error);
+        error instanceof ApiError && error.kind === "signedOut" ? `${SCRIBE.label} refused that token.` : errorMessage(error);
       this.set({ error: message, needsEveryAppSignIn });
     }
   }

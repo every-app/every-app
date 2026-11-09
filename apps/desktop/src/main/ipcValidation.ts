@@ -5,6 +5,7 @@ import type { InvokeChannel, PermissionKind } from "@shared/ipc";
 import { isAllowedApiCall, isValidApiCallOptions } from "./api/routes";
 import { looksLikeLink } from "./clipboard";
 import { parseSettingsPatch } from "./settings";
+import { isSetupCommandId } from "@shared/setup";
 
 const isPermissionKind = (v: unknown): v is PermissionKind => v === "mic" || v === "systemAudio" || v === "notifications";
 
@@ -13,6 +14,7 @@ const isString = (v: unknown, max = 4096): v is string => typeof v === "string" 
 /** Argument checks per channel; a bad call is refused before the handler runs. */
 export const validators: { [C in InvokeChannel]: (args: unknown[]) => boolean } = {
   "state:get": (a) => a.length === 0,
+  "auth:locate": (a) => a.length === 1 && isString(a[0], 2048),
   "auth:signIn": ([u]) => isString(u, 2048),
   "auth:cancelSignIn": () => true,
   "auth:signInWithToken": ([u, t]) => isString(u, 2048) && isString(t, 8192),
@@ -43,6 +45,7 @@ export const validators: { [C in InvokeChannel]: (args: unknown[]) => boolean } 
   "app:openInBrowser": ([id]) => id === undefined || isString(id, 256),
   "api:call": ([method, path, opts, ...rest]) => rest.length === 0 && isAllowedApiCall(method, path) && isValidApiCallOptions(opts),
   "clipboard:writeText": (a) => a.length === 1 && looksLikeLink(a[0]),
+  "clipboard:copySetup": (a) => a.length === 1 && isSetupCommandId(a[0]),
   "update:install": (a) => a.length === 0,
   "pill:get": (a) => a.length === 0,
   "pill:openMeeting": (a) => a.length === 0,

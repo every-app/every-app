@@ -37,6 +37,7 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
 
 - [ ] **Where the update feed lives.** Today it's Scribe's backend (`talk.<base>/api/v1/updates/mac`), behind one setting. Lean: a public feed Every App owns (everyone gets the same signed builds, no token on update checks), over the Gateway serving it (a new token audience on the perimeter, a bucket per self-hosted Gateway). Options in `apps/desktop/docs/release.md`, "Update feed". Settle it before the first release.
 - [ ] **One sign-in per feature?** A native token opens one app, so a second feature (dictation, notes) on another backend means a second grant: a sign-in per feature, or a Gateway-level grant that covers the workspace's apps?
+- [ ] **OpenScribe's install command.** Onboarding shows `everyapp install https://github.com/every-app/private-open-scribe` (`apps/desktop/src/shared/setup.ts`), but that repository is private and `install` needs a published release. Make it public with a release, or give the real command.
 - [ ] **The desktop app is public with main.** `apps/desktop` (and its release docs) goes to every-app/every-app with the next push of main. Fine?
 
 ### Simplify batch (2026-11-03; #945–#959)

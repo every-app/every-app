@@ -2,7 +2,7 @@
 // backend app id: a backend is an Every App app behind the Gateway, at `<appId>.<app base domain>`,
 // and its id can change (the Gateway is getting app renames), so nothing else names it.
 //
-// Scribe (meeting notes) is the first feature. Its backend is still the app id `talk`. A new
+// Scribe (meeting notes) is the first feature; OpenScribe is its open-source project. Its backend is still the app id `talk`. A new
 // feature (dictation, personal notes) adds an entry here, its own section in the window's sidebar
 // and its own `everyapp://<feature>/...` links. No Electron import (main and renderer both use it).
 

@@ -16,7 +16,7 @@ describe("WelcomeSplash", () => {
   it("says Enjoy Every App with the mark, and never takes input", () => {
     render(<WelcomeSplash shown reducedMotion={false} />);
     expect(card().getAttribute("role")).toBe("status");
-    expect(card().querySelector("svg")).toBeTruthy();
+    expect(card().querySelector("img[alt=\"Every App\"]")).toBeTruthy();
     expect(root().className).toContain("pointer-events-none");
   });
 

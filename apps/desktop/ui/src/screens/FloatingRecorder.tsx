@@ -2,7 +2,6 @@ import { cn } from "cn";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { barHeights, smoothLevel } from "../lib/levels";
 import type { Segment } from "../types";
-import { EveryAppMark } from "./OnboardingScreen";
 
 /*
  * The floating recorder, in the bottom-right corner of the screen while recording: a small
@@ -87,7 +86,7 @@ export function RecorderPill({
         className,
       )}
     >
-      <EveryAppMark className="size-[17px] opacity-80" />
+      <RecorderMark className="size-[17px] opacity-80" />
       <LiveBars level={stopping ? 0 : level} animate={animate} />
     </button>
   );
@@ -270,5 +269,17 @@ export function FloatingRecorder({
         />
       </div>
     </div>
+  );
+}
+
+/** The recorder's mark: three level bars in a rounded square. */
+function RecorderMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 48 48" aria-hidden className={className}>
+      <rect width="48" height="48" rx="12" className="fill-foreground" />
+      <rect x="14" y="19" width="4" height="10" rx="2" className="fill-background" />
+      <rect x="22" y="13" width="4" height="22" rx="2" className="fill-background" />
+      <rect x="30" y="17" width="4" height="14" rx="2" className="fill-background" />
+    </svg>
   );
 }

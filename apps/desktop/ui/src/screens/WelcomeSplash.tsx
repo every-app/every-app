@@ -1,6 +1,6 @@
 import { cn } from "cn";
 import { useEffect, useRef, useState } from "react";
-import { EveryAppMark } from "./OnboardingScreen";
+import { EveryAppLogo } from "./OnboardingScreen";
 
 /** How long the fades last, in ms, and how long the one after first run stays up. */
 export const SPLASH_TIMING = {
@@ -111,10 +111,7 @@ export function WelcomeSplash({
           transitionDuration: duration,
         }}
       >
-        <EveryAppMark
-          tone="light"
-          className="size-24 drop-shadow-[0_10px_30px_rgb(0_0_0/0.35)]"
-        />
+        <EveryAppLogo className="size-24 rounded-[22px] shadow-[0_0_0_0.5px_rgb(255_255_255/0.16),0_10px_30px_rgb(0_0_0/0.35)]" />
         <p className="text-[44px] font-semibold leading-none tracking-[-0.02em] text-white [text-shadow:0_2px_16px_rgb(0_0_0/0.35)]">
           Enjoy Every App
         </p>

@@ -1,6 +1,7 @@
 // The typed bridge between the renderer and main. The preload exposes `window.everyapp` with exactly
 // these calls; main registers a handler for each `invoke` channel and validates its arguments.
 
+import type { SetupCommandId } from "./setup";
 import type { HelperEvent, PermissionStatus, ChannelHealth, SelfTestReport, TranscriptionState } from "./protocol";
 
 export type { SelfTestReport, SelfTestSide } from "./protocol";
@@ -187,9 +188,19 @@ export interface PillView {
   transcript: { segments: Segment[]; pending: { speaker: Speaker; text: string }[] };
 }
 
+/** Where the first screen's address leads (src/main/auth/locate.ts). */
+export type Located =
+  /** Sign in to `appUrl`. */
+  | { kind: "app"; appUrl: string; gatewayUrl?: string }
+  /** A Gateway answered, but the app isn't on it yet. `appUrl` is where it will be. */
+  | { kind: "missing"; gatewayUrl: string; appUrl: string };
+
 /** `invoke` channels: name → [args, result]. */
 export interface InvokeMap {
   "state:get": [[], AppSnapshot];
+  /** The first screen: a Gateway's address or the app's own, to the app to sign in to (or where it
+   * will be, when the Gateway hasn't got it yet). Reads only public sign-in metadata. */
+  "auth:locate": [[text: string], Located];
   "auth:signIn": [[appUrl: string], void];
   "auth:cancelSignIn": [[], void];
   "auth:signInWithToken": [[appUrl: string, token: string], void];
@@ -214,6 +225,8 @@ export interface InvokeMap {
   "api:call": [[method: ApiMethod, path: string, opts?: ApiCallOptions], unknown];
   /** Copy a link (https, or the app's own origin; ≤ 2 KB): the sandboxed window can't. */
   "clipboard:writeText": [[text: string], void];
+  /** Copy one of onboarding's setup commands (src/shared/setup.ts), by id: main holds the text. */
+  "clipboard:copySetup": [[id: SetupCommandId], void];
   /** Settings → "Check microphone & Mac audio": a local capture until `selftest:stop` (60 s at
    * most; the helper's selftest.run). `levels` (0–1, 10 Hz) and `selftest.progress` (the report
    * so far, each second) arrive on the "helper" channel meanwhile; it answers the last report.
@@ -261,6 +274,7 @@ export type DesktopBridge = {
 
 export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   "state:get",
+  "auth:locate",
   "auth:signIn",
   "auth:cancelSignIn",
   "auth:signInWithToken",
@@ -282,6 +296,7 @@ export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   "app:openInBrowser",
   "api:call",
   "clipboard:writeText",
+  "clipboard:copySetup",
   "update:install",
   "selftest:run",
   "pill:get",

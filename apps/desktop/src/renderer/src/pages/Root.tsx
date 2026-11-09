@@ -5,10 +5,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Outlet, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import type { AppSnapshot } from "@shared/ipc";
-import type { NavTarget, Space } from "@every-app/desktop-ui";
-import { exampleBackendUrl, SCRIBE } from "@shared/features";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import type { AppSnapshot, Located } from "@shared/ipc";
+import type { NavTarget, PermissionKind, SetupCommandId, Space } from "@every-app/desktop-ui";
+import { SCRIBE } from "@shared/features";
+import { GATEWAY_GUIDE_URL, SETUP_COMMANDS } from "@shared/setup";
+import { playTestTone } from "../testTone";
 import { AppFrame, OfflineBanner, OnboardingScreen, SignInAgainBanner, SPLASH_TIMING, TitleBar, WelcomeSplash } from "@every-app/desktop-ui";
 import { useRecordingElapsed } from "../useRecordingElapsed";
 import { Button } from "@every-app/desktop-ui/components/button";
@@ -40,20 +42,27 @@ export function Root() {
   const gateRef = useRef<Gate>("loading");
   const gate = gateOf(state, gateRef.current);
   gateRef.current = gate;
+  // "Enjoy Every App" goes up when the app first shows after onboarding. When the Gateway hadn't
+  // got Scribe, onboarding finished before the sign-in, so it waits until the app is on screen.
+  const [welcomePending, setWelcomePending] = useState(false);
+  const showingApp = !!state && gate !== "welcome" && onboarded;
+  useEffect(() => {
+    if (showingApp && welcomePending) {
+      setWelcomePending(false);
+      startWelcome();
+    }
+  }, [showingApp, welcomePending, startWelcome]);
   if (!state) return <TitleBar />;
-  if (gate === "welcome") return <SignIn state={state} />;
-  if (!onboarded) {
-    return (
-      <FirstRun
-        state={state}
-        onDone={() => {
-          localStorage.setItem(ONBOARDED_KEY, "1");
-          setOnboarded(true);
-          startWelcome();
-        }}
-      />
-    );
-  }
+  const finishOnboarding = () => {
+    localStorage.setItem(ONBOARDED_KEY, "1");
+    setOnboarded(true);
+    setWelcomePending(true);
+  };
+  // Signed out: the Gateway first. When the Gateway hasn't got the app yet, permissions and
+  // "add the app" come before the sign-in (which needs the app), all on this screen.
+  if (gate === "welcome") return <Welcome state={state} onboarded={onboarded} onPermissionsDone={finishOnboarding} />;
+  // Signed in for the first time: permissions, then the splash.
+  if (!onboarded) return <FirstRun state={state} onDone={finishOnboarding} />;
   return (
     <>
       <Layout state={state} />
@@ -67,48 +76,176 @@ function Splash({ state, welcome }: { state: AppSnapshot; welcome: boolean }) {
   return <WelcomeSplash shown={splashShownOf({ welcome, away, recording: state.recording.state })} />;
 }
 
-function SignIn({ state }: { state: AppSnapshot }) {
+/** The address field's first value: the last app signed in to, shown as its Gateway when it's at
+ * `<appId>.<gateway host>` (the field takes either). */
+function addressFrom(appUrl: string | undefined): string {
+  if (!appUrl) return "";
+  try {
+    const url = new URL(appUrl);
+    const prefix = `${SCRIBE.backend.appId}.`;
+    const host = url.host.startsWith(prefix) ? url.host.slice(prefix.length) : url.host;
+    return url.protocol === "http:" ? `http://${host}` : host;
+  } catch {
+    return "";
+  }
+}
+
+/** A command's copy button: copied for two seconds. */
+function useCopyCommand() {
+  const [copied, setCopied] = useState<SetupCommandId | null>(null);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(null), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  const copy = useCallback((id: SetupCommandId) => {
+    bridge["clipboard:copySetup"](id).then(
+      () => setCopied(id),
+      (e: unknown) => notify(cleanError(e), "error"),
+    );
+  }, []);
+  return { copied, copy };
+}
+
+/** The permissions step's state and actions, before or after the sign-in. */
+function usePermissionsStep(state: AppSnapshot) {
+  const permissions = uiPermissions(state.permissions);
+  const [systemAudioAsked, setSystemAudioAsked] = useState(false);
+  const [testingSound, setTestingSound] = useState(false);
+  const onGrant = (kind: PermissionKind) => {
+    if (kind === "systemAudio") setSystemAudioAsked(true);
+    void grantPermission(bridge, kind, permissions[kind]).then(
+      // System audio that isn't reported either way is "asked" on the row, not an error.
+      ({ hint, status }) => hint && !(kind === "systemAudio" && (status === "unknown" || status === "undetermined")) && notify(hint),
+      (e: unknown) => notify(cleanError(e), "error"),
+    );
+  };
+  // System audio can only be confirmed by hearing it: a short self-test while a chime plays.
+  const onTestSound = () => {
+    setTestingSound(true);
+    const run = bridge["selftest:run"]();
+    try {
+      playTestTone();
+    } catch {
+      // No audio output: the check below says it heard nothing.
+    }
+    const stop = setTimeout(() => void bridge["selftest:stop"]().catch(() => {}), 2500);
+    run
+      .then((report) => {
+        if (report.system.status !== "ok") {
+          notify(
+            "Didn't hear the test sound. Turn the volume up, or allow Every App in System Settings → Privacy & Security → Screen & System Audio Recording.",
+          );
+        }
+      })
+      .catch((e: unknown) => notify(cleanError(e), "error"))
+      .finally(() => {
+        clearTimeout(stop);
+        setTestingSound(false);
+      });
+  };
+  return { permissions, systemAudioAsked, onGrant, onTestSound, testingSound };
+}
+
+function Welcome({
+  state,
+  onboarded,
+  onPermissionsDone,
+}: {
+  state: AppSnapshot;
+  onboarded: boolean;
+  onPermissionsDone: () => void;
+}) {
   // Signed out: before-call drafts belong to the account that wrote them.
   useEffect(() => clearDrafts(), []);
-  const [appUrl, setAppUrl] = useState(state.auth.appUrl ?? "");
+  const [step, setStep] = useState<"gateway" | "permissions" | "add-app">("gateway");
+  const [address, setAddress] = useState(() => addressFrom(state.auth.appUrl));
+  const [missing, setMissing] = useState<Extract<Located, { kind: "missing" }> | null>(null);
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const run = (work: () => Promise<void>) => {
+  const { copied, copy } = useCopyCommand();
+  const grant = usePermissionsStep(state);
+  const signingIn = state.auth.status === "signingIn";
+
+  const signIn = (appUrl: string) => bridge["auth:signIn"](appUrl).catch((e: unknown) => setError(cleanError(e)));
+
+  const connect = async () => {
     setError(null);
-    work().catch((e: unknown) => setError(cleanError(e)));
+    setChecking(true);
+    try {
+      const found = await bridge["auth:locate"](address.trim());
+      if (found.kind === "app") {
+        setChecking(false);
+        await signIn(found.appUrl);
+        return;
+      }
+      setMissing(found);
+      setStep(onboarded ? "add-app" : "permissions");
+    } catch (e) {
+      setError(cleanError(e));
+    } finally {
+      setChecking(false);
+    }
   };
+
+  const checkAgain = async () => {
+    if (!missing) return;
+    setError(null);
+    setChecking(true);
+    try {
+      const found = await bridge["auth:locate"](missing.gatewayUrl);
+      if (found.kind === "app") {
+        setChecking(false);
+        await signIn(found.appUrl);
+      } else {
+        setError(`${SCRIBE.label} isn't on ${new URL(missing.gatewayUrl).host} yet. Install it, then check again.`);
+      }
+    } catch (e) {
+      setError(cleanError(e));
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const shownError = error ?? state.auth.error ?? null;
   return (
     <OnboardingScreen
-      step="sign-in"
-      appUrl={appUrl}
-      appUrlPlaceholder={exampleBackendUrl(SCRIBE, "your-team.everyapp.dev")}
-      onAppUrlChange={setAppUrl}
-      signingIn={state.auth.status === "signingIn"}
-      signInError={error ?? state.auth.error ?? null}
-      onSignIn={() => run(() => bridge["auth:signIn"](appUrl.trim()))}
-      onCancelSignIn={() => void bridge["auth:cancelSignIn"]()}
-      onSubmitToken={(token) => run(() => bridge["auth:signInWithToken"](appUrl.trim(), token))}
+      step={step}
+      appName={SCRIBE.label}
+      address={address}
+      onAddressChange={(next) => {
+        setAddress(next);
+        setError(null);
+      }}
+      onConnect={() => void connect()}
+      connecting={checking ? "checking" : signingIn ? "browser" : null}
+      onCancelConnect={() => void bridge["auth:cancelSignIn"]()}
+      error={shownError}
+      onSubmitToken={(token) =>
+        void bridge["auth:locate"](address.trim())
+          .then((found) => found.appUrl, () => address.trim())
+          .then((appUrl) => bridge["auth:signInWithToken"](appUrl, token))
+          .catch((e: unknown) => setError(cleanError(e)))
+      }
+      setupCommands={SETUP_COMMANDS}
+      onCopyCommand={copy}
+      copiedCommand={copied}
+      guideUrl={GATEWAY_GUIDE_URL}
+      {...grant}
+      onContinue={() => {
+        onPermissionsDone();
+        setStep("add-app");
+      }}
+      gatewayHost={missing ? new URL(missing.gatewayUrl).host : undefined}
+      onCheckAgain={() => void checkAgain()}
+      checking={checking || signingIn}
     />
   );
 }
 
 function FirstRun({ state, onDone }: { state: AppSnapshot; onDone: () => void }) {
-  const [step, setStep] = useState<"permissions" | "done">("permissions");
-  const permissions = uiPermissions(state.permissions);
-  return (
-    <OnboardingScreen
-      step={step}
-      accountName={accountFrom(undefined, state.auth)?.name}
-      permissions={permissions}
-      onGrant={(kind) =>
-        void grantPermission(bridge, kind, permissions[kind]).then(
-          ({ hint }) => hint && notify(hint),
-          (e: unknown) => notify(cleanError(e), "error"),
-        )
-      }
-      onContinue={() => setStep("done")}
-      onFinish={onDone}
-    />
-  );
+  const grant = usePermissionsStep(state);
+  return <OnboardingScreen step="permissions" appName={SCRIBE.label} {...grant} onContinue={onDone} />;
 }
 
 function navFrom(pathname: string): NavTarget | null {

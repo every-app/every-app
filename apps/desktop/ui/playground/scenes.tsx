@@ -300,14 +300,29 @@ function SettingsScene() {
   );
 }
 
-function Onboarding(props: OnboardingScreenProps) {
+/** Copies of the desktop app's src/shared/setup.ts, for drawing. */
+const SETUP_COMMANDS = {
+  cli: "npm install -g everyapp",
+  gateway: "everyapp setup",
+  scribe: "everyapp install https://github.com/every-app/private-open-scribe",
+};
+
+function Onboarding(props: Partial<OnboardingScreenProps> & Pick<OnboardingScreenProps, "step">) {
+  const [address, setAddress] = useState(props.address ?? "");
   return (
     <OnboardingScreen
-      onSignIn={noop}
+      appName="Scribe"
+      address={address}
+      onAddressChange={setAddress}
+      onConnect={noop}
       onSubmitToken={noop}
+      setupCommands={SETUP_COMMANDS}
+      onCopyCommand={noop}
+      guideUrl="https://everyapp.com/docs/gateway"
       onGrant={noop}
+      onTestSound={noop}
       onContinue={noop}
-      onFinish={noop}
+      onCheckAgain={noop}
       {...props}
     />
   );
@@ -1149,20 +1164,26 @@ export const scenes: Scene[] = [
   },
 
   {
-    id: "onboarding-sign-in",
+    id: "onboarding-gateway",
     group: "Onboarding",
-    label: "Sign in",
-    render: () => <Onboarding step="sign-in" />,
+    label: "Connect your Gateway",
+    render: () => <Onboarding step="gateway" />,
   },
   {
-    id: "onboarding-token",
+    id: "onboarding-setup",
     group: "Onboarding",
-    label: "Paste a token, error",
+    label: "No Gateway yet? (opened)",
+    render: () => <Onboarding step="gateway" address="apps.acme.com" defaultShowSetup copiedCommand="gateway" />,
+  },
+  {
+    id: "onboarding-gateway-error",
+    group: "Onboarding",
+    label: "Not a Gateway",
     render: () => (
       <Onboarding
-        step="sign-in"
-        defaultShowToken
-        signInError="That token didn't work. It may have expired."
+        step="gateway"
+        address="acme.com"
+        error="acme.com doesn't answer like an Every App Gateway. Check the address and try again."
       />
     ),
   },
@@ -1170,29 +1191,43 @@ export const scenes: Scene[] = [
     id: "onboarding-waiting",
     group: "Onboarding",
     label: "Waiting for browser",
-    render: () => <Onboarding step="sign-in" signingIn />,
+    render: () => <Onboarding step="gateway" address="apps.acme.com" connecting="browser" onCancelConnect={noop} />,
   },
   {
-    id: "onboarding-permissions",
+    id: "onboarding-token",
     group: "Onboarding",
-    label: "Permissions",
-    render: () => (
-      <Onboarding step="permissions" permissions={mock.permissionsMixed} />
-    ),
+    label: "Paste a token",
+    render: () => <Onboarding step="gateway" address="http://talk.localhost:8787" defaultShowToken />,
   },
   {
     id: "onboarding-permissions-fresh",
     group: "Onboarding",
     label: "Permissions, fresh",
+    render: () => <Onboarding step="permissions" permissions={mock.permissionsFresh} />,
+  },
+  {
+    id: "onboarding-permissions",
+    group: "Onboarding",
+    label: "Permissions, system audio asked",
     render: () => (
-      <Onboarding step="permissions" permissions={mock.permissionsFresh} />
+      <Onboarding
+        step="permissions"
+        permissions={{ mic: "granted", systemAudio: "unknown", notifications: "undetermined" }}
+        systemAudioAsked
+      />
     ),
   },
   {
-    id: "onboarding-done",
+    id: "onboarding-permissions-blocked",
     group: "Onboarding",
-    label: "Done",
-    render: () => <Onboarding step="done" accountName={mock.account.name} />,
+    label: "Permissions, blocked",
+    render: () => <Onboarding step="permissions" permissions={mock.permissionsMixed} />,
+  },
+  {
+    id: "onboarding-add-app",
+    group: "Onboarding",
+    label: "Add Scribe",
+    render: () => <Onboarding step="add-app" gatewayHost="apps.acme.com" />,
   },
   {
     id: "welcome-splash",

@@ -17,6 +17,7 @@ import { devSignIn, helperPath, isDevFlavor, keychainDisabled } from "./config";
 import { HelperSupervisor } from "./helper/supervisor";
 import { registerIpc } from "./ipc";
 import { isCopyableUrl, normalizedLink } from "./clipboard";
+import { SETUP_COMMANDS } from "@shared/setup";
 import { log, logPath, logTail } from "./log";
 import { Connectivity } from "./connectivity";
 import { PendingUploads } from "./pending";
@@ -473,6 +474,7 @@ async function main(): Promise<void> {
 
   registerIpc({
     "state:get": () => snapshot(),
+    "auth:locate": (text) => auth.locate(text),
     "auth:signIn": (appUrl) => auth.signIn(appUrl),
     "auth:cancelSignIn": () => auth.cancelSignIn(),
     "auth:signInWithToken": (appUrl, token) => auth.signInWithToken(appUrl, token),
@@ -529,6 +531,9 @@ async function main(): Promise<void> {
     "clipboard:writeText": (text) => {
       if (!isCopyableUrl(text, auth.api?.appUrl)) throw new Error("Refused: only https links or this Scribe's own links can be copied.");
       clipboard.writeText(normalizedLink(text));
+    },
+    "clipboard:copySetup": (id) => {
+      clipboard.writeText(SETUP_COMMANDS[id]);
     },
     "app:openInBrowser": async (meetingId) => {
       const base = auth.api?.appUrl;
