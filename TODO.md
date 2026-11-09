@@ -38,7 +38,6 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
 - [ ] **Where the update feed lives.** Today it's Scribe's backend (`talk.<base>/api/v1/updates/mac`), behind one setting. Lean: a public feed Every App owns (everyone gets the same signed builds, no token on update checks), over the Gateway serving it (a new token audience on the perimeter, a bucket per self-hosted Gateway). Options in `apps/desktop/docs/release.md`, "Update feed". Settle it before the first release.
 - [ ] **One sign-in per feature?** A native token opens one app, so a second feature (dictation, notes) on another backend means a second grant: a sign-in per feature, or a Gateway-level grant that covers the workspace's apps?
 - [ ] **OpenScribe's install command.** Onboarding shows `everyapp install https://github.com/every-app/private-open-scribe` (`apps/desktop/src/shared/setup.ts`), but that repository is private and `install` needs a published release. Make it public with a release, or give the real command.
-- [ ] **The desktop app is public with main.** `apps/desktop` (and its release docs) goes to every-app/every-app with the next push of main. Fine?
 
 ### Simplify batch (2026-11-03; #945–#959)
 
@@ -59,7 +58,7 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
 
 ## Waiting on Ben
 
-- [ ] **Simpler releases** ([docs/design/2026-11-simplify-releases.md](docs/design/2026-11-simplify-releases.md), "Waiting on Ben"): npm trusted publishing, dropping the `next` dist-tag, then the first `pnpm release patch` (→ 0.3.0).
+- [ ] **Simpler releases** ([docs/design/2026-11-simplify-releases.md](docs/design/2026-11-simplify-releases.md), "Waiting on Ben"): the first `pnpm release patch` (→ 0.3.0), then drop the `next` dist-tag.
 - [ ] **Check the desktop app on a Mac** (it was moved from private-talk and renamed on Linux): `apps/desktop/mac/scripts/test.sh` or the Desktop workflow's Swift job, `pnpm -C apps/desktop package:local`, then: Keychain Access shows "com.everyapp.desktop.dev Safe Storage" (with `EVERYAPP_DESKTOP_DEV_KEYCHAIN=1`), data is in `~/Library/Application Support/com.everyapp.desktop.dev`, the menus say "Every App Dev", `everyapp-dev://scribe/record` opens it.
 - [ ] **Scribe's side of the desktop rename** (every-app/private-open-scribe): the web app opens `talk://record…`, and must open `everyapp://scribe/record…`; the update route serves only `Talk-*` files and must also serve `EveryApp-*` before a release goes out on it.
 - [ ] **The remote MCP apps live check** (#938): add an OAuth server with DCR (Linear's), connect two members, call, refresh, disconnect. A live test, on a test Gateway.
@@ -70,19 +69,8 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
   - Disconnect an idle Google connection; the grant is gone at myaccount.google.com.
 - [ ] **The OAuth-simplify live check** (#942): two apps on one Google client get tokens with different scopes, each connection holding only its own app's scopes. A live test, run on a test Gateway.
 - [ ] **The apps move to provider scope names** in `everyapp.config.ts` (OpenMail, OpenSEO, OpenCRM; CHANGELOG.md has the before and after) and redeploy; migration 0025 drops existing connections, so people connect again in each app. The rollout steps for everyapp.team are in #943.
-- [ ] **Roll the simplify batch (#945–#959) out to everyapp.team.** Live steps, in this order:
-  1. Confirm OpenSEO, OpenMail and CRM were last deployed with an rc.9+ CLI (#962 says rc.11). Otherwise deploy each once with it first: bucket adoption is gone, so a later deploy would stop with `RESOURCE_NAME_TAKEN`.
-  2. `pnpm everyapp update --gateway https://everyapp.team` from main. It applies migrations 0026–0032: dollar caps, one AI default, the `everyone` flag, read/write tools, the Access evaluation key, no `remote_mcp_credentials`, and the OAuth preset rows. Cap reads fail for a few seconds during the swap.
-  3. `pnpm everyapp access on`, once. It swaps the email-list policy for the External Evaluation rule and bypasses `/access-evaluation/*`.
-     - Check that an invitee gets in with no rerun.
-     - Check that a stranger is refused at Access.
-     - Check that `access.evaluated` shows in the Worker logs.
-  4. `pnpm everyapp login --gateway https://everyapp.team`: admin commands now go through the Gateway's tools (or set `EVERYAPP_TOKEN`).
-- [ ] **Re-pin the apps exactly to rc.15** (on npm since 2026-11-04; it carries #974).
-  - Analytics is on rc.1; OpenSEO-everyapp, Mission Control and RepoLens on rc.3; Workout and Talk on `^rc.10`.
-  - App edits that ride the re-pin:
-    - `risk: "destructive"` → `"write"` plus `destructive: true` in CRM, Analytics, OpenMail and Postiz.
-    - `bearerRoutes` → `public` entries with `bearer: true` in the Birds hub and Talk/Open Notes, then `access on`.
-    - Workout and Mission Control swap their copied skills for links.
-    - Postiz: `OAuthClientCapabilityId` → `OAuthPresetId`, `oauthPreset()`.
-    - CRM, OpenMail and OpenSEO list a preset: deploy them with rc.15+ to a Gateway past #974.
+- [ ] **Update everyapp.team after 0.3.0 is published** (migration 0033 only): `pnpm everyapp update --gateway https://everyapp.team --release https://github.com/every-app/every-app`, then `pnpm everyapp login --gateway https://everyapp.team` only if admin commands say signed out.
+- [ ] **Re-pin the apps exactly to 0.3.0.**
+  - Draft re-pin PRs, to merge once 0.3.0 is on npm: private-open-analytics#44, private-open-crm#25, private-open-mail#24, private-open-seo#1264, private-repolens#7, private-mission-control-everyapp#5, private-workout#1, private-open-scribe#66, private-birds#37.
+  - The edits that ride the re-pin are done (`risk` in CRM, Analytics and OpenMail; `bearer` in Birds and Talk), or in their PRs (Workout, Mission Control).
+  - Knowledge Base still needs its re-pin; its source repository hasn't been found yet.
