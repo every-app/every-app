@@ -1,0 +1,84 @@
+name: Leak Check
+# Before main goes public. Ben pushes private main to the public repository
+# by hand (every-app/private-<name> → every-app/<name>, or the repository
+# variable PUBLIC_REPO, owner/name):
+#
+#   git push git@github.com:every-app/every-app.git main:main
+#
+# This workflow pushes nothing. On every pull request, and on each push to
+# main, it runs gitleaks over the commits the public repository doesn't have
+# yet, so a secret is caught before that push, ideally before the merge.
+# The rules are .gitleaks.toml (gitleaks' defaults when a repository has
+# none); a made-up value goes in .gitleaksignore by its fingerprint.
+#
+# The same file goes, unchanged, into every private-* repository.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: leak-check-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  GITLEAKS_VERSION: 8.30.1
+  GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+jobs:
+  leak-check:
+    name: Leak check (what isn't public yet)
+    # Only in a private-* repository: the public copy carries this file too.
+    if: startsWith(github.event.repository.name, 'private-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # On a pull request, its merge with the base: the commits that would
+          # go public if it merged, whatever it was branched from.
+          fetch-depth: 0
+      - name: The public repository's main
+        id: public
+        env:
+          PUBLIC_REPO: ${{ vars.PUBLIC_REPO }}
+        run: |
+          set -euo pipefail
+          name="${GITHUB_REPOSITORY#*/}"
+          repo="${PUBLIC_REPO:-$GITHUB_REPOSITORY_OWNER/${name#private-}}"
+          # Public, so readable without a token. An empty repository has no main yet.
+          if git fetch --quiet "https://github.com/$repo.git" "+refs/heads/main:refs/remotes/public/main" 2>/dev/null; then
+            echo "base=$(git rev-parse public/main)" >> "$GITHUB_OUTPUT"
+            echo "Public main: $repo @ $(git rev-parse --short public/main)"
+          else
+            echo "::notice::$repo has no readable main; the leak check covers the whole history."
+            echo "base=" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$tarball" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$tarball"
+          echo "$GITLEAKS_SHA256  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" gitleaks
+      - name: Leak check (the commits that aren't public yet)
+        env:
+          BASE: ${{ steps.public.outputs.base }}
+        run: |
+          set -euo pipefail
+          # --first-parent -m: a merge commit's own changes are scanned too
+          # (plain git log -p shows none for a merge).
+          range="HEAD"
+          if [ -n "$BASE" ] && git merge-base --is-ancestor "$BASE" HEAD; then
+            range="$BASE..HEAD"
+          elif [ -n "$BASE" ]; then
+            echo "::warning::The public main has commits this branch doesn't; scanning what this branch has that public main doesn't."
+            range="HEAD --not $BASE"
+          fi
+          echo "Scanning $range ($(git rev-list --count $range) commits)"
+          if ! "$RUNNER_TEMP/gitleaks" git --redact --no-banner --exit-code 1 --log-opts="--first-parent -m $range" .; then
+            echo "::error::gitleaks found what looks like a secret in a commit that isn't public yet. A real one: rotate it, and take it out of the history before main is pushed. A made-up one (a test fixture): add its fingerprint (above) to .gitleaksignore."
+            exit 1
+          fi

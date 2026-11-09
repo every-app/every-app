@@ -148,9 +148,8 @@ the pushed branch is the repository's default.
   from an EveryApp checkout installs a downloaded asset without GitHub.
 - `everyapp install` fetches the **public** repository's latest release, so
   a fix merged in the private repository reaches people only once its main
-  is pushed to the public one (by its Public Mirror workflow once that is
-  set up, docs/design/2026-11-simplify-releases.md; by hand, a fast-forward,
-  until then), whose release
+  is pushed to the public one (by hand, a fast-forward, once the Leak Check
+  on main is green; docs/design/2026-11-simplify-releases.md), whose release
   workflow then publishes. `pnpm everyapp install <public repo url>
   --dry-run` says whether this CLI would install what is out there;
   `pnpm release publish` runs it on every public app.

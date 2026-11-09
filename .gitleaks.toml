@@ -1,5 +1,5 @@
-# The leak check the public mirror runs before main goes public
-# (.github/workflows/public-mirror.yml), on every pull request and on each
+# The leak check that runs before main is pushed public
+# (.github/workflows/leak-check.yml), on every pull request and on each
 # push to main, over the commits that aren't public yet. gitleaks' own
 # rules, minus two kinds of made-up value its generic rule can't tell from
 # a key. The specific rules (Cloudflare, GitHub, Anthropic, Stripe, PEM...)

@@ -7,7 +7,7 @@ This page is the proposal. Pull requests:
 | PR | What | Live once |
 | --- | --- | --- |
 | 1 (#996) | The version is committed; `pnpm release` replaces `publish:rc`; the SDK check ignores a linked SDK; this page | merged |
-| 2 (#997) | `public-mirror.yml`: a leak check, then private `main` → public `main` | Ben sets up the mirror app (below) |
+| 2 (#997, then #1001) | `leak-check.yml`: a leak check over what isn't public yet. Ben pushes public `main` by hand (2026-11-09: no automatic push for now) | merged |
 | 3 (#998) | `release.yml` on the public repository publishes npm and the Gateway when the version changes | Ben sets up npm trusted publishing (below) |
 
 ## Ben's day to day
@@ -15,9 +15,10 @@ This page is the proposal. Pull requests:
 ```sh
 # Experiment: any branch in any private-* repository. Nothing leaves it.
 
-# Ship: merge the pull request into private main. That is all.
-#   The mirror runs a leak check, then pushes main to the public repository (PR 2),
-#   whose own workflows run (an app's Release, the platform's Release).
+# Ship: merge the pull request into private main (the Leak Check runs on it), then
+# push main to the public repository by hand, when you want it public:
+git switch main && git pull && git push git@github.com:every-app/every-app.git main:main
+#   The public repository's own workflows run (an app's Release, the platform's Release).
 
 # Release the SDK, the CLI and the Gateway (one version):
 pnpm release patch                          # or minor, or 0.4.0: a "Release x.y.z" commit on release/x.y.z
@@ -50,34 +51,31 @@ git restore pnpm-workspace.yaml pnpm-lock.yaml && pnpm install    # back to the 
 | `.github/RELEASE.md` | Opens with "Publishing is paused" | **False** since 2026-10-25 |
 | Pre-release check | Staging Gateway `demo` (docs/runbooks/pre-release-check.md) | Keep as an optional check before a big release, not a step of every release |
 
-## 1. Sync: one workflow, the same in every private repository
+## 1. Sync: push by hand, with a leak check on every pull request
 
-**`.github/workflows/public-mirror.yml` (PR 2).** On each push to a private repository's
-`main` it:
+**Ben's call (2026-11-09): no automatic push for now.** Private `main` reaches the public `main`
+when Ben pushes it, a fast-forward:
 
-1. reads the public repository's `main` (`private-X` → `X`, or the repository variable `PUBLIC_REPO`);
-2. refuses unless the push is a fast-forward (no force, ever);
-3. runs gitleaks over only the commits that aren't public yet (`.gitleaks.toml`: the default
-   rules, plus two narrow allowlists for made-up values in tests);
-4. pushes `main` to the public repository with a GitHub App token. A push made with an app token
-   runs the public repository's workflows; a push made with `GITHUB_TOKEN` wouldn't.
+```sh
+git switch main && git pull
+git push git@github.com:every-app/every-app.git main:main    # every-app/<name> for an app repository
+```
 
-On pull requests it runs only the leak check, so a leak is caught before it reaches `main`.
-Branches, PRs and tags never leave. Without the app it is a leak check and nothing more, so
-merging PR 2 is safe before the setup.
+**`.github/workflows/leak-check.yml`** (the same file in every private-* repository) pushes nothing.
+On every pull request, and on each push to `main`, it runs gitleaks over the commits the public
+repository doesn't have yet (`.gitleaks.toml`: the default rules plus two narrow allowlists for
+made-up values in tests; one-off fixtures go in `.gitleaksignore` by fingerprint). A green check on
+`main` means it is safe to push. Branches, PRs and tags never leave unless pushed.
 
-- **Why an app, not deploy keys:** one app covers every pair (5 now, more later), its tokens are
-  short-lived, and the org is on GitHub Team, so one org-level secret reaches every private repository.
-- **Why not `git push public main`:** that is today's process. It depends on remembering, and it
-  has drifted.
-- **Outside pull requests on a public repository:** don't merge them there, or the mirror stops
-  with a message. Fetch the PR into the private repository instead (`git fetch
+- **Automatic later, if wanted:** #997 built it (a GitHub App token pushing `main` after the leak
+  check, so the public repository's workflows run). Its git history has the workflow; bringing it
+  back is that file plus one org secret.
+- **Outside pull requests on a public repository:** don't merge them there, or the next push is
+  not a fast-forward. Fetch the PR into the private repository instead (`git fetch
   https://github.com/every-app/every-app pull/18/head:pr-18 && git push origin pr-18`), merge it
-  there, and close the public one. The mirror publishes it.
-- **Deleted:** pushing by hand, the `public` remote in docs and scripts, and "by hand, a fast-forward" in the runbooks.
-- **Per-repo fixes the mirror needs** (Ben, in each repo): `private-open-mail` renames its default
-  branch `everyapp` → `main` (or lists `everyapp` under `push.branches`); `video-skills` has
-  unrelated histories, so either reset its public `main` once or leave it out.
+  there, and close the public one.
+- **Per-repo fixes:** `private-open-mail` renames its default branch `everyapp` → `main`;
+  `video-skills` has unrelated histories, so either reset its public `main` once or leave it out.
 
 ## 2. Releases: the version is committed, and a release is a commit that changes it
 
@@ -93,7 +91,7 @@ merging PR 2 is safe before the setup.
   the `gateway-v<version>` release at that commit and publishes both packages to npm with trusted
   publishing (no npm token anywhere; provenance because the repository is public). Every step
   skips what's already out, so it's safe to run again. Merging the release PR becomes the whole
-  release: the mirror pushes, and the public repository publishes.
+  release once `main` is pushed to the public repository: it publishes.
 - **Plain semver from now on.** The next release is `0.3.0` (`pnpm release patch` from rc.15). After
   that, `patch` for anything and `minor` for a breaking change. No more rcs, and no `next`
   dist-tag. Apps keep exact pins.
@@ -150,15 +148,7 @@ merging PR 2 is safe before the setup.
 ## Waiting on Ben
 
 1. **Merge PR 1.** Then `next` is dead: `npm dist-tag rm everyapp next && npm dist-tag rm @every-app/sdk next`.
-2. **The mirror app (PR 2).** In GitHub, org settings → Developer settings → GitHub Apps → New:
-   - name `every-app-mirror`, no webhook;
-   - repository permissions Contents read and write, Workflows read and write;
-   - install it on the public repositories only (every-app, open-seo, open-crm, open-analytics, open-mail);
-   - org variable `MIRROR_APP_ID` and org secret `MIRROR_APP_PRIVATE_KEY` (the app's private key),
-     both visible to the private-* repositories;
-   - if a public `main` is protected, let the app bypass the protection.
-
-   Then merge PR 2 and copy `public-mirror.yml` and `.gitleaks.toml` into each private app repository.
+2. **The leak check in the app repositories:** copy `leak-check.yml` and `.gitleaks.toml` into each private app repository.
 3. **npm trusted publishing (PR 3).** On npmjs.com, for both `everyapp` and `@every-app/sdk`:
    Settings → Trusted publishing → GitHub Actions, with organization `every-app`, repository
    `every-app`, workflow `release.yml`, environment `npm`, and "npm publish" ticked. Optionally,
