@@ -1,6 +1,6 @@
 # Site preflight: everyapp.com before and after a deploy
 
-The landing page (`landing-page/`: the home page, the user docs at `/docs`, the agent docs at `/docs/agent`, `/llms.txt` and `/llms-full.txt`) is deployed by hand with `pnpm -C landing-page deploy`, and only by Ben. This runbook is the check that runs before that deploy, against the local build, and again right after it, against the live site. Both runs are the same script, `landing-page/scripts/preflight.js`; it has no dependencies and takes the site's origin as its argument.
+The landing page (`landing-page/`: the home page, the user docs at `/docs`, the agent docs at `/docs/agent`, `/llms.txt` and `/llms-full.txt`) is deployed by hand with `pnpm -C landing-page run deploy` (plain `pnpm deploy` is pnpm's own command), and only by Ben. This runbook is the check that runs before that deploy, against the local build, and again right after it, against the live site. Both runs are the same script, `landing-page/scripts/preflight.js`; it has no dependencies and takes the site's origin as its argument.
 
 ## Before the deploy: the local build
 
@@ -9,7 +9,7 @@ From a checkout of `main` with nothing uncommitted:
 ```bash
 pnpm install --frozen-lockfile
 pnpm -C landing-page build
-pnpm -C landing-page exec vite preview --port 4322 --strictPort &
+pnpm -C landing-page exec vite preview --port 4322 --strictPort </dev/null &   # without </dev/null the shell suspends it
 pnpm -C landing-page preflight            # crawls http://localhost:4322
 ```
 
