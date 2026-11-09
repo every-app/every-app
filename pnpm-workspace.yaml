@@ -1,9 +1,14 @@
 packages:
   - 'apps/*'
+  # The desktop app's React screens, a package of its own inside apps/desktop.
+  - 'apps/desktop/ui'
   - 'landing-page'
   - 'packages/*'
   - 'starter'
 allowBuilds:
+  # The desktop app (apps/desktop) downloads its Electron binary at install.
+  electron: true
+  electron-winstaller: false
   "@prisma/client": false
   better-sqlite3: false
   esbuild: true

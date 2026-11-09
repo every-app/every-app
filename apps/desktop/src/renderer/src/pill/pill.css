@@ -1,0 +1,13 @@
+/* The floating recorder's page (pill.html): see-through except what it draws. */
+@import "../../../../ui/src/styles/desktop.css";
+@source "../../../../ui/src";
+@source "./";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}

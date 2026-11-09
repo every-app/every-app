@@ -1,0 +1,162 @@
+/* The desktop look, layered on the web styles (app.css, a copy of
+   the Scribe web app's web/src/styles/app.css). Granola-calm: the system font, quiet warm
+   neutrals, 13px UI text, a translucent sidebar that works over macOS
+   vibrancy, and very little motion. */
+@import "./app.css";
+
+/* The screens and components in this package. */
+@source "../";
+
+@theme inline {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --color-window: var(--window);
+  --color-record: var(--record);
+  --color-me: var(--me);
+  --color-me-foreground: var(--me-foreground);
+}
+
+[data-theme="openseo"],
+:where(:root) {
+  --radius: 0.5rem;
+  --window: oklch(99.2% 0.002 90);
+  --background: oklch(99.2% 0.002 90);
+  --foreground: oklch(22% 0.005 90);
+  --card: oklch(100% 0 0);
+  --popover: oklch(100% 0 0);
+  --primary: oklch(26% 0.005 90);
+  --primary-foreground: oklch(99% 0 0);
+  --secondary: oklch(96.5% 0.003 90);
+  --muted: oklch(96.5% 0.003 90);
+  --muted-foreground: oklch(22% 0.005 90 / 55%);
+  --accent: oklch(95.5% 0.004 90);
+  --border: oklch(22% 0.005 90 / 9%);
+  --input: oklch(22% 0.005 90 / 16%);
+  --ring: oklch(60% 0.11 250);
+  --record: oklch(62% 0.2 27);
+  --me: oklch(94% 0.03 250);
+  --me-foreground: oklch(28% 0.04 250);
+  /* Semi-transparent so macOS vibrancy shows through in the app. */
+  --sidebar: oklch(95.5% 0.004 90 / 82%);
+  --sidebar-foreground: oklch(22% 0.005 90);
+  --sidebar-primary: oklch(26% 0.005 90);
+  --sidebar-accent: oklch(22% 0.005 90 / 7%);
+  --sidebar-border: oklch(22% 0.005 90 / 8%);
+}
+
+[data-theme="openseo-dark"] {
+  --window: oklch(19.5% 0.003 90);
+  --background: oklch(19.5% 0.003 90);
+  --foreground: oklch(93% 0.003 90);
+  --card: oklch(22.5% 0.003 90);
+  --popover: oklch(24% 0.003 90);
+  --primary: oklch(93% 0.003 90);
+  --primary-foreground: oklch(20% 0.003 90);
+  --secondary: oklch(25% 0.003 90);
+  --muted: oklch(24% 0.003 90);
+  --muted-foreground: oklch(93% 0.003 90 / 55%);
+  --accent: oklch(26% 0.003 90);
+  --border: oklch(100% 0 0 / 8%);
+  --input: oklch(100% 0 0 / 14%);
+  --ring: oklch(70% 0.11 250);
+  --record: oklch(66% 0.19 27);
+  --me: oklch(33% 0.05 250);
+  --me-foreground: oklch(93% 0.02 250);
+  --sidebar: oklch(23% 0.003 90 / 78%);
+  --sidebar-foreground: oklch(93% 0.003 90);
+  --sidebar-primary: oklch(93% 0.003 90);
+  --sidebar-accent: oklch(100% 0 0 / 7%);
+  --sidebar-border: oklch(100% 0 0 / 7%);
+}
+
+/* The root stays 16px so the components' rem sizes match the Scribe web app. */
+html,
+body {
+  font-family: var(--font-sans);
+}
+
+body {
+  font-size: 13px;
+  cursor: default;
+  user-select: none;
+}
+
+/* Text you read or write can be selected; chrome can't. */
+input,
+textarea,
+[data-selectable] {
+  user-select: text;
+  cursor: auto;
+}
+
+/* In Electron, `data-vibrancy` on <html> lets the window's vibrancy show
+   through everything that has no background of its own. */
+html[data-vibrancy],
+html[data-vibrancy] body {
+  background: transparent;
+}
+
+html[data-vibrancy] {
+  --window: transparent;
+}
+
+@utility drag-region {
+  -webkit-app-region: drag;
+}
+
+@utility no-drag {
+  -webkit-app-region: no-drag;
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@utility caret-blink {
+  animation: caret-blink 1s steps(1) infinite;
+}
+
+/* The floating recorder's "still talking" dots. */
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-1.5px);
+  }
+}
+
+@utility typing-dot {
+  animation: typing-dot 1.2s ease-in-out infinite;
+}
+
+@keyframes record-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@utility record-pulse {
+  animation: record-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

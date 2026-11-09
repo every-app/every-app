@@ -106,7 +106,10 @@ describe("the starter template", () => {
     expect(workspace).toBe("allowBuilds:\n  esbuild: true\n  sharp: true\n  workerd: true\n");
     const checkoutAllows = [
       ...fs.readFileSync(path.join(checkoutRoot(), "pnpm-workspace.yaml"), "utf8").matchAll(/^  ([\w-]+): true$/gm),
-    ].map((match) => match[1]);
+    ]
+      .map((match) => match[1])
+      // Only the checkout's own desktop app (apps/desktop) installs Electron; an app never does.
+      .filter((name) => name !== "electron");
     expect(checkoutAllows).not.toEqual([]);
     for (const name of checkoutAllows) expect(workspace).toContain(`  ${name}: true\n`);
   });

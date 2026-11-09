@@ -1,0 +1,31 @@
+@import "../src/styles/desktop.css";
+@source "./";
+
+.playground-desk {
+  background:
+    radial-gradient(
+      circle at 20% 10%,
+      oklch(80% 0.06 250 / 0.5),
+      transparent 50%
+    ),
+    radial-gradient(
+      circle at 80% 90%,
+      oklch(80% 0.07 30 / 0.4),
+      transparent 50%
+    ),
+    oklch(88% 0.01 250);
+}
+[data-theme="openseo-dark"] .playground-desk {
+  background:
+    radial-gradient(
+      circle at 20% 10%,
+      oklch(35% 0.06 250 / 0.6),
+      transparent 50%
+    ),
+    radial-gradient(
+      circle at 80% 90%,
+      oklch(30% 0.06 30 / 0.5),
+      transparent 50%
+    ),
+    oklch(16% 0.01 250);
+}

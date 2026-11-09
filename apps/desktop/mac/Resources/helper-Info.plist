@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Embedded in everyapp-helper's __TEXT,__info_plist by scripts/build-helper.sh. It gives the
+       bare executable a bundle id (call detection skips com.everyapp.desktop.*) and a version for
+       `hello`. TCC charges capture to the parent app, whose Info.plist has the usage strings;
+       they're repeated here for a helper launched from a terminal. -->
+  <key>CFBundleIdentifier</key>
+  <string>com.everyapp.desktop.helper</string>
+  <key>CFBundleName</key>
+  <string>everyapp-helper</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.1.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Scribe transcribes your side of a meeting while you record it. Audio is never saved.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>Scribe transcribes the other side of a meeting from your Mac's sound while you record it. Audio is never saved.</string>
+  <!-- With an embedded Info.plist, App Transport Security applies to the helper, and it refuses
+       plain http to *.localhost (http://talk.localhost:8787 under `everyapp dev`): every
+       record.start failed with NSURLErrorAppTransportSecurityRequiresSecureConnection (-1022).
+       Localhost and its subdomains only; any other http host stays refused. -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
+    <key>NSExceptionDomains</key>
+    <dict>
+      <key>localhost</key>
+      <dict>
+        <key>NSIncludesSubdomains</key>
+        <true/>
+        <key>NSExceptionAllowsInsecureHTTPLoads</key>
+        <true/>
+      </dict>
+    </dict>
+  </dict>
+</dict>
+</plist>

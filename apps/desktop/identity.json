@@ -1,0 +1,20 @@
+{
+  "$comment": "The app's fixed identity, read by main, electron-builder.config.cjs, scripts/package-local.mjs and scripts/release-mac.sh. Bundle ids, URL schemes and storageName are permanent: changing one loses macOS permission grants, links, local data or the sign-in. productName is only the display name and is safe to change. See README.md, 'Identity'.",
+  "release": {
+    "productName": "Every App",
+    "appId": "com.everyapp.desktop",
+    "scheme": "everyapp",
+    "storageName": "com.everyapp.desktop"
+  },
+  "dev": {
+    "productName": "Every App Dev",
+    "appId": "com.everyapp.desktop.dev",
+    "scheme": "everyapp-dev",
+    "storageName": "com.everyapp.desktop.dev"
+  },
+  "helper": {
+    "binary": "everyapp-helper",
+    "bundleId": "com.everyapp.desktop.helper"
+  },
+  "releaseTagPrefix": "everyapp-desktop-v"
+}

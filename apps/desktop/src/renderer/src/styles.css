@@ -1,0 +1,11 @@
+/* The @every-app/desktop-ui look (system font, quiet neutrals, translucent sidebar), plus this window. */
+@import "../../../ui/src/styles/desktop.css";
+@source "../../../ui/src";
+@source "./";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}

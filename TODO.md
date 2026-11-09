@@ -33,6 +33,12 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
 
 - [ ] **Fold the Built CLI job into `pr-checks.yml`?** One fewer workflow to read, against the unit tests waiting on an install.
 
+### Desktop app (`apps/desktop`)
+
+- [ ] **Where the update feed lives.** Today it's Scribe's backend (`talk.<base>/api/v1/updates/mac`), behind one setting. Lean: a public feed Every App owns (everyone gets the same signed builds, no token on update checks), over the Gateway serving it (a new token audience on the perimeter, a bucket per self-hosted Gateway). Options in `apps/desktop/docs/release.md`, "Update feed". Settle it before the first release.
+- [ ] **One sign-in per feature?** A native token opens one app, so a second feature (dictation, notes) on another backend means a second grant: a sign-in per feature, or a Gateway-level grant that covers the workspace's apps?
+- [ ] **The desktop app is public with main.** `apps/desktop` (and its release docs) goes to every-app/every-app with the next mirror. Fine?
+
 ### Simplify batch (2026-11-03; #945–#959)
 
 - [ ] **Events design (#953): build it?** It brings three leans:
@@ -52,6 +58,8 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
 
 ## Waiting on Ben
 
+- [ ] **Check the desktop app on a Mac** (it was moved from private-talk and renamed on Linux): `apps/desktop/mac/scripts/test.sh` or the Desktop workflow's Swift job, `pnpm -C apps/desktop package:local`, then: Keychain Access shows "com.everyapp.desktop.dev Safe Storage" (with `EVERYAPP_DESKTOP_DEV_KEYCHAIN=1`), data is in `~/Library/Application Support/com.everyapp.desktop.dev`, the menus say "Every App Dev", `everyapp-dev://scribe/record` opens it.
+- [ ] **Scribe's side of the desktop rename** (every-app/private-open-scribe): the web app opens `talk://record…`, and must open `everyapp://scribe/record…`; the update route serves only `Talk-*` files and must also serve `EveryApp-*` before a release goes out on it.
 - [ ] **The remote MCP apps live check** (#938): add an OAuth server with DCR (Linear's), connect two members, call, refresh, disconnect. A live test, on a test Gateway.
 - [ ] **The ElevenLabs live check** (#969): after `update` (which adds the `/oauth-clients/*` Access bypass), `mcp add https://api.elevenlabs.io/v1/mcp`, connect, call one tool. A live test.
 - [ ] **Remote MCP apps on everyapp.team are added again after #938.** Migration 0031 drops `remote_mcp_credentials`; an old app reads "registered before provider credentials" until `mcp remove`, then `mcp add`.
