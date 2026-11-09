@@ -1,0 +1,167 @@
+name: Release
+# The release, from the public repository (every-app/every-app) only: on each
+# push to main (Ben pushes private main here by hand), when the committed version
+# (packages/cli/package.json, the same in packages/sdk and the Gateway; `pnpm
+# release <version>` writes it) isn't released yet, it publishes
+#
+#   1. the Gateway release: tag gateway-v<version> at the pushed commit, with
+#      every-app-gateway-release.tar.gz, the asset a CLI with no checkout
+#      downloads anonymously (packages/cli/src/lib/gateway/source.ts). A
+#      version with a prerelease suffix is a GitHub prerelease, so
+#      /releases/latest stays the newest stable one;
+#   2. @every-app/sdk, then everyapp, to npm under `latest`, by npm trusted
+#      publishing (OIDC: no npm token anywhere; set up per package on
+#      npmjs.com for this file and the environment `npm`), with provenance.
+#
+# Each step skips what is out already, so a run that failed half way is
+# finished by running it again (workflow_dispatch). A push that doesn't
+# change the version does nothing past the first step. See .github/RELEASE.md.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+permissions:
+  contents: write
+  id-token: write
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  release:
+    name: Publish the version if it's new
+    # main only: a manual run on another branch would tag and publish it.
+    if: github.repository == 'every-app/every-app' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: npm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # The Gateway release records when its sources were last committed
+          # (git log), which a shallow clone can't tell.
+          fetch-depth: 0
+      - name: What is released already
+        id: state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./packages/cli/package.json').version")"
+          for file in packages/sdk/package.json apps/every-app-gateway/package.json; do
+            other="$(node -p "require('./$file').version")"
+            if [ "$other" != "$version" ]; then
+              echo "::error::$file says $other, packages/cli/package.json $version: set them with pnpm release <version>"
+              exit 1
+            fi
+          done
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # Never backwards: a reverted release commit must not move latest down.
+          latest="$(npm view everyapp@latest version 2>/dev/null || true)"
+          if [ -n "$latest" ] && [ "$latest" != "$version" ]; then
+            newest="$(printf '%s\n%s\n' "$latest" "$version" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const [a,b]=s.trim().split("\n");const p=v=>{const [c,...r]=v.split("-");return {c:c.split(".").map(Number),r:r.join("-")}};const cmp=(x,y)=>{const X=p(x),Y=p(y);for(let i=0;i<3;i++)if(X.c[i]!==Y.c[i])return X.c[i]-Y.c[i];if(!X.r||!Y.r)return (X.r?0:1)-(Y.r?0:1);const xs=X.r.split("."),ys=Y.r.split(".");for(let i=0;i<Math.max(xs.length,ys.length);i++){if(xs[i]===undefined)return -1;if(ys[i]===undefined)return 1;const n=/^\d+$/.test(xs[i])&&/^\d+$/.test(ys[i]);const d=n?Number(xs[i])-Number(ys[i]):xs[i].localeCompare(ys[i]);if(d)return d}return 0};console.log(cmp(a,b)>=0?a:b)})')"
+            if [ "$newest" != "$version" ]; then
+              echo "::notice::$version is older than npm's latest ($latest); nothing to release."
+              echo "todo=false" >> "$GITHUB_OUTPUT"; echo "gateway=true" >> "$GITHUB_OUTPUT"; echo "sdk=true" >> "$GITHUB_OUTPUT"; echo "cli=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          gateway=false; sdk=false; cli=false
+          gh release view "gateway-v$version" > /dev/null 2>&1 && gateway=true
+          [ "$(npm view "@every-app/sdk@$version" version 2>/dev/null)" = "$version" ] && sdk=true
+          [ "$(npm view "everyapp@$version" version 2>/dev/null)" = "$version" ] && cli=true
+          echo "gateway=$gateway" >> "$GITHUB_OUTPUT"
+          echo "sdk=$sdk" >> "$GITHUB_OUTPUT"
+          echo "cli=$cli" >> "$GITHUB_OUTPUT"
+          if [ "$gateway$sdk$cli" = "truetruetrue" ]; then
+            echo "todo=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$version is released already (Gateway, SDK and CLI); nothing to do."
+          else
+            echo "todo=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Releasing $version: Gateway released $gateway, SDK on npm $sdk, CLI on npm $cli."
+          fi
+      - name: Setup pnpm
+        if: steps.state.outputs.todo == 'true'
+        # The version is package.json's packageManager.
+        uses: pnpm/action-setup@v4
+      - name: Setup Node.js
+        if: steps.state.outputs.todo == 'true'
+        uses: actions/setup-node@v4
+        with:
+          # Node 24 ships the npm 11 that trusted publishing needs (11.5.1+).
+          node-version: '24'
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Install and build
+        if: steps.state.outputs.todo == 'true'
+        env:
+          VERSION: ${{ steps.state.outputs.version }}
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm -C packages/sdk build
+          pnpm -C packages/cli build
+          said="$(node packages/cli/bin/everyapp.js --version)"
+          if [ "$said" != "everyapp $VERSION" ]; then
+            echo "::error::the built CLI says \"$said\", not \"everyapp $VERSION\""
+            exit 1
+          fi
+          test -f packages/cli/starter/everyapp.config.ts
+          # What npm would publish: a dist/, and no local secrets file.
+          for dir in packages/sdk packages/cli; do
+            files="$(cd "$dir" && npm pack --dry-run --json --ignore-scripts | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s)[0].files.map(f=>f.path).join("\n")))')"
+            grep -q '^dist/' <<< "$files" || { echo "::error::$dir would publish no dist/"; exit 1; }
+            if grep -E '(^|/)(\.dev\.vars|\.env)(\.|$)' <<< "$files" | grep -v '\.example$'; then
+              echo "::error::$dir would publish a .dev.vars or .env file"; exit 1
+            fi
+          done
+      - name: The Gateway release (gateway-v${{ steps.state.outputs.version }})
+        if: steps.state.outputs.gateway == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.state.outputs.version }}
+        run: |
+          set -euo pipefail
+          # A tag left by hand at another commit would win over --target.
+          if tagged="$(git rev-parse -q --verify "refs/tags/gateway-v$VERSION^{commit}")" && [ "$tagged" != "$GITHUB_SHA" ]; then
+            echo "::error::gateway-v$VERSION already tags $tagged, not $GITHUB_SHA: delete the tag, or release a new version"
+            exit 1
+          fi
+          pnpm -C apps/every-app-gateway build:release -- --version "$VERSION"
+          prerelease=()
+          case "$VERSION" in *-*) prerelease=(--prerelease) ;; esac
+          gh release create "gateway-v$VERSION" apps/every-app-gateway/every-app-gateway-release.tar.gz \
+            "${prerelease[@]}" \
+            --target "$GITHUB_SHA" \
+            --title "Gateway $VERSION" \
+            --notes "Every App Gateway $VERSION, built from $GITHUB_SHA for everyapp@$VERSION. Install or update with: npx everyapp@$VERSION setup (or everyapp setup --release https://github.com/$GITHUB_REPOSITORY/releases/tag/gateway-v$VERSION)."
+      # pnpm pack rewrites workspace:* specifiers as pnpm publish does; npm
+      # publishes the tarball, by OIDC. --tag latest is explicit: npm refuses
+      # a prerelease without one.
+      - name: npm publish @every-app/sdk
+        if: steps.state.outputs.sdk == 'false'
+        run: |
+          set -euo pipefail
+          pnpm -C packages/sdk pack --pack-destination "$RUNNER_TEMP/sdk"
+          npm publish "$RUNNER_TEMP"/sdk/*.tgz --access public --tag latest
+      - name: npm publish everyapp
+        if: steps.state.outputs.cli == 'false'
+        run: |
+          set -euo pipefail
+          pnpm -C packages/cli pack --pack-destination "$RUNNER_TEMP/cli"
+          npm publish "$RUNNER_TEMP"/cli/*.tgz --access public --tag latest
+      - name: Check npm has both
+        if: steps.state.outputs.todo == 'true'
+        env:
+          VERSION: ${{ steps.state.outputs.version }}
+        run: |
+          set -euo pipefail
+          for name in @every-app/sdk everyapp; do
+            for attempt in 1 2 3 4 5 6; do
+              [ "$(npm view "$name@$VERSION" version 2>/dev/null)" = "$VERSION" ] && break
+              [ "$attempt" = 6 ] && { echo "::error::npm doesn't list $name@$VERSION"; exit 1; }
+              sleep 10
+            done
+          done
+          echo "::notice::Released $VERSION: Gateway https://github.com/$GITHUB_REPOSITORY/releases/tag/gateway-v$VERSION, npm @every-app/sdk@$VERSION and everyapp@$VERSION."

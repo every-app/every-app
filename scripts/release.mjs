@@ -13,7 +13,12 @@
  * (scripts/lib/versions.mjs), on a branch `release/<version>`, and commits.
  * Merge it like any pull request.
  *
- * publish, from a clean checkout of a commit that is on origin/main:
+ * Normally nothing more: once the release commit reaches the public
+ * repository (Ben pushes main there by hand), its Release workflow
+ * (.github/workflows/release.yml) publishes the Gateway release and both
+ * packages. publish is the same publish by hand, from a clean checkout of a
+ * commit that is on origin/main (npm only; the Gateway release stays the
+ * workflow's):
  *   1. checks the version is the same everywhere and not on npm yet;
  *   2. builds the SDK, then the CLI, and checks the built CLI says it;
  *   3. asks the built CLI whether it would install each public app's latest
@@ -21,8 +26,7 @@
  *   4. publishes the SDK, then the CLI, under `latest` (npm asks for web
  *      authentication). A package already on npm at this version is skipped,
  *      so a publish that stopped half way is finished by running it again;
- *   5. says how to release the Gateway: the tag gateway-v<version> on the
- *      public repository, whose Gateway Release workflow publishes it.
+ *   5. says where the Gateway release comes from: the public Release workflow.
  * --dry-run does 1–3 and says what it would publish.
  *
  * See .github/RELEASE.md and docs/design/2026-11-simplify-releases.md.
@@ -97,9 +101,11 @@ Merge it like any pull request:
 
   git push -u origin ${branch} && gh pr create --fill
 
-Then, from main after the merge:
+After the merge, push main to the public repository; its Release workflow
+publishes the Gateway release and both packages:
 
-  git switch main && git pull && pnpm release publish
+  git switch main && git pull && git push git@github.com:${PUBLIC_REPO}.git main:main
+  gh run list -R ${PUBLIC_REPO} --workflow release.yml --limit 3
 `);
 }
 
@@ -197,19 +203,19 @@ function publish({ dryRun }) {
     run("pnpm", ["publish", "--tag", "latest", "--access", "public", "--no-git-checks"], path.join(ROOT, dir));
   }
 
-  const tag = `gateway-v${version}`;
   const isPublic = publicHasHead(head);
   console.log(`
-${dryRun ? "(dry run) " : ""}${pending.length > 0 && !dryRun ? `Published ${pending.map(({ name }) => `${name}@${version}`).join(" and ")}.\n\n` : ""}The Gateway release: tag ${head.slice(0, 9)} as ${tag} on the public repository.${
+${dryRun ? "(dry run) " : ""}${pending.length > 0 && !dryRun ? `Published ${pending.map(({ name }) => `${name}@${version}`).join(" and ")}.\n\n` : ""}The Gateway release (gateway-v${version}) is the public repository's Release workflow's: it runs when main reaches ${PUBLIC_REPO}.${
     isPublic === false
-      ? `\nIt isn't on ${PUBLIC_REPO}'s main yet: let main reach it first (the mirror, or git push git@github.com:${PUBLIC_REPO}.git main:main).`
+      ? `\n${head.slice(0, 9)} isn't on ${PUBLIC_REPO}'s main yet: push it: git push git@github.com:${PUBLIC_REPO}.git main:main`
       : isPublic === null
-        ? `\nCouldn't read ${PUBLIC_REPO}'s main; check the commit is there before tagging.`
+        ? `\nCouldn't read ${PUBLIC_REPO}'s main.`
         : ""
   }
+To watch it, or to run it again:
 
-  git push git@github.com:${PUBLIC_REPO}.git ${head}:refs/tags/${tag}
-  gh run watch -R ${PUBLIC_REPO} $(gh run list -R ${PUBLIC_REPO} --workflow gateway-release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+  gh run list -R ${PUBLIC_REPO} --workflow release.yml --limit 3
+  gh workflow run release.yml -R ${PUBLIC_REPO}
 `);
 
   if (refused.length > 0) {

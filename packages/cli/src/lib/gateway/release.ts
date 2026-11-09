@@ -18,7 +18,7 @@ export const RELEASE_TARBALL = "every-app-gateway-release.tar.gz";
 /**
  * Where published Gateway releases are: a GitHub Release of this
  * repository per CLI version, tagged `gateway-v<version>` with a
- * {@link RELEASE_TARBALL} asset (.github/workflows/gateway-release.yml).
+ * {@link RELEASE_TARBALL} asset (.github/workflows/release.yml).
  */
 export const GATEWAY_RELEASE_REPO = "https://github.com/every-app/every-app";
 

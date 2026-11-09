@@ -15,23 +15,25 @@ everything built from it. The design is
    on a new branch `release/<version>`. Push it, open the pull request,
    merge it. Plain semver: `patch` for anything, `minor` for a breaking
    change (pre-1.0).
-2. From `main` after the merge: `pnpm release publish`. It checks that the
-   commit is on `origin/main` and that the version is the same everywhere,
-   builds the SDK and then the CLI, checks that the built CLI says the
-   version, and asks it whether it would install each public app's latest
-   release (the table in `landing-page/content/agent/apps.md`; a warning
-   only). Then it publishes whichever of the two packages npm doesn't have
-   yet, the SDK first, under `latest` (npm asks for web authentication). It
-   writes no files. A publish that stopped half way is finished by running
-   it again. `--dry-run` stops before npm.
-3. The Gateway release: tag the release commit `gateway-v<version>` on the
-   public repository (the command `pnpm release publish` prints), once
-   `main` has reached it. The Gateway Release workflow builds and publishes
-   it.
-4. Re-pin the first-party apps to the version
+2. Push `main` to every-app/every-app (by hand, once the Leak Check on
+   `main` is green): `git push git@github.com:every-app/every-app.git
+   main:main`. That's the release: its Release workflow
+   (`.github/workflows/release.yml`) sees a version that isn't released
+   yet. It builds, checks that the built CLI says the version, creates the
+   Gateway release `gateway-v<version>` at that commit (the
+   `every-app-gateway-release.tar.gz` a CLI with no checkout downloads),
+   and publishes `@every-app/sdk` and then `everyapp` to npm under `latest`
+   by trusted publishing (no npm token; provenance). Each step skips what
+   is out already, so `gh workflow run release.yml -R every-app/every-app`
+   finishes a run that failed half way.
+3. Re-pin the first-party apps to the version
    (`pnpm pack-for-app <app> --npm <version>`, or the app's Dependabot pull
-   request). `pnpm release publish` names the apps whose latest release
-   this CLI refuses.
+   request).
+
+By hand, `pnpm release publish` (from `main`, after the merge) publishes
+the two npm packages the same way, with npm's web authentication. It also
+asks the built CLI whether it would install each public app's latest
+release, and names the apps to re-release. `--dry-run` stops before npm.
 
 Before a big release, the optional pre-release check on the staging
 Gateway is [docs/runbooks/pre-release-check.md](../docs/runbooks/pre-release-check.md).
@@ -62,14 +64,11 @@ CLI's (`GATEWAY_OUTDATED`; `update` brings it up), and an app's deploy
 warns when its `@every-app/sdk` isn't the CLI's version
 (`SDK_VERSION_MISMATCH`; not for an SDK linked from a checkout).
 
-The Gateway Release workflow (`.github/workflows/gateway-release.yml`)
-builds `every-app-gateway-release.tar.gz` with
+The Release workflow builds `every-app-gateway-release.tar.gz` with
 `apps/every-app-gateway/scripts/build-release.ts` and publishes it on a
-GitHub Release of the repository it runs in, on a push of a
-`gateway-v<version>` tag or by hand with the tag's name. The CLI downloads
-anonymously from `github.com/every-app/every-app`, so the tag goes on the
-public repository. A version with a prerelease suffix is published as a
-GitHub prerelease, so `/releases/latest` stays the newest stable one.
+GitHub Release of every-app/every-app, where the CLI downloads it
+anonymously. A version with a prerelease suffix is published as a GitHub
+prerelease, so `/releases/latest` stays the newest stable one.
 
 `checkoutRelease.ts` compares the checkout with the `gateway-v<version>`
 tag of the Gateway's package.json version to tell an unreleased commit from
