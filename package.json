@@ -11,7 +11,8 @@
     "knip": "pnpm -r --no-bail --parallel run knip",
     "pack-for-app": "node scripts/pack-for-app.mjs",
     "security-review": "node scripts/security-review.mjs",
-    "publish:rc": "node scripts/publish-rc.mjs"
+    "release": "node scripts/release.mjs",
+    "test:scripts": "node --test \"scripts/**/*.test.mjs\""
   },
   "devDependencies": {
     "everyapp": "workspace:*"

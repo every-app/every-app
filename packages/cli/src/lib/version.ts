@@ -1,8 +1,9 @@
 /**
  * This everyapp's name and version, read from its own package.json when it
- * runs, never baked in at build time. The publish recipe sets the version
- * in package.json after nothing else is built (scripts/publish-rc.mjs), and
- * a version tsup inlined at build would drift from what npm published: on
+ * runs, never baked in at build time. The version is committed now
+ * (`pnpm release`, scripts/release.mjs), but reading it at run time keeps
+ * one rule for every build: a version tsup inlined at build drifted from
+ * what npm published once: on
  * 2026-10-26 the published 0.3.0-rc.6 said `everyapp 0.3.0` and asked for
  * the Gateway release gateway-v0.3.0, which doesn't exist.
  *

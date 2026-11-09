@@ -1,10 +1,40 @@
 # Release Process
 
-Publishing is paused while we work from the repository: nothing goes to npm,
-and nothing is synced to the public repository. `everyapp` and
-`@every-app/sdk` are private packages. The apps take them from the workspace.
-How to work this way is in AGENTS.md: `pnpm everyapp` from the checkout,
-never `npx everyapp`.
+`@every-app/sdk`, `everyapp` and the Gateway are released together at one
+version. The version is committed: it is in `packages/sdk/package.json`,
+`packages/cli/package.json`, `apps/every-app-gateway/package.json` and the
+SDK's `SDK_VERSION` (`packages/sdk/src/server/tools.ts`), and a test fails
+when they disagree. A checkout says the newest release, and so does
+everything built from it. The design is
+[docs/design/2026-11-simplify-releases.md](../docs/design/2026-11-simplify-releases.md).
+
+## Releasing
+
+1. `pnpm release <patch|minor|major|x.y.z>` (`scripts/release.mjs`) writes
+   the next version into those four places and commits `Release <version>`
+   on a new branch `release/<version>`. Push it, open the pull request,
+   merge it. Plain semver: `patch` for anything, `minor` for a breaking
+   change (pre-1.0).
+2. From `main` after the merge: `pnpm release publish`. It checks that the
+   commit is on `origin/main` and that the version is the same everywhere,
+   builds the SDK and then the CLI, checks that the built CLI says the
+   version, and asks it whether it would install each public app's latest
+   release (the table in `landing-page/content/agent/apps.md`; a warning
+   only). Then it publishes whichever of the two packages npm doesn't have
+   yet, the SDK first, under `latest` (npm asks for web authentication). It
+   writes no files. A publish that stopped half way is finished by running
+   it again. `--dry-run` stops before npm.
+3. The Gateway release: tag the release commit `gateway-v<version>` on the
+   public repository (the command `pnpm release publish` prints), once
+   `main` has reached it. The Gateway Release workflow builds and publishes
+   it.
+4. Re-pin the first-party apps to the version
+   (`pnpm pack-for-app <app> --npm <version>`, or the app's Dependabot pull
+   request). `pnpm release publish` names the apps whose latest release
+   this CLI refuses.
+
+Before a big release, the optional pre-release check on the staging
+Gateway is [docs/runbooks/pre-release-check.md](../docs/runbooks/pre-release-check.md).
 
 ## Gateway releases
 
@@ -27,87 +57,25 @@ places, in this order (`packages/cli/src/lib/gateway/source.ts`):
 
 A downloaded release lands in a private temp dir and is checked against
 the SHA-256 its own `release.json` records before anything is deployed.
-The CLI, the SDK and the Gateway are one release: every other command
-refuses a Gateway whose database is older than the CLI's
-(`GATEWAY_OUTDATED`; `update` brings it up), and an app's deploy warns
-when its `@every-app/sdk` isn't the CLI's version
-(`SDK_VERSION_MISMATCH`). After a publish, re-pin each first-party app
-to the new version exactly.
-
-### Publishing a Gateway release
+Every other command refuses a Gateway whose database is older than the
+CLI's (`GATEWAY_OUTDATED`; `update` brings it up), and an app's deploy
+warns when its `@every-app/sdk` isn't the CLI's version
+(`SDK_VERSION_MISMATCH`; not for an SDK linked from a checkout).
 
 The Gateway Release workflow (`.github/workflows/gateway-release.yml`)
 builds `every-app-gateway-release.tar.gz` with
 `apps/every-app-gateway/scripts/build-release.ts` and publishes it on a
-GitHub Release of the repository it runs in. It runs on a push of a
-`gateway-v<version>` tag, or by hand with the tag's name. The tag's
-version is the CLI version it goes with: `gateway-v0.3.0-rc.4` is the
-Gateway for `everyapp@0.3.0-rc.4`, and `release.json` says `version:
-0.3.0-rc.4`. A version with a prerelease suffix is published as a
+GitHub Release of the repository it runs in, on a push of a
+`gateway-v<version>` tag or by hand with the tag's name. The CLI downloads
+anonymously from `github.com/every-app/every-app`, so the tag goes on the
+public repository. A version with a prerelease suffix is published as a
 GitHub prerelease, so `/releases/latest` stays the newest stable one.
 
-The CLI downloads anonymously from `github.com/every-app/every-app`, so
-the release has to be on the public repository: push the tag there.
-Publishing is one script, then the tag:
-
-1. From a clean `main`: `pnpm publish:rc <version>` (`scripts/publish-rc.mjs`).
-   It sets both packages to that version, builds the SDK then the CLI,
-   checks that the built CLI says that version, publishes both under `next`
-   (npm asks for web authentication), puts the package.json files back,
-   moves `latest`, and prints the next commands. It also sets
-   `PUBLISHED_VERSION` (`packages/cli/src/lib/app/publishedVersions.ts`), the
-   version `everyapp create` pins new apps at, before building; commit that
-   one-line change afterwards. Before publishing, it runs the built CLI's
-   `install <repo> --dry-run` on each public app's latest release (the table
-   in `landing-page/content/agent/apps.md`) and, at the end, warns about the
-   ones it refuses: re-release each right after (pin the version, push the
-   app to its public repository).
-2. Push that commit to the public repository, then tag it there:
-   `git tag gateway-v<version> <commit> && git push public gateway-v<version>`.
-   The workflow publishes the release in a few minutes.
-3. Check `npx everyapp@<version> --version` and `status` from a directory with
-   no checkout: it must name the version and the release.
+`checkoutRelease.ts` compares the checkout with the `gateway-v<version>`
+tag of the Gateway's package.json version to tell an unreleased commit from
+a release.
 
 The CLI reads its version from its own package.json at run time
-(`packages/cli/src/lib/version.ts`), so the version set at publish time is
-the one it says and the Gateway release it asks for. Never import
-`version` from package.json in the CLI: tsup inlines it at build time, which
-is how 0.3.0-rc.6 shipped saying 0.3.0.
-
-Keep the Gateway package's version (`apps/every-app-gateway/package.json`)
-on the CLI's, prerelease suffix aside: a checkout's own build reports that
-version, and `checkoutRelease.ts` compares the checkout with the
-`gateway-v<version>` tag to tell an unreleased commit from a release.
-
-## Turning publishing back on
-
-Pausing removed what only a published CLI needs. Bring back:
-
-- **Publishing itself:** drop `"private": true` from `packages/cli/package.json`
-  and `packages/sdk/package.json`, and restore their pack scripts. The SDK
-  had `prepack` and `prepublishOnly`. The CLI had `prepack`, which
-  type-checked, built, and ran `scripts/bundle-gateway.js` (removed: the
-  gateway release tarball stays out of the package now, see Gateway releases)
-  and `scripts/bundle-templates.js` (removed too: the starter, now
-  `starter/`, into `packages/cli/templates/`, removed; its `.gitignore`
-  shipped as `gitignore`).
-- **A Gateway for a CLI with no checkout:** done (Gateway releases, above).
-- **Onboarding:** `everyapp setup` deployed a starter app (`--dir`,
-  `--no-starter`), and `create` copied the bundled template, or cloned
-  the public repository for it.
-- **The cloneable apps and the template:** `@every-app/sdk` by semver range
-  (with `linkWorkspacePackages: true` at the root), their own
-  `pnpm-workspace.yaml` with `allowBuilds` for standalone installs, and
-  `npx -y everyapp@latest` in their scripts.
-- **Words:** `npx everyapp …` in the CLI's and the gateway's hints, the npm
-  update check (`packages/cli/src/lib/version-check.ts`, removed), and the README's
-  install steps (`npx everyapp setup`, `gitpick` for the examples).
-
-All of it is in the git history of the change that paused publishing (#276).
-
-Then publish the SDK first, then the CLI, and only then sync the public
-repository: the cloneable apps reference versions that must already exist
-on npm. Before publishing the CLI, `cd packages/cli && npm pack --dry-run`
-must list `dist/index.js`, and no `.dev.vars` or `.env*` entries. Once the
-public repository is synced, bring back Gateway releases there (above):
-until then a CLI with no checkout has no Gateway to install.
+(`packages/cli/src/lib/version.ts`). Never import `version` from
+package.json in the CLI: tsup inlines it at build time, which is how
+0.3.0-rc.6 shipped saying 0.3.0.

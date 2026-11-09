@@ -1,8 +1,12 @@
 {
   "name": "@every-app/sdk",
-  "private": true,
-  "version": "0.3.0",
+  "version": "0.3.0-rc.15",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/every-app/every-app.git",
+    "directory": "packages/sdk"
+  },
   "type": "module",
   "exports": {
     ".": {

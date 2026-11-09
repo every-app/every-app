@@ -1,6 +1,6 @@
 # Pre-release check on the staging Gateway
 
-Before a release goes public (`pnpm publish:rc`, the public push, a Gateway release tag), the CLI as it would publish runs against a named Gateway in Ben's main Cloudflare account, beside everyapp.team (docs/design/multi-gateway.md). Nothing here touches the default Gateway: every name the staging Gateway makes carries its name.
+Before a big release goes public (`pnpm release publish`, the public push, a Gateway release tag; optional, `.github/RELEASE.md`), the CLI as it would publish runs against a named Gateway in Ben's main Cloudflare account, beside everyapp.team (docs/design/multi-gateway.md). Nothing here touches the default Gateway: every name the staging Gateway makes carries its name.
 
 ## The staging Gateway
 

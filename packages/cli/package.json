@@ -1,11 +1,15 @@
 {
   "name": "everyapp",
-  "private": true,
   "author": "",
   "description": "EveryApp CLI - Deploy and manage apps.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/every-app/every-app.git",
+    "directory": "packages/cli"
+  },
   "type": "module",
-  "version": "0.3.0",
+  "version": "0.3.0-rc.15",
   "files": [
     "dist",
     "bin",

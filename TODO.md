@@ -58,6 +58,7 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
 
 ## Waiting on Ben
 
+- [ ] **Simpler releases and the public mirror** ([docs/design/2026-11-simplify-releases.md](docs/design/2026-11-simplify-releases.md), "Waiting on Ben"): the mirror app, npm trusted publishing, dropping the `next` dist-tag, then the first `pnpm release patch` (→ 0.3.0).
 - [ ] **Check the desktop app on a Mac** (it was moved from private-talk and renamed on Linux): `apps/desktop/mac/scripts/test.sh` or the Desktop workflow's Swift job, `pnpm -C apps/desktop package:local`, then: Keychain Access shows "com.everyapp.desktop.dev Safe Storage" (with `EVERYAPP_DESKTOP_DEV_KEYCHAIN=1`), data is in `~/Library/Application Support/com.everyapp.desktop.dev`, the menus say "Every App Dev", `everyapp-dev://scribe/record` opens it.
 - [ ] **Scribe's side of the desktop rename** (every-app/private-open-scribe): the web app opens `talk://record…`, and must open `everyapp://scribe/record…`; the update route serves only `Talk-*` files and must also serve `EveryApp-*` before a release goes out on it.
 - [ ] **The remote MCP apps live check** (#938): add an OAuth server with DCR (Linear's), connect two members, call, refresh, disconnect. A live test, on a test Gateway.
@@ -76,7 +77,7 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
      - Check that a stranger is refused at Access.
      - Check that `access.evaluated` shows in the Worker logs.
   4. `pnpm everyapp login --gateway https://everyapp.team`: admin commands now go through the Gateway's tools (or set `EVERYAPP_TOKEN`).
-- [ ] **Publish rc.15 (`pnpm publish:rc 0.3.0-rc.15`; it carries #974), then re-pin the apps exactly to it.**
+- [ ] **Re-pin the apps exactly to rc.15** (on npm since 2026-11-04; it carries #974).
   - Analytics is on rc.1; OpenSEO-everyapp, Mission Control and RepoLens on rc.3; Workout and Talk on `^rc.10`.
   - App edits that ride the re-pin:
     - `risk: "destructive"` → `"write"` plus `destructive: true` in CRM, Analytics, OpenMail and Postiz.

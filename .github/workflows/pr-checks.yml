@@ -112,7 +112,7 @@ jobs:
           - part: cli
             run: pnpm -C packages/cli test --maxWorkers=100%
           - part: packages
-            run: pnpm -r --no-bail --parallel --filter '!every-app-gateway' --filter '!everyapp' run test --maxWorkers=100%
+            run: pnpm -r --no-bail --parallel --filter '!every-app-gateway' --filter '!everyapp' run test --maxWorkers=100% && pnpm test:scripts
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

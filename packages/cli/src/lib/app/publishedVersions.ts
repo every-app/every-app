@@ -1,22 +1,21 @@
 /**
- * The published version of the two packages a created app depends on,
- * `@every-app/sdk` and `everyapp`, which are published together at the
- * same version: `everyapp create` writes `^<version>` for both into an
- * app made outside the checkout (from a checkout or from an everyapp
- * installed with npm), so the app installs them from npm, and the
- * lockfile its first commit records says exactly what it got.
+ * The version of the two packages a created app depends on,
+ * `@every-app/sdk` and `everyapp`, which are published together at one
+ * version: `everyapp create` writes `^<version>` for both into an app made
+ * outside the checkout, so the app installs them from npm, and the lockfile
+ * its first commit records says exactly what it got.
  *
- * A constant, not the CLI's own package.json version: the repository's
- * package.json files name the next release (0.3.0) while its rcs are
- * published under the dist-tag `next`. `pnpm publish:rc <version>`
- * (scripts/publish-rc.mjs) sets it before it builds, so the published CLI
- * pins the version it is, and leaves it set for a commit (.github/RELEASE.md). `^0.3.0-rc.6` admits
- * the later rcs and 0.3.0, never 0.4.0.
+ * It is this everyapp's own version. The repository commits the version it
+ * releases (`pnpm release <version>`, scripts/release.mjs, sets it in the
+ * SDK's, the CLI's and the Gateway's package.json in one commit), so a
+ * checkout says the newest release, and a published CLI says itself.
  */
-export const PUBLISHED_VERSION = "0.3.0-rc.15";
+import { cliVersion } from "@/lib/version";
+
+export const PUBLISHED_VERSION = cliVersion;
 
 /** The packages published at `PUBLISHED_VERSION`. */
-export const PUBLISHED_PACKAGES = ["@every-app/sdk", "everyapp"] as const;
+const PUBLISHED_PACKAGES = ["@every-app/sdk", "everyapp"] as const;
 
 /** The range a created app takes `name` at, or null for a package that isn't published. */
 export function publishedRange(name: string): string | null {

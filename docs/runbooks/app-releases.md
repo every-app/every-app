@@ -18,14 +18,13 @@ on `R2_NOT_ENABLED`, the account having never enabled R2).
    `link:../private-every-app/...` paths the ports used only resolve on a
    machine with that checkout beside the app: a stranger's `pnpm install`
    left dangling symlinks, and `pnpm dev` failed with
-   `everyapp: command not found`. Since 2026-10-25 the two packages are on
-   npm under the dist-tag `next` (`everyapp@0.3.0-rc.1`,
-   `@every-app/sdk@0.3.0-rc.1`; `latest` still points at the pre-October
-   0.2.x, so never `npx everyapp`), and an app pins the exact version:
+   `everyapp: command not found`. The two packages are on npm under
+   `latest`, released together at one version (`.github/RELEASE.md`), and
+   an app pins the exact version:
 
    ```json
-   "dependencies":    { "@every-app/sdk": "0.3.0-rc.1" },
-   "devDependencies": { "everyapp": "0.3.0-rc.1" }
+   "dependencies":    { "@every-app/sdk": "0.3.0-rc.15" },
+   "devDependencies": { "everyapp": "0.3.0-rc.15" }
    ```
 
    Exact, not a range: a release is built from what the lockfile says, and
@@ -120,9 +119,17 @@ after a platform edit; the link picks it up. To go back:
 git checkout pnpm-workspace.yaml pnpm-lock.yaml && pnpm install
 ```
 
-To ship it, publish an rc from the platform checkout (`pnpm publish:rc
-<version>`, `.github/RELEASE.md`), then pin it in the app with
-`pnpm pack-for-app <app> --npm <version>` and merge that.
+With both linked, the app's `everyapp` is the checkout's launcher, which
+rebuilds a stale SDK and CLI before each command, and `deploy` takes the
+checkout's Gateway. The CLI says nothing about the SDK's version
+(`SDK_VERSION_MISMATCH`) while the SDK is linked. Other apps keep their
+pinned release. A committed link can't install without the checkout beside
+the app, so the app's CI fails rather than ships it.
+
+To ship it, release from the platform checkout (`pnpm release patch`,
+`.github/RELEASE.md`), then pin it in the app with
+`pnpm pack-for-app <app> --npm <version>` (or merge the app's Dependabot
+pull request) and merge that.
 
 The app's default branch is what the workflow releases from. A repository
 whose default branch isn't `main` (OpenMail's is `everyapp` until it is
@@ -141,10 +148,12 @@ the pushed branch is the repository's default.
   from an EveryApp checkout installs a downloaded asset without GitHub.
 - `everyapp install` fetches the **public** repository's latest release, so
   a fix merged in the private repository reaches people only once its main
-  is pushed to the public one (by hand, a fast-forward), whose release
+  is pushed to the public one (by its Public Mirror workflow once that is
+  set up, docs/design/2026-11-simplify-releases.md; by hand, a fast-forward,
+  until then), whose release
   workflow then publishes. `pnpm everyapp install <public repo url>
   --dry-run` says whether this CLI would install what is out there;
-  `pnpm publish:rc` runs it on every public app.
+  `pnpm release publish` runs it on every public app.
 - Downloads from GitHub are anonymous, so a private repository's releases
   answer 404 (`NO_RELEASE`) even to its own members: the URL form only works
   once the repository is public. Until then, download the asset with
