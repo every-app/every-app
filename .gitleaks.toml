@@ -1,0 +1,18 @@
+# The leak check the public mirror runs before main goes public
+# (.github/workflows/public-mirror.yml), on every pull request and on each
+# push to main, over the commits that aren't public yet. gitleaks' own
+# rules, minus two kinds of made-up value its generic rule can't tell from
+# a key. The specific rules (Cloudflare, GitHub, Anthropic, Stripe, PEM...)
+# still apply everywhere, tests included.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fixtures in tests: BETTER_AUTH_SECRET, webhook and event secrets made up for the test"
+targetRules = ["generic-api-key"]
+paths = ['''\.test\.tsx?$''']
+
+[[allowlists]]
+description = "Cloudflare permission group names, not credentials"
+targetRules = ["generic-api-key"]
+paths = ['''^packages/cli/src/lib/gateway/deployToken\.ts$''']

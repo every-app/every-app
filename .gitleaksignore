@@ -1,0 +1,3 @@
+# Made-up values gitleaks flags, one fingerprint each (commit:file:rule:line).
+# The sample HS256 JWT from jwt.io ({"sub":"1234567890"}), a redaction test fixture.
+6900063f00bd0d4cbaec0d10f09705cdf4c68a6b:apps/desktop/test/logs.test.ts:jwt:11

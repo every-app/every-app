@@ -1,0 +1,128 @@
+name: Public Mirror
+# Private repository → public repository, main only. Each push to the default
+# branch of every-app/private-<name> is pushed, as the same commits, to the
+# default branch of every-app/<name> (or the repository variable PUBLIC_REPO,
+# owner/name), after a leak check over the commits that aren't public yet.
+# Branches, pull requests and tags stay private; nothing is ever force-pushed.
+#
+# The same file goes, unchanged, into every private-* repository. It does
+# nothing until the organization's mirror app is set up
+# (docs/design/2026-11-simplify-releases.md, "Sync"): the variable
+# MIRROR_APP_ID and the secret MIRROR_APP_PRIVATE_KEY, an app with
+# Contents and Workflows read and write, installed on the public repositories.
+# A push made with the app's token runs the public repository's own workflows
+# (its Release workflow, its PR Checks), which a GITHUB_TOKEN push wouldn't.
+#
+# On pull requests it runs only the leak check, so a leak is caught before
+# it reaches main. The check is gitleaks with .gitleaks.toml (its default rules
+# when the repository has none).
+# A repository whose default branch isn't main (private-open-mail's is
+# everyapp) lists it under push.branches.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: public-mirror-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  GITLEAKS_VERSION: 8.30.1
+  GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+jobs:
+  mirror:
+    name: Leak check, then mirror main
+    # Only in a private-* repository: the public copy carries this file too.
+    if: startsWith(github.event.repository.name, 'private-') && (github.event_name == 'pull_request' || github.ref_name == github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # On a pull request, its merge with the base: the commits that would
+          # go public if it merged, whatever it was branched from.
+          fetch-depth: 0
+      - name: Which public repository, and is the mirror app set up
+        id: target
+        env:
+          PUBLIC_REPO: ${{ vars.PUBLIC_REPO }}
+          CLIENT_ID: ${{ vars.MIRROR_APP_ID }}
+          HAS_KEY: ${{ secrets.MIRROR_APP_PRIVATE_KEY != '' }}
+        run: |
+          set -euo pipefail
+          name="${GITHUB_REPOSITORY#*/}"
+          repo="${PUBLIC_REPO:-$GITHUB_REPOSITORY_OWNER/${name#private-}}"
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "name=${repo#*/}" >> "$GITHUB_OUTPUT"
+          if [ -n "$CLIENT_ID" ] && [ "$HAS_KEY" = "true" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::The mirror app isn't set up here (MIRROR_APP_ID, MIRROR_APP_PRIVATE_KEY): leak check only, nothing is pushed to $repo."
+          fi
+      - name: The public repository's main
+        id: public
+        run: |
+          set -euo pipefail
+          url="https://github.com/${{ steps.target.outputs.repo }}.git"
+          # Public, so readable without a token. An empty repository has no main yet.
+          if git fetch --quiet "$url" "+refs/heads/main:refs/remotes/public/main" 2>/dev/null; then
+            echo "base=$(git rev-parse public/main)" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::${{ steps.target.outputs.repo }} has no readable main; the leak check covers the whole history."
+            echo "base=" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Fast-forward only
+        if: github.event_name != 'pull_request' && steps.public.outputs.base != ''
+        run: |
+          set -euo pipefail
+          if ! git merge-base --is-ancestor public/main HEAD; then
+            echo "::error::${{ steps.target.outputs.repo }}'s main has commits this repository doesn't (a pull request merged there?). Bring them in first: git pull https://github.com/${{ steps.target.outputs.repo }}.git main on a branch here, merge it, and this run's successor pushes."
+            exit 1
+          fi
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$tarball" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$tarball"
+          echo "$GITLEAKS_SHA256  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" gitleaks
+      - name: Leak check (the commits that aren't public yet)
+        env:
+          BASE: ${{ steps.public.outputs.base }}
+        run: |
+          set -euo pipefail
+          # --first-parent -m: a merge commit's own changes are scanned too
+          # (plain git log -p shows none for a merge).
+          range="HEAD"
+          [ -n "$BASE" ] && range="$BASE..HEAD"
+          echo "Scanning $range ($(git rev-list --count "$range") commits)"
+          if ! "$RUNNER_TEMP/gitleaks" git --redact --no-banner --exit-code 1 --log-opts="--first-parent -m $range" .; then
+            echo "::error::gitleaks found what looks like a secret in a commit that isn't public yet. A real one: rotate it, and take it out of the history before it goes public. A made-up one (a test fixture): add its fingerprint (above) to .gitleaksignore."
+            exit 1
+          fi
+      - name: Mirror app token
+        id: token
+        if: github.event_name != 'pull_request' && steps.target.outputs.configured == 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.MIRROR_APP_ID }}
+          private-key: ${{ secrets.MIRROR_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ steps.target.outputs.name }}
+          permission-contents: write
+          permission-workflows: write
+      - name: Push main to the public repository
+        if: steps.token.outputs.token != ''
+        env:
+          TOKEN: ${{ steps.token.outputs.token }}
+          REPO: ${{ steps.target.outputs.repo }}
+        run: |
+          set -euo pipefail
+          # Never --force: a push that isn't a fast-forward fails here too.
+          git push "https://x-access-token:${TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/main"
+          echo "::notice::https://github.com/${REPO} main is now $(git rev-parse --short HEAD)"
