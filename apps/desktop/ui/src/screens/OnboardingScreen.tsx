@@ -31,35 +31,23 @@ export interface OnboardingScreenProps {
   accountName?: string;
 }
 
-/** The Every App mark: three level bars in a rounded square. Ours, drawn here. */
-export function EveryAppMark({ className }: { className?: string }) {
+/** The Every App mark: three level bars in a rounded square. Ours, drawn here. `tone="light"`
+ * draws it white whatever the theme, for dark backdrops (the welcome splash). */
+export function EveryAppMark({
+  className,
+  tone = "theme",
+}: {
+  className?: string;
+  tone?: "theme" | "light";
+}) {
+  const square = tone === "light" ? "fill-white" : "fill-foreground";
+  const bar = tone === "light" ? "fill-neutral-900" : "fill-background";
   return (
     <svg viewBox="0 0 48 48" aria-hidden className={cn("size-12", className)}>
-      <rect width="48" height="48" rx="12" className="fill-foreground" />
-      <rect
-        x="14"
-        y="19"
-        width="4"
-        height="10"
-        rx="2"
-        className="fill-background"
-      />
-      <rect
-        x="22"
-        y="13"
-        width="4"
-        height="22"
-        rx="2"
-        className="fill-background"
-      />
-      <rect
-        x="30"
-        y="17"
-        width="4"
-        height="14"
-        rx="2"
-        className="fill-background"
-      />
+      <rect width="48" height="48" rx="12" className={square} />
+      <rect x="14" y="19" width="4" height="10" rx="2" className={bar} />
+      <rect x="22" y="13" width="4" height="22" rx="2" className={bar} />
+      <rect x="30" y="17" width="4" height="14" rx="2" className={bar} />
     </svg>
   );
 }
@@ -227,8 +215,8 @@ function Grant({ permissions, onGrant, onContinue }: OnboardingScreenProps) {
     <>
       <EveryAppMark />
       <Heading title="Let Scribe hear the call">
-        Every App only listens after you click record. Audio is transcribed as you go
-        and never stored.
+        Every App only listens after you click record. Audio is transcribed as
+        you go and never stored.
       </Heading>
       <ul className="mt-7 w-full divide-y divide-border overflow-hidden rounded-xl border border-border bg-card text-left">
         {(Object.keys(permissionInfo) as PermissionKind[]).map((kind) => {

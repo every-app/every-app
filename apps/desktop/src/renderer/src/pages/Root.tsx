@@ -1,5 +1,6 @@
 // The window: sign-in and first-run permissions until they're done, then the app frame around
-// the routed page.
+// the routed page, with "Enjoy Every App" over it right after first run and while the window
+// isn't in front (splash.ts).
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Outlet, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
@@ -8,7 +9,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { AppSnapshot } from "@shared/ipc";
 import type { NavTarget, Space } from "@every-app/desktop-ui";
 import { exampleBackendUrl, SCRIBE } from "@shared/features";
-import { AppFrame, OfflineBanner, OnboardingScreen, SignInAgainBanner, TitleBar } from "@every-app/desktop-ui";
+import { AppFrame, OfflineBanner, OnboardingScreen, SignInAgainBanner, SPLASH_TIMING, TitleBar, WelcomeSplash } from "@every-app/desktop-ui";
 import { useRecordingElapsed } from "../useRecordingElapsed";
 import { Button } from "@every-app/desktop-ui/components/button";
 import { clearDrafts, useCancelledStart, useFollowRecording, useStartRecording, useStopRecording } from "../actions";
@@ -18,6 +19,8 @@ import { cameBackOnline, connectionOf, gateOf, signInAgainOf, type Gate, type Sn
 import { retryUnsavedJottings } from "../jottings";
 import { installUpdate, rememberDeferred, updatePillOf } from "../update";
 import { useLevels } from "../live";
+import { splashShownOf } from "../splash";
+import { useWelcome, useWindowAway } from "../useSplash";
 import { accountFrom, loadable } from "../map";
 import { notify } from "../notice";
 import { bridge, useAppState } from "../bridge";
@@ -32,6 +35,7 @@ const Palette = lazy(() => import("../Palette").then((m) => ({ default: m.Palett
 export function Root() {
   const state = useAppState();
   const [onboarded, setOnboarded] = useState(() => localStorage.getItem(ONBOARDED_KEY) === "1");
+  const [welcome, startWelcome] = useWelcome(SPLASH_TIMING.welcome);
   // An expired sign-in keeps the app on screen (see connection.ts); only a real sign-out leaves.
   const gateRef = useRef<Gate>("loading");
   const gate = gateOf(state, gateRef.current);
@@ -45,11 +49,22 @@ export function Root() {
         onDone={() => {
           localStorage.setItem(ONBOARDED_KEY, "1");
           setOnboarded(true);
+          startWelcome();
         }}
       />
     );
   }
-  return <Layout state={state} />;
+  return (
+    <>
+      <Layout state={state} />
+      <Splash state={state} welcome={welcome} />
+    </>
+  );
+}
+
+function Splash({ state, welcome }: { state: AppSnapshot; welcome: boolean }) {
+  const away = useWindowAway(SPLASH_TIMING.awayDelay);
+  return <WelcomeSplash shown={splashShownOf({ welcome, away, recording: state.recording.state })} />;
 }
 
 function SignIn({ state }: { state: AppSnapshot }) {

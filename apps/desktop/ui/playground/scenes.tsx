@@ -17,6 +17,7 @@ import {
   SettingsScreen,
   SharedScreen,
   TemplatesScreen,
+  WelcomeSplash,
   type LiveState,
   type MeetingPhase,
   type MeetingScreenProps,
@@ -549,6 +550,46 @@ function RecorderScene({
           onOpen={noop}
         />
       </div>
+    </div>
+  );
+}
+
+/** The welcome splash over Home: held up for screenshots, coming and going otherwise. */
+function WelcomeScene({ animate }: SceneContext) {
+  const [shown, setShown] = useState(true);
+  useEffect(() => {
+    if (!animate) return;
+    const timer = setTimeout(() => setShown((s) => !s), shown ? 1800 : 1200);
+    return () => clearTimeout(timer);
+  }, [shown, animate]);
+  return (
+    <div className="relative h-full w-full">
+      <Frame current={{ to: "home" }}>{home()}</Frame>
+      <WelcomeSplash contained shown={shown || !animate} />
+    </div>
+  );
+}
+
+/** The same window at Mission Control size: about a third, among other windows. */
+function WelcomeThumbnail() {
+  return (
+    <div className="flex h-full w-full items-center justify-center gap-10 bg-[#1f3a5f] p-10">
+      {[false, true].map((splash) => (
+        <div
+          key={String(splash)}
+          className="relative h-[267px] w-[400px] shrink-0 overflow-hidden rounded-[6px] shadow-2xl ring-1 ring-black/30"
+        >
+          <div
+            className="absolute left-0 top-0 h-[800px] w-[1200px]"
+            style={{ zoom: 1 / 3 }}
+          >
+            <div className="relative h-full w-full">
+              <Frame current={{ to: "home" }}>{home()}</Frame>
+              {splash && <WelcomeSplash contained shown reducedMotion />}
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1152,6 +1193,18 @@ export const scenes: Scene[] = [
     group: "Onboarding",
     label: "Done",
     render: () => <Onboarding step="done" accountName={mock.account.name} />,
+  },
+  {
+    id: "welcome-splash",
+    group: "Onboarding",
+    label: "Welcome splash",
+    render: (ctx) => <WelcomeScene {...ctx} />,
+  },
+  {
+    id: "welcome-splash-thumbnail",
+    group: "Onboarding",
+    label: "Welcome splash, Mission Control size",
+    render: () => <WelcomeThumbnail />,
   },
   {
     id: "recorder-pill",

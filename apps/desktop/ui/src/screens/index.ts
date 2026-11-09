@@ -11,6 +11,7 @@ export * from "./SelfTest";
 export * from "./SearchScreen";
 export * from "./SettingsScreen";
 export * from "./TemplatesScreen";
+export * from "./WelcomeSplash";
 export * from "./Transcript";
 export {
   EmptyState,
