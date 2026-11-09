@@ -12,8 +12,8 @@
  * answers 200 as HTML; that every internal link resolves without a redirect
  * and its #anchor exists on the target; that every docs page's `.md` twin
  * answers 200 as Markdown; that /llms.txt lists every page and every URL in
- * it resolves; that /llms-full.txt carries every page outside repo/ and no
- * MDX comment; that /robots.txt names the sitemap and the sitemap lists
+ * it resolves; that /llms-full.txt carries every page outside repo/ and
+ * setup/<guide> and no MDX comment; that /robots.txt names the sitemap and the sitemap lists
  * every page; that /docs/internal and an unknown path answer 404; that every
  * page has a title, a description, og:title, og:url and a canonical link;
  * that no page says what the site must no longer say (a private repository,
@@ -453,15 +453,20 @@ async function main() {
       error("/llms-full.txt carries an MDX comment");
     if (/<include\b/.test(full.text))
       error("/llms-full.txt carries an unexpanded <include>");
-    if (/^import .* from "(?:fumadocs|@\/)/m.test(full.text))
+    const prose = full.text.replace(/^```[\s\S]*?^```/gm, "");
+    if (/^import .* from "(?:fumadocs|@\/)/m.test(prose))
       warn("/llms-full.txt carries an MDX import line");
     for (const path of docsPages) {
-      const expected = path.startsWith("/docs/agent/repo/") ? false : true;
+      // The mirrored repository documents and the setup guides are left out
+      // (src/lib/llms.ts); /docs/agent/setup itself is in.
+      const expected =
+        !path.startsWith("/docs/agent/repo/") &&
+        !path.startsWith("/docs/agent/setup/");
       const present = full.text.includes(`(${CANONICAL_ORIGIN}${path})`);
       if (expected && !present) error(`/llms-full.txt doesn't carry ${path}`);
       if (!expected && present)
         warn(
-          `/llms-full.txt carries the mirrored ${path}, which llms.txt says it leaves out`,
+          `/llms-full.txt carries ${path}, which llms.txt says it leaves out`,
         );
     }
     sayings("/llms-full.txt", full.text, "/llms-full.txt");

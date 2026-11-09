@@ -143,7 +143,7 @@ install one.
 **Deep references.** A command's flags and exit codes:
 `pnpm everyapp <command> --help` (0 done, 1 error, 2 action required,
 251/252 a bad command or its arguments). The agent docs:
-https://everyapp.com/docs/agent/, each page also as Markdown at
+https://everyapp.com/docs/agent, each page also as Markdown at
 `https://everyapp.com/docs/agent/<page>.md` (`setup`, `cli`, `json`,
 `errors`, `troubleshooting`, `manifest`, `identity`, `secrets`, `dev`,
 `email`, `mcp`, `deploy`, `providers`, `access`; an error code's fix is at

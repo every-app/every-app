@@ -112,7 +112,7 @@ Feature = { id, name, required, why?, steps: string[], capabilities: string[], p
   needs: [{ kind, id, label, set, command? }] }  // Gateway settings; command when unset: "everyapp provider add <id>"
 ```
 
-To set an app up, show the person each feature's `steps` and each value's `how`, and each Gateway setting's `why`, `hint` and `setup` guide (`setup/<name>.md`: https://everyapp.com/docs/agent/setup/<name>.md). Then have the person run `everyapp configure <app>` at a terminal so values never pass through the chat. An agent that holds a value already pipes `NAME=value` lines in, or exports them and adds `--from-env` (a multi-line value such as a PEM is kept; a `file` value may be a path). Generated secrets without a `how` are made on the run; one with a `how` is made at a terminal, where it is shown once.
+To set an app up, show the person each feature's `steps` and each value's `how`, and each Gateway setting's `why`, `hint` and `setup` guide (`https://everyapp.com/docs/agent/setup/<name>.md`). Then have the person run `everyapp configure <app>` at a terminal so values never pass through the chat. An agent that holds a value already pipes `NAME=value` lines in, or exports them and adds `--from-env` (a multi-line value such as a PEM is kept; a `file` value may be a path). Generated secrets without a `how` are made on the run; one with a `how` is made at a terminal, where it is shown once.
 
 ## The loop an agent runs
 
