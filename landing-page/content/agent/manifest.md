@@ -32,7 +32,8 @@ Only `id` is required. Everything not declared is private and refused.
 
 ## Identity and display
 
-- `id`: kebab-case (`^[a-z]([a-z0-9-]*[a-z0-9])?$`), no `--`, not `everyapp`. It names the hostname (`<id>.<app base domain>`), the Worker (`every-<orgKey>-<id>`) and every resource (`<worker>--<binding>`). Changing it makes a new app.
+- `id`: kebab-case (`^[a-z]([a-z0-9-]*[a-z0-9])?$`), no `--`, not `everyapp`. It names the hostname (`<id>.<app base domain>`), the Worker (`every-<orgKey>-<id>`) and every resource (`<worker>--<binding>`). Changing it alone makes a new app; to rename one, list the old id under `previousIds`.
+- `previousIds`: the ids the app had before, to rename it (`id: "scribe", previousIds: ["talk"]`). The deploy moves the registered app to the new id after a confirmation: it keeps its Worker, data, secrets and everything the Gateway holds for it, and the old hostname keeps working (page loads redirect; bearer and non-GET requests are served there) until the id leaves this list. An id here that no app has stops the deploy. [Renaming an app](/docs/agent/deploy#renaming-an-app)
 - `name`: the display name (default: the id). `description`: one line for the app library. `icon`: the path of an SVG the app serves (`/everyapp-icon.svg`).
 - `compatibilityDate`: `YYYY-MM-DD` for every Worker of the app (default `2026-06-01`).
 - `access`: who can open the app when it is first registered. `admins` (default): owners and admins, who open every app anyway. `everyone`: the app is available to everyone, every member now and later. A redeploy changes nothing; admins manage access in Admin → Apps afterwards.

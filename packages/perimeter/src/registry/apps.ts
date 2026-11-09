@@ -42,8 +42,19 @@ const APP_STATUSES: readonly string[] = [
 export interface RegisteredApp {
   /** Stable app id and first DNS label, e.g. `todo`. */
   appId: string;
-  /** Full routing hostname, e.g. `todo.example.com` (unique). */
+  /**
+   * The host this app is served on, e.g. `todo.example.com`: its routing
+   * hostname (unique), or, when the request named one of its previous
+   * hostnames, that one (see {@link movedTo}).
+   */
   hostname: string;
+  /**
+   * Set when the request named one of the app's previous hostnames (the
+   * app was renamed, docs/design/2026-11-app-rename.md): the app's
+   * hostname now. The perimeter redirects page loads there and serves
+   * everything else on the previous host as before.
+   */
+  movedTo?: string;
   /** Service-binding / script name, e.g. `every-todo-app`. */
   workerName: string;
   tier: Tier;
@@ -80,6 +91,17 @@ export interface AppRegistry {
     organizationId: string,
     appId: string,
   ): Promise<RegisteredApp | null>;
+  /**
+   * The organization's app that had `appId` before it was renamed
+   * (docs/design/2026-11-app-rename.md), under the id it has now; null
+   * when none did. A Worker deployed before the rename still names its old
+   * id when it calls the gateway, until its next upload. Optional: a
+   * registry that knows no renames answers nothing.
+   */
+  findByOrgPreviousApp?(
+    organizationId: string,
+    appId: string,
+  ): Promise<RegisteredApp | null>;
 }
 
 /** Row shape as stored in D1 (manifest is a JSON string column). */
@@ -98,6 +120,8 @@ export interface AppRegistryRow {
   secretNames?: string | null;
   rowId?: string;
   versionId?: string | null;
+  /** The app's hostname now, when `hostname` is a previous one it is served on. */
+  movedTo?: string;
 }
 
 /**
@@ -167,6 +191,7 @@ export function rowToRegisteredApp(row: AppRegistryRow): RegisteredApp {
     ...(row.secretNames === undefined
       ? {}
       : { secretNames: parseSecretNames(row.secretNames) }),
+    ...(row.movedTo === undefined ? {} : { movedTo: row.movedTo }),
   };
 }
 
@@ -184,6 +209,15 @@ export class InMemoryAppRegistry implements AppRegistry {
     this.byHostname.set(app.hostname.toLowerCase(), app);
     this.byAppId.set(app.appId, app);
     this.byOrgApp.set(orgAppKey(app.organizationId, app.appId), app);
+  }
+
+  /** Serve `app` on `hostname` too, a previous hostname of a renamed app. */
+  addPreviousHostname(hostname: string, app: RegisteredApp): void {
+    this.byHostname.set(hostname.toLowerCase(), {
+      ...app,
+      hostname: hostname.toLowerCase(),
+      movedTo: app.hostname,
+    });
   }
 
   async findByHostname(hostname: string): Promise<RegisteredApp | null> {

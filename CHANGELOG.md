@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Rename an app (`previousIds`)
+
+An app can change its id and hostname and keep everything else. Change `id` in `everyapp.config.ts` and list the old one under `previousIds`:
+
+```ts
+export default defineConfig({ id: "scribe", previousIds: ["talk"], name: "Scribe" });
+```
+
+`everyapp deploy` (and `everyapp install` of a release) sees that the new id isn't registered and the old one is, shows what moves, and asks first (`--yes` for CI; unattended without it, `CONFIRMATION_REQUIRED`). The app keeps its registry row, its Worker and every resource named after it (D1, KV, R2, …), its secrets, and everything the Gateway holds for it: access, groups, tokens, AI and OAuth connections, caps, usage, email setup. The old hostname keeps working. Page loads and shared links get a `308` to the new host once it answers; bearer API calls, other methods and WebSockets are served on the old host as before, and native sign-ins made there keep working. Its tools are named after the new id. Removing the old id from `previousIds` stops serving its hostname; the id stays the app's. An id in `previousIds` that no app has stops the deploy (`PREVIOUS_ID_UNKNOWN`) instead of creating a new app. Design: `docs/design/2026-11-app-rename.md`; how-to: [deploy](https://everyapp.com/docs/agent/deploy#renaming-an-app).
+
+What you do: `pnpm everyapp update` brings the Gateway to migration `0033` (`app_previous_ids`). This everyapp refuses an older Gateway with `GATEWAY_OUTDATED` until you do.
+
 ## Unreleased: breaking
 
 An app's setup is grouped into **features** (`features` in `everyapp.config.ts`): each a name, a why, numbered steps with URLs, and the secrets, settings, capabilities and providers it needs. `everyapp configure <app>` walks them; `everyapp status` shows each app's features in one line.

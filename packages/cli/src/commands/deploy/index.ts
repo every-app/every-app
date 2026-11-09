@@ -7,7 +7,8 @@ import { deployApp } from "./deployApp";
 
 /**
  * `everyapp deploy`: the app in this directory, built here. No question
- * first (unless there is no Gateway yet: then it offers to install one).
+ * first, unless there is no Gateway yet (then it offers to install one) or
+ * the deploy renames the app (`previousIds`, lib/gateway/rename.ts).
  * The first line says what is deployed where (`Deploying todo to example.com (Acme)`),
  * and the last that it is live, at its URL. A published release is
  * `everyapp install <source>` (commands/install), and packing one is
@@ -31,6 +32,7 @@ export async function deploy(flags: AppDeployFlags): Promise<void> {
       replaceMx: flags["replace-mx"],
       waitForLive: !flags["no-wait"],
       registerProviders: flags["register-providers"],
+      yes: flags.yes,
       offerInstall: { yes: flags.yes },
     });
     // `app.live` said it to a person already (or that it goes live on its

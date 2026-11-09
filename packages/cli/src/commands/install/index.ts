@@ -67,6 +67,7 @@ export async function install(flags: AppDeployFlags & { "dry-run"?: boolean }, s
         replaceMx: flags["replace-mx"],
         waitForLive: !flags["no-wait"],
         registerProviders: flags["register-providers"],
+        yes: flags.yes,
         offerInstall: { yes: flags.yes },
       });
       out.emit({ type: "done", ...deployDone(result) });

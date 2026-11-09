@@ -679,6 +679,28 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
           : { done: "Mail routes removed" },
       ];
     },
+    // A rename (lib/gateway/rename.ts): what moved, the old host's move,
+    // and retired hostnames. The plan itself is the prompt's context.
+    "app.rename": (event) => {
+      if (event.status !== "ok") return null;
+      const data = event.data ?? {};
+      const retired = strings(data["retired"]);
+      if (retired.length > 0) {
+        const hosts = strings(data["hostnames"]);
+        return { done: `Stopped serving ${(hosts.length > 0 ? hosts : retired).join(", ")}` };
+      }
+      const from = text(data["from"]);
+      if (from) {
+        return {
+          done: `Renamed ${from} to ${text(data["to"])}`,
+          notes: [`https://${text(data["fromHostname"])} keeps working; the app is at https://${text(data["hostname"])}`],
+        };
+      }
+      const moved = strings(data["previousHostnames"]);
+      return moved.length > 0
+        ? { done: `${moved.join(", ")} now ${moved.length === 1 ? "redirects" : "redirect"} page loads to ${text(data["hostname"])}` }
+        : null;
+    },
     "app.bind": (event) =>
       event.status === "start"
         ? { spin: `Adding ${text(event.data?.["appId"])} to the Gateway...` }

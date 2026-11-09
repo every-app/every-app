@@ -1,4 +1,4 @@
-import { and, eq, ne, type SQL } from "drizzle-orm";
+import { and, eq, isNull, ne, type SQL } from "drizzle-orm";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import {
   rowToRegisteredApp,
@@ -7,7 +7,7 @@ import {
   type RegisteredApp,
 } from "@every-app/perimeter";
 import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
-import { apps } from "@/db/apps.schema";
+import { appPreviousIds, apps } from "@/db/apps.schema";
 
 type RegistryRow = {
   id: string;
@@ -74,12 +74,64 @@ export class DrizzleAppRegistry implements AppRegistry {
     return Boolean(row);
   }
 
-  findByHostname(hostname: string): Promise<RegisteredApp | null> {
-    return this.query(eq(apps.hostname, hostname.toLowerCase()));
+  /**
+   * The app at `hostname`: the one registered there, else the one that
+   * was before a rename while that previous hostname is served
+   * (`app_previous_ids`), with `hostname` the previous one and, once its
+   * new hostname has answered (`moved_at`), `movedTo` that one.
+   */
+  async findByHostname(hostname: string): Promise<RegisteredApp | null> {
+    const host = hostname.toLowerCase();
+    const app = await this.query(eq(apps.hostname, host));
+    if (app) return app;
+    const [previous] = await this.db
+      .select({
+        appRowId: appPreviousIds.appRowId,
+        movedAt: appPreviousIds.movedAt,
+      })
+      .from(appPreviousIds)
+      .where(
+        and(
+          eq(appPreviousIds.hostname, host),
+          isNull(appPreviousIds.retiredAt),
+        ),
+      )
+      .limit(1);
+    if (!previous) return null;
+    const moved = await this.query(eq(apps.id, previous.appRowId));
+    if (!moved) return null;
+    return {
+      ...moved,
+      hostname: host,
+      ...(previous.movedAt ? { movedTo: moved.hostname } : {}),
+    };
   }
 
   findByAppId(appId: string): Promise<RegisteredApp | null> {
     return this.query(eq(apps.appSlug, appId));
+  }
+
+  async findByOrgPreviousApp(
+    organizationId: string,
+    appId: string,
+  ): Promise<RegisteredApp | null> {
+    const [previous] = await this.db
+      .select({ appRowId: appPreviousIds.appRowId })
+      .from(appPreviousIds)
+      .where(
+        and(
+          eq(appPreviousIds.organizationId, organizationId),
+          eq(appPreviousIds.appSlug, appId),
+        ),
+      )
+      .limit(1);
+    if (!previous) return null;
+    return this.query(
+      and(
+        eq(apps.id, previous.appRowId),
+        eq(apps.organizationId, organizationId),
+      )!,
+    );
   }
 
   findByOrgApp(

@@ -831,16 +831,29 @@ const EventsSchema = z
   .strict();
 export type EventsPolicy = z.infer<typeof EventsSchema>;
 
+/** An app id: kebab-case, the app hostname's first DNS label. */
+const AppIdSchema = z
+  .string()
+  .min(1)
+  .regex(
+    /^[a-z]([a-z0-9-]*[a-z0-9])?$/,
+    "id must be kebab-case (lowercase, digits, hyphens)",
+  );
+
 /** The manifest's fields that take no lookup; {@link manifestSchemaStrict} adds the rest. */
 const MANIFEST_FIELDS = {
   /** Stable app id, kebab-case. Used in the app hostname's first DNS label. */
-  id: z
-    .string()
-    .min(1)
-    .regex(
-      /^[a-z]([a-z0-9-]*[a-z0-9])?$/,
-      "id must be kebab-case (lowercase, digits, hyphens)",
-    ),
+  id: AppIdSchema,
+  /**
+   * The ids the app was deployed under before (a rename,
+   * docs/design/2026-11-app-rename.md). A deploy whose `id` isn't registered
+   * yet while one of these is moves that app to `id`: its Worker,
+   * resources and Gateway state stay, and each listed id's hostname keeps
+   * answering (page loads redirect to the new host; bearer and non-GET
+   * requests are served there as before) until the id leaves this list.
+   * Default: none.
+   */
+  previousIds: z.array(AppIdSchema).optional(),
   name: z.string().min(1).optional(),
   description: z.string().optional(),
   /**
@@ -1715,6 +1728,32 @@ function assertBearerRoutesAreSafe(manifest: {
 }
 
 /**
+ * `previousIds` names other ids, each once, none the platform's: an id
+ * listed twice, or the app's own, would say nothing a rename can act on.
+ */
+function assertPreviousIds(manifest: EveryAppManifest): void {
+  const seen = new Set<string>();
+  for (const previous of manifest.previousIds ?? []) {
+    if (previous === manifest.id) {
+      throw new ManifestError(
+        `Invalid everyapp.config: previousIds: "${previous}" is the app's id; list only the ids it had before`,
+      );
+    }
+    if (seen.has(previous)) {
+      throw new ManifestError(
+        `Invalid everyapp.config: previousIds: "${previous}" is listed twice`,
+      );
+    }
+    if (isReservedAppId(previous)) {
+      throw new ManifestError(
+        `Invalid everyapp.config: previousIds: "${previous}" is reserved for the platform`,
+      );
+    }
+    seen.add(previous);
+  }
+}
+
+/**
  * Refuse a `publicAssets` pattern that is `/mcp`, under it, or covers it
  * (`/:page`): the host's `/mcp` is never a static file.
  */
@@ -1775,6 +1814,7 @@ export function validateManifestStrict(
       `Invalid everyapp.config: id "${manifest.id}" is reserved for the platform.`,
     );
   }
+  assertPreviousIds(manifest);
 
   for (const route of manifest.public ?? []) {
     assertPublicPathIsSafe(route.path);
@@ -2236,17 +2276,28 @@ export function registryWorkerNameFor({
  * Cloudflare account.
  */
 export function isRegistryWorkerName(
-  row: RegistryNaming & { workerName: string },
+  row: RegistryNaming & {
+    workerName: string;
+    /**
+     * The ids the app was registered under before a rename (the registry's
+     * `app_previous_ids`): a renamed app keeps the Worker its first id
+     * named, so the Worker may be the one any of them gives it.
+     */
+    previousAppIds?: readonly string[];
+  },
 ): boolean {
   if (
     isReservedName(row.workerName) ||
     row.workerName.length > MAX_WORKER_NAME_LENGTH ||
-    !row.orgKey ||
-    row.appId.includes(RESOURCE_SEPARATOR)
+    !row.orgKey
   ) {
     return false;
   }
-  return row.workerName === registryWorkerNameFor(row);
+  const appIds = [row.appId, ...(row.previousAppIds ?? [])];
+  if (appIds.some((appId) => appId.includes(RESOURCE_SEPARATOR))) return false;
+  return appIds.some(
+    (appId) => row.workerName === registryWorkerNameFor({ ...row, appId }),
+  );
 }
 
 /**

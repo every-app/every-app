@@ -2845,3 +2845,32 @@ describe("events (the app event sink)", () => {
     ).toThrow(/events is \{ subscribe/);
   });
 });
+
+describe("previousIds (a rename, docs/design/2026-11-app-rename.md)", () => {
+  it("takes the ids the app had before", () => {
+    expect(
+      validateManifestStrict({ id: "scribe", previousIds: ["talk", "chat"] })
+        .previousIds,
+    ).toEqual(["talk", "chat"]);
+    // A stored row keeps it too.
+    expect(
+      validateManifest({ id: "scribe", previousIds: ["talk"] }).previousIds,
+    ).toEqual(["talk"]);
+  });
+
+  it("refuses the app's own id, an id twice, a reserved one and a malformed one", () => {
+    for (const [previousIds, message] of [
+      [["scribe"], /is the app's id/],
+      [["talk", "talk"], /listed twice/],
+      [["everyapp"], /reserved for the platform/],
+      [["Talk"], /kebab-case/],
+    ] as const) {
+      expect(() =>
+        validateManifestStrict({ id: "scribe", previousIds }),
+      ).toThrow(message);
+    }
+    expect(() =>
+      validateManifestStrict({ id: "scribe", previousIds: ["talk"] }),
+    ).not.toThrow(ManifestError);
+  });
+});

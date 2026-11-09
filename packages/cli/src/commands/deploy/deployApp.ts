@@ -114,14 +114,25 @@ import { preflightAppHost } from "@/lib/domains/preflight";
 import { afterMigration, EveryAppError, type Rollback } from "@/lib/errors";
 import { directoryExists } from "@/lib/file-operations";
 import { connectToGateway } from "@/lib/gateway/connect";
+import type { InstallRecord } from "@/lib/gateway/install";
 import { acquireAppLease, LeasePurpose } from "@/lib/gateway/lease";
 import { gatewayRegistry, registerPresetProviders } from "@/lib/gateway/providers";
 import {
+  assertMayRenameShared,
   findRegisteredApp,
   installOrganization,
   markDeployed,
   readAppEmail,
+  type Deployer,
 } from "@/lib/gateway/registry";
+import {
+  describeRename,
+  finishMoves,
+  planRenameFor,
+  syncPreviousIds,
+  writeRename,
+} from "@/lib/gateway/rename";
+import type { PreviousIdRow, RenamePlan } from "@every-app/perimeter/registry";
 import {
   loadEveryAppManifest,
   migrationsDir,
@@ -139,7 +150,7 @@ import {
 import { appRestoreTarget } from "@/lib/gateway/restorePoints";
 import { CLI, thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
-import { canPromptInTerminal, type Confirm } from "@/lib/output/prompt";
+import { canPromptInTerminal, confirmUnlessYes, type Confirm } from "@/lib/output/prompt";
 import { listed } from "@/lib/output/text";
 import { installDependencies } from "@/lib/package-manager";
 import { warnSdkVersion } from "@/lib/app/sdkVersion";
@@ -190,6 +201,12 @@ interface DeployAppOptions {
    * key will go to, so an agent's habitual `--yes` must not approve it.
    */
   registerProviders?: boolean;
+  /**
+   * `--yes`: rename the app its `previousIds` names without asking
+   * (docs/design/2026-11-app-rename.md). Unattended without it, a rename
+   * stops with CONFIRMATION_REQUIRED before anything is written.
+   */
+  yes?: boolean;
   /**
    * With no Gateway in any account the login sees, offer to install one
    * (`deploy`): at a terminal setup's pipeline runs
@@ -359,6 +376,21 @@ async function deploySteps(
     });
     providers = await gatewayRegistry(registry, install);
   }
+  // A rename (`previousIds` names the app this one was): planned, shown and
+  // confirmed before anything is registered; written before the usual
+  // registration, which then finds the app under its new id.
+  const renamed = await renameIfAsked({
+    registry,
+    manifest,
+    install,
+    names,
+    deployer,
+    out,
+    interactive,
+    yes: options.yes,
+    confirm: options.confirm,
+    gatewayUrl,
+  });
   // A person's first line, before anything can stop the run: where this
   // goes, and whether the app has ever been live (a first deploy that
   // stopped part way is still the first).
@@ -476,6 +508,7 @@ async function deploySteps(
   let versionId: string;
   let status: string;
   let next: DeployAppResult["next"];
+  let previous: Awaited<ReturnType<typeof syncPreviousIds>>;
   try {
     const replace = {
       question: "Replace the version that's serving?",
@@ -623,6 +656,17 @@ async function deploySteps(
       source: release ? "release" : "cli",
       ...(secretNames ? { secretNames } : {}),
     });
+    // The previous ids the manifest still lists stay served; the rest retire.
+    previous = await syncPreviousIds(registry, plan.app.id, manifest.previousIds, Date.now());
+    if (previous.retire.length > 0) {
+      out.emit({
+        type: "step",
+        step: "app.rename",
+        status: "ok",
+        message: `${listed(previous.retire)} left previousIds, so ${listed(hostnamesOf(previous.rows, previous.retire))} ${previous.retire.length === 1 ? "is" : "are"} no longer served.`,
+        data: { retired: previous.retire, hostnames: hostnamesOf(previous.rows, previous.retire) },
+      });
+    }
     // What the app still needs set, once its upload is on record: a
     // warning with the one command, said again under Next. The Gateway
     // records the app's setup state when it next evaluates it.
@@ -630,6 +674,10 @@ async function deploySteps(
   } finally {
     await lease.release();
   }
+
+  // Hostnames the gateway publishes changed: the new one of a rename, or a
+  // previous one that retired or came back.
+  const hostsChanged = renamed !== null || previous.retire.length > 0 || previous.restore.length > 0;
 
   // 4. Bind and publish under the gateway's lease, then go live.
   await bindIfNeeded({
@@ -641,7 +689,7 @@ async function deploySteps(
     accountId,
     appId: manifest.id,
     workerName,
-    publishHost: newHost,
+    publishHost: newHost || hostsChanged,
     interactive,
     forceDns: options.forceDns,
     seams: { ...options.reconcile, openRelease: gateway.openRelease, source: gateway.source },
@@ -683,9 +731,22 @@ async function deploySteps(
           },
     );
   }
+  // A renamed app's previous hostnames redirect page loads once its
+  // hostname answers; until then they serve it in full.
+  await finishMoves({
+    db: registry,
+    appRowId: plan.app.id,
+    appId: manifest.id,
+    hostname,
+    rows: previous.rows,
+    wait,
+    out,
+    seams: options.live,
+  });
   // Behind Cloudflare Access, new or removed public routes are let through
-  // by `access on`'s recipe, run again here only when this deploy changed them.
-  if (publicSurfaceKey(plan.previousManifest) !== publicSurfaceKey(manifest)) {
+  // by `access on`'s recipe, run again here only when this deploy changed
+  // them or the hostnames they are served on.
+  if (hostsChanged || publicSurfaceKey(plan.previousManifest) !== publicSurfaceKey(manifest)) {
     await updateAccessIfOn(
       { cf, out, accountId, gatewayUrl, worker: names.worker, hosted: install.deploymentMode === "hosted" },
       { what: `${manifest.id}'s public routes`, data: { appId: manifest.id } },
@@ -712,6 +773,94 @@ async function deploySteps(
     publicRoutes,
     next,
   };
+}
+
+/** The hostnames of the previous ids named, in their order. */
+function hostnamesOf(rows: readonly PreviousIdRow[], ids: readonly string[]): string[] {
+  return ids.map((id) => {
+    const host = rows.find((row) => row.appSlug === id)?.hostname;
+    return host ? `https://${host}` : id;
+  });
+}
+
+/**
+ * Rename the app `previousIds` names to the manifest's id, when that's what
+ * this deploy is (lib/gateway/rename.ts decides, and refuses what isn't a
+ * rename of exactly one app): show what moves, ask (`--yes` answers
+ * for CI), then write it. Null when it's no rename.
+ */
+async function renameIfAsked({
+  registry,
+  manifest,
+  install,
+  names,
+  deployer,
+  out,
+  interactive,
+  yes,
+  confirm,
+  gatewayUrl,
+}: {
+  registry: D1Database;
+  manifest: EveryAppCliManifest;
+  install: Pick<InstallRecord, "appBaseDomain">;
+  names: GatewayNames;
+  deployer: Deployer;
+  out: EventSink;
+  interactive: boolean;
+  yes?: boolean;
+  confirm?: Confirm;
+  gatewayUrl: string;
+}): Promise<RenamePlan | null> {
+  const planned = await planRenameFor(registry, {
+    manifest,
+    appBaseDomain: install.appBaseDomain,
+    gatewayName: names.name,
+  });
+  if (!planned) return null;
+  const { plan, organization } = planned;
+  const { from } = plan;
+  if (plan.app.scope === "shared") await assertMayRenameShared(registry, deployer, organization);
+  const lines = describeRename(plan, plan.app.workerName!);
+  const data = {
+    from: from.appSlug,
+    to: plan.app.appSlug,
+    fromHostname: from.hostname,
+    hostname: plan.app.hostname,
+    workerName: plan.app.workerName,
+    resources: plan.resources,
+    gatewayUrl,
+  };
+  out.emit({
+    type: "step",
+    step: "app.rename",
+    status: "start",
+    message: `${manifest.id} lists ${from.appSlug} under previousIds: this deploy renames ${from.appSlug} to ${manifest.id}
+  ${lines.join("\n  ")}`,
+    data,
+  });
+  await confirmUnlessYes({
+    yes,
+    interactive,
+    confirm,
+    question: `Rename ${from.appSlug} to ${manifest.id}?`,
+    context: [
+      `${manifest.id} lists ${from.appSlug} under previousIds, so this deploy renames ${from.appSlug} on ${gatewayUrl.replace(/^https:\/\//, "")}:`,
+      ...lines.map((line) => `  ${line}`),
+    ],
+    unattended: `This deploy renames ${from.appSlug} to ${manifest.id} on ${gatewayUrl.replace(/^https:\/\//, "")}, which takes a yes\nIts hostname becomes ${plan.app.hostname}; ${from.hostname} keeps working. Nothing was renamed or deployed.`,
+    cancelled: "Nothing was renamed or deployed.",
+    data,
+  });
+  await writeRename(registry, plan, Date.now());
+  out.emit({
+    type: "step",
+    step: "app.rename",
+    status: "ok",
+    message: `Renamed ${from.appSlug} to ${manifest.id}: https://${plan.app.hostname}, with https://${from.hostname} serving it until the new hostname answers.`,
+    data,
+  });
+  return plan;
 }
 
 /**

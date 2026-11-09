@@ -403,7 +403,7 @@ async function resolveAppBoundCaller(
  * tokenExchangeCallback): by its props' kind, the MCP connection with its
  * scope, the dev connection (its owner or admin, the switch, the app still
  * active and the audience's), or the native connection, which must also still be the audience's
- * app (the resource list dropped a deleted app's origin, so a refresh
+ * app (its hostname, or a previous one it is still served on) (the resource list dropped a deleted app's origin, so a refresh
  * naming it is `invalid_target` before this; a grant for an app whose row
  * changed hands is refused here). Throws when D1 can't say.
  */
@@ -426,11 +426,11 @@ export async function grantStands(
   if (isNativeGrantProps(props)) {
     const caller = await resolveNativeCaller(props);
     if (!caller) return false;
-    const app = await McpConnectionRepository.findAppResource(
+    const resources = await McpConnectionRepository.findAppResources(
       caller.appRowId,
       new URL(audience).protocol as "https:" | "http:",
     );
-    return app !== null && app === audience;
+    return resources.includes(audience);
   }
   const caller = await resolveOauthCaller(props, scope);
   return caller !== null && caller !== "insufficient_scope";

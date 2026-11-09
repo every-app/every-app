@@ -55,6 +55,8 @@ The directory for the new app exists. Pick another name or move it away.
 The app is switched off in Admin → Apps; the Gateway serves it once turned on.
 ### APP_HOST_OUTSIDE_BASE
 The app's hostname isn't one label below the app base domain, so it isn't published.
+### APP_ID_RENAMED
+That id is a previous id of an app that was renamed, and stays that app's (its Worker is named after it). Pick another id, or list it under `previousIds` in the renamed app's config. [Renaming an app](/docs/agent/deploy#renaming-an-app)
 ### APP_ID_REQUIRED
 `create` got no name and can't ask (`--json`, `--yes` or no terminal). Run `everyapp create <name>`.
 ### APP_NEEDS_SETUP
@@ -357,6 +359,8 @@ The member is deactivated. `everyapp workspace reactivate <email>` first.
 `configure` reads `NAME=value` lines on stdin, one per line. A bare value goes to `everyapp secret set NAME`.
 ### POSTGRES_URL_MISSING
 A Postgres app needs `POSTGRES_DATABASE_URL` in `.everyapp/secrets.env`.
+### PREVIOUS_ID_UNKNOWN
+`previousIds` names an id no app on this Gateway has (or had), so the deploy can't tell which app to rename and creates none. Fix the id, or remove `previousIds` to deploy a new app. [Renaming an app](/docs/agent/deploy#renaming-an-app)
 ### PRISMA_MISSING
 A Prisma app needs `prisma` in its devDependencies.
 ### PROVIDER_APP_UNKNOWN
@@ -437,6 +441,16 @@ The server didn't answer the probe from this machine; the app was added anyway.
 The tool isn't in the server's last listing; the override is kept for when it appears.
 ### REMOTE_MCP_URL_REFUSED
 The Gateway won't fetch that MCP URL: it must be public `https://`, not an IP, not on this Gateway, and not a provider's host unless `--provider` names that provider.
+### RENAME_AMBIGUOUS
+`previousIds` names more than one app on this Gateway; a rename moves one. List only the ids of the app being renamed.
+### RENAME_CONFLICT
+The app changed (another deploy or a delete) while it was being renamed; nothing was renamed. Run the deploy again.
+### RENAME_NOT_MOVED
+The new hostname didn't answer during this run, so the old hostname still serves the app in full instead of redirecting. Nothing is broken; deploy again once the new hostname answers to finish the move.
+### RENAME_TARGET_EXISTS
+The new id is already an app on this Gateway (or a deleted one's, or another app's previous id); two apps can't be merged. Rename to another id, or drop the other app from `previousIds`.
+### RENAME_UNSUPPORTED
+That app can't be renamed this way: it is deployed through the hosted deploy API (its Worker must carry its id), or the rename would change nothing.
 ### REPEATED_FLAG
 A flag was given twice (exit 252).
 ### RESERVED_APP_ID

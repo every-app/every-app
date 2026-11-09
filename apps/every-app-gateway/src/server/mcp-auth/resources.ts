@@ -14,10 +14,10 @@
  * Dispatch-tier apps on third-party hosts are not resources (B8: their own
  * session model); neither are provider (MCP) apps, which have no host.
  */
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { logEvent } from "@every-app/perimeter";
 import { db } from "@/db";
-import { apps, orgSettings } from "@/db/schema";
+import { appPreviousIds, apps, orgSettings } from "@/db/schema";
 
 /** How long a list is trusted before the registry is read again. */
 const RESOURCES_TTL_MS = 60_000;
@@ -159,18 +159,27 @@ async function readDevResources(issuer: string): Promise<string[]> {
   ].sort();
 }
 
-/** The origins of every active first-party app host, from the registry. */
+/**
+ * The origins of every active first-party app host, from the registry: each
+ * app's hostname, and the previous hostnames of renamed apps while they are
+ * served (docs/design/2026-11-app-rename.md), so a native client signed in
+ * on the old host keeps its token, and one that finds the old host signs in
+ * there.
+ */
 async function readAppResources(scheme: ResourceScheme): Promise<string[]> {
-  const rows = await db
-    .select({ hostname: apps.hostname })
-    .from(apps)
-    .where(
-      and(
-        eq(apps.status, "active"),
-        eq(apps.tier, "service_binding"),
-        isNotNull(apps.hostname),
-      ),
-    );
+  const live = and(eq(apps.status, "active"), eq(apps.tier, "service_binding"));
+  const [current, previous] = await Promise.all([
+    db
+      .select({ hostname: apps.hostname })
+      .from(apps)
+      .where(and(live, isNotNull(apps.hostname))),
+    db
+      .select({ hostname: appPreviousIds.hostname })
+      .from(appPreviousIds)
+      .innerJoin(apps, eq(apps.id, appPreviousIds.appRowId))
+      .where(and(live, isNull(appPreviousIds.retiredAt))),
+  ]);
+  const rows = [...current, ...previous];
   const dropped = rows.filter(
     (row) => !isResourceHostname(row.hostname!, scheme),
   );

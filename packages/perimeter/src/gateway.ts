@@ -302,6 +302,35 @@ function protectedResourceMetadata(
   );
 }
 
+/**
+ * A request on a renamed app's previous hostname that moves to its new one
+ * (docs/design/2026-11-app-rename.md): a GET or HEAD carrying no bearer
+ * and opening no WebSocket, so a page load, a shared link or a bookmark,
+ * gets a 308 to the same path and query there. Null for everything else,
+ * served on the previous host as on the new: a client follows a redirect
+ * across hosts without its Authorization header, and a webhook may not
+ * follow one at all. Never cached (`no-store`): renaming the app back
+ * must not leave browsers bouncing between the two.
+ */
+function movedRedirect(
+  request: Request,
+  url: URL,
+  movedTo: string,
+): Response | null {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+  if (hasBearerCredential(request.headers)) return null;
+  if (isWebSocketUpgrade(request.headers)) return null;
+  return withSecurityHeaders(
+    new Response(null, {
+      status: 308,
+      headers: {
+        location: `${url.protocol}//${movedTo}${url.pathname}${url.search}`,
+        "cache-control": "no-store",
+      },
+    }),
+  );
+}
+
 function wantsHtml(request: Request): boolean {
   return (request.headers.get("accept") ?? "").includes("text/html");
 }
@@ -445,6 +474,19 @@ export async function handleGatewayRequest(
     isProtectedResourceMetadataPath(url.pathname)
   ) {
     return protectedResourceMetadata(deps.authorizationServer, app);
+  }
+  // A previous hostname of a renamed app: page loads move to the new host;
+  // the rest is served here as before (see movedRedirect).
+  if (app.movedTo) {
+    const moved = movedRedirect(request, url, app.movedTo);
+    if (moved) {
+      logEvent("proxy.moved", {
+        app: app.appId,
+        from: app.hostname,
+        to: app.movedTo,
+      });
+      return moved;
+    }
   }
   // Decided once, here: the setup gate needs it before the auth logic does.
   // A bearer route is served to a bearer alone, so it is never public and

@@ -320,7 +320,7 @@ async function registerApp(
     input.organizationName,
     now,
   );
-  const [, keys = [], existing = [], members = [], deployers = []] =
+  const [, keys = [], existing = [], previousIds = [], previousIdOwners = [], members = [], deployers = []] =
     await db.run([
       claimOrgKey(organization.id, organization.slug),
       {
@@ -329,6 +329,16 @@ async function registerApp(
       },
       {
         sql: `SELECT ${APP_COLUMNS} FROM apps WHERE organization_id = ? AND app_slug = ?`,
+        params: [organization.id, input.appSlug],
+      },
+      // A renamed app's Worker carries an id it had; a new app can't take one.
+      {
+        sql: `SELECT app_slug FROM app_previous_ids
+WHERE app_row_id = (SELECT id FROM apps WHERE organization_id = ?1 AND app_slug = ?2)`,
+        params: [organization.id, input.appSlug],
+      },
+      {
+        sql: "SELECT organization_id, app_slug, app_row_id, hostname, renamed_at FROM app_previous_ids WHERE organization_id = ? AND app_slug = ?",
         params: [organization.id, input.appSlug],
       },
       ...memberQueries(organization.id, input.deployer.email),
@@ -342,6 +352,18 @@ async function registerApp(
     });
   }
   const existingApp = existing[0] ? toAppRow(existing[0]) : null;
+  const previousAppIds = previousIds.map((row) => String(row["app_slug"]));
+  const previousIdOwner = previousIdOwners[0]
+    ? {
+        organizationId: String(previousIdOwners[0]["organization_id"]),
+        appSlug: String(previousIdOwners[0]["app_slug"]),
+        appRowId: String(previousIdOwners[0]["app_row_id"]),
+        hostname: String(previousIdOwners[0]["hostname"]),
+        renamedAt: Number(previousIdOwners[0]["renamed_at"]),
+        movedAt: null,
+        retiredAt: null,
+      }
+    : null;
   const names = appNames({
     appSlug: input.appSlug,
     orgKey,
@@ -349,6 +371,7 @@ async function registerApp(
     appBaseDomain: input.appBaseDomain,
     existingApp,
     gatewayName: input.gatewayName ?? null,
+    previousAppIds,
   });
   const [hostnameOwners = [], workerNameOwners = []] = await db.run([
     {
@@ -376,6 +399,8 @@ async function registerApp(
     existingApp,
     hostnameOwner: toNameOwner(hostnameOwners[0]),
     workerNameOwner: toNameOwner(workerNameOwners[0]),
+    previousAppIds,
+    previousIdOwner,
   });
   // The scope the plan resolved: a redeploy that didn't ask keeps the row's.
   if (plan.app.scope === "shared") {
@@ -456,6 +481,16 @@ enum SharedAppAction {
   Register = "register",
   Delete = "delete",
   ChangeEmail = "change the email of",
+  Rename = "rename",
+}
+
+/** Only the platform organization's owners and admins rename a shared app, as they deploy one. */
+export function assertMayRenameShared(
+  db: D1Database,
+  deployer: Deployer,
+  organization: Organization,
+): Promise<void> {
+  return assertPlatformAdminIn(db, deployer, organization, SharedAppAction.Rename);
 }
 
 /** What a registration writes, in one batch. */
@@ -525,9 +560,9 @@ WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
  * configuration (`email_senders`, `email_inbound`), its recorded secret
  * names, everyone's access to it (direct and through groups), the personal
  * access tokens bound to it (revoked), its agent tools snapshot, its place
- * in AI connections, and every organization's settings on it (a monthly
- * cap). The same writes as the gateway's own delete
- * (AppRepository.tombstone).
+ * in AI connections, every organization's settings on it (a monthly
+ * cap), and the serving of its previous hostnames (a renamed app's). The
+ * same writes as the gateway's own delete (AppRepository.tombstone).
  */
 export function withoutAppData(
   app: Pick<AppRow, "id" | "organizationId">,
@@ -567,6 +602,11 @@ WHERE app_row_id = ?2 AND organization_id = ?3 AND revoked_at IS NULL`,
     {
       sql: "DELETE FROM org_app_settings WHERE app_row_id = ?",
       params: [app.id],
+    },
+    // A renamed app's previous hostnames stop being served; the ids stay its own.
+    {
+      sql: "UPDATE app_previous_ids SET retired_at = ?1 WHERE app_row_id = ?2 AND organization_id = ?3 AND retired_at IS NULL",
+      params: [now, ...scoped],
     },
   ];
 }

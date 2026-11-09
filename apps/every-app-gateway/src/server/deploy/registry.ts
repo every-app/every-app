@@ -23,7 +23,12 @@ import {
   type RegistrationPlan,
 } from "@every-app/perimeter/registry";
 import { db } from "@/db";
-import { apps, organizationKeys, organizations } from "@/db/schema";
+import {
+  appPreviousIds,
+  apps,
+  organizationKeys,
+  organizations,
+} from "@/db/schema";
 import { installOrganizationId } from "./gateway-app-installs";
 import { DeployError } from "./errors";
 
@@ -198,6 +203,35 @@ async function register(
   const orgKey = await orgKeyFor(organizationId);
   const stored = await findOrgApp(organizationId, appSlug);
   const existingApp = stored ? toAppRow(stored) : null;
+  // A rename (`previousIds`, docs/design/2026-11-app-rename.md) is
+  // `everyapp deploy`'s or `everyapp install`'s, which show what moves and
+  // ask first: here a manifest naming previous ids for an app that isn't
+  // registered yet is refused, never deployed as a new app.
+  const listed = (input.manifest as { previousIds?: unknown } | null)
+    ?.previousIds;
+  if (!existingApp && Array.isArray(listed) && listed.length > 0) {
+    throw new DeployError(
+      "RENAME_UNSUPPORTED",
+      409,
+      `"${appSlug}" lists previousIds, which renames an app; rename it with everyapp deploy or everyapp install, then install it here.`,
+    );
+  }
+  const previousIds = await db
+    .select({
+      organizationId: appPreviousIds.organizationId,
+      appSlug: appPreviousIds.appSlug,
+      appRowId: appPreviousIds.appRowId,
+      hostname: appPreviousIds.hostname,
+    })
+    .from(appPreviousIds)
+    .where(eq(appPreviousIds.organizationId, organizationId));
+  // A renamed app's Worker carries an id it had; a new app can't take one.
+  const previousAppIds = existingApp
+    ? previousIds
+        .filter((row) => row.appRowId === existingApp.id)
+        .map((row) => row.appSlug)
+    : [];
+  const previousIdOwner = previousIds.find((row) => row.appSlug === appSlug);
   const names = appNames({
     appSlug,
     orgKey,
@@ -206,6 +240,7 @@ async function register(
     appBaseDomain: domain ?? NO_DOMAIN,
     existingApp,
     gatewayName: input.gatewayName ?? null,
+    previousAppIds,
   });
   const owner = async (
     column: typeof apps.hostname | typeof apps.workerName,
@@ -229,6 +264,10 @@ async function register(
     existingApp,
     hostnameOwner: domain ? await owner(apps.hostname, names.hostname) : null,
     workerNameOwner: await owner(apps.workerName, names.workerName),
+    previousAppIds,
+    previousIdOwner: previousIdOwner
+      ? { ...previousIdOwner, renamedAt: 0, movedAt: null, retiredAt: null }
+      : null,
   });
   const hostname = domain ? plan.app.hostname : (existingApp?.hostname ?? null);
   const app = { ...plan.app, hostname };

@@ -2994,3 +2994,115 @@ describe("Sign in with Every App on app hosts", () => {
     });
   });
 });
+
+describe("a renamed app's previous hostname (docs/design/2026-11-app-rename.md)", () => {
+  const SCRIBE: RegisteredApp = {
+    ...TODO,
+    appId: "scribe",
+    hostname: "scribe.example.com",
+    manifest: validateManifest({
+      id: "scribe",
+      public: [{ path: "/s/:token" }, { path: "/api/v1/**", bearer: true }],
+    }),
+  };
+  function renamedDeps(
+    moved: boolean,
+    over: Partial<GatewayDeps> = {},
+  ): GatewayDeps {
+    const registry = new InMemoryAppRegistry([SCRIBE]);
+    registry.addPreviousHostname("talk.example.com", SCRIBE);
+    return deps({
+      registry,
+      // A previous id's hostname before its move serves the app in full.
+      resolveApp: async (host, reg) => {
+        const app = await reg.findByHostname(host.host);
+        if (!app || moved) return app;
+        const { movedTo: _movedTo, ...served } = app;
+        return served;
+      },
+      ...over,
+    });
+  }
+  const onTalk = (path: string, init: RequestInit = {}) =>
+    req(path, { ...init, host: "talk.example.com" });
+
+  it("redirects page loads and shared links to the new host, path and query kept", async () => {
+    for (const [path, init] of [
+      ["/notes/1?tab=summary", {}],
+      ["/s/abc123", {}],
+      ["/", { method: "HEAD" }],
+      ["/notes", { headers: { accept: "text/html", cookie: "x=1" } }],
+    ] as const) {
+      const res = await handleGatewayRequest(
+        onTalk(path, init),
+        renamedDeps(true),
+      );
+      expect(res.status).toBe(308);
+      expect(res.headers.get("location")).toBe(
+        `https://scribe.example.com${path}`,
+      );
+      expect(res.headers.get("cache-control")).toBe("no-store");
+      expectSecurityHeaders(res);
+    }
+  });
+
+  it("serves bearer calls, other methods and WebSockets on the old host", async () => {
+    const pat = deps().authenticator;
+    const bearer = await handleGatewayRequest(
+      onTalk("/api/v1/notes", {
+        headers: { authorization: "Bearer epat_abc" },
+      }),
+      renamedDeps(true, {
+        authenticator: { ...pat, authenticate: async () => PAT_SESSION },
+      }),
+    );
+    expect(bearer.status).toBe(200);
+    const body = (await bearer.json()) as { url: string; identity: string };
+    expect(body.url).toBe("https://talk.example.com/api/v1/notes");
+    expect(body.identity).toBeTruthy();
+
+    const post = await handleGatewayRequest(
+      onTalk("/notes", {
+        method: "POST",
+        headers: { origin: "https://talk.example.com" },
+      }),
+      renamedDeps(true),
+    );
+    expect(post.status).toBe(200);
+
+    const socket = await handleGatewayRequest(
+      onTalk("/ws", {
+        headers: { upgrade: "websocket", origin: "https://talk.example.com" },
+      }),
+      renamedDeps(true),
+    );
+    expect(socket.status).not.toBe(308);
+  });
+
+  it("serves everything on the old host until the new one has answered", async () => {
+    const res = await handleGatewayRequest(
+      onTalk("/notes"),
+      renamedDeps(false),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("names the old host as the resource there, so a native client signed in on it keeps working", async () => {
+    const res = await handleGatewayRequest(
+      onTalk("/.well-known/oauth-protected-resource"),
+      renamedDeps(true, { authorizationServer: "https://home.example.com" }),
+    );
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      resource: "https://talk.example.com",
+    });
+  });
+
+  it("answers the app's own host as before", async () => {
+    const res = await handleGatewayRequest(
+      req("/notes", { host: "scribe.example.com" }),
+      renamedDeps(true),
+    );
+    expect(res.status).toBe(200);
+  });
+});

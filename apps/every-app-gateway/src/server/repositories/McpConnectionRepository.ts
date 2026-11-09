@@ -13,6 +13,7 @@ import {
 } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  appPreviousIds,
   apps,
   appToolCatalogs,
   mcpConnectionApps,
@@ -335,53 +336,75 @@ async function findActiveAppsBySlug(slug: string) {
 }
 
 /**
- * The resource (origin on `scheme`) of an active first-party app row, or
- * null when the row is gone, not active, or not a first-party host.
+ * The resources (origins on `scheme`) of an active first-party app row: its
+ * hostname's, and those of its previous hostnames while they are served (a
+ * renamed app, docs/design/2026-11-app-rename.md). Empty when the row is
+ * gone, not active, or not a first-party host.
  */
-async function findAppResource(
+async function findAppResources(
   appRowId: string,
   scheme: "https:" | "http:",
-): Promise<string | null> {
-  const [row] = await db
-    .select({ hostname: apps.hostname })
-    .from(apps)
-    .where(
-      and(
-        eq(apps.id, appRowId),
-        eq(apps.status, "active"),
-        eq(apps.tier, "service_binding"),
-        isNotNull(apps.hostname),
-      ),
-    )
-    .limit(1);
-  return row?.hostname ? `${scheme}//${row.hostname.toLowerCase()}` : null;
+): Promise<string[]> {
+  const live = and(
+    eq(apps.id, appRowId),
+    eq(apps.status, "active"),
+    eq(apps.tier, "service_binding"),
+  );
+  const [current, previous] = await Promise.all([
+    db
+      .select({ hostname: apps.hostname })
+      .from(apps)
+      .where(and(live, isNotNull(apps.hostname)))
+      .limit(1),
+    db
+      .select({ hostname: appPreviousIds.hostname })
+      .from(appPreviousIds)
+      .innerJoin(apps, eq(apps.id, appPreviousIds.appRowId))
+      .where(and(live, isNull(appPreviousIds.retiredAt))),
+  ]);
+  if (!current[0]?.hostname) return [];
+  return [current[0].hostname, ...previous.map((row) => row.hostname)].map(
+    (hostname) => `${scheme}//${hostname.toLowerCase()}`,
+  );
 }
 
 /**
  * The active first-party app serving `hostname` (the one a native grant's
  * resource names), with what the consent page shows and records; null for
- * an unknown, inactive or third-party host.
+ * an unknown, inactive or third-party host. A renamed app's previous
+ * hostname, while it is served, is the app's (docs/design/2026-11-app-rename.md),
+ * with `hostname` the previous one: the grant is for the host the client
+ * named.
  */
 async function findActiveAppByHostname(hostname: string) {
+  const columns = {
+    rowId: apps.id,
+    organizationId: apps.organizationId,
+    appSlug: apps.appSlug,
+    name: apps.name,
+    hostname: apps.hostname,
+    scope: apps.scope,
+  };
+  const live = and(eq(apps.status, "active"), eq(apps.tier, "service_binding"));
   const [row] = await db
-    .select({
-      rowId: apps.id,
-      organizationId: apps.organizationId,
-      appSlug: apps.appSlug,
-      name: apps.name,
-      hostname: apps.hostname,
-      scope: apps.scope,
-    })
+    .select(columns)
     .from(apps)
+    .where(and(eq(apps.hostname, hostname), live))
+    .limit(1);
+  if (row) return row;
+  const [moved] = await db
+    .select(columns)
+    .from(appPreviousIds)
+    .innerJoin(apps, eq(apps.id, appPreviousIds.appRowId))
     .where(
       and(
-        eq(apps.hostname, hostname),
-        eq(apps.status, "active"),
-        eq(apps.tier, "service_binding"),
+        eq(appPreviousIds.hostname, hostname),
+        isNull(appPreviousIds.retiredAt),
+        live,
       ),
     )
     .limit(1);
-  return row ?? null;
+  return moved ? { ...moved, hostname } : null;
 }
 
 /**
@@ -706,7 +729,7 @@ export const McpConnectionRepository = {
   findActiveAppRow,
   findActiveAppsBySlug,
   findConnectionApp,
-  findAppResource,
+  findAppResources,
   findActiveAppByHostname,
   touchLastUsed,
   listActiveForUser,

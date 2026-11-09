@@ -271,10 +271,20 @@ export async function handleAppGatewayRequest({
 }: HandleAppGatewayRequestOptions): Promise<Response> {
   try {
     const policy = platformPolicy(env);
-    const props = parseCallerProps(rawProps);
+    let props = parseCallerProps(rawProps);
     let app: RegisteredApp | null;
     try {
       app = await resolveCallerApp(registry, props);
+      // A Worker uploaded before its app was renamed names the old id
+      // until its next upload: the same Worker, so the same app, under
+      // the id it has now (docs/design/2026-11-app-rename.md).
+      if (
+        app &&
+        app.appId !== props.appId &&
+        app.workerName === props.workerName
+      ) {
+        props = { ...props, appId: app.appId };
+      }
     } catch (error) {
       console.error("App gateway registry lookup failed", {
         event: "ai.proxy.registry.failed",
@@ -727,7 +737,13 @@ async function resolveCallerApp(
   if (cached && cached.expiresAt > now) return cached.app;
   if (cached) callerCache.delete(key);
 
-  const app = await registry.findByOrgApp(props.organizationId, props.appId);
+  const app =
+    (await registry.findByOrgApp(props.organizationId, props.appId)) ??
+    (await registry.findByOrgPreviousApp?.(
+      props.organizationId,
+      props.appId,
+    )) ??
+    null;
   callerCache.set(key, {
     app,
     expiresAt: now + (app ? CALLER_CACHE_HIT_TTL_MS : CALLER_CACHE_MISS_TTL_MS),

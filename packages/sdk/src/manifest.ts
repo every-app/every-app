@@ -215,6 +215,13 @@ export interface EveryAppFeature {
 export interface EveryAppManifest {
   /** Stable id, kebab-case: the app's hostname and Worker. */
   readonly id: string;
+  /**
+   * The ids the app had before, to rename it: change `id` and list the old
+   * one here. The deploy moves the registered app to the new id, keeping
+   * its Worker, data and Gateway state, and the old hostname keeps working
+   * until its id leaves this list.
+   */
+  readonly previousIds?: readonly string[];
   readonly name?: string;
   /** The one line the Gateway's app library shows under the name. */
   readonly description?: string;

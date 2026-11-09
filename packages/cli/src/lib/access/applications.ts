@@ -80,10 +80,17 @@ export const scopeOf = (install: InstallRecord): AccessScope => ({
  * manifest won't parse, has no public surface.
  */
 export async function readPublicSurfaces(db: D1Database): Promise<AppPublicSurface[]> {
+  const served = `status IN (${SERVED_STATUSES.map((status) => `'${status}'`).join(", ")})`;
+  // A renamed app's served previous hostnames take its routes too: a shared
+  // link or a bearer API call there is served as on its hostname now.
   const [rows = []] = await db.run([
     {
       sql: `SELECT app_slug, hostname, manifest FROM apps
-WHERE status IN (${SERVED_STATUSES.map((status) => `'${status}'`).join(", ")}) AND hostname IS NOT NULL
+WHERE ${served} AND hostname IS NOT NULL
+UNION ALL
+SELECT apps.app_slug, app_previous_ids.hostname, apps.manifest FROM app_previous_ids
+JOIN apps ON apps.id = app_previous_ids.app_row_id
+WHERE apps.${served} AND app_previous_ids.retired_at IS NULL
 ORDER BY hostname`,
     },
   ]);

@@ -1,5 +1,6 @@
 import { db } from "@/db";
 import {
+  appPreviousIds,
   apps,
   appToolCatalogs,
   appTools,
@@ -267,6 +268,18 @@ async function tombstone(
       .update(apps)
       .set({ ...update, updatedAt: now })
       .where(and(eq(apps.id, id), eq(apps.organizationId, organizationId))),
+    // A renamed app's previous hostnames stop being served (they stay
+    // reserved to it, as its own do), and a revived app doesn't bring them back.
+    db
+      .update(appPreviousIds)
+      .set({ retiredAt: now })
+      .where(
+        and(
+          eq(appPreviousIds.appRowId, id),
+          eq(appPreviousIds.organizationId, organizationId),
+          isNull(appPreviousIds.retiredAt),
+        ),
+      ),
     db
       .delete(userAppAccess)
       .where(

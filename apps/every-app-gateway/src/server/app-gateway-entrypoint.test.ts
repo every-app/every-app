@@ -184,6 +184,27 @@ describe("AppGateway caller authorization", () => {
     );
   });
 
+  it("takes a Worker uploaded before its app's rename, under the id it has now", async () => {
+    // chef was renamed to cook; its Worker still names chef until its next upload.
+    const cook = app({ appId: "cook", hostname: "cook.example.com" });
+    const renamed = Object.assign(new InMemoryAppRegistry([cook]), {
+      findByOrgPreviousApp: async (organizationId: string, appId: string) =>
+        organizationId === "org-1" && appId === "chef" ? cook : null,
+    });
+    const response = await call({ registry: renamed });
+    expect(response.status).toBe(200);
+
+    // Another Worker naming the old id is still no one.
+    await expectError(
+      call({
+        registry: renamed,
+        props: { ...PROPS, workerName: "every-impostor" },
+      }),
+      403,
+      "caller_identity_mismatch",
+    );
+  });
+
   it("rejects a worker name that does not match registration", async () => {
     await expectError(
       call({ props: { ...PROPS, workerName: "every-impostor" } }),

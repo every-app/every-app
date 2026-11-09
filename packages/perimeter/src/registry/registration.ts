@@ -14,7 +14,10 @@
  * its D1, KV and R2 resources after it (`every-<orgKey>-<appId>--<binding>`), and
  * the hostname, `<appId>.<base>` for the install's own organization and
  * `<appId>-<orgKey>.<base>` for any other. Deleted apps keep their row (a
- * tombstone), so their names stay taken. A `shared` app (a first-party app
+ * tombstone), so their names stay taken. A rename ({@link planRename})
+ * changes an app's id and hostname and nothing else: its row, Worker and
+ * resources stay, and the old id and hostname are recorded as a previous
+ * id (`app_previous_ids`), whose hostname is served until it is retired. A `shared` app (a first-party app
  * every organization's members may open, on the hosted gateway) is only
  * ever the install organization's, the platform organization there, and
  * keeps its scope for good.
@@ -104,7 +107,10 @@ export type RegistrationErrorCode =
   | "REMOTE_MCP_INVALID"
   | "REMOTE_MCP_URL_REFUSED"
   | "REMOTE_MCP_EXISTS"
-  | "REMOTE_MCP_PROVIDER_HOST";
+  | "REMOTE_MCP_PROVIDER_HOST"
+  | "APP_ID_RENAMED"
+  | "RENAME_TARGET_EXISTS"
+  | "RENAME_UNSUPPORTED";
 
 /** A registration the rules refuse, with the HTTP status a server answers. */
 export class RegistrationError extends Error {
@@ -184,6 +190,11 @@ export interface AppNamesInput {
    * one Cloudflare account never share a Worker or a resource.
    */
   gatewayName?: string | null;
+  /**
+   * The ids the existing app had before a rename (its `app_previous_ids`
+   * rows, retired ones included): its Worker is named after the first.
+   */
+  previousAppIds?: readonly string[];
 }
 
 /**
@@ -227,7 +238,13 @@ export function appNames(input: AppNamesInput): {
     }.${base}`;
 
   if (
-    !isRegistryWorkerName({ appId: appSlug, orgKey, workerName, gatewayName })
+    !isRegistryWorkerName({
+      appId: appSlug,
+      orgKey,
+      workerName,
+      gatewayName,
+      previousAppIds: input.previousAppIds,
+    })
   ) {
     throw new RegistrationError({
       status: 400,
@@ -387,6 +404,14 @@ export interface RegistrationInput {
   workerNameOwner: AppNameOwner | null;
   /** The Gateway's name (manifest/gatewayNames.ts): null or absent for the default Gateway. */
   gatewayName?: string | null;
+  /** The existing app's previous ids, retired ones included (see {@link AppNamesInput}). */
+  previousAppIds?: readonly string[];
+  /**
+   * The organization's previous-id row for this app id: set when the id
+   * was another app's before it was renamed. A new app can't take it (the
+   * renamed app's Worker is still named after it).
+   */
+  previousIdOwner?: PreviousIdRow | null;
 }
 
 export interface RegistrationPlan {
@@ -473,6 +498,16 @@ export function planRegistration(input: RegistrationInput): RegistrationPlan {
           : existingApp.tier === "dispatch"
             ? `App "${input.appSlug}" is deployed through the hosted deploy API; deploy it the same way, or give this app an id of its own.`
             : `App "${input.appSlug}" is reached over a service binding, not deployed through the hosted deploy API; give the third-party app an id of its own.`,
+    });
+  }
+  if (
+    input.previousIdOwner &&
+    input.previousIdOwner.appRowId !== existingApp?.id
+  ) {
+    throw new RegistrationError({
+      status: 409,
+      code: "APP_ID_RENAMED",
+      message: `"${input.appSlug}" is a previous id of another app on this gateway (it was renamed), and stays that app's: its Worker is still named after it. Choose another id, or list "${input.appSlug}" under previousIds in the renamed app's everyapp.config.ts.`,
     });
   }
   // Reserved and malformed ids first, as appNames would refuse them.
@@ -647,5 +682,222 @@ export function deleteUpdate(app: Pick<AppRow, "status">): {
     emailSenders: null,
     emailInbound: null,
     secretNames: null,
+  };
+}
+
+/**
+ * An `app_previous_ids` row: an id (and its hostname) a registered app had
+ * before a rename. The id stays the app's for good: its Worker, and every
+ * resource named after it, still carry it. The hostname is served (page
+ * loads redirect to the app's hostname now, once that answers) until the
+ * row is retired, which a deploy does when the id leaves the manifest's
+ * `previousIds`.
+ */
+export interface PreviousIdRow {
+  organizationId: string;
+  /** The previous id. */
+  appSlug: string;
+  appRowId: string;
+  /** The hostname the app had under that id (unique across the gateway). */
+  hostname: string;
+  /** Epoch milliseconds. */
+  renamedAt: number;
+  /**
+   * Epoch milliseconds: when the app's new hostname first answered, from
+   * which page loads here redirect there. Null until then: the previous
+   * hostname serves the app in full.
+   */
+  movedAt: number | null;
+  /** Epoch milliseconds; null while the hostname is served. */
+  retiredAt: number | null;
+}
+
+export interface RenameInput {
+  /** The registered app the rename moves: the row of one of the manifest's `previousIds`. */
+  app: AppRow;
+  /** The id it moves to: the manifest's `id`. */
+  toSlug: string;
+  /** The manifest the deploy builds from: its `id` must be `toSlug`. */
+  manifest: unknown;
+  isInstallOrganization: boolean;
+  appBaseDomain: string;
+  orgKey: string;
+  gatewayName?: string | null;
+  /** The app's previous-id rows, retired ones included. */
+  previousIds: readonly PreviousIdRow[];
+  /** The organization's `apps` row for `toSlug`, tombstones included. */
+  toSlugApp: Pick<AppRow, "appSlug" | "status"> | null;
+  /** The organization's previous-id row for `toSlug`, any app's. */
+  toSlugPreviousId: PreviousIdRow | null;
+  /** The `apps` row holding the new hostname, tombstones included. */
+  hostnameOwner: AppNameOwner | null;
+  /** The previous-id row holding the new hostname, any app's. */
+  hostnamePreviousOwner: PreviousIdRow | null;
+  now?: number;
+}
+
+export interface RenamePlan {
+  /** The row as it is to be written: its id and hostname the new ones, all else kept. */
+  app: AppRow;
+  /** What the app was: its id and hostname, now a previous id. */
+  from: { appSlug: string; hostname: string };
+  /** The previous-id row to insert for {@link from}. */
+  previousId: PreviousIdRow;
+  /**
+   * The app's own previous-id rows the new id or hostname takes back (an
+   * app renamed back to an id it had): deleted in the same batch.
+   */
+  reclaimed: PreviousIdRow[];
+  /** The resources its bindings use: the same as before, named after its Worker. */
+  resources: AppResources;
+}
+
+/**
+ * Rename a registered app (docs/design/2026-11-app-rename.md): give it the
+ * id `toSlug` and the hostname the naming rules give that id, and record
+ * its old id and hostname as a previous id. Its row keeps its primary key,
+ * so everything the gateway holds for it (who opens it, tokens, OAuth
+ * connections, tools, caps, usage, events) stays with it, and its Worker
+ * name, so its resources and secrets do. The new id must be free in the
+ * organization (no app, tombstones included, and no other app's previous
+ * id); renaming back to one of the app's own previous ids takes that id
+ * back. Only an app reached over a service binding is renamed here: a
+ * dispatch app's Worker must carry its id (getAppFetcher.ts).
+ */
+export function planRename(input: RenameInput): RenamePlan {
+  const { app, toSlug } = input;
+  if (app.status === DELETED_APP_STATUS) {
+    throw new RegistrationError({
+      status: 404,
+      code: "APP_NOT_FOUND",
+      message: `No app "${app.appSlug}" is registered for this organization.`,
+    });
+  }
+  if (!app.workerName || !app.hostname) {
+    throw new RegistrationError({
+      status: 409,
+      code: "APP_NOT_REGISTERED",
+      message: `App "${app.appSlug}" has no Worker or hostname yet; deploy it under its id first, then rename it.`,
+    });
+  }
+  if (app.tier !== "service_binding") {
+    throw new RegistrationError({
+      status: 409,
+      code: "RENAME_UNSUPPORTED",
+      message: `App "${app.appSlug}" is ${app.tier === "dispatch" ? "deployed through the hosted deploy API" : `a ${app.tier} app`}, which can't be renamed: its Worker must carry its id.`,
+    });
+  }
+  if (input.toSlugApp) {
+    throw new RegistrationError({
+      status: 409,
+      code: "RENAME_TARGET_EXISTS",
+      message:
+        input.toSlugApp.status === DELETED_APP_STATUS
+          ? `"${toSlug}" was an app on this gateway that was deleted, and its id stays reserved; rename "${app.appSlug}" to another id.`
+          : `"${toSlug}" is already an app on this gateway, so "${app.appSlug}" can't be renamed to it. Two apps can't be merged: rename to another id, or delete one of them first.`,
+    });
+  }
+  if (input.toSlugPreviousId && input.toSlugPreviousId.appRowId !== app.id) {
+    throw new RegistrationError({
+      status: 409,
+      code: "RENAME_TARGET_EXISTS",
+      message: `"${toSlug}" is a previous id of another app on this gateway, and stays that app's; rename "${app.appSlug}" to another id.`,
+    });
+  }
+  const previousAppIds = [
+    app.appSlug,
+    ...input.previousIds.map((row) => row.appSlug),
+  ];
+  // Reserved and malformed ids first, as in planRegistration.
+  const names = appNames({
+    appSlug: toSlug,
+    orgKey: input.orgKey,
+    isInstallOrganization: input.isInstallOrganization,
+    appBaseDomain: input.appBaseDomain,
+    // The Worker stays; the hostname is the new id's.
+    existingApp: { workerName: app.workerName, hostname: null },
+    gatewayName: input.gatewayName,
+    previousAppIds,
+  });
+  const manifest = validateRegistryManifest(input.manifest, toSlug);
+  const { hostname } = names;
+  for (const [owner, column] of [
+    [input.hostnameOwner, "hostname"],
+    [input.hostnamePreviousOwner, "hostname"],
+  ] as const) {
+    if (owner && owner[column] !== hostname) {
+      throw new Error("The hostname owner passed holds another hostname.");
+    }
+  }
+  const ownHostname =
+    input.hostnamePreviousOwner?.appRowId === app.id ||
+    (input.hostnameOwner?.organizationId === app.organizationId &&
+      input.hostnameOwner.appSlug === app.appSlug);
+  if ((input.hostnameOwner || input.hostnamePreviousOwner) && !ownHostname) {
+    throw new RegistrationError({
+      status: 409,
+      code: "HOSTNAME_TAKEN",
+      message: `The hostname "${hostname}" is already registered to another app on this gateway, so "${app.appSlug}" can't be renamed to "${toSlug}".`,
+    });
+  }
+  if (hostname === app.hostname) {
+    // Only the id would change: the old hostname would be its own alias.
+    throw new RegistrationError({
+      status: 409,
+      code: "RENAME_UNSUPPORTED",
+      message: `"${app.appSlug}" is served at ${hostname} already, which the rename would keep; nothing to move.`,
+    });
+  }
+
+  const now = input.now ?? Date.now();
+  return {
+    app: { ...app, appSlug: toSlug, hostname },
+    from: { appSlug: app.appSlug, hostname: app.hostname },
+    previousId: {
+      organizationId: app.organizationId,
+      appSlug: app.appSlug,
+      appRowId: app.id,
+      hostname: app.hostname,
+      renamedAt: now,
+      movedAt: null,
+      retiredAt: null,
+    },
+    reclaimed: input.previousIds.filter(
+      (row) => row.appSlug === toSlug || row.hostname === hostname,
+    ),
+    resources: resourcesFor(app.workerName, manifest),
+  };
+}
+
+/** What a deploy changes on an app's previous ids: see {@link previousIdChanges}. */
+export interface PreviousIdChanges {
+  /** Served now, no longer listed: their hostnames stop being served. */
+  retire: string[];
+  /** Retired, listed again: their hostnames are served again. */
+  restore: string[];
+  /** Listed, but none of this app's previous ids. */
+  unknown: string[];
+}
+
+/**
+ * An app's previous ids against the manifest's `previousIds`: a served one
+ * the manifest dropped is retired (its hostname answers no more), a retired
+ * one it lists again is served again, and one it lists that the app never
+ * had is unknown, which the deploy refuses rather than guess at.
+ */
+export function previousIdChanges(
+  rows: readonly PreviousIdRow[],
+  listed: readonly string[] | undefined,
+): PreviousIdChanges {
+  const wanted = new Set(listed ?? []);
+  const known = new Set(rows.map((row) => row.appSlug));
+  return {
+    retire: rows
+      .filter((row) => row.retiredAt === null && !wanted.has(row.appSlug))
+      .map((row) => row.appSlug),
+    restore: rows
+      .filter((row) => row.retiredAt !== null && wanted.has(row.appSlug))
+      .map((row) => row.appSlug),
+    unknown: [...wanted].filter((slug) => !known.has(slug)),
   };
 }

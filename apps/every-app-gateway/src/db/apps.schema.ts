@@ -6,6 +6,7 @@ import {
   uniqueIndex,
   index,
   foreignKey,
+  primaryKey,
 } from "drizzle-orm/sqlite-core";
 import { organizations, users } from "./auth.schema";
 
@@ -140,6 +141,46 @@ export const userAppAccess = sqliteTable(
     index("user_app_access_organization_id_idx").on(table.organizationId),
     index("user_app_access_user_id_idx").on(table.userId),
     index("user_app_access_app_row_id_idx").on(table.appRowId),
+  ],
+);
+
+/**
+ * An id (and its hostname) an app had before it was renamed
+ * (docs/design/2026-11-app-rename.md; the rules are `planRename` in
+ * @every-app/perimeter/registry, the CLI's deploy writes them). The app's
+ * row keeps its primary key, so everything keyed by `app_row_id` stays with
+ * it; its Worker keeps the name the first id gave it, which is why the id
+ * stays this app's for good (one row per organization and id). The
+ * hostname is served while `retired_at` is null (page loads redirecting to
+ * the app's hostname now once `moved_at` is set); a deploy whose
+ * `previousIds` no longer lists the id retires it, one that lists it again
+ * serves it again.
+ */
+export const appPreviousIds = sqliteTable(
+  "app_previous_ids",
+  {
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    // The previous id, e.g. "talk".
+    appSlug: text("app_slug").notNull(),
+    appRowId: text("app_row_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    // The hostname the app had under that id. Unique across the gateway,
+    // like `apps.hostname`, and never handed to another app.
+    hostname: text("hostname").notNull().unique(),
+    renamedAt: integer("renamed_at", { mode: "timestamp_ms" }).notNull(),
+    // When the app's new hostname first answered over HTTPS, after which
+    // page loads on this one redirect there. Null until then: the previous
+    // hostname serves the app in full, so a rename never sends people to a
+    // host still waiting for its certificate.
+    movedAt: integer("moved_at", { mode: "timestamp_ms" }),
+    retiredAt: integer("retired_at", { mode: "timestamp_ms" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.organizationId, table.appSlug] }),
+    index("app_previous_ids_app_row_id_idx").on(table.appRowId),
   ],
 );
 

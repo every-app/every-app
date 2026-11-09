@@ -131,7 +131,11 @@ Deploys the app in this directory as a private Cloudflare Worker defined by clou
 5. Uploads the Worker with its secrets, its helper Workers, its Workflows and the Email Routing rules for its inbound addresses (turning routing on for a domain asks first)
 6. Binds a new app on the Gateway by redeploying the live Gateway's own release (never a newer one: that is everyapp update), then waits for the app's hostname to go live
 
-No Gateway in any account the login sees, and none named? At a terminal it offers to install one at apps.<zone> (what everyapp setup does), then deploys; otherwise it stops with action_required install_gateway and the setup command to run. Nothing else asks first. Install and build output goes to a log file, never to stdout. Safe to run again: a redeploy of an app the Gateway already serves never touches the Gateway.
+No Gateway in any account the login sees, and none named? At a terminal it offers to install one at apps.<zone> (what everyapp setup does), then deploys; otherwise it stops with action_required install_gateway and the setup command to run.
+
+A rename: change id in everyapp.config.ts and list the old one under previousIds. When the new id isn't registered and a previous one is, the deploy shows what moves (the id and hostname; the Worker, its data and the Gateway's state stay) and asks first (--yes for CI); the old hostname keeps working. A previousIds entry that names no app stops the deploy.
+
+Nothing else asks first. Install and build output goes to a log file, never to stdout. Safe to run again: a redeploy of an app the Gateway already serves never touches the Gateway.
 
 Someone else's published app: everyapp install <url>. To publish this one: everyapp release. --gateway <url> (or EVERYAPP_GATEWAY_URL) names the Gateway when your login sees several. With --json, each step is an NDJSON event.
 
@@ -142,7 +146,7 @@ Someone else's published app: everyapp install <url>. To publish this one: every
 - `--replace-mx`: Turn on Email Routing even for a domain whose MX records deliver its mail elsewhere (Google Workspace...): they are replaced, and that mail stops arriving there
 - `--register-providers`: Register the providers the app bundles, which tell the Gateway where to send their keys (--yes doesn't)
 - `--no-wait`: Don't wait for the app to go live (a new hostname's certificate included); the Gateway makes it live within a minute, or on its first visit
-- `--yes`: With no Gateway yet, install one at apps.<zone> without asking (never registers the providers the app bundles, cf's questions, or the one before replacing a Worker changed outside everyapp)
+- `--yes`: With no Gateway yet, install one at apps.<zone> without asking, and rename the app previousIds names without asking (never registers the providers the app bundles, cf's questions, or the one before replacing a Worker changed outside everyapp)
 
 ### `everyapp release`
 Pack the app in this directory as a release others can install.
@@ -294,7 +298,7 @@ No Gateway in any account the login sees, and none named? At a terminal it offer
 - `--register-providers`: Register the providers the app bundles, which tell the Gateway where to send their keys (--yes doesn't)
 - `--no-wait`: Don't wait for the app to go live (a new hostname's certificate included); the Gateway makes it live within a minute, or on its first visit
 - `--dry-run`: Download and check the release, as an install would before deploying, and deploy nothing: no Gateway and no Cloudflare login
-- `--yes`: With no Gateway yet, install one at apps.<zone> without asking (never registers the providers the app bundles, cf's questions, or the one before replacing a Worker changed outside everyapp)
+- `--yes`: With no Gateway yet, install one at apps.<zone> without asking, and rename the app the release's previousIds names without asking (never registers the providers the app bundles, cf's questions, or the one before replacing a Worker changed outside everyapp)
 
 ### `everyapp deploy-token add`
 Give the Gateway its own Cloudflare token, so it installs apps itself.

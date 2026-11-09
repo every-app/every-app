@@ -4,7 +4,8 @@
  * (`disabled`, still bound so turning it on again is instant). `pending`
  * apps are never bound, since their Worker may not exist yet. A row is bound
  * only if its Worker is the one the naming rule gives it
- * (`every-<orgKey>-<appId>`; on a named Gateway `every-<name>--<orgKey>-<appId>`), so the registry can never point the gateway
+ * (`every-<orgKey>-<appId>`; on a named Gateway `every-<name>--<orgKey>-<appId>`;
+ * for a renamed app, one of the ids it had), so the registry can never point the gateway
  * at another Worker in the account, and only if
  * that Worker exists: a deploy moves a row to `binding` on the CLI's
  * word, and an `active` row outlives a Worker deleted by hand. Binding a
@@ -17,7 +18,12 @@ import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 
 const DESIRED_APPS = `SELECT apps.app_slug, apps.worker_name, apps.hostname, apps.status,
-  organization_keys.org_key
+  organization_keys.org_key,
+  (SELECT json_group_array(app_previous_ids.app_slug) FROM app_previous_ids
+    WHERE app_previous_ids.app_row_id = apps.id) AS previous_ids,
+  (SELECT json_group_array(app_previous_ids.hostname) FROM app_previous_ids
+    WHERE app_previous_ids.app_row_id = apps.id
+      AND app_previous_ids.retired_at IS NULL) AS previous_hostnames
 FROM apps LEFT JOIN organization_keys
   ON organization_keys.organization_id = apps.organization_id
 WHERE apps.status IN ('binding', 'active', 'disabled')
@@ -29,13 +35,29 @@ interface BoundApp {
   workerName: string;
   hostname: string;
   status: string;
+  /**
+   * A renamed app's previous hostnames while they are served
+   * (docs/design/2026-11-app-rename.md): published beside its own.
+   */
+  previousHostnames: string[];
+}
+
+/** A JSON string[] column (`json_group_array`), or none. */
+function stringList(value: unknown): string[] {
+  if (typeof value !== "string") return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 export interface DesiredState {
   apps: BoundApp[];
   /** Sorted, unique. */
   appWorkers: string[];
-  /** The bound apps' hostnames, sorted, unique. */
+  /** The bound apps' hostnames, their served previous ones included, sorted, unique. */
   appHosts: string[];
   /** Rows not bound because their Worker name breaks the naming rule. */
   skipped: Array<{ appId: string; workerName: string }>;
@@ -77,12 +99,15 @@ export async function readDesiredState(
       workerName: String(row["worker_name"]),
       hostname: String(row["hostname"]),
       status: String(row["status"]),
+      previousHostnames: stringList(row["previous_hostnames"]),
     };
+    // A renamed app keeps the Worker an id it had named.
     const valid = isRegistryWorkerName({
       appId: app.appId,
       workerName: app.workerName,
       orgKey: typeof row["org_key"] === "string" ? row["org_key"] : null,
       gatewayName: names.name,
+      previousAppIds: stringList(row["previous_ids"]),
     });
     if (valid) named.push(app);
     else skipped.push({ appId: app.appId, workerName: app.workerName });
@@ -102,7 +127,11 @@ export async function readDesiredState(
   return {
     apps,
     appWorkers,
-    appHosts: [...new Set(apps.map((app) => app.hostname.toLowerCase()))].sort(),
+    appHosts: [
+      ...new Set(
+        apps.flatMap((app) => [app.hostname, ...app.previousHostnames].map((host) => host.toLowerCase())),
+      ),
+    ].sort(),
     skipped,
     missing,
   };
