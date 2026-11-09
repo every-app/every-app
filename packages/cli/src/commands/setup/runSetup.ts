@@ -88,6 +88,7 @@ import { GatewayChange } from "@/lib/gateway/change";
 import { requestedGatewayUrl } from "@/lib/gateway/connect";
 import { discoverGateway, refuseUnchecked, requireGateway, type Discovery } from "@/lib/gateway/discover";
 import { notDeployedByEveryapp, type InstallRecord } from "@/lib/gateway/install";
+import { parsePlacement } from "@/lib/gateway/placement";
 import type { DeploymentMode } from "@/lib/gateway/secretsFile";
 import { reconcileGateway, registryDrift } from "@/lib/gateway/reconcile";
 import {
@@ -123,6 +124,8 @@ export interface SetupFlags {
   "force-dns"?: boolean;
   /** Upload the Gateway even when it is up to date (hidden; key rotation). */
   redeploy?: boolean;
+  /** Where the Gateway Worker runs from now on: smart, off or a cloud region (lib/gateway/placement.ts). */
+  placement?: string;
   json?: boolean;
   /** Skip everyapp's own confirmations: Access goes on without asking. */
   yes?: boolean;
@@ -241,6 +244,7 @@ export async function runSetup(
   // Before anything is asked of Cloudflare: a --domain that isn't a hostname.
   const domain = domainFlag(flags.domain);
   const name = nameFlag(flags.name);
+  flags = withPlacement(flags);
   checkToolchain(out);
   const { whoami, discovery } = await loginAndDiscover(flags, out, deps, {
     host: domain,
@@ -263,6 +267,7 @@ export async function runGatewayDeploy(
   out: EventSink,
   deps: SetupDeps,
 ): Promise<SetupResult> {
+  flags = withPlacement(flags);
   checkToolchain(out);
   // --gateway: a URL picks by host, a name by name ("" is the default).
   const requested = requestedGatewayUrl(flags.gateway);
@@ -273,7 +278,7 @@ export async function runGatewayDeploy(
     ...(requested !== undefined && !byUrl ? { name: requested || null } : {}),
   });
   const found = requireGateway(discovery, whoami);
-  if (!found.install?.liveVersionId) throw notDeployedByEveryapp();
+  if (!found.install?.liveVersionId) throw notDeployedByEveryapp(flags.placement);
   return installGateway({
     whoami,
     discovery,
@@ -323,6 +328,11 @@ async function loginAndDiscover(
     interactive: deps.interactive,
   });
   return { whoami, discovery };
+}
+
+/** --placement as parsePlacement reads it, so a value that isn't one stops the run before Cloudflare is asked. */
+function withPlacement<Flags extends { placement?: string }>(flags: Flags): Flags {
+  return flags.placement === undefined ? flags : { ...flags, placement: parsePlacement(flags.placement) };
 }
 
 /** --name, as a Gateway name (null: the default Gateway); one that isn't is refused in the flag's name. */
@@ -888,6 +898,7 @@ async function deployOrRepairGateway({
       ...(updateOnly && databaseId ? { existing: { databaseId } } : {}),
       forceDns: flags["force-dns"],
       checkedDomains,
+      placement: flags.placement,
       sleep: deps.seams?.sleep,
       leaseWaitMs: deps.seams?.leaseWaitMs,
       certificates: deps.seams?.certificates,
@@ -945,7 +956,10 @@ async function repairGateway({
   const release = install.releaseVersion;
   const name = releaseName(source);
   const { inSync, desired } = await registryDrift(cf, db, install, names);
-  if (inSync && !flags.redeploy) {
+  // Asked for, it uploads: the row can't say what the Worker has now (an
+  // upload from an older everyapp drops it; the dashboard can change it).
+  const placementChange = flags.placement !== undefined;
+  if (inSync && !flags.redeploy && !placementChange) {
     out.emit({
       type: "step",
       step: "setup.gateway",
@@ -980,7 +994,7 @@ async function repairGateway({
     step: "setup.gateway",
     status: "start",
     message: inSync
-      ? `Redeploying the Gateway (${name}) for --redeploy`
+      ? `Redeploying the Gateway (${name}) for ${placementChange ? `--placement ${flags.placement}` : "--redeploy"}`
       : finishing
         ? `Finishing the Gateway's first publication at ${install.gatewayHost} (${name})`
         : `Repairing the Gateway (${name}): ${desired.appWorkers.length} apps, was ${install.liveAppWorkers.length}`,
@@ -1007,6 +1021,7 @@ async function repairGateway({
     cliVersion: deps.cliVersion,
     force: true,
     forceDns: flags["force-dns"],
+    placement: flags.placement,
     sleep: deps.seams?.sleep,
     leaseWaitMs: deps.seams?.leaseWaitMs,
   });

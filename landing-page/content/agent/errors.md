@@ -279,6 +279,8 @@ Not a full hostname. Use a name like `apps.example.com`.
 `--gateway` or `EVERYAPP_GATEWAY_URL` isn't a URL (or, for linked dev, not https). Fix or unset it.
 ### INVALID_MANIFEST
 `everyapp.config.ts` fails the manifest schema. Fix what the message names. [manifest](/docs/agent/manifest)
+### INVALID_PLACEMENT
+`--placement` isn't `smart`, `off` or a cloud region (`aws:`, `gcp:` or `azure:`, such as `aws:us-east-1`). Nothing was changed.
 ### INVALID_VALUE
 A flag's value isn't valid (exit 252). The message lists what it takes.
 ### INVALID_WORKER_NAME

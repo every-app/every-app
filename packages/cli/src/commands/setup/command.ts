@@ -1,6 +1,6 @@
 import { buildCommand } from "@stricli/core";
 import { CLI } from "@/lib/output/command";
-import { forceDnsFlag, jsonFlag, yesFlag } from "../flags";
+import { forceDnsFlag, jsonFlag, placementFlag, yesFlag } from "../flags";
 
 export const setupCommand = buildCommand({
   loader: async () => {
@@ -40,6 +40,7 @@ export const setupCommand = buildCommand({
         optional: true,
       },
       "force-dns": forceDnsFlag,
+      placement: placementFlag,
       redeploy: {
         kind: "boolean",
         brief:

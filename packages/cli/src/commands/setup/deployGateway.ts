@@ -146,6 +146,7 @@ export async function deployGatewayRelease({
   | "leaseWaitMs"
   | "deploymentMode"
   | "checkedDomains"
+  | "placement"
 > & {
     certificates?: Pick<
       Parameters<typeof waitForCertificates>[0],

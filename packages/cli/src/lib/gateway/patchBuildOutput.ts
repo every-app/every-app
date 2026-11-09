@@ -11,6 +11,7 @@
  */
 import { DEFAULT_WORKER, WORKERS_DIR } from "@/lib/app/buildOutput";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
+import { placementConfig, type GatewayPlacement } from "./placement";
 import { EveryAppError } from "@/lib/errors";
 import { validateWorkerBuildOutput } from "@every-app/perimeter/install";
 import {
@@ -44,6 +45,8 @@ interface GatewayPatch {
   appWorkers: readonly string[];
   /** App hosts to publish as Custom Domains. */
   appHosts: readonly string[];
+  /** Where the Worker runs; none leaves the Build Output's as it is. */
+  placement?: GatewayPlacement;
 }
 
 /**
@@ -136,6 +139,7 @@ export async function patchGatewayBuildOutput(releaseDir: string, patch: Gateway
   config.workersDev = false;
   config.previewUrls = false;
   config.observability ??= structuredClone(EVERYAPP_OBSERVABILITY);
+  if (patch.placement) config["placement"] = placementConfig(patch.placement);
 
   // cf uploads source maps only as listed modules; list every one.
   if (config.manifest) {

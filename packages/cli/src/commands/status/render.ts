@@ -89,6 +89,7 @@ export function renderStatus({
       value: `${chalk.cyan(`https://${install.gatewayHost}`)}${gatewayWorker ? chalk.dim(` · ${gatewayWorker}`) : ""}${install.deploymentMode ? chalk.dim(` · ${install.deploymentMode.replace("_", "-")}`) : ""}`,
     },
     { label: "Cloudflare", value: accountName },
+    ...(install.placement ? [{ label: "Placement", value: install.placement }] : []),
     {
       label: "Owner",
       value: owner

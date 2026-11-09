@@ -11,6 +11,7 @@ import { applyEmailRoutes, planEmailRoutes } from "@/lib/app/emailRoutes";
 import { recordOwnedResource } from "@/lib/app/ownership";
 import { cfD1Database } from "@/lib/cf/d1";
 import { applyGateway } from "@/lib/gateway/apply";
+import { readInstall, writeInstall } from "@/lib/gateway/install";
 import { discoverGateway } from "@/lib/gateway/discover";
 import { LeasePurpose } from "@/lib/gateway/lease";
 import { holdLease } from "@/test/holdLease";
@@ -1215,6 +1216,20 @@ describe("everyapp status", () => {
       ),
       rerun: "pnpm everyapp setup",
     });
+  });
+});
+
+describe("everyapp status, with a placement", () => {
+  it("says nothing about placement until one is chosen", async () => {
+    expect((await status())["data"]).not.toHaveProperty("placement");
+    expect(await shown()).not.toContain("Placement");
+  });
+
+  it("shows the Gateway's placement once one is chosen", async () => {
+    await writeInstall(db(), { ...(await readInstall(db()))!, placement: "aws:ap-south-1" });
+
+    expect((await status())["data"]).toMatchObject({ placement: "aws:ap-south-1" });
+    expect(await shown()).toMatch(/Placement\s+aws:ap-south-1/);
   });
 });
 
