@@ -37,7 +37,7 @@ export function AiDefaultCard({
       value={
         resolution ? (
           <>
-            <span className="break-all">
+            <span className="wrap-break-word">
               {resolution.label} · {resolution.model}
             </span>
             {resolution.configured ? null : (

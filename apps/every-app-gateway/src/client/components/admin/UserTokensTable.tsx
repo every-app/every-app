@@ -2,7 +2,11 @@ import { useMemo, type ReactNode } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Unplug } from "lucide-react";
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
-import { DataTable, useDataTable } from "@/client/components/table/DataTable";
+import {
+  CardSlot,
+  DataTable,
+  useDataTable,
+} from "@/client/components/table/DataTable";
 import {
   DATE_CELL,
   DateCell,
@@ -50,6 +54,7 @@ export function UserTokensTable({
       {
         id: "access",
         header: "Access",
+        meta: { card: CardSlot.BareDetail },
         cell: ({ row }) => {
           const access = tokenAccessOf(row.original.scopes);
           return access
@@ -60,12 +65,13 @@ export function UserTokensTable({
       {
         id: "prefix",
         header: "Prefix",
+        meta: { card: CardSlot.Hidden },
         cell: ({ row }) => <TokenPrefix prefix={row.original.tokenPrefix} />,
       },
       {
         id: "appScope",
         header: "Apps",
-        meta: { cellClassName: "max-w-[240px]" },
+        meta: { cellClassName: "max-w-[240px]", card: CardSlot.BareDetail },
         cell: ({ row }) =>
           row.original.appName ? (
             <>
@@ -85,6 +91,7 @@ export function UserTokensTable({
       {
         id: "status",
         header: "Status",
+        meta: { card: CardSlot.Trailing },
         cell: ({ row }) => (
           <TokenStatusBadge status={tokenStatus(row.original)} />
         ),
@@ -95,7 +102,11 @@ export function UserTokensTable({
         header: ({ column }) => (
           <SortableHeader column={column} label="Created" />
         ),
-        meta: { label: "Created", cellClassName: DATE_CELL },
+        meta: {
+          label: "Created",
+          cellClassName: DATE_CELL,
+          card: CardSlot.Hidden,
+        },
         cell: ({ row }) => <DateCell value={row.original.createdAt} />,
       },
       {

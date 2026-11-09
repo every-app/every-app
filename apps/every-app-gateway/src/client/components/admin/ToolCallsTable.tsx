@@ -2,7 +2,12 @@ import type { ReactNode } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { VariantProps } from "class-variance-authority";
 import { cn } from "cn";
-import { DataTable, useDataTable } from "@/client/components/table/DataTable";
+import {
+  CardSlot,
+  DataTable,
+  useDataTable,
+  useInDataTableCard,
+} from "@/client/components/table/DataTable";
 import { DATE_CELL, DateCell } from "@/client/components/table/DateCell";
 import { Badge, type badgeVariants } from "@/client/components/ui/badge";
 import {
@@ -86,7 +91,12 @@ function formatDuration(ms: number | null): string {
   return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
 }
 
+/**
+ * Who called, and with what. A phone's row keeps only the first line, so a
+ * long log stays a list of short rows.
+ */
 function WhoCell({ call }: { call: ToolCallRow }) {
+  const inCard = useInDataTableCard();
   const { user, credential } = call;
   // No membership in this organization any more: by id, never by the
   // profile they keep elsewhere.
@@ -130,7 +140,7 @@ function WhoCell({ call }: { call: ToolCallRow }) {
           {label}
         </Badge>
       </div>
-      {secondary ? (
+      {secondary && !inCard ? (
         <p className="truncate text-xs text-muted-foreground" title={secondary}>
           {secondary}
         </p>
@@ -140,6 +150,7 @@ function WhoCell({ call }: { call: ToolCallRow }) {
 }
 
 function AppCell({ app }: { app: ToolCallRow["app"] }) {
+  const inCard = useInDataTableCard();
   // A gateway-surface call that named no app (an unknown tool).
   if (!app.rowId && !app.slug) {
     return <span className="text-muted-foreground">—</span>;
@@ -151,7 +162,7 @@ function AppCell({ app }: { app: ToolCallRow["app"] }) {
   return (
     <>
       <p className="truncate font-medium">{title}</p>
-      {detail ? (
+      {detail && !inCard ? (
         <p className="truncate text-xs text-muted-foreground">{detail}</p>
       ) : null}
     </>
@@ -240,24 +251,25 @@ const columns: ColumnDef<ToolCallRow>[] = [
   {
     id: "who",
     header: "Who",
-    meta: { cellClassName: "max-w-[192px]" },
+    meta: { cellClassName: "max-w-[192px]", card: CardSlot.BareDetail },
     cell: ({ row }) => <WhoCell call={row.original} />,
   },
   {
     id: "app",
     header: "App",
-    meta: { cellClassName: "max-w-[116px]" },
+    meta: { cellClassName: "max-w-[116px]", card: CardSlot.BareDetail },
     cell: ({ row }) => <AppCell app={row.original.app} />,
   },
   {
     id: "tool",
     header: "Tool",
-    meta: { cellClassName: "max-w-[167px]" },
+    meta: { cellClassName: "max-w-[167px]", card: CardSlot.BareDetail },
     cell: ({ row }) => <ToolCell tool={row.original.tool} />,
   },
   {
     id: "decision",
     header: "Decision",
+    meta: { card: CardSlot.Trailing },
     cell: ({ row }) => <DecisionCell call={row.original} />,
   },
   {
@@ -272,6 +284,7 @@ const columns: ColumnDef<ToolCallRow>[] = [
     meta: {
       headerClassName: "text-right",
       cellClassName: `${DATE_CELL} text-right`,
+      card: CardSlot.Hidden,
     },
     cell: ({ row }) => formatDuration(row.original.durationMs),
   },

@@ -16,7 +16,11 @@ import {
   Zap,
 } from "lucide-react";
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
-import { DataTable, useDataTable } from "@/client/components/table/DataTable";
+import {
+  CardSlot,
+  DataTable,
+  useDataTable,
+} from "@/client/components/table/DataTable";
 import { DateCell } from "@/client/components/table/DateCell";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
@@ -115,7 +119,7 @@ function EventsCell({ subscription }: { subscription: EventSubscription }) {
   const shown = subscription.events.slice(0, CHIPS_SHOWN);
   const more = subscription.events.length - shown.length;
   return (
-    <span className="flex flex-wrap justify-end gap-1 md:justify-start">
+    <span className="flex flex-wrap gap-1">
       {shown.map((pattern) => (
         <Badge key={pattern} variant="outline" className="font-mono">
           {pattern}
@@ -144,7 +148,7 @@ function LastDeliveryCell({
     return <span className="text-muted-foreground">Nothing sent yet</span>;
   }
   return (
-    <span className="flex flex-col items-end gap-0.5 md:items-start">
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 md:flex-col md:items-start">
       <span className="flex items-center gap-2">
         {status === "delivered" ? (
           <span className="text-muted-foreground">Delivered</span>
@@ -239,24 +243,25 @@ const columns: ColumnDef<EventSubscription>[] = [
   {
     id: "target",
     header: "Target",
-    meta: { cellClassName: "max-w-[240px]" },
+    meta: { cellClassName: "max-w-[240px]", card: CardSlot.BareDetail },
     cell: ({ row }) => <TargetCell subscription={row.original} />,
   },
   {
     id: "events",
     header: "Events",
-    meta: { cellClassName: "max-w-[280px]" },
+    meta: { cellClassName: "max-w-[280px]", card: CardSlot.Hidden },
     cell: ({ row }) => <EventsCell subscription={row.original} />,
   },
   {
     id: "lastDelivery",
     header: "Last delivery",
+    meta: { card: CardSlot.BareDetail },
     cell: ({ row }) => <LastDeliveryCell subscription={row.original} />,
   },
   {
     id: "enabled",
     header: "On",
-    meta: { headerClassName: "w-14" },
+    meta: { headerClassName: "w-14", card: CardSlot.Trailing },
     cell: ({ row }) => <EnabledCell subscription={row.original} />,
   },
   {

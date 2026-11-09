@@ -16,6 +16,9 @@ type CountCellProps = {
  * does not read as a column of labels; no verb at any count, since the
  * dialog it opens says what can be done. For the Apps and Groups tables.
  *
+ * The text takes the size of what holds it: a table cell's, or the
+ * smaller line under a name on a phone's row.
+ *
  * The accessible name is the visible text first, then what opens, so a
  * screen reader hears the column's value and voice control can say what it
  * sees (WCAG 2.5.3): an `aria-label` alone would replace the count.
@@ -35,7 +38,7 @@ export function CountCell({
       aria-haspopup="dialog"
       onClick={onClick}
       className={cn(
-        "-mx-1 rounded-sm px-1 text-sm text-muted-foreground tabular-nums underline-offset-4 outline-none transition-colors hover:text-foreground hover:underline focus-visible:ring-3 focus-visible:ring-ring/50",
+        "-mx-1 rounded-sm px-1 text-muted-foreground tabular-nums underline-offset-4 outline-none transition-colors hover:text-foreground hover:underline focus-visible:ring-3 focus-visible:ring-ring/50",
         className,
       )}
     >

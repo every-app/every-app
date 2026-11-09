@@ -21,12 +21,22 @@ import type { UserAccessApp } from "@/types/app";
 
 /**
  * Every card in a layout is the same height: the name is one line, the
- * description at most two, and a status sits beside the name rather than
- * adding a row.
+ * description at most two (one on a phone's row), and a status sits beside
+ * the name rather than adding a row.
  */
 function cardHeightClass(list: boolean) {
-  return cn("h-32 md:h-42", list && "md:h-13");
+  return cn("h-16 md:h-42", list && "md:h-13");
 }
+
+/**
+ * Under `md` the cards are rows of one grouped list (the `ul` draws the
+ * surface), so a card drops its own frame there.
+ */
+const PHONE_ROW = "max-md:rounded-none max-md:border-0 max-md:shadow-none";
+
+/** The `ul` of app cards: one grouped surface under `md`, its rows divided. */
+export const APP_LIST_PHONE_SURFACE =
+  "max-md:gap-0 max-md:divide-y max-md:divide-border max-md:overflow-hidden max-md:rounded-xl max-md:border max-md:border-border max-md:bg-card max-md:shadow-xs";
 
 interface AppListItemProps {
   app: UserAccessApp;
@@ -113,13 +123,13 @@ export function AppListItem({
       <AppIcon
         app={app}
         className={cn(
-          "row-span-2 md:mb-4 md:size-10 md:rounded-lg",
+          "row-span-2 size-10 rounded-lg md:mb-4",
           list && "md:row-span-1 md:mb-0 md:size-8",
         )}
       />
       <div
         className={cn(
-          "min-w-0 pr-8",
+          "min-w-0 pr-12 md:pr-8",
           list && "md:flex md:items-baseline md:gap-3 md:pr-0 md:pb-0",
         )}
       >
@@ -147,7 +157,7 @@ export function AppListItem({
         </div>
         <p
           className={cn(
-            "mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground",
+            "mt-0.5 line-clamp-1 text-xs leading-5 text-muted-foreground md:mt-1 md:line-clamp-2 md:leading-relaxed",
             list && "md:mt-0 md:line-clamp-none md:truncate md:leading-5",
           )}
         >
@@ -156,7 +166,10 @@ export function AppListItem({
       </div>
       <div
         className={cn(
-          "absolute top-2 right-2 flex items-center text-xs font-medium md:static md:mt-auto md:w-full",
+          // Centered on a phone's row by a translate, which only applies
+          // there: any translate makes this the pin's containing block,
+          // and the grid card pins it to the card's own corner.
+          "absolute top-1/2 right-2 flex items-center text-xs font-medium max-md:-translate-y-1/2 md:static md:mt-auto md:w-full",
           list &&
             "md:mt-0 md:w-auto md:gap-2 md:self-center md:justify-end md:pt-0",
         )}
@@ -206,20 +219,23 @@ export function AppListItem({
     </>
   );
   const bodyClass = cn(
-    "grid min-h-0 flex-1 grid-cols-[3rem_minmax(0,1fr)] items-center gap-x-4 rounded-xl p-5 md:flex md:flex-col md:items-stretch",
+    "grid min-h-0 flex-1 grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-x-3 px-4 py-3 md:flex md:flex-col md:items-stretch md:rounded-xl md:p-5",
     list &&
       "md:grid md:grid-cols-[2rem_minmax(0,1fr)_auto] md:items-center md:gap-x-3 md:px-4 md:py-2",
   );
   const overlayClass =
-    "absolute inset-0 rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50";
+    "absolute inset-0 outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50 md:rounded-xl";
 
   return (
     <li>
       <Card
         className={cn(
           "group relative gap-0 py-0 transition-colors motion-reduce:transition-none",
+          PHONE_ROW,
           cardHeightClass(list),
-          routable ? "hover:border-foreground/25" : "bg-card/60",
+          routable
+            ? "hover:border-foreground/25"
+            : "bg-card/60 max-md:bg-muted/60",
           needsSetup && "hover:border-foreground/25",
         )}
       >
@@ -253,20 +269,18 @@ export function AppListItemSkeleton({ layout }: { layout: AppLibraryLayout }) {
     <li>
       <Card
         className={cn(
-          "flex-row items-center gap-4 p-5 md:flex-col md:items-stretch",
+          "flex-row items-center gap-3 px-4 py-3 md:flex-col md:items-stretch md:gap-4 md:p-5",
+          PHONE_ROW,
           cardHeightClass(list),
           list && "md:flex-row md:items-center md:gap-3 md:px-4 md:py-2",
         )}
       >
         <Skeleton
-          className={cn(
-            "size-12 shrink-0 rounded-xl md:size-10 md:rounded-lg",
-            list && "md:size-8",
-          )}
+          className={cn("size-10 shrink-0 rounded-lg", list && "md:size-8")}
         />
         <div
           className={cn(
-            "flex-1 space-y-3",
+            "flex-1 space-y-2 md:space-y-3",
             list && "md:flex md:min-w-0 md:items-center md:gap-3 md:space-y-0",
           )}
         >

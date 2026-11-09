@@ -1,6 +1,11 @@
 import { useMemo, type ReactNode } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { DataTable, useDataTable } from "@/client/components/table/DataTable";
+import { cn } from "cn";
+import {
+  CardSlot,
+  DataTable,
+  useDataTable,
+} from "@/client/components/table/DataTable";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
@@ -47,13 +52,19 @@ function Failures({ value }: { value: number }) {
 
 function Cost({ micros }: { micros: number }) {
   return (
-    <span className={micros === 0 ? "text-muted-foreground" : undefined}>
+    <span
+      className={micros === 0 ? "text-muted-foreground" : "text-foreground"}
+    >
       {formatCostMicros(micros)}
     </span>
   );
 }
 
-/** The provider columns every table shares: calls, failures, tokens, cost. */
+/**
+ * The provider columns every table shares: calls, failures, tokens, cost. On
+ * a phone's row the cost is the value on the right and the counts are the
+ * line under the name, with short labels.
+ */
 function providerColumns<TRow extends UsageTotals>(): ColumnDef<TRow>[] {
   return [
     {
@@ -62,7 +73,7 @@ function providerColumns<TRow extends UsageTotals>(): ColumnDef<TRow>[] {
         <SortableHeader column={column} label="Provider calls" />
       ),
       meta: {
-        label: "Provider calls",
+        label: "Calls",
         headerClassName: NUMERIC_HEAD,
         cellClassName: NUMERIC,
       },
@@ -117,6 +128,7 @@ function providerColumns<TRow extends UsageTotals>(): ColumnDef<TRow>[] {
         label: "Provider cost",
         headerClassName: NUMERIC_HEAD,
         cellClassName: NUMERIC,
+        card: CardSlot.Trailing,
       },
       cell: ({ row }) => <Cost micros={row.original.costMicros} />,
     },
@@ -132,7 +144,7 @@ function toolCallsColumn<
       <SortableHeader column={column} label="Agent tool calls" />
     ),
     meta: {
-      label: "Agent tool calls",
+      label: "Tool calls",
       headerClassName: NUMERIC_HEAD,
       cellClassName: NUMERIC,
     },
@@ -151,7 +163,9 @@ const NOT_METERED = "Not metered";
  * "Paused · $20.00 of $20.00" in red with a red bar, and its button is
  * Raise. The button opens the cap dialog. An app the organization can no
  * longer call (deleted) has no cap and no button, and an MCP server added
- * by URL, which isn't metered, reads "Not metered" with no button.
+ * by URL, which isn't metered, reads "Not metered" with no button. On a
+ * phone's row the cell spans the row: the bar stretches, the words follow
+ * it, and the button sits at the right edge.
  */
 function MonthlyCapCell({
   row,
@@ -188,7 +202,7 @@ function MonthlyCapCell({
     // it reads as the unlimited it is.
     const noCap = row.capUnlimited && hasDefault;
     return (
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex items-center justify-end gap-2 max-md:justify-between">
         <span className="text-muted-foreground">
           {noCap ? "No cap" : "Unlimited"}
         </span>
@@ -199,7 +213,7 @@ function MonthlyCapCell({
   const source = row.costCapSource === "default" ? " · default" : "";
   if (!isCurrentMonth) {
     return (
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex items-center justify-end gap-2 max-md:justify-between">
         <span>
           {formatCostCap(cap)}
           {source}
@@ -211,15 +225,20 @@ function MonthlyCapCell({
   const progress = formatCostCapProgress(row.costMicros, cap);
   return (
     <div className="flex items-center justify-end gap-2">
-      <div className="flex flex-col items-end gap-1">
-        <span className={row.paused ? "text-destructive" : undefined}>
+      <div className="flex flex-col items-end gap-1 max-md:flex-1 max-md:flex-row-reverse max-md:items-center max-md:gap-3">
+        <span
+          className={cn(
+            "max-md:shrink-0 max-md:text-xs",
+            row.paused ? "text-destructive" : "max-md:text-muted-foreground",
+          )}
+        >
           {row.paused ? `Paused · ${progress}` : `${progress}${source}`}
         </span>
         <Progress
           value={Math.min(row.costMicros, cap)}
           max={cap}
           aria-label={`${row.name ?? row.appRowId}: ${progress} of provider-reported cost this month`}
-          className="w-28"
+          className="w-28 max-md:w-auto max-md:flex-1"
           indicatorClassName={row.paused ? "bg-destructive" : undefined}
         />
       </div>
@@ -260,6 +279,7 @@ function buildAppColumns({
         label: "Monthly cap",
         headerClassName: NUMERIC,
         cellClassName: NUMERIC,
+        card: CardSlot.Footer,
       },
       cell: ({ row }) => (
         <MonthlyCapCell

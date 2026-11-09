@@ -9,6 +9,7 @@ import { AppGallery } from "@/client/components/onboarding/AppGallery";
 import { BuildYourOwnDialog } from "@/client/components/onboarding/BuildYourOwnDialog";
 import { FeaturedAppDialog } from "@/client/components/onboarding/FeaturedAppDialog";
 import {
+  APP_LIST_PHONE_SURFACE,
   AppListItem,
   AppListItemSkeleton,
 } from "@/client/components/AppListItem";
@@ -145,6 +146,7 @@ function App() {
   );
   const gridClassName = cn(
     "grid gap-4",
+    APP_LIST_PHONE_SURFACE,
     layout === AppLibraryLayout.Grid && "md:grid-cols-2 xl:grid-cols-3",
   );
   const manageAppsButton = (

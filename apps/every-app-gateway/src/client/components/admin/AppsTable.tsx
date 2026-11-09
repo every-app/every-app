@@ -2,7 +2,11 @@ import { useMemo, useState, type ComponentProps, type ReactNode } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Info } from "lucide-react";
 import { EmptyState } from "@/client/components/EmptyState";
-import { DataTable, useDataTable } from "@/client/components/table/DataTable";
+import {
+  CardSlot,
+  DataTable,
+  useDataTable,
+} from "@/client/components/table/DataTable";
 import {
   DataTableSearch,
   DataTableToolbar,
@@ -101,9 +105,8 @@ function McpAppNameCell({ app }: { app: AppWithAccessCount }) {
  * under it, since it covers people who join later too. Nobody is granted a
  * shared app: every organization has it.
  *
- * The hint is its own block line rather than a flex column, so the cell
- * takes the alignment of what holds it: left in the table's column, right
- * as a card's value under `md`.
+ * The hint is its own line in the table's column, and follows the count on
+ * a phone's row, where the cell is one item of the line under the name.
  */
 function WhoCell({
   app,
@@ -126,9 +129,12 @@ function WhoCell({
         onClick={() => onManageAccess(app)}
       />
       {app.everyone ? (
-        <span className="block text-xs text-muted-foreground">
-          + everyone who joins
-        </span>
+        <>
+          {" "}
+          <span className="text-xs text-muted-foreground md:block">
+            + everyone who joins
+          </span>
+        </>
       ) : null}
     </>
   );
@@ -152,7 +158,7 @@ function statusColumn(onSetup: OnApp): AppColumn {
     id: "status",
     accessorFn: (app) => appStatus(app).label,
     header: ({ column }) => <SortableHeader column={column} label="Status" />,
-    meta: { label: "Status" },
+    meta: { label: "Status", card: CardSlot.Trailing },
     cell: ({ row }) => {
       const status = appStatus(row.original);
       // The usual state is plain text; only an exception is a chip (as on
@@ -185,7 +191,7 @@ function whoColumn(label: string, onManageAccess: OnApp): AppColumn {
     id: "who",
     accessorFn: (app) => app.accessCount,
     header: ({ column }) => <SortableHeader column={column} label={label} />,
-    meta: { label },
+    meta: { label, card: CardSlot.BareDetail },
     cell: ({ row }) => (
       <WhoCell app={row.original} onManageAccess={onManageAccess} />
     ),
@@ -208,7 +214,11 @@ function updatedColumn(
         ) : null}
       </>
     ),
-    meta: { label: "Updated", cellClassName: `${DATE_CELL} max-w-[240px]` },
+    meta: {
+      label: "Updated",
+      cellClassName: `${DATE_CELL} max-w-[240px]`,
+      card: CardSlot.Hidden,
+    },
   };
 }
 

@@ -9,7 +9,12 @@ import { act, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { ColumnDef } from "@tanstack/react-table";
 import { afterEach, expect, it } from "vitest";
-import { DataTable, useDataTable } from "./DataTable";
+import {
+  CardSlot,
+  DataTable,
+  useDataTable,
+  useInDataTableCard,
+} from "./DataTable";
 
 type Row = { id: string };
 
@@ -91,18 +96,25 @@ it("stands in for the table when there are no rows", async () => {
   act(() => root.unmount());
 });
 
-// Under `md` the rows render as cards beside the table (CSS shows one): the
-// first cell as the heading, the actions menu top right, the other cells as
-// label and value. Columns with a component header (every `SortableHeader`
-// column in the admin tables) say their label in `meta.label`; a string
-// header is its own label. `role` covers the first path, `team` the second.
+// Under `md` the rows render as list rows beside the table (CSS shows one):
+// the first cell as the heading, the actions menu on the right, and every
+// other cell where its `meta.card` puts it. A detail is labelled: columns
+// with a component header (every `SortableHeader` column in the admin
+// tables) say their label in `meta.label`, and a string header is its own
+// label. `role` covers the first path, `team` the second.
 type Person = {
   id: string;
   name: string;
   role: string;
   team: string;
+  status: string;
   secret: string;
 };
+
+/** Says which layout rendered it. */
+function LayoutCell() {
+  return useInDataTableCard() ? "on a card" : "in the table";
+}
 
 const cardColumns: ColumnDef<Person>[] = [
   {
@@ -119,10 +131,22 @@ const cardColumns: ColumnDef<Person>[] = [
   },
   { id: "team", accessorKey: "team", header: "Team" },
   {
+    id: "status",
+    accessorKey: "status",
+    header: "Status",
+    meta: { card: CardSlot.Trailing },
+  },
+  {
+    id: "layout",
+    header: "Layout",
+    meta: { card: CardSlot.BareDetail },
+    cell: () => <LayoutCell />,
+  },
+  {
     id: "secret",
     accessorKey: "secret",
     header: "Secret",
-    meta: { hideOnCard: true },
+    meta: { card: CardSlot.Hidden },
   },
   {
     id: "actions",
@@ -136,12 +160,20 @@ const cardColumns: ColumnDef<Person>[] = [
 ];
 
 const people: Person[] = [
-  { id: "1", name: "Ada", role: "Owner", team: "Analysis", secret: "hush-1" },
+  {
+    id: "1",
+    name: "Ada",
+    role: "Owner",
+    team: "Analysis",
+    status: "Active",
+    secret: "hush-1",
+  },
   {
     id: "2",
     name: "Grace",
     role: "Member",
     team: "Compilers",
+    status: "Away",
     secret: "hush-2",
   },
 ];
@@ -167,7 +199,7 @@ function cardsOf(container: HTMLElement) {
   );
 }
 
-it("renders each row as a card with the first cell as its heading", async () => {
+it("renders each row as a list row with the first cell as its heading", async () => {
   (
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
@@ -184,15 +216,29 @@ it("renders each row as a card with the first cell as its heading", async () => 
     cards[0]?.querySelector('[data-slot="data-table-card-primary"]')
       ?.textContent,
   ).toBe("Ada");
-  // The heading carries no label (its `meta.label` is unused); the other
-  // cells do: Role from `meta.label` beside a component header, Team from
-  // its string header.
-  const labels = (card: HTMLElement) =>
-    Array.from(card.querySelectorAll("dt")).map((dt) => dt.textContent);
-  expect(labels(cards[0]!)).toEqual(["Role", "Team"]);
-  const values = (card: HTMLElement) =>
-    Array.from(card.querySelectorAll("dd")).map((dd) => dd.textContent);
-  expect(values(cards[0]!)).toEqual(["Owner", "Analysis"]);
+  // The heading carries no label (its `meta.label` is unused); the details
+  // do: Role from `meta.label` beside a component header, Team from its
+  // string header. A bare detail is its value alone.
+  const texts = (card: HTMLElement, slot: string) =>
+    Array.from(card.querySelectorAll(`[data-slot="${slot}"]`)).map(
+      (element) => element.textContent,
+    );
+  expect(texts(cards[0]!, "data-table-card-label")).toEqual(["Role", "Team"]);
+  expect(texts(cards[0]!, "data-table-card-value")).toEqual([
+    "Owner",
+    "Analysis",
+  ]);
+  expect(texts(cards[0]!, "data-table-card-detail")).toEqual([
+    "RoleOwner",
+    "TeamAnalysis",
+    "on a card",
+  ]);
+  // The trailing value sits beside the heading, unlabelled.
+  expect(texts(cards[1]!, "data-table-card-trailing")).toEqual(["Away"]);
+  // A cell can tell the two layouts apart.
+  expect(container.querySelector("table")?.textContent).toContain(
+    "in the table",
+  );
   act(() => root.unmount());
 });
 
@@ -216,7 +262,7 @@ it("puts the actions cell on each card once, without a label", async () => {
   act(() => root.unmount());
 });
 
-it("leaves hideOnCard columns off the cards", async () => {
+it("leaves hidden columns off the cards", async () => {
   (
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;

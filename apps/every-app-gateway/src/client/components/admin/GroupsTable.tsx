@@ -1,6 +1,10 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { DataTable, useDataTable } from "@/client/components/table/DataTable";
+import {
+  CardSlot,
+  DataTable,
+  useDataTable,
+} from "@/client/components/table/DataTable";
 import {
   DATE_CELL,
   DateCell,
@@ -93,20 +97,20 @@ const columns: ColumnDef<AdminGroup>[] = [
   {
     accessorKey: "memberCount",
     header: ({ column }) => <SortableHeader column={column} label="Members" />,
-    meta: { label: "Members" },
+    meta: { label: "Members", card: CardSlot.BareDetail },
     cell: ({ row }) => <MembersCell group={row.original} />,
   },
   {
     accessorKey: "appCount",
     header: ({ column }) => <SortableHeader column={column} label="Apps" />,
-    meta: { label: "Apps" },
+    meta: { label: "Apps", card: CardSlot.BareDetail },
     cell: ({ row }) => <AppsCell group={row.original} />,
   },
   {
     id: "createdAt",
     accessorFn: (group) => dateSortValue(group.createdAt, 0),
     header: ({ column }) => <SortableHeader column={column} label="Created" />,
-    meta: { label: "Created", cellClassName: DATE_CELL },
+    meta: { label: "Created", cellClassName: DATE_CELL, card: CardSlot.Hidden },
     cell: ({ row }) => <DateCell value={row.original.createdAt} />,
   },
   {

@@ -6,7 +6,7 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   Activity as ActivityIcon,
   AppWindow,
@@ -21,6 +21,8 @@ import {
   Webhook,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useIsMobile } from "@/client/hooks/use-mobile";
+import { useScrollEdges } from "@/client/hooks/useScrollEdges";
 import { useSession } from "@/client/hooks/useSession";
 import {
   ACTIVE_ORGANIZATION_QUERY_KEY,
@@ -119,6 +121,7 @@ function AdminLayout() {
     enabled: Boolean(session?.user),
   });
   const [renaming, setRenaming] = useState(false);
+  const isMobile = useIsMobile();
 
   // Show loading while checking session
   if (isPending || isRolePending) {
@@ -156,10 +159,22 @@ function AdminLayout() {
         title="Manage workspace"
         actions={
           activeOrganization ? (
-            <Button variant="outline" onClick={() => setRenaming(true)}>
-              <Pencil data-icon="inline-start" />
-              Rename
-            </Button>
+            // An icon on a phone, so it stays on the title's line.
+            isMobile ? (
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Rename"
+                onClick={() => setRenaming(true)}
+              >
+                <Pencil />
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={() => setRenaming(true)}>
+                <Pencil data-icon="inline-start" />
+                Rename
+              </Button>
+            )
           ) : null
         }
       />
@@ -196,27 +211,7 @@ function AdminLayout() {
         }}
         className="gap-6"
       >
-        {/* The tabs scroll sideways on a phone instead of being cut off. The
-            line is an inset shadow, so the active tab's bar sits on it, and
-            the first tab starts on the page's left edge. */}
-        <div className="scrollbar-hidden overflow-x-auto shadow-[inset_0_-1px_0_var(--border)]">
-          <TabsList
-            variant="line"
-            className="gap-6 p-0 group-data-horizontal/tabs:h-10"
-            aria-label="Manage workspace"
-          >
-            {adminTabs.map(({ value, label, icon: Icon }) => (
-              <TabsTrigger
-                key={value}
-                value={value}
-                className="h-full gap-2 rounded-none border-0 px-0 group-data-horizontal/tabs:after:bottom-0"
-              >
-                <Icon className="size-4" aria-hidden />
-                {label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </div>
+        <AdminTabStrip activeTab={activeTab} />
         {adminTabs.map((tab) => (
           <TabsContent key={tab.value} value={tab.value}>
             {activeTab === tab.value ? <Outlet /> : null}
@@ -224,5 +219,60 @@ function AdminLayout() {
         ))}
       </Tabs>
     </Page>
+  );
+}
+
+/** How far an edge of the tab strip fades while there is more past it. */
+const TAB_FADE = "2rem";
+
+/**
+ * The tabs scroll sideways on a phone instead of being cut off. The active
+ * tab is scrolled into view, so a page past the fold (Usage, Events) still
+ * shows its tab, and each edge fades while there are tabs past it. The line
+ * is an inset shadow, so the active tab's bar sits on it, and the first tab
+ * starts on the page's left edge.
+ */
+function AdminTabStrip({ activeTab }: { activeTab: AdminTab }) {
+  const stripRef = useRef<HTMLDivElement>(null);
+  const edges = useScrollEdges(stripRef);
+
+  useLayoutEffect(() => {
+    const strip = stripRef.current;
+    const active = strip?.querySelector<HTMLElement>(
+      '[role="tab"][data-active]',
+    );
+    if (!strip || !active) return;
+    strip.scrollLeft =
+      active.offsetLeft - (strip.clientWidth - active.offsetWidth) / 2;
+  }, [activeTab]);
+
+  const mask =
+    edges.before || edges.after
+      ? `linear-gradient(to right, ${edges.before ? `transparent, black ${TAB_FADE}` : "black"}, ${edges.after ? `black calc(100% - ${TAB_FADE}), transparent` : "black"})`
+      : undefined;
+
+  return (
+    <div
+      ref={stripRef}
+      className="scrollbar-hidden relative overflow-x-auto shadow-[inset_0_-1px_0_var(--border)]"
+      style={{ maskImage: mask, WebkitMaskImage: mask }}
+    >
+      <TabsList
+        variant="line"
+        className="gap-6 p-0 group-data-horizontal/tabs:h-10"
+        aria-label="Manage workspace"
+      >
+        {adminTabs.map(({ value, label, icon: Icon }) => (
+          <TabsTrigger
+            key={value}
+            value={value}
+            className="h-full gap-2 rounded-none border-0 px-0 group-data-horizontal/tabs:after:bottom-0"
+          >
+            <Icon className="size-4" aria-hidden />
+            {label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </div>
   );
 }

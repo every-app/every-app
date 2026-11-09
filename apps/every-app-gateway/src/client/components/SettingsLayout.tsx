@@ -1,4 +1,5 @@
 import type { ComponentProps, ReactNode } from "react";
+import { cn } from "cn";
 import { SectionHeader } from "@/client/components/PageHeader";
 import { Skeleton } from "@/client/components/ui/skeleton";
 
@@ -52,7 +53,8 @@ export function SettingsList({
 /**
  * One row: a name with its detail on the left, a status and an action on the
  * right. The action's slot is kept even when empty, so the statuses line up
- * down a list, and across the lists on a page.
+ * down a list, and across the lists on a page. On a phone the status follows
+ * the name, so the action keeps the right edge without squeezing the name.
  */
 export function SettingsRow({
   name,
@@ -65,19 +67,46 @@ export function SettingsRow({
   status?: ReactNode;
   action?: ReactNode;
 }) {
+  // The status and the action span the name's line and the detail's, so
+  // they center on both; with no detail there is one line to span. From
+  // `sm` the text keeps 16px to what follows it and the status 12px to the
+  // action; a row without a status has no column for one.
   return (
-    <li className="flex min-h-13 flex-col gap-2 px-4 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-      <div className="min-w-0">
-        <p className="text-sm font-medium">{name}</p>
-        {detail ? (
-          <p className="text-xs text-muted-foreground">{detail}</p>
+    <li
+      className={cn(
+        "grid min-h-13 grid-cols-[minmax(0,1fr)_auto] content-center items-center gap-x-3 px-4 py-2",
+        status ? "sm:grid-cols-[minmax(0,1fr)_auto_auto]" : undefined,
+      )}
+    >
+      {/* On a phone the status follows the name; from `sm` it is a column. */}
+      <div className="col-start-1 row-start-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 sm:contents">
+        <p className="text-sm font-medium sm:col-start-1 sm:row-start-1 sm:mr-1">
+          {name}
+        </p>
+        {status ? (
+          <div
+            className={cn(
+              "text-sm sm:col-start-2 sm:row-start-1",
+              detail ? "sm:row-span-2" : undefined,
+            )}
+          >
+            {status}
+          </div>
         ) : null}
       </div>
-      <div className="flex shrink-0 items-center gap-3 text-sm">
-        {status}
-        <div className="flex justify-end empty:hidden sm:min-w-18 sm:empty:block">
-          {action}
-        </div>
+      {detail ? (
+        <p className="col-start-1 row-start-2 text-xs text-muted-foreground sm:mr-1">
+          {detail}
+        </p>
+      ) : null}
+      <div
+        className={cn(
+          "col-start-2 row-start-1 flex justify-end text-sm empty:hidden sm:min-w-18 sm:empty:block",
+          status ? "sm:col-start-3" : undefined,
+          detail ? "row-span-2" : undefined,
+        )}
+      >
+        {action}
       </div>
     </li>
   );

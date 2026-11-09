@@ -12,7 +12,9 @@ import {
   type TableOptions,
 } from "@tanstack/react-table";
 import {
+  createContext,
   Fragment,
+  useContext,
   type ComponentProps,
   type MouseEvent,
   type ReactNode,
@@ -31,6 +33,24 @@ import {
   TableRow,
 } from "@/client/components/ui/table";
 
+/**
+ * Where a column's cell sits on a row's card under `md`. The first column is
+ * the card's heading and the `actions` column its menu; every other column
+ * names its place, `Detail` unless it says otherwise.
+ */
+export enum CardSlot {
+  /** In the line under the heading, after its label. */
+  Detail = "detail",
+  /** In that line without a label, for a value that names itself ("3 apps", a status chip). */
+  BareDetail = "bare-detail",
+  /** Right of the heading, before the menu: the one value people scan a list for. */
+  Trailing = "trailing",
+  /** Under the detail line at full width, for a bar or a control that needs room. */
+  Footer = "footer",
+  /** Off the card. The table keeps it. */
+  Hidden = "hidden",
+}
+
 type AppColumnMeta<TData> = {
   headerClassName?: string;
   /** The `<td>`'s class. A card (under `md`) lays its cells out itself and ignores it. */
@@ -40,8 +60,8 @@ type AppColumnMeta<TData> = {
    * `SortableHeader`). A string header is its own label.
    */
   label?: string;
-  /** Leaves the column off the cards. The table keeps it. */
-  hideOnCard?: boolean;
+  /** Where the cell sits on a card; `CardSlot.Detail` when unset. */
+  card?: CardSlot;
 };
 
 declare module "@tanstack/react-table" {
@@ -128,13 +148,28 @@ function cardLabel<TData>(column: Column<TData, unknown>): string | undefined {
   return typeof header === "string" ? header : meta?.label;
 }
 
+function cardSlot<TData>(cell: Cell<TData, unknown>): CardSlot {
+  return cell.column.columnDef.meta?.card ?? CardSlot.Detail;
+}
+
 function renderCell<TData>(cell: Cell<TData, unknown>) {
   return flexRender(cell.column.columnDef.cell, cell.getContext());
 }
 
+const InCardContext = createContext(false);
+
 /**
- * One row as a card: the first cell as its heading, the actions menu top
- * right, every other cell a label and a value. There is no header row, so
+ * True for a cell rendered on a card, where it can leave out what only the
+ * table needs, such as the usual state a table column spells out ("Active").
+ */
+export function useInDataTableCard(): boolean {
+  return useContext(InCardContext);
+}
+
+/**
+ * One row as a list row: the first cell as its heading, a line of details
+ * under it, the trailing value and the actions menu on the right. Each
+ * column's `meta.card` says where its cell goes. There is no header row, so
  * the cards cannot be sorted; the table's default order stands.
  */
 function DataTableCard<TData>({
@@ -146,57 +181,93 @@ function DataTableCard<TData>({
   active: boolean;
   onClick?: (event: MouseEvent<HTMLElement>) => void;
 }) {
-  const cells = row
-    .getVisibleCells()
-    .filter((cell) => !cell.column.columnDef.meta?.hideOnCard);
-  const primary = cells[0];
+  const [primary, ...rest] = row.getVisibleCells();
   if (!primary) return null;
-  const actions = cells.find(
-    (cell) => cell !== primary && cell.column.id === ACTIONS_COLUMN,
-  );
-  const details = cells.filter((cell) => cell !== primary && cell !== actions);
+  const actions = rest.find((cell) => cell.column.id === ACTIONS_COLUMN);
+  const placed = rest.filter((cell) => cell !== actions);
+  const inSlot = (...slots: CardSlot[]) =>
+    placed.filter((cell) => slots.includes(cardSlot(cell)));
+  const details = inSlot(CardSlot.Detail, CardSlot.BareDetail);
+  const trailing = inSlot(CardSlot.Trailing);
+  const footers = inSlot(CardSlot.Footer);
 
   return (
     <div
       data-slot="data-table-card"
       data-active={active ? "" : undefined}
-      className={cn("space-y-2 px-4 py-3", onClick ? CLICKABLE_ROW : undefined)}
+      className={cn("px-4 py-3", onClick ? CLICKABLE_ROW : undefined)}
       onClick={onClick}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div data-slot="data-table-card-primary" className="min-w-0 flex-1">
-          {renderCell(primary)}
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div data-slot="data-table-card-primary">{renderCell(primary)}</div>
+          {details.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
+              {details.map((cell) => {
+                const label =
+                  cardSlot(cell) === CardSlot.Detail
+                    ? cardLabel(cell.column)
+                    : undefined;
+                // A bare value is the item itself, so a cell that renders
+                // nothing on a card leaves no gap, and a cell of two lines
+                // keeps them stacked; a label sits on its value's line.
+                return (
+                  <span
+                    key={cell.id}
+                    data-slot="data-table-card-detail"
+                    className={cn(
+                      "mt-1 max-w-full min-w-0 empty:hidden",
+                      label ? "inline-flex items-center gap-1" : undefined,
+                    )}
+                  >
+                    {label ? (
+                      <>
+                        <span data-slot="data-table-card-label">{label}</span>
+                        <span
+                          data-slot="data-table-card-value"
+                          className="min-w-0 text-foreground"
+                        >
+                          {renderCell(cell)}
+                        </span>
+                      </>
+                    ) : (
+                      renderCell(cell)
+                    )}
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
+        {trailing.length > 0 ? (
+          // As tall as a heading and the line under it, so a one-word value
+          // centers on them however many detail lines follow.
+          <div
+            data-slot="data-table-card-trailing"
+            className="flex min-h-9 shrink-0 items-center gap-2 text-sm text-muted-foreground"
+          >
+            {trailing.map((cell) => (
+              <Fragment key={cell.id}>{renderCell(cell)}</Fragment>
+            ))}
+          </div>
+        ) : null}
         {actions ? (
-          <div data-slot="data-table-card-actions" className="-my-1 shrink-0">
+          // The menu's width even when a row has none (the owner's row), so
+          // the trailing values line up down the list.
+          <div
+            data-slot="data-table-card-actions"
+            className="-mr-2 flex min-h-9 min-w-7 shrink-0 items-center"
+          >
             {renderCell(actions)}
           </div>
         ) : null}
       </div>
-      {details.length > 0 ? (
-        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1">
-          {details.map((cell) => {
-            const label = cardLabel(cell.column);
-            return (
-              <Fragment key={cell.id}>
-                {label ? (
-                  <dt className="text-xs leading-5 text-muted-foreground">
-                    {label}
-                  </dt>
-                ) : null}
-                <dd
-                  className={cn(
-                    "flex min-w-0 flex-col items-end text-right",
-                    label ? undefined : "col-span-full",
-                  )}
-                >
-                  {renderCell(cell)}
-                </dd>
-              </Fragment>
-            );
-          })}
-        </dl>
-      ) : null}
+      {/* Under the whole row, the trailing value's width included. */}
+      {footers.map((cell) => (
+        <div key={cell.id} data-slot="data-table-card-footer" className="mt-2">
+          {renderCell(cell)}
+        </div>
+      ))}
     </div>
   );
 }
@@ -204,9 +275,9 @@ function DataTableCard<TData>({
 /**
  * The table body of a data table: sortable headers, skeleton rows while the
  * first page loads, and an empty state that says whether filters hide rows.
- * Under `md` the rows are cards instead (`DataTableCard`), so a phone never
- * scrolls a table sideways; the two layouts render together and CSS shows
- * one.
+ * Under `md` the rows are list rows instead (`DataTableCard`), so a phone
+ * never scrolls a table sideways; the two layouts render together and CSS
+ * shows one.
  *
  * The table component owns sorting and filters, and passes them to
  * `useDataTable`. Put a `DataTableToolbar` in `toolbar`.
@@ -354,31 +425,29 @@ export function DataTable<TData>({
       <div
         data-slot="data-table-cards"
         className={cn(
-          // Cells are written for a table row, where a long value truncates
-          // so the columns beside it keep their place. A card has nothing
-          // beside the value, so it wraps instead.
-          "divide-y divide-border text-sm md:hidden [&_.truncate]:whitespace-normal [&_.truncate]:wrap-anywhere",
+          "divide-y divide-border text-sm md:hidden",
           scrollClassName ? cn("overflow-y-auto", scrollClassName) : undefined,
         )}
       >
-        {isLoading
-          ? Array.from({ length: SKELETON_ROWS }, (_, index) => (
-              <div key={index} aria-hidden className="space-y-2 px-4 py-3">
-                <Skeleton className="h-4 w-1/2" />
-                <Skeleton className="h-3 w-full" />
-                <Skeleton className="h-3 w-2/3" />
-              </div>
-            ))
-          : rows.map((row) => (
-              <DataTableCard
-                key={row.id}
-                row={row}
-                active={row.id === activeRowId}
-                onClick={
-                  onRowClick ? (event) => onRowClick(row, event) : undefined
-                }
-              />
-            ))}
+        <InCardContext.Provider value>
+          {isLoading
+            ? Array.from({ length: SKELETON_ROWS }, (_, index) => (
+                <div key={index} aria-hidden className="space-y-2 px-4 py-3">
+                  <Skeleton className="h-4 w-1/2" />
+                  <Skeleton className="h-3 w-2/3" />
+                </div>
+              ))
+            : rows.map((row) => (
+                <DataTableCard
+                  key={row.id}
+                  row={row}
+                  active={row.id === activeRowId}
+                  onClick={
+                    onRowClick ? (event) => onRowClick(row, event) : undefined
+                  }
+                />
+              ))}
+        </InCardContext.Provider>
       </div>
       {footer}
     </TableCard>

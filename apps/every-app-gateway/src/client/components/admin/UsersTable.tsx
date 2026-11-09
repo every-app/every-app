@@ -1,6 +1,11 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { DataTable, useDataTable } from "@/client/components/table/DataTable";
+import {
+  CardSlot,
+  DataTable,
+  useDataTable,
+  useInDataTableCard,
+} from "@/client/components/table/DataTable";
 import {
   DATE_CELL,
   DateCell,
@@ -76,12 +81,18 @@ const STATUS_LABELS: Record<string, string> = {
   pending: "Pending",
 };
 
-/** The usual state is plain text; only an exception is a chip. */
+/**
+ * The usual state is plain text, and nothing on a phone's row; only an
+ * exception is a chip.
+ */
 function StatusCell({ user }: { user: AdminUser }) {
+  const inCard = useInDataTableCard();
   if (user.banned) return <Badge variant="destructive">Deactivated</Badge>;
   const status = user.status || "active";
   if (status === "active") {
-    return <span className="text-muted-foreground">Active</span>;
+    return inCard ? null : (
+      <span className="text-muted-foreground">Active</span>
+    );
   }
   return <Badge variant="warning">{STATUS_LABELS[status] ?? status}</Badge>;
 }
@@ -102,18 +113,20 @@ const columns: ColumnDef<AdminUser>[] = [
   {
     id: "role",
     header: "Role",
+    meta: { card: CardSlot.Trailing },
     cell: ({ row }) => formatRole(row.original.role || "member"),
   },
   {
     id: "status",
     header: "Status",
+    meta: { card: CardSlot.BareDetail },
     cell: ({ row }) => <StatusCell user={row.original} />,
   },
   {
     id: "createdAt",
     accessorFn: (user) => dateSortValue(user.createdAt, 0),
     header: ({ column }) => <SortableHeader column={column} label="Created" />,
-    meta: { label: "Created", cellClassName: DATE_CELL },
+    meta: { label: "Created", cellClassName: DATE_CELL, card: CardSlot.Hidden },
     cell: ({ row }) => <DateCell value={row.original.createdAt} />,
   },
   {
