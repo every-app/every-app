@@ -58,7 +58,7 @@ jobs:
           done
           echo "version=$version" >> "$GITHUB_OUTPUT"
           # Never backwards: a reverted release commit must not move latest down.
-          latest="$(npm view everyapp@latest version 2>/dev/null || true)"
+          latest="$(npm view everyapp@latest version --prefer-online 2>/dev/null || true)"
           if [ -n "$latest" ] && [ "$latest" != "$version" ]; then
             newest="$(printf '%s\n%s\n' "$latest" "$version" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const [a,b]=s.trim().split("\n");const p=v=>{const [c,...r]=v.split("-");return {c:c.split(".").map(Number),r:r.join("-")}};const cmp=(x,y)=>{const X=p(x),Y=p(y);for(let i=0;i<3;i++)if(X.c[i]!==Y.c[i])return X.c[i]-Y.c[i];if(!X.r||!Y.r)return (X.r?0:1)-(Y.r?0:1);const xs=X.r.split("."),ys=Y.r.split(".");for(let i=0;i<Math.max(xs.length,ys.length);i++){if(xs[i]===undefined)return -1;if(ys[i]===undefined)return 1;const n=/^\d+$/.test(xs[i])&&/^\d+$/.test(ys[i]);const d=n?Number(xs[i])-Number(ys[i]):xs[i].localeCompare(ys[i]);if(d)return d}return 0};console.log(cmp(a,b)>=0?a:b)})')"
             if [ "$newest" != "$version" ]; then
@@ -69,8 +69,8 @@ jobs:
           fi
           gateway=false; sdk=false; cli=false
           gh release view "gateway-v$version" > /dev/null 2>&1 && gateway=true
-          [ "$(npm view "@every-app/sdk@$version" version 2>/dev/null)" = "$version" ] && sdk=true
-          [ "$(npm view "everyapp@$version" version 2>/dev/null)" = "$version" ] && cli=true
+          [ "$(npm view "@every-app/sdk@$version" version --prefer-online 2>/dev/null)" = "$version" ] && sdk=true
+          [ "$(npm view "everyapp@$version" version --prefer-online 2>/dev/null)" = "$version" ] && cli=true
           echo "gateway=$gateway" >> "$GITHUB_OUTPUT"
           echo "sdk=$sdk" >> "$GITHUB_OUTPUT"
           echo "cli=$cli" >> "$GITHUB_OUTPUT"
@@ -157,11 +157,15 @@ jobs:
           VERSION: ${{ steps.state.outputs.version }}
         run: |
           set -euo pipefail
+          # npm can take a few minutes to list a new version (0.3.0's SDK: 3-4
+          # minutes), so wait up to 10, asking past npm's cache each time.
+          attempts=20
           for name in @every-app/sdk everyapp; do
-            for attempt in 1 2 3 4 5 6; do
-              [ "$(npm view "$name@$VERSION" version 2>/dev/null)" = "$VERSION" ] && break
-              [ "$attempt" = 6 ] && { echo "::error::npm doesn't list $name@$VERSION"; exit 1; }
-              sleep 10
+            for attempt in $(seq 1 "$attempts"); do
+              [ "$(npm view "$name@$VERSION" version --prefer-online 2>/dev/null)" = "$VERSION" ] && { echo "npm lists $name@$VERSION (attempt $attempt of $attempts)"; break; }
+              [ "$attempt" = "$attempts" ] && { echo "::error::npm doesn't list $name@$VERSION after $attempts attempts, 30 s apart"; exit 1; }
+              echo "npm doesn't list $name@$VERSION yet (attempt $attempt of $attempts); trying again in 30 s"
+              sleep 30
             done
           done
           echo "::notice::Released $VERSION: Gateway https://github.com/$GITHUB_REPOSITORY/releases/tag/gateway-v$VERSION, npm @every-app/sdk@$VERSION and everyapp@$VERSION."
