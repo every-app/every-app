@@ -187,7 +187,7 @@ export async function existingGateway({
     createCf,
     accountId,
     host: byUrl ? new URL(gateway).host.toLowerCase() : undefined,
-    name: gateway !== undefined && !byUrl ? gatewayNameFrom(gateway) : undefined,
+    name: gateway !== undefined && !byUrl ? gateway : undefined,
     interactive: canPromptInTerminal(json ?? false),
     onDeviceLogin: json ? deviceLoginAction(out, "gateway.login") : undefined,
   });
@@ -216,7 +216,7 @@ interface ExistingGatewayOptions {
   out: EventSink;
   /** --account-id */
   accountId?: string;
-  /** What --gateway or EVERYAPP_GATEWAY_URL names (requestedGatewayUrl): a URL or a name. */
+  /** What --gateway or EVERYAPP_GATEWAY_URL names, as requestedGatewayUrl gives it: a URL or a name ("" is the default's). */
   gateway?: string;
   /** cf per account (tests). */
   createCf?: CreateCf;
@@ -237,7 +237,7 @@ export async function connectToGateway({
   login,
   checkSchema = true,
 }: {
-  /** The URL `--gateway` or EVERYAPP_GATEWAY_URL names (requestedGatewayUrl). */
+  /** What `--gateway` or EVERYAPP_GATEWAY_URL names, as requestedGatewayUrl gives it: a URL or a name ("" is the default's). */
   gateway?: string;
   /** --account-id */
   accountId?: string;
@@ -267,10 +267,11 @@ export async function connectToGateway({
    */
   checkSchema?: boolean;
 }): Promise<GatewayConnection> {
-  // --gateway: a URL picks by host, a name by name ("" is the default Gateway).
+  // --gateway, already read by requestedGatewayUrl: a URL picks by host, a
+  // name by name ("" is the default Gateway).
   const byUrl = gateway !== undefined && gateway.includes("://");
   const host = byUrl ? new URL(gateway).host.toLowerCase() : undefined;
-  const name = gateway !== undefined && !byUrl ? gatewayNameFrom(gateway) : undefined;
+  const name = gateway !== undefined && !byUrl ? gateway : undefined;
   const loggedIn = await loginAndDiscover({
     createCf,
     accountId,

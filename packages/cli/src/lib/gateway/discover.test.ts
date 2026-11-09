@@ -9,7 +9,7 @@ import { cfD1Database } from "@/lib/cf/d1";
 import type { FakeCfResponse } from "@/lib/cf/fakeCf";
 import type { CfRunner } from "@/lib/cf/runner";
 import { FakeCloudflare } from "@/test/fakeCloudflare";
-import { connectToGateway } from "./connect";
+import { connectToGateway, requestedGatewayUrl } from "./connect";
 import { discoverGateway, refuseUnchecked, requireGateway } from "./discover";
 import { writeInstall } from "./install";
 import { forgetThisRunsPickForTests } from "./pick";
@@ -239,6 +239,26 @@ describe("discoverGateway", () => {
           choices: [
             expect.objectContaining({ rerun: "pnpm everyapp status --json --account-id acct-1" }),
             expect.objectContaining({ rerun: "pnpm everyapp status --json --account-id acct-2" }),
+          ],
+        },
+      });
+      // Named by a name two accounts have: the name stays, the account picks.
+      process.argv = [...argv.slice(0, 2), "status", "--gateway", "every-app-gateway", "--json", "--account-id", "acct-9"];
+      await expect(discover({ name: null })).rejects.toMatchObject({
+        data: {
+          choices: [
+            expect.objectContaining({ rerun: "pnpm everyapp status --gateway every-app-gateway --json --account-id acct-1" }),
+            expect.objectContaining({ rerun: "pnpm everyapp status --gateway every-app-gateway --json --account-id acct-2" }),
+          ],
+        },
+      });
+      // db restore --gateway (no value): kept as it is, --json too.
+      process.argv = [...argv.slice(0, 2), "db", "restore", "--gateway", "--json"];
+      await expect(discover()).rejects.toMatchObject({
+        data: {
+          choices: [
+            expect.objectContaining({ rerun: "pnpm everyapp db restore --gateway --json --account-id acct-1" }),
+            expect.objectContaining({ rerun: "pnpm everyapp db restore --gateway --json --account-id acct-2" }),
           ],
         },
       });
@@ -565,14 +585,38 @@ describe("two Gateways in one account", () => {
     }
   });
 
-  it("connects by name, bare or as its Worker's", async () => {
-    for (const gateway of ["demo", "every-app-gateway-demo"]) {
-      const connection = await connectToGateway({ gateway, createCf, interactive: false });
+  it("connects by name, bare or as its Worker's, the default's too, read from --gateway as commands read it", async () => {
+    for (const flag of ["demo", "every-app-gateway-demo"]) {
+      const connection = await connectToGateway({ gateway: requestedGatewayUrl(flag), createCf, interactive: false });
       expect(connection.names.worker).toBe("every-app-gateway-demo");
       expect(connection.gatewayUrl).toBe("https://demo.acme.com");
     }
-    const byDefault = await connectToGateway({ gateway: "every-app-gateway", createCf, interactive: false });
+    const byDefault = await connectToGateway({ gateway: requestedGatewayUrl("every-app-gateway"), createCf, interactive: false });
     expect(byDefault.names.worker).toBe("every-app-gateway");
+  });
+
+  it("offers reruns that replace this run's --gateway and --account-id, each with its own label", async () => {
+    const argv = process.argv;
+    // update --gateway <a URL no Gateway serves>: nothing picks one.
+    process.argv = [...argv.slice(0, 2), "update", "--gateway=https://old.acme.com", "--json", "--account-id", "acct-1"];
+    try {
+      await expect(discover({ host: "old.acme.com" })).rejects.toMatchObject({
+        data: {
+          choices: [
+            expect.objectContaining({
+              label: "Acme · apps.acme.com",
+              rerun: "pnpm everyapp update --json --account-id acct-1 --gateway https://apps.acme.com",
+            }),
+            expect.objectContaining({
+              label: "Acme · demo.acme.com",
+              rerun: "pnpm everyapp update --json --account-id acct-1 --gateway https://demo.acme.com",
+            }),
+          ],
+        },
+      });
+    } finally {
+      process.argv = argv;
+    }
   });
 });
 

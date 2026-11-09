@@ -31,7 +31,7 @@
 import os from "node:os";
 import path from "node:path";
 import { EveryAppError, errorMessage } from "@/lib/errors";
-import { existingGateway } from "@/lib/gateway/connect";
+import { existingGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { openInBrowser } from "@/lib/gateway/setup-link";
 import { gatewayOrigin } from "@/lib/linkedDev";
 import {
@@ -154,7 +154,7 @@ async function findThroughCloudflare(flags: GatewayApiFlags, out: EventSink): Pr
     json: flags.json,
     out,
     accountId: flags["account-id"],
-    gateway: flags.gateway,
+    gateway: requestedGatewayUrl(flags.gateway),
   });
   if (!found.install) {
     throw new EveryAppError(

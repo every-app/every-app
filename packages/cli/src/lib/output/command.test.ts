@@ -66,5 +66,10 @@ describe("thisCommandWithout", () => {
     expect(thisCommandWithout("--domain", ["setup", "--domain=apps.example.com"])).toBe(
       "pnpm everyapp setup",
     );
+    expect(
+      thisCommandWithout(["--account-id", "--gateway"], ["update", "--gateway=https://a.example.com", "--json", "--account-id", "acct-1"]),
+    ).toBe("pnpm everyapp update --json");
+    // db restore's --gateway takes no value: the flag after it stays.
+    expect(thisCommandWithout("--gateway", ["db", "restore", "--gateway", "--json"])).toBe("pnpm everyapp db restore --json");
   });
 });

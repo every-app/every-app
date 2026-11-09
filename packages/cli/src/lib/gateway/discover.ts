@@ -222,9 +222,11 @@ async function discover({
 
 /**
  * Several Gateways and nothing to pick one by: one command per Gateway,
- * ready to run (no single rerun fits). By host (the flag the command
- * names it with, --gateway or setup's --domain) when the Gateway has one,
- * else by account and name.
+ * ready to run (no single rerun fits). By host when the command names a
+ * Gateway that way (setup's --domain) and it has one; else by account, and
+ * by URL (or name) too when the account alone wouldn't pick it. A rerun
+ * replaces the --account-id (and --gateway) this run had; one that only
+ * adds the account keeps this run's --gateway, which picks within it.
  */
 function chooseGateway(found: FoundGateway[], whoami: CfWhoami, hostFlag?: string): ActionRequiredError {
   const accounts = new Set(found.map((gateway) => gateway.account.id));
@@ -256,13 +258,8 @@ function chooseGateway(found: FoundGateway[], whoami: CfWhoami, hostFlag?: strin
             rerun: byHost
               ? `${thisCommandWithout(hostFlag)} ${hostFlag} ${gatewayHost}`
               : sameAccount
-                ? thisCommand([
-                    "--account-id",
-                    gateway.account.id,
-                    "--gateway",
-                    gatewayHost ? `https://${gatewayHost}` : gateway.names.worker,
-                  ])
-                : thisCommand(["--account-id", gateway.account.id]),
+                ? `${thisCommandWithout(["--account-id", "--gateway"])} --account-id ${gateway.account.id} --gateway ${gatewayHost ? `https://${gatewayHost}` : gateway.names.worker}`
+                : `${thisCommandWithout("--account-id")} --account-id ${gateway.account.id}`,
           };
         }),
       },

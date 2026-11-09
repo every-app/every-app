@@ -41,16 +41,20 @@ export function thisCommand(
   return [CLI, ...args.map(quote)].join(" ");
 }
 
-/** This run's command without `flag` and its value (`--gateway x`, `--gateway=x`). */
+/** This run's command without `flags` and their values (`--gateway x`, `--gateway=x`), if they have one. */
 export function thisCommandWithout(
-  flag: string,
+  flags: string | readonly string[],
   argv: readonly string[] = process.argv.slice(2),
 ): string {
+  const without = typeof flags === "string" ? [flags] : flags;
   const args: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
-    if (arg === flag) i++;
-    else if (!arg.startsWith(`${flag}=`)) args.push(arg);
+    // A flag after it isn't its value (db restore's --gateway takes none).
+    if (without.includes(arg)) {
+      if (!argv[i + 1]?.startsWith("-")) i++;
+    }
+    else if (!without.some((flag) => arg.startsWith(`${flag}=`))) args.push(arg);
   }
   return thisCommand([], { argv: args });
 }

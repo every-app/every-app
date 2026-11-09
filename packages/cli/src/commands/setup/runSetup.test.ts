@@ -570,6 +570,34 @@ describe("everyapp setup", () => {
     expect([...account.databases.values()].map((entry) => entry.name)).not.toContain("every-app-gateway");
   });
 
+  it("update among two Gateways offers reruns that --gateway takes: each Gateway's URL, labelled apart", async () => {
+    await setup({ domain: GW });
+    // Its owner never opens the link: the install row is written by then.
+    await setup({ name: "demo", domain: "demo.example.com" }, { seams: { ...deps().seams, owner: nobodyOpensIt } });
+    const out: EventSink = createNdjsonSink(() => undefined);
+    const argv = process.argv;
+    process.argv = [...argv.slice(0, 2), "update", "--json"];
+    try {
+      await expect(runGatewayDeploy({ json: true }, out, deps())).rejects.toMatchObject({
+        action: "choose_account",
+        data: {
+          choices: [
+            expect.objectContaining({
+              label: `Acme · ${GW}`,
+              rerun: `pnpm everyapp update --json --account-id ${account.accountId} --gateway https://${GW}`,
+            }),
+            expect.objectContaining({
+              label: `Acme · demo.example.com`,
+              rerun: `pnpm everyapp update --json --account-id ${account.accountId} --gateway https://demo.example.com`,
+            }),
+          ],
+        },
+      });
+    } finally {
+      process.argv = argv;
+    }
+  });
+
   it("update removes an older install's activation queue and the Gateway's consumer on it before the upload", async () => {
     await setup({ domain: GW });
     // Releases before 0.3.0-rc.12 made it and consumed it; the upload now has no queue() handler.
