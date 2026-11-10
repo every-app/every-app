@@ -93,7 +93,7 @@ An MCP app is a set of tools the Gateway serves on its `/mcp` with no deployed a
 A remote app's credential is a provider row `<id>-mcp`, written with the app. Its host is the MCP URL's, so the credential goes nowhere else.
 
 - `--auth bearer|header|query|basic`: a static key, `everyapp secret set <ID>_MCP_TOKEN`.
-- `--auth oauth` (picked when the server's 401 names its OAuth metadata): `mcp add` discovers the authorization server and registers a client (DCR); a server that registers none but takes client metadata documents (CIMD, ElevenLabs') gets the URL of the document the Gateway serves, `https://<gateway>/oauth-clients/<id>-mcp`, as a public client's id; else `--client-id` takes one registered by hand. A host the Gateway holds a key for (`api.elevenlabs.io`) takes an OAuth server: each member's own token goes there, never the Gateway's key. Each member connects their own account in the app, at `/connect/<id>-mcp?app=<id>&return=/settings/accounts`. Until then their calls answer `Connect your <Provider> account to use this tool: <url>`. The discovered scopes go in the app's capability entry `{ scopes, why }`, `scopes_supported` is `tolerated`, and the scopes the server grants are kept as granted.
+- `--auth oauth` (picked when the server's 401 names its OAuth metadata): `mcp add` discovers the authorization server and registers a client (DCR); a server that registers none but takes client metadata documents (CIMD, ElevenLabs') gets the URL of the document the Gateway serves, `https://<gateway>/oauth-clients/<id>-mcp`, as a public client's id; else `--client-id` takes one registered by hand. A host the Gateway holds a key for (`api.elevenlabs.io`) takes an OAuth server: each member's own token goes there, never the Gateway's key. Each member connects their own account in the app, at `/connect/<id>-mcp?app=<id>`. Until then their calls answer `Connect your <Provider> account to use this tool: <url>`. The discovered scopes go in the app's capability entry `{ scopes, why }`, `scopes_supported` is `tolerated`, and the scopes the server grants are kept as granted.
 - `--provider <id>`: a provider the Gateway already has (`--provider elevenlabs`); the URL's host must be one of its hosts (`REMOTE_MCP_PROVIDER_HOST`).
 
 Adding the app again with another credential replaces its `<id>-mcp` row and deletes its connections.
@@ -109,7 +109,7 @@ Adding the app again with another credential replaces its `<id>-mcp` row and del
 | Cursor, Gemini CLI, MCP Inspector | The same URL; they register with dynamic client registration (`/oauth/register`, `MCP_DCR_ENABLED`). |
 | Scripts, anything that takes a header | A personal access token: `Authorization: Bearer epat_…`. |
 
-The consent page shows the client and lets the person pick read & write or read only, and the apps (all, or some). Approving records a connection. People see and revoke theirs under the account menu → AI connections (`everyapp workspace connections`, `connection revoke`).
+The consent page shows the client and lets the person pick read & write or read only, and the apps (all, or some). Approving records a connection. People see and revoke theirs under Connections in the sidebar (`everyapp workspace connections`, `connection revoke`).
 
 Personal access tokens are made in **Manage workspace → Tokens**: read only (`mcp:read`, the default) or full access, all apps or one app, for 7, 30 (the default) or 90 days or a year. The `epat_` value is shown once and only its hash is stored. Revoke with `everyapp workspace token revoke <id>`.
 

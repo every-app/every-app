@@ -26,7 +26,7 @@ Owners and admins only. Each tab has a CLI command and an MCP tool: [workspace](
 | **Activity** | `/admin/activity` | Every tool call by AI clients, allowed or blocked; the **Audit** toggle shows the audit log. |
 | **Events** | `/admin/events` | Webhooks and email alerts. [events](/docs/agent/events) |
 
-Each person manages their own AI connections under the account menu → AI connections.
+Each person manages their own AI connections under Connections in the sidebar.
 
 ## The CLI by job
 

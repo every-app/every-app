@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
 /**
- * Settings → AI connections rendered for real with the server functions
+ * Connections → Agents rendered for real with the server functions
  * mocked: AI apps in the first table, native apps under "Apps on your
  * devices" with the one app each opens, and signing one out revokes that
  * connection by id (the server function scopes it to the signed-in user).
- * The section is absent until there is a native app.
+ * The section is absent until there is a native app. The steps to connect
+ * an agent take the table's place until there is one, and open in a dialog
+ * after that.
  */
 import { act, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -31,12 +33,13 @@ vi.mock("@/client/auth-client", () => ({
   authClient: { useActiveMemberRole: () => ({ data: { role: "member" } }) },
 }));
 vi.mock("@/client/components/ConnectAgent", () => ({
-  ConnectAgentSteps: () => null,
+  ConnectAgentSteps: () => <div data-testid="steps" />,
   ConnectAgentDocsLink: () => null,
+  ConnectAgentDialog: () => <div data-testid="connect-dialog" />,
 }));
 vi.mock("sonner", () => ({ toast: mocks.toast }));
 
-import { Route } from "./connections";
+import { Route } from "./index";
 
 const Page = (Route as unknown as { options: { component: ComponentType } })
   .options.component;
@@ -97,9 +100,16 @@ async function render() {
   await settle();
 }
 
-function section(label: string): HTMLElement | null {
-  return document.querySelector<HTMLElement>(`section[aria-label="${label}"]`);
+/** The section under a heading. */
+function section(title: string): HTMLElement | null {
+  return (
+    [...document.querySelectorAll<HTMLElement>("section")].find(
+      (element) => element.querySelector("h2")?.textContent === title,
+    ) ?? null
+  );
 }
+
+const testId = (id: string) => document.querySelector(`[data-testid="${id}"]`);
 
 /** Open a row's actions menu and press one of its items. */
 async function pressRowAction(rowLabel: string, item: string) {
@@ -189,5 +199,27 @@ describe("Apps on your devices", () => {
       data: { connectionId: "mcpc_openzen" },
     });
     expect(mocks.toast.success).toHaveBeenCalled();
+  });
+});
+
+describe("Connect an agent", () => {
+  it("shows the steps in place of the table until an agent is connected", async () => {
+    mocks.listMyMcpConnections.mockResolvedValue({ connections: [OPENZEN] });
+    await render();
+    const agents = section("Agents")!;
+    expect(agents.querySelector('[data-testid="steps"]')).not.toBeNull();
+    expect(agents.querySelector("table")).toBeNull();
+    expect(agents.textContent).not.toContain("Connect an agent");
+  });
+
+  it("opens the steps in a dialog once an agent is connected", async () => {
+    await render();
+    expect(testId("steps")).toBeNull();
+    expect(testId("connect-dialog")).toBeNull();
+    const connect = [...section("Agents")!.querySelectorAll("button")].find(
+      (element) => element.textContent?.trim() === "Connect an agent",
+    )!;
+    await act(async () => connect.click());
+    expect(testId("connect-dialog")).not.toBeNull();
   });
 });

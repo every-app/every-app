@@ -694,7 +694,8 @@ describe("adding a remote MCP server", () => {
       provider: "treg-mcp",
       secret: null,
       setupCommand: null,
-      connectPath: "/connect/treg-mcp?app=treg&return=%2Fsettings%2Faccounts",
+      connectPath:
+        "/connect/treg-mcp?app=treg&return=%2Fconnections%2Faccounts",
       oauth: { issuer: "https://auth.treg.to", registered: "dcr" },
       toolCount: null,
     });
@@ -724,7 +725,8 @@ describe("adding a remote MCP server", () => {
       await McpAppService.connection(as(member, "member"), { appId: "treg" }),
     ).toEqual({
       providerName: "Treg MCP server",
-      connectPath: "/connect/treg-mcp?app=treg&return=%2Fsettings%2Faccounts",
+      connectPath:
+        "/connect/treg-mcp?app=treg&return=%2Fconnections%2Faccounts",
       connection: null,
     });
     const shown = await McpAppService.get(as(admin, "admin"), {

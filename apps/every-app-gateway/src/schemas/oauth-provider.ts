@@ -2,7 +2,7 @@ import { z } from "zod";
 import { PROVIDER_ID } from "@every-app/sdk/internal";
 
 /**
- * What Manage workspace → Providers and Settings → Connected accounts send
+ * What Manage workspace → Providers and Connections → Accounts send
  * (docs/design/2026-11-oauth-simplify.md). A client
  * id or secret is bounded by length only: the provider decides its shape.
  * The spec of a custom provider is parsed by the registry's parser on the

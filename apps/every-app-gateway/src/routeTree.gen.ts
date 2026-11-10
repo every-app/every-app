@@ -21,6 +21,7 @@ import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAdminRouteImport } from './routes/_app/admin'
+import { Route as AppConnectionsRouteImport } from './routes/_app/connections'
 import { Route as AppOrganizationsRouteImport } from './routes/_app/organizations'
 import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
 import { Route as AppAdminIndexRouteImport } from './routes/_app/admin/index'
@@ -33,6 +34,8 @@ import { Route as AppAdminSignInRouteImport } from './routes/_app/admin/sign-in'
 import { Route as AppAdminTokensRouteImport } from './routes/_app/admin/tokens'
 import { Route as AppAdminUsageRouteImport } from './routes/_app/admin/usage'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
+import { Route as AppConnectionsIndexRouteImport } from './routes/_app/connections/index'
+import { Route as AppConnectionsAccountsRouteImport } from './routes/_app/connections/accounts'
 import { Route as AppSettingsAccountsRouteImport } from './routes/_app/settings/accounts'
 import { Route as AppSettingsConnectionsRouteImport } from './routes/_app/settings/connections'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -102,6 +105,11 @@ const AppAdminRoute = AppAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => AppRoute,
 } as any)
+const AppConnectionsRoute = AppConnectionsRouteImport.update({
+  id: '/connections',
+  path: '/connections',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppOrganizationsRoute = AppOrganizationsRouteImport.update({
   id: '/organizations',
   path: '/organizations',
@@ -162,6 +170,16 @@ const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AppAdminRoute,
 } as any)
+const AppConnectionsIndexRoute = AppConnectionsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppConnectionsRoute,
+} as any)
+const AppConnectionsAccountsRoute = AppConnectionsAccountsRouteImport.update({
+  id: '/accounts',
+  path: '/accounts',
+  getParentRoute: () => AppConnectionsRoute,
+} as any)
 const AppSettingsAccountsRoute = AppSettingsAccountsRouteImport.update({
   id: '/settings/accounts',
   path: '/settings/accounts',
@@ -221,6 +239,7 @@ export interface FileRoutesByFullPath {
   '/sign-up': typeof SignUpRoute
   '/verify-email': typeof VerifyEmailRoute
   '/admin': typeof AppAdminRouteWithChildren
+  '/connections': typeof AppConnectionsRouteWithChildren
   '/organizations': typeof AppOrganizationsRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/admin/activity': typeof AppAdminActivityRoute
@@ -232,6 +251,7 @@ export interface FileRoutesByFullPath {
   '/admin/tokens': typeof AppAdminTokensRoute
   '/admin/usage': typeof AppAdminUsageRoute
   '/admin/users': typeof AppAdminUsersRoute
+  '/connections/accounts': typeof AppConnectionsAccountsRoute
   '/settings/accounts': typeof AppSettingsAccountsRoute
   '/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -239,6 +259,7 @@ export interface FileRoutesByFullPath {
   '/api/invitations/lookup': typeof ApiInvitationsLookupRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/admin/': typeof AppAdminIndexRoute
+  '/connections/': typeof AppConnectionsIndexRoute
   '/api/admin/apps/install': typeof ApiAdminAppsInstallRouteWithChildren
   '/api/admin/deploys/$id': typeof ApiAdminDeploysIdRoute
   '/api/admin/apps/install/context': typeof ApiAdminAppsInstallContextRoute
@@ -265,6 +286,7 @@ export interface FileRoutesByTo {
   '/admin/tokens': typeof AppAdminTokensRoute
   '/admin/usage': typeof AppAdminUsageRoute
   '/admin/users': typeof AppAdminUsersRoute
+  '/connections/accounts': typeof AppConnectionsAccountsRoute
   '/settings/accounts': typeof AppSettingsAccountsRoute
   '/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -272,6 +294,7 @@ export interface FileRoutesByTo {
   '/api/invitations/lookup': typeof ApiInvitationsLookupRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/admin': typeof AppAdminIndexRoute
+  '/connections': typeof AppConnectionsIndexRoute
   '/api/admin/apps/install': typeof ApiAdminAppsInstallRouteWithChildren
   '/api/admin/deploys/$id': typeof ApiAdminDeploysIdRoute
   '/api/admin/apps/install/context': typeof ApiAdminAppsInstallContextRoute
@@ -289,6 +312,7 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/verify-email': typeof VerifyEmailRoute
   '/_app/admin': typeof AppAdminRouteWithChildren
+  '/_app/connections': typeof AppConnectionsRouteWithChildren
   '/_app/organizations': typeof AppOrganizationsRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/_app/': typeof AppIndexRoute
@@ -301,6 +325,7 @@ export interface FileRoutesById {
   '/_app/admin/tokens': typeof AppAdminTokensRoute
   '/_app/admin/usage': typeof AppAdminUsageRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
+  '/_app/connections/accounts': typeof AppConnectionsAccountsRoute
   '/_app/settings/accounts': typeof AppSettingsAccountsRoute
   '/_app/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -308,6 +333,7 @@ export interface FileRoutesById {
   '/api/invitations/lookup': typeof ApiInvitationsLookupRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/_app/admin/': typeof AppAdminIndexRoute
+  '/_app/connections/': typeof AppConnectionsIndexRoute
   '/api/admin/apps/install': typeof ApiAdminAppsInstallRouteWithChildren
   '/api/admin/deploys/$id': typeof ApiAdminDeploysIdRoute
   '/api/admin/apps/install/context': typeof ApiAdminAppsInstallContextRoute
@@ -326,6 +352,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/verify-email'
     | '/admin'
+    | '/connections'
     | '/organizations'
     | '/oauth/consent'
     | '/admin/activity'
@@ -337,6 +364,7 @@ export interface FileRouteTypes {
     | '/admin/tokens'
     | '/admin/usage'
     | '/admin/users'
+    | '/connections/accounts'
     | '/settings/accounts'
     | '/settings/connections'
     | '/api/auth/$'
@@ -344,6 +372,7 @@ export interface FileRouteTypes {
     | '/api/invitations/lookup'
     | '/api/setup/claim'
     | '/admin/'
+    | '/connections/'
     | '/api/admin/apps/install'
     | '/api/admin/deploys/$id'
     | '/api/admin/apps/install/context'
@@ -370,6 +399,7 @@ export interface FileRouteTypes {
     | '/admin/tokens'
     | '/admin/usage'
     | '/admin/users'
+    | '/connections/accounts'
     | '/settings/accounts'
     | '/settings/connections'
     | '/api/auth/$'
@@ -377,6 +407,7 @@ export interface FileRouteTypes {
     | '/api/invitations/lookup'
     | '/api/setup/claim'
     | '/admin'
+    | '/connections'
     | '/api/admin/apps/install'
     | '/api/admin/deploys/$id'
     | '/api/admin/apps/install/context'
@@ -393,6 +424,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/verify-email'
     | '/_app/admin'
+    | '/_app/connections'
     | '/_app/organizations'
     | '/oauth/consent'
     | '/_app/'
@@ -405,6 +437,7 @@ export interface FileRouteTypes {
     | '/_app/admin/tokens'
     | '/_app/admin/usage'
     | '/_app/admin/users'
+    | '/_app/connections/accounts'
     | '/_app/settings/accounts'
     | '/_app/settings/connections'
     | '/api/auth/$'
@@ -412,6 +445,7 @@ export interface FileRouteTypes {
     | '/api/invitations/lookup'
     | '/api/setup/claim'
     | '/_app/admin/'
+    | '/_app/connections/'
     | '/api/admin/apps/install'
     | '/api/admin/deploys/$id'
     | '/api/admin/apps/install/context'
@@ -523,6 +557,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/connections': {
+      id: '/_app/connections'
+      path: '/connections'
+      fullPath: '/connections'
+      preLoaderRoute: typeof AppConnectionsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/organizations': {
       id: '/_app/organizations'
       path: '/organizations'
@@ -606,6 +647,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/users'
       preLoaderRoute: typeof AppAdminUsersRouteImport
       parentRoute: typeof AppAdminRoute
+    }
+    '/_app/connections/': {
+      id: '/_app/connections/'
+      path: '/'
+      fullPath: '/connections/'
+      preLoaderRoute: typeof AppConnectionsIndexRouteImport
+      parentRoute: typeof AppConnectionsRoute
+    }
+    '/_app/connections/accounts': {
+      id: '/_app/connections/accounts'
+      path: '/accounts'
+      fullPath: '/connections/accounts'
+      preLoaderRoute: typeof AppConnectionsAccountsRouteImport
+      parentRoute: typeof AppConnectionsRoute
     }
     '/_app/settings/accounts': {
       id: '/_app/settings/accounts'
@@ -703,8 +758,23 @@ const AppAdminRouteWithChildren = AppAdminRoute._addFileChildren(
   AppAdminRouteChildren,
 )
 
+interface AppConnectionsRouteChildren {
+  AppConnectionsAccountsRoute: typeof AppConnectionsAccountsRoute
+  AppConnectionsIndexRoute: typeof AppConnectionsIndexRoute
+}
+
+const AppConnectionsRouteChildren: AppConnectionsRouteChildren = {
+  AppConnectionsAccountsRoute: AppConnectionsAccountsRoute,
+  AppConnectionsIndexRoute: AppConnectionsIndexRoute,
+}
+
+const AppConnectionsRouteWithChildren = AppConnectionsRoute._addFileChildren(
+  AppConnectionsRouteChildren,
+)
+
 interface AppRouteChildren {
   AppAdminRoute: typeof AppAdminRouteWithChildren
+  AppConnectionsRoute: typeof AppConnectionsRouteWithChildren
   AppOrganizationsRoute: typeof AppOrganizationsRoute
   AppIndexRoute: typeof AppIndexRoute
   AppSettingsAccountsRoute: typeof AppSettingsAccountsRoute
@@ -713,6 +783,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAdminRoute: AppAdminRouteWithChildren,
+  AppConnectionsRoute: AppConnectionsRouteWithChildren,
   AppOrganizationsRoute: AppOrganizationsRoute,
   AppIndexRoute: AppIndexRoute,
   AppSettingsAccountsRoute: AppSettingsAccountsRoute,

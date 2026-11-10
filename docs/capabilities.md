@@ -521,7 +521,7 @@ the hosts only.
 
 Removing a member deletes their connections, a member losing an app
 deletes their connection in it, and deleting an app deletes its
-connections. A person disconnects in Settings → Connected accounts, which
+connections. A person disconnects in Connections → Accounts, which
 lists each connection with its app; an owner or admin disconnects anyone's
 in Manage workspace → Providers.
 

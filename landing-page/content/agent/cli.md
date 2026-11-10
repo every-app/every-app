@@ -234,7 +234,7 @@ At a terminal, Cloudflare's own login runs (open its link and enter the code). P
 
 Sign in to a Gateway (--gateway <url>)
 
-The workspace, events, ai and call commands are the Gateway's own tools, run as you. This opens the Gateway's consent page in the browser (under --json the link is in a progress event and the run waits): choose read & write and all apps for the admin commands. The grant is kept in ~/.config/everyapp/gateways.json (0600) and refreshed when stale; revoke it under Settings → AI connections there, or with --sign-out. Scripts and CI set EVERYAPP_TOKEN to a personal access token (Manage workspace → Tokens) instead.
+The workspace, events, ai and call commands are the Gateway's own tools, run as you. This opens the Gateway's consent page in the browser (under --json the link is in a progress event and the run waits): choose read & write and all apps for the admin commands. The grant is kept in ~/.config/everyapp/gateways.json (0600) and refreshed when stale; revoke it under Connections there, or with --sign-out. Scripts and CI set EVERYAPP_TOKEN to a personal access token (Manage workspace → Tokens) instead.
 
 - `--gateway <url>`: Sign in to this Gateway instead: its admin API, which the workspace, events, ai and call commands use
 - `--sign-out`: With --gateway: revoke this machine's sign-in there and forget it

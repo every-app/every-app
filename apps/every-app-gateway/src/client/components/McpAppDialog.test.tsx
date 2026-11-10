@@ -140,7 +140,7 @@ it("closes from the footer", () => {
 
 const STATUS: McpAppConnectionStatus = {
   providerName: "Treg MCP server",
-  connectPath: "/connect/treg-mcp?app=treg&return=%2Fsettings%2Faccounts",
+  connectPath: "/connect/treg-mcp?app=treg&return=%2Fconnections%2Faccounts",
   connection: null,
 };
 

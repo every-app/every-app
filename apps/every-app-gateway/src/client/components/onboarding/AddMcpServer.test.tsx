@@ -343,7 +343,8 @@ describe("the Add an MCP server form", () => {
         authKind: "provider",
         credentialKind: "oauth",
         provider: "treg-mcp",
-        connectPath: "/connect/treg-mcp?app=treg&return=%2Fsettings%2Faccounts",
+        connectPath:
+          "/connect/treg-mcp?app=treg&return=%2Fconnections%2Faccounts",
         oauth: { issuer: "https://auth.treg.to", registered: "pasted" },
         toolCount: null,
         toolsStatus: null,
@@ -364,7 +365,7 @@ describe("the Add an MCP server form", () => {
       (element) => element.textContent?.trim() === MCP_APP_COPY.added.connect,
     );
     expect(link?.getAttribute("href")).toBe(
-      "/connect/treg-mcp?app=treg&return=%2Fsettings%2Faccounts",
+      "/connect/treg-mcp?app=treg&return=%2Fconnections%2Faccounts",
     );
   });
 });

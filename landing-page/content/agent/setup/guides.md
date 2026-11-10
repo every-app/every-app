@@ -68,7 +68,7 @@ pass the values with `--from-env` (an owner or admin may paste them in
 Manage workspace → Providers instead). Only a person can make the OAuth app at the provider
 and approve a consent; after the client is set, each member connects their
 own account inside each app that lists the provider, for the scopes that
-app's `everyapp.config.ts` names (Connected accounts in the account menu
+app's `everyapp.config.ts` names (Connections → Accounts in the sidebar
 lists and disconnects them). Google, Microsoft 365 and Slack below are the
 same: their files set the client and the scopes to allow on it.
 

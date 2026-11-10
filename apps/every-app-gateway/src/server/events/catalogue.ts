@@ -1489,7 +1489,7 @@ export function adminPathFor(type: string): string {
   if (type.startsWith("subscription.")) return "/admin/events";
   if (type.startsWith("tool.")) return "/admin/activity";
   if (type.startsWith("token.")) return "/admin/tokens";
-  if (type.startsWith("connection.")) return "/settings/connections";
+  if (type.startsWith("connection.")) return "/connections";
   if (type.startsWith("provider.")) return "/admin/providers";
   if (type.startsWith("app.") || type.startsWith("mcp_app.")) {
     return "/admin/apps";

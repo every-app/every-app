@@ -34,7 +34,7 @@ export async function login(flags: LoginCommandFlags,
         out.emit({
           type: "done",
           message: signedOut
-            ? `Signed out of ${gateway}${signedOut.revoked ? "" : " (forgotten here; revoke it under Settings → AI connections there)"}.`
+            ? `Signed out of ${gateway}${signedOut.revoked ? "" : " (forgotten here; revoke it under Connections there)"}.`
             : `Not signed in to ${gateway}.`,
           data: { gateway, signedIn: false, revoked: signedOut?.revoked ?? false },
         });

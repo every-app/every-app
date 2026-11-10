@@ -18,7 +18,7 @@ export interface ConnectUrlOptions {
   provider: string;
   /**
    * Where to send the person afterwards: the app's own URL (absolute) or
-   * a path on the Gateway. Absent: Settings → Connected accounts.
+   * a path on the Gateway. Absent: Connections → Accounts.
    */
   returnTo?: string;
 }

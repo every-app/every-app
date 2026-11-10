@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import type { LinkOptions } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useState, type ComponentType } from "react";
-import { ArrowUpRight, Bot, LayoutGrid, Settings, User } from "lucide-react";
+import type { ComponentType } from "react";
+import { ArrowUpRight, Cable, LayoutGrid, Settings, User } from "lucide-react";
 import { authClient } from "@/client/auth-client";
 import { signOutAndForget } from "@/client/sign-out";
 import { useSession } from "@/client/hooks/useSession";
@@ -18,8 +18,6 @@ import {
 } from "@/client/sign-in-methods";
 import { BrandLink } from "@/client/components/BrandLink";
 import { BuildStamp } from "@/client/components/BuildStamp";
-import { ConnectAgentDialog } from "@/client/components/ConnectAgent";
-import { CONNECT_AGENT_COPY } from "@/client/lib/connectAgentCopy";
 import { OrganizationSwitcher } from "@/client/components/OrganizationSwitcher";
 import { ThemePreferenceRadio } from "@/client/components/ThemePreferenceMenuItems";
 import {
@@ -112,137 +110,118 @@ export function Sidebar() {
   const { data: activeMemberRole } = authClient.useActiveMemberRole();
   const canManageOrganizationApps =
     activeMemberRole?.role === "owner" || activeMemberRole?.role === "admin";
-  const [connectOpen, setConnectOpen] = useState(false);
   return (
-    <>
-      <UiSidebar collapsible="offcanvas">
-        {/* The top inset keeps the header clear of the status bar in the
-          installed app, where the page runs under it. The brand row matches
-          the page title row (20px down, 40px tall), so the workspace switcher
-          lines up with the page's toolbar. */}
-        <SidebarHeader className="gap-4 px-3 pb-4 pt-[calc(env(safe-area-inset-top,0px)+1.25rem)]">
-          <BrandLink
-            onClick={() => setOpenMobile(false)}
-            className="h-10 px-3 text-sidebar-foreground"
-          />
-          <OrganizationSwitcher
-            signedIn={signedIn}
-            onCloseDrawer={() => setOpenMobile(false)}
-          />
-        </SidebarHeader>
+    <UiSidebar collapsible="offcanvas">
+      {/* The top inset keeps the header clear of the status bar in the
+        installed app, where the page runs under it. The brand row matches
+        the page title row (20px down, 40px tall), so the workspace switcher
+        lines up with the page's toolbar. */}
+      <SidebarHeader className="gap-4 px-3 pb-4 pt-[calc(env(safe-area-inset-top,0px)+1.25rem)]">
+        <BrandLink
+          onClick={() => setOpenMobile(false)}
+          className="h-10 px-3 text-sidebar-foreground"
+        />
+        <OrganizationSwitcher
+          signedIn={signedIn}
+          onCloseDrawer={() => setOpenMobile(false)}
+        />
+      </SidebarHeader>
 
-        <SidebarContent className="gap-5">
-          <nav aria-label="Main navigation">
-            <SidebarGroup className="px-3 py-0">
+      <SidebarContent className="gap-5">
+        <nav aria-label="Main navigation">
+          <SidebarGroup className="px-3 py-0">
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarNavLink
+                  icon={LayoutGrid}
+                  label="All apps"
+                  count={!isLoading && !isError ? apps.length : undefined}
+                  linkProps={{
+                    to: "/",
+                    activeOptions: { exact: true },
+                  }}
+                />
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+          {/* The pinned apps: one click from any page. Pinning also puts
+            them first in the library. */}
+          {pinnedApps.length > 0 ? (
+            <SidebarGroup className="mt-3 px-3 py-0">
+              <SidebarGroupLabel className="h-6 px-3 text-xs font-medium text-sidebar-foreground/50">
+                Pinned
+              </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  <SidebarNavLink
-                    icon={LayoutGrid}
-                    label="All apps"
-                    count={!isLoading && !isError ? apps.length : undefined}
-                    linkProps={{
-                      to: "/",
-                      activeOptions: { exact: true },
-                    }}
-                  />
+                  {pinnedApps.map((app) => {
+                    const status = appStatus(app);
+                    // An app that needs setup leads to its setup dialog on
+                    // the home page, where the launcher opens it.
+                    const needsSetup = appNeedsSetup(app);
+                    // Open the connection to the app on hover, focus or
+                    // touch (lib/appLaunchPrefetch).
+                    const { hostname } = app;
+                    const warm = hostname
+                      ? () => preconnectTo(hostname)
+                      : undefined;
+                    return (
+                      <SidebarMenuItem key={app.id}>
+                        <SidebarMenuButton
+                          className={navButtonClass}
+                          disabled={!status.opens && !needsSetup}
+                          render={
+                            status.opens ? (
+                              <a
+                                href={`//${app.hostname}`}
+                                onClick={() => setOpenMobile(false)}
+                                onPointerEnter={warm}
+                                onFocus={warm}
+                                onTouchStart={warm}
+                              />
+                            ) : needsSetup ? (
+                              <Link
+                                to="/"
+                                search={{ setup: app.appId }}
+                                onClick={() => setOpenMobile(false)}
+                              />
+                            ) : undefined
+                          }
+                        >
+                          <AppIcon
+                            app={app}
+                            className="size-6 rounded-md text-xs"
+                          />
+                          <span className="min-w-0 flex-1 truncate">
+                            {app.name}
+                          </span>
+                          {status.opens ? (
+                            <ArrowUpRight
+                              className="size-4 text-sidebar-foreground/50"
+                              aria-hidden
+                            />
+                          ) : null}
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
-            {/* The pinned apps: one click from any page. Pinning also puts
-              them first in the library. */}
-            {pinnedApps.length > 0 ? (
-              <SidebarGroup className="mt-3 px-3 py-0">
-                <SidebarGroupLabel className="h-6 px-3 text-xs font-medium text-sidebar-foreground/50">
-                  Pinned
-                </SidebarGroupLabel>
-                <SidebarGroupContent>
-                  <SidebarMenu>
-                    {pinnedApps.map((app) => {
-                      const status = appStatus(app);
-                      // An app that needs setup leads to its setup dialog on
-                      // the home page, where the launcher opens it.
-                      const needsSetup = appNeedsSetup(app);
-                      // Open the connection to the app on hover, focus or
-                      // touch (lib/appLaunchPrefetch).
-                      const { hostname } = app;
-                      const warm = hostname
-                        ? () => preconnectTo(hostname)
-                        : undefined;
-                      return (
-                        <SidebarMenuItem key={app.id}>
-                          <SidebarMenuButton
-                            className={navButtonClass}
-                            disabled={!status.opens && !needsSetup}
-                            render={
-                              status.opens ? (
-                                <a
-                                  href={`//${app.hostname}`}
-                                  onClick={() => setOpenMobile(false)}
-                                  onPointerEnter={warm}
-                                  onFocus={warm}
-                                  onTouchStart={warm}
-                                />
-                              ) : needsSetup ? (
-                                <Link
-                                  to="/"
-                                  search={{ setup: app.appId }}
-                                  onClick={() => setOpenMobile(false)}
-                                />
-                              ) : undefined
-                            }
-                          >
-                            <AppIcon
-                              app={app}
-                              className="size-6 rounded-md text-xs"
-                            />
-                            <span className="min-w-0 flex-1 truncate">
-                              {app.name}
-                            </span>
-                            {status.opens ? (
-                              <ArrowUpRight
-                                className="size-4 text-sidebar-foreground/50"
-                                aria-hidden
-                              />
-                            ) : null}
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      );
-                    })}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </SidebarGroup>
-            ) : null}
-          </nav>
-        </SidebarContent>
-        <AccountFooter
-          canManageApps={canManageOrganizationApps}
-          onConnectAgent={() => setConnectOpen(true)}
-        />
-      </UiSidebar>
-      {/* Outside the rail, which unmounts as the phone drawer closes. */}
-      {connectOpen ? (
-        <ConnectAgentDialog
-          role={activeMemberRole?.role}
-          onClose={() => setConnectOpen(false)}
-        />
-      ) : null}
-    </>
+          ) : null}
+        </nav>
+      </SidebarContent>
+      <AccountFooter canManageApps={canManageOrganizationApps} />
+    </UiSidebar>
   );
 }
 
 /**
- * The foot of the rail: Connect your agent for every role, Manage workspace
- * for owners and admins, then the account block, whose menu holds what is the
- * person's own (their AI connections, the docs, the theme, sign out), and the
- * build stamp under it.
+ * The foot of the rail: Connections for every role (their agents, devices
+ * and connected accounts, and how to connect an agent), Manage workspace for
+ * owners and admins, then the account block, whose menu holds the docs, the
+ * theme and sign out, and the build stamp under it.
  */
-function AccountFooter({
-  canManageApps,
-  onConnectAgent,
-}: {
-  canManageApps: boolean;
-  onConnectAgent: () => void;
-}) {
+function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
   const { data: session } = useSession();
   const { setOpenMobile } = useSidebar();
   const email = session?.user.email;
@@ -283,22 +262,11 @@ function AccountFooter({
     <UiSidebarFooter className="gap-0 p-0 pb-safe">
       <div className="px-3 pb-3">
         <SidebarMenu>
-          {/* How to point Claude, ChatGPT or another agent at /mcp, from every
-            page. It opens a dialog, so it stays out of the navigation above. */}
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              className={navButtonClass}
-              onClick={() => {
-                setOpenMobile(false);
-                onConnectAgent();
-              }}
-            >
-              <span className="flex size-6 shrink-0 items-center justify-center">
-                <Bot className="size-4" />
-              </span>
-              <span className="truncate">{CONNECT_AGENT_COPY.title}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          <SidebarNavLink
+            icon={Cable}
+            label="Connections"
+            linkProps={{ to: "/connections" }}
+          />
           {canManageApps ? (
             <SidebarNavLink
               icon={Settings}
@@ -343,26 +311,6 @@ function AccountFooter({
                     </DropdownMenuItem>
                   ))}
                   {connectable.length > 0 ? <DropdownMenuSeparator /> : null}
-                  <DropdownMenuItem
-                    render={
-                      <Link
-                        to="/settings/connections"
-                        onClick={() => setOpenMobile(false)}
-                      />
-                    }
-                  >
-                    AI connections
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    render={
-                      <Link
-                        to="/settings/accounts"
-                        onClick={() => setOpenMobile(false)}
-                      />
-                    }
-                  >
-                    Connected accounts
-                  </DropdownMenuItem>
                   <DropdownMenuItem
                     render={
                       <a

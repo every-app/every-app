@@ -31,7 +31,7 @@ A bearer route takes a token on every method (so no `methods`) and refuses the s
 
 ## What a token opens
 
-Only `{origin}`; another app host or `/mcp` refuses it. It acts as the member who consented, re-checked on every request. Scope `*`; there's no read-only native grant. The grant ends when the person revokes it (account menu → AI connections → Apps on your devices), the app signs out, the member is removed, the app is deleted, or 30 days pass unused. `MCP_OAUTH_ENABLED` and `MCP_DCR_ENABLED` switch native sign-in along with MCP's OAuth.
+Only `{origin}`; another app host or `/mcp` refuses it. It acts as the member who consented, re-checked on every request. Scope `*`; there's no read-only native grant. The grant ends when the person revokes it (Connections → Apps on your devices), the app signs out, the member is removed, the app is deleted, or 30 days pass unused. `MCP_OAUTH_ENABLED` and `MCP_DCR_ENABLED` switch native sign-in along with MCP's OAuth.
 
 ## Behind Cloudflare Access
 

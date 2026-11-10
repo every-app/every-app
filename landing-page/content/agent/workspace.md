@@ -3,7 +3,7 @@ title: "Managing the workspace: the CLI and the MCP tools"
 description: Everything the Gateway's admin UI does (people, roles, groups, who opens which app, caps, usage, activity, audit log, tokens, AI connections) as everyapp_workspace_* tools, which the everyapp workspace commands are thin clients of, who may do what, and what neither ever returns.
 ---
 
-The admin UI (**Manage workspace** in the sidebar: Users, Groups, Apps, Tokens, Usage, Activity, Events, Sign-in, Providers; AI connections in the account menu) is one of three equal ways to run a workspace. The other two are the same tools:
+The admin UI (**Manage workspace** in the sidebar: Users, Groups, Apps, Tokens, Usage, Activity, Events, Sign-in, Providers; AI connections under **Connections**) is one of three equal ways to run a workspace. The other two are the same tools:
 
 | Surface | Who acts | Authority |
 |---|---|---|

@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 /**
- * Settings → Connected accounts rendered for real with the server
- * functions mocked: one row per connection with its provider, account,
- * app and scopes, and Disconnect by connection id; no Connect button, no
- * organization connect, no background; no token is ever on the page.
+ * Connections → Accounts rendered for real with the server functions
+ * mocked: one row per connection with its provider, account, app and
+ * scopes, and Disconnect by connection id from the row's menu; no Connect
+ * button, no organization connect, no background; no token is ever on the
+ * page.
  */
 import { act, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -104,38 +105,65 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  document.body.innerHTML = "";
 });
 
 const body = () => document.body.textContent ?? "";
 
-function button(label: string): HTMLButtonElement | undefined {
-  return [...document.body.querySelectorAll("button")].find(
-    (element) =>
-      element.getAttribute("aria-label") === label ||
-      element.textContent?.trim() === label,
+/** A row's cells, by the app the account is connected in. */
+function rowFor(app: string): string[] {
+  const row = [...container.querySelectorAll("tbody tr")].find((element) =>
+    element.textContent?.includes(app),
   );
+  if (!row) throw new Error(`no row for ${app}`);
+  return [...row.querySelectorAll("td")].map(
+    (cell) => cell.textContent?.trim() ?? "",
+  );
+}
+
+/** Open a row's actions menu and press one of its items. */
+async function pressRowAction(rowLabel: string, item: string) {
+  const trigger = document.querySelector<HTMLElement>(
+    `[aria-label="Actions for ${rowLabel}"]`,
+  );
+  if (!trigger) throw new Error(`no actions for ${rowLabel}`);
+  await act(async () => {
+    trigger.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, button: 0 }),
+    );
+    trigger.click();
+  });
+  await settle();
+  const menuItem = [
+    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ].find((element) => element.textContent?.trim() === item);
+  if (!menuItem) throw new Error(`no ${item} item`);
+  await act(async () => menuItem.click());
+  await settle();
 }
 
 describe("Connected accounts", () => {
   it("lists each connection with its provider, account, app and scopes, and no way to connect here", async () => {
     await render();
-    expect(body()).toContain("In OpenMail · gmail.modify, gmail.send");
-    expect(body()).toContain("In OpenSEO · webmasters.readonly");
-    expect(body()).toContain("ada@acme.com");
-    expect(body()).toContain("Reconnect in OpenSEO");
+    expect(rowFor("OpenMail").slice(0, 4)).toEqual([
+      "Google Workspaceada@acme.com",
+      "OpenMail",
+      "gmail.modify, gmail.send",
+      "Connected",
+    ]);
+    expect(rowFor("OpenSEO").slice(0, 4)).toEqual([
+      "Google Workspaceada@acme.com",
+      "OpenSEO",
+      "webmasters.readonly",
+      "Reconnect in OpenSEO",
+    ]);
     expect(container.querySelectorAll("a")).toHaveLength(0);
     expect(body()).not.toMatch(/Connect Google|background|organization/i);
-    expect(
-      button("Disconnect Google Workspace from OpenMail"),
-    ).not.toBeUndefined();
   });
 
   it("disconnects one connection by its id", async () => {
     await render();
-    await act(async () =>
-      button("Disconnect Google Workspace from OpenSEO")!.click(),
-    );
-    await settle();
+    await pressRowAction("Google Workspace in OpenSEO", "Disconnect");
     expect(body()).toContain("Disconnect Google Workspace from OpenSEO?");
     const dialog = document.body.querySelector(
       '[role="alertdialog"], [role="dialog"]',
@@ -154,6 +182,6 @@ describe("Connected accounts", () => {
   it("says so when there is nothing connected", async () => {
     mocks.listMyConnections.mockResolvedValue({ connections: [] });
     await render();
-    expect(body()).toContain("No connected accounts yet.");
+    expect(body()).toContain("No connected accounts yet");
   });
 });

@@ -151,15 +151,17 @@ export function ConnectAgentDocsLink() {
 }
 
 /**
- * The sidebar's "Connect your agent" dialog: the steps, then where to see or
- * revoke connections and the docs. An MCP app's dialog is this one with its
- * own title and last step (McpAppDialog). Render it only while it is open.
+ * The "Connect your agent" dialog, behind Connections → Connect an agent: the
+ * steps, then where to see or revoke connections and the docs. An MCP app's
+ * dialog is this one with its own title and last step (McpAppDialog). Render
+ * it only while it is open.
  */
 export function ConnectAgentDialog({
   title = COPY.title,
   intro,
   lastStep,
   role,
+  connectionsLink = true,
   onClose,
 }: {
   title?: string;
@@ -167,6 +169,8 @@ export function ConnectAgentDialog({
   intro?: ReactNode;
   lastStep?: ConnectStep;
   role: string | undefined;
+  /** False on Connections itself, which the link would only lead back to. */
+  connectionsLink?: boolean;
   onClose: () => void;
 }) {
   return (
@@ -188,13 +192,15 @@ export function ConnectAgentDialog({
         />
         <DialogFooter showCloseButton>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground sm:mr-auto sm:self-center">
-            <Link
-              to="/settings/connections"
-              onClick={onClose}
-              className="underline underline-offset-4 hover:text-foreground"
-            >
-              {COPY.connectionsLink}
-            </Link>
+            {connectionsLink ? (
+              <Link
+                to="/connections"
+                onClick={onClose}
+                className="underline underline-offset-4 hover:text-foreground"
+              >
+                {COPY.connectionsLink}
+              </Link>
+            ) : null}
             <ConnectAgentDocsLink />
           </div>
         </DialogFooter>

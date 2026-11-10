@@ -236,9 +236,13 @@ function authData(auth: RemoteMcpAuth): Record<string, unknown> {
   return auth.kind === "none" ? { kind: "none" } : { kind: "provider", provider: auth.provider };
 }
 
-/** The Gateway's page where a person connects their account to an OAuth provider in the app, coming back to the app's dialog. */
+/**
+ * The Gateway's page where a person connects their account to an OAuth
+ * provider in the app. It names no page to return to: the Gateway sends them
+ * to its own accounts page, wherever that is in the version deployed.
+ */
 function connectUrl(gatewayUrl: string, provider: string, appId: string): string {
-  return `${gatewayUrl.replace(/\/+$/, "")}/connect/${provider}?app=${appId}&return=/settings/accounts`;
+  return `${gatewayUrl.replace(/\/+$/, "")}/connect/${provider}?app=${appId}`;
 }
 
 /** A built-in's key as the commands report it: its name and whether it is set. */

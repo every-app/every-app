@@ -70,7 +70,7 @@ Presets (`everyapp provider presets`): `google-workspace`, `microsoft-365`, `sla
 
 The common fields, with `hosts` the API hosts the token goes to, and an `auth` block: `authorizeUrl`, `tokenUrl`, optional `revokeUrl` and `revokeMethod`, `clientId` and optional `clientSecret` (setting names under the id's prefix), `inject` (`form` or `basic`), `pkce`, `scopeSeparator` (`space` or `comma`), `scopePrefix` (joined onto an app's short scope), `authorizeParams`, `tokenHeaders`, `identity` (`{ url, label, id? }`, to name the connection), `tolerated` (extra scopes a token may carry), `resource` (the RFC 8707 resource the tokens are for; an MCP app's own `<id>-mcp` row keeps the scopes its server grants; any other row is checked as usual) and `issuer` (the RFC 8414 issuer; a callback's `iss` must equal it).
 
-Disconnecting (the app, Settings → Connected accounts, Manage workspace → Providers, `everyapp provider disconnect <id> --user <email> [--app <app>]`) deletes the connection and revokes it at the provider. Removing a member, their access to an app, or the app deletes the connections too. `everyapp provider connections [--user] [--provider] [--app] [--all]` lists who connected what, never a token.
+Disconnecting (the app, Connections → Accounts, Manage workspace → Providers, `everyapp provider disconnect <id> --user <email> [--app <app>]`) deletes the connection and revokes it at the provider. Removing a member, their access to an app, or the app deletes the connections too. `everyapp provider connections [--user] [--provider] [--app] [--all]` lists who connected what, never a token.
 
 ## Rows `mcp add` writes
 

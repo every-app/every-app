@@ -298,7 +298,7 @@ Linked dev only listens on this machine (`127.0.0.1`, `::1`, `localhost`).
 ### LINKED_DEV_REFUSED
 The Gateway refused linked dev's token for this app: linked dev is off (`everyapp workspace linked-dev on`), or the person isn't an owner or admin, or can't open the app.
 ### LINKED_DEV_REVOKE_FAILED
-The token was forgotten locally, but the Gateway couldn't revoke the grant. Revoke it under AI connections.
+The token was forgotten locally, but the Gateway couldn't revoke the grant. Revoke it under Connections.
 ### LOCAL_DNS_STALE
 The app is live, but this machine's DNS still caches the name as missing. Wait or flush DNS.
 ### MANIFEST_NOT_FOUND

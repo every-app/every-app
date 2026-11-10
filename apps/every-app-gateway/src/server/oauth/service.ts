@@ -1,6 +1,6 @@
 /**
  * The OAuth providers service (docs/design/2026-11-oauth-simplify.md):
- * what Manage workspace → Providers, Settings → Connected accounts and the
+ * what Manage workspace → Providers, Connections → Accounts and the
  * `everyapp_provider_*` tools call. Adding a provider, replacing its
  * client, removing it, listing every connection and disconnecting someone
  * else's are an owner's or admin's; a person's own connections are

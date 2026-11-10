@@ -1157,7 +1157,7 @@ describe("a remote MCP app on the gateway's /mcp", () => {
 describe("a remote MCP app whose credential is an OAuth provider", () => {
   const OWNER_TOKEN = "owner-oauth-access-token-0123";
   const MEMBER_TOKEN = "member-oauth-access-token-4567";
-  const CONNECT = `${GATEWAY}/connect/treg-mcp?app=treg&return=%2Fsettings%2Faccounts`;
+  const CONNECT = `${GATEWAY}/connect/treg-mcp?app=treg&return=%2Fconnections%2Faccounts`;
   let memberId: string;
 
   beforeEach(async () => {

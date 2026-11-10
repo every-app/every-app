@@ -6,7 +6,7 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   Activity as ActivityIcon,
   AppWindow,
@@ -22,7 +22,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useIsMobile } from "@/client/hooks/use-mobile";
-import { useScrollEdges } from "@/client/hooks/useScrollEdges";
 import { useSession } from "@/client/hooks/useSession";
 import {
   ACTIVE_ORGANIZATION_QUERY_KEY,
@@ -36,12 +35,8 @@ import { SkeletonPage } from "@/client/components/SkeletonPresets";
 import { StatusScreen } from "@/client/components/StatusScreen";
 import { Button } from "@/client/components/ui/button";
 import { Page, PageHeader } from "@/client/components/PageHeader";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/client/components/ui/tabs";
+import { PageTabStrip } from "@/client/components/PageTabStrip";
+import { Tabs, TabsContent } from "@/client/components/ui/tabs";
 import { renameOrganization } from "@/serverFunctions/organizations";
 
 export const Route = createFileRoute("/_app/admin")({
@@ -211,7 +206,11 @@ function AdminLayout() {
         }}
         className="gap-6"
       >
-        <AdminTabStrip activeTab={activeTab} />
+        <PageTabStrip
+          label="Manage workspace"
+          tabs={adminTabs}
+          activeTab={activeTab}
+        />
         {adminTabs.map((tab) => (
           <TabsContent key={tab.value} value={tab.value}>
             {activeTab === tab.value ? <Outlet /> : null}
@@ -219,60 +218,5 @@ function AdminLayout() {
         ))}
       </Tabs>
     </Page>
-  );
-}
-
-/** How far an edge of the tab strip fades while there is more past it. */
-const TAB_FADE = "2rem";
-
-/**
- * The tabs scroll sideways on a phone instead of being cut off. The active
- * tab is scrolled into view, so a page past the fold (Usage, Events) still
- * shows its tab, and each edge fades while there are tabs past it. The line
- * is an inset shadow, so the active tab's bar sits on it, and the first tab
- * starts on the page's left edge.
- */
-function AdminTabStrip({ activeTab }: { activeTab: AdminTab }) {
-  const stripRef = useRef<HTMLDivElement>(null);
-  const edges = useScrollEdges(stripRef);
-
-  useLayoutEffect(() => {
-    const strip = stripRef.current;
-    const active = strip?.querySelector<HTMLElement>(
-      '[role="tab"][data-active]',
-    );
-    if (!strip || !active) return;
-    strip.scrollLeft =
-      active.offsetLeft - (strip.clientWidth - active.offsetWidth) / 2;
-  }, [activeTab]);
-
-  const mask =
-    edges.before || edges.after
-      ? `linear-gradient(to right, ${edges.before ? `transparent, black ${TAB_FADE}` : "black"}, ${edges.after ? `black calc(100% - ${TAB_FADE}), transparent` : "black"})`
-      : undefined;
-
-  return (
-    <div
-      ref={stripRef}
-      className="scrollbar-hidden relative overflow-x-auto shadow-[inset_0_-1px_0_var(--border)]"
-      style={{ maskImage: mask, WebkitMaskImage: mask }}
-    >
-      <TabsList
-        variant="line"
-        className="gap-6 p-0 group-data-horizontal/tabs:h-10"
-        aria-label="Manage workspace"
-      >
-        {adminTabs.map(({ value, label, icon: Icon }) => (
-          <TabsTrigger
-            key={value}
-            value={value}
-            className="h-full gap-2 rounded-none border-0 px-0 group-data-horizontal/tabs:after:bottom-0"
-          >
-            <Icon className="size-4" aria-hidden />
-            {label}
-          </TabsTrigger>
-        ))}
-      </TabsList>
-    </div>
   );
 }

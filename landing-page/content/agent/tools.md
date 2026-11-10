@@ -296,8 +296,8 @@ claude mcp add --transport http everyapp https://<gateway>/mcp --header "Authori
 On an app host `/mcp` is the app's own private route, and an MCP-only token
 gets 403 `token_scope` everywhere there.
 
-Disconnecting: **AI connections** in the account menu at the bottom of the
-sidebar (`/settings/connections`) lists each OAuth connection; revoking one
+Disconnecting: **Connections** in the sidebar (`/connections`) lists each
+OAuth connection; revoking one
 makes the client's next request fail `invalid_token`. Removing or
 deactivating a person ends all of theirs; tokens are revoked on Admin, Tokens.
 
@@ -361,6 +361,6 @@ clients bring an OAuth or personal token.
 - packages/sdk/src/server/tools.ts, toolsEndpoint.ts, everyApp.ts; packages/sdk/src/internal/tools.ts, protocol.ts
 - packages/toolbus/src/server.ts, http.ts, builtins.ts, policy.ts, dev/index.ts
 - apps/every-app-gateway/src/server/toolbus/catalog-sync.ts, gateway-mcp.ts; src/server/app-activation.ts, deploy/run.ts; src/server/mcp-auth/routes.ts, config.ts, validate.ts, consent.ts, registration-limit.ts
-- apps/every-app-gateway/src/routes/_app/admin/tokens.tsx, settings/connections.tsx; src/client/components/Sidebar.tsx, oauth/ConsentForm.tsx, admin/CreateUserTokenModal.tsx
+- apps/every-app-gateway/src/routes/_app/admin/tokens.tsx, connections/index.tsx; src/client/components/Sidebar.tsx, oauth/ConsentForm.tsx, admin/CreateUserTokenModal.tsx
 - packages/perimeter/src/gateway.ts; packages/cli/src/commands/dev/devAppGateway.ts, ready.ts; packages/cli/src/commands/deploy/deployApp.ts
 - starter/src/tools.ts, entry.worker.ts, server/todos.ts, README.md; docs/runbooks/mcp-oauth.md; landing-page/content/agent/mcp.md; landing-page/content/docs/connect-ai.mdx

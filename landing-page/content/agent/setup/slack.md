@@ -266,7 +266,7 @@ an internal app installed in its own workspace.
   secret works for 24 hours unless revoked manually. The person sets
   `SLACK_CLIENT_SECRET` again at the hidden prompt (step 3a); no API
   returns the new secret.
-- **Remove.** People disconnect in each app or under Connected accounts
+- **Remove.** People disconnect in each app or under Connections → Accounts
   (owners and admins: `pnpm everyapp provider disconnect slack --all`).
   Then `pnpm everyapp secret unset SLACK_CLIENT_ID SLACK_CLIENT_SECRET --json --yes`
   (`--yes` only when the person said so). Then delete the app: the

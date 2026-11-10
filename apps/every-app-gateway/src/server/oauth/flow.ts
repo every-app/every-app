@@ -49,7 +49,7 @@ import { tokenCall, type Fetch } from "./tokens";
 
 const CONNECT_PREFIX = "/connect/";
 /** Where the browser lands after a connect with no `return`. */
-export const DEFAULT_RETURN = "/settings/accounts";
+export const DEFAULT_RETURN = "/connections/accounts";
 /** How long a state row lives. */
 const STATE_TTL_MS = 10 * 60 * 1000;
 const PROVIDER_ID = /^[a-z][a-z0-9-]{1,39}$/;
