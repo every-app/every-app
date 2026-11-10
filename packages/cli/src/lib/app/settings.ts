@@ -295,7 +295,7 @@ export function guideUrl(setup: string): string {
  * Where an agent reads how to set a Gateway setting up: the agent docs'
  * setup guide when the registry names one ("Guide: https://everyapp.com/
  * docs/agent/setup/dataforseo.md"), else for a provider (a
- * registered row has no guide) the command that prints its whole spec
+ * registered row has no guide) the command that shows its setup
  * ("Guide: pnpm everyapp provider show stripe"). Null for an app's own
  * value: its feature's steps and its `how` say it.
  */

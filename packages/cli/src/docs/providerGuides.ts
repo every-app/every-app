@@ -252,7 +252,7 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
       "Open [API Access](https://app.dataforseo.com/api-access) for your **API login** and **API password** (not your dashboard password; after 24 hours, **Send by e-mail** resends it).",
       "Leave the **IP Access** list empty.",
       "Optional, before real use: **Add Funds** ($50 minimum) and set a daily limit under [API Settings](https://app.dataforseo.com/api-settings).",
-      "When asked for the key, enter `login:password`.",
+      "The key is `login:password`: the API login, a colon, then the API password.",
     ],
   },
   context: {
@@ -369,7 +369,7 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
       "Set up the [consent screen](https://console.cloud.google.com/auth/overview): an app name people will see, a support email, and the audience: **Internal** (your Workspace only, no review) or **External**.",
       "On [Data Access](https://console.cloud.google.com/auth/scopes), add only the scopes your apps use: `webmasters.readonly` and `analytics.readonly` for OpenSEO, `gmail.readonly` and `calendar.readonly` for OpenCRM.",
       "[Create a client](https://console.cloud.google.com/auth/clients): type **Web application**, and under **Authorized redirect URIs** add the redirect URI above. Copy the **Client ID** and **Client secret**, or select **Download JSON**.",
-      "**External** only: while the app is in Testing, add each person under **Audience → Test users**. Their access expires every 7 days until Google verifies the app. [Personal Gmail accounts](/docs/google-personal-accounts)",
+      "**External** only: while the app is in Testing, add each person under **Audience → Test users**. Their access expires every 7 days until you publish the app. [Personal Gmail accounts](/docs/google-personal-accounts)",
     ],
   },
   microsoft: {

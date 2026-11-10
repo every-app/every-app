@@ -506,7 +506,7 @@ A built-in provider (provider list names them) is only its key. An OAuth preset 
 
 An OpenAI-compatible model provider is a spec with mode "ai": its baseUrl, the key's placement (auth), the models it serves and the defaultModel (embeddingsModel too, when it has one); the AI proxy serves it as a catalog AI provider, inference POSTs alone. Apps list it under providers and call /api/ai/<id>/v1/chat/completions; everyapp ai default <id> makes it the Gateway's default model provider.
 
---oauth takes an OAuth spec file (auth.kind oauth2-user), or a preset by name. Apps list the provider's own scopes in everyapp.config.ts; people connect in each app. --verbose adds the manifest entry.
+--oauth takes an OAuth spec file (auth.kind oauth2-user), or a preset by name. An app lists the scopes it needs in everyapp.config.ts, as the provider names them; people connect in each app. --verbose adds the manifest entry.
 
 ```sh
 everyapp provider add google-workspace
@@ -535,9 +535,9 @@ everyapp provider list
 ```
 
 ### `everyapp provider show <id>`
-Print a provider's spec: its hosts, how its key is sent, its settings, who registered it and which apps use it.
+Show a provider: whether its key is set, where the key comes from and goes, who registered it and which apps use it.
 
-What an agent reads to set up and call a provider without a setup guide. With --save, in an app's directory, the spec is written where everyapp dev reads it.
+What to read to set up and call a provider that has no setup guide. --json carries its whole spec (data.provider). With --save, in an app's directory, the spec is written where everyapp dev reads it.
 
 ```sh
 everyapp provider show stripe
@@ -562,7 +562,7 @@ everyapp provider remove stripe
 ### `everyapp provider presets`
 List the OAuth presets provider add takes: Google, Microsoft 365, Slack, GitHub and more.
 
-Each with its API hosts and the console where its client is made. Apps list the provider's own scopes in everyapp.config.ts. Nothing is read from the Gateway.
+Each with its first API host (--json names them all) and the console where its client is made. An app lists the scopes it needs in everyapp.config.ts, as the provider names them. Nothing is read from the Gateway.
 
 ```sh
 everyapp provider presets

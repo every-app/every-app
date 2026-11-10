@@ -76,6 +76,8 @@ type EveryAppEvent = EventBase &
         status: StepStatus;
         message?: string;
         data?: EventData;
+        /** How a person sees the step, drawn by the command (numbered steps); never in --json. */
+        display?: string;
       }
     | { type: "progress"; step: string; message: string; data?: EventData }
     | {
@@ -131,7 +133,7 @@ export function createNdjsonSink(
   const sink = emitter(
     (event) => {
       // `display` is drawn for a person; a script reads `data`.
-      const line = event.type === "done" ? { ...event, display: undefined } : event;
+      const line = event.type === "done" || event.type === "step" ? { ...event, display: undefined } : event;
       write(`${JSON.stringify({ v: 1, ts: now().toISOString(), ...line })}\n`);
     },
     false,
@@ -148,7 +150,8 @@ export function createNdjsonSink(
  * How a person sees the same events: a filter over them, not a print of
  * each one.
  *
- *  - Steps: only the milestones below, each rendered from its data. A
+ *  - Steps: only the milestones below, each rendered from its data (or as
+ *    its command drew it, `display`). A
  *    finished step gets a ticked line of its own (`Built ✓ 4.2s`), with its
  *    time when it took a second or more, and notes such as the database's
  *    restore point under it. Facts (`Live`) wait for the end of the run.
@@ -465,18 +468,8 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
         // Cloudflare checks before the database and the upload have none).
         const said = (line: string, spin: string): Shown[] => [{ line }, { spin }];
         switch (data["change"]) {
-          case GatewayChange.Install: {
-            // How long until the owner link, so nobody gives up on it.
-            const minutes = expectedMinutes(data["expectedMinutes"]);
-            return said(
-              `Installing the Gateway at ${host} (${name})${
-                minutes
-                  ? chalk.dim(` (usually ${minutes.min}–${minutes.max} minutes, then the owner link)`)
-                  : ""
-              }`,
-              "Installing...",
-            );
-          }
+          case GatewayChange.Install:
+            return said(`Installing the Gateway at ${host} (${name})`, "Installing...");
           case GatewayChange.Resume:
             return said(`Resuming the Gateway install at ${host} (${name})`, "Installing...");
           case GatewayChange.Upgrade:
@@ -785,9 +778,11 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       event.status === "ok" && event.message ? { line: event.message } : null,
     "provider.add": (event) =>
       event.status === "start" ? { spin: event.message ?? "Registering..." } : null,
-    // `provider add`: what was added and the one thing to do at the provider, before its key or client is asked for.
-    "provider.setup": (event) =>
-      event.status === "ok" && event.message ? { line: event.message } : null,
+    // `provider add`: what was added and what to do at the provider, before its key or client is asked for.
+    "provider.setup": (event) => {
+      const shown = event.display ?? event.message;
+      return event.status === "ok" && shown ? { line: shown } : null;
+    },
     "provider.remove": (event) =>
       event.status === "start" ? { spin: event.message ?? "Removing..." } : null,
     // `provider on|off`, said before `mcp on|off` runs for it.
@@ -1031,13 +1026,6 @@ function factsIn(value: unknown): Fact[] {
     label: fact.label,
     value: `${/^https?:\/\//.test(fact.value) ? chalk.cyan(fact.value) : fact.value}${fact.note ? `  ${chalk.dim(fact.note)}` : ""}`,
   }));
-}
-
-/** A step's `data.expectedMinutes`: `{ min, max }`, how long it usually takes. */
-function expectedMinutes(value: unknown): { min: number; max: number } | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  const { min, max } = value as { min?: unknown; max?: unknown };
-  return typeof min === "number" && typeof max === "number" ? { min, max } : undefined;
 }
 
 /** A deploy's `data.publicRoutes`: `{ path, methods }` each. */

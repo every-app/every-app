@@ -474,6 +474,26 @@ describe("createHumanSink", () => {
     expect(alone.lines()).toEqual(["Set CLOUDFLARE_ACCESS_AUD on the Gateway ✓"]);
   });
 
+  it("shows a step as its command drew it (display), which a script never gets", () => {
+    const step = {
+      type: "step",
+      step: "provider.setup",
+      status: "ok",
+      message: "1. Create a key at https://example.com/keys",
+      display: "1. Create a key\n   https://example.com/keys",
+    } as const;
+    const { sink, lines } = human();
+    sink.emit(step);
+    expect(lines()).toEqual(["1. Create a key", "   https://example.com/keys"]);
+
+    const script = ndjson();
+    script.sink.emit(step);
+    expect(script.events()).toEqual([
+      expect.objectContaining({ step: "provider.setup", message: "1. Create a key at https://example.com/keys" }),
+    ]);
+    expect(script.lines[0]).not.toContain("display");
+  });
+
   it("shows setup's install a step a line, with each slow step's time, then the facts, the run's time and what comes next", () => {
     let now = 0;
     const { sink, lines } = human({ now: () => now });
@@ -555,8 +575,7 @@ describe("createHumanSink", () => {
     expect(lines()).toEqual([
       "Setting up EveryApp in Example Inc (ben@example.com)",
       "EveryApp is in early development, so expect some rough edges: https://everyapp.com/docs/early-adopters",
-      // How long until the owner link, from the step's `data.expectedMinutes`.
-      "Installing the Gateway at apps.example.com (0.4.0) (usually 5–10 minutes, then the owner link)",
+      "Installing the Gateway at apps.example.com (0.4.0)",
       "Database created ✓ 2 migrations",
       "Uploaded ✓ 6.1s",
       "Owner account created for ben@example.com ✓",

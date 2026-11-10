@@ -273,7 +273,7 @@ export function setupProvidersPage(): string {
     "",
     "For a coding agent setting up a provider the Gateway's built-in catalog has. Each provider is a section under its id, so `setup/providers.md#<id>` points at it. Where the provider has a guide of its own (its **Guide**), follow that guide and read this section as its summary. Read [the setup rules](/docs/agent/setup/guides) first: its rules hold here too, above all that a key never goes through the chat.",
     "",
-    `A provider registered on one Gateway (\`pnpm everyapp provider add\`) is not on this page: \`pnpm everyapp provider show <id>\` prints its whole spec (its hint, settings, hosts, where the key comes from and its smoke request). The catalog has ${counts()}.`,
+    `A provider registered on one Gateway (\`pnpm everyapp provider add\`) is not on this page: \`pnpm everyapp provider show <id>\` shows its hint, settings, hosts, where the key comes from and its smoke request (\`--json\` carries its whole spec). The catalog has ${counts()}.`,
     "",
     "The smoke request needs the key, so it runs where the key is: the person's terminal, with the variable they read in hidden, or through the app that uses it. It is one call that costs nothing (unless marked charged).",
     "",

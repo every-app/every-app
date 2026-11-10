@@ -27,10 +27,12 @@ import {
   type Capability,
   type ProviderRegistry,
   type RegistrableCapability,
+  type SmokeRequest,
 } from "@every-app/sdk/internal";
 import chalk from "chalk";
 import type { CfRunner } from "@/lib/cf/runner";
 import { listWorkerSecrets } from "@/lib/cf/secrets";
+import { closestTo } from "@/lib/closeTo";
 import { errorMessage, EveryAppError } from "@/lib/errors";
 import { isNotFoundError } from "@/lib/file-operations";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
@@ -43,19 +45,21 @@ import {
   type UploadedClient,
 } from "@/lib/gateway/providers";
 import { listApps } from "@/lib/gateway/registry";
-import { providerDocsUrl } from "@/lib/providerDocs";
+import { plainText, providerDocsUrl, providerKeyGuide, providerKeySteps } from "@/lib/providerDocs";
 import { CLI } from "@/lib/output/command";
-import type { EventSink } from "@/lib/output/events";
+import { ticked, type EventSink } from "@/lib/output/events";
 import { canPromptInTerminal } from "@/lib/output/prompt";
 import { runCommand } from "@/lib/output/run";
-import { formatTable } from "@/lib/output/table";
+import { formatSteps, type Step } from "@/lib/output/steps";
+import { formatFacts, formatTable, type Fact } from "@/lib/output/table";
 import { listed } from "@/lib/output/text";
+import { proseWidth, wrap } from "@/lib/output/wrap";
 import type { GatewayCommandFlags } from "../flags";
 import { turnOff, turnOn } from "../mcp";
 import {
   addOAuth,
-  describeScopeRules,
   disconnectProvider,
+  hostsCell,
   isOAuthCapability,
   listPresets,
   listProviderConnections,
@@ -63,8 +67,16 @@ import {
   type ConnectionsFlags,
   type DisconnectFlags,
   type OAuthAddFlags,
+  type ScopeRulesSummary,
 } from "./oauth";
-import { givenValues, setProviderSettings, shortName, type CredentialFlags, type CredentialSeams } from "./credentials";
+import {
+  givenValues,
+  setProviderSettings,
+  setupShown,
+  shortName,
+  type CredentialFlags,
+  type CredentialSeams,
+} from "./credentials";
 
 /** The most a spec may be, from a file or a URL. */
 export const MAX_SPEC_BYTES = 64 * 1024;
@@ -124,12 +136,24 @@ Nothing was changed.`,
     return;
   }
   if (!/[./\\:]/.test(spec)) {
-    throw new EveryAppError("PROVIDER_NOT_FOUND", `${spec} isn't a built-in provider\nA provider the catalog doesn't have is added from its spec: a JSON file or an https URL.`, {
-      rerun: `${CLI} provider list`,
-      rerunNote: "names the built-in providers",
-    });
+    const meant = closestTo(spec, addableIds());
+    throw new EveryAppError(
+      "PROVIDER_NOT_FOUND",
+      `${spec} isn't a provider's id`,
+      meant ? { data: { didYouMean: meant } } : { fix: `use an id from ${CLI} provider list or ${CLI} provider presets` },
+    );
   }
   await addFromSpec(options, spec);
+}
+
+/** Every id `provider add` takes: the catalog's API-key and AI providers, then the OAuth presets. */
+function addableIds(): string[] {
+  return [
+    ...Object.entries(CAPABILITIES as Record<string, Capability>)
+      .filter(([, capability]) => capability.mode === "api_key" || capability.mode === "ai")
+      .map(([id]) => id),
+    ...Object.keys(OAUTH_PRESETS),
+  ];
 }
 
 /** The catalog's entry `id`, when it is one. */
@@ -322,9 +346,19 @@ function sentAs(capability: RegistrableCapability): string {
   }
 }
 
-/** "1. Create a key at <docs>", then what to do with it: the steps a provider's key takes, numbered. */
-function keySteps(docs: string, interactive: boolean): string[] {
-  return [`1. Create a key at ${docs}`, interactive ? "2. Paste it below." : "2. Set it with the command below."];
+/**
+ * The steps a provider's key takes: its page's own (lib/providerDocs.ts),
+ * or "Create a key at <docs>" for one whose page has none, then what to do
+ * with it. `plain` is numbered, for a script; `shown` is for a person's
+ * screen.
+ */
+function keySteps(id: string, docs: string, interactive: boolean): { plain: string[]; shown: Step[] } {
+  const last = interactive ? "Paste it below." : "Set it with the command below.";
+  const guide = providerKeySteps(id);
+  return {
+    plain: guide ? [...guide, `${guide.length + 1}. ${last}`] : [`1. Create a key at ${docs}`, `2. ${last}`],
+    shown: [...(providerKeyGuide(id) ?? [{ text: `Create a key at ${chalk.cyan(docs)}` }]), { text: last }],
+  };
 }
 
 /**
@@ -338,8 +372,10 @@ async function finishKey(
   context: {
     id: string;
     capability: Capability;
-    /** The lines saying what was added, before the steps. */
-    setup: string[];
+    /** What is on the Gateway now: "Registered Northwind (northwind) on example.com". */
+    added: string;
+    /** What else to know of it, before the steps. */
+    notes?: string[];
     /** The settings still to set; empty when the key is set already. */
     needed: string[];
     /** The page to read, when there is one. */
@@ -356,18 +392,36 @@ async function finishKey(
   const given = await givenValues(settings, `${name}'s key`, flags, options);
   const interactive = options.interactive ?? canPromptInTerminal(flags.json ?? false);
   const docsUrl = capability.mode === "api_key" || capability.mode === "ai" ? capability.docs : null;
+  // The steps, when the key is still to come and nothing gave it.
+  const steps = needed.length > 0 && Object.keys(given).length === 0 && docsUrl ? keySteps(id, docsUrl, interactive) : null;
+  const notes = context.notes ?? [];
   const setup = [
-    ...context.setup,
-    ...(needed.length > 0 && Object.keys(given).length === 0 && docsUrl ? keySteps(docsUrl, interactive) : []),
+    `${context.added}.`,
+    ...notes,
+    ...(steps?.plain ?? []),
     ...(context.docs ? [`Docs: ${context.docs}`] : []),
   ];
-  out.emit({ type: "step", step: "provider.setup", status: "ok", message: setup.join("\n"), data: { id, docs: context.docs } });
+  out.emit({
+    type: "step",
+    step: "provider.setup",
+    status: "ok",
+    message: setup.join("\n"),
+    display: setupShown({
+      added: context.added,
+      notes,
+      steps: steps ? formatSteps(steps.shown, proseWidth()) : [],
+      docs: context.docs,
+    }),
+    data: { id, docs: context.docs },
+  });
   const outcome = await setProviderSettings({
     flags,
     out,
     ...(options.createCf ? { createCf: options.createCf } : {}),
     whose: `${name}'s key`,
     standing: context.standing,
+    // The notes say where a registered provider's key goes; a built-in one has no row to say it of.
+    whereKeysGoSaid: true,
     settings,
     needed,
     given,
@@ -407,7 +461,7 @@ async function finishKey(
 /**
  * `provider add <id>` of a built-in API-key or AI provider (`openrouter`,
  * `dataforseo`): no row, only its key, which is asked for in the same run
- * when it isn't set (or given), after the page it comes from.
+ * when it isn't set (or given), after the steps to get it.
  */
 export async function addBuiltIn(
   options: ProviderOptions & { flags: GatewayCommandFlags & CredentialFlags },
@@ -435,7 +489,7 @@ export async function addBuiltIn(
   await finishKey(options, {
     id,
     capability,
-    setup: [`${shortName(capability.label)} (${id}) is on ${gatewayHost}.`],
+    added: `${shortName(capability.label)} (${id}) is on ${gatewayHost}`,
     needed: settings.filter((name) => !gatewayNames.includes(name)),
     docs: providerDocsUrl(id),
     standing: "the provider is built in",
@@ -501,8 +555,8 @@ export async function addFromSpec(
   await finishKey(options, {
     id,
     capability,
-    setup: [
-      `${added.replaced ? "Replaced" : "Registered"} ${capability.label} (${id}) on ${gatewayHost}.`,
+    added: `${added.replaced ? "Replaced" : "Registered"} ${capability.label} (${id}) on ${gatewayHost}`,
+    notes: [
       `Its key goes to ${keyHosts(capability)} only, ${sentAs(capability)}.`,
       ...(added.replaced ? ["The key set before was for the old spec: set it again before the Gateway sends it."] : []),
       ...(devFile ? [`Wrote ${devFile} for everyapp dev (your key goes in .dev.vars).`] : []),
@@ -673,14 +727,12 @@ export async function listProviders(options: ProviderOptions): Promise<void> {
       provider.id,
       provider.name,
       provider.kind === "oauth client" ? "oauth" : provider.kind,
-      [...provider.hosts, ...(provider.hostSetting ? [`<${provider.hostSetting}>`] : [])].join(", ") || chalk.dim("-"),
+      hostsCell([...provider.hosts, ...(provider.hostSetting ? [`<${provider.hostSetting}>`] : [])]),
       [
         // An uploaded client counts as set: the Gateway reads it when the env lacks the setting.
         provider.client?.source === "uploaded"
           ? `client ${chalk.green("uploaded")}`
-          : provider.settings
-              .map((setting) => `${setting.name} ${setting.set ? chalk.green("set") : chalk.yellow("not set")}`)
-              .join(", "),
+          : settingsShown(provider.settings),
         ...(provider.source === "row" && provider.client?.source !== "uploaded"
           ? [provider.bound ? chalk.green("bound") : chalk.yellow("not bound")]
           : []),
@@ -715,8 +767,15 @@ export async function listProviders(options: ProviderOptions): Promise<void> {
   });
 }
 
+/** Each setting and whether it is set: "STRIPE_API_KEY set", "A not set, B not set". */
+function settingsShown(settings: ReadonlyArray<{ name: string; set: boolean }>): string {
+  return settings
+    .map((setting) => `${setting.name} ${setting.set ? chalk.green("set") : chalk.yellow("not set")}`)
+    .join(", ");
+}
+
 /**
- * The spec of `id` as `provider show` prints it: an API-key entry's whole
+ * The spec of `id` as `provider show --json` carries it: an API-key entry's whole
  * spec or an OAuth row's (`providerSpecOf`, what `provider add` takes),
  * or for a built-in AI provider, what a person needs to set it up.
  */
@@ -749,11 +808,31 @@ function specOf(id: string, capability: Capability): Record<string, unknown> {
   }
 }
 
+/** A provider's kind, as `provider show` says it. */
+function kindShown(capability: RegistrableCapability): string {
+  switch (capability.mode) {
+    case "api_key":
+      return "API key";
+    case "ai":
+      return "AI provider";
+    case "oauth_client":
+      return `OAuth client  ${chalk.dim("each person connects their own account in each app")}`;
+  }
+}
+
+/** The request that proves a key works, what it answers and what to know of it: "GET https://api.stripe.com/v1/balance  answers 200; free. A restricted key needs Balance read for this one." */
+function smokeShown(smoke: SmokeRequest, firstHost: string): string {
+  return `${smoke.method} https://${smoke.host ?? firstHost}${smoke.path}  ${chalk.dim(
+    `answers ${smoke.expect.join(" or ")}; ${smoke.free ? "free" : "charged"}${smoke.note ? `. ${smoke.note}` : ""}`,
+  )}`;
+}
+
 /**
- * `provider show <id>`: the spec, where it is from, whether its key is
- * bound, who registered it and which apps list it. With `--save`, in an
- * app's directory, a registered provider's spec is written to
- * `.everyapp/providers/<id>.json` for `everyapp dev`.
+ * `provider show <id>`: what it is, whether its key or client is set, where
+ * it is from, where the key comes from and goes, and which apps list it;
+ * `--json` carries its whole spec. With `--save`, in an app's directory, a
+ * registered provider's spec is written to `.everyapp/providers/<id>.json`
+ * for `everyapp dev`.
  */
 export async function showProvider(
   options: ProviderOptions & { flags: { save?: boolean } },
@@ -814,34 +893,67 @@ export async function showProvider(
       })
     : null;
   const client = oauth?.["client"] as { source: "env" | "uploaded" | "none"; clientId?: string } | undefined;
-  const facts = [
-    row
-      ? `Registered by ${row.addedBy ?? "someone"}${row.addedAt ? ` on ${new Date(row.addedAt).toISOString().slice(0, 10)}` : ""}; ${
-          oauth
-            ? client?.source === "uploaded"
-              ? "its client was uploaded under Admin → Providers"
-              : bound
-                ? "its client is bound to these endpoints"
-                : "its client isn't set for these endpoints yet"
-            : bound
-              ? "its key is bound to these hosts"
-              : "its key isn't set for these hosts yet"
-        }.`
-      : "Built in.",
-    ...(oauth
+  const settings = capabilitySettings(capability).map((name) => ({ name, set: gatewayNames.includes(name) }));
+  // Set, but for the hosts of an earlier spec: the Gateway doesn't send it until it is set again.
+  const stale = row && !bound && settings.every((setting) => setting.set);
+  const { hosts, hostSetting } = hostsOf(capability);
+  const scopes = oauth?.["scopes"] as ScopeRulesSummary | undefined;
+  const connected = Number(oauth?.["connections"] ?? 0);
+  const width = proseWidth();
+  const facts: Fact[] = [
+    { label: "Kind", value: kindShown(capability) },
+    {
+      label: oauth ? "Client" : "Key",
+      value:
+        client?.source === "uploaded"
+          ? `${chalk.green("uploaded")} under Admin → Providers`
+          : `${settingsShown(settings)}${stale ? chalk.yellow(" but not for these hosts") : ""}`,
+    },
+    {
+      label: "Source",
+      value: row
+        ? `registered by ${row.addedBy ?? "someone"}${row.addedAt ? ` on ${new Date(row.addedAt).toISOString().slice(0, 10)}` : ""}`
+        : "built in",
+    },
+    ...(capability.hint ? [{ label: "Setup", value: plainText(capability.hint) }] : []),
+    capability.mode === "oauth_client"
+      ? { label: "Console", value: chalk.cyan(capability.console) }
+      : { label: "Get it at", value: chalk.cyan(capability.docs) },
+    ...(oauth ? [{ label: "Redirect URI", value: chalk.cyan(String(oauth["redirectUri"])) }] : []),
+    { label: "Hosts", value: [...hosts, ...(hostSetting ? [`the host ${hostSetting} names`] : [])].join(", ") },
+    ...(capability.mode === "oauth_client" ? [] : [{ label: "Sent", value: sentAs(capability) }]),
+    ...(capability.mode === "api_key" ? [{ label: "Access", value: capability.access.join(", ") }] : []),
+    ...(capability.mode !== "oauth_client" && capability.smoke
+      ? [{ label: "Check", value: smokeShown(capability.smoke, hosts[0] ?? `<${hostSetting}>`) }]
+      : []),
+    ...(scopes
       ? [
-          `Redirect URI to register at ${String(oauth["console"])}: ${String(oauth["redirectUri"])}`,
-          `Scopes: ${describeScopeRules(oauth["scopes"] as Parameters<typeof describeScopeRules>[0])}. Apps list the provider's own scopes in everyapp.config.ts.`,
-          `${String(oauth["connections"])} connected; people connect inside each app that lists it, for that app's scopes.`,
+          { label: "Scopes", value: "Apps list their scopes in everyapp.config.ts." },
+          ...(scopes.reference ? [{ label: "Scope list", value: chalk.cyan(scopes.reference) }] : []),
+          {
+            label: "Connections",
+            value:
+              connected > 0
+                ? `${connected} ${chalk.dim(`(${CLI} provider connections --provider ${id})`)}`
+                : chalk.dim("none yet"),
+          },
         ]
       : []),
-    using.length > 0 ? `Used by ${listed(using)}.` : "No app lists it yet.",
-    ...(saved ? [`Wrote ${saved} for everyapp dev.`] : []),
+    { label: "Apps", value: using.length > 0 ? using.join(", ") : chalk.dim("none list it yet") },
+    ...(!row || Object.hasOwn(OAUTH_PRESETS, id) ? [{ label: "Docs", value: chalk.cyan(providerDocsUrl(id)) }] : []),
   ];
   out.emit({
     type: "done",
     message: `${capability.label} (${id})`,
-    display: [JSON.stringify(spec, null, 2), "", ...facts.map((line) => chalk.dim(line))].join("\n"),
+    display: [
+      chalk.bold(`${capability.label} (${id})`),
+      ...(capability.description ? wrap(capability.description, width).map((line) => chalk.dim(line)) : []),
+      "",
+      ...formatFacts(facts, width),
+      "",
+      ...(saved ? [ticked(`Wrote ${saved} for everyapp dev`)] : []),
+      chalk.dim(`Its whole spec: ${CLI} provider show ${id} --json`),
+    ].join("\n"),
     data: {
       provider: spec,
       source: row ? "row" : "catalog",

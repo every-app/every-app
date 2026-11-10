@@ -137,7 +137,7 @@ app's name and logo: unverified).
 | --- | --- | --- |
 | no **Continue with Google** button | the provider isn't on: a setting missing or malformed, or the new version isn't live yet | `pnpm everyapp signin list --json` (`missing`); the logs' `signin.config_problem`; `signin add google` again |
 | Google's "Error 400: redirect_uri_mismatch" | the client's redirect URI isn't exactly `data.callbackUrl` | fix it under Authorized redirect URIs (no trailing slash; `https`); wait a few minutes |
-| Google refuses someone before the Gateway sees them (its wording for people not on Test users: unverified) | the consent screen is *External* and still in Testing: only test users get in, and their grants expire after seven days | **Publish app** (step 2) |
+| Google refuses someone before the Gateway sees them (its wording for people not on Test users: unverified) | the consent screen is *External* and still in Testing: only test users get in | **Publish app** (step 2) |
 | Google's `org_internal` error | the consent screen is *Internal* and the person's Google account is outside that organization | they use their Workspace account, or the audience becomes *External* and published |
 | "You don't have an account on this gateway." | the address Google returned isn't a member's and has no pending invitation | `pnpm everyapp workspace invite <email>` with the Google address, exactly as Google spells it |
 | "The sign-in provider hasn't verified this email address." | Google reports the address unverified (a secondary, unverified address on a non-Gmail account) | the person verifies it at Google, or uses another account |

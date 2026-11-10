@@ -49,8 +49,9 @@ the Gateway sends it, a smoke request, cost and rate), generated from the
 catalog by `pnpm -C packages/cli docs:update`; one with a file has a
 section there too, which points at the file. A provider registered on
 one Gateway (`pnpm everyapp provider add`, the agent docs' `providers`
-page) has no file at all: `pnpm everyapp provider show <id>` prints its
-whole spec, hint and smoke request included, and its setting is set like
+page) has no file at all: `pnpm everyapp provider show <id>` shows its
+hint, where its key comes from and its smoke request (`--json` carries its
+whole spec), and its setting is set like
 any Gateway setting (`pnpm everyapp secret set <NAME>`, which first names
 the provider and the hosts its key goes to).
 

@@ -402,7 +402,8 @@ the hosts and auth it was set for (`secret set` binds it; a replaced row
 needs the key again). The gateway checks every row again each time it
 reads one and leaves out, logged `provider.row_invalid`, a row that fails.
 `pnpm everyapp provider list` lists the catalog and the rows with whether
-each setting is set and bound; `provider show <id>` prints a spec;
+each setting is set and bound; `provider show <id>` shows one (its spec
+with `--json`);
 `provider remove <id>` removes a row. The spec's fields, the auth kinds,
 the rules, the commands and their codes are the agent docs page
 [/docs/agent/providers](https://everyapp.com/docs/agent/providers); the

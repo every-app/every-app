@@ -93,7 +93,7 @@ everyapp provider add openrouter        # a catalog provider: where the key come
 everyapp provider add stripe.json       # register a spec (file or https URL), then its key
 everyapp provider add github-oauth [--client-id <id>]   # an OAuth preset: its row, then its client
 everyapp provider list                  # catalog and rows: settings set, apps listing each
-everyapp provider show stripe [--save]  # the spec as JSON
+everyapp provider show stripe [--save]  # its setup facts; --json carries the whole spec
 everyapp provider remove stripe [--force]
 everyapp provider presets
 everyapp provider connections

@@ -452,7 +452,7 @@ How an agent uses it (the everyapp skill's rule): run
 whose `ready` is false, go through `unmet`, show the person each setting's
 `label`, `why`, `hint` and `docs`, and read its `setup` guide, which walks
 through getting the key or client (a provider registered on the Gateway
-has no guide: `pnpm everyapp provider show <id>` prints its spec, and
+has no guide: `pnpm everyapp provider show <id>` shows its setup, and
 `status`, `secret list` and `configure` print
 `Guide: pnpm everyapp provider show <id>` for it). Then get the value in without it ever passing
 through the chat, one of the three ways the agent docs' `setup/guides.md`

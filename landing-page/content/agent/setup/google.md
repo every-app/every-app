@@ -72,7 +72,8 @@ standard property): they matter only once an app lists those scopes.
 Identity organization: Workspace Starter lists at about $7 per user per
 month, or Cloud Identity Free costs nothing and creates the organization
 once the person verifies a domain they own (a DNS TXT record, recognized
-within 72 hours; then continue at step 2). *External* with a restricted Gmail scope
+within 72 hours; then continue at step 2). *External* for more than 100 people
+(step 7) with a restricted Gmail scope
 (`gmail.readonly`, `gmail.modify`) needs Google's restricted-scope verification (several weeks of review, by
 email) plus a yearly CASA security assessment by a third-party assessor:
 Google's Health page quotes $500 to $4,500 depending on the app's
@@ -185,16 +186,20 @@ before step 8.
 7. **Person,** *External* only: https://console.cloud.google.com/auth/audience
    → Test users → Add users → each member's Google email (up to 100) → Save.
    In Testing every consent expires after 7 days: members reconnect in each
-   app weekly. Publish app moves to In production: the unverified-app
-   screen and a lifetime cap of 100 new users until verification (plus the
-   CASA assessment for a restricted Gmail scope) passes. Verification
+   app weekly. Publish app moves to In production and ends that: consents
+   given from then on have no 7-day expiry and need no test user (one
+   given in Testing keeps its 7 days). In production people see the
+   unverified-app screen and the project has a lifetime cap of 100 new
+   users, until verification (plus the CASA assessment for a restricted
+   Gmail scope) passes. Verification
    (after Publish app: Prepare for Verification → Submit for Verification)
    needs a home page and a privacy policy on a domain the person owns,
    listed under Authorized domains and verified in Search Console by a
    project owner or editor, a demo video of the consent flow and a written
-   scope justification; Google answers by email over several weeks. Until
-   then stay in Testing (weekly reconnects, 100 test users); the run
-   resumes at Verify when Google's mail comes. Skip for *Internal*.
+   scope justification; Google answers by email over several weeks. Only
+   more than 100 people, or dropping that screen, needs it: the person
+   picks Testing (weekly reconnects, 100 test users) or Publish app, and
+   the run goes on to step 8 either way. Skip for *Internal*.
 8. **You,** only after the person says the file is there: the setup rules' "a
    command produced it" way, pipe each value from the file, never read the
    file yourself. `ls ~/Downloads/client_secret_*.json` (or the folder they
@@ -267,7 +272,7 @@ before step 8.
 | Google "Error 400: admin_policy_enforced" | The Workspace admin restricts the scopes or the app | A Workspace admin (Service Settings privilege): Admin console → Security → Access and data control → API controls (admin.google.com/ac/owl) → Manage App Access → Configure new app → search the client id → Continue → Trusted → Continue → Finish |
 | Google "Error 403: org_internal" | *Internal* audience, account outside the organization | Use a Workspace account, or switch to *External* ([/docs/google-personal-accounts](https://everyapp.com/docs/google-personal-accounts)) |
 | "Google hasn't verified this app" | *External*, unverified, sensitive or restricted scopes | Continue, or verify |
-| Calls stop after 7 days, the app asks to reconnect | *External* in Testing: consent expired | Reconnect in the app; publish and verify to stop it |
+| Calls stop after 7 days, the app asks to reconnect | *External* in Testing: consent expired | Reconnect in the app; Publish app (step 7) stops it |
 | `403 accessNotConfigured` ("has not been used in project") from Google | The API behind a scope isn't enabled in that project | Step 3 in the project the error names; wait a minute |
 | Google "Error 401: deleted_client" | The client was deleted (30-day restore window) | Restore it under Deleted credentials, or make a new one |
 
@@ -299,6 +304,8 @@ before step 8.
 - https://support.google.com/cloud/answer/15549135 (Data Access: only enabled APIs' scopes listed, Manually add scopes; step 5)
 - https://support.google.com/cloud/answer/15549257 (clients: secret shown once, two at most, Add secret, 30-day restore, six-month inactivity; steps 6 and 8, Rotate, Remove)
 - https://support.google.com/cloud/answer/15549945 (Audience: Internal needs an organization, External, Testing's 100 users and 7 days, Publish app; step 7)
+- https://developers.google.com/identity/protocols/oauth2#expiration (the 7-day refresh token is issued while the publishing status is Testing; step 7)
+- https://support.google.com/cloud/answer/13464323 (no verification needed under 100 users, with the unverified-app screen; step 7, Costs and plans)
 - https://support.google.com/cloud/answer/13464321 (verification: home page, privacy policy, Search Console, demo video, scope justification; restricted scopes alone add the yearly assessment; step 7, Costs and plans)
 - https://support.google.com/cloud/answer/9110914 (a scope's category is labeled in the console once added; step 5)
 - https://developers.google.com/identity/protocols/oauth2/web-server (`access_type=offline`, `prompt`, `include_granted_scopes`, the response's `scope`; Settings)

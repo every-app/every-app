@@ -459,7 +459,7 @@ function askTeamAtTerminal(suggested: string): Promise<string> {
   return askText("Zero Trust team name", {
     initial: suggested,
     context: [
-      "This Cloudflare account has no Zero Trust team yet. People will sign in at",
+      "This Cloudflare account has no Zero Trust team yet. Visitors will sign in at",
       "https://<name>.cloudflareaccess.com; the name can't be changed later.",
     ],
     validate: (value) => (TEAM.test(value.trim()) ? null : "Lowercase letters, digits and dashes only."),

@@ -1203,8 +1203,7 @@ async function checkReachable(
 const terminalPrompts: SetupPrompts = {
   accessInFront: ({ owner, cloudflareEmail }) =>
     confirmYesAtTerminal("Put Cloudflare Access in front of your Gateway?", [
-      "One command: people sign in at Cloudflare's edge before they reach your Gateway or its apps,",
-      "with their Cloudflare account (members of your Cloudflare account) or a code sent by email.",
+      "Visitors to your Gateway or apps sign in with their Cloudflare account or a code sent by email.",
       `Cloudflare's free Zero Trust plan covers 50 people. Turn it off any time: ${CLI} access off.`,
       ...(cloudflareEmail && cloudflareEmail.toLowerCase() !== owner.toLowerCase()
         ? [

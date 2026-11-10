@@ -10,11 +10,14 @@
 import fs from "node:fs";
 import { text as readAll } from "node:stream/consumers";
 import { isPlainGatewaySetting } from "@every-app/sdk/internal";
+import chalk from "chalk";
 import type { CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
-import type { EventSink } from "@/lib/output/events";
+import { ticked, type EventSink } from "@/lib/output/events";
+import { formatFacts } from "@/lib/output/table";
 import { listed } from "@/lib/output/text";
+import { proseWidth, wrap } from "@/lib/output/wrap";
 import { askSettingValue, checkedPlainValue } from "@/lib/secretValue";
 import type { GatewayCommandFlags } from "../flags";
 import { parsePipedLines } from "../configure";
@@ -38,6 +41,32 @@ export interface CredentialSeams {
   interactive?: boolean;
   /** Ask for one setting's value; "" is Enter on nothing (default: askSettingValue). */
   ask?: (name: string, question: string) => Promise<string>;
+}
+
+/**
+ * How a person sees what `provider add` did and what is left to do at the
+ * provider, before the key or client is asked for: the ticked line of what
+ * is on the Gateway (`added`), its notes dim under it, the steps, and the
+ * provider's page.
+ */
+export function setupShown({
+  added,
+  notes = [],
+  steps,
+  docs,
+}: {
+  added: string;
+  notes?: readonly string[];
+  /** The steps' lines, as lib/output/steps.ts draws them; none when nothing is left to do. */
+  steps: readonly string[];
+  docs: string | null;
+}): string {
+  return [
+    ticked(added),
+    ...notes.flatMap((note) => wrap(note, proseWidth() - 2)).map((line) => chalk.dim(`  ${line}`)),
+    ...(steps.length > 0 ? ["", ...steps] : []),
+    ...(docs ? ["", ...formatFacts([{ label: "Docs", value: chalk.cyan(docs) }])] : []),
+  ].join("\n");
 }
 
 /** "Google" for "Google (Gmail, Calendar, Search Console and Analytics)": a label without its trailing aside. */
@@ -141,6 +170,8 @@ export async function setProviderSettings(options: {
   ask?: CredentialSeams["ask"];
   /** The prompt's question for a setting (default: its name). */
   questionOf?: (name: string) => string;
+  /** Where the key goes needs no saying again: `provider add` said it, or the hosts are a preset's own. */
+  whereKeysGoSaid?: boolean;
 }): Promise<CredentialOutcome> {
   const { given, needed, settings } = options;
   const apply = (names: string[], readValue: (name: string) => Promise<string>) =>
@@ -150,6 +181,7 @@ export async function setProviderSettings(options: {
       names,
       readValue,
       ...(options.createCf ? { createCf: options.createCf } : {}),
+      ...(options.whereKeysGoSaid ? { whereKeysGoSaid: true } : {}),
     });
   if (Object.keys(given).length > 0) {
     const missing = needed.filter((name) => !(name in given));

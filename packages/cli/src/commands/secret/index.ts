@@ -152,6 +152,8 @@ interface SetSecretsOptions extends SecretOptions {
    * checked against it.
    */
   readValue: (name: string, rule?: SettingValueRule) => Promise<string>;
+  /** `provider add` said where the provider's key goes already (or its hosts are a preset's own): not said again here. */
+  whereKeysGoSaid?: boolean;
 }
 
 export async function set(
@@ -196,7 +198,7 @@ export async function applySecretValues(options: SetSecretsOptions) {
   const reached = await resolve(options.names, options, SecretAction.Set);
   // A registered provider's key goes where its row says: who registered
   // it and where it is sent, before the person types it.
-  sayWhereKeysGo(reached.providers, options.names, options.out);
+  if (!options.whereKeysGoSaid) sayWhereKeysGo(reached.providers, options.names, options.out);
   const changes: Record<string, string> = {};
   const settings = reached.route.app ? settingEntries(reached.route.app.manifest) : [];
   for (const name of options.names) {

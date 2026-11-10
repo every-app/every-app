@@ -5,6 +5,7 @@
  */
 import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
+import { wrap } from "./wrap";
 
 const width = (text: string) => stripVTControlCharacters(text).length;
 const pad = (text: string, to: number) => text + " ".repeat(to - width(text));
@@ -15,11 +16,17 @@ export interface Fact {
   value: string;
 }
 
-/** Each fact on its line, the values lined up after dim labels. */
-export function formatFacts(facts: readonly Fact[]): string[] {
+/**
+ * Each fact on its line, the values lined up after dim labels. With
+ * `columns`, a value too long for the line goes on under its start.
+ */
+export function formatFacts(facts: readonly Fact[], columns?: number): string[] {
   const labels = Math.max(...facts.map((fact) => fact.label.length));
-  return facts.map(
-    (fact) => `${chalk.dim(fact.label.padEnd(labels))}  ${fact.value}`,
+  const under = " ".repeat(labels + 2);
+  return facts.flatMap((fact) =>
+    (columns === undefined ? [fact.value] : wrap(fact.value, columns - under.length)).map((line, index) =>
+      index === 0 ? `${chalk.dim(fact.label.padEnd(labels))}  ${line}` : `${under}${line}`,
+    ),
   );
 }
 

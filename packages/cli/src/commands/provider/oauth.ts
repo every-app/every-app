@@ -42,11 +42,13 @@ import { installOrganization } from "@/lib/gateway/registry";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal } from "@/lib/output/prompt";
+import { formatSteps } from "@/lib/output/steps";
 import { formatTable } from "@/lib/output/table";
-import { listed } from "@/lib/output/text";
+import { listed, plural } from "@/lib/output/text";
+import { proseWidth } from "@/lib/output/wrap";
 import type { GatewayCommandFlags } from "../flags";
-import { providerConnectSteps, providerDocsUrl } from "@/lib/providerDocs";
-import { givenValues, setProviderSettings, shortName, type CredentialFlags } from "./credentials";
+import { providerConnectGuide, providerConnectSteps, providerDocsUrl } from "@/lib/providerDocs";
+import { givenValues, setProviderSettings, setupShown, shortName, type CredentialFlags } from "./credentials";
 import { readSpecSource, type ProviderOptions } from "./index";
 
 /** The flags `provider add --oauth` adds to `provider add`. */
@@ -68,7 +70,7 @@ function redirectUriFor(gatewayUrl: string, id: string): string {
  * (joined onto `prefix`) or in full; the Gateway adds `identity` to every
  * connect and lets a token carry `tolerated` beyond what was asked.
  */
-interface ScopeRulesSummary {
+export interface ScopeRulesSummary {
   separator: "space" | "comma";
   prefix?: string;
   identity: string[];
@@ -89,7 +91,7 @@ function scopeRulesOf(capability: OAuthClientCapability): ScopeRulesSummary {
 }
 
 /** The scope rules in one line: "space-separated, short ones joined onto https://…; the Gateway adds openid, email". */
-export function describeScopeRules(rules: ScopeRulesSummary): string {
+function describeScopeRules(rules: ScopeRulesSummary): string {
   return [
     `${rules.separator}-separated${rules.prefix ? `, short ones joined onto ${rules.prefix}` : ""}`,
     ...(rules.identity.length > 0 ? [`the Gateway adds ${rules.identity.join(", ")}`] : []),
@@ -172,12 +174,7 @@ export async function listPresets(options: Pick<ProviderOptions, "out">): Promis
   const presets = allPresets();
   const table = formatTable(
     ["ID", "NAME", "HOSTS", "CONSOLE"],
-    presets.map((preset) => [
-      preset.id,
-      preset.name,
-      preset.hosts.join(", ") || chalk.dim("-"),
-      preset.console,
-    ]),
+    presets.map((preset) => [preset.id, preset.name, hostsCell(preset.hosts), preset.console]),
   );
   options.out.emit({
     type: "done",
@@ -185,11 +182,18 @@ export async function listPresets(options: Pick<ProviderOptions, "out">): Promis
     display: [
       ...table,
       "",
-      chalk.dim(`Add one: ${CLI} provider add <id>. Deploying an app that lists one registers it too.`),
-      chalk.dim("Apps list the provider's own scopes in everyapp.config.ts: { scopes: [...], why: \"...\" }."),
+      chalk.dim(`Add one: ${CLI} provider add <id>`),
+      chalk.dim("Apps list their scopes in everyapp.config.ts."),
     ].join("\n"),
-    data: { presets, next: [{ command: `${CLI} provider add --oauth github-oauth`, note: "registers GitHub and prints the redirect URI to register at its console" }] },
+    data: { presets },
   });
+}
+
+/** A table's HOSTS cell: the first host, then how many more there are (`--json` and `provider show` name them all). */
+export function hostsCell(hosts: readonly string[]): string {
+  const [first, ...others] = hosts;
+  if (!first) return chalk.dim("-");
+  return others.length > 0 ? `${first} ${chalk.dim(`(+${plural(others.length, "other")})`)}` : first;
 }
 
 /** What `--oauth <value>` named: a preset, or a spec file or URL. */
@@ -310,28 +314,66 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
   const given = await givenValues(settings, `${name}'s client`, flags, options, capability.secrets.clientId);
   const interactive = options.interactive ?? canPromptInTerminal(flags.json ?? false);
   const docs = providerDocsUrl(id);
-  const header = registered
-    ? `${name} (${id}) is on ${gatewayHost}.`
-    : `${replaced ? "Replaced" : "Registered"} ${name} (${id}) on ${gatewayHost}.`;
+  const added = registered
+    ? `${name} (${id}) is on ${gatewayHost}`
+    : `${replaced ? "Replaced" : "Registered"} ${name} (${id}) on ${gatewayHost}`;
   // No punctuation right after a URL: terminals link it too.
   const register = `Register this redirect URI at ${capability.console}\n   ${redirectUri}`;
-  const guide = providerConnectSteps(id, redirectUri);
-  const steps = guide ?? [`1. ${register}`];
-  const what = guide ? "the Client ID and Client Secret" : "the client it gives you";
-  const paste = interactive ? `Paste ${what}.` : `Set ${what} with the command below.`;
+  // The provider page's own steps, or one step for a provider whose page has none.
+  const steps = providerConnectSteps(id, redirectUri) ?? [
+    `1. Create an OAuth app in ${name}'s console (${capability.console}), with this redirect URI\n   ${redirectUri}`,
+  ];
+  const paste = interactive
+    ? "Paste the Client ID and Client Secret."
+    : "Set the Client ID and Client Secret with the command below.";
+  // The client is set already; or it was given, and only the redirect URI is left to register; or every step.
+  const asked = needed.length > 0 && Object.keys(given).length === 0;
   const setup =
     needed.length === 0
-      ? [header]
-      : Object.keys(given).length > 0
-        ? [header, register, `Docs: ${docs}`]
-        : [header, ...steps, `${steps.length + 1}. ${paste}`, `Docs: ${docs}`];
-  out.emit({ type: "step", step: "provider.setup", status: "ok", message: setup.join("\n"), data: { id, docs } });
+      ? [`${added}.`]
+      : asked
+        ? [`${added}.`, ...steps, `${steps.length + 1}. ${paste}`, `Docs: ${docs}`]
+        : [`${added}.`, register, `Docs: ${docs}`];
+  const registerShown = `Register this redirect URI at ${chalk.cyan(capability.console)}`;
+  out.emit({
+    type: "step",
+    step: "provider.setup",
+    status: "ok",
+    message: setup.join("\n"),
+    display: setupShown({
+      added,
+      steps:
+        needed.length === 0
+          ? []
+          : asked
+            ? formatSteps(
+                [
+                  ...(providerConnectGuide(id, redirectUri) ?? [
+                    {
+                      text: `Create an OAuth app in ${name}'s console, with this redirect URI.`,
+                      links: [
+                        { label: "Console", url: capability.console },
+                        { label: "Redirect URI", url: redirectUri },
+                      ],
+                    },
+                  ]),
+                  { text: paste },
+                ],
+                proseWidth(),
+              )
+            : [registerShown, `  ${chalk.cyan(redirectUri)}`],
+      docs: needed.length === 0 ? null : docs,
+    }),
+    data: { id, docs },
+  });
   const outcome = await setProviderSettings({
     flags,
     out,
     ...(options.createCf ? { createCf: options.createCf } : {}),
     whose: `${name}'s client`,
     standing: "the provider is registered",
+    // A preset's hosts are EveryApp's own, on its page; a spec's are said before its client is typed.
+    whereKeysGoSaid: source.kind === "preset",
     settings,
     needed,
     given,

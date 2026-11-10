@@ -1,7 +1,7 @@
 ---
 title: Let personal Gmail accounts connect
-description: Switch your Google consent screen to External so @gmail.com accounts can connect, and choose between Testing mode and Google's verification.
-metaDescription: "Let people with personal @gmail.com accounts connect Gmail to your EveryApp apps: External audience, test users, the 7-day reconnect, and Google's verification."
+description: Switch your Google consent screen to External so @gmail.com accounts can connect, and choose between Testing mode and publishing the app.
+metaDescription: "Let people with personal @gmail.com accounts connect Gmail to your EveryApp apps: External audience, test users, the 7-day reconnect, publishing, and Google's verification."
 ---
 
 By default, your Google consent screen may be **Internal**. Internal only lets accounts in your Google Workspace connect, and anyone else gets an `org_internal` error. Personal `@gmail.com` accounts are outside every Workspace, so they need **External**.
@@ -35,11 +35,18 @@ In Testing, Google ends every connection 7 days after the person approved it. Th
 - Each app's connection is its own, so each one expires 7 days after the person connected it in that app.
 - There's no way to extend this in Testing. If weekly reconnects are too much, see the next section.
 
-## 3. The other option: publish and get verified
+## 3. The other option: publish the app
 
-Gmail's read and modify scopes (`gmail.readonly`, `gmail.modify`, `gmail.compose`) are **restricted** scopes, and `gmail.send` is **sensitive**. To let anyone connect without test users and without expiry, you need to:
+Publishing ends the weekly reconnects. On the [Audience page](https://console.cloud.google.com/auth/audience), select **Publish app**. Once the app is **In production**:
 
-- **Publish the app** (Audience → **Publish app**). Until Google verifies it, people still see the unverified-app screen, and the project can only ever have 100 users in total. That cap can't be reset.
+- Connections made from then on no longer end after 7 days. One made in Testing still does, and the person reconnects one last time.
+- The test users list no longer applies. Anyone you've invited to your Gateway can connect.
+- Until Google verifies the app, people still see the unverified-app screen, and the project can only ever have 100 users in total. That cap can't be reset.
+
+### More than 100 people: get verified
+
+Gmail's read and modify scopes (`gmail.readonly`, `gmail.modify`, `gmail.compose`) are **restricted** scopes, and `gmail.send` is **sensitive**. To go past 100 people and remove the unverified-app screen, you need to:
+
 - **Pass Google's verification.** You need:
   - a home page and a privacy policy on a domain you own;
   - a demo video of the consent flow;
@@ -49,6 +56,6 @@ Gmail's read and modify scopes (`gmail.readonly`, `gmail.modify`, `gmail.compose
 
 - **Pass a security assessment (CASA) every year**, because restricted Gmail data reaches your servers. A third-party assessor does it. Google quotes roughly $500 to $4,500 a year, depending on the app.
 
-Most self-hosted teams don't want this. Stay in Testing unless you need more than 100 people or can't live with weekly reconnects.
+Most self-hosted teams don't need this. Stay in Testing, or publish if weekly reconnects are too much.
 
 If everyone is in one Google Workspace, keeping the audience **Internal** avoids all of this. Internal needs no test users, no verification and no 7-day expiry.
