@@ -1300,13 +1300,13 @@ describe("provider add, one step: the key or client asked for in the same run", 
     // Where a preset's client goes isn't said: its hosts are EveryApp's own.
     expect(shown).toBe(
       [
-        "Registered Google (google-workspace) on example.com ✓",
+        "✓ Registered Google (google-workspace) on example.com",
         "",
         ...GOOGLE_STEPS,
         "7. Paste the Client ID and Client Secret.",
         "",
         "Docs  https://everyapp.com/docs/providers/google",
-        "Set GOOGLE_WORKSPACE_CLIENT_ID and GOOGLE_WORKSPACE_CLIENT_SECRET on the Gateway ✓",
+        "✓ Set GOOGLE_WORKSPACE_CLIENT_ID and GOOGLE_WORKSPACE_CLIENT_SECRET on the Gateway",
         "Apps can now list google-workspace. Live now, no deploy needed.",
         "",
       ].join("\n"),
@@ -1324,7 +1324,7 @@ describe("provider add, one step: the key or client asked for in the same run", 
     expect(again.asked).toEqual([]);
     expect(second).toBe(
       [
-        "Google (google-workspace) is on example.com ✓",
+        "✓ Google (google-workspace) is on example.com",
         "Its client is set. Apps can list google-workspace; each person connects once, from inside an app.",
         "",
       ].join("\n"),
@@ -1335,7 +1335,7 @@ describe("provider add, one step: the key or client asked for in the same run", 
     const { ask } = asker({ DROPBOX_OAUTH_CLIENT_ID: "dbx-id", DROPBOX_OAUTH_CLIENT_SECRET: "dbx-shh" });
     expect(await human(run("dropbox", { interactive: true, ask }))).toContain(
       [
-        "Registered Dropbox (dropbox) on example.com ✓",
+        "✓ Registered Dropbox (dropbox) on example.com",
         "",
         "1. Create an OAuth app in Dropbox's console, with this redirect URI.",
         "   Console       https://www.dropbox.com/developers/apps",
@@ -1386,7 +1386,7 @@ describe("provider add, one step: the key or client asked for in the same run", 
   it("unattended, says the steps and the command next; the manifest entry and scope rules only with --verbose", async () => {
     expect(await human(run("google-workspace"))).toBe(
       [
-        "Registered Google (google-workspace) on example.com ✓",
+        "✓ Registered Google (google-workspace) on example.com",
         "",
         ...GOOGLE_STEPS,
         "7. Set the Client ID and Client Secret with the command below.",
@@ -1409,7 +1409,7 @@ describe("provider add, one step: the key or client asked for in the same run", 
     const { asked, ask } = asker({ OPENROUTER_API_KEY: "sk-or-shh" });
     expect(await human(run("openrouter", { interactive: true, ask }))).toBe(
       [
-        "OpenRouter (openrouter) is on example.com ✓",
+        "✓ OpenRouter (openrouter) is on example.com",
         "",
         // The OpenRouter page's own steps, each link's URL under its step.
         "1. Sign in or sign up at openrouter.ai, with Google, GitHub or an email address.",
@@ -1428,7 +1428,7 @@ describe("provider add, one step: the key or client asked for in the same run", 
         "5. Paste it below.",
         "",
         "Docs  https://everyapp.com/docs/providers/openrouter",
-        "Set OPENROUTER_API_KEY on the Gateway ✓",
+        "✓ Set OPENROUTER_API_KEY on the Gateway",
         "Apps can now list openrouter under providers. Live now, no deploy needed.",
         "",
       ].join("\n"),
@@ -1440,7 +1440,7 @@ describe("provider add, one step: the key or client asked for in the same run", 
     const exa = asker({ EXA_API_KEY: "exa-shh" });
     expect(await human(run("exa", { interactive: true, ask: exa.ask }))).toContain(
       [
-        "Exa (exa) is on example.com ✓",
+        "✓ Exa (exa) is on example.com",
         "",
         `1. Create a key at ${CAPABILITIES["exa"].docs}`,
         "2. Paste it below.",

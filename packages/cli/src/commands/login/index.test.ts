@@ -48,7 +48,7 @@ describe("everyapp login", () => {
       ["auth login", "interactive"],
       ["auth whoami", "json"],
     ]);
-    expect(text()).toBe("Logged in to Cloudflare as ben@example.com ✓\n");
+    expect(text()).toBe("✓ Logged in to Cloudflare as ben@example.com\n");
   });
 
   it("hands out cf's device link and code without a terminal, and waits for the approval", async () => {

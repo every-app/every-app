@@ -419,8 +419,8 @@ describe("email set stores the lists on the Gateway and routes the addresses at 
 
     expect(await shown({ senders: ["ceo@example.com"], inbound: INBOUND })).toBe(
       [
-        "inbox sends as ceo@example.com ✓",
-        "Mail to *@example.com, support@mail.example.com goes to inbox ✓",
+        "✓ inbox sends as ceo@example.com",
+        "✓ Mail to *@example.com, support@mail.example.com goes to inbox",
         "The Gateway picks up the change within 30 seconds.",
         "",
         // ceo@example.com covers example.com.
@@ -433,9 +433,9 @@ describe("email set stores the lists on the Gateway and routes the addresses at 
       await shown({ senders: ["*@example.com", "support@mail.example.com"], inbound: ["*@example.com", "help@mail.example.com"] }),
     ).toBe(
       [
-        "inbox sends as *@example.com, support@mail.example.com ✓",
-        "Mail to *@example.com, help@mail.example.com goes to inbox ✓",
-        "Stopped routing support@mail.example.com ✓",
+        "✓ inbox sends as *@example.com, support@mail.example.com",
+        "✓ Mail to *@example.com, help@mail.example.com goes to inbox",
+        "✓ Stopped routing support@mail.example.com",
         "The Gateway picks up the change within 30 seconds.",
         "",
       ].join("\n"),

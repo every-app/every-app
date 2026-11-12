@@ -311,11 +311,11 @@ describe("createHumanSink", () => {
 
     expect(lines()).toEqual([
       "Deploying todo to apps.example.com (Example Inc)",
-      "Built ✓",
-      "Database migrated ✓ 0000_init.sql, 0001_tags.sql",
+      "✓ Built",
+      "✓ Database migrated · 0000_init.sql, 0001_tags.sql",
       "  Restore point saved. To undo: pnpm everyapp db restore",
-      "Uploaded ✓",
-      "Added to the Gateway ✓",
+      "✓ Uploaded",
+      "✓ Added to the Gateway",
       "",
       "Live          https://todo.apps.example.com",
       "Who can open  Private to owners and admins · change it at https://apps.example.com/admin/apps",
@@ -400,7 +400,7 @@ describe("createHumanSink", () => {
     expect(lines()).toEqual([
       "Deploying analytics 1.4.2 to apps.example.com (Example Inc)",
       "  From github.com/acme/analytics (release v1.4.2)",
-      "Release checked ✓",
+      "✓ Release checked",
     ]);
   });
 
@@ -450,9 +450,9 @@ describe("createHumanSink", () => {
 
     expect(redeploy()).toEqual([
       "Deploying todo to apps.example.com (Example Inc)",
-      "Built ✓",
-      "Database up to date ✓",
-      "Uploaded ✓",
+      "✓ Built",
+      "✓ Database up to date",
+      "✓ Uploaded",
       "",
       "Live  https://todo.apps.example.com",
     ]);
@@ -471,7 +471,13 @@ describe("createHumanSink", () => {
     alone.sink.emit({ type: "step", step: "secrets.gateway", status: "start", message: "Updating the Gateway..." });
     alone.sink.emit({ type: "step", step: "secrets.gateway", status: "ok", message: "Set CLOUDFLARE_ACCESS_AUD on the Gateway" });
     alone.sink.emit({ type: "done", message: "Set CLOUDFLARE_ACCESS_AUD on the Gateway.", display: "" });
-    expect(alone.lines()).toEqual(["Set CLOUDFLARE_ACCESS_AUD on the Gateway ✓"]);
+    expect(alone.lines()).toEqual(["✓ Set CLOUDFLARE_ACCESS_AUD on the Gateway"]);
+  });
+
+  it("ticks a result that is only a message: its first line, the rest dim under it", () => {
+    const { sink, lines } = human();
+    sink.emit({ type: "done", message: "Logged in to Cloudflare\nas ben@example.com" });
+    expect(lines()).toEqual(["✓ Logged in to Cloudflare", "  as ben@example.com"]);
   });
 
   it("shows a step as its command drew it (display), which a script never gets", () => {
@@ -576,9 +582,9 @@ describe("createHumanSink", () => {
       "Setting up EveryApp in Example Inc (ben@example.com)",
       "EveryApp is in early development, so expect some rough edges: https://everyapp.com/docs/early-adopters",
       "Installing the Gateway at apps.example.com (0.4.0)",
-      "Database created ✓ 2 migrations",
-      "Uploaded ✓ 6.1s",
-      "Owner account created for ben@example.com ✓",
+      "✓ Database created · 2 migrations",
+      "✓ Uploaded · 6.1s",
+      "✓ Owner account created for ben@example.com",
       "",
       "Gateway  https://apps.example.com",
       "Admin    https://apps.example.com/admin  invite people",
@@ -610,10 +616,10 @@ describe("createHumanSink", () => {
     });
 
     expect(lines()).toEqual([
-      "2 migrations applied to the local database ✓",
+      "✓ 2 migrations applied to the local database",
       "  0000_dry_bloodaxe.sql",
       "  0001_add_events.sql",
-      "Restored the Gateway's database ✓ before 0007_x.sql",
+      "✓ Restored the Gateway's database · before 0007_x.sql",
     ]);
   });
 
@@ -636,8 +642,8 @@ describe("createHumanSink", () => {
       },
     });
     expect(lines()).toEqual([
-      "Email Routing turned on for example.com ✓",
-      "Mail to support@example.com routed ✓",
+      "✓ Email Routing turned on for example.com",
+      "✓ Mail to support@example.com routed",
       "  To reply from example.com, set up Email Sending, then: pnpm everyapp email set --sender",
     ]);
   });
@@ -681,7 +687,7 @@ describe("createHumanSink", () => {
       },
     });
     expect(lines()).toEqual([
-      "Packed analytics 1.4.2 ✓",
+      "✓ Packed analytics 1.4.2",
       "",
       "Release  ./everyapp-release.tar.gz",
       "SHA-256  9f3c1a2e4b5d6e7f",
@@ -717,15 +723,15 @@ describe("createHumanSink", () => {
     sink.emit({ type: "step", step: "dev.stop", status: "ok", data: { appId: "todo", started: true } });
 
     expect(lines()).toEqual([
-      "Worker types generated ✓ .cloudflare/types",
-      "2 local migrations applied ✓",
-      "todo is running locally ✓",
+      "✓ Worker types generated · .cloudflare/types",
+      "✓ 2 local migrations applied",
+      "✓ todo is running locally",
       "",
       "  App  http://todo.localhost:8787",
       "",
       "Every request goes through the real perimeter. Ctrl+C to stop.",
       "MCP  list_todos  ok  12ms",
-      "todo stopped ✓",
+      "✓ todo stopped",
     ]);
   });
 
@@ -737,7 +743,7 @@ describe("createHumanSink", () => {
     sink.emit({ type: "step", step: "dev.stop", status: "ok", data: { appId: "todo", started: false } });
     expect(lines()).toEqual([
       "Skipped local migrations (--skip-migrations)",
-      "Local database up to date ✓",
+      "✓ Local database up to date",
       "Stopped before todo started.",
     ]);
   });
@@ -770,8 +776,8 @@ describe("createHumanSink", () => {
       data: { email: "ben@example.com", organizationName: "Ben Senescu" },
     });
     expect(lines()).toEqual([
-      "Ben Senescu's Gateway is up to date with 0.4.0 ✓",
-      "Owner account is ben@example.com ✓",
+      "✓ Ben Senescu's Gateway is up to date with 0.4.0",
+      "✓ Owner account is ben@example.com",
     ]);
   });
 
@@ -804,7 +810,7 @@ describe("createHumanSink", () => {
       "Resuming the Gateway install at apps.example.com (0.4.0)",
       "Redeploying Ben Senescu's Gateway (0.4.0)",
       "Repairing Ben Senescu's Gateway (0.4.0)",
-      "Gateway now routes todo ✓",
+      "✓ Gateway now routes todo",
     ]);
   });
 
@@ -945,7 +951,7 @@ describe("createHumanSink", () => {
     const screen = stdout()
       .split("\n")
       .map((line) => line.split("\r\x1b[2K").at(-1));
-    expect(screen).toEqual(["Other deploy finished ✓ 41s", ""]);
+    expect(screen).toEqual(["✓ Other deploy finished · 41s", ""]);
   });
 
   it("shows an action the run waits for on stdout, and one it stops on with its rerun on stderr", () => {
@@ -1023,7 +1029,7 @@ describe("createHumanSink", () => {
       status: "start",
       message: "Migrating the app's database...",
     });
-    expect(stdout()).toContain("Built ✓\n");
+    expect(stdout()).toContain("✓ Built\n");
     expect(stdout().split("\r\x1b[2K").at(-1)).toBe("Migrating the database... ⠋");
 
     // cf deploy attached to the terminal, or a prompt: the spinner goes first.
@@ -1037,7 +1043,7 @@ describe("createHumanSink", () => {
       data: { applied: [] },
     });
     sink.emit({ type: "done" });
-    expect(stdout().endsWith("Database up to date ✓\n")).toBe(true);
+    expect(stdout().endsWith("✓ Database up to date\n")).toBe(true);
   });
 
   it("exits 1 on an error after an action it waited for, like the NDJSON sink", () => {
@@ -1132,7 +1138,7 @@ describe("createHumanSink", () => {
     sink.emit({ type: "step", step: "gateway.release", status: "ok", data: { release: "0.2.1", downloaded: true } });
     sink.emit({ type: "step", step: "gateway.release", status: "ok", data: { release: "0.2.1", cached: false } });
     sink.emit({ type: "step", step: "gateway.release", status: "ok", data: { release: "0.2.1", cached: true } });
-    expect(lines()).toEqual(["Downloaded Gateway 0.2.1 ✓", "Built from this checkout ✓"]);
+    expect(lines()).toEqual(["✓ Downloaded Gateway 0.2.1", "✓ Built from this checkout"]);
   });
 
   it("piped, says a long step still runs every 30 seconds", () => {
@@ -1155,7 +1161,7 @@ describe("createHumanSink", () => {
         "still building the Gateway from this checkout (usually 1–2m) · 30s",
         "still building the Gateway from this checkout (usually 1–2m) · 1m",
         "still building the Gateway from this checkout (usually 1–2m) · 2m",
-        "Built from this checkout ✓ 1m 30s",
+        "✓ Built from this checkout · 1m 30s",
       ]);
     } finally {
       vi.useRealTimers();

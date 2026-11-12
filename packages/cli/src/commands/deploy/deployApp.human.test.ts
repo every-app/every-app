@@ -114,11 +114,11 @@ describe("deploy, as a person sees it", () => {
     expect(first.exitCode).toBe(0);
     expect(first.stdout.split("\n")).toEqual([
       "Deploying todo to example.com (Acme)",
-      "Installed dependencies ✓",
-      "Built ✓",
-      "Database created ✓ 1 migration",
-      "Uploaded ✓",
-      "Added to the Gateway ✓",
+      "✓ Installed dependencies",
+      "✓ Built",
+      "✓ Database created · 1 migration",
+      "✓ Uploaded",
+      "✓ Added to the Gateway",
       "",
       "Live          https://todo.example.com",
       "Who can open  Private to owners and admins · change it at https://example.com/admin/apps",
@@ -132,10 +132,10 @@ describe("deploy, as a person sees it", () => {
     const again = await deployShown();
     expect(again.stdout.split("\n")).toEqual([
       "Deploying todo to example.com (Acme)",
-      "Installed dependencies ✓",
-      "Built ✓",
-      "Database up to date ✓",
-      "Uploaded ✓",
+      "✓ Installed dependencies",
+      "✓ Built",
+      "✓ Database up to date",
+      "✓ Uploaded",
       "",
       "Live  https://todo.example.com",
       "",
@@ -210,6 +210,6 @@ describe("deploy, as a person sees it", () => {
     expect(override).toMatch(/^ {2}To go ahead anyway: pnpm everyapp .*--allow-delete-workflows$/);
 
     const deleted = await deployShown(TODO, { allowDeleteWorkflows: true });
-    expect(deleted.stdout).toContain("Uploaded ✓\nDeleted the Workflow RANK_CHECK ✓\n");
+    expect(deleted.stdout).toContain("✓ Uploaded\n✓ Deleted the Workflow RANK_CHECK\n");
   });
 });

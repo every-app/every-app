@@ -1974,7 +1974,7 @@ describe("delete", () => {
   it("says it removed the app, what stays, and how to delete that too", async () => {
     const shown = await removeShown("todo");
 
-    expect(shown).toMatch(/^Removed todo from the Gateway ✓/m);
+    expect(shown).toMatch(/^✓ Removed todo from the Gateway/m);
     expect(shown).not.toContain("Updating the Gateway");
     expect(shown).toMatch(
       /Its Worker and data are kept, and any cron triggers, Workflows and mail routes keep running\.\nTo delete those too: pnpm everyapp delete todo --purge\n$/,
@@ -1996,8 +1996,8 @@ describe("delete", () => {
   it("ticks the purge as its own step, naming the kinds it deleted", async () => {
     const shown = await removeShown("todo", true);
 
-    expect(shown).toMatch(/^Removed todo from the Gateway ✓/m);
-    expect(shown).toMatch(/^Deleted todo's Worker(, [\w ]+)* and [\w ]+ ✓/m);
+    expect(shown).toMatch(/^✓ Removed todo from the Gateway/m);
+    expect(shown).toMatch(/^✓ Deleted todo's Worker(, [\w ]+)* and [\w ]+$/m);
     expect(shown).not.toContain("every-acme-todo");
   });
 

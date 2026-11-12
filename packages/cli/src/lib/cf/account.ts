@@ -134,7 +134,7 @@ export async function logIn({
     });
   }
   if (interactive) {
-    tellPerson(`Logged in to Cloudflare${loggedIn.email ? ` as ${loggedIn.email}` : ""} ${chalk.green("✓")}`);
+    tellPerson(`${chalk.green("✓")} Logged in to Cloudflare${loggedIn.email ? ` as ${loggedIn.email}` : ""}`);
   }
   return loggedIn;
 }

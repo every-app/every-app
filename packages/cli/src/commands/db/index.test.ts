@@ -197,7 +197,7 @@ describe("formatQueryResults", () => {
 
   it("says how many rows a write changed, and that a select found none", () => {
     expect(plain([{ rows: [], duration: 21, changes: 3 }], "production")).toBe(
-      "3 rows changed ✓ production · 21ms",
+      "✓ 3 rows changed · production · 21ms",
     );
     expect(plain([{ rows: [], duration: 0.2, changes: 0 }], "local")).toBe(
       "0 rows · local · <1ms",

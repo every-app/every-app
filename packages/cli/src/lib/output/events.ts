@@ -152,7 +152,7 @@ export function createNdjsonSink(
  *
  *  - Steps: only the milestones below, each rendered from its data (or as
  *    its command drew it, `display`). A
- *    finished step gets a ticked line of its own (`Built ✓ 4.2s`), with its
+ *    finished step gets a ticked line of its own (`✓ Built · 4.2s`), with its
  *    time when it took a second or more, and notes such as the database's
  *    restore point under it. Facts (`Live`) wait for the end of the run.
  *    Every other step is bookkeeping, shown with --verbose.
@@ -166,8 +166,10 @@ export function createNdjsonSink(
  *    `data.fix`, then the command to run (`data.rerun`, `data.rerunNote`
  *    dim after it). With --verbose an error adds its code, and an
  *    unexpected one its stack. A CANCELLED error is only its message, dim.
- *    Problems go to stderr. `done` ends with the facts, the run's time when
- *    it took 10 seconds or more, and `data.next`.
+ *    Problems go to stderr. `done` is a ticked headline (its message's
+ *    first line, the rest dim under it) or what its command drew
+ *    (`display`), then the facts, the run's time when it took 10 seconds
+ *    or more, and `data.next`.
  *  - Piped, a step that runs long says so every 30 seconds (`still
  *    building the Gateway · 1m`), so a CI log shows it's alive.
  *  - Ctrl-C (lib/interrupt.ts): the spinner becomes the line saying what's
@@ -351,7 +353,7 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
               ? [event.display]
               : []
             : event.message
-              ? [chalk.green(event.message)]
+              ? headed(chalk.green("✓"), event.message)
               : []),
           ...(allFacts.length > 0 ? ["", ...formatFacts(allFacts)] : []),
           ...(took >= 10_000 && event.display === undefined
@@ -398,9 +400,9 @@ export function stepInsteadOfDone(out: EventSink, step: string): EventSink {
   };
 }
 
-/** Something done, as a ticked line: `Built ✓ 4.2s`, `after` dim. */
+/** Something done, as a ticked line: `✓ Built · 4.2s`, `after` dim. */
 export function ticked(done: string, after?: string): string {
-  return `${done} ${chalk.green("✓")}${after ? ` ${chalk.dim(after)}` : ""}`;
+  return `${chalk.green("✓")} ${done}${after ? chalk.dim(` · ${after}`) : ""}`;
 }
 
 type StepEvent = Extract<EventInput<EveryAppEvent>, { type: "step" }>;
@@ -894,7 +896,7 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
  */
 const QUIET_WARNINGS = new Set(["CUSTOM_DOMAIN_OWNER_UNCHECKED"]);
 
-/** A lease came free after a wait (lib/gateway/lease.ts): "Other deploy finished ✓ 41s". */
+/** A lease came free after a wait (lib/gateway/lease.ts): "✓ Other deploy finished · 41s". */
 function leaseWaited(event: StepEvent): Shown | null {
   return event.status === "ok"
     ? { done: `Other ${text(event.data?.["waitedFor"]) ?? "run"} finished` }

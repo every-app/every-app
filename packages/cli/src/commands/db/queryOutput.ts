@@ -20,7 +20,7 @@ export function formatQueryResults(
   if (results.length === 1) {
     const [result] = results as [D1Result];
     if (changedRows(result)) {
-      return `${plural(result.changes, "row")} changed ${chalk.green("✓")} ${chalk.dim(`${database} · ${took}`)}`;
+      return `${chalk.green("✓")} ${plural(result.changes, "row")} changed${chalk.dim(` · ${database} · ${took}`)}`;
     }
     const footer = chalk.dim(`${plural(result.rows.length, "row")} · ${database} · ${took}`);
     return result.rows.length === 0 ? footer : [...table(result), "", footer].join("\n");

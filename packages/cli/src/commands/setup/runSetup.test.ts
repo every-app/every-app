@@ -787,8 +787,8 @@ describe("everyapp setup", () => {
       "Setting up EveryApp in Acme (dev@example.com)",
       "EveryApp is in early development, so expect some rough edges: https://everyapp.com/docs/early-adopters",
       "Installing the Gateway at apps.example.com (0.2.0)",
-      expect.stringMatching(/^Database created ✓/),
-      expect.stringMatching(/^Uploaded ✓/),
+      expect.stringMatching(/^✓ Database created/),
+      expect.stringMatching(/^✓ Uploaded/),
     ]);
     expect(plain(stderr)).toEqual([
       "! The Gateway has no owner yet",
