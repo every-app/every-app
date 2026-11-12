@@ -72,8 +72,10 @@ module.exports = {
         enableEmbeddedAsarIntegrityValidation: true,
         onlyLoadAppFromAsar: true,
       },
+  // Electron's ~40 other UI languages; Every App is English only.
+  electronLanguages: ["en"],
   // Release file names without the display name (no spaces, unchanged by a rename):
-  // EveryApp-1.2.3-universal-mac.zip, EveryApp-1.2.3-universal.dmg.
+  // EveryApp-1.2.3-arm64-mac.zip, EveryApp-1.2.3-x64.dmg.
   mac: {
     artifactName: "EveryApp-${version}-${arch}-mac.${ext}",
     category: "public.app-category.productivity",
@@ -82,9 +84,11 @@ module.exports = {
     target: dev
       ? [{ target: "dir" }]
       : [
-          { target: "dmg", arch: ["universal"] },
+          // One build per architecture: a universal one carries two copies of Electron (about twice the
+          // download). electron-updater picks the file with "arm64" in its name on Apple Silicon.
+          { target: "dmg", arch: ["arm64", "x64"] },
           // electron-updater on macOS installs from the zip.
-          { target: "zip", arch: ["universal"] },
+          { target: "zip", arch: ["arm64", "x64"] },
         ],
     hardenedRuntime: true,
     gatekeeperAssess: false,

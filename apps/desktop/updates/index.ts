@@ -1,6 +1,7 @@
 // updates.everyapp.com: the desktop app's public update feed (docs/release.md, "Update feed").
-// electron-updater reads <channel>/latest-mac.yml, then downloads the zip, with Range requests for
-// blockmap differential downloads. Files live in the R2 bucket bound as UPDATES, under <channel>/.
+// electron-updater reads <channel>/latest-mac.yml, then downloads the zip for its architecture, with
+// Range requests for blockmap differential downloads. Files live in the R2 bucket bound as UPDATES,
+// under <channel>/. <channel>/download/arm64 and /x64 redirect to the current DMG: the download links.
 // Read-only: uploads are `wrangler r2 object put`, printed by scripts/release-mac.sh.
 
 /** Feeds served. "mac" is baked into every build signed by Ben's personal team; a feed for
@@ -87,10 +88,22 @@ export function parseRange(header: string, size: number): [number, number] | "un
   return [start, end];
 }
 
+/** The current release's DMG for an architecture, from the channel's latest-mac.yml. */
+async function latestDmg(channel: string, arch: string, env: Env): Promise<Response> {
+  const manifest = await env.UPDATES.get(`${channel}/${MANIFEST}`);
+  if (!manifest) return plain(404, "Not found");
+  const text = await new Response(manifest.body).text();
+  const dmg = [...text.matchAll(/^\s*- url: (\S+)$/gm)].map((m) => m[1]!).find((url) => url.endsWith(`-${arch}.dmg`));
+  if (!dmg || !isUpdateFile(dmg)) return plain(404, "Not found");
+  return new Response(null, { status: 302, headers: { location: `/${channel}/${dmg}`, "cache-control": "no-store" } });
+}
+
 export async function handle(request: Request, env: Env): Promise<Response> {
   if (request.method !== "GET" && request.method !== "HEAD") return plain(405, "Method not allowed", { allow: "GET, HEAD" });
   const { pathname } = new URL(request.url);
   if (pathname === "/") return Response.redirect("https://everyapp.com", 302);
+  const download = /^\/([a-z0-9-]{1,32})\/download\/(arm64|x64)$/.exec(pathname);
+  if (download && CHANNELS.has(download[1]!)) return latestDmg(download[1]!, download[2]!, env);
   const key = keyFor(pathname);
   if (!key) return plain(404, "Not found");
   const name = key.slice(key.indexOf("/") + 1);

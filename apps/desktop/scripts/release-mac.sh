@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# Cut an Every App for Mac release: the universal helper, the signed + notarized app (DMG + zip), the
-# update-feed files, all verified, in apps/desktop/releases/<version>/. It never uploads anything: it
-# prints the upload commands for you to run. See docs/release.md.
+# Cut an Every App for Mac release: the universal helper, the signed + notarized app for Apple Silicon
+# and for Intel (a DMG + an update zip each), the update-feed files, all verified, in
+# apps/desktop/releases/<version>/. A release then asks whether to publish it. See docs/release.md.
 #
-#   scripts/release-mac.sh                     dry run (the default): build, sign, notarize,
-#                                              verify; no git changes, warnings instead of errors
-#                                              for a dirty tree or a missing tag
-#   scripts/release-mac.sh --release           the real thing: clean tree + tag everyapp-desktop-v<version>
-#                                              at HEAD required (or --bump to make them)
+#   scripts/release-mac.sh                     dry run (the default): build, sign, notarize, verify into
+#                                              releases/<version>-dry-run/; no git changes, warnings
+#                                              instead of errors for a dirty tree or a missing tag
 #   scripts/release-mac.sh --release --bump patch|minor|major|X.Y.Z
-#                                              sets desktop/package.json's version, commits that
-#                                              file, tags everyapp-desktop-v<version>, then builds
+#                                              the real thing, from a clean main: builds and verifies, then
+#                                              commits desktop/package.json's new version, tags
+#                                              everyapp-desktop-v<version> and asks "Publish now?"
+#   scripts/release-mac.sh --release           the same for a tag everyapp-desktop-v<version> already at HEAD
+#   scripts/release-mac.sh --publish X.Y.Z     publish releases/X.Y.Z/: upload it to the feed (latest-mac.yml
+#                                              last), check the feed serves it, push main and the tag
 #   scripts/release-mac.sh --dry-run --unsigned   no credentials: ad hoc signing, no notarization,
 #                                              proves the pipeline end to end
 #
@@ -22,6 +24,7 @@
 #   EVERYAPP_DESKTOP_UPDATE_URL    the update feed baked into the app (default https://updates.everyapp.com/mac,
 #                      served by updates/; a build signed by another team needs its own feed)
 set -euo pipefail
+shopt -s nullglob
 
 DESKTOP="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ROOT="$(git -C "${DESKTOP}" rev-parse --show-toplevel)"
@@ -35,15 +38,18 @@ HELPER_ID="$(ident helper.bundleId)"
 DEFAULT_FEED="https://updates.everyapp.com/mac"
 PLACEHOLDER_FEED="https://updates.invalid/everyapp/mac/"
 UPDATE_BUCKET="everyapp-desktop-updates"  # updates/wrangler.jsonc
+ARCHS=(arm64 x64)  # electron-builder.config.cjs builds one app per architecture
 
 MODE="dry-run"
 UNSIGNED=0
 BUMP=""
-usage() { sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+PUBLISH_VERSION=""
+usage() { sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) MODE="dry-run" ;;
     --release) MODE="release" ;;
+    --publish) MODE="publish"; PUBLISH_VERSION="${2:?--publish needs the version, e.g. 0.1.3}"; shift ;;
     --unsigned) UNSIGNED=1 ;;
     --bump) BUMP="${2:?--bump needs patch, minor, major or X.Y.Z}"; shift ;;
     -h | --help) usage; exit 0 ;;
@@ -59,6 +65,61 @@ die() { printf '\n\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 if [[ "${MODE}" == "release" && "${UNSIGNED}" == 1 ]]; then die "--release can't be --unsigned: a release is signed and notarized."; fi
 
+FEED="${EVERYAPP_DESKTOP_UPDATE_URL:-${DEFAULT_FEED}}"
+# An unsigned build can't install a signed update, so it never points at the real feed.
+[[ "${UNSIGNED}" == 1 ]] && FEED="${PLACEHOLDER_FEED}"
+FEED="${FEED%/}"
+CHANNEL="${FEED##*/}"
+
+# ── Publish: upload a built release, check the feed serves it, push main + the tag ──
+publish() {
+  local version="$1" dir="${DESKTOP}/releases/$1" tag="${TAG_PREFIX}$1"
+  [[ -f "${dir}/latest-mac.yml" ]] || die "No release in ${dir#"${ROOT}/"} (build it with --release first)."
+  git -C "${ROOT}" rev-parse -q --verify "refs/tags/${tag}" > /dev/null || die "No tag ${tag}: publish only what a --release run built."
+  grep -qx "version: ${version}" "${dir}/latest-mac.yml" || die "${dir#"${ROOT}/"}/latest-mac.yml isn't for ${version}."
+
+  # Git first: if main moved on, stop before anything goes live.
+  step "Pushing ${tag} (and main, if it doesn't have it yet)"
+  git -C "${ROOT}" fetch -q origin main
+  local refs=("refs/tags/${tag}")
+  git -C "${ROOT}" merge-base --is-ancestor "${tag}^{commit}" origin/main || refs+=("${tag}^{commit}:refs/heads/main")
+  git -C "${ROOT}" push --atomic origin "${refs[@]}" ||
+    die "Couldn't push. If main moved on, bring ${tag} onto main, then run: scripts/release-mac.sh --publish ${version}"
+
+  step "Uploading to ${FEED} (latest-mac.yml last)"
+  local files=() f name
+  for f in "${dir}"/*; do
+    name="$(basename "${f}")"
+    [[ "${name}" == latest-mac.yml || "${name}" == SHA256SUMS ]] || files+=("${name}")
+  done
+  # Release files are cached as immutable: a published name never gets a different file.
+  for name in "${files[@]}" latest-mac.yml; do
+    note "${name}"
+    (cd "${DESKTOP}" && pnpm exec wrangler r2 object put "${UPDATE_BUCKET}/${CHANNEL}/${name}" --file "${dir}/${name}" --remote > /dev/null)
+  done
+
+  step "Checking the feed"
+  curl -fsS "${FEED}/latest-mac.yml" | grep -qx "version: ${version}" || die "${FEED}/latest-mac.yml doesn't say version ${version} yet."
+  note "latest-mac.yml: version ${version}"
+  for name in "${files[@]}"; do
+    curl -fsSI -o /dev/null "${FEED}/${name}" || die "${FEED}/${name} isn't served."
+  done
+  note "all ${#files[@]} release files: 200"
+  local arch
+  for arch in "${ARCHS[@]}"; do
+    local target
+    target="$(curl -sS -o /dev/null -w '%{redirect_url}' "${FEED}/download/${arch}" || true)"
+    if [[ "${target}" == *"-${version}-${arch}.dmg" ]]; then note "download link (${arch}): ${FEED}/download/${arch}"
+    else warn "${FEED}/download/${arch} doesn't point at the ${version} DMG yet (is the updates Worker deployed?)"; fi
+  done
+  step "Published ${PRODUCT} ${version}. Installed copies update within 6 hours, or at their next launch."
+}
+
+if [[ "${MODE}" == "publish" ]]; then
+  publish "${PUBLISH_VERSION}"
+  exit 0
+fi
+
 # ── Version ─────────────────────────────────────────────────────────────────
 CURRENT="$(node -p "require('${DESKTOP}/package.json').version")"
 next_version() {
@@ -73,7 +134,9 @@ next_version() {
 VERSION="${CURRENT}"
 [[ -n "${BUMP}" ]] && VERSION="$(next_version "${BUMP}")"
 TAG="${TAG_PREFIX}${VERSION}"
+# A dry run has its own folder, so it never blocks the real release of the same version.
 OUT="${DESKTOP}/releases/${VERSION}"
+[[ "${MODE}" == "dry-run" ]] && OUT="${DESKTOP}/releases/${VERSION}-dry-run"
 
 step "${PRODUCT} ${VERSION} (${MODE}$([[ ${UNSIGNED} == 1 ]] && echo ", unsigned"))"
 
@@ -115,19 +178,15 @@ if [[ "${UNSIGNED}" == 0 ]]; then
 fi
 
 if [[ -n "$(git -C "${ROOT}" status --porcelain)" ]]; then soft "The git tree isn't clean (commit or stash first)."; fi
+# Publishing pushes the release commit to main, so a release is cut from main.
+[[ "$(git -C "${ROOT}" symbolic-ref -q --short HEAD)" == main ]] || soft "Not on main (git switch main && git pull)."
 if [[ -z "${BUMP}" ]]; then
   if [[ "$(git -C "${ROOT}" rev-parse -q --verify "refs/tags/${TAG}^{commit}" 2> /dev/null)" != "$(git -C "${ROOT}" rev-parse HEAD)" ]]; then
-    soft "No tag ${TAG} at HEAD. Tag it (git tag -a ${TAG} -m \"${PRODUCT} ${VERSION}\") or pass --bump patch|minor|major|X.Y.Z."
+    soft "No tag ${TAG} at HEAD. Pass --bump patch|minor|major|X.Y.Z (or tag HEAD ${TAG} yourself)."
   fi
 elif git -C "${ROOT}" rev-parse -q --verify "refs/tags/${TAG}" > /dev/null; then
   problem "Tag ${TAG} already exists; pick another --bump."
 fi
-
-# An unsigned build can't install a signed update, so it never points at the real feed.
-FEED="${EVERYAPP_DESKTOP_UPDATE_URL:-${DEFAULT_FEED}}"
-[[ "${UNSIGNED}" == 1 ]] && FEED="${PLACEHOLDER_FEED}"
-CHANNEL="${FEED%/}"
-CHANNEL="${CHANNEL##*/}"
 if [[ "${MODE}" == "release" && -e "${OUT}" ]]; then problem "${OUT} already exists (a release is never overwritten)."; fi
 
 if [[ ${#PROBLEMS[@]} -gt 0 ]]; then
@@ -143,21 +202,12 @@ else
 fi
 note "update feed baked into the app: ${FEED}"
 
-# ── Version bump (release only) ──────────────────────────────────────────────
+# The new version is built in without touching package.json; a release commits and tags it only
+# once the build has verified, so a failed run leaves git as it was and the version free.
 VERSION_ARGS=()
 if [[ -n "${BUMP}" ]]; then
-  if [[ "${MODE}" == "release" ]]; then
-    step "Bumping ${DESKTOP_REL}/package.json ${CURRENT} → ${VERSION}, tagging ${TAG}"
-    node -e '
-      const fs = require("fs"); const [file, v] = process.argv.slice(1);
-      const text = fs.readFileSync(file, "utf8");
-      fs.writeFileSync(file, text.replace(/("version":\s*")[^"]+(")/, `$1${v}$2`));' "${DESKTOP}/package.json" "${VERSION}"
-    git -C "${ROOT}" commit -q -m "${PRODUCT} desktop ${VERSION}" -- "${DESKTOP_REL}/package.json"
-    git -C "${ROOT}" tag -a "${TAG}" -m "${PRODUCT} desktop ${VERSION}"
-  else
-    note "dry run: would bump ${CURRENT} → ${VERSION} and tag ${TAG}; building as ${VERSION} without touching git"
-    VERSION_ARGS=(-c.extraMetadata.version="${VERSION}")
-  fi
+  note "building ${CURRENT} → ${VERSION}$([[ ${MODE} == dry-run ]] && echo " (dry run: git stays as it is)")"
+  VERSION_ARGS=(-c.extraMetadata.version="${VERSION}")
 fi
 
 # ── Helper ───────────────────────────────────────────────────────────────────
@@ -166,8 +216,8 @@ HELPER="$(EVERYAPP_DESKTOP_HELPER_ARCHS="arm64 x86_64" EVERYAPP_DESKTOP_SIGN_ID=
 [[ "$(lipo -archs "${HELPER}")" == *arm64* && "$(lipo -archs "${HELPER}")" == *x86_64* ]] || die "The helper isn't universal: ${HELPER}"
 note "${HELPER} ($(lipo -archs "${HELPER}"))"
 
-# ── App ──────────────────────────────────────────────────────────────────────
-step "Building the app (${DESKTOP_REL}: pnpm dist)"
+# ── Apps ─────────────────────────────────────────────────────────────────────
+step "Building the apps for ${ARCHS[*]} (${DESKTOP_REL}: pnpm dist)"
 rm -rf "${DESKTOP}/dist/release"
 BUILD_ENV=(EVERYAPP_DESKTOP_HELPER_BINARY="${HELPER}" EVERYAPP_DESKTOP_UPDATE_URL="${FEED}" CSC_IDENTITY_AUTO_DISCOVERY=false)
 if [[ "${UNSIGNED}" == 0 ]]; then
@@ -181,13 +231,23 @@ else
 fi
 
 BUILT="${DESKTOP}/dist/release"
-APP="$(find "${BUILT}" -maxdepth 2 -name "${PRODUCT}.app" -type d | head -1)"
-DMG="$(find "${BUILT}" -maxdepth 1 -name "*${VERSION}*.dmg" | head -1)"
-ZIP="$(find "${BUILT}" -maxdepth 1 -name "*${VERSION}*-mac.zip" | head -1)"
 YML="${BUILT}/latest-mac.yml"
-for f in "${APP}" "${DMG}" "${ZIP}" "${YML}"; do [[ -n "${f}" && -e "${f}" ]] || die "electron-builder didn't produce everything (app, dmg, zip, latest-mac.yml) in ${BUILT}."; done
+[[ -f "${YML}" ]] || die "electron-builder didn't write latest-mac.yml in ${BUILT}."
+# One app, DMG and zip per architecture, in ARCHS order: dist/release/mac-arm64/ holds the arm64 app,
+# mac/ the x64 one.
+APPS=() DMGS=() ZIPS=()
+for arch in "${ARCHS[@]}"; do
+  dir="mac-${arch}"
+  [[ "${arch}" == x64 ]] && dir="mac"
+  APPS+=("${BUILT}/${dir}/${PRODUCT}.app")
+  DMGS+=("${BUILT}/EveryApp-${VERSION}-${arch}.dmg")
+  ZIPS+=("${BUILT}/EveryApp-${VERSION}-${arch}-mac.zip")
+done
+for f in "${APPS[@]}" "${DMGS[@]}" "${ZIPS[@]}"; do
+  [[ -e "${f}" ]] || die "electron-builder didn't produce ${f#"${BUILT}/"}."
+done
 
-# ── Notarize + staple the DMG (electron-builder notarizes the app inside) ─────
+# ── Notarize + staple the DMGs (electron-builder notarizes the apps inside) ───
 yml_refresh() {
   # The DMG changed after electron-builder hashed it: update its sha512 and size in latest-mac.yml.
   node -e '
@@ -205,81 +265,93 @@ yml_refresh() {
   rm -f "$1.blockmap"  # stale now; macOS updates use the zip's blockmap
 }
 if [[ "${UNSIGNED}" == 0 ]]; then
-  step "Notarizing and stapling the DMG"
-  if xcrun stapler validate -q "${DMG}" 2> /dev/null; then
-    note "already stapled"
-  else
-    codesign -dv "${DMG}" 2> /dev/null || codesign --sign "${IDENTITY}" --timestamp "${DMG}"
-    xcrun notarytool submit "${DMG}" "${NOTARY_ARGS[@]}" --wait
-    xcrun stapler staple "${DMG}"
-    yml_refresh "${DMG}"
-  fi
+  for dmg in "${DMGS[@]}"; do
+    step "Notarizing and stapling $(basename "${dmg}")"
+    if xcrun stapler validate -q "${dmg}" 2> /dev/null; then
+      note "already stapled"
+    else
+      codesign -dv "${dmg}" 2> /dev/null || codesign --sign "${IDENTITY}" --timestamp "${dmg}"
+      xcrun notarytool submit "${dmg}" "${NOTARY_ARGS[@]}" --wait
+      xcrun stapler staple "${dmg}"
+      yml_refresh "${dmg}"
+    fi
+  done
 fi
 
 # ── Verify ───────────────────────────────────────────────────────────────────
-step "Verifying"
-codesign --verify --deep --strict "${APP}" || die "codesign --verify --deep --strict failed for ${APP}."
-note "codesign --verify --deep --strict: ok"
-HELPER_IN_APP="${APP}/Contents/MacOS/${HELPER_NAME}"
-[[ -x "${HELPER_IN_APP}" ]] || die "The app has no Contents/MacOS/${HELPER_NAME}."
-# Not `codesign | grep -q`: grep -q exits at the first match, codesign gets SIGPIPE, and pipefail fails the check.
-grep -q "^Identifier=${HELPER_ID}$" <<< "$(codesign -dv "${HELPER_IN_APP}" 2>&1)" || die "The bundled helper lost its identifier ${HELPER_ID}."
-note "helper in the app: $(lipo -archs "${HELPER_IN_APP}"), identifier ${HELPER_ID}"
-for key in NSMicrophoneUsageDescription NSAudioCaptureUsageDescription; do
-  /usr/libexec/PlistBuddy -c "Print :${key}" "${APP}/Contents/Info.plist" > /dev/null || die "Info.plist lacks ${key}."
-done
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${APP}/Contents/Info.plist")" == "${VERSION}" ]] || die "The app's version isn't ${VERSION}."
-note "Info.plist: version ${VERSION}, mic + audio-capture usage strings"
 UNZIPPED="$(mktemp -d)"
 trap 'rm -rf "${UNZIPPED}"' EXIT
-ditto -x -k "${ZIP}" "${UNZIPPED}"
-codesign --verify --deep --strict "${UNZIPPED}/${PRODUCT}.app" || die "The app inside the update zip doesn't verify."
-note "update zip: the app inside verifies"
-if [[ "${UNSIGNED}" == 0 ]]; then
-  codesign -dv --verbose=2 "${APP}" 2>&1 | grep -E "^(Authority=Developer ID Application|TeamIdentifier)" | sed 's/^/  /'
-  spctl -a -vvv -t exec "${APP}" 2>&1 | sed 's/^/  /'
-  xcrun stapler validate "${APP}" | sed 's/^/  /'
-  xcrun stapler validate "${UNZIPPED}/${PRODUCT}.app" | sed 's/^/  /'
-  spctl -a -vvv -t install "${DMG}" 2>&1 | sed 's/^/  /'
-  xcrun stapler validate "${DMG}" | sed 's/^/  /'
-else
-  note "unsigned: skipped spctl (Gatekeeper) and stapler checks; a signed run does:"
-  note "  spctl -a -vvv -t exec ${PRODUCT}.app · xcrun stapler validate ${PRODUCT}.app · spctl -a -vvv -t install <dmg> · xcrun stapler validate <dmg>"
-fi
+for i in "${!ARCHS[@]}"; do
+  arch="${ARCHS[${i}]}" app="${APPS[${i}]}" dmg="${DMGS[${i}]}" zip="${ZIPS[${i}]}"
+  step "Verifying ${arch}"
+  want="${arch/x64/x86_64}"
+  exe="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${app}/Contents/Info.plist")"
+  [[ "$(lipo -archs "${app}/Contents/MacOS/${exe}")" == "${want}" ]] || die "${app#"${BUILT}/"} isn't a ${want}-only build."
+  codesign --verify --deep --strict "${app}" || die "codesign --verify --deep --strict failed for ${app}."
+  note "${want} app; codesign --verify --deep --strict: ok"
+  HELPER_IN_APP="${app}/Contents/MacOS/${HELPER_NAME}"
+  [[ -x "${HELPER_IN_APP}" ]] || die "The app has no Contents/MacOS/${HELPER_NAME}."
+  # Not `codesign | grep -q`: grep -q exits at the first match, codesign gets SIGPIPE, and pipefail fails the check.
+  grep -q "^Identifier=${HELPER_ID}$" <<< "$(codesign -dv "${HELPER_IN_APP}" 2>&1)" || die "The bundled helper lost its identifier ${HELPER_ID}."
+  note "helper in the app: $(lipo -archs "${HELPER_IN_APP}"), identifier ${HELPER_ID}"
+  for key in NSMicrophoneUsageDescription NSAudioCaptureUsageDescription; do
+    /usr/libexec/PlistBuddy -c "Print :${key}" "${app}/Contents/Info.plist" > /dev/null || die "Info.plist lacks ${key}."
+  done
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${app}/Contents/Info.plist")" == "${VERSION}" ]] || die "The app's version isn't ${VERSION}."
+  note "Info.plist: version ${VERSION}, mic + audio-capture usage strings"
+  ditto -x -k "${zip}" "${UNZIPPED}/${arch}"
+  codesign --verify --deep --strict "${UNZIPPED}/${arch}/${PRODUCT}.app" || die "The app inside the ${arch} update zip doesn't verify."
+  note "update zip: the app inside verifies"
+  if [[ "${UNSIGNED}" == 0 ]]; then
+    codesign -dv --verbose=2 "${app}" 2>&1 | grep -E "^(Authority=Developer ID Application|TeamIdentifier)" | sed 's/^/  /'
+    spctl -a -vvv -t exec "${app}" 2>&1 | sed 's/^/  /'
+    xcrun stapler validate "${app}" | sed 's/^/  /'
+    xcrun stapler validate "${UNZIPPED}/${arch}/${PRODUCT}.app" | sed 's/^/  /'
+    spctl -a -vvv -t install "${dmg}" 2>&1 | sed 's/^/  /'
+    xcrun stapler validate "${dmg}" | sed 's/^/  /'
+  fi
+done
+[[ "${UNSIGNED}" == 0 ]] || note "unsigned: skipped spctl (Gatekeeper) and stapler checks"
 node -e '
   const fs = require("fs"), crypto = require("crypto"), path = require("path");
-  const [yml, zip, version] = process.argv.slice(1); const text = fs.readFileSync(yml, "utf8");
+  const [yml, version, ...zips] = process.argv.slice(1); const text = fs.readFileSync(yml, "utf8");
   if (!text.includes(`version: ${version}`)) throw new Error(`latest-mac.yml is not for ${version}`);
-  const sha = crypto.createHash("sha512").update(fs.readFileSync(zip)).digest("base64");
-  if (!text.includes(`url: ${path.basename(zip)}`) || !text.includes(sha)) throw new Error("latest-mac.yml does not match the zip");' "${YML}" "${ZIP}" "${VERSION}"
-note "latest-mac.yml: version ${VERSION}, zip hash matches"
+  for (const zip of zips) {
+    const sha = crypto.createHash("sha512").update(fs.readFileSync(zip)).digest("base64");
+    if (!text.includes(`url: ${path.basename(zip)}`) || !text.includes(sha)) throw new Error(`latest-mac.yml does not match ${path.basename(zip)}`);
+  }' "${YML}" "${VERSION}" "${ZIPS[@]}"
+note "latest-mac.yml: version ${VERSION}, both zip hashes match"
 
 # ── Collect ──────────────────────────────────────────────────────────────────
 step "Writing ${OUT#"${ROOT}/"}"
 rm -rf "${OUT}"
 mkdir -p "${OUT}"
-cp "${DMG}" "${ZIP}" "${YML}" "${OUT}/"
-for f in "${ZIP}.blockmap" "${DMG}.blockmap"; do [[ -f "${f}" ]] && cp "${f}" "${OUT}/"; done
+cp "${DMGS[@]}" "${ZIPS[@]}" "${YML}" "${OUT}/"
+for f in "${ZIPS[@]/%/.blockmap}" "${DMGS[@]/%/.blockmap}"; do [[ -f "${f}" ]] && cp "${f}" "${OUT}/"; done
 (cd "${OUT}" && shasum -a 256 * > SHA256SUMS)
 ls -lh "${OUT}" | sed 's/^/  /'
 
-# ── What to upload (never run here) ──────────────────────────────────────────
-FILES=()
-for f in "${OUT}"/*; do
-  name="$(basename "${f}")"
-  [[ "${name}" == latest-mac.yml || "${name}" == SHA256SUMS ]] || FILES+=("${name}")
-done
-step "Nothing was uploaded. To publish on ${FEED}, run these (latest-mac.yml goes last):"
-cat << EOF
+if [[ "${MODE}" == "dry-run" ]]; then
+  note "This was a dry run$([[ ${UNSIGNED} == 1 ]] && echo " with ad hoc signatures: don't ship these files"). Nothing was committed or uploaded."
+  exit 0
+fi
 
-  cd "${DESKTOP}"
-  # Release files are cached as immutable: never re-upload a different file under a published name.
-$(for f in "${FILES[@]}"; do echo "  pnpm exec wrangler r2 object put \"${UPDATE_BUCKET}/${CHANNEL}/${f}\" --file releases/${VERSION}/${f} --remote"; done)
-  pnpm exec wrangler r2 object put "${UPDATE_BUCKET}/${CHANNEL}/latest-mac.yml" --file releases/${VERSION}/latest-mac.yml --remote
+# ── Commit + tag (the build verified), then publish ──────────────────────────
+if [[ -n "${BUMP}" ]]; then
+  step "Committing ${DESKTOP_REL}/package.json ${CURRENT} → ${VERSION}, tagging ${TAG}"
+  node -e '
+    const fs = require("fs"); const [file, v] = process.argv.slice(1);
+    const text = fs.readFileSync(file, "utf8");
+    fs.writeFileSync(file, text.replace(/("version":\s*")[^"]+(")/, `$1${v}$2`));' "${DESKTOP}/package.json" "${VERSION}"
+  git -C "${ROOT}" commit -q -m "${PRODUCT} desktop ${VERSION}" -- "${DESKTOP_REL}/package.json"
+  git -C "${ROOT}" tag -a "${TAG}" -m "${PRODUCT} desktop ${VERSION}"
+fi
 
-EOF
-if [[ "${MODE}" == "release" ]]; then
-  note "Then push the tag: git push origin ${TAG}"
+ANSWER=""
+if [[ -t 0 ]]; then read -r -p $'\n'"Publish ${VERSION} to ${FEED} now? [y/N] " ANSWER; fi
+if [[ "${ANSWER}" =~ ^[Yy] ]]; then
+  publish "${VERSION}"
 else
-  note "This was a dry run$([[ ${UNSIGNED} == 1 ]] && echo " with ad hoc signatures: don't ship these files")."
+  step "Not published. When you're ready, from ${DESKTOP_REL}:"
+  printf '\n  scripts/release-mac.sh --publish %s\n\n' "${VERSION}"
 fi

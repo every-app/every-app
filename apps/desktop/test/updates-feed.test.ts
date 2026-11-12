@@ -21,7 +21,7 @@ function bucket(files: Record<string, string>): R2Bucket {
 
 const env = {
   UPDATES: bucket({
-    "mac/latest-mac.yml": "version: 0.1.1\n",
+    "mac/latest-mac.yml": "version: 0.1.3\nfiles:\n  - url: EveryApp-0.1.3-arm64-mac.zip\n  - url: EveryApp-0.1.3-arm64.dmg\n  - url: EveryApp-0.1.3-x64.dmg\n",
     "mac/EveryApp-0.1.1-universal-mac.zip": "0123456789",
   }),
 };
@@ -30,7 +30,7 @@ const get = (path: string, init?: RequestInit) => handle(new Request(`https://up
 describe("update feed", () => {
   it("serves only the manifest and EveryApp release files on a known channel", () => {
     expect(keyFor("/mac/latest-mac.yml")).toBe("mac/latest-mac.yml");
-    for (const name of ["EveryApp-0.1.1-universal-mac.zip", "EveryApp-0.1.1-universal-mac.zip.blockmap", "EveryApp-0.1.1-universal.dmg", "EveryApp-1.2.3-beta.1-universal-mac.zip"]) {
+    for (const name of ["EveryApp-0.1.1-universal-mac.zip", "EveryApp-0.1.1-universal-mac.zip.blockmap", "EveryApp-0.1.3-arm64-mac.zip", "EveryApp-0.1.3-x64.dmg", "EveryApp-1.2.3-beta.1-universal-mac.zip"]) {
       expect(keyFor(`/mac/${name}`)).toBe(`mac/${name}`);
     }
     for (const path of ["/mac/Talk-0.1.1-universal-mac.zip", "/mac/EveryApp-0.1.1-../x.zip", "/mac/EveryApp-0.1.1.exe", "/mac/../secret", "/mac/a/latest-mac.yml", "/other/latest-mac.yml", "/latest-mac.yml"]) {
@@ -43,7 +43,7 @@ describe("update feed", () => {
     expect(yml.status).toBe(200);
     expect(yml.headers.get("cache-control")).toBe("public, no-cache");
     expect(yml.headers.get("content-type")).toContain("text/yaml");
-    expect(await yml.text()).toBe("version: 0.1.1\n");
+    expect(await yml.text()).toContain("version: 0.1.3\n");
 
     const zip = await get("/mac/EveryApp-0.1.1-universal-mac.zip");
     expect(zip.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
@@ -64,6 +64,17 @@ describe("update feed", () => {
     const past = await get("/mac/EveryApp-0.1.1-universal-mac.zip", { headers: { range: "bytes=50-" } });
     expect(past.status).toBe(416);
     expect(past.headers.get("content-range")).toBe("bytes */10");
+  });
+
+  it("redirects each architecture's download link to the current DMG", async () => {
+    for (const arch of ["arm64", "x64"]) {
+      const res = await get(`/mac/download/${arch}`);
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe(`/mac/EveryApp-0.1.3-${arch}.dmg`);
+      expect(res.headers.get("cache-control")).toBe("no-store");
+    }
+    expect((await get("/mac/download/universal")).status).toBe(404);
+    expect((await get("/other/download/arm64")).status).toBe(404);
   });
 
   it("parses one bytes= range; ignores malformed ones", () => {

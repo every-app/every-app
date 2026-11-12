@@ -17,7 +17,7 @@ pnpm package          # an unsigned (ad hoc) release-flavor .app in dist/release
 pnpm icons            # redraws the app icon (build/icon.icns) and tray icons (macOS: sips, iconutil)
 pnpm check:icon       # checks a packaged app's CFBundleIconFile + .icns sizes (default: the .app under dist/)
 pnpm package:local    # "Every App Dev" with the real helper: build, sign locally, install, launch (below)
-pnpm dist             # release DMG + zip (universal), signed and notarized from env (below)
+pnpm dist             # release DMG + zip for arm64 and for x64, signed and notarized from env (below)
 pnpm release          # scripts/release-mac.sh: the whole release, verified (docs/release.md)
 ```
 
@@ -180,7 +180,7 @@ EVERYAPP_DESKTOP_DEV_APP_URL=http://talk.localhost:8787 EVERYAPP_DESKTOP_DEV_TOK
 | Helper | Always the real, universal one: `scripts/release-helper.mjs` checks `EVERYAPP_DESKTOP_HELPER_BINARY` or builds `mac/.build/helper/everyapp-helper` for arm64 + x86_64, and the builder config refuses a release with a missing or single-arch helper. electron-builder re-signs it with the app's identity. |
 | Update feed | `EVERYAPP_DESKTOP_UPDATE_URL` (generic provider), the one setting that names the feed. Unset: no `app-update.yml` is written, and updates (and their menu items) stay off. `scripts/release-mac.sh` sets it to `https://updates.everyapp.com/mac`, the public feed `updates/` serves (docs/release.md, "Update feed"). A feed on the signed-in Scribe backend's own https origin gets the API's bearer on each check and the download it triggers, refreshed once after a 401, and the check is skipped while signed out. A feed on any other host gets no credentials (`src/main/updateAuth.ts`). |
 
-The DMG and zip are universal (arm64 + x64), with the hardened runtime and `build/entitlements.mac.plist` (JIT, unsigned executable memory, `com.apple.security.device.audio-input`). Info.plist carries `NSMicrophoneUsageDescription` and `NSAudioCaptureUsageDescription` (TCC charges the helper's capture to Every App.app), `everyapp://` and macOS 15 as the minimum. An `afterPack` hook removes the camera and Bluetooth usage strings Electron's template adds, so only the mic and audio capture are asked for. Release fuses turn off RunAsNode, `NODE_OPTIONS` and the inspector flags, and turn on asar integrity and asar-only loading. The app icon is `build/icon.icns`, drawn from `build/icon.svg` by `pnpm icons`.
+There is a DMG and a zip for arm64 and another for x64 (a universal build would ship Electron twice), English only (`electronLanguages`), with the hardened runtime and `build/entitlements.mac.plist` (JIT, unsigned executable memory, `com.apple.security.device.audio-input`). Info.plist carries `NSMicrophoneUsageDescription` and `NSAudioCaptureUsageDescription` (TCC charges the helper's capture to Every App.app), `everyapp://` and macOS 15 as the minimum. An `afterPack` hook removes the camera and Bluetooth usage strings Electron's template adds, so only the mic and audio capture are asked for. Release fuses turn off RunAsNode, `NODE_OPTIONS` and the inspector flags, and turn on asar integrity and asar-only loading. The app icon is `build/icon.icns`, drawn from `build/icon.svg` by `pnpm icons`.
 
 ## Files
 
