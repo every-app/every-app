@@ -46,7 +46,7 @@ All run as `everyapp …` (with `--json` for an agent); every flag is on [cli](/
 | Let the Gateway install apps itself | `everyapp deploy-token add`, `everyapp deploy-token remove` |
 | Take an app off | `everyapp delete <id>` (`--purge` only when the person asks) |
 | An app's database | `everyapp db query "<sql>"`, `everyapp db migrate`, `everyapp db restore` |
-| Offer an MCP app | `everyapp mcp on dataforseo`, `everyapp mcp add <url>`, `everyapp mcp off <id>`, `everyapp mcp remove <id>`, `everyapp mcp list`, `everyapp mcp show <id>`, `everyapp mcp refresh <id>`, `everyapp mcp tool <id> <tool>` |
+| Offer an MCP app | `everyapp mcp on dataforseo`, `everyapp mcp add <url>`, `everyapp mcp connect <id>`, `everyapp mcp off <id>`, `everyapp mcp remove <id>`, `everyapp mcp list`, `everyapp mcp show <id>`, `everyapp mcp refresh <id>`, `everyapp mcp tool <id> <tool>` |
 | The model apps get | `everyapp ai show`, `everyapp ai default <provider>[/<model>]`, `everyapp ai gateway on`, `everyapp ai gateway off` ([ai](/docs/agent/ai)) |
 | API and OAuth providers | `everyapp provider add <id\|spec>`, `everyapp provider list`, `everyapp provider show <id>`, `everyapp provider remove <id>`, `everyapp provider presets`, `everyapp provider connections`, `everyapp provider disconnect <id>` ([providers](/docs/agent/providers)) |
 | Events out | `everyapp events add <url>`, `everyapp events list`, `everyapp events remove <id>`, `everyapp events enable <id>`, `everyapp events disable <id>`, `everyapp events test <id>`, `everyapp events deliveries`, `everyapp events redeliver <id>`, `everyapp events types` |

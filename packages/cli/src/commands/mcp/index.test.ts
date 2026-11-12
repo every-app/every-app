@@ -28,6 +28,7 @@ import { reportStatus } from "../status";
 import {
   addServer,
   changeTool,
+  connectApp,
   listMcp,
   refreshApp,
   removeApp,
@@ -35,6 +36,7 @@ import {
   turnOff,
   turnOn,
   type AddFlags,
+  type ConnectFlags,
   type McpOptions,
   type ToolFlags,
 } from "./index";
@@ -550,7 +552,12 @@ describe("mcp add", () => {
     });
     expect(fetch).not.toHaveBeenCalled();
     await addTreg();
-    await expect(addTreg()).rejects.toMatchObject({ code: "REMOTE_MCP_EXISTS" });
+    // Another server under an id that is taken: refused, with the way to add it beside the first.
+    await expect(addTreg({ flags: { ...flags, auth: "bearer", name: "treg" } }, "https://other.example.org/mcp")).rejects.toMatchObject({
+      code: "REMOTE_MCP_EXISTS",
+      fix: expect.stringContaining("--name <id>"),
+      data: { id: "treg", url: TREG },
+    });
     expect((await rows()).map((row) => row["app_slug"])).toEqual(["treg"]);
   });
 
@@ -837,7 +844,10 @@ describe("mcp list", () => {
             lastListedAt: "2026-10-25T12:05:00.000Z",
           },
         ],
-        next: [{ command: "pnpm everyapp secret set TREG_MCP_TOKEN", note: "treg's credential" }],
+        next: [
+          { command: "pnpm everyapp mcp connect o", url: "https://example.com/connect/o-mcp?app=o", note: "connect an account to o" },
+          { command: "pnpm everyapp secret set TREG_MCP_TOKEN", note: "treg's credential" },
+        ],
       },
     });
     // Never a token: who connected is show's, and only as an email.
@@ -952,6 +962,260 @@ VALUES (?, 'o-mcp', 'u-ada', (SELECT id FROM apps WHERE app_slug = 'o'), '[]', 0
     events = [];
     await showApp(options(), "dataforseo");
     expect(done()!["data"]).toMatchObject({ status: "needs setup", key: { name: "DATAFORSEO_API_KEY", set: false } });
+  });
+});
+
+/** Ada connects her account to `o` (the connection and the app's access to it), as the Gateway's connect page writes it. */
+async function connectAda(): Promise<void> {
+  const [org] = await query("SELECT organization_id FROM apps WHERE app_slug = 'o'");
+  await db().run([
+    {
+      sql: "INSERT INTO users (id, name, email, email_verified, created_at, updated_at) VALUES ('u-ada', 'Ada', 'ada@example.org', 1, 0, 0)",
+    },
+    {
+      sql: `INSERT INTO provider_connections (id, organization_id, provider_id, user_id, app_row_id, label, scopes, access_token_enc, status, created_at, updated_at)
+VALUES ('c1', ?, 'o-mcp', 'u-ada', (SELECT id FROM apps WHERE app_slug = 'o'), 'Ada', '[]', 'sealed-token', 'active', 0, 0)`,
+      params: [String(org!["organization_id"])],
+    },
+    {
+      sql: `INSERT INTO provider_app_access (organization_id, provider_id, user_id, app_row_id, scopes, created_at, updated_at)
+VALUES (?, 'o-mcp', 'u-ada', (SELECT id FROM apps WHERE app_slug = 'o'), '[]', 0, 0)`,
+      params: [String(org!["organization_id"])],
+    },
+  ]);
+}
+
+/** The Gateway's `provider.connected` event for `provider`, as its connect callback records it. */
+async function recordConnected(id: string, provider = "o-mcp"): Promise<void> {
+  const [org] = await query("SELECT organization_id FROM apps WHERE app_slug = 'o'");
+  await db().run([
+    {
+      sql: `INSERT INTO events (id, organization_id, type, version, time, actor, actor_kind, actor_id, data, created_at)
+VALUES (?, ?, 'provider.connected', 1, 0, ?, 'user', 'u-ada', ?, 0)`,
+      params: [
+        id,
+        String(org!["organization_id"]),
+        JSON.stringify({ kind: "user", id: "u-ada", email: "ada@example.org" }),
+        JSON.stringify({ provider: { id: provider, name: provider }, reconnected: false }),
+      ],
+    },
+  ]);
+}
+
+/** The Gateway's failed listing of an app's tools. */
+async function seedFailedListing(slug: string, error: string): Promise<void> {
+  await db().run([
+    {
+      sql: `INSERT INTO app_tool_catalogs (app_row_id, organization_id, status, catalog_hash, tool_count, fetched_at, last_error)
+SELECT id, organization_id, 'error', 'h', 0, 0, ? FROM apps WHERE app_slug = ?`,
+      params: [error, slug],
+    },
+  ]);
+}
+
+const addO = () => addServer(options<AddFlags>({ flags: { ...flags, name: "o" }, fetch: oauthServer().fetcher }), O_MCP);
+const CONNECT_O = "https://example.com/connect/o-mcp?app=o";
+
+describe("mcp add of a server that is added already", () => {
+  it("changes nothing, says where it stands and names the one command that fixes it", async () => {
+    await addO();
+    events = [];
+    const again = oauthServer();
+    await addServer(options<AddFlags>({ flags: { ...flags, name: "o" }, fetch: again.fetcher }), `${O_MCP}/`);
+    // Nothing was looked at or written: the answer is the app as it is.
+    expect(again.calls).toEqual([]);
+    expect(done()).toMatchObject({
+      message: expect.stringContaining("o is added already (needs setup). Nothing changed.\nNobody has connected an account yet."),
+      data: {
+        id: "o",
+        added: false,
+        was: "existing",
+        status: "needs setup",
+        on: true,
+        url: O_MCP,
+        credential: { kind: "oauth", connected: 0 },
+        connect: { url: CONNECT_O },
+        next: [{ command: "pnpm everyapp mcp connect o", url: CONNECT_O, note: "connect an account to o" }],
+      },
+    });
+
+    // Connected, and the server refuses the listing: connect again.
+    await connectAda();
+    await seedFailedListing("o", "o refused the request (403). If your o account should have access, reconnect it: https://example.com/connect/o-mcp?app=o");
+    events = [];
+    await addServer(options<AddFlags>({ flags: { ...flags, name: "o" }, fetch: again.fetcher }), O_MCP);
+    expect(done()).toMatchObject({
+      message: expect.stringContaining("o is added already (on). Nothing changed.\no refused the tool listing (403)."),
+      data: {
+        status: "on",
+        snapshot: { status: "error" },
+        next: [{ command: "pnpm everyapp mcp connect o", url: CONNECT_O, note: "its tools didn't list (403): connect the account again" }],
+      },
+    });
+    events = [];
+    await listMcp(options());
+    expect(done()!["data"]["next"]).toContainEqual({
+      command: "pnpm everyapp mcp connect o",
+      url: CONNECT_O,
+      note: "its tools didn't list (403): connect the account again",
+    });
+
+    // Off, and a key that isn't set: each with its command.
+    await addTreg();
+    await turnOff(options(), "treg");
+    events = [];
+    await addTreg();
+    expect(done()!["data"]).toMatchObject({ added: false, status: "off", next: [{ command: "pnpm everyapp mcp on treg" }, { command: "pnpm everyapp secret set TREG_MCP_TOKEN" }] });
+  });
+
+  it("at a terminal, offers the connect page, opens it, waits for the Gateway's event and lists a failed listing again", async () => {
+    await addO();
+    await recordConnected("evt_0001");
+    await seedFailedListing("o", "o isn't ready");
+    events = [];
+    const opened: string[] = [];
+    const asked: string[] = [];
+    let looks = 0;
+    await addServer(
+      options<AddFlags>({
+        flags: { ...flags, name: "o" },
+        interactive: true,
+        confirm: async (question) => {
+          asked.push(question);
+          return true;
+        },
+        openBrowser: async (url) => opened.push(url),
+        // The second look finds Ada's connection; the one from before the wait never counts.
+        sleep: async () => {
+          if (++looks === 2) await recordConnected("evt_0002");
+        },
+        fetch: oauthServer().fetcher,
+      }),
+      O_MCP,
+    );
+    expect(asked).toEqual(["Connect an account to o now?"]);
+    expect(opened).toEqual([CONNECT_O]);
+    expect(looks).toBe(2);
+    expect(done()).toMatchObject({
+      message: "ada@example.org connected o.\nIts tools list on the next request to https://example.com/mcp.",
+      data: { added: false, connect: { url: CONNECT_O }, opened: true, connected: true, by: "ada@example.org", refreshed: true },
+    });
+    expect(await query("SELECT status FROM app_tool_catalogs")).toEqual([]);
+
+    // No: the state and the command, nothing opened.
+    events = [];
+    opened.length = 0;
+    await addServer(
+      options<AddFlags>({ flags: { ...flags, name: "o" }, interactive: true, confirm: async () => false, openBrowser: async (url) => opened.push(url) }),
+      O_MCP,
+    );
+    expect(opened).toEqual([]);
+    expect(done()!["data"]["next"]).toEqual([{ command: "pnpm everyapp mcp connect o", url: CONNECT_O, note: "connect an account to o" }]);
+  });
+});
+
+describe("mcp connect", () => {
+  it("prints the connect page and doesn't wait without a terminal; refuses an app with no account to connect", async () => {
+    await addO();
+    events = [];
+    await connectApp(options<ConnectFlags>(), "o");
+    expect(done()).toMatchObject({
+      message: `Connect an account to o in the browser:\n${CONNECT_O}\nSign in to the Gateway there as yourself, then approve.`,
+      data: { id: "o", connect: { url: CONNECT_O }, opened: false, connected: null, next: [{ command: "pnpm everyapp mcp show o" }] },
+    });
+    // By the server's address too.
+    events = [];
+    await connectApp(options<ConnectFlags>(), O_MCP);
+    expect(done()!["data"]).toMatchObject({ id: "o", connect: { url: CONNECT_O } });
+
+    await addTreg();
+    await expect(connectApp(options<ConnectFlags>(), "treg")).rejects.toMatchObject({
+      code: "MCP_APP_NO_ACCOUNT",
+      rerun: "pnpm everyapp secret set TREG_MCP_TOKEN",
+    });
+    await expect(connectApp(options<ConnectFlags>(), "dataforseo")).rejects.toMatchObject({ code: "MCP_APP_NO_ACCOUNT" });
+  });
+
+  it("at a terminal, says when nobody connected in time, with the link that keeps working; --no-wait and --no-open are honored", async () => {
+    await addO();
+    events = [];
+    const opened: string[] = [];
+    let looks = 0;
+    await connectApp(
+      options<ConnectFlags>({ interactive: true, openBrowser: async (url) => opened.push(url), sleep: async () => void looks++ }),
+      "o",
+    );
+    expect(opened).toEqual([CONNECT_O]);
+    expect(looks).toBe(100);
+    expect(done()).toMatchObject({ message: expect.stringContaining(`No account connected o yet.\n${CONNECT_O}`), data: { connected: false } });
+
+    events = [];
+    opened.length = 0;
+    looks = 0;
+    await connectApp(
+      options<ConnectFlags>({
+        flags: { ...flags, "no-open": true, "no-wait": true },
+        interactive: true,
+        openBrowser: async (url) => opened.push(url),
+        sleep: async () => void looks++,
+      }),
+      "o",
+    );
+    expect([opened, looks]).toEqual([[], 0]);
+    expect(done()!["data"]).toMatchObject({ opened: false, connected: null });
+  });
+});
+
+describe("an MCP app named by its server's address", () => {
+  it("is the app added from there, for show, off, on, refresh, tool and remove; an address no app has offers add", async () => {
+    await addTreg();
+    await seedTregListing();
+    events = [];
+    await showApp(options(), "https://TREG.to/mcp");
+    expect(done()!["data"]).toMatchObject({ id: "treg", url: TREG });
+    await turnOff(options(), TREG);
+    expect(done()!["data"]).toMatchObject({ id: "treg", on: false, wasOn: true });
+    expect(done()!["message"]).toContain("pnpm everyapp mcp on treg");
+    await turnOn(options(), TREG);
+    expect(done()!["data"]).toMatchObject({ id: "treg", on: true, mcp: { toolPrefix: "treg_" } });
+    await changeTool(options<ToolFlags>({ flags: { ...flags, risk: "read" } }), TREG, "delete-everything");
+    expect(done()!["data"]).toMatchObject({ id: "treg" });
+    await refreshApp(options(), TREG);
+    expect(done()!["data"]).toMatchObject({ id: "treg", refreshed: true });
+
+    await expect(removeApp(options(), "https://nowhere.example.org/mcp")).rejects.toMatchObject({
+      code: "PROVIDER_APP_UNKNOWN",
+      message: expect.stringContaining("No MCP app on this Gateway is at https://nowhere.example.org/mcp"),
+      rerun: "pnpm everyapp mcp add https://nowhere.example.org/mcp",
+    });
+    await removeApp(options(), TREG);
+    expect(done()!["data"]).toMatchObject({ id: "treg", removed: true });
+    expect(done()!["message"]).toContain(`pnpm everyapp mcp add ${TREG} --name treg adds it again`);
+    // Removed: the address still names it, so the answer is what happened to it, never "add it" for one that is there.
+    events = [];
+    await removeApp(options(), TREG);
+    expect(done()!["data"]).toMatchObject({ id: "treg", removed: false });
+  });
+});
+
+describe("mcp refresh with no id", () => {
+  it("changes nothing and names the apps there are, each with how its last listing went", async () => {
+    await addTreg();
+    await seedTregListing();
+    await addO();
+    await seedFailedListing("o", "o isn't ready");
+    await expect(refreshApp(options())).rejects.toMatchObject({
+      code: "MCP_APP_ID_MISSING",
+      message: "Which MCP app? refresh takes one id\no     listing failed\ntreg  2 tools",
+      data: {
+        usage: "pnpm everyapp mcp refresh <id>",
+        apps: [
+          { id: "o", tools: "listing failed" },
+          { id: "treg", tools: "2 tools" },
+        ],
+      },
+    });
+    expect((await query("SELECT status FROM app_tool_catalogs ORDER BY status")).map((row) => row["status"])).toEqual(["error", "ok"]);
   });
 });
 

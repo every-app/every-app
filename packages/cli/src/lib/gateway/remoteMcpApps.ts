@@ -132,36 +132,66 @@ async function rowFor(
   return rows[0] ? toAppRow(rows[0]) : null;
 }
 
-/** The install organization's live remote MCP apps' ids, for what a refusal names. */
-async function remoteIds(
+/** The install organization's remote MCP rows, live ones first, tombstones when asked for. */
+async function remoteRows(
   db: D1Database,
   organizationId: string,
-): Promise<string[]> {
+  { removed = false }: { removed?: boolean } = {},
+): Promise<StoredAppRow[]> {
   const [rows = []] = await db.run([
     {
-      sql: `SELECT ${APP_COLUMNS} FROM apps WHERE organization_id = ? AND tier = ? AND status != '${DELETED_APP_STATUS}' ORDER BY app_slug`,
+      sql: `SELECT ${APP_COLUMNS} FROM apps WHERE organization_id = ? AND tier = ?${removed ? "" : ` AND status != '${DELETED_APP_STATUS}'`} ORDER BY app_slug`,
       params: [organizationId, PROVIDER_APP_TIER],
     },
   ]);
-  return rows
-    .map(toAppRow)
-    .filter(isRemoteMcpRow)
-    .map((app) => app.appSlug);
+  const remote = rows.map(toAppRow).filter(isRemoteMcpRow);
+  return [
+    ...remote.filter((app) => app.status !== DELETED_APP_STATUS),
+    ...remote.filter((app) => app.status === DELETED_APP_STATUS),
+  ];
+}
+
+/** Whether what was typed is an address, not an id. */
+function looksLikeUrl(value: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(value.trim());
+}
+
+/** Two addresses of the same server: the same but for case in the host and a slash at the end. */
+export function sameRemoteUrl(a: string | null, b: string | null): boolean {
+  const key = (value: string | null) => {
+    try {
+      const url = new URL((value ?? "").trim());
+      return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, "")}${url.search}`;
+    } catch {
+      return null;
+    }
+  };
+  const left = key(a);
+  return left !== null && left === key(b);
 }
 
 /**
  * An id as an MCP app: a built-in's (with its row, if it has one), or a
  * remote app's row (a tombstone included: `on` and `show` say how to add
- * it again). Anything else is PROVIDER_APP_UNKNOWN, naming the built-ins
- * and the remote apps there are, or for a deployed app's id, the command
- * that removes a deployed app.
+ * it again). A remote app is also named by its server's address, as `mcp
+ * add` took it: the live app there, else one removed from there. Anything
+ * else is PROVIDER_APP_UNKNOWN, naming the built-ins and the remote apps
+ * there are, or for a deployed app's id, the command that removes a
+ * deployed app. The ref's `id` is the app's own, whatever was typed.
  */
 export async function resolveMcpApp(
   db: D1Database,
   id: string,
 ): Promise<McpAppRef> {
+  id = id.trim();
   const found = await installOrganization(db);
   const organization = found?.organization ?? null;
+  if (looksLikeUrl(id) && organization) {
+    const at = (await remoteRows(db, organization.id, { removed: true })).find((app) =>
+      sameRemoteUrl(remoteUrlOf(app), id),
+    );
+    if (at) return { kind: "remote", id: at.appSlug, organization, app: at };
+  }
   const app = organization ? await rowFor(db, organization.id, id) : null;
   if (isProviderAppId(id)) {
     return {
@@ -184,15 +214,16 @@ export async function resolveMcpApp(
       { rerun: `${CLI} mcp list`, rerunNote: "lists the MCP apps" },
     );
   }
-  const remote = organization ? await remoteIds(db, organization.id) : [];
-  const looksLikeUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(id);
+  const remote = organization ? (await remoteRows(db, organization.id)).map((each) => each.appSlug) : [];
+  // An address that reached here is no app's: every live or removed one was looked up above.
+  const isUrl = looksLikeUrl(id);
   throw new EveryAppError(
     "PROVIDER_APP_UNKNOWN",
     [
-      `"${id}" is not an MCP app on this Gateway`,
+      isUrl ? `No MCP app on this Gateway is at ${id}` : `"${id}" is not an MCP app on this Gateway`,
       `Built in: ${PROVIDER_APP_IDS.join(", ")}. Added: ${remote.length > 0 ? remote.join(", ") : "none yet"}.`,
     ].join("\n"),
-    looksLikeUrl
+    isUrl
       ? {
           rerun: `${CLI} mcp add ${id}`,
           rerunNote: "adds the server at that address",
@@ -652,6 +683,43 @@ export function credentialReady(state: CredentialState): boolean {
     default:
       return false;
   }
+}
+
+/** A `provider.connected` event the Gateway recorded: who connected, and whether it replaced an earlier connection. */
+interface ConnectedEvent {
+  id: string;
+  /** Who connected: their email, else their name or id. */
+  by: string | null;
+  reconnected: boolean;
+}
+
+/**
+ * The `provider.connected` events of `providerId` after event `afterId`
+ * (ids sort by time), oldest first: what `mcp connect` waits for. With no
+ * `afterId`, every one: the last is where a wait starts from.
+ */
+export async function connectedEvents(
+  db: D1Database,
+  organizationId: string,
+  providerId: string,
+  afterId: string | null = null,
+): Promise<ConnectedEvent[]> {
+  const [rows = []] = await db.run([
+    {
+      sql: `SELECT id, actor, data FROM events WHERE organization_id = ? AND type = 'provider.connected' AND id > ? ORDER BY id`,
+      params: [organizationId, afterId ?? ""],
+    },
+  ]);
+  return rows.flatMap((row) => {
+    try {
+      const data = JSON.parse(String(row["data"])) as { provider?: { id?: string }; reconnected?: boolean };
+      if (data.provider?.id !== providerId) return [];
+      const actor = JSON.parse(String(row["actor"] ?? "{}")) as { email?: string; name?: string; id?: string };
+      return [{ id: String(row["id"]), by: actor.email ?? actor.name ?? actor.id ?? null, reconnected: data.reconnected === true }];
+    } catch {
+      return [];
+    }
+  });
 }
 
 /**

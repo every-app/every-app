@@ -660,6 +660,8 @@ Add any remote MCP server as an MCP app: its tools reach members' AI clients thr
 
 The Gateway serves the server's tools on its own /mcp under <id>_<tool> names, holding the server's credential itself: every call is attributed to the member, audited and counted (MCP servers added by URL aren't metered: no cap applies), and read tools are told apart from write tools. The owners and the admins can use it at once; an admin grants others in Admin → Apps → Manage access. Nothing is deployed.
 
+A server that is added already is left as it is: add says where it stands and the one command that fixes it, and at a terminal offers to connect an account to an OAuth one.
+
 add looks at the URL once from this machine before writing anything. A server that answers without a credential is added with none. One whose 401 names its OAuth metadata is added with OAuth. One that asks for a credential otherwise is refused (REMOTE_MCP_NEEDS_CREDENTIAL) until you say how it authenticates; --force adds it anyway.
 
 The credential is a provider: the app's own <id>-mcp row, written beside it, or --provider <id> for one the Gateway has (its host must be the URL's). --auth bearer|header|query|basic: a static value, <ID>_MCP_TOKEN. At a terminal add offers to set it (hidden input); --from-env VAR sets it from a variable; later: everyapp secret set TREG_MCP_TOKEN Once set, add checks it with one tools/list from here. The Gateway sends it only to the URL's host. --auth oauth: the Gateway signs in to the server. add discovers its authorization server and registers a client with it, or, where the server takes client metadata documents instead, gives it the URL of the Gateway's own; for a server that takes neither, register one with the redirect URI add prints and give --client-id (--client-secret-from-env). Each member then connects their own account, at the connect page add prints and opens (--no-open: print only).
@@ -689,6 +691,22 @@ everyapp mcp add https://api.elevenlabs.io/v1/mcp
 - `--force`: Add a server that asks for a credential with none (its tools won't list until it has one)
 - `--no-open`: Print the OAuth connect page without opening it in the browser
 
+### `everyapp mcp connect <id>`
+Connect an account to an MCP app that signs in with OAuth, or connect it again: opens the Gateway's connect page.
+
+For an MCP app whose credential is OAuth (mcp list says OAuth: <n> connected). The account is connected in the browser, by whoever signs in to the Gateway there: this command prints the Gateway's connect page and, at a terminal, opens it and waits up to five minutes for the Gateway to record the connection. A tool listing that had failed is then tried again on the next request to /mcp. Connecting again replaces that person's connection: the fix when the server refuses an account that is connected.
+
+Under --json or with no terminal it prints the page (data.connect.url) and doesn't wait.
+
+```sh
+everyapp mcp connect linear
+everyapp mcp connect https://mcp.linear.app/mcp --no-open
+```
+
+- `<id>`: The MCP app (mcp list names them): dataforseo, the id a server was added as, or the server's URL
+- `--no-open`: Print the connect page without opening it in the browser
+- `--no-wait`: Don't wait for the account to be connected
+
 ### `everyapp mcp remove <id>`
 Remove an MCP app: it leaves /mcp and Admin → Apps, and everyone's access to it goes.
 
@@ -700,7 +718,7 @@ Its provider row (<id>-mcp) and the key or client it holds stay, with everyone's
 everyapp mcp remove treg
 ```
 
-- `<id>`: The MCP app (mcp list names them): dataforseo, or the id a server was added as
+- `<id>`: The MCP app (mcp list names them): dataforseo, the id a server was added as, or the server's URL
 
 ### `everyapp mcp on <id>`
 Turn an MCP app on: its tools reach members' AI clients through the Gateway's /mcp.
@@ -719,7 +737,7 @@ everyapp mcp on dataforseo
 everyapp mcp on treg --json
 ```
 
-- `<id>`: The MCP app (mcp list names them): dataforseo, or the id a server was added as
+- `<id>`: The MCP app (mcp list names them): dataforseo, the id a server was added as, or the server's URL
 
 ### `everyapp mcp off <id>`
 Turn an MCP app off: its tools leave /mcp, and everyone's access is kept for on.
@@ -732,7 +750,7 @@ The Gateway stops serving the app's tools within 30 seconds and the home page st
 everyapp mcp off dataforseo
 ```
 
-- `<id>`: The MCP app (mcp list names them): dataforseo, or the id a server was added as
+- `<id>`: The MCP app (mcp list names them): dataforseo, the id a server was added as, or the server's URL
 
 ### `everyapp mcp list`
 List the MCP apps: built-in and added, on or off, their tools and whether each key is set.
@@ -753,18 +771,18 @@ everyapp mcp show treg
 everyapp mcp show dataforseo --json
 ```
 
-- `<id>`: The MCP app (mcp list names them): dataforseo, or the id a server was added as
+- `<id>`: The MCP app (mcp list names them): dataforseo, the id a server was added as, or the server's URL
 
-### `everyapp mcp refresh <id>`
+### `everyapp mcp refresh [<id>]`
 Drop an MCP app's tools snapshot, so the Gateway lists its tools again.
 
-Only the snapshot goes (the Gateway's copy of the tool list); the app, its access and its settings stay. The Gateway lists the tools again on the next request to its /mcp, or within the hour. Use it after the server changed its tools.
+Only the snapshot goes (the Gateway's copy of the tool list); the app, its access and its settings stay. The Gateway lists the tools again on the next request to its /mcp, or within the hour. Use it after the server changed its tools. With no id it changes nothing and names the apps there are, each with how its last listing went.
 
 ```sh
 everyapp mcp refresh treg
 ```
 
-- `<id>`: The MCP app (mcp list names them): dataforseo, or the id a server was added as
+- `<id>`: The MCP app (mcp list names them): dataforseo, the id a server was added as, or the server's URL
 
 ### `everyapp mcp tool <id> <tool>`
 Override one tool of a remote MCP app: its risk, or whether it is listed at all.
@@ -777,7 +795,7 @@ everyapp mcp tool treg get_report --risk read
 everyapp mcp tool treg search --risk annotations
 ```
 
-- `<id>`: The MCP app (mcp list names them): dataforseo, or the id a server was added as
+- `<id>`: The MCP app (mcp list names them): dataforseo, the id a server was added as, or the server's URL
 - `<tool>`: The tool: the server's name for it, or its name on the Gateway (mcp show lists both)
 - `--risk read|write|annotations`: The tool's risk: read or write; annotations drops your override
 - `--on`: List the tool (the default)

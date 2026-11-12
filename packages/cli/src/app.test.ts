@@ -1,6 +1,7 @@
 import { ExitCode, run } from "@stricli/core";
 import { describe, expect, it } from "vitest";
 import { buildApp, commandPaths, groupHelp, rootHelp, versionLine } from "./app";
+import { mcpRoutes } from "./commands/mcp/command";
 import type { ArgumentProblem } from "./argumentErrors";
 import { buildContext } from "./context";
 import { CLI } from "./lib/output/command";
@@ -30,6 +31,12 @@ describe("argument problems", () => {
       message: "Unknown command secret frob\nsecret has set, unset and list.",
       data: { help: "pnpm everyapp secret --help" },
     });
+    // Another tool's word for a command the group has: `mcp status` is `mcp list`.
+    expect((await parse("mcp", "status")).problems[0]!.data).toEqual({
+      didYouMean: "pnpm everyapp mcp list",
+      help: "pnpm everyapp mcp --help",
+    });
+    expect((await parse("mcp", "login")).problems[0]!.data["didYouMean"]).toBe("pnpm everyapp mcp connect");
   });
 
   it("names an unknown flag for its command, with a suggestion only when it is close", async () => {
@@ -199,6 +206,14 @@ describe("help", () => {
     expect(groupHelp(["provider"])).not.toMatch(/\n {2}(on|off) /);
     expect(commandPaths()).toEqual(expect.arrayContaining(["provider on", "provider off", "mcp on"]));
     expect(groupHelp(["mcp"])).toContain(`  $ ${CLI} mcp on dataforseo`);
+    // `mcp enable` and `mcp disable` are `mcp on` and `mcp off` for people who type them, and nothing shows them.
+    const mcpGroup = mcpRoutes as unknown as { getRoutingTargetForInput(input: string): unknown };
+    expect(mcpGroup.getRoutingTargetForInput("enable")).toBe(mcpGroup.getRoutingTargetForInput("on"));
+    expect(mcpGroup.getRoutingTargetForInput("disable")).toBe(mcpGroup.getRoutingTargetForInput("off"));
+    expect(mcpGroup.getRoutingTargetForInput("on")).not.toBe(mcpGroup.getRoutingTargetForInput("off"));
+    expect(commandPaths()).toEqual(expect.arrayContaining(["mcp enable", "mcp disable"]));
+    expect(groupHelp(["mcp"])).toMatch(/\n {2}on {2,}Turn an MCP app on/);
+    expect(groupHelp(["mcp"])).not.toMatch(/enable|disable/);
     expect(groupHelp(["secret", "set"])).toBeNull();
     expect(groupHelp(["create"])).toBeNull();
   });

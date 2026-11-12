@@ -12,7 +12,7 @@ const connectFlags = {
 
 const idParameter = {
   placeholder: "id",
-  brief: "The MCP app (mcp list names them): dataforseo, or the id a server was added as",
+  brief: "The MCP app (mcp list names them): dataforseo, the id a server was added as, or the server's URL",
   parse: String,
 } as const;
 
@@ -128,6 +128,9 @@ const addCommand = buildCommand({
       "from write tools. The owners and the admins can use it at once; an admin grants others",
       "in Admin → Apps → Manage access. Nothing is deployed.",
       "",
+      "A server that is added already is left as it is: add says where it stands and the one",
+      "command that fixes it, and at a terminal offers to connect an account to an OAuth one.",
+      "",
       "add looks at the URL once from this machine before writing anything. A server that",
       "answers without a credential is added with none. One whose 401 names its OAuth metadata",
       "is added with OAuth. One that asks for a credential otherwise is refused",
@@ -156,6 +159,46 @@ const addCommand = buildCommand({
       `  ${CLI} mcp add https://api.example.org/mcp --name example --auth header --header X-Api-Key --risk read`,
       `  ${CLI} mcp add https://mcp.linear.app/mcp`,
       `  ${CLI} mcp add https://api.elevenlabs.io/v1/mcp`,
+    ].join("\n"),
+  },
+});
+
+const connectCommand = buildCommand({
+  loader: async () => {
+    const { connectAccount } = await import(".");
+    return connectAccount;
+  },
+  parameters: {
+    positional: { kind: "tuple", parameters: [idParameter] },
+    flags: {
+      "no-open": {
+        kind: "boolean",
+        brief: "Print the connect page without opening it in the browser",
+        optional: true,
+      },
+      "no-wait": {
+        kind: "boolean",
+        brief: "Don't wait for the account to be connected",
+        optional: true,
+      },
+      ...connectFlags,
+    },
+  },
+  docs: {
+    brief: "Connect an account to an MCP app that signs in with OAuth, or connect it again: opens the Gateway's connect page",
+    fullDescription: [
+      "For an MCP app whose credential is OAuth (mcp list says OAuth: <n> connected). The",
+      "account is connected in the browser, by whoever signs in to the Gateway there: this",
+      "command prints the Gateway's connect page and, at a terminal, opens it and waits up to",
+      "five minutes for the Gateway to record the connection. A tool listing that had failed is",
+      "then tried again on the next request to /mcp. Connecting again replaces that person's",
+      "connection: the fix when the server refuses an account that is connected.",
+      "",
+      "Under --json or with no terminal it prints the page (data.connect.url) and doesn't wait.",
+      "",
+      "Examples:",
+      `  ${CLI} mcp connect linear`,
+      `  ${CLI} mcp connect https://mcp.linear.app/mcp --no-open`,
     ].join("\n"),
   },
 });
@@ -292,7 +335,7 @@ const refreshCommand = buildCommand({
     return refresh;
   },
   parameters: {
-    positional: { kind: "tuple", parameters: [idParameter] },
+    positional: { kind: "tuple", parameters: [{ ...idParameter, optional: true }] },
     flags: connectFlags,
   },
   docs: {
@@ -300,7 +343,8 @@ const refreshCommand = buildCommand({
     fullDescription: [
       "Only the snapshot goes (the Gateway's copy of the tool list); the app, its access and its",
       "settings stay. The Gateway lists the tools again on the next request to its /mcp, or",
-      "within the hour. Use it after the server changed its tools.",
+      "within the hour. Use it after the server changed its tools. With no id it changes nothing",
+      "and names the apps there are, each with how its last listing went.",
       "",
       "Example:",
       `  ${CLI} mcp refresh treg`,
@@ -355,15 +399,18 @@ const toolCommand = buildCommand({
 });
 
 /**
- * `everyapp mcp add|remove|on|off|list|show|refresh|tool`: MCP apps,
+ * `everyapp mcp add|connect|remove|on|off|list|show|refresh|tool`: MCP apps,
  * provider apps in the code (tier `provider`): the built-in data providers
  * (`PROVIDER_APPS`) and any remote MCP server added by URL. `everyapp
  * provider …` is an alias of the group (app.ts), kept through launch week
- * for documents that still say it.
+ * for documents that still say it. `enable` and `disable` run `on` and
+ * `off` for people who type them: aliases, so help, the reference and every
+ * hint keep saying `on` and `off` alone.
  */
 export const mcpRoutes = buildRouteMap({
   routes: {
     add: addCommand,
+    connect: connectCommand,
     remove: removeCommand,
     on: onCommand,
     off: offCommand,
@@ -372,7 +419,7 @@ export const mcpRoutes = buildRouteMap({
     refresh: refreshCommand,
     tool: toolCommand,
   },
-  aliases: { ls: "list" },
+  aliases: { ls: "list", enable: "on", disable: "off" },
   docs: {
     brief: "Offer MCP servers to members' AI clients as MCP apps, with the Gateway holding each one's key",
   },

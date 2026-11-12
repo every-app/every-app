@@ -133,6 +133,24 @@ function usageOf(path: readonly string[], command: Command<CommandContext>): str
   return [CLI, ...path, ...args, ...required, "[flags]"].join(" ");
 }
 
+/**
+ * Words people type for a command that has another name here (`mcp status`
+ * is `mcp list`): suggested when the group has the command and no typo's
+ * match was found.
+ */
+const OTHER_WORDS: Record<string, readonly string[]> = {
+  status: ["list", "show"],
+  info: ["show"],
+  get: ["show"],
+  login: ["connect"],
+  auth: ["connect"],
+  reconnect: ["connect"],
+  delete: ["remove"],
+  rm: ["remove"],
+  new: ["add"],
+  create: ["add"],
+};
+
 /** A command or group the router has no route for. */
 export function unknownCommand(
   routes: Routes,
@@ -147,7 +165,9 @@ export function unknownCommand(
           .filter((entry) => !entry.hidden)
           .map((entry) => entry.name.original)
       : [];
-  const match = closeTo(input, names);
+  const match =
+    closeTo(input, names) ??
+    (path.length > 0 ? OTHER_WORDS[input.toLowerCase()]?.find((name) => names.includes(name)) : undefined);
   return {
     code: ArgumentErrorCode.UnknownCommand,
     message: [

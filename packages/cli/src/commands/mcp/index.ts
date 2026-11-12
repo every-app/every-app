@@ -1,5 +1,5 @@
 /**
- * `everyapp mcp add|remove|on|off|list|show|refresh|tool` (alias
+ * `everyapp mcp add|connect|remove|on|off|list|show|refresh|tool` (alias
  * `provider`): MCP apps, provider apps in the code (tier `provider`), the
  * tools of a data provider (DataForSEO, built in) or of any remote MCP
  * server added by URL, offered to members' AI clients through the
@@ -27,6 +27,13 @@
  * (until 2026-10-25 `off` was). `add` looks at the server once from here
  * before writing anything: a server that asks for a credential none was
  * given for is refused (REMOTE_MCP_NEEDS_CREDENTIAL) unless `--force`.
+ *
+ * Every command that names an app takes its id or its server's address.
+ * `add` of a server that is added already changes nothing and says where
+ * it stands; `list`, `show` and that answer name the one command that
+ * fixes an app that isn't serving ({@link troubleOf}). `connect` opens the
+ * Gateway's connect page for an OAuth app and, at a terminal, waits for
+ * the Gateway's `provider.connected` event.
  */
 import { stripVTControlCharacters } from "node:util";
 import {
@@ -77,6 +84,7 @@ import {
   remoteMcpProviderRowWrites,
 } from "@/lib/gateway/providers";
 import {
+  connectedEvents,
   credentialState,
   listMcpApps,
   mcpAppState,
@@ -90,6 +98,7 @@ import {
   removedRemoteApp,
   removeMcpApp,
   resolveMcpApp,
+  sameRemoteUrl,
   setMcpAppStatus,
   setRemoteMcpTool,
   writeRemoteMcpAdd,
@@ -104,7 +113,7 @@ import { asEveryAppError, type StoredAppRow } from "@/lib/gateway/registry";
 import { openInBrowser } from "@/lib/gateway/setup-link";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
-import { canPromptInTerminal, confirmAtTerminal, type Confirm } from "@/lib/output/prompt";
+import { canPromptInTerminal, confirmAtTerminal, confirmYesAtTerminal, type Confirm } from "@/lib/output/prompt";
 import { runCommand } from "@/lib/output/run";
 import { formatFacts, formatTable } from "@/lib/output/table";
 import { listed, plural } from "@/lib/output/text";
@@ -140,6 +149,14 @@ export interface AddFlags extends GatewayCommandFlags {
   "no-open"?: boolean;
 }
 
+/** `mcp connect`'s flags. */
+export interface ConnectFlags extends GatewayCommandFlags {
+  /** Don't open the connect page in the browser. */
+  "no-open"?: boolean;
+  /** Don't wait for the account to be connected. */
+  "no-wait"?: boolean;
+}
+
 /** `mcp tool`'s flags. */
 export interface ToolFlags extends GatewayCommandFlags {
   risk?: ToolRisk | "annotations";
@@ -164,6 +181,8 @@ export interface McpOptions<Flags extends GatewayCommandFlags = GatewayCommandFl
   readValue?: (name: string) => Promise<string>;
   /** `add`'s browser for the connect page (default: the system's, at a terminal unless --no-open). */
   openBrowser?: (url: string) => Promise<unknown>;
+  /** `connect`'s pause between looks for the connection (tests). */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export async function add(flags: AddFlags, url: string): Promise<void> {
@@ -190,7 +209,11 @@ export async function show(flags: GatewayCommandFlags, id: string): Promise<void
   await runCommand(flags, (out) => showApp({ flags, out }, id));
 }
 
-export async function refresh(flags: GatewayCommandFlags, id: string): Promise<void> {
+export async function connectAccount(flags: ConnectFlags, id: string): Promise<void> {
+  await runCommand(flags, (out) => connectApp({ flags, out }, id));
+}
+
+export async function refresh(flags: GatewayCommandFlags, id?: string): Promise<void> {
   await runCommand(flags, (out) => refreshApp({ flags, out }, id));
 }
 
@@ -475,13 +498,23 @@ export async function addServer(options: McpOptions<AddFlags>, url: string): Pro
     ? { kind: "provider" as const, provider: asked.provider }
     : null;
   if (named) checkProvider(url, named, lookup);
-  const firstPlan = planRemoteMcpAdd(context, {
-    ...base,
-    auth: named ?? { kind: "none" },
-    lookupProvider: lookup,
-    // auto may find OAuth: the plan with the app's own row decides a reserved host.
-    mayBeOwnOAuth: !named && (asked.kind === "auto" || asked.kind === "oauth"),
-  });
+  let firstPlan: ReturnType<typeof planRemoteMcpAdd>;
+  try {
+    firstPlan = planRemoteMcpAdd(context, {
+      ...base,
+      auth: named ?? { kind: "none" },
+      lookupProvider: lookup,
+      // auto may find OAuth: the plan with the app's own row decides a reserved host.
+      mayBeOwnOAuth: !named && (asked.kind === "auto" || asked.kind === "oauth"),
+    });
+  } catch (error) {
+    // The id is a live MCP app: the same server says where it stands, another is refused with the way out.
+    if (error instanceof EveryAppError && error.code === "REMOTE_MCP_EXISTS" && context.existingApp) {
+      await alreadyAdded(options, gateway, { id: context.id, organization: context.organization, app: context.existingApp }, url);
+      return;
+    }
+    throw error;
+  }
   const id = firstPlan.id;
   const appName = firstPlan.app.name;
 
@@ -974,10 +1007,266 @@ function credentialNext(id: string, name: string, credential: CredentialState | 
   return setting ? [{ command: `${CLI} secret set ${setting}`, note: `${name}'s ${credential?.kind === "oauth" ? "OAuth client" : "credential"}` }] : [];
 }
 
+/** What stands between an added app and its tools, in a sentence, with the one command that fixes it. */
+interface Trouble {
+  kind: "connect" | "reconnect" | "listing" | "provider";
+  /** What is wrong, as a sentence without its full stop. */
+  line: string;
+  next: { command: string; url?: string; note: string };
+}
+
+/** The HTTP status a listing's error names ("(403)"), for a note. */
+function statusIn(error: string | null): string {
+  const status = error?.match(/\((\d{3})\)/)?.[1];
+  return status ? ` (${status})` : "";
+}
+
+/**
+ * Why a remote app that is on isn't serving, when the fix isn't a setting
+ * ({@link credentialNext} names those): nobody has connected its OAuth
+ * account, the account is connected and the server refuses the listing, the
+ * listing failed otherwise, or its provider is gone. Null for an app that
+ * is off, a built-in, or one with nothing wrong.
+ */
+function troubleOf(
+  gatewayUrl: string,
+  app: { id: string; name: string; state: McpAppState; credential: CredentialState | null; snapshot: ToolSnapshot | null },
+): Trouble | null {
+  const { id, name, state, credential, snapshot } = app;
+  if (!credential || state === "off" || state === "not added" || credential.kind === "predates") return null;
+  if (settingToSet(credential)) return null;
+  if (credential.kind === "missing") {
+    return {
+      kind: "provider",
+      line: `Its provider ${credential.provider} isn't on this Gateway`,
+      next: { command: `${CLI} mcp remove ${id}`, note: `its provider ${credential.provider} is gone; then add it again` },
+    };
+  }
+  const failed = snapshot?.status === "error";
+  if (credential.kind === "oauth") {
+    const url = connectUrl(gatewayUrl, credential.provider, id);
+    if (credential.connected === 0) {
+      return {
+        kind: "connect",
+        line: "Nobody has connected an account yet",
+        next: { command: `${CLI} mcp connect ${id}`, url, note: `connect an account to ${name}` },
+      };
+    }
+    if (failed) {
+      return {
+        kind: "reconnect",
+        line: `${name} refused the tool listing${statusIn(snapshot.lastError)}`,
+        next: { command: `${CLI} mcp connect ${id}`, url, note: `its tools didn't list${statusIn(snapshot.lastError)}: connect the account again` },
+      };
+    }
+    return null;
+  }
+  if (failed) {
+    return {
+      kind: "listing",
+      line: `Its tools didn't list${statusIn(snapshot.lastError)}`,
+      next: { command: `${CLI} mcp refresh ${id}`, note: `its tools didn't list${statusIn(snapshot.lastError)}: try again (${CLI} mcp show ${id} has the error)` },
+    };
+  }
+  return null;
+}
+
+/** How long `connect` waits for the account, and how often it looks. */
+const CONNECT_WAIT_MS = 5 * 60_000;
+const CONNECT_POLL_MS = 3_000;
+
+/**
+ * Open the Gateway's connect page for an OAuth app and, at a terminal,
+ * wait for the Gateway to record the connection (`provider.connected`),
+ * then drop a failed tools snapshot so the tools list on the next request.
+ * Elsewhere (`--json`, no terminal, `--no-wait`) the link is the answer.
+ */
+async function openConnectPage(
+  options: McpOptions<ConnectFlags>,
+  gateway: Connection,
+  app: { id: string; name: string; row: StoredAppRow; provider: string; snapshot: ToolSnapshot | null },
+): Promise<{ url: string; opened: boolean; connected: boolean | null; by: string | null; refreshed: boolean }> {
+  const { out, flags } = options;
+  const interactive = options.interactive ?? canPromptInTerminal(flags.json ?? false);
+  const url = connectUrl(gateway.gatewayUrl, app.provider, app.id);
+  const before = (await connectedEvents(gateway.db, app.row.organizationId, app.provider)).at(-1)?.id ?? null;
+  const open = flags["no-open"] ? null : (options.openBrowser ?? (interactive ? openInBrowser : null));
+  if (open) {
+    out.emit({ type: "progress", step: "mcp.connect", message: `Opening ${url} in your browser...` });
+    await open(url);
+  }
+  if (!interactive || flags["no-wait"]) return { url, opened: Boolean(open), connected: null, by: null, refreshed: false };
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  out.emit({
+    type: "step",
+    step: "mcp.connect",
+    status: "start",
+    message: `Waiting for the account at ${url} (Ctrl-C stops waiting; the link keeps working)...`,
+  });
+  for (let waited = 0; waited < CONNECT_WAIT_MS; waited += CONNECT_POLL_MS) {
+    await sleep(CONNECT_POLL_MS);
+    const event = (await connectedEvents(gateway.db, app.row.organizationId, app.provider, before)).at(-1);
+    if (!event) continue;
+    out.emit({ type: "step", step: "mcp.connect", status: "ok", message: `${event.by ?? "An account"} connected ${app.name}` });
+    // A listing that failed is tried again at once; one that serves is left alone.
+    const refreshed = app.snapshot?.status === "error";
+    if (refreshed) await refreshMcpAppTools(gateway.db, app.row);
+    return { url, opened: Boolean(open), connected: true, by: event.by, refreshed };
+  }
+  out.emit({ type: "step", step: "mcp.connect", status: "ok", message: "No account connected yet" });
+  return { url, opened: Boolean(open), connected: false, by: null, refreshed: false };
+}
+
+/** The lines and data a connect ends with. */
+function connectResult(
+  id: string,
+  name: string,
+  result: Awaited<ReturnType<typeof openConnectPage>>,
+  mcpUrl: string,
+): { lines: string[]; data: Record<string, unknown>; next: Array<{ command: string; note: string }> } {
+  const lines =
+    result.connected === true
+      ? [
+          `${result.by ?? "An account"} connected ${name}.`,
+          result.refreshed ? `Its tools list on the next request to ${mcpUrl}.` : `Its tools are on ${mcpUrl} as ${id}_<tool>.`,
+        ]
+      : [
+          result.connected === false ? `No account connected ${name} yet.` : `Connect an account to ${name} in the browser:`,
+          result.url,
+          "Sign in to the Gateway there as yourself, then approve.",
+        ];
+  return {
+    lines,
+    data: {
+      connect: { url: result.url },
+      opened: result.opened,
+      connected: result.connected,
+      ...(result.by ? { by: result.by } : {}),
+      ...(result.refreshed ? { refreshed: true } : {}),
+    },
+    next: [{ command: `${CLI} mcp show ${id}`, note: result.connected === true ? "its tools, once the Gateway lists them" : "who has connected, and its tools" }],
+  };
+}
+
+/**
+ * `add` of an id that is a live MCP app. The same server: nothing is
+ * changed, and the answer is where it stands with the one step that fixes
+ * it; at a terminal an OAuth app that needs an account offers the connect
+ * page. Another server under the id is refused (REMOTE_MCP_EXISTS) with the
+ * way to add it beside the first.
+ */
+async function alreadyAdded(
+  options: McpOptions<AddFlags>,
+  gateway: Connection,
+  existing: { id: string; organization: NonNullable<McpAppRef["organization"]>; app: StoredAppRow },
+  url: string,
+): Promise<void> {
+  const { out, flags } = options;
+  const { id, app } = existing;
+  const existingUrl = remoteUrlOf(app);
+  if (!sameRemoteUrl(existingUrl, url)) {
+    throw new EveryAppError(
+      "REMOTE_MCP_EXISTS",
+      `"${id}" is an MCP app on this Gateway already, for another server${existingUrl ? `: ${existingUrl}` : ""}`,
+      {
+        fix: `give this one its own id: ${CLI} mcp add ${url} --name <id>. To replace the other: ${CLI} mcp remove ${id}, then add again`,
+        data: { id, ...(existingUrl ? { url: existingUrl } : {}) },
+      },
+    );
+  }
+  const ref: McpAppRef = { kind: "remote", id, organization: existing.organization, app };
+  const { context, credential } = await refState(gateway, ref);
+  const { remote } = remoteOf(ref);
+  const state = mcpAppState({ kind: "remote", app, keyName: null }, context.gatewayNames, credential);
+  const { snapshot } = await readMcpAppDetail(gateway.db, { ...ref, app }, remote);
+  const trouble = troubleOf(gateway.gatewayUrl, { id, name: app.name, state, credential, snapshot });
+  const mcp = { url: `${gateway.gatewayUrl}/mcp`, toolPrefix: `${id}_` };
+  const connectLink = connectOf(gateway.gatewayUrl, id, credential);
+  const setting = settingToSet(credential);
+  const data: Record<string, unknown> = {
+    id,
+    name: app.name,
+    url: existingUrl,
+    added: false,
+    was: "existing",
+    status: state,
+    on: app.status === "active",
+    auth: remote ? authData(remote.auth) : null,
+    credential: credentialData(credential),
+    ...(connectLink ? { connect: connectLink } : {}),
+    snapshot: snapshotData(snapshot),
+    organization: { id: existing.organization.id, name: existing.organization.name },
+    mcp,
+  };
+  const lines = [
+    `${app.name} is added already (${state}). Nothing changed.`,
+    ...(state === "off" ? ["It is off: its tools aren't served."] : []),
+    ...(credential?.kind === "predates" ? [`It was ${PREDATES_TEXT.replace(": remove and add again", "")}.`] : []),
+    ...(setting ? [`${setting} isn't set${credential?.kind === "key" && credential.set ? " for its hosts" : ""}.`] : []),
+    ...(trouble ? [`${trouble.line}.`] : []),
+    ...(state === "on" && !trouble ? [`Its tools are on ${mcp.url} as ${mcp.toolPrefix}<tool>.`] : []),
+  ];
+  const next = [
+    ...(state === "off" ? [{ command: `${CLI} mcp on ${id}`, note: "serve it again" }] : []),
+    ...credentialNext(id, app.name, credential),
+    ...(trouble ? [trouble.next] : []),
+  ];
+  // At a terminal, an app that waits on an account goes down that path now.
+  const interactive = options.interactive ?? canPromptInTerminal(flags.json ?? false);
+  if (trouble && (trouble.kind === "connect" || trouble.kind === "reconnect") && credential?.kind === "oauth" && interactive && !flags["no-open"]) {
+    const confirm = options.confirm ?? confirmYesAtTerminal;
+    const question = trouble.kind === "connect" ? `Connect an account to ${app.name} now?` : `Connect the account to ${app.name} again now?`;
+    if (await confirm(question, [...lines, `It opens ${trouble.next.url} in your browser.`])) {
+      const result = await openConnectPage(options, gateway, { id, name: app.name, row: app, provider: credential.provider, snapshot });
+      const ended = connectResult(id, app.name, result, mcp.url);
+      finish(out, ended.lines, { ...data, ...ended.data, next: ended.next });
+      return;
+    }
+    // The question showed where it stands: only the command is left to say.
+    finish(out, ["Nothing changed."], { ...data, next });
+    return;
+  }
+  finish(out, lines, { ...data, next: next.length > 0 ? next : [{ command: `${CLI} mcp show ${id}`, note: "its tools" }] });
+}
+
+export async function connectApp(options: McpOptions<ConnectFlags>, id: string): Promise<void> {
+  const { out } = options;
+  const gateway = await connect(options);
+  const ref = await resolveMcpApp(gateway.db, id);
+  id = ref.id;
+  const name = nameOf(ref);
+  const { key, credential } = await refState(gateway, ref);
+  if (ref.kind === "builtin" || !credential || credential.kind !== "oauth") {
+    if (ref.kind === "remote") liveRemote(ref);
+    const setting = key?.name ?? null;
+    throw new EveryAppError(
+      "MCP_APP_NO_ACCOUNT",
+      `${name} has no account to connect: ${setting ? `its credential is the Gateway setting ${setting}` : "it takes no credential"}`,
+      setting
+        ? { rerun: `${CLI} secret set ${setting}`, rerunNote: "sets it" }
+        : { rerun: `${CLI} mcp show ${id}`, rerunNote: "says where it stands" },
+    );
+  }
+  const app = liveRemote(ref);
+  const unset = settingToSet(credential);
+  if (unset) {
+    throw new EveryAppError("MCP_APP_NO_ACCOUNT", `${name}'s OAuth client isn't set on the Gateway, so nobody can connect yet`, {
+      rerun: `${CLI} secret set ${unset}`,
+      rerunNote: "sets it",
+    });
+  }
+  const { remote } = remoteOf(ref);
+  const { snapshot } = await readMcpAppDetail(gateway.db, { ...ref, app }, remote);
+  const result = await openConnectPage(options, gateway, { id, name, row: app, provider: credential.provider, snapshot });
+  const ended = connectResult(id, name, result, `${gateway.gatewayUrl}/mcp`);
+  finish(out, ended.lines, { id, name, kind: ref.kind, ...ended.data, next: ended.next });
+}
+
 export async function turnOn(options: McpOptions, id: string): Promise<void> {
   const { out } = options;
   const gateway = await connect(options);
   const ref = await resolveMcpApp(gateway.db, id);
+  id = ref.id;
   out.emit({ type: "step", step: STEP, status: "start", message: `Turning ${id} on...` });
   let was: string;
   let organization: { id: string; name: string };
@@ -1054,6 +1343,7 @@ export async function turnOff(options: McpOptions, id: string): Promise<void> {
   const { out } = options;
   const gateway = await connect(options);
   const ref = await resolveMcpApp(gateway.db, id);
+  id = ref.id;
   out.emit({ type: "step", step: STEP, status: "start", message: `Turning ${id} off...` });
   const name = nameOf(ref);
   const live = ref.app && ref.app.status !== "deleted" ? ref.app : null;
@@ -1090,6 +1380,7 @@ export async function removeApp(options: McpOptions, id: string): Promise<void> 
   const { out } = options;
   const gateway = await connect(options);
   const ref = await resolveMcpApp(gateway.db, id);
+  id = ref.id;
   // What the app used, read before the tombstone: the provider row stays after it.
   const { key, credential } = await refState(gateway, ref);
   out.emit({ type: "step", step: "mcp.remove", status: "start", message: `Removing ${id}...` });
@@ -1182,7 +1473,11 @@ export async function listMcp(options: McpOptions): Promise<void> {
     const state = mcpAppState(entry, context.gatewayNames, credential);
     const key = keyFrom(context, entry.keyName, credential);
     const tools = entry.snapshot && entry.snapshot.status !== "error" ? entry.snapshot.toolCount : null;
-    return { entry, state, key, credential, tools };
+    const trouble =
+      entry.kind === "remote"
+        ? troubleOf(gateway.gatewayUrl, { id: entry.id, name: entry.name, state, credential, snapshot: entry.snapshot })
+        : null;
+    return { entry, state, key, credential, tools, trouble };
   });
   const table = formatTable(
     ["APP", "KIND", "STATUS", "TOOLS", "KEY"],
@@ -1198,12 +1493,13 @@ export async function listMcp(options: McpOptions): Promise<void> {
       keyCell(key, credential),
     ]),
   );
-  const next = rows.flatMap(({ entry, state, key, credential }) => [
+  const next = rows.flatMap(({ entry, state, key, credential, trouble }) => [
     ...(state === "not added" ? [{ command: `${CLI} mcp on ${entry.id}`, note: `offer ${entry.name}` }] : []),
     ...(entry.kind === "builtin" && key && entry.app && !key.set
       ? [{ command: `${CLI} secret set ${key.name}`, note: `${entry.name}'s key` }]
       : []),
     ...(entry.kind === "remote" ? credentialNext(entry.id, entry.name, credential) : []),
+    ...(trouble ? [trouble.next] : []),
   ]);
   const onCount = rows.filter((row) => row.entry.app?.status === "active").length;
   const summary = `${onCount} of ${rows.length} MCP ${rows.length === 1 ? "app" : "apps"} on`;
@@ -1262,6 +1558,7 @@ export async function showApp(options: McpOptions, id: string): Promise<void> {
   const { out } = options;
   const gateway = await connect(options);
   const ref = await resolveMcpApp(gateway.db, id);
+  id = ref.id;
   if (ref.kind === "remote") liveRemote(ref);
   const name = nameOf(ref);
   const { context, key, credential } = await refState(gateway, ref);
@@ -1328,6 +1625,7 @@ export async function showApp(options: McpOptions, id: string): Promise<void> {
     : [];
   const hasTools = detail ? (remote ? detail.remoteTools.length > 0 : detail.catalogTools.length > 0) : false;
   const lines = [`${name} (${id})`];
+  const trouble = troubleOf(gateway.gatewayUrl, { id, name, state, credential, snapshot: detail?.snapshot ?? null });
   const next =
     ref.kind === "builtin"
       ? key && live && !key.set
@@ -1336,7 +1634,7 @@ export async function showApp(options: McpOptions, id: string): Promise<void> {
           ? [{ command: `${CLI} mcp on ${id}`, note: `offer ${name}` }]
           : []
       : live
-        ? credentialNext(id, name, credential)
+        ? [...credentialNext(id, name, credential), ...(trouble ? [trouble.next] : [])]
         : [];
   out.emit({
     type: "done",
@@ -1379,10 +1677,31 @@ export async function showApp(options: McpOptions, id: string): Promise<void> {
   });
 }
 
-export async function refreshApp(options: McpOptions, id: string): Promise<void> {
+/** `refresh` with no id: the apps there are to name, each with how its last listing went. Nothing is changed. */
+async function whichToRefresh(gateway: Connection): Promise<never> {
+  const apps = (await listMcpApps(gateway.db))
+    .filter((entry) => entry.app)
+    .map((entry) => ({
+      id: entry.id,
+      tools: !entry.snapshot ? "not listed yet" : entry.snapshot.status === "error" ? "listing failed" : plural(entry.snapshot.toolCount, "tool"),
+    }));
+  const width = Math.max(0, ...apps.map((app) => app.id.length));
+  throw new EveryAppError(
+    "MCP_APP_ID_MISSING",
+    [
+      "Which MCP app? refresh takes one id",
+      ...(apps.length > 0 ? apps.map((app) => `${app.id.padEnd(width)}  ${app.tools}`) : ["No MCP app is added yet."]),
+    ].join("\n"),
+    { data: { usage: `${CLI} mcp refresh <id>`, apps } },
+  );
+}
+
+export async function refreshApp(options: McpOptions, id?: string): Promise<void> {
   const { out } = options;
   const gateway = await connect(options);
+  if (!id?.trim()) return whichToRefresh(gateway);
   const ref = await resolveMcpApp(gateway.db, id);
+  id = ref.id;
   if (ref.kind === "remote") liveRemote(ref);
   const name = nameOf(ref);
   const live = ref.app && ref.app.status !== "deleted" ? ref.app : null;
@@ -1421,6 +1740,7 @@ export async function changeTool(options: McpOptions<ToolFlags>, id: string, too
   }
   const gateway = await connect(options);
   const ref = await resolveMcpApp(gateway.db, id);
+  id = ref.id;
   if (ref.kind === "builtin") {
     throw new EveryAppError(
       "MCP_APP_BUILTIN",

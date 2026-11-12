@@ -305,6 +305,10 @@ The app is live, but this machine's DNS still caches the name as missing. Wait o
 No `everyapp.config.ts` here. Run the command in the app's directory, or name the app.
 ### MCP_APP_BUILTIN
 A built-in MCP app's tools can't be changed; `everyapp mcp off <id>` stops serving it.
+### MCP_APP_ID_MISSING
+`mcp refresh` was given no app. Nothing changed; the message and `data.apps` name each MCP app with how its last listing went. Rerun with one id.
+### MCP_APP_NO_ACCOUNT
+`mcp connect` is for an MCP app that signs in with OAuth. This one takes a key (`data.rerun` sets it), no credential, or its OAuth client isn't set yet.
 ### MCP_TOOL_CHANGE_INVALID
 `mcp tool` needs something to change (`--risk`, `--on` or `--off`), and not `--on` with `--off`.
 ### MIGRATIONS_FAILED
@@ -424,7 +428,7 @@ The release uses a Build Output this CLI doesn't deploy. Update everyapp.
 ### REMOTE_MCP_CREDENTIAL_REJECTED
 Warning: `mcp add` checked the key with one `tools/list` and the server refused it. Check the key and where it goes (`--auth`, `--header`, `--param`), then `everyapp secret set <ID>_MCP_TOKEN` again.
 ### REMOTE_MCP_EXISTS
-An MCP app with that id exists. Remove it first, or change it in place with `everyapp mcp tool`.
+The id is an MCP app already, for another server (`data.url`). Add this one under its own id with `--name <id>`, or `everyapp mcp remove <id>` first to replace the other. The same server added again is not an error: `mcp add` answers `done` with `data.added` false and where it stands.
 ### REMOTE_MCP_INVALID
 `mcp add` got flags or a server answer a remote MCP app can't use (the message says which). Fix and rerun.
 ### REMOTE_MCP_NEEDS_CREDENTIAL

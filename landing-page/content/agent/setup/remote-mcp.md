@@ -100,7 +100,9 @@ One step per message: give the step, wait for the words it ends with
 3. **Person, OAuth:** they open the connect page (`mcp add` opens it at a
    terminal; `--no-open` only prints it), sign in and approve. Every other
    member connects their own account the same way, or from the app's dialog
-   on the Gateway's home page. A server that registers no clients was refused
+   on the Gateway's home page. Later, or to connect an account again:
+   `pnpm everyapp mcp connect <id>` (at a terminal it opens the page and
+   waits for the connection; under `--json` it prints `data.connect.url`). A server that registers no clients was refused
    `REMOTE_MCP_OAUTH_NO_CLIENT` with the redirect URI to register: they
    register a client in its console with that URI, then you run the add again
    with `--client-id <id> --client-secret-from-env <VAR>`.
@@ -151,10 +153,13 @@ One step per message: give the step, wait for the words it ends with
 | `REMOTE_MCP_CREDENTIAL_REJECTED` (warning) | The server refused the key when `mcp add` checked it | Check the key and where it goes (`--auth`, `--header`, `--param`), then `secret set <ID>_MCP_TOKEN` again |
 | `REMOTE_MCP_PROVIDER_HOST` | `--provider`'s hosts don't include the URL's host | The server's own credential (`--auth`), or the provider whose host it is |
 | `PROVIDER_KEY_UNSET` (warning), `set for other hosts` in `mcp list` | The key isn't set, or was set for an earlier row | `pnpm everyapp secret set <NAME>` |
-| `OAuth: 0 connected` in `mcp list` | Nobody has connected an account yet | The connect page (`mcp show <id>` prints it) |
+| `OAuth: 0 connected` in `mcp list` | Nobody has connected an account yet | `pnpm everyapp mcp connect <id>`: the connect page, for the person to open |
+| `listing failed` with `OAuth: 1 connected` (or more) | The server refuses the connected account (403, 401) | `pnpm everyapp mcp connect <id>`: the person connects again, which replaces their connection |
 | `registered before provider credentials` in `mcp list` | The app was added before this release | `pnpm everyapp mcp remove <id>`, then add it again |
 | `REMOTE_MCP_URL_REFUSED` | Not `https://`, an IP address, the Gateway's own host or app domain, or a provider's host without `--provider` | The server's own MCP address, by host name, over https |
-| `REMOTE_MCP_EXISTS` | That id is an MCP app already | `mcp show <id>`; `mcp remove <id>` then add again, or another `--name` |
+| `REMOTE_MCP_EXISTS` | That id is an MCP app already, for another server (`data.url`) | Another `--name`; or `mcp remove <id>`, then add again |
+| `done` with `data.added` false | The server is added already: nothing changed | `data.status` and `data.next` say where it stands and what fixes it |
+| `MCP_APP_ID_MISSING` | `mcp refresh` with no id | Rerun with one of the ids it names |
 | `REMOTE_MCP_INVALID` | A bad id, risk, header or provider, or flags that say two things | As the message says |
 | `REMOTE_MCP_PROBE_FAILED` (warning) | A redirect, or no answer from this machine | Another address; or this machine's network only (the Gateway fetches from Cloudflare) |
 | `SECRET_EMPTY` | The `--from-env` variable is empty (nothing was added) | Export it in that shell, then rerun |
@@ -163,8 +168,11 @@ One step per message: give the step, wait for the words it ends with
 
 ## Rerun, rotate, remove
 
-- **Rerun.** `mcp add` refuses an id that exists (`REMOTE_MCP_EXISTS`), so a
-  rerun starts from Verify. `secret set` replaces.
+- **Rerun.** `mcp add` of a server that is added already changes nothing
+  (`data.added` false, with `data.status` and `data.next`), so a rerun
+  starts from Verify. `secret set` replaces.
+- **By id or URL.** Every `mcp` command that names an app takes its id or
+  the server's URL (`mcp remove https://mcp.example.com/mcp`).
 - **Rotate.** A new key on the provider's dashboard, then
   `secret set <ID>_MCP_TOKEN` again. A value that went through the chat is
   compromised: rotate it.
