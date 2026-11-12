@@ -516,6 +516,17 @@ lands (`/tmp/build-skill-runs/<scenario>-<n>/`). What the two harnesses
 share (the claude session, the person's rules, the stubs) is
 `packages/cli/test/shared/`.
 
+### A sandbox Gateway
+
+`pnpm e2e up [--from <ref>]`, `update`, `exec`, `down`
+(`scripts/e2e/run.mjs`, `docs/runbooks/e2e.md`) give a real Gateway to try
+a change on: a named Gateway in the Cloudflare account this machine's
+`~/.config/everyapp/e2e.json` names, installed from this checkout, or from a
+base and then updated to this checkout, with a health check after each.
+What the change needs beyond that is tried on the sandbox directly, then it
+is torn down. A person runs it, or an agent when the person asks; nothing
+schedules it.
+
 ### Test accounts and the wipe
 
 Live tests run only when Ben asks for that specific run. Nothing schedules or
