@@ -98,6 +98,7 @@ import { resetAppSetupCacheForTests } from "@/server/app-setup";
 import { createKvFake } from "@/test/kv-fake";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 import { resetGatewayProvidersForTests } from "@/server/providers";
+import { ProviderAppAccessRepository } from "@/server/repositories/ProviderAppAccessRepository";
 import { ProviderConnectionRepository } from "@/server/repositories/ProviderConnectionRepository";
 import {
   remoteMcpAppFetcher,
@@ -466,17 +467,24 @@ async function reAddTreg(credential: TregCredential): Promise<void> {
   clearCatalogSyncClaimsForTests();
 }
 
-/** A member's connection to `treg-mcp` made in Treg, its token sealed. */
+/**
+ * A member's connection to `treg-mcp`, its token sealed, as a connect from
+ * inside Treg leaves it: Treg allowed to use it. With `allowed: false`,
+ * the connection alone, as when the person hasn't allowed Treg.
+ */
 async function connectTreg(
   userId: string,
   accessToken: string,
-  options: { expiresAt?: number | null; lastUsedAt?: Date } = {},
+  options: {
+    expiresAt?: number | null;
+    lastUsedAt?: Date;
+    allowed?: boolean;
+  } = {},
 ): Promise<string> {
+  const owner = { organizationId: orgId, providerId: "treg-mcp", userId };
   const connection = await ProviderConnectionRepository.upsert(
     {
-      organizationId: orgId,
-      providerId: "treg-mcp",
-      userId,
+      ...owner,
       appRowId: rowId,
       label: `${userId}@treg`,
       externalId: null,
@@ -487,6 +495,13 @@ async function connectTreg(
     },
     hoisted.env as never,
   );
+  if (options.allowed ?? true) {
+    await ProviderAppAccessRepository.allow({
+      ...owner,
+      appRowId: rowId,
+      scopes: ["mcp"],
+    });
+  }
   if (options.lastUsedAt) {
     await ProviderConnectionRepository.touchLastUsed(
       connection.id,
@@ -1248,6 +1263,34 @@ describe("a remote MCP app whose credential is an OAuth provider", () => {
         ?.headers["authorization"];
     };
     expect(await sync()).toBe(`Bearer ${MEMBER_TOKEN}`);
+    // The member takes Treg's access away: their connection is theirs
+    // still, and a listing no longer uses it.
+    await ProviderAppAccessRepository.remove({
+      organizationId: orgId,
+      providerId: "treg-mcp",
+      userId: memberId,
+      appRowId: rowId,
+    });
+    expect(await sync()).toBe(`Bearer ${OWNER_TOKEN}`);
+  });
+
+  it("answers a member who has a connection but hasn't allowed the app with the connect link, and sends nothing", async () => {
+    await connectTreg(ownerId, OWNER_TOKEN);
+    // The member's own connection to the provider, which Treg may not use.
+    await connectTreg(memberId, MEMBER_TOKEN, { allowed: false });
+    const memberPat = await pat(memberId);
+    await toolNames(memberPat);
+    seen = [];
+    const refused = await callTool(memberPat, "treg_get_user", { id: "u1" });
+    expect(refused.result?.isError).toBe(true);
+    expect(refused.result?.content[0]?.text).toBe(
+      `Connect your Treg MCP server account to use this tool: ${CONNECT}`,
+    );
+    expect(seen).toEqual([]);
+    // Neither their token nor the owner's stood in for it.
+    expect(JSON.stringify(refused)).not.toMatch(
+      new RegExp(`${MEMBER_TOKEN}|${OWNER_TOKEN}`),
+    );
   });
 
   it("reads as listing nothing while nobody has connected, and says who connects where", async () => {

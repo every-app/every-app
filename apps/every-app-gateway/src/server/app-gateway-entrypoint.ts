@@ -205,12 +205,12 @@ async function loadOAuthProxyDeps(
       { resolveOAuthClient },
       { gatewayHeldTokens },
       { memberMayUseApp },
-      { ProviderConnectionRepository },
+      { ProviderAppAccessRepository },
     ] = await Promise.all([
       import("./oauth/client"),
       import("./oauth/heldTokens"),
       import("./oauth/appAccess"),
-      import("./repositories/ProviderConnectionRepository"),
+      import("./repositories/ProviderAppAccessRepository"),
     ]);
     return {
       resolveClient: resolveOAuthClient,
@@ -218,7 +218,7 @@ async function loadOAuthProxyDeps(
       members: {
         mayUse: memberMayUseApp,
         async revoke(input) {
-          await ProviderConnectionRepository.removeForMemberApp(input);
+          await ProviderAppAccessRepository.removeForMemberApp(input);
         },
       },
     };

@@ -2,6 +2,8 @@
 
 Date: 2026-11-02. For Ben. The plan is [2026-11-oauth-simplify.md](2026-11-oauth-simplify.md); the wider audit is [2026-11-simplify-audit.md](2026-11-simplify-audit.md).
 
+On 2026-11-10, [2026-11-oauth-one-connection.md](2026-11-oauth-one-connection.md) replaced the per-app connections this document describes with one connection per person per provider.
+
 ## Merged
 
 | Repo              | PR                    | Commit   | What                                                                             |

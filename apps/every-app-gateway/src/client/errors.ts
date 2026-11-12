@@ -114,6 +114,8 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
   PROVIDER_BOUND: "That provider's settings are set from the terminal.",
   OAUTH_PROVIDER_REQUIRED: "That provider is not an OAuth provider.",
   OAUTH_CLIENT_REQUIRED: "Paste the client id and the client secret.",
+  CONNECTION_UNUSED:
+    "No app you allowed uses this connection. Connect it from inside the app that needs it.",
   SEALING_UNAVAILABLE: "This Gateway can't store a secret yet.",
   ADMIN_REQUIRED: "Only an owner or admin can do that.",
   PROVIDER_HOSTED:
@@ -150,6 +152,7 @@ const RULE_MESSAGE_CODES: ReadonlySet<string> = new Set<PublicErrorCode>([
   "PROVIDER_BOUND",
   "OAUTH_PROVIDER_REQUIRED",
   "OAUTH_CLIENT_REQUIRED",
+  "CONNECTION_UNUSED",
   "SEALING_UNAVAILABLE",
   "PROVIDER_HOSTED",
 ]);

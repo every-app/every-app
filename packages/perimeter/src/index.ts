@@ -3,6 +3,7 @@ export {
   unroutableAppResponse,
   type GatewayDeps,
   type McpInterceptInput,
+  type NeedsConnectionInput,
   type NeedsSetupInput,
 } from "./gateway";
 export { parseHost, type ParsedHost } from "./host";

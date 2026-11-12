@@ -9,10 +9,11 @@
  *   hosts and auth it has now (`providers.value-bound-to-hosts`, the
  *   registry's `bound`), placed on the request as the provider's `auth`
  *   says (headers, or query parameters on the URL the client posts to);
- * - an OAuth provider with a Gateway-run flow: the connection a member
- *   made in this app at `/connect/<provider>?app=<app>`. A call uses the
- *   caller's own connection; a listing, which no one in particular makes,
- *   uses the app's connection used most recently. The access token comes from the existing lease and refresh
+ * - an OAuth provider with a Gateway-run flow: a member's connection to
+ *   the provider, which they allowed this app to use at
+ *   `/connect/<provider>?app=<app>`. A call uses the caller's own
+ *   connection; a listing, which no one in particular makes, uses the one
+ *   used most recently among those the app may use. The access token comes from the existing lease and refresh
  *   (oauth/tokens.ts `accessTokenFor`) and goes as `Authorization: Bearer`.
  *
  * Either way the credential goes only to a URL on one of the provider's
@@ -39,6 +40,7 @@ import {
   type RemoteMcpBlock,
 } from "@every-app/sdk/internal";
 import { gatewayProviders } from "@/server/providers";
+import { ProviderAppAccessRepository } from "@/server/repositories/ProviderAppAccessRepository";
 import { ProviderConnectionRepository } from "@/server/repositories/ProviderConnectionRepository";
 import { SETUP_CLI } from "@/server/setup-cli";
 import type { OAuthClientResolver } from "../oauth/client";
@@ -104,8 +106,8 @@ function gatewayUrl(): string {
 
 /**
  * Where a member connects the provider for a remote MCP app, a path on
- * the Gateway: back to Connections → Accounts afterwards, which shows the
- * connection (an MCP app has no page to return to).
+ * the Gateway: back to Your connections → Accounts afterwards, which shows
+ * the connection (an MCP app has no page to return to).
  */
 export function remoteMcpConnectPath(
   provider: string,
@@ -214,21 +216,28 @@ async function oauthCredential(
     ReturnType<typeof ProviderConnectionRepository.find>
   > = null;
   if (caller) {
-    connection = await ProviderConnectionRepository.find({
+    const owner = {
       organizationId: route.organizationId,
       providerId,
       userId: caller.id,
-      appRowId: route.rowId,
-    });
-    if (!connection || connection.status === "expired") {
+    };
+    connection = await ProviderConnectionRepository.find(owner);
+    // The caller's own connection, which they allowed this app to use.
+    const allowed =
+      connection !== null &&
+      (await ProviderAppAccessRepository.find({
+        ...owner,
+        appRowId: route.rowId,
+      })) !== null;
+    if (!connection || !allowed || connection.status === "expired") {
       return {
         kind: "connect",
-        message: connectMessage(label, connectUrl, connection !== null),
+        message: connectMessage(label, connectUrl, allowed),
         connectUrl,
       };
     }
   } else {
-    connection = await ProviderConnectionRepository.latestActiveForProvider(
+    connection = await ProviderConnectionRepository.latestActiveForApp(
       route.organizationId,
       providerId,
       route.rowId,
@@ -243,15 +252,8 @@ async function oauthCredential(
   const fetchUpstream: Fetch =
     deps.fetchUpstream ?? ((request) => fetch(request));
   const held = gatewayHeldTokens({ fetchUpstream });
-  const heldConnection = {
-    id: connection.id,
-    userId: connection.userId,
-    appRowId: connection.appRowId,
-    label: connection.label,
-    scopes: connection.scopes,
-    status: connection.status,
-    expiresAt: connection.expiresAt,
-  };
+  // A const keeps the narrowing (not null) inside the callbacks below.
+  const heldConnection = connection;
   const token = await held.accessToken({
     connection: heldConnection,
     providerId,
@@ -268,6 +270,7 @@ async function oauthCredential(
             providerId,
             capability,
             organizationId: route.organizationId,
+            appRowId: route.rowId,
           })
           .catch(() => undefined),
       );
@@ -303,6 +306,7 @@ async function oauthCredential(
           capability,
           organizationId: route.organizationId,
           appId: route.appSlug,
+          appRowId: route.rowId,
         })
         .catch(() => undefined),
     );

@@ -13,6 +13,7 @@ import {
   AppListItem,
   AppListItemSkeleton,
 } from "@/client/components/AppListItem";
+import { AppConnectionsDialog } from "@/client/components/AppConnectionsDialog";
 import { AppSetupDialog } from "@/client/components/AppSetupDialog";
 import { EmptyState } from "@/client/components/EmptyState";
 import { ErrorState } from "@/client/components/ErrorState";
@@ -333,7 +334,9 @@ function App() {
       {buildOpen ? (
         <BuildYourOwnDialog onClose={() => setBuildOpen(false)} />
       ) : null}
-      {setupApp ? (
+      {/* The settings first: an account can't be connected until the
+          provider's client is set. Then the viewer's own accounts. */}
+      {setupApp?.setup && !setupApp.setup.ready ? (
         <AppSetupDialog
           name={setupApp.name}
           hostname={setupApp.hostname}
@@ -346,6 +349,13 @@ function App() {
             setupApp.organizationId ===
               session.data?.session.activeOrganizationId
           }
+          onClose={closeSetup}
+        />
+      ) : setupApp ? (
+        <AppConnectionsDialog
+          name={setupApp.name}
+          hostname={setupApp.hostname}
+          connections={setupApp.connections}
           onClose={closeSetup}
         />
       ) : null}

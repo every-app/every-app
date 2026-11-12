@@ -38,7 +38,7 @@ The app calls Linear's [API](https://linear.app/developers/graphql) with `integr
 
 ## Connect accounts
 
-Each person connects their own Linear account in each app that uses it, for the scopes that app lists. Apps never see the tokens. [How connecting works](/docs/connect-oauth)
+Each person connects their own Linear account once, then allows each app that uses it. Apps never see the tokens. [How connecting works](/docs/connect-oauth)
 
 The redirect URI to register, with your Gateway's address (like `apps.example.com`):
 
@@ -68,7 +68,7 @@ capabilities: {
 },
 ```
 
-Use [Linear's scopes](https://developers.linear.app/docs/oauth/authentication). The app calls Linear's API with `integrationFetch()`, and the Gateway adds the person's token. A token with more scopes than the app lists is refused.
+Use [Linear's scopes](https://developers.linear.app/docs/oauth/authentication). The app calls Linear's API with `integrationFetch()`, and the Gateway adds the person's token. A token with more scopes than your apps list is refused.
 
 **Check it worked:** `everyapp provider show linear-oauth` shows the client as set. Then open an app that lists it and select its **Connect** button.
 

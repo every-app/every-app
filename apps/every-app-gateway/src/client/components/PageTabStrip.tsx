@@ -16,8 +16,8 @@ interface PageTab<Value extends string> {
 const TAB_FADE = "2rem";
 
 /**
- * The tabs under a page's title (Manage workspace, Connections), inside the
- * page's `Tabs`. They scroll sideways on a phone instead of being cut off.
+ * The tabs under a page's title (Manage workspace, Your connections), inside
+ * the page's `Tabs`. They scroll sideways on a phone instead of being cut off.
  * The active tab is scrolled into view, so a tab past the fold still shows,
  * and each edge fades while there are tabs past it. The line is an inset
  * shadow, so the active tab's bar sits on it, and the first tab starts on the

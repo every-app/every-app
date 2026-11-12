@@ -21,6 +21,7 @@ import {
 } from "react";
 import { cn } from "cn";
 import { EmptyState } from "@/client/components/EmptyState";
+import { DataTablePagination } from "@/client/components/table/DataTablePagination";
 import { Button } from "@/client/components/ui/button";
 import { Skeleton } from "@/client/components/ui/skeleton";
 import {
@@ -83,7 +84,9 @@ type UseDataTableOptions<TData> = Omit<
 const NO_ROWS: never[] = [];
 
 /**
- * A TanStack table with the row models a page asks for.
+ * A TanStack table with the row models a page asks for. `withPagination`
+ * shows ten rows at a time (`initialState.pagination.pageSize` changes that),
+ * and `DataTable` adds the row that turns the page.
  *
  * `data` and `columns` must keep their identity between renders. A new
  * `data` array resets the page index, and that reset renders again, so an
@@ -199,7 +202,8 @@ function DataTableCard<TData>({
       onClick={onClick}
     >
       <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
+        {/* At least as tall as the trailing values, so a heading alone centers on them. */}
+        <div className="flex min-h-9 min-w-0 flex-1 flex-col justify-center">
           <div data-slot="data-table-card-primary">{renderCell(primary)}</div>
           {details.length > 0 ? (
             <div className="flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
@@ -262,9 +266,13 @@ function DataTableCard<TData>({
           </div>
         ) : null}
       </div>
-      {/* Under the whole row, the trailing value's width included. */}
+      {/* Under the whole row, the trailing value's width included. A cell that renders nothing leaves no gap. */}
       {footers.map((cell) => (
-        <div key={cell.id} data-slot="data-table-card-footer" className="mt-2">
+        <div
+          key={cell.id}
+          data-slot="data-table-card-footer"
+          className="mt-2 empty:hidden"
+        >
           {renderCell(cell)}
         </div>
       ))}
@@ -449,6 +457,9 @@ export function DataTable<TData>({
               ))}
         </InCardContext.Provider>
       </div>
+      {table.options.getPaginationRowModel ? (
+        <DataTablePagination table={table} />
+      ) : null}
       {footer}
     </TableCard>
   );

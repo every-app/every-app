@@ -216,8 +216,9 @@ export function Sidebar() {
 }
 
 /**
- * The foot of the rail: Connections for every role (their agents, devices
- * and connected accounts, and how to connect an agent), Manage workspace for
+ * The foot of the rail: Your connections for every role (their agents,
+ * devices and connected accounts, and how to connect an agent), Manage
+ * workspace for
  * owners and admins, then the account block, whose menu holds the docs, the
  * theme and sign out, and the build stamp under it.
  */
@@ -264,7 +265,7 @@ function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
         <SidebarMenu>
           <SidebarNavLink
             icon={Cable}
-            label="Connections"
+            label="Your connections"
             linkProps={{ to: "/connections" }}
           />
           {canManageApps ? (

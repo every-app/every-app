@@ -64,13 +64,14 @@ import {
   listAppSecretNames,
   listGatewaySecretNames,
   namesToSet,
+  oauthClientsHeld,
   renderSettingsTable,
   settingsRows,
 } from "@/lib/app/settings";
 import type { CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
-import { gatewayRegistry } from "@/lib/gateway/providers";
+import { gatewayRegistry, readUploadedClients } from "@/lib/gateway/providers";
 import { findRegisteredApp } from "@/lib/gateway/registry";
 import { loadEveryAppManifestIfPresent } from "@/lib/manifest";
 import { CLI } from "@/lib/output/command";
@@ -357,7 +358,8 @@ function urlsOf(connection: Target["connection"], appHostname: string): SetupUrl
  */
 async function readState(target: Target): Promise<State> {
   const { cf } = target.connection;
-  const gatewayNames = boundGatewayNames(await listGatewaySecretNames(cf, target.connection.names), target.registry);
+  const listed = await listGatewaySecretNames(cf, target.connection.names);
+  const gatewayNames = boundGatewayNames(listed, target.registry);
   const secretNames = target.deployed ? await listAppSecretNames(cf, target.deployed.workerName) : null;
   const { report, setup } = appSetupFrom({
     manifest: target.manifest,
@@ -365,6 +367,12 @@ async function readState(target: Target): Promise<State> {
     gatewayNames,
     secretNames,
     lookup: target.registry,
+    oauthReady: oauthClientsHeld({
+      manifest: target.manifest,
+      lookup: target.registry,
+      gatewayNames: listed,
+      pasted: await readUploadedClients(target.connection.db),
+    }),
   });
   const held = new Set<string>();
   for (const setting of report.settings) {

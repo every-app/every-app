@@ -42,7 +42,7 @@ const PAGE_LABELS: Record<string, string> = {
   "/admin/activity": "Open Activity",
   "/admin/tokens": "Open Tokens",
   "/admin/apps": "Open Apps",
-  "/connections": "Open Connections",
+  "/connections": "Open Your connections",
   "/admin/events": "Open Events",
 };
 

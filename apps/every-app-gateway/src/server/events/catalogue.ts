@@ -969,8 +969,8 @@ export const catalogue = {
   },
 
   /**
-   * A member connected their account at an OAuth provider in an app: the
-   * connection is theirs and that app's, for `scopes` (canonical).
+   * A member connected their account at an OAuth provider, from inside
+   * `app`: the connection is theirs, for `scopes` (canonical).
    */
   providerConnected(input: {
     provider: EventProvider;
@@ -1049,17 +1049,16 @@ export const catalogue = {
     });
   },
 
+  /** A member's connection to an OAuth provider was removed: every app they had allowed stops using it. */
   providerDisconnected(input: {
     provider: EventProvider;
     account: EventProviderAccount;
-    app: EventApp;
     /** Whether the Gateway revoked the grant at the provider too. */
     revoked: boolean;
   }): BuiltEvent {
     return built("provider.disconnected", {
       provider: provider(input.provider),
       account: account(input.account),
-      app: app(input.app),
       revoked: input.revoked,
     });
   },
@@ -1087,7 +1086,7 @@ export const catalogue = {
     });
   },
 
-  /** The provider refused a refresh; once per connection until it is connected again. */
+  /** The provider refused a refresh, on a call from `app`; once per connection until it is connected again. */
   providerConnectionExpired(input: {
     provider: EventProvider;
     account: EventProviderAccount;
@@ -1451,7 +1450,7 @@ export function summarize(
     case "provider.connected":
       return `${accountLabel(d.account, actor)} connected ${str(obj(d.provider).name) ?? "a provider"} in ${appLabel(d.app)}`;
     case "provider.disconnected":
-      return `${accountLabel(d.account, actor)}'s ${str(obj(d.provider).name) ?? "provider"} account was disconnected from ${appLabel(d.app)}`;
+      return `${accountLabel(d.account, actor)}'s ${str(obj(d.provider).name) ?? "provider"} account was disconnected`;
     case "provider.connection_expired":
       return `${accountLabel(d.account, actor)}'s ${str(obj(d.provider).name) ?? "provider"} connection expired and needs reconnecting`;
     case "ai.default_changed": {

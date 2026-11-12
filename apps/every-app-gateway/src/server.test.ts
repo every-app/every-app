@@ -70,6 +70,11 @@ vi.mock("./server/app-activation", () => ({
 vi.mock("./server/app-needs-setup", () => ({
   refuseUnreadyApp: mocks.refuseUnreadyApp,
 }));
+// The connection gate reads the person's connections from D1: these tests'
+// apps list no OAuth provider, so it lets every request through.
+vi.mock("./server/app-needs-connection", () => ({
+  refuseUnconnectedApp: async () => null,
+}));
 
 vi.mock("./perimeter/betterAuthAuthenticator", () => ({
   createProdAuthenticator: () => ({

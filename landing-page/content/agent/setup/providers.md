@@ -1089,7 +1089,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 
 ### google-workspace
 
-**Google** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+**Google** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects once, for the scopes their organization's apps list for it in `everyapp.config.ts`, and allows each app that uses it; an allowed app's calls to the provider's hosts go with that person's token, which the app never sees.
 
 - **Settings:** `GOOGLE_WORKSPACE_CLIENT_ID` (set by `everyapp setup`), `GOOGLE_WORKSPACE_CLIENT_SECRET` (set by `everyapp setup`)
 - **Where the client comes from:** https://console.cloud.google.com/apis/credentials
@@ -1101,7 +1101,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 
 ### microsoft-365
 
-**Microsoft 365** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+**Microsoft 365** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects once, for the scopes their organization's apps list for it in `everyapp.config.ts`, and allows each app that uses it; an allowed app's calls to the provider's hosts go with that person's token, which the app never sees.
 
 - **Settings:** `MICROSOFT_365_CLIENT_ID` (set by `everyapp setup`), `MICROSOFT_365_CLIENT_SECRET` (set by `everyapp setup`)
 - **Where the client comes from:** https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
@@ -1113,7 +1113,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 
 ### slack
 
-**Slack** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+**Slack** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects once, for the scopes their organization's apps list for it in `everyapp.config.ts`, and allows each app that uses it; an allowed app's calls to the provider's hosts go with that person's token, which the app never sees.
 
 - **Settings:** `SLACK_CLIENT_ID` (set by `everyapp setup`), `SLACK_CLIENT_SECRET` (set by `everyapp setup`)
 - **Where the client comes from:** https://api.slack.com/apps
@@ -1125,7 +1125,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 
 ### github-oauth
 
-**GitHub** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+**GitHub** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects once, for the scopes their organization's apps list for it in `everyapp.config.ts`, and allows each app that uses it; an allowed app's calls to the provider's hosts go with that person's token, which the app never sees.
 
 - **Settings:** `GITHUB_OAUTH_CLIENT_ID` (set by `everyapp setup`), `GITHUB_OAUTH_CLIENT_SECRET` (set by `everyapp setup`)
 - **Where the client comes from:** https://github.com/settings/developers
@@ -1137,7 +1137,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 
 ### notion-oauth
 
-**Notion** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+**Notion** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects once, for the scopes their organization's apps list for it in `everyapp.config.ts`, and allows each app that uses it; an allowed app's calls to the provider's hosts go with that person's token, which the app never sees.
 
 - **Settings:** `NOTION_OAUTH_CLIENT_ID` (set by `everyapp setup`), `NOTION_OAUTH_CLIENT_SECRET` (set by `everyapp setup`)
 - **Where the client comes from:** https://www.notion.so/my-integrations
@@ -1149,7 +1149,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 
 ### linear-oauth
 
-**Linear** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+**Linear** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects once, for the scopes their organization's apps list for it in `everyapp.config.ts`, and allows each app that uses it; an allowed app's calls to the provider's hosts go with that person's token, which the app never sees.
 
 - **Settings:** `LINEAR_OAUTH_CLIENT_ID` (set by `everyapp setup`), `LINEAR_OAUTH_CLIENT_SECRET` (set by `everyapp setup`)
 - **Where the client comes from:** https://linear.app/settings/api/applications
@@ -1161,7 +1161,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 
 ### gitlab-oauth
 
-**GitLab** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+**GitLab** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects once, for the scopes their organization's apps list for it in `everyapp.config.ts`, and allows each app that uses it; an allowed app's calls to the provider's hosts go with that person's token, which the app never sees.
 
 - **Settings:** `GITLAB_OAUTH_CLIENT_ID` (set by `everyapp setup`), `GITLAB_OAUTH_CLIENT_SECRET` (set by `everyapp setup`)
 - **Where the client comes from:** https://gitlab.com/-/user_settings/applications
@@ -1173,7 +1173,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 
 ### atlassian
 
-**Atlassian (Jira and Confluence)** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+**Atlassian (Jira and Confluence)** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects once, for the scopes their organization's apps list for it in `everyapp.config.ts`, and allows each app that uses it; an allowed app's calls to the provider's hosts go with that person's token, which the app never sees.
 
 - **Settings:** `ATLASSIAN_CLIENT_ID` (set by `everyapp setup`), `ATLASSIAN_CLIENT_SECRET` (set by `everyapp setup`)
 - **Where the client comes from:** https://developer.atlassian.com/console/myapps/
@@ -1185,7 +1185,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 
 ### hubspot-oauth
 
-**HubSpot** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+**HubSpot** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects once, for the scopes their organization's apps list for it in `everyapp.config.ts`, and allows each app that uses it; an allowed app's calls to the provider's hosts go with that person's token, which the app never sees.
 
 - **Settings:** `HUBSPOT_OAUTH_CLIENT_ID` (set by `everyapp setup`), `HUBSPOT_OAUTH_CLIENT_SECRET` (set by `everyapp setup`)
 - **Where the client comes from:** https://developers.hubspot.com/
@@ -1197,7 +1197,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 
 ### zoom
 
-**Zoom** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+**Zoom** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects once, for the scopes their organization's apps list for it in `everyapp.config.ts`, and allows each app that uses it; an allowed app's calls to the provider's hosts go with that person's token, which the app never sees.
 
 - **Settings:** `ZOOM_CLIENT_ID` (set by `everyapp setup`), `ZOOM_CLIENT_SECRET` (set by `everyapp setup`)
 - **Where the client comes from:** https://marketplace.zoom.us/develop/create
@@ -1209,7 +1209,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 
 ### dropbox
 
-**Dropbox** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+**Dropbox** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects once, for the scopes their organization's apps list for it in `everyapp.config.ts`, and allows each app that uses it; an allowed app's calls to the provider's hosts go with that person's token, which the app never sees.
 
 - **Settings:** `DROPBOX_OAUTH_CLIENT_ID` (set by `everyapp setup`), `DROPBOX_OAUTH_CLIENT_SECRET` (set by `everyapp setup`)
 - **Where the client comes from:** https://www.dropbox.com/developers/apps
@@ -1221,7 +1221,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 
 ### spotify
 
-**Spotify** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's `everyapp.config.ts` lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.
+**Spotify** (`oauth_client`): the Gateway holds the client and runs the flow. A person connects once, for the scopes their organization's apps list for it in `everyapp.config.ts`, and allows each app that uses it; an allowed app's calls to the provider's hosts go with that person's token, which the app never sees.
 
 - **Settings:** `SPOTIFY_CLIENT_ID` (set by `everyapp setup`), `SPOTIFY_CLIENT_SECRET` (set by `everyapp setup`)
 - **Where the client comes from:** https://developer.spotify.com/dashboard

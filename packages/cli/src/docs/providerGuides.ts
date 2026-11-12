@@ -358,7 +358,7 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
   google: {
     name: "Google",
     blurb:
-      "One OAuth client in your Google Cloud project lets each person connect their Google account in each app: Gmail, Calendar, Search Console, Analytics and the other Google APIs, for the scopes that app lists. Sign in with Google is a separate client, below.",
+      "One OAuth client in your Google Cloud project lets each person connect their Google account once, for the scopes your apps list: Gmail, Calendar, Search Console, Analytics and the other Google APIs. Sign in with Google is a separate client, below.",
     usedBy: [
       `${OPENSEO} for Search Console and Google Analytics (\`webmasters.readonly\` and \`analytics.readonly\`)`,
       `${CRM} for Gmail and Google Calendar (\`gmail.readonly\` and \`calendar.readonly\`)`,
@@ -375,7 +375,7 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
   microsoft: {
     name: "Microsoft",
     blurb:
-      "One app registration in Microsoft Entra lets each person connect their Outlook mail, calendar and the rest of Microsoft Graph in each app, for the scopes that app lists. Sign in with Microsoft is a separate registration, below.",
+      "One app registration in Microsoft Entra lets each person connect their Outlook mail, calendar and the rest of Microsoft Graph once, for the scopes your apps list. Sign in with Microsoft is a separate registration, below.",
     usedBy: [`${CRM} for Outlook mail (\`Mail.Read\`)`],
     connect: [
       "Sign in to [Microsoft Entra → App registrations](https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade) with an account that administers your tenant, and select **New registration**.",

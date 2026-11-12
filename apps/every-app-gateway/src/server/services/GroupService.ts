@@ -7,7 +7,7 @@ import type { OrgContext } from "@/server/organization/orgContext";
 import { AppRepository } from "../repositories/AppRepository";
 import { GroupRepository } from "../repositories/GroupRepository";
 import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
-import { ProviderConnectionRepository } from "../repositories/ProviderConnectionRepository";
+import { ProviderAppAccessRepository } from "../repositories/ProviderAppAccessRepository";
 
 type GroupInput = { name: string; description?: string | null };
 
@@ -147,8 +147,9 @@ async function updateGroup(
 async function deleteGroup(ctx: OrgContext, groupId: string) {
   const existing = await requireGroup(ctx, groupId);
   await GroupRepository.remove(groupId, ctx.orgId);
-  // Whoever opened an app only through the group loses its OAuth connections.
-  await ProviderConnectionRepository.pruneWithoutAccess(ctx.orgId);
+  // Whoever opened an app only through the group: that app loses its
+  // access to their OAuth connections.
+  await ProviderAppAccessRepository.pruneWithoutAccess(ctx.orgId);
   logEvent("group.deleted", {
     organizationId: ctx.orgId,
     groupId,
@@ -206,7 +207,7 @@ async function setGroupMembers(
     addedBy: ctx.userId,
   });
   if (remove.length > 0) {
-    await ProviderConnectionRepository.pruneWithoutAccess(ctx.orgId);
+    await ProviderAppAccessRepository.pruneWithoutAccess(ctx.orgId);
   }
   logEvent("group.members_changed", {
     organizationId: ctx.orgId,
@@ -277,7 +278,7 @@ async function setGroupApps(
     grantedBy: ctx.userId,
   });
   if (remove.length > 0) {
-    await ProviderConnectionRepository.pruneWithoutAccess(ctx.orgId);
+    await ProviderAppAccessRepository.pruneWithoutAccess(ctx.orgId);
   }
   logEvent("group.apps_changed", {
     organizationId: ctx.orgId,

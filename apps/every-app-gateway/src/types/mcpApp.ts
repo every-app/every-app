@@ -30,7 +30,7 @@ export type RemoteToolRiskHint = ToolRisk | "destructive" | "unknown";
  * - `ready`: an API-key provider whose key is set and bound;
  * - `no_client`: an OAuth provider the Gateway holds no client for;
  * - `not_connected`: an OAuth provider with a client, and nobody has
- *   connected it in the app yet;
+ *   allowed the app to use a connection to it yet;
  * - `connected`: an OAuth provider with at least one usable connection;
  * - `missing`: the provider the app names isn't on this Gateway (removed),
  *   or can't be an MCP server's credential.
@@ -66,7 +66,7 @@ export interface McpAppCredential {
   /** Whether that setting is set on the Gateway (its env). */
   set: boolean;
   state: McpAppCredentialState;
-  /** An OAuth app's active connections: the members who connected it in the app. */
+  /** An OAuth app's active connections: the members who allowed the app to use theirs. */
   connections: number;
   /**
    * Where a member connects their account:
@@ -185,6 +185,6 @@ export interface McpAppConnectionStatus {
   providerName: string;
   /** `/connect/<provider>?app=<appId>&return=/connections/accounts`, a path on the Gateway. */
   connectPath: string;
-  /** The member's own connection, made in the app; null when there is none yet. */
+  /** The member's own connection, which they allowed the app to use; null when there is none yet. */
   connection: McpAppViewerConnection | null;
 }

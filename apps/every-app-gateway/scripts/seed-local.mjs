@@ -35,7 +35,7 @@
  *
  * Two things the UI will not show from this data alone. "Deleted App" is a
  * tombstone and is never listed anywhere. The AI connections have no OAuth
- * grant behind them, and Settings > Connections ends any connection older
+ * grant behind them, and Your connections ends any connection older
  * than five minutes without one, so they appear in the admin activity trail
  * but not on that page; to see a live connection there, connect a real
  * client, or run scripts/mcp-oauth-local.mjs against the same gateway.

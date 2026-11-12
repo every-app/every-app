@@ -111,7 +111,7 @@ everyapp dev link --gateway https://apps.example.com
 ### `everyapp dev unlink`
 Sign everyapp dev out of a Gateway for this app: revoke the grant there and forget the token.
 
-Revokes the linked dev grant at the Gateway (it also disappears from Settings → Connections there) and removes the token from ~/.config/everyapp/linked-dev.json. If the Gateway can't be reached the token is still forgotten (warning LINKED_DEV_REVOKE_FAILED): revoke it under Settings → Connections.
+Revokes the linked dev grant at the Gateway (it also disappears from Your connections there) and removes the token from ~/.config/everyapp/linked-dev.json. If the Gateway can't be reached the token is still forgotten (warning LINKED_DEV_REVOKE_FAILED): revoke it under Your connections.
 
 ```sh
 everyapp dev unlink --gateway https://apps.example.com
@@ -234,7 +234,7 @@ At a terminal, Cloudflare's own login runs (open its link and enter the code). P
 
 Sign in to a Gateway (--gateway <url>)
 
-The workspace, events, ai and call commands are the Gateway's own tools, run as you. This opens the Gateway's consent page in the browser (under --json the link is in a progress event and the run waits): choose read & write and all apps for the admin commands. The grant is kept in ~/.config/everyapp/gateways.json (0600) and refreshed when stale; revoke it under Connections there, or with --sign-out. Scripts and CI set EVERYAPP_TOKEN to a personal access token (Manage workspace → Tokens) instead.
+The workspace, events, ai and call commands are the Gateway's own tools, run as you. This opens the Gateway's consent page in the browser (under --json the link is in a progress event and the run waits): choose read & write and all apps for the admin commands. The grant is kept in ~/.config/everyapp/gateways.json (0600) and refreshed when stale; revoke it under Your connections there, or with --sign-out. Scripts and CI set EVERYAPP_TOKEN to a personal access token (Manage workspace → Tokens) instead.
 
 - `--gateway <url>`: Sign in to this Gateway instead: its admin API, which the workspace, events, ai and call commands use
 - `--sign-out`: With --gateway: revoke this machine's sign-in there and forget it
@@ -506,7 +506,7 @@ A built-in provider (provider list names them) is only its key. An OAuth preset 
 
 An OpenAI-compatible model provider is a spec with mode "ai": its baseUrl, the key's placement (auth), the models it serves and the defaultModel (embeddingsModel too, when it has one); the AI proxy serves it as a catalog AI provider, inference POSTs alone. Apps list it under providers and call /api/ai/<id>/v1/chat/completions; everyapp ai default <id> makes it the Gateway's default model provider.
 
---oauth takes an OAuth spec file (auth.kind oauth2-user), or a preset by name. An app lists the scopes it needs in everyapp.config.ts, as the provider names them; people connect in each app. --verbose adds the manifest entry.
+--oauth takes an OAuth spec file (auth.kind oauth2-user), or a preset by name. An app lists the scopes it needs in everyapp.config.ts, as the provider names them; each person connects once and allows each app. --verbose adds the manifest entry.
 
 ```sh
 everyapp provider add google-workspace
@@ -569,9 +569,9 @@ everyapp provider presets
 ```
 
 ### `everyapp provider connections`
-List the accounts people connected to OAuth providers in each app on the Gateway.
+List the accounts people connected to OAuth providers on the Gateway, and the apps that use each.
 
-A connection is one person's, in one app: who connected what, in which app, with the scopes granted, the status and when it was last used. Never a token.
+A connection is one person's, to one provider: who connected what, the apps they allowed to use it, the scopes granted, the status and when it was last used. Never a token.
 
 ```sh
 everyapp provider connections
@@ -583,12 +583,12 @@ everyapp provider connections --app openmail
 - `--all`: Every organization's connections (default: the Gateway's own organization's)
 - `--user <email>`: One person's connections
 - `--provider <id>`: One provider's connections
-- `--app <app>`: One app's connections, by its id: openmail
+- `--app <app>`: The connections one app may use, by its id: openmail
 
 ### `everyapp provider disconnect <id>`
-Remove people's connections to an OAuth provider from the Gateway.
+Remove people's connections to an OAuth provider from the Gateway, or one app's access to them.
 
-The Gateway drops the tokens it held; the app gets "not connected" until the person connects again in it. --user removes that person's connections in every app, --app narrows it to one app. The CLI holds no token, so the grant stays at the provider until it is revoked there (Disconnect in Connected accounts revokes it from the Gateway).
+The Gateway drops the tokens it held; every app that used the connection gets "not connected" until the person connects again. The CLI holds no token, so the grant stays at the provider until it is revoked there (Disconnect in Connected accounts revokes it from the Gateway). With --app the connection stays: that app alone loses its access, until the person allows it again.
 
 ```sh
 everyapp provider disconnect github-oauth --user ben@example.com
@@ -599,7 +599,7 @@ everyapp provider disconnect github-oauth --all
 - `<id>`: The OAuth provider's id: github-oauth
 - `--user <email>`: This person's connection
 - `--all`: Every connection to the provider
-- `--app <app>`: Only the connections made in this app, by its id: openmail
+- `--app <app>`: Take only this app's access to the connection away and keep the connection, by its id: openmail
 
 ### `everyapp provider on <id>` (hidden)
 Same as everyapp mcp on; this alias goes after launch week.

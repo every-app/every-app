@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { isRemoteMcpRow } from "@every-app/perimeter/registry";
 import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import { AppRepository } from "../repositories/AppRepository";
-import { ProviderConnectionRepository } from "../repositories/ProviderConnectionRepository";
+import { ProviderAppAccessRepository } from "../repositories/ProviderAppAccessRepository";
 import { PublicError } from "@/server/errors";
 import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
@@ -130,9 +130,10 @@ async function update(ctx: OrgContext, data: UpdateAppInput) {
   }
 
   if (data.everyone !== undefined && data.everyone !== existingApp.everyone) {
-    // Off: the OAuth connections of whoever no longer opens it go.
+    // Off: the app loses its access to the OAuth connections of whoever
+    // no longer opens it.
     if (!data.everyone) {
-      await ProviderConnectionRepository.pruneWithoutAccess(ctx.orgId);
+      await ProviderAppAccessRepository.pruneWithoutAccess(ctx.orgId);
     }
     await emit(async () => ({
       organizationId: ctx.orgId,

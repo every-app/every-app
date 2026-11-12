@@ -48,6 +48,7 @@ import {
   groupMembers,
   groups,
   members,
+  providerAppAccess,
   userAccessTokens,
 } from "@/db/schema";
 import { createProdAuthenticator } from "@/perimeter/betterAuthAuthenticator";
@@ -59,8 +60,11 @@ import { clearOrgContextCacheForTests } from "@/server/organization/orgContext";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { AppToolRepository } from "@/server/repositories/AppToolRepository";
 import { GroupRepository } from "@/server/repositories/GroupRepository";
+import { ProviderAppAccessRepository } from "@/server/repositories/ProviderAppAccessRepository";
+import { ProviderConnectionRepository } from "@/server/repositories/ProviderConnectionRepository";
 import { AdminService } from "@/server/services/AdminService";
 import { AppAccessService } from "@/server/services/AppAccessService";
+import { AppService } from "@/server/services/AppService";
 import { GroupService } from "@/server/services/GroupService";
 import { hashUserPat } from "@/server/user-pat-hash";
 import { registerApp } from "@/test/registry";
@@ -398,6 +402,91 @@ describe("groups with app grants (SQLite)", () => {
       ]);
       expect(await db.select().from(groupMembers)).toEqual([]);
       expect(await db.select().from(groupAppAccess)).toEqual([]);
+    });
+
+    it("takes an app's access to a member's OAuth connection away each way they can lose the app, and keeps the connection", async () => {
+      const connect = async (userId: string) =>
+        ProviderConnectionRepository.upsert(
+          {
+            organizationId: org,
+            providerId: "github-oauth",
+            userId,
+            appRowId: todo.rowId,
+            label: userId,
+            externalId: userId,
+            scopes: ["repo"],
+            accessToken: "gho_access",
+            refreshToken: null,
+            expiresAt: null,
+          },
+          { BETTER_AUTH_SECRET: SECRET },
+        );
+      /** The person allows the apps to use their connection. */
+      const allow = async (userId: string, ...rowIds: string[]) => {
+        for (const appRowId of rowIds) {
+          await ProviderAppAccessRepository.allow({
+            organizationId: org,
+            providerId: "github-oauth",
+            userId,
+            appRowId,
+            scopes: ["repo"],
+          });
+        }
+      };
+      /** The apps allowed to use the person's connection. */
+      const allowed = async (userId: string) =>
+        (await db.select().from(providerAppAccess))
+          .filter((row) => row.userId === userId)
+          .map((row) => (row.appRowId === todo.rowId ? "todo" : "crm"))
+          .sort();
+      const theirs = await connect(member);
+      // The owner opens every app by role: nothing below touches theirs.
+      await connect(owner);
+      await allow(owner, todo.rowId, crmRowId);
+
+      const { id } = await GroupService.createGroup(asOwner(), {
+        name: "Sales",
+      });
+      await GroupService.setGroupMembers(asOwner(), id, [member]);
+      await GroupService.setGroupApps(asOwner(), id, [todo.rowId, crmRowId]);
+      await allow(member, todo.rowId, crmRowId);
+      expect(await allowed(member)).toEqual(["crm", "todo"]);
+
+      // The group loses crm.
+      await GroupService.setGroupApps(asOwner(), id, [todo.rowId]);
+      expect(await allowed(member)).toEqual(["todo"]);
+      // They leave the group.
+      await GroupService.setGroupMembers(asOwner(), id, []);
+      expect(await allowed(member)).toEqual([]);
+
+      // The group is deleted.
+      await GroupService.setGroupMembers(asOwner(), id, [member]);
+      await allow(member, todo.rowId);
+      await GroupService.deleteGroup(asOwner(), id);
+      expect(await allowed(member)).toEqual([]);
+
+      // Their own grant is revoked.
+      await AppAccessService.updateAccessForApp(asOwner(), todo.rowId, [
+        owner,
+        member,
+      ]);
+      await allow(member, todo.rowId);
+      await AppAccessService.updateAccessForApp(asOwner(), todo.rowId, [owner]);
+      expect(await allowed(member)).toEqual([]);
+
+      // "Available to everyone" is turned off.
+      await AppService.update(asOwner(), { id: crmRowId, everyone: true });
+      await allow(member, crmRowId);
+      expect(await allowed(member)).toEqual(["crm"]);
+      await AppService.update(asOwner(), { id: crmRowId, everyone: false });
+      expect(await allowed(member)).toEqual([]);
+
+      // The connection was theirs all along, and still is.
+      expect(await ProviderConnectionRepository.byId(theirs.id)).toMatchObject({
+        userId: member,
+        status: "active",
+      });
+      expect(await allowed(owner)).toEqual(["crm", "todo"]);
     });
 
     it("never opens a tombstone, even with a group grant left on it", async () => {

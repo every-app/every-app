@@ -129,6 +129,7 @@ import { buildConsentContext, type ConsentContext } from "./consent";
 import { runMcpMaintenance } from "./maintenance";
 import { resetRegistrationLimitsForTests } from "./registration-limit";
 import { resetAppResourcesForTests } from "./resources";
+import { serveMcpAuthRoute } from "./routes";
 
 const GATEWAY = "https://gateway.example.com";
 const HOST = "gateway.example.com";
@@ -3389,6 +3390,39 @@ describe("with MCP_OAUTH_ENABLED off", () => {
     ]) {
       expect((await send(path)).status).toBe(404);
     }
+  });
+
+  it("leaves the page where a person allows an app (/oauth/app-access) to the control plane with OAuth off or on, while the consent page is 404 with it off", async () => {
+    // The Allow page is no part of the Gateway's own OAuth server: it is
+    // where a person allows an app to use their connection to a provider.
+    const route = (path: string) =>
+      serveMcpAuthRoute(new Request(`${GATEWAY}${path}`));
+    const allowPage = "/oauth/app-access?state=a-state";
+    const consentPage = "/oauth/consent?handle=a-handle";
+
+    // On: both are pages, and nothing else under /oauth/app-access is.
+    expect(await route(allowPage)).toBeNull();
+    expect(await route(consentPage)).toBeNull();
+    expect((await route("/oauth/app-access/more"))?.status).toBe(404);
+
+    hoisted.env["MCP_OAUTH_ENABLED"] = "false";
+    expect(await route(allowPage)).toBeNull();
+    const consent = await route(consentPage);
+    expect(consent?.status).toBe(404);
+    expect(await consent!.json()).toEqual({ error: "oauth_disabled" });
+    const under = await route("/oauth/app-access/more");
+    expect(under?.status).toBe(404);
+    expect(await under!.json()).toEqual({ error: "oauth_disabled" });
+
+    // Through the Worker, off: the control plane serves it, uncached.
+    hoisted.controlPlane.mockClear();
+    const page = await send(allowPage);
+    expect(page.status).toBe(200);
+    expect(await page.text()).toBe("control plane");
+    expect(hoisted.controlPlane).toHaveBeenCalledTimes(1);
+    expect(page.headers.get("cache-control")).toBe("no-store");
+    expect((await send(consentPage)).status).toBe(404);
+    expect(hoisted.controlPlane).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { PROVIDER_ID } from "@every-app/sdk/internal";
 
 /**
- * What Manage workspace → Providers and Connections → Accounts send
+ * What Manage workspace → Providers and Your connections → Accounts send
  * (docs/design/2026-11-oauth-simplify.md). A client
  * id or secret is bounded by length only: the provider decides its shape.
  * The spec of a custom provider is parsed by the registry's parser on the
@@ -56,6 +56,12 @@ export const providerActionSchema = z.object({ providerId });
 /** Disconnect one connection, by its id: the caller's own, or anyone's for an owner or admin. */
 export const disconnectConnectionSchema = z.object({
   connectionId: z.string().min(1).max(128),
+});
+
+/** Take one app's access to a connection away, by the connection's id and the app's row id. */
+export const removeConnectionAppSchema = z.object({
+  connectionId: z.string().min(1).max(128),
+  appRowId: z.string().min(1).max(128),
 });
 
 export type AddOAuthProviderInput = z.infer<typeof addOAuthProviderSchema>;

@@ -46,8 +46,8 @@ How to record (from the skill):
 
 ## 3. Connect Claude Code (14 s)
 
-- **On screen:** the Gateway's **Connections** page, with its connect steps on the **Claude Code** tab.
-- **Clicks:** click **Connections**; click **Claude Code**; zoom on the `claude mcp add` command.
+- **On screen:** the Gateway's **Your connections** page, with its connect steps on the **Claude Code** tab.
+- **Clicks:** click **Your connections**; click **Claude Code**; zoom on the `claude mcp add` command.
 - **Say:**
   - One MCP address for every app
   - Paste this into Claude Code
@@ -170,7 +170,7 @@ For `uv run $SK/storyboard.py storyboard.json storyboard/` once the captures exi
   "cards": [
     {"title": "Cold open", "image": "shots/01-crm-list-board.png", "on_screen": "Claude Code finishing; the Backlink outreach board filling in", "seconds": 12, "say": ["My agent just found ten link prospects", "Found who to email, put them in our CRM", "All in my own Cloudflare account"], "tip": "This frame is the poster"},
     {"title": "How backlinks work in OpenSEO", "image": "shots/02-openseo-referring-domains.png", "on_screen": "Backlinks overview, then Referring Domains", "seconds": 28, "say": ["Sites linking to competitors", "Referring Domains: one row per site", "Your target list; skip the spam", "Pay per request"]},
-    {"title": "Connect Claude Code", "image": "shots/03-connect-your-agent.png", "on_screen": "Connections, Claude Code tab", "seconds": 14, "say": ["One MCP address", "Paste into Claude Code", "Can't delete anything"]},
+    {"title": "Connect Claude Code", "image": "shots/03-connect-your-agent.png", "on_screen": "Your connections, Claude Code tab", "seconds": 14, "say": ["One MCP address", "Paste into Claude Code", "Can't delete anything"]},
     {"title": "Claude Code finds prospects and who to pitch", "image": "shots/04-claude-code.png", "on_screen": "The prompt, openseo_ and crm_ tool calls, the summary", "seconds": 34, "say": ["Same backlink tools", "Referring domains minus spam", "Editor at each site", "Into the CRM"], "tip": "The longest scene"},
     {"title": "OpenCRM", "image": "shots/05-crm-list-board.png", "on_screen": "Backlink outreach board, Claude Code listing who's Due, The Daily Pour", "seconds": 20, "say": ["A list with its own stages", "Due after 7 quiet days", "Ask Claude Code who's Due", "Moves on the timeline"]},
     {"title": "OpenMail", "image": "shots/06-openmail-reply.png", "on_screen": "Claude Code drafting pitches, the inbox, Claude Code moving replies to Replied, Maya's reply with the draft", "seconds": 24, "say": ["Inbox on your own domain", "Claude Code drafts the pitches", "Replies: moved to Replied", "OpenMail drafts, you hit send"]},

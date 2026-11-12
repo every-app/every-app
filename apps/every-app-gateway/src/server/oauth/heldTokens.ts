@@ -1,9 +1,10 @@
 /**
  * The connections the proxy reads for a held-token call
- * (docs/design/2026-11-oauth-simplify.md), as a port: the gateway's D1
- * implementation here, an in-memory one in tests. A connection is one
- * person's in one app. Hands out an access token (refreshed first when
- * due) and nothing else about it.
+ * (docs/design/2026-11-oauth-one-connection.md), as a port: the gateway's
+ * D1 implementation here, an in-memory one in tests. A connection is one
+ * person's to one provider, used by the apps that person allowed. Hands
+ * out an access token (refreshed first when due) and nothing else about
+ * it.
  */
 import { env, waitUntil } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
@@ -16,6 +17,7 @@ import {
 } from "@/server/events/catalogue";
 import { GATEWAY_ACTOR, userSubject } from "@/server/events/subjects";
 import { AppRepository } from "@/server/repositories/AppRepository";
+import { ProviderAppAccessRepository } from "@/server/repositories/ProviderAppAccessRepository";
 import { ProviderConnectionRepository } from "@/server/repositories/ProviderConnectionRepository";
 import { RateLimitCounterRepository } from "@/server/repositories/RateLimitCounterRepository";
 import type { ResolvedOAuthClient } from "./client";
@@ -27,7 +29,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 interface HeldConnection {
   id: string;
   userId: string;
-  appRowId: string;
   label: string | null;
   /** The scopes the token holds, canonical. */
   scopes: string[];
@@ -36,12 +37,22 @@ interface HeldConnection {
 }
 
 export interface HeldTokenPort {
+  /** The person's connection to the provider. */
   find(input: {
     organizationId: string;
     providerId: string;
     userId: string;
-    appRowId: string;
   }): Promise<HeldConnection | null>;
+  /**
+   * The scopes the app listed when the person allowed it to use their
+   * connection, canonical; null when they haven't allowed it.
+   */
+  allowedScopes(input: {
+    organizationId: string;
+    providerId: string;
+    userId: string;
+    appRowId: string;
+  }): Promise<string[] | null>;
   /** The access token to send, refreshed when due. */
   accessToken(input: {
     connection: HeldConnection;
@@ -50,16 +61,18 @@ export interface HeldTokenPort {
     client: ResolvedOAuthClient;
     organizationId: string;
   }): Promise<RefreshOutcome>;
-  /** The provider refused a refresh: the connection is expired until reconnected. */
+  /** The provider refused a refresh, on a call from `appRowId`: the connection is expired until reconnected. */
   expired(input: {
     connection: HeldConnection;
     providerId: string;
     capability: OAuthClientCapability;
     organizationId: string;
+    appRowId: string;
   }): Promise<void>;
   /**
-   * The call went through: `last_used_at`, and the first call of a UTC
-   * day on the connection a `connection.used` event (after the response).
+   * The call went through: `last_used_at`, and the app's first call of a
+   * UTC day on the connection a `connection.used` event (after the
+   * response).
    */
   used(input: {
     connection: HeldConnection;
@@ -67,6 +80,7 @@ export interface HeldTokenPort {
     capability: OAuthClientCapability;
     organizationId: string;
     appId: string;
+    appRowId: string;
   }): Promise<void>;
 }
 
@@ -96,23 +110,24 @@ export function gatewayHeldTokens(options: {
   fetchUpstream: Fetch;
 }): HeldTokenPort {
   return {
-    async find({ organizationId, providerId, userId, appRowId }) {
+    async find({ organizationId, providerId, userId }) {
       const row = await ProviderConnectionRepository.find({
         organizationId,
         providerId,
         userId,
-        appRowId,
       });
       if (!row) return null;
       return {
         id: row.id,
         userId: row.userId,
-        appRowId: row.appRowId,
         label: row.label,
         scopes: row.scopes,
         status: row.status,
         expiresAt: row.expiresAt,
       };
+    },
+    async allowedScopes(key) {
+      return (await ProviderAppAccessRepository.find(key))?.scopes ?? null;
     },
     accessToken({
       connection,
@@ -131,14 +146,20 @@ export function gatewayHeldTokens(options: {
         log: { provider: providerId, org: organizationId },
       });
     },
-    async expired({ connection, providerId, capability, organizationId }) {
+    async expired({
+      connection,
+      providerId,
+      capability,
+      organizationId,
+      appRowId,
+    }) {
       logEvent(
         "oauth.connection_expired",
         {
           provider: providerId,
           org: organizationId,
           user_id: connection.userId,
-          app_row_id: connection.appRowId,
+          app_row_id: appRowId,
         },
         "warn",
       );
@@ -151,12 +172,19 @@ export function gatewayHeldTokens(options: {
             user: await eventUser(connection.userId),
             label: connection.label,
           },
-          app: await eventApp(connection.appRowId, organizationId),
+          app: await eventApp(appRowId, organizationId),
           connectionId: connection.id,
         }),
       }));
     },
-    async used({ connection, providerId, capability, organizationId, appId }) {
+    async used({
+      connection,
+      providerId,
+      capability,
+      organizationId,
+      appId,
+      appRowId,
+    }) {
       await ProviderConnectionRepository.touchLastUsed(connection.id).catch(
         () => undefined,
       );
@@ -164,7 +192,7 @@ export function gatewayHeldTokens(options: {
       const day = now.toISOString().slice(0, 10);
       const tomorrow = Date.parse(`${day}T00:00:00.000Z`) + DAY_MS;
       const task = RateLimitCounterRepository.claimOnce(
-        `connection:used:${connection.id}:${day}`,
+        `connection:used:${connection.id}:${appRowId}:${day}`,
         new Date(tomorrow),
       )
         .then(async (first) => {
@@ -179,7 +207,7 @@ export function gatewayHeldTokens(options: {
                 name: capability.label,
                 kind: "oauth",
               },
-              app: await eventApp(connection.appRowId, organizationId),
+              app: await eventApp(appRowId, organizationId),
               user: await eventUser(connection.userId),
             }),
           }));

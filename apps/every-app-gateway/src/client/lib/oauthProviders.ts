@@ -1,7 +1,7 @@
 import { providerSettingPrefix } from "@every-app/sdk/internal";
 
 /**
- * Pure helpers behind Manage workspace → Providers and Connections →
+ * Pure helpers behind Manage workspace → Providers and Your connections →
  * Accounts (docs/design/2026-11-oauth-simplify.md): the words
  * each state reads as, and the custom provider's spec. Tested without
  * React.

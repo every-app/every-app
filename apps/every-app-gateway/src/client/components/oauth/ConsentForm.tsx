@@ -1,25 +1,26 @@
-import { useState } from "react";
-import { ArrowLeftRight, BadgeCheck, Send, ShieldAlert } from "lucide-react";
-import { CONSENT_FIELDS } from "@/schemas/consent-decision";
+import { useId, useState } from "react";
+import { ShieldAlert } from "lucide-react";
+import {
+  CONSENT_FIELDS,
+  type ConsentDecision,
+} from "@/schemas/consent-decision";
 import type { ConsentContext } from "@/server/mcp-auth/consent";
 import { Alert, AlertDescription } from "@/client/components/ui/alert";
-import { Badge } from "@/client/components/ui/badge";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/client/components/ui/card";
-import {
-  FieldDescription,
-  FieldLegend,
-  FieldSet,
-} from "@/client/components/ui/field";
+  NativeSelect,
+  NativeSelectOption,
+} from "@/client/components/ui/native-select";
 import { domainCoversRedirect } from "./clientSite";
 import {
-  Choice,
+  ClientPublisher,
+  ConsentBox,
+  ConsentCard,
+  ConsentHeader,
+  ConsentRow,
   DecisionButtons,
-  initials,
+  InitialsTile,
+  NativeCheckbox,
+  Segmented,
   SignedInRow,
   useSendOnce,
 } from "./consentParts";
@@ -27,6 +28,22 @@ import { useDeliberateAllow } from "./useDeliberateAllow";
 
 type Context = Extract<ConsentContext, { ok: true }>;
 type ToolState = Context["organizations"][number]["apps"][number]["tools"];
+
+type AppMode = ConsentDecision["app_mode"];
+
+/** Which apps a connection reaches: all the person can use, or the ones they tick. */
+const APP_MODES: readonly { value: AppMode; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "selected", label: "Selected" },
+];
+
+const ACCESS_LEVELS: readonly {
+  value: ConsentDecision["access"];
+  label: string;
+}[] = [
+  { value: "read", label: "Read only" },
+  { value: "write", label: "Read & write" },
+];
 
 /** Beside an app that can't be chosen because it serves no tools. */
 function toolHint(tools: ToolState): string | undefined {
@@ -48,10 +65,11 @@ export function ConsentForm({
 }) {
   const { client, organizations } = context;
   const deliberate = useDeliberateAllow();
+  const organizationFieldId = useId();
   const [organizationId, setOrganizationId] = useState(
     context.defaultOrganizationId ?? "",
   );
-  const [appMode, setAppMode] = useState<"all" | "selected">("all");
+  const [appMode, setAppMode] = useState<AppMode>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const organization = organizations.find((org) => org.id === organizationId);
   const canAllow =
@@ -85,148 +103,108 @@ export function ConsentForm({
         name={CONSENT_FIELDS.resource}
         value={context.grant.resource}
       />
+      {/* A member of one organization is asked nothing about it. */}
+      {organizations.length === 1 ? (
+        <input
+          type="hidden"
+          name={CONSENT_FIELDS.organizationId}
+          value={organizationId}
+        />
+      ) : null}
 
-      <Card>
-        <CardHeader className="flex flex-col items-center text-center">
-          <div aria-hidden className="flex items-center gap-3">
-            <div className="grid size-12 shrink-0 place-items-center rounded-xl bg-primary/10 text-base font-semibold text-primary">
-              {initials(client.name)}
-            </div>
-            <ArrowLeftRight className="size-4 text-muted-foreground" />
+      <ConsentCard>
+        <ConsentHeader
+          from={<InitialsTile name={client.name} />}
+          to={
             <img
-              src="/transparent-logo.png"
+              src="/android-chrome-192x192.png"
               alt=""
-              className="size-12 rounded-lg"
+              className="size-12 rounded-xl"
             />
-          </div>
-          <CardTitle className="mt-4 text-xl">
-            <h1 className="line-clamp-3 break-words" title={client.name}>
-              Connect {client.name} to EveryApp
-            </h1>
-          </CardTitle>
-          {verified ? (
-            <p className="mt-1 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
-              <BadgeCheck className="size-4 shrink-0 text-success" />
-              <span>
-                Published by{" "}
-                <strong className="font-medium text-foreground">
-                  {client.domain}
-                </strong>
-              </span>
-            </p>
-          ) : client.domain ? null : (
-            <p className="mt-1 text-sm text-muted-foreground">
-              <Badge
-                variant="outline"
-                size="sm"
-                className="mr-1.5 align-middle"
+          }
+          title={`Connect ${client.name} to EveryApp`}
+        >
+          <ClientPublisher domain={client.domain} verified={verified} />
+        </ConsentHeader>
+
+        {client.domain && !verified ? (
+          <Alert variant="warning">
+            <ShieldAlert />
+            <AlertDescription className="text-foreground">
+              Its details are published on <strong>{client.domain}</strong>, but
+              it sends access to <strong>{client.redirectHost}</strong>, a
+              different site. Continue only if you trust both.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        {organizations.length === 0 ? (
+          <Alert variant="warning">
+            <ShieldAlert />
+            <AlertDescription className="text-foreground">
+              Your account isn't a member of any organization, so there is
+              nothing to connect.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        <div className="space-y-4">
+          <SignedInRow
+            email={context.email}
+            onSwitchAccount={onSwitchAccount}
+          />
+
+          <ConsentBox>
+            <ConsentRow label="Redirects to">
+              <span title={client.redirectUri}>{client.redirectHost}</span>
+            </ConsentRow>
+            {organizations.length > 1 ? (
+              <ConsentRow
+                label="Organization"
+                htmlFor={organizationFieldId}
+                control
               >
-                Unverified
-              </Badge>
-              Named by the app itself.
-            </p>
-          )}
-        </CardHeader>
-
-        <CardContent className="space-y-6">
-          {client.domain && !verified ? (
-            <Alert variant="warning">
-              <ShieldAlert />
-              <AlertDescription className="text-foreground">
-                Its details are published on <strong>{client.domain}</strong>,
-                but it sends access to <strong>{client.redirectHost}</strong>, a
-                different site. Continue only if you trust both.
-              </AlertDescription>
-            </Alert>
-          ) : null}
-
-          <div className="divide-y divide-border rounded-lg border border-border bg-muted/50 text-sm">
-            <SignedInRow
-              email={context.email}
-              onSwitchAccount={onSwitchAccount}
-            />
-            <div className="flex items-center gap-3 px-3 py-2">
-              <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted">
-                <Send className="size-4" />
-              </div>
-              <p className="min-w-0 flex-1 break-words">
-                Access will be sent to{" "}
-                <strong className="font-medium">{client.redirectHost}</strong>.
-              </p>
-            </div>
-          </div>
-
-          {organizations.length === 0 ? (
-            <Alert variant="warning">
-              <ShieldAlert />
-              <AlertDescription className="text-foreground">
-                Your account isn't a member of any organization, so there is
-                nothing to connect.
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <>
-              {organizations.length > 1 ? (
-                <FieldSet>
-                  <FieldLegend variant="label">Organization</FieldLegend>
-                  <div className="grid gap-2.5">
-                    {organizations.map((org) => (
-                      <Choice
-                        key={org.id}
-                        type="radio"
-                        name={CONSENT_FIELDS.organizationId}
-                        value={org.id}
-                        checked={organizationId === org.id}
-                        onChange={() => {
-                          setOrganizationId(org.id);
-                          setSelected(new Set());
-                        }}
-                      >
-                        {org.name}
-                      </Choice>
-                    ))}
-                  </div>
-                </FieldSet>
-              ) : (
-                <input
-                  type="hidden"
+                <NativeSelect
+                  id={organizationFieldId}
                   name={CONSENT_FIELDS.organizationId}
+                  className="w-full"
                   value={organizationId}
-                />
-              )}
-
-              <FieldSet>
-                <FieldLegend variant="label">Apps</FieldLegend>
-                <div className="grid gap-2.5">
-                  <Choice
-                    type="radio"
+                  onChange={(event) => {
+                    setOrganizationId(event.target.value);
+                    setSelected(new Set());
+                  }}
+                >
+                  {organizations.map((org) => (
+                    <NativeSelectOption key={org.id} value={org.id}>
+                      {org.name}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </ConsentRow>
+            ) : null}
+            {organizations.length > 0 ? (
+              <>
+                <ConsentRow label="Apps" control>
+                  <Segmented
+                    label="Apps"
                     name={CONSENT_FIELDS.appMode}
-                    value="all"
-                    checked={appMode === "all"}
-                    onChange={() => setAppMode("all")}
-                  >
-                    All apps I can use, including future ones
-                  </Choice>
-                  <Choice
-                    type="radio"
-                    name={CONSENT_FIELDS.appMode}
-                    value="selected"
-                    checked={appMode === "selected"}
-                    onChange={() => setAppMode("selected")}
-                  >
-                    Only these apps
-                  </Choice>
-                  {appMode === "selected" ? (
-                    <div className="ml-6.5 grid gap-2.5 rounded-lg border border-border p-3">
+                    options={APP_MODES}
+                    defaultValue="all"
+                    onChange={setAppMode}
+                  />
+                </ConsentRow>
+                {appMode === "selected" ? (
+                  <div className="col-span-2">
+                    <dt className="sr-only">Selected apps</dt>
+                    <dd className="grid gap-2.5 rounded-md border border-border bg-card p-3">
                       {(organization?.apps ?? []).length === 0 ? (
                         <p className="text-sm text-muted-foreground">
                           You don't have access to any apps here yet.
                         </p>
                       ) : null}
                       {organization?.apps.map((app) => (
-                        <Choice
+                        <NativeCheckbox
                           key={app.rowId}
-                          type="checkbox"
                           name={CONSENT_FIELDS.appIds}
                           value={app.rowId}
                           disabled={app.tools === "none"}
@@ -240,68 +218,42 @@ export function ConsentForm({
                           hint={toolHint(app.tools)}
                         >
                           {app.name}
-                        </Choice>
+                        </NativeCheckbox>
                       ))}
-                    </div>
-                  ) : null}
-                </div>
-              </FieldSet>
-
-              <FieldSet>
-                <FieldLegend variant="label">Access</FieldLegend>
-                {context.writeRequested ? (
-                  <>
-                    <div className="grid gap-2.5">
-                      <Choice
-                        type="radio"
+                    </dd>
+                  </div>
+                ) : null}
+                <ConsentRow label="Access" control={context.writeRequested}>
+                  {context.writeRequested ? (
+                    <Segmented
+                      label="Access"
+                      name={CONSENT_FIELDS.access}
+                      options={ACCESS_LEVELS}
+                      defaultValue="write"
+                    />
+                  ) : (
+                    <>
+                      {/* The client set its own ceiling (it asked for
+                          mcp:read alone); nothing on this page raises it. */}
+                      <input
+                        type="hidden"
                         name={CONSENT_FIELDS.access}
                         value="read"
-                      >
-                        Read only
-                      </Choice>
-                      <Choice
-                        type="radio"
-                        name={CONSENT_FIELDS.access}
-                        value="write"
-                        defaultChecked
-                      >
-                        Read &amp; write
-                      </Choice>
-                    </div>
-                    {/* Write tools create, change or delete. Each app marks
-                        its own deletes (destructiveHint), and whether the AI
-                        app asks first is the client's call, so promise no
-                        more than the mark. */}
-                    <FieldDescription>
-                      Read &amp; write can add, change and delete things. Tools
-                      that delete are marked so your AI app can ask first.
-                    </FieldDescription>
-                  </>
-                ) : (
-                  <>
-                    {/* The client set its own ceiling (it asked for mcp:read
-                        alone); nothing on this page raises it. */}
-                    <input
-                      type="hidden"
-                      name={CONSENT_FIELDS.access}
-                      value="read"
-                    />
-                    <FieldDescription>
-                      Read only: this app asked to read, not to add or change
-                      anything.
-                    </FieldDescription>
-                  </>
-                )}
-              </FieldSet>
-            </>
-          )}
+                      />
+                      Read only
+                    </>
+                  )}
+                </ConsentRow>
+              </>
+            ) : null}
+          </ConsentBox>
 
           <DecisionButtons
             sentDecision={sentDecision}
             canAllow={canAllow && deliberate}
           />
-        </CardContent>
-      </Card>
+        </div>
+      </ConsentCard>
     </form>
   );
 }

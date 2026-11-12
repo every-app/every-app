@@ -1,15 +1,16 @@
 // @vitest-environment happy-dom
 /**
  * Manage workspace → Providers rendered for real (React in a DOM) with the
- * server functions mocked: what is set up lists first, then what an app
- * needs and lacks, and the rest of the catalog behind Show all, never a
- * Gateway service; the full table says where each OAuth client comes
- * from and never a value; Add OAuth provider lists the presets with the
- * built-in ones marked, and picking GitHub shows the redirect URI to
- * register; a registered row's menu offers Replace client and Remove; the
- * Connections table lists the organization's, each one person's in one
- * app, with Disconnect. No scope sets, no organization connect, no
- * background.
+ * server functions mocked: one table lists what is set up first, then what
+ * still needs setting up, with the rest of the catalog behind Show all,
+ * never a Gateway service; it says where each OAuth client comes from and
+ * never a value; Add OAuth provider lists the presets with the built-in
+ * ones marked, and picking GitHub shows the redirect URI to register; a
+ * registered row's menu offers Replace client and Remove; the Organization
+ * connections table lists the organization's, each one person's to one
+ * provider with the apps allowed to use it, one app's access taken away
+ * by the connection's id and the app's row id, and Disconnect. No scope
+ * sets, no organization connect, no background.
  */
 import { act, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -25,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   removeProvider: vi.fn(),
   listAllConnections: vi.fn(),
   disconnectConnection: vi.fn(),
+  removeConnectionApp: vi.fn(),
   getAiDefault: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
@@ -45,6 +47,7 @@ vi.mock("@/serverFunctions/providers", () => ({
 vi.mock("@/serverFunctions/connections", () => ({
   listAllConnections: mocks.listAllConnections,
   disconnectConnection: mocks.disconnectConnection,
+  removeConnectionApp: mocks.removeConnectionApp,
 }));
 vi.mock("@/serverFunctions/ai", () => ({
   getAiDefault: mocks.getAiDefault,
@@ -192,10 +195,14 @@ const connections = [
     providerName: "GitHub",
     userId: "user_1",
     userEmail: "ada@acme.com",
-    app: { rowId: "app_crm", id: "crm", name: "CRM" },
+    apps: [
+      { rowId: "app_ci", id: "ci", name: "CI" },
+      { rowId: "app_crm", id: "crm", name: "CRM" },
+    ],
     label: "ada",
     scopes: ["repo", "read:user"],
     status: "active",
+    needsReconnect: false,
     createdAt: Date.now() - 86_400_000,
     lastUsedAt: Date.now() - 3_600_000,
     expiresAt: Date.now() + 3_600_000,
@@ -206,10 +213,11 @@ const connections = [
     providerName: "GitHub",
     userId: "user_2",
     userEmail: "bo@acme.com",
-    app: { rowId: "app_ci", id: "ci", name: "CI" },
+    apps: [],
     label: "bo",
     scopes: [],
     status: "expired",
+    needsReconnect: false,
     createdAt: Date.now() - 86_400_000,
     lastUsedAt: null,
     expiresAt: null,
@@ -296,48 +304,78 @@ function menuItems(): string[] {
   );
 }
 
-function group(title: string) {
-  return container.querySelector(`ul[aria-label="${title}"]`);
+/** The providers table's rows: it is the page's first table while it lists any. */
+function providerRows(): HTMLTableRowElement[] {
+  return [
+    ...container
+      .querySelector("table")!
+      .querySelectorAll<HTMLTableRowElement>("tbody tr"),
+  ];
 }
 
-function rowNames(title: string): string[] {
-  return [...(group(title)?.querySelectorAll("li") ?? [])].map(
-    (row) => row.querySelector("p")?.textContent ?? "",
+function rowNames(): string[] {
+  return providerRows().map((row) => row.querySelector("p")?.textContent ?? "");
+}
+
+function providerRow(name: string): HTMLTableRowElement {
+  const row = providerRows().find(
+    (element) => element.querySelector("p")?.textContent === name,
+  );
+  if (!row) throw new Error(`no ${name} row`);
+  return row;
+}
+
+/**
+ * A provider's cells: provider, kind over where it comes from, apps, status,
+ * client over its connections (or the hosts), Set up, menu.
+ */
+function cells(name: string): string[] {
+  return [...providerRow(name).querySelectorAll("td")].map(
+    (cell) => cell.textContent?.trim() ?? "",
   );
 }
 
 async function showAll() {
-  await press(button("Show all providers"));
+  await press(button("Show all"));
 }
 
-describe("the grouped list", () => {
-  it("lists what is set up first, then what an app needs, and folds the rest away, never a Gateway service", async () => {
+describe("the providers before Show all", () => {
+  it("lists what is set up first, then what still needs setting up, and folds the rest away, never a Gateway service", async () => {
     await render();
-    expect(rowNames("Set up")).toEqual([
+    expect(rowNames()).toEqual([
       "OpenRouter",
       "Google Workspace",
       "GitHub",
+      "DataForSEO",
     ]);
-    expect(body()).toContain("Set up · 3");
-    const setUp = group("Set up")!.textContent ?? "";
-    expect(setUp).toContain("AI · AI default");
-    expect(setUp).toContain(
-      "OAuth · registered here · 2 connections · used by crm",
-    );
-    expect(setUp).toContain("Ready");
-    expect(rowNames("Needed by an app")).toEqual(["DataForSEO"]);
-    const needed = group("Needed by an app")!.textContent ?? "";
-    expect(needed).toContain("API key · needed by notes");
-    expect(needed).toContain("Needs a key");
-    expect(body()).toContain("1 more built in: APIs");
-    expect(container.querySelector('[aria-label="All providers"]')).toBeNull();
+    expect(cells("OpenRouter").slice(1, 4)).toEqual([
+      "AI defaultBuilt in",
+      "none",
+      "Ready",
+    ]);
+    expect(cells("GitHub").slice(1, 5)).toEqual([
+      "OAuthRegistered here",
+      "crm",
+      "Ready",
+      "Pasted here2 connections",
+    ]);
+    expect(cells("DataForSEO").slice(1, 5)).toEqual([
+      "API keyBuilt in",
+      "notes",
+      "Needs setup",
+      "api.dataforseo.com",
+    ]);
+    expect(body()).toContain("1 more provider available");
+    expect(
+      container.querySelector('input[aria-label="Search providers"]'),
+    ).toBeNull();
     expect(body()).not.toContain("Slack");
     expect(body()).not.toContain("Gateway service");
   });
 
   it("shows the terminal command, never a field, for a key an app needs", async () => {
     await render();
-    await press(button("Set up", group("Needed by an app")!));
+    await press(button("Set up", providerRow("DataForSEO")));
     const dialog = document.body.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain("Set up DataForSEO");
     expect(dialog.textContent).toContain("notes needs it.");
@@ -355,9 +393,9 @@ describe("the grouped list", () => {
       providers: [{ ...slack, apps: [{ name: "chat", needs: true }] }],
     });
     await render();
-    expect(rowNames("Needed by an app")).toEqual(["Slack"]);
-    expect(group("Needed by an app")!.textContent).toContain("Needs a client");
-    await press(button("Set up", group("Needed by an app")!));
+    expect(rowNames()).toEqual(["Slack"]);
+    expect(cells("Slack")[3]).toBe("Needs setup");
+    await press(button("Set up", providerRow("Slack")));
     const dialog = document.body.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain("Slack");
     expect(dialog.textContent).toContain(slack.oauth.redirectUri);
@@ -367,23 +405,16 @@ describe("the grouped list", () => {
     // An OAuth preset isn't listed until a deploy or an admin registers it.
     mocks.listProviders.mockResolvedValue({ providers: [exa, email] });
     await render();
-    expect(group("Set up")).toBeNull();
-    expect(group("Needed by an app")).toBeNull();
     expect(body()).toContain("Nothing is set up yet");
-    expect(body()).toContain("1 more built in: APIs");
+    expect(body()).not.toContain("Exa");
     await showAll();
-    expect(
-      container.querySelectorAll('[aria-label="All providers"] tbody tr'),
-    ).toHaveLength(1);
+    expect(rowNames()).toEqual(["Exa"]);
   });
 
   it("expands to every provider but the Gateway services, and filters by name", async () => {
     await render();
     await showAll();
-    const rows = () =>
-      [
-        ...container.querySelectorAll('[aria-label="All providers"] tbody tr'),
-      ].map((row) => row.querySelector("p")?.textContent);
+    const rows = rowNames;
     expect(rows()).toHaveLength(5);
     expect(rows()).not.toContain("email");
     const search = container.querySelector<HTMLInputElement>(
@@ -470,42 +501,88 @@ describe("Add OAuth provider", () => {
 });
 
 describe("the connections table", () => {
-  it("lists each connection with its person, app, scopes and state, and disconnects one by its id", async () => {
-    mocks.disconnectConnection.mockResolvedValue({ ok: true, revoked: true });
-    await render();
-    const tables = container.querySelectorAll("table");
-    const text = tables[0]!.textContent ?? "";
-    expect(text).toContain("ada@acme.com");
-    expect(text).toContain("CRM");
-    expect(text).toContain("repo, read:user");
-    expect(text).toContain("bo@acme.com");
-    expect(text).toContain("CI");
-    expect(text).toContain("no scopes");
-    expect(text).toContain("Connected");
-    expect(text).toContain("Reconnect in the app");
-    expect(body()).not.toMatch(/organization's|background/i);
+  /** A connection's cells, by the person it belongs to. */
+  function connectionRow(person: string): string[] {
+    const row = [...container.querySelectorAll("table tbody tr")].find(
+      (element) => element.textContent?.includes(person),
+    );
+    if (!row) throw new Error(`no connection for ${person}`);
+    return [...row.querySelectorAll("td")].map(
+      (cell) => cell.textContent?.trim() ?? "",
+    );
+  }
 
+  /** Press the open confirmation's button. */
+  async function confirm(label: string) {
+    const dialog = document.body.querySelector(
+      '[role="alertdialog"], [role="dialog"]',
+    )!;
+    await press(
+      [...dialog.querySelectorAll("button")].find(
+        (element) => element.textContent?.trim() === label,
+      )!,
+    );
+  }
+
+  it("lists each connection with its person, the apps allowed to use it, scopes and state", async () => {
+    await render();
+    expect(connectionRow("ada@acme.com").slice(0, 5)).toEqual([
+      "ada@acme.comada",
+      "GitHub",
+      "CICRM",
+      "repo, read:user",
+      "Connected",
+    ]);
+    expect(connectionRow("bo@acme.com").slice(0, 5)).toEqual([
+      "bo@acme.combo",
+      "GitHub",
+      "none",
+      "no scopes",
+      "Expired",
+    ]);
+    expect(body()).not.toMatch(/organization's|background|each app/i);
+  });
+
+  it("takes one app's access away by the connection's id and the app's row id, then lists again", async () => {
+    mocks.removeConnectionApp.mockResolvedValue({ ok: true });
+    await render();
     await press(
       container.querySelector<HTMLButtonElement>(
-        `table button[aria-label="Actions for bo@acme.com's GitHub connection in CI"]`,
+        `table button[aria-label="Remove CRM's access"]`,
+      )!,
+    );
+    expect(body()).toContain("Remove CRM's access to ada@acme.com's GitHub?");
+    expect(mocks.removeConnectionApp).not.toHaveBeenCalled();
+    await confirm("Remove access");
+    expect(mocks.removeConnectionApp).toHaveBeenCalledOnce();
+    expect(mocks.removeConnectionApp.mock.calls[0]![0]).toEqual({
+      data: { connectionId: "conn_1", appRowId: "app_crm" },
+    });
+    expect(mocks.disconnectConnection).not.toHaveBeenCalled();
+    expect(mocks.listAllConnections).toHaveBeenCalledTimes(2);
+  });
+
+  it("disconnects one by its id, and says every app stops", async () => {
+    mocks.disconnectConnection.mockResolvedValue({ ok: true, revoked: true });
+    await render();
+    await press(
+      container.querySelector<HTMLButtonElement>(
+        `table button[aria-label="Actions for bo@acme.com's GitHub connection"]`,
       )!,
     );
     const disconnect = [...document.querySelectorAll('[role="menuitem"]')].find(
       (element) => element.textContent?.includes("Disconnect"),
     ) as HTMLElement;
     await press(disconnect);
-    expect(body()).toContain("Disconnect bo@acme.com's GitHub from CI?");
-    const dialog = document.body.querySelector(
-      '[role="alertdialog"], [role="dialog"]',
-    )!;
-    await press(
-      [...dialog.querySelectorAll("button")].find(
-        (element) => element.textContent?.trim() === "Disconnect",
-      )!,
+    expect(body()).toContain("Disconnect bo@acme.com's GitHub?");
+    expect(body()).toContain(
+      "Every app stops using this person's account at once.",
     );
+    await confirm("Disconnect");
     expect(mocks.disconnectConnection.mock.calls[0]![0]).toEqual({
       data: { connectionId: "conn_2" },
     });
+    expect(mocks.removeConnectionApp).not.toHaveBeenCalled();
   });
 });
 
@@ -530,15 +607,15 @@ describe("rows this build can't fully read", () => {
     });
     await render();
     expect(body()).not.toContain("Something went wrong");
-    expect(rowNames("Set up")).toEqual(["GitHub"]);
-    expect(body()).toContain("2 more built in: APIs");
+    expect(rowNames()).toEqual(["GitHub"]);
+    expect(body()).toContain("2 more providers available");
     await showAll();
     const table = container.querySelector("table")!.textContent ?? "";
     expect(table).toContain("Exa");
     expect(table).toContain("DataForSEO");
   });
 
-  it("shows a row that fails to render as its name and a line, and the rest of the page as usual", async () => {
+  it("shows a row that fails to render with its name and a line where a cell failed, and the rest of the page as usual", async () => {
     const broken = { ...google, id: "broken", name: "Broken", oauth: {} };
     mocks.listProviders.mockResolvedValue({
       providers: [openrouter, broken, dataforseo],
@@ -546,10 +623,8 @@ describe("rows this build can't fully read", () => {
     const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
     await render();
     quiet.mockRestore();
-    expect(rowNames("Set up")).toEqual(["OpenRouter", "Broken"]);
-    expect(group("Set up")!.textContent).toContain(
-      "Couldn't show this provider",
-    );
-    expect(rowNames("Needed by an app")).toEqual(["DataForSEO"]);
+    expect(rowNames()).toEqual(["OpenRouter", "Broken", "DataForSEO"]);
+    expect(providerRow("Broken").textContent).toContain("Couldn't show this");
+    expect(cells("DataForSEO")[3]).toBe("Needs setup");
   });
 });

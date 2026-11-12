@@ -643,8 +643,9 @@ interface ConnectionStatus {
 /**
  * `GET /api/integrations/<id>` for an OAuth provider: whether the app
  * lists it, whether a client is live, the scopes it declares, where a
- * person connects in this app, and the connection of the person behind
- * the request (null without one). Only an app that lists the provider
+ * person connects or allows this app, and the connection of the person
+ * behind the request (null without one, or while they haven't allowed
+ * this app to use theirs). Only an app that lists the provider
  * learns whether a client is held. Never a token or the client.
  */
 async function oauthStatus({
@@ -682,16 +683,28 @@ async function oauthStatus({
   if (requested && oauth?.app?.rowId) {
     try {
       const who = await oauth.identify();
-      const found = who?.user
-        ? await oauth.connections.find({
+      const owner = who?.user
+        ? {
             organizationId: who.organizationId,
             providerId: id,
             userId: who.user.id,
-            appRowId: oauth.app.rowId,
-          })
+          }
         : null;
-      if (found) {
-        const missing = missingScopes(capability.flow, found.scopes, declared);
+      const found = owner ? await oauth.connections.find(owner) : null;
+      // A connection the person hasn't allowed this app to use is, to the
+      // app, no connection: its Connect leads to the Gateway's Allow page.
+      const allowed =
+        owner && found
+          ? await oauth.connections.allowedScopes({
+              ...owner,
+              appRowId: oauth.app.rowId,
+            })
+          : null;
+      if (found && allowed) {
+        const missing = [
+          ...missingScopes(capability.flow, found.scopes, declared),
+          ...missingScopes(capability.flow, allowed, declared),
+        ].filter((scope, index, all) => all.indexOf(scope) === index);
         const reconnect = found.status === "expired" || missing.length > 0;
         connection = {
           label: found.label,

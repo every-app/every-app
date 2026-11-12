@@ -2,7 +2,8 @@
  * The provider tools: the API provider registry
  * (docs/design/2026-10-provider-registry.md, section 8) and the OAuth
  * providers people connect their accounts to
- * (docs/design/2026-10-oauth-providers.md, section 9) on the gateway's own
+ * (docs/design/2026-10-oauth-providers.md, section 9;
+ * docs/design/2026-11-oauth-one-connection.md) on the gateway's own
  * /mcp, under `everyapp_provider_*`, beside the workspace tools and run
  * the same way (kind `host`, `ToolBusDeps.workspace`).
  *
@@ -21,10 +22,11 @@
  *
  * `everyapp_provider_connections` lists the caller's own connections to
  * OAuth providers (every member) or the whole organization's (owners and
- * admins, `all: true`), each one person's in one app;
- * `everyapp_provider_disconnect` removes the caller's own, or any for
- * owners and admins, revoking the grant at the provider where the spec
- * knows how. Neither carries a token.
+ * admins, `all: true`), each one person's to one provider, with the apps
+ * that person allowed to use it; `everyapp_provider_disconnect` removes
+ * the caller's own, or any for owners and admins, revoking the grant at
+ * the provider where the spec knows how, or with `app` takes that one
+ * app's access away and leaves the connection. Neither carries a token.
  */
 import type { WorkspaceToolDefinition } from "./workspace";
 
@@ -56,7 +58,7 @@ export const PROVIDER_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "provider_add",
     title: "Register an API provider",
     description:
-      "Register a provider on this Gateway: an API provider from its spec `{ id, name, docs, hosts, auth: { kind: bearer | header | query | basic, secret: SETTING_NAME, … }, hint?, secrets?, access?, writeMethods?, accountWidePaths?, data?, smoke?, cost?, rate? }`, an OAuth provider from a spec with `auth: { kind: oauth2-user, authorizeUrl, tokenUrl, clientId: SETTING_NAME, clientSecret?: SETTING_NAME, … }` (no scopes: each app lists its own), or an OAuth preset by id (`{ preset: \"google-workspace\" }`; `everyapp_provider_list` names them; deploying an app that lists a preset registers it too). A spec names its settings and never carries a value: a client id or secret is set from the terminal (`everyapp secret set NAME`) or pasted under Admin → Providers, never through a tool. The id must not be a built-in provider's, its settings must start with its own id (`STRIPE_` for `stripe`) and be nobody else's, and its hosts must be the provider's own public https hosts. A spec whose id is registered already is refused: this tool never replaces a row (`everyapp provider add --replace` from the terminal does); a preset registered already is answered as it is. For an OAuth provider the answer carries the redirect URI to register at the provider's console and where people connect. Owners and admins, on a self-hosted Gateway.",
+      "Register a provider on this Gateway: an API provider from its spec `{ id, name, docs, hosts, auth: { kind: bearer | header | query | basic, secret: SETTING_NAME, … }, hint?, secrets?, access?, writeMethods?, accountWidePaths?, data?, smoke?, cost?, rate? }`, an OAuth provider from a spec with `auth: { kind: oauth2-user, authorizeUrl, tokenUrl, clientId: SETTING_NAME, clientSecret?: SETTING_NAME, … }` (no scopes: each app lists its own), or an OAuth preset by id (`{ preset: \"google-workspace\" }`; `everyapp_provider_list` names them; deploying an app that lists a preset registers it too). A spec names its settings and never carries a value: a client id or secret is set from the terminal (`everyapp secret set NAME`) or pasted under Admin → Providers, never through a tool. The id must not be a built-in provider's, its settings must start with its own id (`STRIPE_` for `stripe`) and be nobody else's, and its hosts must be the provider's own public https hosts. A spec whose id is registered already is refused: this tool never replaces a row (`everyapp provider add --replace` from the terminal does); a preset registered already is answered as it is. For an OAuth provider the answer carries the redirect URI to register at the provider's console; each person then connects once, from inside an app that lists it. Owners and admins, on a self-hosted Gateway.",
     inputSchema: {
       type: "object",
       properties: {
@@ -105,7 +107,7 @@ export const PROVIDER_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "provider_connections",
     title: "List connected accounts",
     description:
-      "List the accounts connected to OAuth providers on this Gateway: the caller's own (any member), or with `all: true` every connection in the organization (owners and admins). A connection is one person's in one app. Each with the provider, the person, the app, the account's label at the provider, the scopes it holds, its status (active, or expired: the provider refused a refresh and the person connects again in the app) and when it was last used. Never a token. People connect inside each app; there is no tool for that.",
+      "List the accounts connected to OAuth providers on this Gateway: the caller's own (any member), or with `all: true` every connection in the organization (owners and admins). A connection is one person's to one provider, used by the apps that person allowed. Each with the provider, the person, the apps allowed to use it (`apps`), the account's label at the provider, the scopes it holds, its status (active, or expired: the provider refused a refresh and the person connects again from inside an app that uses it) and when it was last used. Never a token. A person connects once, from inside an app that lists the provider, and allows each other app on the Gateway's own page; there is no tool for either.",
     inputSchema: {
       type: "object",
       properties: {
@@ -128,30 +130,30 @@ export const PROVIDER_TOOLS: readonly WorkspaceToolDefinition[] = [
     risk: "write",
     minRole: "member",
     name: "provider_disconnect",
-    title: "Disconnect an account",
+    title: "Disconnect an account, or one app from it",
     description:
-      "Remove a connection to an OAuth provider: the caller's own (any member), or for owners and admins another person's (`user`: their email or user id). Name it by `connection` (its id, from everyapp_provider_connections), or by `provider` with `app` when the person connected it in more than one app. The Gateway drops the tokens it held and revokes the grant at the provider where the spec knows how (`revoked` says whether it did); the app gets `integration_not_connected` until the person connects again in it.",
+      "Remove a connection to an OAuth provider, or with `app` take that one app's access to it away: the caller's own (any member), or for owners and admins another person's (`user`: their email or user id). Name the connection by `connection` (its id, from everyapp_provider_connections) or by `provider`. Without `app`, the Gateway drops the tokens it held and revokes the grant at the provider where the spec knows how (`revoked` says whether it did); every app the person allowed gets `integration_not_connected` until they connect again. With `app`, the connection stays for the other apps and nothing is revoked; that app gets `integration_not_connected` until the person allows it again.",
     inputSchema: {
       type: "object",
       properties: {
         provider: {
           type: "string",
           description:
-            "The OAuth provider's id, as everyapp_provider_list lists it (with user and app, instead of connection).",
+            "The OAuth provider's id, as everyapp_provider_list lists it (with user, instead of connection).",
           minLength: 2,
           maxLength: PROVIDER_ID_MAX,
         },
         app: {
           type: "string",
           description:
-            "The app the connection belongs to, by its id (needed only when the person connected the provider in more than one app).",
+            "An app allowed to use the connection, by its id (everyapp_provider_connections lists them under `apps`): take this app's access away and leave the connection. Leave it out to remove the connection.",
           minLength: 1,
           maxLength: 128,
         },
         connection: {
           type: "string",
           description:
-            "The connection's id, as everyapp_provider_connections lists it (instead of provider, user and app).",
+            "The connection's id, as everyapp_provider_connections lists it (instead of provider and user).",
           minLength: 1,
           maxLength: 128,
         },

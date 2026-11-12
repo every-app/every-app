@@ -924,6 +924,12 @@ describe("mcp show", () => {
 VALUES ('c1', ?, 'o-mcp', 'u-ada', (SELECT id FROM apps WHERE app_slug = 'o'), 'Ada', '[]', 'sealed-token', 'active', 0, 0)`,
         params: [String(org!["organization_id"])],
       },
+      // Connecting from inside the app allowed it.
+      {
+        sql: `INSERT INTO provider_app_access (organization_id, provider_id, user_id, app_row_id, scopes, created_at, updated_at)
+VALUES (?, 'o-mcp', 'u-ada', (SELECT id FROM apps WHERE app_slug = 'o'), '[]', 0, 0)`,
+        params: [String(org!["organization_id"])],
+      },
     ]);
     events = [];
     await showApp(options(), "o");

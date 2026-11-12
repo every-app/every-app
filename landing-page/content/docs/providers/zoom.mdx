@@ -10,7 +10,7 @@ The person's meetings and recordings.
 
 ## Connect accounts
 
-Each person connects their own Zoom account in each app that uses it, for the scopes that app lists. Apps never see the tokens. [How connecting works](/docs/connect-oauth)
+Each person connects their own Zoom account once, then allows each app that uses it. Apps never see the tokens. [How connecting works](/docs/connect-oauth)
 
 The redirect URI to register, with your Gateway's address (like `apps.example.com`):
 
@@ -42,7 +42,7 @@ capabilities: {
 },
 ```
 
-Use [Zoom's scopes](https://developers.zoom.us/docs/integrations/oauth-scopes-overview/). The Gateway adds `user:read:user` itself; don't list them. The app calls Zoom's API with `integrationFetch()`, and the Gateway adds the person's token. A token with more scopes than the app lists is refused.
+Use [Zoom's scopes](https://developers.zoom.us/docs/integrations/oauth-scopes-overview/). The Gateway adds `user:read:user` itself; don't list them. The app calls Zoom's API with `integrationFetch()`, and the Gateway adds the person's token. A token with more scopes than your apps list is refused.
 
 **Check it worked:** `everyapp provider show zoom` shows the client as set. Then open an app that lists it and select its **Connect** button.
 

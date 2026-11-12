@@ -21,9 +21,10 @@ import { attributionFromContext } from "./context.js";
  *    leave it out (the gateway knows its organization) and may only name
  *    its own.
  *  - `{ background: true, organizationId, userId }`: a call to an OAuth
- *    provider's API (`integrationFetch`) on the connection member `userId`
- *    made in this app, at any time, even while serving another person's
- *    request: the call carries that member (`x-everyapp-user`) and never
+ *    provider's API (`integrationFetch`) on member `userId`'s connection,
+ *    which they allowed this app to use, at any time, even while serving
+ *    another person's request: the call carries that member
+ *    (`x-everyapp-user`) and never
  *    the identity of the person being served. Only an organization's own
  *    app may name a member, and only one who may still open the app. No
  *    identity for the member reaches the app. Other gateway calls ignore

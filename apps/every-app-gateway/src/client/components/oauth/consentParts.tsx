@@ -5,20 +5,134 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import { CheckIcon, User } from "lucide-react";
+import { ArrowLeftRight, BadgeCheck, CheckIcon, User } from "lucide-react";
 import { cn } from "cn";
 import { CONSENT_FIELDS } from "@/schemas/consent-decision";
+import { Badge } from "@/client/components/ui/badge";
 import { Button, buttonVariants } from "@/client/components/ui/button";
+import { Card, CardContent } from "@/client/components/ui/card";
 import { Spinner } from "@/client/components/ui/spinner";
 
-/** What the consent pages show in place of a client's logo, never loaded. */
-export function initials(name: string): string {
+function initials(name: string): string {
   const letters = name
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
     .map((word) => word[0]?.toUpperCase() ?? "");
   return letters.join("") || "?";
+}
+
+/** What the consent pages show in place of a client's logo, never loaded. */
+export function InitialsTile({
+  name,
+  className,
+}: {
+  name: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "grid size-12 shrink-0 place-items-center rounded-xl bg-primary/10 text-base font-semibold text-primary",
+        className,
+      )}
+    >
+      {initials(name)}
+    </div>
+  );
+}
+
+/** The one card a consent page is, with more room around it from a tablet up. */
+export function ConsentCard({ children }: { children: ReactNode }) {
+  return (
+    <Card className="sm:[--card-spacing:--spacing(8)]">
+      <CardContent className="space-y-6">{children}</CardContent>
+    </Card>
+  );
+}
+
+/**
+ * A box of ConsentRows inside the card: the account an app would use, where
+ * access goes, what to choose. Two columns: the labels, as wide as the
+ * longest one, and the rest, where every control is one width, so the
+ * controls share both edges whatever they hold.
+ */
+export function ConsentBox({ children }: { children: ReactNode }) {
+  return (
+    <div className="@container">
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 rounded-lg border border-border bg-muted/50 px-3 py-3 text-sm sm:px-4">
+        {children}
+      </dl>
+    </div>
+  );
+}
+
+/**
+ * The top of a consent page: who asks (`from`) and what it would reach
+ * (`to`), each a 48px tile, the question, and one line under it.
+ */
+export function ConsentHeader({
+  from,
+  to,
+  title,
+  children,
+}: {
+  from: ReactNode;
+  to: ReactNode;
+  title: string;
+  children?: ReactNode;
+}) {
+  return (
+    <header className="flex flex-col items-center text-center">
+      <div aria-hidden className="flex items-center gap-3">
+        {from}
+        <ArrowLeftRight className="size-4 text-muted-foreground" />
+        {to}
+      </div>
+      <h1
+        className="mt-4 line-clamp-3 text-xl font-semibold text-balance break-words"
+        title={title}
+      >
+        {title}
+      </h1>
+      {children}
+    </header>
+  );
+}
+
+/**
+ * Under a consent page's title, who vouches for the client's name: the
+ * domain that publishes its details, when that domain covers where it sends
+ * access (`verified`), or nobody, for a client that registered itself.
+ * Nothing for a domain that doesn't cover it: the page warns about that.
+ */
+export function ClientPublisher({
+  domain,
+  verified,
+}: {
+  domain: string | null;
+  verified: boolean;
+}) {
+  if (verified) {
+    return (
+      <p className="mt-2 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+        <BadgeCheck className="size-4 shrink-0 text-success" />
+        <span>
+          Published by{" "}
+          <strong className="font-medium text-foreground">{domain}</strong>
+        </span>
+      </p>
+    );
+  }
+  if (domain) return null;
+  return (
+    <p className="mt-2 text-sm text-balance text-muted-foreground">
+      <Badge variant="outline" size="sm" className="mr-1.5 align-middle">
+        Unverified
+      </Badge>
+      Continue if you trust this application.
+    </p>
+  );
 }
 
 /**
@@ -58,16 +172,14 @@ export function DecisionButtons({
   // drops out of what is sent, and with it the decision.
   const sendingClassName = sending ? "pointer-events-none opacity-50" : "";
   return (
-    <div className="flex gap-2 pt-2">
+    // Allow sits on top, but the decline button comes first in the form, so
+    // it stays the default button: the one an Enter outside a button presses.
+    <div className="flex flex-col-reverse gap-2">
       <button
         type="submit"
         name={CONSENT_FIELDS.decision}
         value="deny"
-        className={cn(
-          buttonVariants({ variant: "ghost" }),
-          "flex-1",
-          sendingClassName,
-        )}
+        className={cn(buttonVariants({ variant: "outline" }), sendingClassName)}
         aria-disabled={sending}
       >
         {sentDecision === "deny" ? <Spinner data-icon="inline-start" /> : null}
@@ -77,7 +189,7 @@ export function DecisionButtons({
         type="submit"
         name={CONSENT_FIELDS.decision}
         value="approve"
-        className={cn(buttonVariants(), "flex-1", sendingClassName)}
+        className={cn(buttonVariants(), sendingClassName)}
         aria-disabled={sending}
         disabled={!canAllow}
       >
@@ -90,7 +202,7 @@ export function DecisionButtons({
   );
 }
 
-/** "Signed in as", with the way to switch accounts. */
+/** Who is signed in, with the way to switch accounts. */
 export function SignedInRow({
   email,
   onSwitchAccount,
@@ -99,40 +211,125 @@ export function SignedInRow({
   onSwitchAccount: () => void;
 }) {
   return (
-    // On a phone the button goes under the address, which must stay readable.
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
-      <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted">
+    <div className="flex items-center gap-3 text-sm">
+      <div
+        aria-hidden
+        className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted/50"
+      >
         <User className="size-4" />
       </div>
-      <div className="min-w-0 flex-1 basis-40">
-        <div className="text-xs text-muted-foreground">Signed in as</div>
-        <div className="truncate font-medium">{email}</div>
+      {/* One line on any screen: an address too long for it ends in an ellipsis. */}
+      <div className="min-w-0 flex-1 truncate font-medium" title={email}>
+        {email}
       </div>
       <Button
         type="button"
-        variant="ghost"
-        size="xs"
-        className="ml-10 sm:ml-0"
+        variant="link"
+        className="h-auto p-0"
         onClick={onSwitchAccount}
       >
-        Use another account
+        Switch account
       </Button>
     </div>
   );
 }
 
 /**
- * A radio or checkbox with its label. Native inputs styled like the shadcn
- * ones, not Base UI's: the form posts natively, so each choice must be a real
+ * One row of a ConsentBox: a label, and beside it a fact, set at the row's
+ * end, or a `control`. Every control in a box is the same width: its whole
+ * column on a phone, 200px at the row's end from a tablet up. In a box too
+ * narrow for a control beside its label (a small phone), the control goes
+ * under it. `htmlFor` is the id of the control the label names.
+ */
+export function ConsentRow({
+  label,
+  htmlFor,
+  control = false,
+  children,
+}: {
+  label: string;
+  htmlFor?: string;
+  control?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "col-span-2 grid items-baseline gap-y-1.5",
+        control ? "@xs:grid-cols-subgrid" : "grid-cols-subgrid",
+      )}
+    >
+      <dt className="text-muted-foreground">
+        {htmlFor ? <label htmlFor={htmlFor}>{label}</label> : label}
+      </dt>
+      <dd
+        className={cn(
+          "min-w-0 font-medium",
+          control ? "sm:w-50 sm:justify-self-end" : "text-right wrap-anywhere",
+        )}
+      >
+        {children}
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * A choice between a few short options, side by side in equal parts of the
+ * space it is given. Native radios drawn as one control, not Base UI's
+ * toggle group: the form posts natively, so each option must be a real
  * input with its own name and value.
  */
-export function Choice({
-  type,
+export function Segmented<TValue extends string>({
+  label,
+  name,
+  options,
+  defaultValue,
+  onChange,
+}: {
+  /** What is being chosen, for a screen reader. */
+  label: string;
+  name: string;
+  options: readonly { value: TValue; label: string }[];
+  defaultValue: TValue;
+  onChange?: (value: TValue) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="grid h-8 auto-cols-fr grid-flow-col rounded-lg border border-input bg-card p-0.5 dark:bg-input/30"
+    >
+      {options.map((option) => (
+        <label
+          key={option.value}
+          className="flex cursor-pointer items-center justify-center rounded-md px-1 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors has-checked:bg-foreground/10 has-checked:text-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
+        >
+          <input
+            type="radio"
+            className="sr-only"
+            name={name}
+            value={option.value}
+            defaultChecked={option.value === defaultValue}
+            onChange={() => onChange?.(option.value)}
+          />
+          {option.label}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A checkbox with its label. A native input styled like the shadcn one, not
+ * Base UI's: the form posts natively, so each choice must be a real input
+ * with its own name and value.
+ */
+export function NativeCheckbox({
   hint,
   children,
   ...props
 }: Omit<ComponentProps<"input">, "type" | "className"> & {
-  type: "radio" | "checkbox";
   hint?: string;
   children: ReactNode;
 }) {
@@ -140,24 +337,14 @@ export function Choice({
     <label className="flex w-fit cursor-pointer items-center gap-2.5 text-sm has-disabled:cursor-not-allowed has-disabled:opacity-50">
       <span className="relative grid size-4 shrink-0 place-items-center">
         <input
-          type={type}
-          className={cn(
-            "peer size-4 cursor-pointer appearance-none border border-input outline-none transition-colors checked:border-primary checked:bg-primary focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed dark:bg-input/30 dark:checked:bg-primary",
-            type === "radio" ? "rounded-full" : "rounded-[4px]",
-          )}
+          type="checkbox"
+          className="peer size-4 cursor-pointer appearance-none rounded-[4px] border border-input outline-none transition-colors checked:border-primary checked:bg-primary focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed dark:bg-input/30 dark:checked:bg-primary"
           {...props}
         />
-        {type === "radio" ? (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute size-2 rounded-full bg-primary-foreground opacity-0 peer-checked:opacity-100"
-          />
-        ) : (
-          <CheckIcon
-            aria-hidden
-            className="pointer-events-none absolute size-3.5 text-primary-foreground opacity-0 peer-checked:opacity-100"
-          />
-        )}
+        <CheckIcon
+          aria-hidden
+          className="pointer-events-none absolute size-3.5 text-primary-foreground opacity-0 peer-checked:opacity-100"
+        />
       </span>
       <span>{children}</span>
       {hint ? (

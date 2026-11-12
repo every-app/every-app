@@ -58,7 +58,7 @@ The native sign-in branch already makes the Gateway's OAuth server issue tokens 
 | scope | `*` | `*` (ignored by the endpoint: the resource binds everything) |
 | consent page | "wants to use OpenZen as you" | "everyapp dev on this computer wants to use OpenZen's AI, email, providers and members **as you** while you develop. Calls bill this workspace. Data stays on your computer." |
 | lifetimes | 1 h access, 30 d sliding refresh | same (question 2 in TODO) |
-| listed under | Settings → Connections, "Apps on your devices" | same table, labelled "Linked dev", revocable there |
+| listed under | Your connections, "Apps on your devices" | same table, labelled "Linked dev", revocable there |
 
 The CLI's flow (`packages/cli/src/lib/linkedDev/`): discover `/.well-known/oauth-authorization-server`, register once per gateway (client id kept beside the token), bind a free loopback port, open the browser (`open`), exchange the code with PKCE, store `{ gateway, appId, clientId, refreshToken, accessToken, expiresAt }` in `~/.config/everyapp/linked-dev.json` (mode 0600, one entry per gateway + app). On a terminal with no browser it prints the URL. `everyapp dev unlink [--gateway]` revokes (RFC 7009) and forgets.
 
@@ -113,7 +113,7 @@ Unchanged. There is **no** endpoint that returns a secret value, for the app's s
 
 | Threat | Answer |
 | --- | --- |
-| **Stolen token** (laptop, disk) | Audience is one app's linked-dev resource: it opens no app host, not `/mcp`, no control plane. What it can do: spend on that app's allowed providers as that person, send email as the app from its registered senders, read that app's members, emit that app's events. Access token 1 h; refresh revocable under Settings → Connections; `everyapp dev unlink`; rate-limited; every day of use is an audit event naming the client. File is 0600. |
+| **Stolen token** (laptop, disk) | Audience is one app's linked-dev resource: it opens no app host, not `/mcp`, no control plane. What it can do: spend on that app's allowed providers as that person, send email as the app from its registered senders, read that app's members, emit that app's events. Access token 1 h; refresh revocable under Your connections; `everyapp dev unlink`; rate-limited; every day of use is an audit event naming the client. File is 0600. |
 | **Spend** | Real: counted against the organization and the app, under the organization's monthly caps as production calls; rate-limited per connection; usage tagged dev. |
 | **A page on the laptop calling the loopback forwarder** | Browser markers refused (Sec-Fetch, Origin, Referer); custom header required (no simple cross-origin request can send it); run nonce. |
 | **The dev identity JWT reaching production** | Stripped by the gateway-lite; the endpoint never calls `attributeCall` and never verifies an identity header: attribution is the token's. |
@@ -161,6 +161,6 @@ Where the code departs from the sections above, and what it pinned:
 - **Usage rows carry no `source` column** (TODO question 3): dev calls count as the app's, under the organization's caps, with the audit event and the per-call log line telling them apart. Built once Ben answers.
 - **Mode selection**: `--gateway` with a host that isn't this machine selects `linked`; `--mode linked` says it; mirror keeps the loopback default. `dev link` and `dev unlink` sign in and out without running the app.
 - **The CLI forgets a refused token** (a 401 from `whoami`, or `invalid_grant` at refresh) so the next run signs in again rather than retrying forever.
-- **The consent page** reuses the native variant with its own copy ("wants to develop <app> as you … calls bill <workspace>'s providers … data stays on your computer"); Settings → Connections lists the row under "Apps on your devices" with "Linked dev" in place of the host.
+- **The consent page** reuses the native variant with its own copy ("wants to develop <app> as you … calls bill <workspace>'s providers … data stays on your computer"); Your connections lists the row under "Apps on your devices" with "Linked dev" in place of the host.
 - **Shared apps are out** (TODO question 5): `devGrantFor` offers only organizations that own the app, and the route refuses a shared row.
 - Pinned: `apps/every-app-gateway/src/server/mcp-auth/linked-dev.e2e.sqlite.test.ts` (13 cases through the real worker entry), `packages/cli/src/commands/dev/linked.test.ts`, `index.test.ts` (a whole linked run with a fake Gateway), `packages/cli/src/lib/linkedDev/*.test.ts`, `packages/sdk/src/server/gatewayFetch.test.ts`, `packages/sdk/src/cloudflare/worker.test.ts`, `packages/cli/src/commands/workspace/index.test.ts`.

@@ -102,7 +102,7 @@ export interface McpPrincipal {
   /**
    * Which apps the credential reaches: every app the person can use
    * (`all`, the default), or only some (`selected`: a personal token bound
-   * to one app, an OAuth connection consented to "Only these apps"). A
+   * to one app, an OAuth connection consented to "Selected" apps). A
    * credential narrowed to apps administers nothing: the workspace tools
    * are hidden from it (policy.ts, reason `app_scoped_credential`), since
    * whoever holds a crm-only token expects it to reach crm alone.

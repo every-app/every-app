@@ -1,6 +1,6 @@
 ---
 title: "API providers: the registry and the catalog"
-description: "What an API provider is, the built-in catalog and the providers a Gateway registers, how an app lists and calls one, the spec's fields, OAuth providers people connect in an app, and the everyapp provider commands."
+description: "What an API provider is, the built-in catalog and the providers a Gateway registers, how an app lists and calls one, the spec's fields, OAuth providers a person connects once and allows each app to use, and the everyapp provider commands."
 ---
 
 An **API provider** is an API the Gateway holds a key (or an OAuth client) for and brokers calls to: DataForSEO, Stripe, Google. An app lists it in `everyapp.config.ts` and calls the provider's real URLs; the Gateway adds the credential, so the app never holds it. One key per Gateway serves every app. Providers come from two places:
@@ -8,7 +8,7 @@ An **API provider** is an API the Gateway holds a key (or an OAuth client) for a
 - the **built-in catalog** in the SDK (the table at the end), and
 - a Gateway's own **rows**, registered with `everyapp provider add <spec>` for an API the catalog lacks. A row never shadows a catalog id. Every OAuth provider is a row, most written from a preset when an app that lists it deploys.
 
-Kinds: `api_key` (the Gateway puts the key on calls to the provider's hosts; listed under `capabilities`), `ai` (an OpenAI-compatible model provider behind the AI proxy; listed under `providers`, see [ai](/docs/agent/ai)), `oauth_client` (people connect their own account in each app; `capabilities` with `scopes`), and `service` (`email`, `members`: the Gateway does the work).
+Kinds: `api_key` (the Gateway puts the key on calls to the provider's hosts; listed under `capabilities`), `ai` (an OpenAI-compatible model provider behind the AI proxy; listed under `providers`, see [ai](/docs/agent/ai)), `oauth_client` (each person connects their own account once and allows each app to use it; `capabilities` with `scopes`), and `service` (`email`, `members`: the Gateway does the work).
 
 ## How an app lists one
 
@@ -61,8 +61,19 @@ For APIs that act on a person's own account (Google, Microsoft 365, Slack, GitHu
 
 1. The provider is a registered row. Deploying or installing an app that lists a preset's id (`google-workspace`, `github-oauth`) writes its row; an owner or admin can add it first with `everyapp provider add github-oauth`, which prints the redirect URI (`https://<gateway>/connect/<id>/callback`) to register in the provider's console and then asks for the client. Or paste it in **Manage workspace → Providers**, where the secret is sealed in D1. A client set as Worker secrets (`GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`) wins over a pasted one.
 2. The app lists the provider's own scopes it needs: `capabilities: { "github-oauth": { scopes: ["repo"], why: "…" } }`.
-3. A person connects **in that app**: the app sends them to `connectUrl({ env, provider, returnTo })`, and the provider's consent shows exactly those scopes. The connection belongs to that person and that app.
-4. The app calls the provider's URLs with `integrationFetch()`, whether the person is there or not (background work names them with `for: { background: true, userId }`). The Gateway refreshes the token and refuses any token carrying more scopes than the app lists. With no connection, or one missing a scope the app now lists, the answer is `409 integration_not_connected` with a `connectPath` to send the person to.
+3. A person connects **once, to EveryApp**. The app sends them to `connectUrl({ env, provider, returnTo })`, and the Gateway picks what happens:
+   - No connection, an expired one, or one that lacks a scope the app lists: the provider's consent, asked for every scope the organization's apps list for the provider. The callback stores the connection as that person's and allows the app the connect started in.
+   - A connection that holds what the app lists: the Gateway's own Allow page (`Allow <app> to use your <provider> account?`, with **Don't allow** and **Allow**). No trip to the provider.
+   - A connection the person already allowed the app to use: straight back to `returnTo`.
+4. The app calls the provider's URLs with `integrationFetch()`, whether the person is there or not (background work names them with `for: { background: true, userId }`). The Gateway refreshes the token. It refuses any token carrying more scopes than were asked, which is the scopes the organization's apps list. The answer is `409 integration_not_connected` with a `connectPath` to send the person to when there is no connection, when the person hasn't allowed this app, or when the app now lists a scope the connection lacks or the person hasn't allowed.
+
+An app the person hasn't allowed can't use their connection, in the foreground or the background. An app that requires an OAuth provider doesn't open for a person until they have connected it and allowed the app: opening it shows the Gateway's setup dialog with a Connect, Allow or Reconnect button. A provider an optional feature lists (`features.<id>.capabilities`) is optional and never blocks: name it in a feature when the app works without it and shows its own Connect button. A connection is never used for another person. App code and `everyapp.config.ts` are the same as before: the app's Connect button and `connectUrl()` lead to the provider or to the Allow page.
+
+What this gives up:
+
+- Allowing an app is a yes or no, not a limit on scopes. An allowed app can use every scope the connection holds, not only the ones it lists. The Allow page shows only the scopes the app lists; Your connections → Accounts lists every scope the connection holds.
+- The provider's consent lists the scopes of every app in the organization, including apps the person never opens.
+- A person has one account per provider. Connecting another account replaces the connection, and the other apps ask for access again.
 
 Presets (`everyapp provider presets`): `google-workspace`, `microsoft-365`, `slack`, `github-oauth`, `notion-oauth`, `linear-oauth`, `gitlab-oauth`, `atlassian`, `hubspot-oauth`, `zoom`, `dropbox`, `spotify`. Any other OAuth 2 API is a spec with `auth.kind: "oauth2-user"`.
 
@@ -70,7 +81,7 @@ Presets (`everyapp provider presets`): `google-workspace`, `microsoft-365`, `sla
 
 The common fields, with `hosts` the API hosts the token goes to, and an `auth` block: `authorizeUrl`, `tokenUrl`, optional `revokeUrl` and `revokeMethod`, `clientId` and optional `clientSecret` (setting names under the id's prefix), `inject` (`form` or `basic`), `pkce`, `scopeSeparator` (`space` or `comma`), `scopePrefix` (joined onto an app's short scope), `authorizeParams`, `tokenHeaders`, `identity` (`{ url, label, id? }`, to name the connection), `tolerated` (extra scopes a token may carry), `resource` (the RFC 8707 resource the tokens are for; an MCP app's own `<id>-mcp` row keeps the scopes its server grants; any other row is checked as usual) and `issuer` (the RFC 8414 issuer; a callback's `iss` must equal it).
 
-Disconnecting (the app, Connections → Accounts, Manage workspace → Providers, `everyapp provider disconnect <id> --user <email> [--app <app>]`) deletes the connection and revokes it at the provider. Removing a member, their access to an app, or the app deletes the connections too. `everyapp provider connections [--user] [--provider] [--app] [--all]` lists who connected what, never a token.
+Disconnecting (Your connections → Accounts, Manage workspace → Providers, `everyapp provider disconnect <id> --user <email>`, `everyapp_provider_disconnect`) deletes the connection, and every app stops using it at once. The Gateway's UI and the tool also revoke it at the provider, when the spec has a `revokeUrl`. The CLI holds no token, so after its disconnect the grant stays at the provider. With `--app <app>` (the tool's `app`), only that app's access goes and the connection stays. Removing a member or the provider deletes the connections. A member losing an app, or the app being deleted, removes only that app's access. `everyapp provider connections [--user] [--provider] [--app] [--all]` lists one row per person per provider with the apps allowed to use it, never a token. `--app` narrows it to the connections one app may use.
 
 ## Rows `mcp add` writes
 
@@ -98,6 +109,7 @@ everyapp provider remove stripe [--force]
 everyapp provider presets
 everyapp provider connections
 everyapp provider disconnect github-oauth --user ben@example.com
+everyapp provider disconnect google-workspace --user ben@example.com --app openmail   # only OpenMail's access
 ```
 
 Keys can also be set alone with `everyapp secret set STRIPE_API_KEY`. `--from-env` reads them from the environment, and piped `NAME=value` lines work. From an AI client: [the provider tools](/docs/agent/mcp#provider-tools).
@@ -174,7 +186,7 @@ The built-in catalog has 58 providers (49 API-key, 9 AI) and 12 OAuth presets. W
 | `groq` | Groq | `ai` | `GROQ_API_KEY` | `api.groq.com` | `Authorization: Bearer <GROQ_API_KEY>` |
 | `cohere` | Cohere | `ai` | `COHERE_API_KEY` | `api.cohere.com` | `Authorization: Bearer <COHERE_API_KEY>` |
 
-OAuth presets (`oauth_client`: registered when an app that lists one is deployed; the Gateway runs the flow; a person connects in each app, for the provider scopes that app lists): `google-workspace`, `microsoft-365`, `slack`, `github-oauth`, `notion-oauth`, `linear-oauth`, `gitlab-oauth`, `atlassian`, `hubspot-oauth`, `zoom`, `dropbox`, `spotify`. Their consoles and redirect URIs are on [the provider pages](/docs/providers). Gateway services (`service`: no host, no spec): `email`, `members`.
+OAuth presets (`oauth_client`: registered when an app that lists one is deployed; the Gateway runs the flow; a person connects once, for the provider scopes their organization's apps list, and allows each app that uses it): `google-workspace`, `microsoft-365`, `slack`, `github-oauth`, `notion-oauth`, `linear-oauth`, `gitlab-oauth`, `atlassian`, `hubspot-oauth`, `zoom`, `dropbox`, `spotify`. Their consoles and redirect URIs are on [the provider pages](/docs/providers). Gateway services (`service`: no host, no spec): `email`, `members`.
 
 <!-- providers-catalog:end -->
 <!-- prettier-ignore-end -->

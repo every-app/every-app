@@ -1,15 +1,19 @@
 /**
  * The OAuth side of `everyapp provider`
- * (docs/design/2026-11-oauth-simplify.md): `add --oauth` registers a
+ * (docs/design/2026-11-oauth-simplify.md,
+ * docs/design/2026-11-oauth-one-connection.md): `add --oauth` registers a
  * preset or a spec file and can set its client in the same run; `presets`
  * lists what the picker offers; `connections` and
  * `disconnect` read and delete the connections the Gateway holds in D1,
- * each one person's in one app, for the scopes that app lists.
+ * each one person's to one provider, with the apps that person allowed to
+ * use it.
  *
  * The CLI uploads a client as Worker secrets (`secret set`, which binds
  * the row), never as the sealed D1 row Admin → Providers writes: the key
  * that opens the D1 row lives in the Worker. It holds no token either, so
- * `disconnect` deletes the connection and says where to revoke the grant.
+ * `disconnect` deletes the connection and says where to revoke the grant;
+ * with `--app` it takes that one app's access away and leaves the
+ * connection.
  */
 import { stripVTControlCharacters } from "node:util";
 import {
@@ -34,6 +38,7 @@ import {
   gatewayRegistry,
   listConnections,
   readUploadedClients,
+  removeAppAccess,
   removeConnections,
   type ProviderConnection,
   type UploadedClient,
@@ -393,16 +398,16 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
   const result = set
     ? [`Apps can now list ${id}. Live now, no deploy needed.`]
     : client === "env"
-      ? [`Its client is set. Apps can list ${id}; people connect inside each app.`]
+      ? [`Its client is set. Apps can list ${id}; each person connects once, from inside an app.`]
       : client === "uploaded"
-        ? [`Its client was uploaded under Admin → Providers. Apps can list ${id}; people connect inside each app.`]
+        ? [`Its client was uploaded under Admin → Providers. Apps can list ${id}; each person connects once, from inside an app.`]
         : [];
   // The manifest entry is the docs page's and provider show's; --verbose prints it here too.
   const rules = scopeRulesOf(capability);
   const extra = [
     `In an app's capabilities: { ${JSON.stringify(id)}: { scopes: [<${capability.label}'s own scopes>], why: "..." } }`,
     `Scopes: ${describeScopeRules(rules)}${rules.reference ? ` (${rules.reference})` : ""}.`,
-    "People connect in each app that lists it, for the scopes that app lists.",
+    "Each person connects once, for the scopes of every app that lists it, and allows each app to use it.",
   ];
   const display = [...result, ...(flags.verbose ? extra.map((line) => chalk.dim(line)) : [])];
   out.emit({
@@ -457,7 +462,7 @@ function reported(connection: ProviderConnection, name: string): Record<string, 
     providerName: name,
     userId: connection.userId,
     userEmail: connection.userEmail,
-    app: connection.app,
+    apps: connection.apps,
     label: connection.label,
     scopes: connection.scopes,
     status: connection.status,
@@ -470,10 +475,10 @@ function reported(connection: ProviderConnection, name: string): Record<string, 
 
 /**
  * `provider connections`: every connection the Gateway holds for its
- * organization (each one person's, in one app), newest first; with
- * `--all` every organization's (a hosted Gateway has several), `--user`
- * one person's, `--provider` one provider's, `--app` one app's. Never a
- * token.
+ * organization (each one person's, to one provider, with the apps they
+ * allowed to use it), newest first; with `--all` every organization's (a
+ * hosted Gateway has several), `--user` one person's, `--provider` one
+ * provider's, `--app` the ones one app may use. Never a token.
  */
 export async function listProviderConnections(
   options: ProviderOptions & { flags: ConnectionsFlags },
@@ -492,11 +497,11 @@ export async function listProviderConnections(
   });
   const nameOf = (id: string) => registry.get(id)?.label ?? id;
   const table = formatTable(
-    ["PROVIDER", "PERSON", "APP", "ACCOUNT", "SCOPES", "STATUS", "LAST USED", "CONNECTED"],
+    ["PROVIDER", "PERSON", "APPS", "ACCOUNT", "SCOPES", "STATUS", "LAST USED", "CONNECTED"],
     connections.map((connection) => [
       `${nameOf(connection.providerId)} (${connection.providerId})`,
       personOf(connection),
-      connection.app?.id ?? chalk.dim("(app deleted)"),
+      connection.apps.map((app) => app.id).join(", ") || chalk.dim("-"),
       connection.label ?? chalk.dim("-"),
       connection.scopes.join(", ") || chalk.dim("-"),
       connection.status === "active" ? chalk.green("active") : chalk.yellow(connection.status),
@@ -513,7 +518,7 @@ export async function listProviderConnections(
         ? table
         : [
             chalk.dim(
-              `No connections${flags.provider ? ` to ${flags.provider}` : ""}${flags.user ? ` for ${flags.user}` : ""}${flags.app ? ` in ${flags.app}` : ""}. People connect inside each app that lists the provider.`,
+              `No connections${flags.provider ? ` to ${flags.provider}` : ""}${flags.user ? ` for ${flags.user}` : ""}${flags.app ? ` that ${flags.app} may use` : ""}. Each person connects once, from inside an app that lists the provider.`,
             ),
           ]),
     ].join("\n"),
@@ -533,9 +538,11 @@ export interface DisconnectFlags {
 
 /**
  * `provider disconnect <provider> --user <email> | --all [--app <app>]`:
- * the connections deleted from the Gateway's D1 and `provider.disconnected`
- * queued for each. The CLI holds no token, so the grant stays at the
- * provider until the person revokes it there; the output says where.
+ * the connections deleted from the Gateway's D1, each with the access apps
+ * had to it, and `provider.disconnected` queued for each. The CLI holds no
+ * token, so the grant stays at the provider until the person revokes it
+ * there; the output says where. With `--app`, that one app's access to
+ * those connections is taken away and the connections stay.
  */
 export async function disconnectProvider(
   options: ProviderOptions & { flags: DisconnectFlags },
@@ -547,10 +554,10 @@ export async function disconnectProvider(
     throw new EveryAppError(
       "PROVIDER_CONNECTION_WHICH",
       chosen.length === 0
-        ? `Say whose connection to ${id} to remove\nNothing was changed.`
+        ? `Say whose connection to ${id} you mean\nNothing was changed.`
         : `${listed(chosen as string[])} name different connections\nNothing was changed.`,
       {
-        fix: `one of --user <email> (a person's) or --all (every connection to ${id}); add --app <app> for one app's`,
+        fix: `one of --user <email> (a person's) or --all (every connection to ${id}); add --app <app> to take only that app's access away`,
       },
     );
   }
@@ -564,6 +571,47 @@ export async function disconnectProvider(
       { rerun: `${CLI} provider list`, rerunNote: "names every one" },
     );
   }
+  const whose = flags.user ? `for ${flags.user}` : "on this Gateway";
+  const notFound = (which: string) =>
+    new EveryAppError("PROVIDER_CONNECTION_NOT_FOUND", `No connection to ${capability.label} ${which}\nNothing was changed.`, {
+      rerun: `${CLI} provider connections --provider ${id}`,
+      rerunNote: "lists the ones there are",
+    });
+  if (flags.app) {
+    // One app's access: the connections stay for the other apps.
+    const app = flags.app;
+    out.emit({ type: "step", step: "provider.disconnect", status: "start", message: `Removing ${app}'s access to ${capability.label}...` });
+    const kept = await removeAppAccess(gateway.db, {
+      providerId: id,
+      appSlug: app,
+      ...(flags.user ? { userEmail: flags.user } : {}),
+    });
+    if (kept.length === 0) throw notFound(`${whose} that ${app} may use`);
+    out.emit({
+      type: "step",
+      step: "provider.disconnect",
+      status: "ok",
+      message: `Removed ${app}'s access to ${plural(kept.length, "connection")} to ${capability.label}`,
+      data: { id, app, removed: kept.length },
+    });
+    const lines = [
+      `${app} can no longer use ${kept.length === 1 ? `${personOf(kept[0]!)}'s connection` : `${kept.length} connections`} to ${capability.label} (${id}).`,
+      `The Gateway keeps the tokens for the other apps; ${app} gets "not connected" until the person allows it again.`,
+    ];
+    out.emit({
+      type: "done",
+      message: stripVTControlCharacters(lines.join("\n")),
+      display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line))].join("\n"),
+      data: {
+        id,
+        name: capability.label,
+        app,
+        connections: kept.map((connection) => reported(connection, capability.label)),
+        revoked: false,
+      },
+    });
+    return;
+  }
   out.emit({ type: "step", step: "provider.disconnect", status: "start", message: `Removing connections to ${capability.label}...` });
   const removed = await removeConnections(
     gateway.db,
@@ -571,29 +619,21 @@ export async function disconnectProvider(
       providerId: id,
       providerName: capability.label,
       ...(flags.user ? { userEmail: flags.user } : {}),
-      ...(flags.app ? { appSlug: flags.app } : {}),
     },
     gateway.deployer,
     options.now?.(),
   );
-  if (removed.length === 0) {
-    throw new EveryAppError(
-      "PROVIDER_CONNECTION_NOT_FOUND",
-      `No connection to ${capability.label} ${flags.user ? `for ${flags.user}` : "on this Gateway"}${flags.app ? ` in ${flags.app}` : ""}\nNothing was changed.`,
-      { rerun: `${CLI} provider connections --provider ${id}`, rerunNote: "lists the ones there are" },
-    );
-  }
+  if (removed.length === 0) throw notFound(whose);
   out.emit({
     type: "step",
     step: "provider.disconnect",
     status: "ok",
-    message: `Removed ${removed.length} connection${removed.length === 1 ? "" : "s"} to ${capability.label}`,
+    message: `Removed ${plural(removed.length, "connection")} to ${capability.label}`,
     data: { id, removed: removed.length },
   });
-  const first = removed[0]!;
   const lines = [
-    `Removed ${removed.length === 1 ? `${personOf(first)}'s` : `${removed.length}`} connection${removed.length === 1 ? "" : "s"} to ${capability.label} (${id})${removed.length === 1 && first.app ? ` in ${first.app.id}` : ""}.`,
-    "The Gateway no longer holds the tokens; the app gets \"not connected\" until the person connects again in it.",
+    `Removed ${removed.length === 1 ? `${personOf(removed[0]!)}'s connection` : `${removed.length} connections`} to ${capability.label} (${id}).`,
+    "The Gateway no longer holds the tokens; every app that used the connection gets \"not connected\" until the person connects again.",
     `The grant stays at ${capability.label} until it is revoked there: ${capability.console} (Disconnect in Connected accounts revokes it from the Gateway).`,
   ];
   out.emit({

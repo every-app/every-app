@@ -27,7 +27,7 @@ If you'd rather run it yourself, the commands are on [Set up your Gateway](/docs
 
 ## 2. Connect Claude Code
 
-Every app on the Gateway is behind one MCP address. Open **Connections** in the Gateway's sidebar and pick **Claude Code**:
+Every app on the Gateway is behind one MCP address. Open **Your connections** in the Gateway's sidebar and pick **Claude Code**:
 
 ![The Connect your agent dialog with the Claude Code command](./open-source-backlink-outreach/connect-your-agent.png)
 

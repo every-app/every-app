@@ -62,11 +62,12 @@ export interface IntegrationFetchOptions {
    * queues). A shared app's Worker must end up with one or the other
    * ({@link AttributionError}).
    *
-   * For an OAuth provider the call uses the connection the person behind
-   * it made in this app. `{ background: true, userId }` names another
-   * member's connection to this app instead, at any time, even while
-   * serving a different person: the call then carries that member and
-   * not the person being served. Only an organization's own app may.
+   * For an OAuth provider the call uses the connection of the person
+   * behind it, which they allowed this app to use. `{ background: true,
+   * userId }` names another member's connection instead (one who allowed
+   * this app), at any time, even while serving a different person: the
+   * call then carries that member and not the person being served. Only
+   * an organization's own app may.
    */
   for?: GatewayCallFor;
   /**
@@ -90,10 +91,11 @@ export interface IntegrationFetchOptions {
  * {@link gatewayRefusal} recognizes; anything else is the provider's answer.
  *
  * For an OAuth provider (`google-workspace`, `github`, ...) the gateway
- * puts the token of the person's connection in this app on the call, to
- * the provider's API hosts only. Without one the answer is a 409
- * `integration_not_connected` refusal with the `connectPath` to send the
- * person to ({@link connectUrl}).
+ * puts the token of the person's connection on the call, to the
+ * provider's API hosts only, once the person allowed this app to use it.
+ * Without a connection, or before they allowed this app, the answer is a
+ * 409 `integration_not_connected` refusal with the `connectPath` to send
+ * the person to ({@link connectUrl}).
  *
  * In local dev only, with no binding, the developer's own key from
  * `.dev.vars` reaches the provider directly, under the gateway's names:
@@ -231,9 +233,10 @@ export function devAccessTokenName(provider: string): string {
 }
 
 /**
- * Where a person connects `provider` in this app:
- * `/connect/<id>?app=<EVERYAPP_APP_ID>`, as the gateway's refusal and
- * status name it (without the app id when the env has none).
+ * Where a person connects `provider`, or allows this app to use their
+ * connection to it: `/connect/<id>?app=<EVERYAPP_APP_ID>`, as the
+ * gateway's refusal and status name it (without the app id when the env
+ * has none).
  */
 function appConnectPath(
   provider: string,
@@ -430,26 +433,30 @@ export type EmailIntegrationStatus = IntegrationStatus &
 
 /**
  * An OAuth provider's status: as {@link IntegrationStatus}, plus the
- * scopes the app's manifest lists, where the person connects in this app,
- * and their connection to this app. `configured` means the gateway holds
- * the client; `ready` that a call for this person would go through.
+ * scopes the app's manifest lists, where the person connects or allows
+ * this app, and their connection once they allowed this app to use it.
+ * `configured` means the gateway holds the client; `ready` that a call
+ * for this person would go through.
  */
 export type OAuthClientIntegrationStatus = IntegrationStatus & {
   /** The provider's scopes as the app's `everyapp.config.ts` lists them. */
   scopes: readonly string[];
   /**
-   * Where the person connects the provider in this app:
-   * `/connect/<id>?app=<app>` on the Gateway ({@link connectUrl} builds
-   * the absolute URL); null when the app can't connect (the manifest
-   * doesn't list it, or the gateway holds no client).
+   * Where the person connects the provider, or allows this app to use
+   * their connection to it: `/connect/<id>?app=<app>` on the Gateway
+   * ({@link connectUrl} builds the absolute URL); null when the app can't
+   * connect (the manifest doesn't list it, or the gateway holds no
+   * client).
    */
   connectPath: string | null;
   /**
-   * The connection the call would use (the person's in this app, or the
-   * member's `for: { background: true, userId }` names), or null when there
-   * is none. `ready` false with `missingScopes` when it lacks a scope the
-   * app now lists, and `reconnect` when the person has to connect again
-   * (missing scopes, or it expired).
+   * The connection the call would use (the person's, or the member's
+   * `for: { background: true, userId }` names), or null when there is
+   * none or they haven't allowed this app to use it. `ready` false with
+   * `missingScopes` when it lacks a scope the app now lists, or the app
+   * lists one the person hasn't allowed it, and `reconnect` when the
+   * person has to go through `connectPath` again (missing scopes, or it
+   * expired).
    */
   connection: {
     /** The account's name at the provider (an email address, a login). */
@@ -473,8 +480,8 @@ export type IntegrationStatusOf<P extends string> = P extends "email"
  * Whether the app can use an integration right now, without calling the
  * provider: show "an admin needs to set up DataForSEO" (or "sending isn't
  * set up", or "connect Google") up front instead of failing mid-task. An
- * OAuth provider's status carries the person's connection in this app and
- * where to connect.
+ * OAuth provider's status carries the person's connection, once they
+ * allowed this app to use it, and where to connect or allow.
  */
 export async function integrationStatus<
   P extends CapabilityId | (string & {}),
@@ -487,10 +494,10 @@ export async function integrationStatus<
   provider: P;
   /**
    * Whom the status is for: the request being served (its person), so an
-   * OAuth provider's `connection` is that person's in this app; `{
-   * background: true, userId }` that member's. Explicitly the inbound
-   * request or `{ background: true, organizationId, userId? }`, as on
-   * every call.
+   * OAuth provider's `connection` is that person's, once they allowed
+   * this app; `{ background: true, userId }` that member's. Explicitly
+   * the inbound request or `{ background: true, organizationId, userId?
+   * }`, as on every call.
    */
   for?: GatewayCallFor;
 }): Promise<IntegrationStatusOf<P>> {
@@ -621,9 +628,9 @@ async function readIntegrationStatus<P extends CapabilityId | (string & {})>({
     if (target === undefined) {
       response = await binding.fetch(statusUrl);
     } else {
-      // Whose status: the person's identity (their connection in this
-      // app), the member background work names, or the organization's,
-      // as a call would carry it.
+      // Whose status: the person's identity (their connection, which
+      // they allowed this app), the member background work names, or the
+      // organization's, as a call would carry it.
       const headers = new Headers();
       applyAttribution(headers, target);
       response = await binding.fetch(statusUrl, { headers });

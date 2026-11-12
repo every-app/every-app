@@ -12,7 +12,8 @@ This is phase 0 of the integrations design (the integrations-hub research of
 October 2026, which the repository no longer carries):
 **API-key providers whose key the gateway holds**, **OAuth providers**
 whose client the gateway holds and whose flow it runs, so a person connects
-their own account in each app that needs it ([below](#oauth-providers)),
+their own account once and allows each app that needs it
+([below](#oauth-providers)),
 and **gateway services**, things the gateway does itself for apps (sending
 email, [below](#gateway-services-email); listing the organization's
 members, [below](#gateway-services-members)).
@@ -66,7 +67,7 @@ AI proxy's inference routes may use it.
 | -------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------- | ------------------------------- |
 | `api_key`      | `dataforseo`, `context`, and the providers a gateway registers ([Provider registry](#provider-registry)) | puts its key on calls to the provider's own hosts, with the methods its entry allows (read methods; write methods under a write grant, where the provider offers write) | `integrationFetch({ env, provider, for })` on the provider's real URLs                   | `read` (a registered provider may offer `write`) |                                 |
 | `ai`           | `openai`, `openrouter`, `workers-ai` ([AI providers](#ai-providers)) | puts its key on inference calls to the provider's origin, with the AI proxy's rules (inference routes, `store: false`, the model allowlist) | `createGatewayFetch({ env, for })` on `/api/ai/<id>/...`; listed under `providers`, not `capabilities` | | none here: `GET /api/integrations/<id>` is 400 |
-| `oauth_client` | Google, Microsoft 365, Slack, GitHub and others ([OAuth providers](#oauth-providers)): presets, each a row once an app that lists it is deployed or an operator adds it | runs the flow, keeps each person's tokens per app, and puts the person's token on calls to the provider's API hosts | `connectUrl({ env, provider })` to connect; `integrationFetch({ env, provider, for })` on the provider's real URLs | none: `scopes` | `scopes`, `connectPath`, `connection` |
+| `oauth_client` | Google, Microsoft 365, Slack, GitHub and others ([OAuth providers](#oauth-providers)): presets, each a row once an app that lists it is deployed or an operator adds it | runs the flow, keeps each person's tokens, and puts the person's token on calls from the apps that person allowed, to the provider's API hosts | `connectUrl({ env, provider })` to connect or to allow the app; `integrationFetch({ env, provider, for })` on the provider's real URLs | none: `scopes` | `scopes`, `connectPath`, `connection` |
 | `service`      | `email` ([Gateway services](#gateway-services-email)) | does the work itself: sends the mail from its sender, within its budgets          | `sendEmail({ env, for, message })`, which posts to `/api/integrations/email/send`        | `write` | `sender`, `senders`, `provider` |
 | `service`      | `members` ([Gateway services](#gateway-services-members)) | does the work itself: reads its own directory of who can open the app          | `listMembers({ env, for })`, which gets `/api/integrations/members/list`        | `read` |  |
 
@@ -417,7 +418,9 @@ An OAuth provider is a capability too (`oauth_client`): the Gateway holds
 the provider's client, runs the authorization-code flow, keeps the tokens
 sealed in D1, refreshes them, and puts a person's token on an app's calls to
 the provider's API. The app never sees a token or the client
-(`docs/design/2026-11-oauth-simplify.md`). Every OAuth provider is a
+(`docs/design/2026-11-oauth-simplify.md`, and
+`docs/design/2026-11-oauth-one-connection.md` for one connection per
+person). Every OAuth provider is a
 registered row. Google (`google-workspace`), Microsoft 365
 (`microsoft-365`), Slack (`slack`, its bot token), GitHub, Notion, Linear,
 GitLab, Atlassian, HubSpot, Zoom, Dropbox and Spotify are presets
@@ -438,8 +441,9 @@ and the scopes your apps list allowed on it, then hand it to the Gateway
 simply not offered: its status answers `configured: false`. One client
 serves every app and organization on the Gateway, so a provider's limits
 are shared too. Microsoft and Slack may hand back every scope a person ever
-approved on a client: when two apps share such a client with different
-scopes, the wider token is refused, and the fix is a client per app.
+approved on a client. A connect asks for every scope the organization's
+apps list, so apps share a client. A token that carries a scope no app
+lists is refused.
 
 **For an app.** List the provider with its own scope strings and why:
 
@@ -460,15 +464,21 @@ takes no `access`: the scopes are the grant, for every method. The strict
 validator refuses `access`, `background`, `optionalScopes` and
 `redirectPaths` on it, each with what to write instead.
 
-A person connects in the app: `connectUrl({ env, provider, returnTo })`
-sends them to `https://<gateway>/connect/<id>?app=<app>`, where the Gateway
-checks they may open the app and that its manifest lists the provider, and
-asks the provider for exactly the app's scopes and the identity scopes
-(PKCE, a one-use state, never `include_granted_scopes`). The connection
-belongs to that person and that app; another app on the same client
-connects separately, for its own scopes. On the callback, and on every
-refresh, the Gateway compares what the provider says it granted with what
-was asked: a token with more is refused and dropped (at refresh the
+A person connects once, from inside an app: `connectUrl({ env, provider,
+returnTo })` sends them to `https://<gateway>/connect/<id>?app=<app>`, where
+the Gateway checks they may open the app and that its manifest lists the
+provider. With no connection, or one that lacks a scope the app lists, it
+asks the provider for every scope the organization's apps list and the
+identity scopes (PKCE, a one-use state, never `include_granted_scopes`).
+The connection belongs to that person, and the callback allows the app the
+connect started in. With a connection that holds what the app lists, the
+same link opens the Gateway's Allow page (`/oauth/app-access`), where the
+person allows the app with no trip to the provider. An app the person
+hasn't allowed can't use the connection. Allowing is a yes or no, not a
+limit on scopes: an allowed app can use every scope the connection holds.
+On the callback, the Gateway compares what the provider says it granted
+with what was asked. On every refresh, it compares it with what the
+connection holds. A token with more is refused and dropped (at refresh the
 connection is marked expired). A provider that answers without a `scope`
 field is taken as granted as asked.
 
@@ -484,9 +494,9 @@ const answer = await google("https://gmail.googleapis.com/gmail/v1/users/me/prof
 The call uses the connection of the person behind it. Work no person
 started, or a call on another member's behalf, names the member with
 `for: { background: true, userId }` (sent as `x-everyapp-user`): an app may
-use any member's connection to it, at any time. Only an organization's own
-app may name a member, and only one who is still an active member able to
-open the app.
+use the connection of any member who allowed it, at any time. Only an
+organization's own app may name a member, and only one who is still an
+active member able to open the app.
 
 **What the gateway checks** on a call to a provider's API, in order, each a
 refusal with its code in `x-everyapp-error`:
@@ -497,7 +507,7 @@ refusal with its code in `x-everyapp-error`:
 | `integration_not_configured`   | 503    | the Gateway holds no client for it                                                                      |
 | `integration_body_invalid`     | 400    | `x-everyapp-user` isn't a user id                                                                       |
 | `integration_user_not_allowed` | 403    | a shared app or linked dev named a member with `x-everyapp-user`                                        |
-| `integration_not_connected`    | 409    | no connection for this person (or the named member) in this app, it expired, or it lacks a scope the app now lists; the answer carries `connectPath` (`/connect/<id>?app=<app>`), `reconnect` and `missingScopes`. A named member who left, was deactivated or lost the app gets this too, and their connection in the app is deleted |
+| `integration_not_connected`    | 409    | no connection for this person (or the named member), they haven't allowed this app, it expired, or the app now lists a scope the connection lacks or the person hasn't allowed; the answer carries `connectPath` (`/connect/<id>?app=<app>`), `reconnect` and `missingScopes`. A named member who left, was deactivated or lost the app gets this too, and the app's access to their connection is removed |
 | `invalid_integration_route`    | 400    | the host isn't one of the provider's API hosts                                                          |
 | `integration_upstream_failed`  | 502    | the provider couldn't be reached                                                                        |
 
@@ -506,24 +516,27 @@ Bearer`, drops the app's `Authorization`, cookies, `x-http-method-override`
 and every `x-everyapp-*` header and any `access_token` or `token` query key,
 refuses to follow redirects, drops the provider's `set-cookie`, and streams
 the answer back. There are no route, set or method rules: what the app may
-do is what the scopes it listed let it do. Each call is logged
+do is what the scopes the connection holds let it do. Each call is logged
 (`integration.proxy.call`) without the query, the body or the answer, and
-the first call of a UTC day on a connection emits `connection.used`.
+an app's first call of a UTC day on a connection emits `connection.used`.
 
 `GET /api/integrations/<id>` answers `{ capability, requested, configured,
 ready, scopes, connectPath, connection }` for the person (or the named
 member): `scopes` as the manifest lists them, `connectPath` the app's
 connect path, and `connection` `{ label, scopes, ready, missingScopes?,
-reconnect? }` or null. In local dev (`everyapp dev`, no binding) a token
+reconnect? }` or null (null too while the person hasn't allowed this app).
+In local dev (`everyapp dev`, no binding) a token
 you obtained yourself in `.dev.vars` as `<PREFIX>_ACCESS_TOKEN`
 (`GOOGLE_WORKSPACE_ACCESS_TOKEN`) stands in for the connection; dev checks
 the hosts only.
 
-Removing a member deletes their connections, a member losing an app
-deletes their connection in it, and deleting an app deletes its
-connections. A person disconnects in Connections → Accounts, which
-lists each connection with its app; an owner or admin disconnects anyone's
-in Manage workspace → Providers.
+Removing a member deletes their connections, and removing a provider
+deletes every connection to it. A member losing an app, or the app being
+deleted, removes only that app's access. A person disconnects in
+Your connections → Accounts, which lists each connection once with the apps
+allowed to use it. Disconnect stops every app at once, and one app's access
+can be removed on its own. An owner or admin does the same for anyone's
+connection in Manage workspace → Providers.
 
 <!-- oauth-clients:begin (generated from packages/sdk/src/internal/oauthPresets.ts by capabilitiesDoc.test.ts) -->
 
@@ -878,6 +891,7 @@ how the Gateway's UI shows one is [docs/design/2026-10-mcp-apps-ui.md](design/20
   rotation in the UI, as the full design has it.
 - An OAuth connection's boundary is the scopes the person approved on the
   provider's screen: the Gateway doesn't narrow within a scope (Google's
-  `gmail.modify` includes sending), and an app may use a connection made
-  in it at any time, with no separate consent for work while the person is
+  `gmail.modify` includes sending) or between apps. An app the person
+  allowed can use every scope the connection holds, not only the ones it
+  lists, at any time, with no separate consent for work while the person is
   away.

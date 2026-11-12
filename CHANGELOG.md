@@ -10,9 +10,15 @@ An app can change its id and hostname and keep everything else. Change `id` in `
 export default defineConfig({ id: "scribe", previousIds: ["talk"], name: "Scribe" });
 ```
 
-`everyapp deploy` (and `everyapp install` of a release) sees that the new id isn't registered and the old one is, shows what moves, and asks first (`--yes` for CI; unattended without it, `CONFIRMATION_REQUIRED`). The app keeps its registry row, its Worker and every resource named after it (D1, KV, R2, …), its secrets, and everything the Gateway holds for it: access, groups, tokens, AI and OAuth connections, caps, usage, email setup. The old hostname keeps working. Page loads and shared links get a `308` to the new host once it answers; bearer API calls, other methods and WebSockets are served on the old host as before, and native sign-ins made there keep working. Its tools are named after the new id. Removing the old id from `previousIds` stops serving its hostname; the id stays the app's. An id in `previousIds` that no app has stops the deploy (`PREVIOUS_ID_UNKNOWN`) instead of creating a new app. Design: `docs/design/2026-11-app-rename.md`; how-to: [deploy](https://everyapp.com/docs/agent/deploy#renaming-an-app).
+`everyapp deploy` (and `everyapp install` of a release) sees that the new id isn't registered and the old one is, shows what moves, and asks first (`--yes` for CI; unattended without it, `CONFIRMATION_REQUIRED`). The app keeps its registry row, its Worker and every resource named after it (D1, KV, R2, …), its secrets, and everything the Gateway holds for it: access, groups, tokens, AI connections, its access to people's OAuth connections, caps, usage, email setup. The old hostname keeps working. Page loads and shared links get a `308` to the new host once it answers; bearer API calls, other methods and WebSockets are served on the old host as before, and native sign-ins made there keep working. Its tools are named after the new id. Removing the old id from `previousIds` stops serving its hostname; the id stays the app's. An id in `previousIds` that no app has stops the deploy (`PREVIOUS_ID_UNKNOWN`) instead of creating a new app. Design: `docs/design/2026-11-app-rename.md`; how-to: [deploy](https://everyapp.com/docs/agent/deploy#renaming-an-app).
 
 What you do: `pnpm everyapp update` brings the Gateway to migration `0033` (`app_previous_ids`). This everyapp refuses an older Gateway with `GATEWAY_OUTDATED` until you do.
+
+### One OAuth connection per person per provider
+
+A person connects a provider once, to EveryApp, and each app then asks them for access (the OAuth bullets under "Unreleased: breaking", below). App code and `everyapp.config.ts` don't change: an app's Connect button and `connectUrl()` now lead to the provider or to EveryApp's Allow page. `everyapp provider connections` lists one row per person per provider, with the apps allowed. `everyapp provider disconnect` removes the connection, and with `--app <id>` takes only that app's access away. The `provider.disconnected` event no longer carries `app`, and `connection.used` is sent once per app per day. Design: `docs/design/2026-11-oauth-one-connection.md`; how-to: [Connect an OAuth provider](https://everyapp.com/docs/connect-oauth).
+
+What you do: `pnpm everyapp update` brings the Gateway to migration `0034` (`oauth_one_connection`). This everyapp refuses an older Gateway with `GATEWAY_OUTDATED` until you do. Each person keeps one connection per provider: an active one before an expired one, then the one with the most scopes, then the newest. The tokens of their other connections are dropped, not revoked at the provider. An app that was connected to the kept account stays allowed. It keeps working if the kept connection holds its scopes, and otherwise sends the person through the provider once. An app that was connected to a different account asks the person again. While the update swaps the code, connecting and calls to OAuth providers fail for a few seconds.
 
 ## Unreleased: breaking
 
@@ -22,19 +28,21 @@ An app's setup is grouped into **features** (`features` in `everyapp.config.ts`)
 - A value says `how` (where it is, what permission it needs). A secret may say `generate: true` (made for you; the deploy sets a top-level one) or `file: true` (the prompt takes a `.pem`'s path).
 - An app deployed with `optional` still in its stored manifest reads those values as required: update its `everyapp.config.ts` and deploy it again.
 
-OAuth providers are simpler (docs/design/2026-11-oauth-simplify.md):
+OAuth providers are simpler (docs/design/2026-11-oauth-simplify.md, docs/design/2026-11-oauth-one-connection.md):
 
 - An app's `everyapp.config.ts` lists the provider's own scopes (`gmail.modify`, `Mail.Read`, `chat:write`). Scope sets are gone.
-- A person connects **in each app**. A connection belongs to one person and one app, and holds exactly the scopes that app lists. The Gateway adds the scopes that name the account (Google's `openid email`, Microsoft's `User.Read offline_access`). Apps never list them.
-- The Gateway refuses a token that carries more scopes than the app lists, at connect and at every refresh.
-- An app may use a connection made in it at any time, in the background too. There is no second "allow in the background" step.
-- `integrationFetch()` sends the person's token to the provider's API hosts only. There are no route, method or read/write rules: what an app may do is what its scopes allow.
+- A person connects a provider **once**, to EveryApp. A connection belongs to one person, and holds every scope the organization's apps list for that provider. The Gateway adds the scopes that name the account (Google's `openid email`, Microsoft's `User.Read offline_access`). Apps never list them.
+- Each app asks the person for access, and they select Allow on an EveryApp page. An app they haven't allowed can't use the connection. Connecting from inside an app allows that app in the same step.
+- Allowing an app is a yes or no, not a limit on scopes: an allowed app can use every scope the connection holds. The provider's consent screen lists every app's scopes. A person has one account per provider.
+- The Gateway refuses a token that carries more scopes than the organization's apps list at connect, or more than the connection holds at a refresh.
+- An app the person allowed may use the connection at any time, in the background too. There is no second "allow in the background" step.
+- `integrationFetch()` sends the person's token to the provider's API hosts only. There are no route, method or read/write rules: what an allowed app may do is what the connection's scopes allow.
 - Google, Microsoft and Slack are JSON specs like any other provider. Nothing in the code is specific to one provider.
 
 ### What you do
 
 1. Update the Gateway from a checkout: `pnpm everyapp update`.
-2. Every existing connection is dropped (migration 0025). People connect again, in each app.
+2. Every connection made before migration 0025 is dropped. People connect again, once per provider, and allow each app.
 3. Edit each app's `everyapp.config.ts` (below) and deploy it.
 4. If you added an OAuth provider from a preset before this release, its row no longer parses (it has `scopeSets`), and the Gateway stops serving it. Write the new spec over it, then set its client again when asked (the setting names don't change):
 
@@ -44,7 +52,7 @@ OAuth providers are simpler (docs/design/2026-11-oauth-simplify.md):
 
    A provider you wrote your own spec for: drop `scopeSets`, `alwaysRequested`, `access`, `readMethods` and `writeMethods`, move `tolerated` into `auth`, rename `auth.scopeDialect` to `auth.scopeSeparator` (`space` or `comma`; a prefix goes in `auth.scopePrefix`), put the scopes the identity URL needs in `auth.identity.scopes`, and add it again with `--replace`.
 
-5. Microsoft and Slack can hand back every scope a person ever approved on one client. If two apps share such a client and list different scopes, the wider token is refused. Give each app its own client.
+5. Microsoft and Slack can hand back every scope a person ever approved on one client. One connect asks for every scope the organization's apps list, so apps share a client. A token that carries a scope no app lists is refused: limit the client's scopes at the provider's console.
 
 ### `everyapp.config.ts`, before and after
 

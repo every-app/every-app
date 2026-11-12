@@ -39,14 +39,16 @@ export enum AppStatusLabel {
 }
 
 /**
- * What {@link appStatus} reads: `paused` is absent where no cap is read
- * (Admin → Apps), `manifest` where the list doesn't carry it (the launcher).
+ * What {@link appStatus} reads: `paused` and `connections` are absent where
+ * they aren't read for the viewer (Admin → Apps), `manifest` where the list
+ * doesn't carry it (the launcher).
  */
 type AppStatusInput = Pick<
   UserAccessApp,
   "hostname" | "status" | "setup" | "tier"
 > & {
   paused?: boolean;
+  connections?: UserAccessApp["connections"];
   manifest?: string | null;
   /** When the row last changed: for `binding`, when its Worker was uploaded. */
   updatedAt?: Date | number | string | null;
@@ -54,9 +56,10 @@ type AppStatusInput = Pick<
 
 /**
  * The deploy state in a word, as a chip. An app opens only once it has a
- * hostname, its Worker is bound and active, and everything its manifest
- * says it needs is set (`setup`); until then it shows "Needs setup" and
- * the setup dialog opens in its place. An MCP app (tier "provider") never
+ * hostname, its Worker is bound and active, everything its manifest says
+ * it needs is set (`setup`), and the viewer has connected and allowed each
+ * OAuth provider it requires (`connections`); until then it shows "Needs
+ * setup" and the setup dialog opens in its place. An MCP app (tier "provider") never
  * opens: once its key is set it is Active, and its tools are served to AI
  * clients. An MCP app that is off reads "Off" (its access and tokens are
  * kept; Turn on serves it again). An app at its monthly cap (`paused`) shows
@@ -105,9 +108,13 @@ export function appStatus(
   }
   switch (app.status) {
     case "active":
-      // Bound and running, but a setting it needs isn't set: the perimeter
-      // won't open it, so neither does the launcher.
-      if (app.setup && !app.setup.ready) {
+      // Bound and running, but a setting it needs isn't set, or an account
+      // of the viewer's it requires isn't connected and allowed: the
+      // perimeter won't open it, so neither does the launcher.
+      if (
+        (app.setup && !app.setup.ready) ||
+        (app.connections?.length ?? 0) > 0
+      ) {
         return {
           label: AppStatusLabel.NeedsSetup,
           variant: "warning",
@@ -175,9 +182,7 @@ export function appStatusLabel(status: string): AppStatusLabel | string {
 }
 
 /** The app shows "Needs setup": where it would open, the setup dialog opens. */
-export function appNeedsSetup(
-  app: AppStatusInput,
-): app is typeof app & { setup: NonNullable<UserAccessApp["setup"]> } {
+export function appNeedsSetup(app: AppStatusInput): boolean {
   return appStatus(app).label === AppStatusLabel.NeedsSetup;
 }
 

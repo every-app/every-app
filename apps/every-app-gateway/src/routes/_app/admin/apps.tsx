@@ -201,7 +201,7 @@ function AppsPage() {
         />
       ) : null}
 
-      {setupApp ? (
+      {setupApp?.setup ? (
         <AppSetupDialog
           name={setupApp.name}
           hostname={setupApp.hostname}

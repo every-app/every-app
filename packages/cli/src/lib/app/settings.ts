@@ -15,6 +15,7 @@ import {
   evaluateAppSettings,
   featureEntries,
   isReservedAppSecretName,
+  oauthClientSource,
   settingValueTakes,
   type AppSettingsReport,
   type CapabilityLookup,
@@ -22,6 +23,7 @@ import {
   type AppSetupFeature,
   type AppSetupSetting,
   type EvaluatedSetting,
+  type ProviderRegistry,
   type SettingsManifestLike,
 } from "@every-app/sdk/internal";
 import chalk from "chalk";
@@ -63,6 +65,8 @@ interface AppSetupInput {
   secretNames: readonly string[] | null;
   /** The catalog (the default) or the Gateway's registry. */
   lookup?: SettingsLookup;
+  /** Whether the Gateway holds each listed OAuth provider's client, by id ({@link oauthClientsHeld}); a provider left out reads by its names. */
+  oauthReady?: ReadonlyMap<string, boolean>;
 }
 
 interface AppSetupResult {
@@ -94,9 +98,46 @@ export function appSetupFrom(input: AppSetupInput): AppSetupResult {
       const names = holder === "gateway" ? gatewayNames : input.secretNames;
       return names === null ? null : names.includes(name);
     },
-    { features: featureEntries(input.manifest) },
+    {
+      features: featureEntries(input.manifest),
+      readiness: (setting) => (setting.kind === "capability" ? input.oauthReady?.get(setting.id) : undefined),
+    },
   );
   return { report, setup: appSetupOf(report, { cli: CLI, appId: input.appId }) };
+}
+
+/**
+ * Whether the Gateway holds the client of each OAuth provider the manifest
+ * lists, decided as the Gateway decides it (the SDK's `oauthClientSource`):
+ * its Worker settings while bound, else the client pasted under Manage
+ * workspace → Providers (`oauth_clients`: the CLI reads its binding, never
+ * the secret, so it can't tell a copy that no longer opens). A provider
+ * whose Worker settings couldn't be listed is left out.
+ */
+export function oauthClientsHeld(input: {
+  manifest: SettingsManifestLike;
+  lookup: ProviderRegistry;
+  /** The Gateway Worker's setting names, before any binding filter; null when cf couldn't list them. */
+  gatewayNames: readonly string[] | null;
+  pasted: ReadonlyMap<string, { boundTo: string | null; hasSecret: boolean }>;
+}): Map<string, boolean> {
+  const held = new Map<string, boolean>();
+  if (input.gatewayNames === null) return held;
+  const names = input.gatewayNames;
+  for (const setting of appSettings(input.manifest, input.lookup)) {
+    const capability = setting.kind === "capability" ? input.lookup.get(setting.id) : undefined;
+    if (capability?.mode !== "oauth_client") continue;
+    const { clientId, clientSecret } = capability.secrets;
+    const pasted = input.pasted.get(setting.id);
+    const source = oauthClientSource({
+      capability,
+      envSet: names.includes(clientId) && (!clientSecret || names.includes(clientSecret)),
+      envBound: input.lookup.bound(setting.id),
+      pasted: pasted ? { ...pasted, opens: true } : null,
+    });
+    held.set(setting.id, source !== null);
+  }
+  return held;
 }
 
 /** Whether the manifest declares anything to set (a capability with no setting, like members, doesn't count). */

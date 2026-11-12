@@ -12,10 +12,11 @@ import { Tabs, TabsContent } from "@/client/components/ui/tabs";
 import { useConnectedAccounts } from "@/client/hooks/useConnectedAccounts";
 
 /**
- * Connections: everything the signed-in person has connected, a tab each
- * with its own URL. Agents: the AI apps on the Gateway's /mcp and the native
+ * Your connections: everything the signed-in person has connected, a tab
+ * each with its own URL. Agents: the AI apps on the Gateway's /mcp and the native
  * apps signed in on a device, with the steps to connect another. Accounts:
- * the accounts they connected inside an app.
+ * the accounts they connected inside an app, with a count on its tab of
+ * the ones that need Reconnect.
  */
 export const Route = createFileRoute("/_app/connections")({
   component: ConnectionsLayout,
@@ -44,11 +45,11 @@ const TABS = [
 function ConnectionsLayout() {
   const pathname = useLocation({ select: (location) => location.pathname });
   const navigate = useNavigate();
-  // An account that stopped working is counted on its tab, so it isn't
+  // An account that needs Reconnect is counted on its tab, so it isn't
   // missed from the Agents tab.
   const { data: accounts } = useConnectedAccounts();
   const toReconnect = (accounts?.connections ?? []).filter(
-    (account) => account.status === "expired",
+    (account) => account.needsReconnect,
   ).length;
 
   const activeTab =
@@ -56,7 +57,7 @@ function ConnectionsLayout() {
 
   return (
     <Page>
-      <PageHeader title="Connections" />
+      <PageHeader title="Your connections" />
       <Tabs
         value={activeTab}
         onValueChange={(value) => {
@@ -66,7 +67,7 @@ function ConnectionsLayout() {
         className="gap-6"
       >
         <PageTabStrip
-          label="Connections"
+          label="Your connections"
           tabs={TABS.map((tab) =>
             tab.value === ConnectionsTab.Accounts && toReconnect > 0
               ? {

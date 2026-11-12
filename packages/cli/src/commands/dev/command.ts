@@ -228,10 +228,10 @@ const unlinkCommand = buildCommand({
   docs: {
     brief: "Sign everyapp dev out of a Gateway for this app: revoke the grant there and forget the token",
     fullDescription: [
-      "Revokes the linked dev grant at the Gateway (it also disappears from Settings → Connections",
+      "Revokes the linked dev grant at the Gateway (it also disappears from Your connections",
       "there) and removes the token from ~/.config/everyapp/linked-dev.json. If the Gateway can't",
       "be reached the token is still forgotten (warning LINKED_DEV_REVOKE_FAILED): revoke it under",
-      "Settings → Connections.",
+      "Your connections.",
       "",
       "Examples:",
       `  ${CLI} dev unlink --gateway https://apps.example.com`,

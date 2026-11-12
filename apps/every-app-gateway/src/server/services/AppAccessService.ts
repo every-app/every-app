@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { AppAccessRepository } from "../repositories/AppAccessRepository";
 import { AppRepository } from "../repositories/AppRepository";
 import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
-import { ProviderConnectionRepository } from "../repositories/ProviderConnectionRepository";
+import { ProviderAppAccessRepository } from "../repositories/ProviderAppAccessRepository";
 import { UsageRepository } from "../repositories/UsageRepository";
 import { PublicError } from "@/server/errors";
 import { emit } from "@/server/events/bus";
@@ -10,6 +10,8 @@ import { catalogue, type EventUser } from "@/server/events/catalogue";
 import { actorFor } from "@/server/events/subjects";
 import type { OrgContext } from "@/server/organization/orgContext";
 import { platformPolicy } from "@/server/platform-policy";
+import { connectionNeeds } from "@/server/oauth/connection-needs";
+import { gatewayProviders } from "@/server/providers";
 import { listedAppSetup } from "./listedAppSetup";
 
 /**
@@ -68,6 +70,7 @@ async function getAppsForUser(ctx: OrgContext) {
     ctx.orgId,
     listed.map(({ app }) => app.id),
   );
+  const registry = await gatewayProviders();
   const apps = await Promise.all(
     listed.map(async ({ app, grantedAt, via }) => {
       // The registry columns the evaluation read stay server-side; the
@@ -84,6 +87,12 @@ async function getAppsForUser(ctx: OrgContext) {
         grantedAt,
         via,
         setup: await listedAppSetup(app, app.organizationId === ctx.orgId),
+        connections: await connectionNeeds({
+          organizationId: ctx.orgId,
+          userId: ctx.userId,
+          app: { rowId: app.id, slug: app.appId, manifest: app.manifest },
+          registry,
+        }),
         paused: paused.has(app.id),
       };
     }),
@@ -194,9 +203,9 @@ async function updateAccessForApp(
       toRevoke,
       ctx.orgId,
     );
-    // Their OAuth connections in the app go too, unless another way in
-    // still gives them the app.
-    await ProviderConnectionRepository.pruneWithoutAccess(ctx.orgId);
+    // The app's access to their OAuth connections goes too, unless
+    // another way in still gives them the app.
+    await ProviderAppAccessRepository.pruneWithoutAccess(ctx.orgId);
   }
 
   if (toGrant.length > 0 || toRevoke.length > 0) {

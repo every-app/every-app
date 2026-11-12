@@ -10,7 +10,8 @@
 import { logEvent } from "@every-app/perimeter";
 import {
   oauthClientCredentials,
-  providerBindingKey,
+  oauthClientSource,
+  OAuthClientSource,
   type CapabilityLookup,
   type CapabilitySettings,
   type OAuthClientCapability,
@@ -22,7 +23,7 @@ export interface ResolvedOAuthClient {
   clientId: string;
   clientSecret?: string;
   /** Where it came from: the Worker env, or the sealed D1 row. */
-  source: "env" | "d1";
+  source: OAuthClientSource;
 }
 
 /** What a resolver needs to know about a provider; the lookup for a row's binding. */
@@ -38,17 +39,10 @@ export type OAuthClientResolver = (
   input: ResolveOAuthClientInput,
 ) => Promise<ResolvedOAuthClient | null>;
 
-/** Whether a D1 client is for the provider as it is now, and still opens. */
-function d1Usable(
-  stored: { boundTo: string | null; lost: boolean },
-  capability: OAuthClientCapability,
-): boolean {
-  return !stored.lost && stored.boundTo === providerBindingKey(capability);
-}
-
 /**
- * The env client while the registry says the provider's settings may be
- * read, else the D1 client while it was uploaded for these endpoints.
+ * The client `oauthClientSource` picks (the SDK's one rule): the env
+ * client while the registry says the provider's settings may be read, else
+ * the D1 client while it was pasted for these endpoints.
  */
 export const resolveOAuthClient: OAuthClientResolver = async ({
   id,
@@ -57,27 +51,43 @@ export const resolveOAuthClient: OAuthClientResolver = async ({
   lookup,
 }) => {
   const fromEnv = oauthClientCredentials(capability, env);
-  if (fromEnv && (!lookup?.bound || lookup.bound(id))) {
-    return { ...fromEnv, source: "env" };
+  let stored: Awaited<ReturnType<typeof OAuthClientRepository.credentials>> =
+    null;
+  if (!fromEnv) {
+    try {
+      stored = await OAuthClientRepository.credentials(id, env);
+    } catch (error) {
+      // Fails closed: a client that can't be read is one the gateway lacks.
+      logEvent(
+        "oauth.client_unavailable",
+        {
+          provider: id,
+          error: error instanceof Error ? error.name : "unknown",
+        },
+        "warn",
+      );
+      return null;
+    }
   }
-  if (fromEnv) return null;
-  let stored: Awaited<ReturnType<typeof OAuthClientRepository.credentials>>;
-  try {
-    stored = await OAuthClientRepository.credentials(id, env);
-  } catch (error) {
-    // Fails closed: a client that can't be read is one the gateway lacks.
-    logEvent(
-      "oauth.client_unavailable",
-      { provider: id, error: error instanceof Error ? error.name : "unknown" },
-      "warn",
-    );
-    return null;
+  const source = oauthClientSource({
+    capability,
+    envSet: fromEnv !== null,
+    envBound: !lookup?.bound || lookup.bound(id),
+    pasted: stored && {
+      boundTo: stored.boundTo,
+      hasSecret: stored.secret !== null,
+      opens: !stored.lost,
+    },
+  });
+  if (source === OAuthClientSource.Env && fromEnv) {
+    return { ...fromEnv, source };
   }
-  if (!stored || !d1Usable(stored, capability)) return null;
-  if (capability.secrets.clientSecret && stored.secret === null) return null;
-  return {
-    clientId: stored.clientId,
-    ...(stored.secret ? { clientSecret: stored.secret } : {}),
-    source: "d1",
-  };
+  if (source === OAuthClientSource.Pasted && stored) {
+    return {
+      clientId: stored.clientId,
+      ...(stored.secret ? { clientSecret: stored.secret } : {}),
+      source,
+    };
+  }
+  return null;
 };

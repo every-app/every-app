@@ -4,6 +4,7 @@ import {
   groupMembers,
   members,
   organizations,
+  providerAppAccess,
   providerConnections,
   userAccessTokens,
   userAppAccess,
@@ -288,9 +289,10 @@ async function updateRole(
 /**
  * Take a user out of an organization in one D1 transaction: the membership,
  * their app access there (direct, and their place in its groups), the
- * personal access tokens they hold for it and the OAuth accounts they
- * connected in its apps. Tokens and connections act for the user, so they
- * go too. The membership's delete refuses an owner no other live
+ * personal access tokens they hold for it, the OAuth accounts they
+ * connected there and the access its apps had to them. Tokens and
+ * connections act for the user, so they go too. The membership's delete
+ * refuses an owner no other live
  * owner would outlast (wouldLeaveNoLiveOwner), and the rest applies only
  * once the membership is gone, so a refused removal changes nothing: false
  * then.
@@ -350,6 +352,15 @@ async function removeMember(
           eq(userAccessTokens.userId, userId),
           eq(userAccessTokens.organizationId, organizationId),
           isNull(userAccessTokens.revokedAt),
+          membershipGone,
+        ),
+      ),
+    db
+      .delete(providerAppAccess)
+      .where(
+        and(
+          eq(providerAppAccess.userId, userId),
+          eq(providerAppAccess.organizationId, organizationId),
           membershipGone,
         ),
       ),

@@ -741,6 +741,13 @@ describe("provider add --oauth, presets, connections and disconnect", () => {
     ]);
     return "u_dev";
   }
+  /** A second member. */
+  async function adaUserId(): Promise<string> {
+    await db().run([
+      { sql: "INSERT OR IGNORE INTO users (id, name, email, email_verified) VALUES ('u_ada', 'Ada', 'ada@example.com', 1)" },
+    ]);
+    return "u_ada";
+  }
   /** The install organization's id. */
   async function orgId(): Promise<string> {
     const [found = []] = await db().run([{ sql: "SELECT id FROM organizations LIMIT 1" }]);
@@ -752,29 +759,46 @@ describe("provider add --oauth, presets, connections and disconnect", () => {
     return String(found[0]!["id"]);
   }
   /**
-   * A connection as the Gateway's callback writes one: one person's, in one
-   * app (the token columns hold sealed text the CLI never reads).
+   * A connection as the Gateway's callback writes one: one person's, to one
+   * provider (the token columns hold sealed text the CLI never reads), and
+   * the apps that person allowed to use it.
    */
-  async function seedConnection(providerId: string, appSlug: string, userId: string, label: string) {
+  async function seedConnection(providerId: string, userId: string, label: string, apps: string[]) {
+    const organizationId = await orgId();
+    const now = Date.now();
+    const scopes = JSON.stringify(["repo"]);
+    const access = [];
+    for (const slug of apps) {
+      access.push({
+        sql: `INSERT INTO provider_app_access (organization_id, provider_id, user_id, app_row_id, scopes, created_at, updated_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)`,
+        params: [organizationId, providerId, userId, await appRowId(slug), scopes, now],
+      });
+    }
     await db().run([
       {
         sql: `INSERT INTO provider_connections (id, organization_id, provider_id, user_id, app_row_id, label, external_id, scopes, access_token_enc, refresh_token_enc, expires_at, status, created_at, updated_at, last_used_at)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, 'v1.sealed.access', 'v1.sealed.refresh', NULL, 'active', ?8, ?8, NULL)`,
-        params: [
-          `conn_${label}`,
-          await orgId(),
-          providerId,
-          userId,
-          await appRowId(appSlug),
-          label,
-          JSON.stringify(["repo"]),
-          Date.now(),
-        ],
+VALUES (?1, ?2, ?3, ?4, ?8, ?5, NULL, ?6, 'v1.sealed.access', 'v1.sealed.refresh', NULL, 'active', ?7, ?7, NULL)`,
+        // The app the connect started in: shop, for one that no app may use any more.
+        params: [`conn_${label}`, organizationId, providerId, userId, label, scopes, now, await appRowId(apps[0] ?? "shop")],
       },
+      ...access,
     ]);
   }
   const connectionRows = async () =>
     (await db().run([{ sql: "SELECT id, provider_id, user_id FROM provider_connections ORDER BY id" }]))[0] ?? [];
+  /** Which app may use whose connection: "github-oauth u_dev shop". */
+  const accessRows = async () =>
+    (
+      (
+        await db().run([
+          {
+            sql: `SELECT x.provider_id, x.user_id, a.app_slug FROM provider_app_access x JOIN apps a ON a.id = x.app_row_id
+ORDER BY x.provider_id, x.user_id, a.app_slug`,
+          },
+        ])
+      )[0] ?? []
+    ).map((row) => `${row["provider_id"]} ${row["user_id"]} ${row["app_slug"]}`);
   const uploadClient = () =>
     db().run([
       {
@@ -969,7 +993,7 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, 'v1.sealed.access', 'v1.sealed.refresh
   it("shows and lists an OAuth row with its redirect URI, scope rules, client source and connections", async () => {
     await addOAuthProvider("github-oauth");
     await registerApp("shop", { capabilities: { "github-oauth": { scopes: ["repo"], why: "Reads repositories." } } });
-    await seedConnection("github-oauth", "shop", await devUserId(), "ben");
+    await seedConnection("github-oauth", await devUserId(), "ben", ["shop"]);
     events = [];
     await show("github-oauth");
     expect(done()).toMatchObject({
@@ -1008,48 +1032,85 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, 'v1.sealed.access', 'v1.sealed.refresh
     expect(done()!["data"]["next"]).toBeUndefined();
   });
 
-  it("lists connections (never a token), each one person's in one app, by provider, person or app, and disconnects them, queueing the event", async () => {
+  it("lists connections (never a token), each one person's to one provider with the apps allowed to use it, by provider, person or app", async () => {
     await addOAuthProvider("github-oauth");
     await registerApp("shop", {});
     await registerApp("notes", {});
     const userId = await devUserId();
-    await seedConnection("github-oauth", "shop", userId, "ben");
-    await seedConnection("github-oauth", "notes", userId, "ben-notes");
+    await seedConnection("github-oauth", userId, "ben", ["shop", "notes"]);
+    await seedConnection("github-oauth", await adaUserId(), "ada", []);
     await addOAuthProvider("google-workspace");
-    await seedConnection("google-workspace", "shop", userId, "ben-google");
+    await seedConnection("google-workspace", userId, "ben-google", ["shop"]);
 
     events = [];
     await connections();
     const listed = done()!["data"]["connections"] as Array<Record<string, any>>;
-    expect(listed.map((each) => [each["provider"], each["app"]?.["id"], each["label"], each["userEmail"]]).sort()).toEqual([
-      ["github-oauth", "notes", "ben-notes", "dev@example.com"],
-      ["github-oauth", "shop", "ben", "dev@example.com"],
-      ["google-workspace", "shop", "ben-google", "dev@example.com"],
+    const appIds = (each: Record<string, any>) => (each["apps"] as Array<{ id: string }>).map((app) => app.id);
+    expect(listed.map((each) => [each["provider"], appIds(each), each["label"], each["userEmail"]]).sort()).toEqual([
+      ["github-oauth", [], "ada", "ada@example.com"],
+      ["github-oauth", ["notes", "shop"], "ben", "dev@example.com"],
+      ["google-workspace", ["shop"], "ben-google", "dev@example.com"],
     ]);
-    expect(listed[0]).toMatchObject({
-      providerName: expect.any(String),
+    expect(listed.find((each) => each["label"] === "ben")).toMatchObject({
+      providerName: "GitHub",
       userId,
-      app: { id: expect.any(String), rowId: expect.any(String), name: expect.any(String) },
+      apps: [
+        { id: "notes", rowId: await appRowId("notes"), name: "notes" },
+        { id: "shop", rowId: await appRowId("shop"), name: "shop" },
+      ],
       scopes: ["repo"],
       status: "active",
     });
-    expect(listed[0]).not.toHaveProperty("account");
-    expect(listed[0]).not.toHaveProperty("scopeSets");
+    for (const each of listed) {
+      expect(each).not.toHaveProperty("app");
+      expect(each).not.toHaveProperty("account");
+      expect(each).not.toHaveProperty("scopeSets");
+    }
     expect(JSON.stringify(events)).not.toContain("sealed");
     events = [];
     await connections({ provider: "google-workspace" });
     expect((done()!["data"]["connections"] as unknown[]).length).toBe(1);
     events = [];
     await connections({ user: "DEV@example.com" });
-    expect((done()!["data"]["connections"] as unknown[]).length).toBe(3);
+    expect((done()!["data"]["connections"] as unknown[]).length).toBe(2);
+    // The ones an app may use.
     events = [];
     await connections({ app: "notes" });
-    expect((done()!["data"]["connections"] as Array<Record<string, any>>).map((each) => each["label"])).toEqual(["ben-notes"]);
+    expect((done()!["data"]["connections"] as Array<Record<string, any>>).map((each) => each["label"])).toEqual(["ben"]);
+    // A deleted app is left out of a connection's apps.
+    await db().run([{ sql: "UPDATE apps SET status = 'deleted' WHERE app_slug = 'notes'" }]);
+    events = [];
+    await connections({ user: "dev@example.com", provider: "github-oauth" });
+    expect((done()!["data"]["connections"] as Array<Record<string, any>>).map(appIds)).toEqual([["shop"]]);
+    await db().run([{ sql: "UPDATE apps SET status = 'active' WHERE app_slug = 'notes'" }]);
+    // One row per person per provider: the apps in one column, a dash for none.
     const table = await human((sink) => listProviderConnections({ flags: {}, out: sink, createCf }));
-    expect(table).toContain("dev@example.com");
-    expect(table).toMatch(/PROVIDER\s+PERSON\s+APP\s+ACCOUNT\s+SCOPES/);
+    expect(table).toMatch(/PROVIDER\s+PERSON\s+APPS\s+ACCOUNT\s+SCOPES/);
+    expect(table).toMatch(/GitHub \(github-oauth\)\s+dev@example\.com\s+notes, shop\s+ben\s+repo/);
+    expect(table).toMatch(/GitHub \(github-oauth\)\s+ada@example\.com\s+-\s+ada\s+repo/);
+    expect(await human((sink) => listProviderConnections({ flags: { app: "nothing" }, out: sink, createCf }))).toBe(
+      "No connections that nothing may use. Each person connects once, from inside an app that lists the provider.\n",
+    );
+  });
 
-    await expect(disconnect("github-oauth")).rejects.toMatchObject({ code: "PROVIDER_CONNECTION_WHICH" });
+  it("disconnects a connection with every app's access to it, queueing the event without an app; --app takes one app's access away and keeps the connection", async () => {
+    await addOAuthProvider("github-oauth");
+    await registerApp("shop", {});
+    await registerApp("notes", {});
+    const userId = await devUserId();
+    await seedConnection("github-oauth", userId, "ben", ["shop", "notes"]);
+    await seedConnection("github-oauth", await adaUserId(), "ada", ["notes"]);
+    await addOAuthProvider("google-workspace");
+    await seedConnection("google-workspace", userId, "ben-google", ["shop"]);
+    const disconnected = async () =>
+      ((await db().run([{ sql: "SELECT data FROM events WHERE type = 'provider.disconnected' ORDER BY rowid" }]))[0] ?? []).map(
+        (row) => JSON.parse(String(row["data"])),
+      );
+
+    await expect(disconnect("github-oauth")).rejects.toMatchObject({
+      code: "PROVIDER_CONNECTION_WHICH",
+      fix: "one of --user <email> (a person's) or --all (every connection to github-oauth); add --app <app> to take only that app's access away",
+    });
     await expect(disconnect("github-oauth", { user: "x@example.com", all: true })).rejects.toMatchObject({
       code: "PROVIDER_CONNECTION_WHICH",
     });
@@ -1058,48 +1119,92 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, 'v1.sealed.access', 'v1.sealed.refresh
       code: "PROVIDER_CONNECTION_NOT_FOUND",
       rerun: "pnpm everyapp provider connections --provider github-oauth",
     });
+    // An app the person never allowed has no access to take.
+    await expect(disconnect("github-oauth", { user: "ada@example.com", app: "shop" })).rejects.toMatchObject({
+      code: "PROVIDER_CONNECTION_NOT_FOUND",
+      message: expect.stringMatching(/^No connection to GitHub for ada@example\.com that shop may use\n/),
+    });
 
-    // One app's connection: the person's in other apps stays.
+    // One app's access: the connection stays, with the other app's access.
     events = [];
     await disconnect("github-oauth", { user: "dev@example.com", app: "shop" });
     expect(done()).toMatchObject({
-      message: expect.stringContaining("Removed dev@example.com's connection to GitHub (github-oauth) in shop."),
+      message: [
+        "shop can no longer use dev@example.com's connection to GitHub (github-oauth).",
+        'The Gateway keeps the tokens for the other apps; shop gets "not connected" until the person allows it again.',
+      ].join("\n"),
+      data: {
+        id: "github-oauth",
+        name: "GitHub",
+        app: "shop",
+        revoked: false,
+        connections: [expect.objectContaining({ id: "conn_ben", userId, label: "ben", apps: [expect.objectContaining({ id: "notes" })] })],
+      },
+    });
+    expect(done()!["data"]).not.toHaveProperty("removed");
+    expect(steps("provider.disconnect").at(-1)).toMatchObject({ status: "ok", data: { id: "github-oauth", app: "shop", removed: 1 } });
+    expect((await connectionRows()).map((row) => row["id"])).toEqual(["conn_ada", "conn_ben", "conn_ben-google"]);
+    expect(await accessRows()).toEqual(["github-oauth u_ada notes", "github-oauth u_dev notes", "google-workspace u_dev shop"]);
+    expect(await disconnected()).toEqual([]);
+    await expect(disconnect("github-oauth", { user: "dev@example.com", app: "shop" })).rejects.toMatchObject({
+      code: "PROVIDER_CONNECTION_NOT_FOUND",
+    });
+
+    // The connection: every app's access to it goes too, and the event names no app.
+    events = [];
+    await disconnect("github-oauth", { user: "dev@example.com" });
+    expect(done()).toMatchObject({
+      message: expect.stringContaining(
+        [
+          "Removed dev@example.com's connection to GitHub (github-oauth).",
+          'The Gateway no longer holds the tokens; every app that used the connection gets "not connected" until the person connects again.',
+        ].join("\n"),
+      ),
       data: {
         id: "github-oauth",
         revoked: false,
         revokeAt: expect.stringMatching(/^https:\/\/github\.com/),
-        removed: [expect.objectContaining({ userId, label: "ben", app: expect.objectContaining({ id: "shop" }) })],
+        removed: [expect.objectContaining({ userId, label: "ben", apps: [expect.objectContaining({ id: "notes" })] })],
       },
     });
-    expect((await connectionRows()).map((row) => row["id"])).toEqual(["conn_ben-google", "conn_ben-notes"]);
-    const [queued = []] = await db().run([{ sql: "SELECT data FROM events WHERE type = 'provider.disconnected'" }]);
-    expect(queued.map((row) => JSON.parse(String(row["data"])))).toEqual([
+    expect((await connectionRows()).map((row) => row["id"])).toEqual(["conn_ada", "conn_ben-google"]);
+    expect(await accessRows()).toEqual(["github-oauth u_ada notes", "google-workspace u_dev shop"]);
+    expect(await disconnected()).toEqual([
       {
         provider: { id: "github-oauth", name: "GitHub" },
         account: { user: { id: userId, email: "dev@example.com", name: "Dev" }, label: "ben" },
-        app: { id: "shop", rowId: await appRowId("shop"), name: "shop" },
         revoked: false,
       },
     ]);
 
+    // --all with --app: that app's access to every connection to the provider.
     events = [];
-    await disconnect("github-oauth", { user: "dev@example.com" });
-    expect(done()!["data"]["removed"]).toEqual([expect.objectContaining({ label: "ben-notes" })]);
+    await disconnect("github-oauth", { all: true, app: "notes" });
+    expect(done()!["data"]).toMatchObject({ app: "notes", connections: [expect.objectContaining({ label: "ada", apps: [] })] });
+    expect((await connectionRows()).map((row) => row["id"])).toEqual(["conn_ada", "conn_ben-google"]);
+    expect(await accessRows()).toEqual(["google-workspace u_dev shop"]);
+
+    events = [];
+    await disconnect("github-oauth", { all: true });
+    expect(done()!["data"]["removed"]).toEqual([expect.objectContaining({ label: "ada" })]);
     await expect(disconnect("github-oauth", { all: true })).rejects.toMatchObject({ code: "PROVIDER_CONNECTION_NOT_FOUND" });
     events = [];
     await disconnect("google-workspace", { all: true });
     expect(await connectionRows()).toEqual([]);
+    expect(await accessRows()).toEqual([]);
+    expect((await disconnected()).length).toBe(3);
   });
 
-  it("removes an OAuth row with its connections and its uploaded client, and counts them", async () => {
+  it("removes an OAuth row with its connections, the access apps had to them and its uploaded client, and counts them", async () => {
     await registerApp("shop", {});
     await addOAuthProvider("github-oauth");
-    await seedConnection("github-oauth", "shop", await devUserId(), "ben");
+    await seedConnection("github-oauth", await devUserId(), "ben", ["shop"]);
     await uploadClient();
     events = [];
     await remove("github-oauth");
     expect(await rows()).toEqual([]);
     expect(await connectionRows()).toEqual([]);
+    expect(await accessRows()).toEqual([]);
     expect((await db().run([{ sql: "SELECT provider_id FROM oauth_clients" }]))[0]).toEqual([]);
     expect(done()).toMatchObject({
       message: expect.stringContaining("1 connection to it was deleted"),
@@ -1220,7 +1325,7 @@ describe("provider add, one step: the key or client asked for in the same run", 
     expect(second).toBe(
       [
         "Google (google-workspace) is on example.com ✓",
-        "Its client is set. Apps can list google-workspace; people connect inside each app.",
+        "Its client is set. Apps can list google-workspace; each person connects once, from inside an app.",
         "",
       ].join("\n"),
     );

@@ -524,8 +524,8 @@ For a person's own account at a provider (Google, Microsoft 365, Slack,
 GitHub, Notion and the other presets: deploying an app that lists one
 registers it on the gateway), the gateway holds the client, runs the flow
 and keeps the tokens. The
-app lists the provider's own scopes, sends people to connect inside the app,
-and calls the provider's API; it never sees a token.
+app lists the provider's own scopes, sends people to the gateway to connect
+or to allow the app, and calls the provider's API; it never sees a token.
 
 ```ts
 // everyapp.config.ts
@@ -553,8 +553,8 @@ import {
 
 const status = await integrationStatus({ env, provider: "google-workspace" });
 if (!status.connection?.ready) {
-  // A "Connect Google" button: the gateway asks Google for exactly this
-  // app's scopes and sends the person back.
+  // A "Connect Google" button: the gateway sends the person to Google,
+  // or to its own page that allows this app, and then back here.
   return redirect(
     connectUrl({ env, provider: "google-workspace", returnTo: request.url }),
   );
@@ -566,28 +566,32 @@ const sites = await google(
 ```
 
 `connectUrl({ env, provider, returnTo })` is
-`<gateway>/connect/<id>?app=<this app>&return=<returnTo>`. The connection
-belongs to that person and this app: another app that needs the same
-provider connects for its own scopes. The gateway refuses a token that
-carries more scopes than the app lists.
+`<gateway>/connect/<id>?app=<this app>&return=<returnTo>`. A person
+connects a provider once, and the connection belongs to them. The gateway
+asks the provider for every scope the organization's apps list, and
+refuses a token that carries more. Another app that needs the same
+provider sends the person to its own `connectUrl()`. There they select
+Allow on a gateway page, with no trip to the provider. An app they haven't
+allowed can't use the connection. Allowing is a yes or no: an allowed app
+can use every scope the connection holds, not only the ones it lists.
 
 `integrationFetch` reaches https URLs only, and the gateway forwards a call
 to the provider's API hosts alone (a token endpoint or any other host is
 refused, `invalid_integration_route`); it puts the person's token on the
-call. Without a connection, or when the
-connection lacks a scope the app now lists, the gateway answers 409
+call. Without a connection, before the person allowed this app, or when
+the connection lacks a scope the app now lists, the gateway answers 409
 `integration_not_connected` with `connectPath` (and `missingScopes`): send
 the person to `connectUrl()`.
 
 `integrationStatus` for an OAuth provider adds `scopes` (as the manifest
 lists them), `connectPath` (`/connect/<id>?app=<app>`, or null) and
 `connection` (`{ label, scopes, ready, missingScopes?, reconnect? }`, or
-null) for the person.
+null) for the person. `connection` is null until they allowed this app.
 
-An app may use a connection made in it at any time, including from a cron
-or a Durable Object alarm. `for: { background: true, userId }` names any
-member's connection to this app, even while serving another member's
-request: OpenSEO reads a project's Search Console with the connection of the
+An app a person allowed may use their connection at any time, including
+from a cron or a Durable Object alarm. `for: { background: true, userId }`
+names any member's connection, once that member allowed this app, even
+while serving another member's request: OpenSEO reads a project's Search Console with the connection of the
 member who picked the property, whoever is viewing. The call carries that
 member (`x-everyapp-user`), not the person being served. Only an
 organization's own app may, and only for a member who may still open the
@@ -608,9 +612,9 @@ calls to the provider's hosts as the bearer; without it calls answer the same 40
 - `for: { background: true, organizationId }`, for work no request started
   (a cron, a Workflow step, a queue): sent as `x-everyapp-org` with no
   identity.
-- `for: { background: true, userId }`, for a call to an OAuth provider on a
-  member's connection to this app: sent as `x-everyapp-user`, with no
-  identity, even while a request is being served.
+- `for: { background: true, userId }`, for a call to an OAuth provider on
+  the connection of a member who allowed this app: sent as
+  `x-everyapp-user`, with no identity, even while a request is being served.
 - Omitted: allowed only in an organization's own app, whose background
   calls are the app's, in its own organization (the same as
   `{ background: true }`). Naming another organization is refused.

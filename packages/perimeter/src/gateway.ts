@@ -85,6 +85,15 @@ export interface McpInterceptInput {
   session: AuthenticatedSession;
 }
 
+/** What {@link GatewayDeps.needsConnection} receives. */
+export interface NeedsConnectionInput {
+  /** The original request, on a private route; its body is still unread. */
+  request: Request;
+  app: RegisteredApp;
+  /** The signed-in caller, already checked for access to `app`. */
+  session: AuthenticatedSession;
+}
+
 /** What {@link GatewayDeps.needsSetup} receives. */
 export interface NeedsSetupInput {
   /** The app, `active` by now. */
@@ -176,6 +185,17 @@ export interface GatewayDeps {
    * opens the app; omitting the hook gates nothing.
    */
   needsSetup?(input: NeedsSetupInput): Promise<Response | null>;
+  /**
+   * Refuse to open an app for this person until they have what it needs of
+   * their own: an OAuth provider the app requires, connected and allowed
+   * for this app. Called on a private path once the caller is signed in and
+   * may open the app (not for `/mcp`), after `needsSetup`. A Response is
+   * returned as is: the gateway's sends a page navigation to the
+   * launcher's setup dialog, which says what to connect; it lets every
+   * other request through, since the app's own calls to the provider are
+   * refused anyway. Null opens the app; omitting the hook gates nothing.
+   */
+  needsConnection?(input: NeedsConnectionInput): Promise<Response | null>;
   /**
    * Set on a third-party host (hostRoutes.ts): sign-in is the per-host
    * session handoff, and app responses lose credentialed CORS and the
@@ -720,6 +740,12 @@ export async function handleGatewayRequest(
       // Nothing to serve (no catalog yet, or none readable): say so rather
       // than hand the request, an MCP-only token's included, to the app.
       return json(503, { error: "mcp_unavailable", app: app.appId });
+    }
+    // What the app needs of this person (an OAuth account it requires),
+    // asked on its private routes only: a public route serves as it is.
+    if (deps.needsConnection && !publicMatch.public) {
+      const refused = await deps.needsConnection({ request, app, session });
+      if (refused) return refused;
     }
     const identity = await mintIdentityJwt(deps.privateKeyPem, {
       subject: {

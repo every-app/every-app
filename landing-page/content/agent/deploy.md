@@ -49,7 +49,7 @@ export default defineConfig({ id: "scribe", previousIds: ["talk"], name: "Scribe
 `everyapp deploy` sees that `scribe` isn't registered and `talk` is, shows the plan (`app.rename`) and asks; `--yes` answers for CI. Then:
 
 - The registry row takes the new id and the hostname `scribe.<app base domain>`. It keeps its Worker name (`every-<orgKey>-talk`), so the D1, KV, R2 and other resources named after it, the Worker's secrets, and its data stay as they are. Nothing is copied.
-- Everything the Gateway holds for the app stays with it: who can open it, groups, tokens bound to it, AI and OAuth connections, native sign-ins, caps, usage, events, email setup.
+- Everything the Gateway holds for the app stays with it: who can open it, groups, tokens bound to it, AI connections, its access to people's OAuth connections, native sign-ins, caps, usage, events, email setup.
 - The old hostname keeps working. Until the new one answers over HTTPS it serves the app in full; from then on (`app.rename` "now redirect", or the next deploy if this one didn't wait) page loads and shared links get a `308` to the same path on the new host, while requests with a bearer token, non-GET requests and WebSockets are served on the old host as before. A desktop app's `/api/v1` calls and webhooks keep working without a change.
 - Two things follow the new id: the app's tools are named `scribe_*` on the Gateway's `/mcp`, and `everyapp dev --linked` signs in again.
 

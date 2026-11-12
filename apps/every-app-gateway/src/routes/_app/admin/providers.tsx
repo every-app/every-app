@@ -1,24 +1,31 @@
 import { Component, useMemo, useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ColumnDef } from "@tanstack/react-table";
-import { KeyRound, Plus, Trash2, Unplug } from "lucide-react";
+import { flexRender, type ColumnDef } from "@tanstack/react-table";
+import { ChevronDown, KeyRound, Plus, Trash2, Unplug } from "lucide-react";
 import { toast } from "sonner";
 import { AddOAuthProviderDialog } from "@/client/components/admin/AddOAuthProviderDialog";
 import { ReplaceOAuthClientDialog } from "@/client/components/admin/ReplaceOAuthClientDialog";
 import { CodeBlock } from "@/client/components/CodeBlock";
 import { ConfirmDialog } from "@/client/components/ConfirmDialog";
-import { EmptyState } from "@/client/components/EmptyState";
+import { ConnectionApps } from "@/client/components/ConnectionApps";
+import {
+  useConnectionRemoval,
+  type AppAccess,
+} from "@/client/components/ConnectionRemoval";
+import { ConnectionStatusBadge } from "@/client/components/ConnectionStatusBadge";
 import { ErrorState } from "@/client/components/ErrorState";
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
 import {
-  SettingsList,
-  SettingsListSkeleton,
-  SettingsRow,
   SettingsSection,
   SettingsTab,
 } from "@/client/components/SettingsLayout";
-import { DataTable, useDataTable } from "@/client/components/table/DataTable";
+import {
+  CardSlot,
+  DataTable,
+  useDataTable,
+  useInDataTableCard,
+} from "@/client/components/table/DataTable";
 import {
   DataTableSearch,
   DataTableToolbar,
@@ -43,10 +50,7 @@ import { DropdownMenuItem } from "@/client/components/ui/dropdown-menu";
 import { getRuleErrorMessage } from "@/client/errors";
 import { clientSourceLabel, scopesText } from "@/client/lib/oauthProviders";
 import { getAiDefault } from "@/serverFunctions/ai";
-import {
-  disconnectConnection,
-  listAllConnections,
-} from "@/serverFunctions/connections";
+import { listAllConnections } from "@/serverFunctions/connections";
 import {
   addOAuthProvider,
   listProviders,
@@ -69,12 +73,26 @@ type Connection = Awaited<
   ReturnType<typeof listAllConnections>
 >["connections"][number];
 
+/** Whose connection it is: their email, or their id when no email is known. */
+function personOf(connection: Connection): string {
+  return connection.userEmail ?? connection.userId;
+}
+
 const KIND_LABEL: Record<Provider["kind"], string> = {
   api_key: "API key",
   oauth: "OAuth",
   ai: "AI",
   service: "Gateway service",
 };
+
+const SOURCE_LABEL: Record<Provider["source"], string> = {
+  catalog: "Built in",
+  row: "Registered here",
+};
+
+/** The columns that hold a row's controls: the Set up button, then the menu (the id `DataTable` puts top right on a card). */
+const SETUP_COLUMN = "setup";
+const ACTIONS_COLUMN = "actions";
 
 /** The user docs' provider pages: where to get a key. */
 const PROVIDER_DOCS_URL = "https://everyapp.com/docs/providers";
@@ -119,7 +137,7 @@ function readProviders(data: { providers: Provider[] }): {
   };
 }
 
-/** One row failing to render shows its name and a line instead of the tab's error page. */
+/** A cell failing to render says so in its place instead of the tab's error page. */
 class ProviderBoundary extends Component<
   { fallback: ReactNode; children: ReactNode },
   { failed: boolean }
@@ -135,112 +153,76 @@ class ProviderBoundary extends Component<
   }
 }
 
-function BrokenProviderRow({ provider }: { provider: Provider }) {
-  return (
-    <SettingsRow
-      name={provider.name}
-      detail="Couldn't show this provider. Reload the page to try again."
-    />
-  );
+/**
+ * Each cell behind a boundary: a row this build can't fully read keeps its
+ * name and the cells that do render, and the rest of the table lists as
+ * usual. A menu that fails leaves its place empty.
+ */
+function guardCells(columns: ColumnDef<Provider>[]): ColumnDef<Provider>[] {
+  return columns.map((column) => {
+    const { cell } = column;
+    if (typeof cell !== "function") return column;
+    const fallback =
+      column.id === ACTIONS_COLUMN || column.id === SETUP_COLUMN ? null : (
+        <span className="text-xs text-muted-foreground">
+          Couldn't show this
+        </span>
+      );
+    return {
+      ...column,
+      cell: (context) => (
+        <ProviderBoundary fallback={fallback}>
+          {flexRender(cell, context)}
+        </ProviderBoundary>
+      ),
+    };
+  });
 }
 
-/** What a provider still lacks, in the words its Set up action answers. */
-function needLabel(provider: Provider): string {
-  return provider.kind === "oauth" ? "Needs a client" : "Needs a key";
+/** Where a provider stands, in the order the table lists them. */
+enum ProviderState {
+  Ready,
+  /**
+   * Not set, and waited on: an installed app stays closed without it, or
+   * it was registered here (an OAuth preset a deploy registered, until its
+   * client is set). These rows carry Set up.
+   */
+  NeedsSetup,
+  NotSet,
 }
 
-function ProviderStatus({ provider }: { provider: Provider }) {
-  return provider.configured ? (
-    <span>Ready</span>
-  ) : (
-    <span className="text-muted-foreground">Not set</span>
-  );
+function providerState(provider: Provider): ProviderState {
+  if (provider.configured) return ProviderState.Ready;
+  return provider.source === "row" || provider.apps.some((app) => app.needs)
+    ? ProviderState.NeedsSetup
+    : ProviderState.NotSet;
 }
+
+/** A chip in every state, as a connection's status is, so the column reads by color. */
+const STATE_BADGE: Record<ProviderState, ReactNode> = {
+  [ProviderState.Ready]: <Badge variant="success">Ready</Badge>,
+  [ProviderState.NeedsSetup]: <Badge variant="warning">Needs setup</Badge>,
+  [ProviderState.NotSet]: <Badge variant="secondary">Not set</Badge>,
+};
 
 /**
- * How the page groups the list: what is set up, what an installed app
- * needs and lacks (an OAuth preset a deploy registered, until its client
- * is set), the other rows registered here, and the rest of the catalog
- * behind Show all. Gateway services (email, members) are internals and
- * never list.
+ * What the table lists before Show all, in its order: what is set up, then
+ * what still needs setting up. The rest of the catalog waits behind Show
+ * all. Gateway services (email, members) are internals and never list.
  */
 function partitionProviders(providers: readonly Provider[]): {
-  setUp: Provider[];
-  needed: Provider[];
+  inUse: Provider[];
   rest: Provider[];
-  listed: Provider[];
 } {
   const listed = providers.filter((provider) => provider.kind !== "service");
-  const setUp: Provider[] = [];
-  const needed: Provider[] = [];
-  const rest: Provider[] = [];
-  for (const provider of listed) {
-    if (provider.configured) setUp.push(provider);
-    else if (provider.apps.some((app) => app.needs)) needed.push(provider);
-    else if (provider.source === "row") setUp.push(provider);
-    else rest.push(provider);
-  }
-  return { setUp, needed, rest, listed };
-}
-
-/** "AI models, APIs, OAuth sign-ins": the kinds among `providers`, in that order. */
-function kindsLine(providers: readonly Provider[]): string {
-  const words: [Provider["kind"], string][] = [
-    ["ai", "AI models"],
-    ["api_key", "APIs"],
-    ["oauth", "OAuth sign-ins"],
-  ];
-  return words
-    .filter(([kind]) => providers.some((provider) => provider.kind === kind))
-    .map(([, word]) => word)
-    .join(", ");
-}
-
-/** The muted line under a provider's name: its kind, then what is known about its use. */
-function providerDetail(
-  provider: Provider,
-  options: { aiDefault: string | null; needing?: boolean },
-): string {
-  const parts = [KIND_LABEL[provider.kind]];
-  if (provider.source === "row") parts.push("registered here");
-  if (provider.id === options.aiDefault) parts.push("AI default");
-  const connections = provider.oauth?.connections ?? 0;
-  if (connections > 0) {
-    parts.push(`${connections} connection${connections === 1 ? "" : "s"}`);
-  }
-  const apps = provider.apps
-    .filter((app) => !options.needing || app.needs)
-    .map((app) => app.name);
-  if (apps.length > 0) {
-    parts.push(
-      `${options.needing ? "needed by" : "used by"} ${apps.join(", ")}`,
-    );
-  }
-  return parts.join(" · ");
-}
-
-function ProviderGroup({
-  title,
-  count,
-  children,
-}: {
-  title: string;
-  count: number;
-  children: ReactNode;
-}) {
-  return (
-    <SettingsSection
-      level={3}
-      title={
-        <>
-          {title}{" "}
-          <span className="font-normal text-muted-foreground">· {count}</span>
-        </>
-      }
-    >
-      <SettingsList label={title}>{children}</SettingsList>
-    </SettingsSection>
-  );
+  return {
+    inUse: listed
+      .filter((provider) => providerState(provider) !== ProviderState.NotSet)
+      .sort((a, b) => providerState(a) - providerState(b)),
+    rest: listed.filter(
+      (provider) => providerState(provider) === ProviderState.NotSet,
+    ),
+  };
 }
 
 /** How a key is set: from the terminal, by name; the value never passes through the browser. */
@@ -292,19 +274,24 @@ function SetKeyDialog({
   );
 }
 
-interface ProviderActionHandlers {
+interface ProviderMenuHandlers {
   onReplaceClient: (provider: OAuthProvider) => void;
   onForgetClient: (provider: OAuthProvider) => void;
   onRemove: (provider: Provider) => void;
 }
 
+interface ProviderActionHandlers extends ProviderMenuHandlers {
+  /** Opens what the provider lacks: the client dialog, or the key's terminal command. */
+  onSetUp: (provider: Provider) => void;
+}
+
 /** A provider's menu: its client for an OAuth one, Remove for a registered row; none for a built-in key. */
-function ProviderActions({
+function ProviderMenu({
   provider,
   onReplaceClient,
   onForgetClient,
   onRemove,
-}: { provider: Provider } & ProviderActionHandlers) {
+}: { provider: Provider } & ProviderMenuHandlers) {
   const entry = provider.oauth;
   if (!entry && provider.source === "catalog") return null;
   return (
@@ -334,10 +321,104 @@ function ProviderActions({
   );
 }
 
-function providerColumns(
-  actions: ProviderActionHandlers,
-): ColumnDef<Provider>[] {
-  return [
+/**
+ * A phone's row is one line: a provider's name, its status and Set up. The
+ * table keeps the rest: the id, its kind and where it comes from, the apps
+ * that list it, and the client or hosts.
+ */
+function NameCell({ provider }: { provider: Provider }) {
+  const inCard = useInDataTableCard();
+  return (
+    <>
+      <p className="truncate font-medium">{provider.name}</p>
+      {inCard ? null : (
+        <p className="truncate font-mono text-xs text-muted-foreground">
+          {provider.id}
+        </p>
+      )}
+    </>
+  );
+}
+
+/** What a provider is, over where it comes from. */
+function KindCell({
+  provider,
+  isAiDefault,
+}: {
+  provider: Provider;
+  isAiDefault: boolean;
+}) {
+  return (
+    <>
+      <p>{isAiDefault ? "AI default" : KIND_LABEL[provider.kind]}</p>
+      <p className="text-xs text-muted-foreground">
+        {SOURCE_LABEL[provider.source]}
+      </p>
+    </>
+  );
+}
+
+/** The apps that list a provider, by name. */
+function AppsCell({ provider }: { provider: Provider }) {
+  if (provider.apps.length === 0)
+    return <span className="text-muted-foreground">none</span>;
+  const names = provider.apps.map((app) => app.name).join(", ");
+  return (
+    <span className="line-clamp-3" title={names}>
+      {names}
+    </span>
+  );
+}
+
+/**
+ * An OAuth provider's client, by where it comes from and never its value,
+ * over how many people have connected. Any other provider lists the hosts
+ * its key goes to.
+ */
+function ClientCell({ provider }: { provider: Provider }) {
+  const entry = provider.oauth;
+  if (!entry) {
+    if (provider.hosts.length === 0) return null;
+    const hosts = provider.hosts.join(", ");
+    // Capped, so a long list of hosts doesn't take the Apps column's room.
+    return (
+      <span
+        className="line-clamp-2 max-w-60 text-xs text-muted-foreground"
+        title={hosts}
+      >
+        {hosts}
+      </span>
+    );
+  }
+  const view = clientSourceLabel(entry.client);
+  const stale = entry.client.stale ? (
+    <Badge variant="warning" size="sm" className="ml-2">
+      Pasted for other endpoints
+    </Badge>
+  ) : null;
+  return (
+    <>
+      <p className={view.tone === "unset" ? "text-muted-foreground" : ""}>
+        {view.label}
+        {stale}
+      </p>
+      <p className="text-xs text-muted-foreground">
+        {entry.connections}{" "}
+        {entry.connections === 1 ? "connection" : "connections"}
+      </p>
+    </>
+  );
+}
+
+function providerColumns({
+  aiDefault,
+  onSetUp,
+  ...menu
+}: ProviderActionHandlers & {
+  /** The provider the default model runs on, or null: its kind says so. */
+  aiDefault: string | null;
+}): ColumnDef<Provider>[] {
+  return guardCells([
     {
       accessorKey: "name",
       header: ({ column }) => (
@@ -345,133 +426,170 @@ function providerColumns(
       ),
       meta: { label: "Provider", cellClassName: "max-w-[260px]" },
       cell: ({ row: { original: provider } }) => (
-        <>
-          <p className="truncate font-medium">{provider.name}</p>
-          <p className="truncate font-mono text-xs text-muted-foreground">
-            {provider.id}
-          </p>
-        </>
+        <NameCell provider={provider} />
       ),
     },
     {
       accessorKey: "kind",
       header: ({ column }) => <SortableHeader column={column} label="Kind" />,
-      meta: { label: "Kind" },
+      meta: {
+        label: "Kind",
+        cellClassName: "whitespace-nowrap",
+        card: CardSlot.Hidden,
+      },
       cell: ({ row: { original: provider } }) => (
-        <Badge variant="secondary">{KIND_LABEL[provider.kind]}</Badge>
+        <KindCell provider={provider} isAiDefault={provider.id === aiDefault} />
+      ),
+    },
+    {
+      id: "apps",
+      header: "Apps",
+      enableSorting: false,
+      meta: {
+        cellClassName: "min-w-32 max-w-[280px]",
+        card: CardSlot.Hidden,
+      },
+      cell: ({ row: { original: provider } }) => (
+        <AppsCell provider={provider} />
       ),
     },
     {
       id: "status",
-      accessorFn: (provider) => (provider.configured ? 0 : 1),
+      accessorFn: providerState,
       header: ({ column }) => <SortableHeader column={column} label="Status" />,
-      meta: { label: "Status", cellClassName: "whitespace-nowrap" },
-      cell: ({ row: { original: provider } }) => (
-        <ProviderStatus provider={provider} />
-      ),
-    },
-    {
-      accessorKey: "source",
-      header: ({ column }) => <SortableHeader column={column} label="Source" />,
-      meta: { label: "Source", cellClassName: "text-muted-foreground" },
+      meta: {
+        label: "Status",
+        cellClassName: "whitespace-nowrap",
+        card: CardSlot.Trailing,
+      },
       cell: ({ row: { original: provider } }) =>
-        provider.source === "catalog" ? "Built in" : "Registered here",
+        STATE_BADGE[providerState(provider)],
     },
     {
       id: "client",
       header: "OAuth client",
       enableSorting: false,
-      cell: ({ row: { original: provider } }) => {
-        const entry = provider.oauth;
-        if (!entry) {
-          return (
-            <span className="text-xs text-muted-foreground">
-              {provider.kind === "service" ? "—" : provider.hosts.join(", ")}
-            </span>
-          );
-        }
-        const view = clientSourceLabel(entry.client);
-        return (
-          <span
-            className={view.tone === "unset" ? "text-muted-foreground" : ""}
-          >
-            {view.label}
-            {entry.client.stale ? (
-              <Badge variant="warning" size="sm" className="ml-2">
-                Pasted for other endpoints
-              </Badge>
-            ) : null}
-          </span>
-        );
-      },
-    },
-    {
-      id: "connections",
-      accessorFn: (provider) => provider.oauth?.connections ?? -1,
-      header: ({ column }) => (
-        <SortableHeader column={column} label="Connections" />
+      meta: { card: CardSlot.Hidden },
+      cell: ({ row: { original: provider } }) => (
+        <ClientCell provider={provider} />
       ),
-      meta: { label: "Connections" },
-      cell: ({ row: { original: provider } }) =>
-        provider.oauth ? provider.oauth.connections : "—",
     },
     {
-      id: "actions",
+      // Its own column, so the buttons line up whether or not a row has a menu.
+      id: SETUP_COLUMN,
+      header: () => <span className="sr-only">Set up</span>,
+      enableSorting: false,
+      meta: {
+        headerClassName: "w-px",
+        cellClassName: "text-right",
+        card: CardSlot.Trailing,
+      },
+      cell: ({ row: { original: provider } }) =>
+        providerState(provider) === ProviderState.NeedsSetup ? (
+          // text-foreground: a card's trailing slot mutes its text.
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-foreground"
+            onClick={() => onSetUp(provider)}
+          >
+            Set up
+          </Button>
+        ) : null,
+    },
+    {
+      id: ACTIONS_COLUMN,
       header: () => <span className="sr-only">Actions</span>,
       enableSorting: false,
       meta: { headerClassName: "w-10" },
       cell: ({ row: { original: provider } }) => (
-        <ProviderActions provider={provider} {...actions} />
+        <ProviderMenu provider={provider} {...menu} />
       ),
     },
-  ];
+  ]);
+}
+
+/**
+ * A phone's row says whose connection it is, the provider and its status,
+ * over the apps allowed to use it. The table keeps the rest: the account's
+ * name at the provider, the scopes and when it was last used.
+ */
+function WhoCell({ connection }: { connection: Connection }) {
+  const inCard = useInDataTableCard();
+  const who = personOf(connection);
+  return (
+    <>
+      <p className="truncate font-medium">{who}</p>
+      {!inCard && connection.label && connection.label !== who ? (
+        <p className="truncate text-xs text-muted-foreground">
+          {connection.label}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/** The apps a person allowed, each with the button that takes its access away. */
+function AllowedAppsCell({
+  connection,
+  onRemoveApp,
+}: {
+  connection: Connection;
+  onRemoveApp: (access: AppAccess<Connection>) => void;
+}) {
+  const inCard = useInDataTableCard();
+  if (connection.apps.length === 0) {
+    return inCard ? null : <span className="text-muted-foreground">none</span>;
+  }
+  return (
+    <ConnectionApps
+      apps={connection.apps}
+      onRemove={(app) => onRemoveApp({ connection, app })}
+    />
+  );
 }
 
 function connectionColumns({
   onDisconnect,
-  isDisconnecting,
+  onRemoveApp,
 }: {
   onDisconnect: (connection: Connection) => void;
-  isDisconnecting: boolean;
+  onRemoveApp: (access: AppAccess<Connection>) => void;
 }): ColumnDef<Connection>[] {
   return [
     {
       id: "who",
-      accessorFn: (connection) => connection.userEmail ?? connection.userId,
+      accessorFn: personOf,
       header: ({ column }) => <SortableHeader column={column} label="Who" />,
       meta: { label: "Who", cellClassName: "max-w-[240px]" },
-      cell: ({ row: { original: connection } }) => {
-        const who = connection.userEmail ?? connection.userId;
-        return (
-          <>
-            <p className="truncate font-medium">{who}</p>
-            {connection.label && connection.label !== who ? (
-              <p className="truncate text-xs text-muted-foreground">
-                {connection.label}
-              </p>
-            ) : null}
-          </>
-        );
-      },
+      cell: ({ row: { original: connection } }) => (
+        <WhoCell connection={connection} />
+      ),
     },
     {
       accessorKey: "providerName",
       header: ({ column }) => (
         <SortableHeader column={column} label="Provider" />
       ),
-      meta: { label: "Provider" },
+      meta: { label: "Provider", card: CardSlot.BareDetail },
     },
     {
-      id: "app",
-      accessorFn: (connection) => connection.app.name,
-      header: ({ column }) => <SortableHeader column={column} label="App" />,
-      meta: { label: "App" },
+      id: "apps",
+      header: "Apps",
+      enableSorting: false,
+      meta: { cellClassName: "max-w-[280px]", card: CardSlot.Footer },
+      cell: ({ row: { original: connection } }) => (
+        <AllowedAppsCell connection={connection} onRemoveApp={onRemoveApp} />
+      ),
     },
     {
       id: "scopes",
       header: "Scopes",
       enableSorting: false,
-      meta: { cellClassName: "font-mono text-xs text-muted-foreground" },
+      meta: {
+        cellClassName: "font-mono text-xs text-muted-foreground",
+        card: CardSlot.Hidden,
+      },
       cell: ({ row: { original: connection } }) =>
         scopesText(connection.scopes),
     },
@@ -479,12 +597,10 @@ function connectionColumns({
       accessorKey: "status",
       header: "Status",
       enableSorting: false,
-      cell: ({ row: { original: connection } }) =>
-        connection.status === "expired" ? (
-          <Badge variant="warning">Reconnect in the app</Badge>
-        ) : (
-          <span className="text-muted-foreground">Connected</span>
-        ),
+      meta: { card: CardSlot.BareDetail },
+      cell: ({ row: { original: connection } }) => (
+        <ConnectionStatusBadge connection={connection} />
+      ),
     },
     {
       id: "lastUsedAt",
@@ -492,7 +608,11 @@ function connectionColumns({
       header: ({ column }) => (
         <SortableHeader column={column} label="Last used" />
       ),
-      meta: { label: "Last used", cellClassName: DATE_CELL },
+      meta: {
+        label: "Last used",
+        cellClassName: DATE_CELL,
+        card: CardSlot.Hidden,
+      },
       cell: ({ row: { original: connection } }) => (
         <DateCell value={connection.lastUsedAt} />
       ),
@@ -504,11 +624,10 @@ function connectionColumns({
       meta: { headerClassName: "w-10" },
       cell: ({ row: { original: connection } }) => (
         <RowActionsMenu
-          label={`Actions for ${connection.userEmail ?? connection.userId}'s ${connection.providerName} connection in ${connection.app.name}`}
+          label={`Actions for ${personOf(connection)}'s ${connection.providerName} connection`}
         >
           <DropdownMenuItem
             variant="destructive"
-            disabled={isDisconnecting}
             onClick={() => onDisconnect(connection)}
           >
             <Unplug />
@@ -522,12 +641,16 @@ function connectionColumns({
 
 /**
  * Manage workspace → Providers (docs/design/2026-11-oauth-simplify.md):
- * every provider the Gateway brokers, where each one's key or client comes
- * from (never a value), the OAuth ones with their redirect URI and
- * connection count; Add OAuth provider from a preset or a custom spec with
- * the client pasted in; Replace or Forget a client; Remove a registered
- * provider; and every connection in the organization (one person's in one
- * app), each disconnectable. Owners and admins.
+ * one table of the providers the Gateway brokers, first what is set up and
+ * what still needs it, with the rest of the catalog behind Show all, ten
+ * rows to a page: the apps that list each one, where its key or client comes from (never a
+ * value), and an OAuth one's connection count; Add OAuth provider from a
+ * preset or a custom spec with the client pasted in; Set up, Replace or
+ * Forget a client; Remove a registered provider; and, under Organization
+ * connections, every connection in the organization
+ * (docs/design/2026-11-oauth-one-connection.md): one person's to one
+ * provider, with the apps they allowed to use it, ten to a page. One app's access can be
+ * taken away, and Disconnect stops every app at once. Owners and admins.
  */
 function ProvidersPage() {
   const queryClient = useQueryClient();
@@ -535,7 +658,6 @@ function ProvidersPage() {
   const [replacing, setReplacing] = useState<OAuthProvider | null>(null);
   const [forgetting, setForgetting] = useState<OAuthProvider | null>(null);
   const [removing, setRemoving] = useState<Provider | null>(null);
-  const [disconnecting, setDisconnecting] = useState<Connection | null>(null);
   const [settingKey, setSettingKey] = useState<Provider | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [search, setSearch] = useState("");
@@ -599,58 +721,62 @@ function ProvidersPage() {
     onError: (error) =>
       toast.error(getRuleErrorMessage(error, "Failed to remove the provider")),
   });
-  const disconnectMutation = useMutation({
-    mutationFn: disconnectConnection,
-    onSuccess: async () => {
-      await refresh();
-      toast.success("Disconnected");
-    },
-    onError: (error) =>
-      toast.error(getRuleErrorMessage(error, "Failed to disconnect")),
+  const removal = useConnectionRemoval<Connection>({
+    person: personOf,
+    onChanged: refresh,
   });
 
-  const actions: ProviderActionHandlers = useMemo(
-    () => ({
-      onReplaceClient: setReplacing,
-      onForgetClient: setForgetting,
-      onRemove: setRemoving,
-    }),
-    [],
+  const providerCols = useMemo(
+    () =>
+      providerColumns({
+        aiDefault,
+        onSetUp: (provider) =>
+          provider.oauth
+            ? setReplacing(provider.oauth)
+            : setSettingKey(provider),
+        onReplaceClient: setReplacing,
+        onForgetClient: setForgetting,
+        onRemove: setRemoving,
+      }),
+    [aiDefault],
   );
-  const providerCols = useMemo(() => providerColumns(actions), [actions]);
   const groups = useMemo(
     () => partitionProviders(providersQuery.data?.providers ?? []),
     [providersQuery.data],
   );
-  const matching = useMemo(() => {
-    const needle = search.trim().toLowerCase();
+  const needle = search.trim().toLowerCase();
+  const listed = useMemo(() => {
+    if (!showAll) return groups.inUse;
+    const all = [...groups.inUse, ...groups.rest];
     return needle
-      ? groups.listed.filter(
+      ? all.filter(
           (provider) =>
             provider.name.toLowerCase().includes(needle) ||
             provider.id.includes(needle),
         )
-      : groups.listed;
-  }, [groups.listed, search]);
+      : all;
+  }, [groups, showAll, needle]);
   const providersTable = useDataTable({
-    data: matching,
+    data: listed,
     columns: providerCols,
     getRowId: (provider) => provider.id,
     withSorting: true,
+    withPagination: true,
   });
   const connectionCols = useMemo(
     () =>
       connectionColumns({
-        onDisconnect: setDisconnecting,
-        isDisconnecting: disconnectMutation.isPending,
+        onDisconnect: removal.askDisconnect,
+        onRemoveApp: removal.askRemoveApp,
       }),
-    [disconnectMutation.isPending],
+    [removal.askDisconnect, removal.askRemoveApp],
   );
   const connectionsTable = useDataTable({
     data: connectionsQuery.data?.connections ?? [],
     columns: connectionCols,
     getRowId: (connection) => connection.id,
     withSorting: true,
+    withPagination: true,
   });
 
   // A custom provider's redirect URI, before it exists: the same path every
@@ -679,148 +805,74 @@ function ProvidersPage() {
           </Button>
         }
       >
-        {providersQuery.isError ? (
-          <ErrorState
-            message="Couldn't load the providers."
-            onRetry={() => void providersQuery.refetch()}
-            isRetrying={providersQuery.isFetching}
-          />
-        ) : !providersQuery.data ? (
-          <SettingsListSkeleton rows={3} />
-        ) : (
-          <div className="space-y-6">
-            {groups.setUp.length > 0 ? (
-              <ProviderGroup title="Set up" count={groups.setUp.length}>
-                {groups.setUp.map((provider) => (
-                  <ProviderBoundary
-                    key={provider.id}
-                    fallback={<BrokenProviderRow provider={provider} />}
-                  >
-                    <SettingsRow
-                      name={provider.name}
-                      detail={providerDetail(provider, { aiDefault })}
-                      status={
-                        provider.configured ? (
-                          <ProviderStatus provider={provider} />
-                        ) : (
-                          <Badge variant="warning">{needLabel(provider)}</Badge>
-                        )
-                      }
-                      action={
-                        <ProviderActions provider={provider} {...actions} />
-                      }
-                    />
-                  </ProviderBoundary>
-                ))}
-              </ProviderGroup>
-            ) : (
-              <EmptyState
-                size="sm"
-                title="Nothing is set up yet"
-                description="Set a key from the terminal, or add an OAuth provider."
+        <DataTable
+          table={providersTable}
+          isLoading={providersQuery.isPending}
+          error={
+            providersQuery.isError ? (
+              <ErrorState
+                message="Couldn't load the providers."
+                onRetry={() => void providersQuery.refetch()}
+                isRetrying={providersQuery.isFetching}
               />
-            )}
-
-            {groups.needed.length > 0 ? (
-              <ProviderGroup
-                title="Needed by an app"
-                count={groups.needed.length}
-              >
-                {groups.needed.map((provider) => (
-                  <ProviderBoundary
-                    key={provider.id}
-                    fallback={<BrokenProviderRow provider={provider} />}
-                  >
-                    <SettingsRow
-                      name={provider.name}
-                      detail={providerDetail(provider, {
-                        aiDefault,
-                        needing: true,
-                      })}
-                      status={
-                        <Badge variant="warning">{needLabel(provider)}</Badge>
-                      }
-                      action={
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            provider.oauth
-                              ? setReplacing(provider.oauth)
-                              : setSettingKey(provider)
-                          }
-                        >
-                          Set up
-                        </Button>
-                      }
-                    />
-                  </ProviderBoundary>
-                ))}
-              </ProviderGroup>
-            ) : null}
-
-            {showAll ? (
-              <div role="region" aria-label="All providers">
-                <ProviderBoundary
-                  fallback={
-                    <p className="text-sm text-muted-foreground">
-                      Couldn't show the full list. Reload the page to try again.
-                    </p>
-                  }
-                >
-                  <DataTable
-                    table={providersTable}
-                    isLoading={false}
-                    toolbar={
-                      <DataTableToolbar
-                        actions={
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setShowAll(false)}
-                          >
-                            Hide
-                          </Button>
-                        }
-                      >
-                        <DataTableSearch
-                          label="Search providers"
-                          value={search}
-                          onChange={setSearch}
-                        />
-                      </DataTableToolbar>
-                    }
-                    empty={{
-                      title: "No providers match",
-                      description: "Try another name or id.",
-                    }}
-                  />
-                </ProviderBoundary>
-              </div>
-            ) : (
-              <div className="flex min-h-13 flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-border px-4 py-2">
-                <p className="text-sm text-muted-foreground">
-                  {groups.rest.length} more built in
-                  {groups.rest.length > 0
-                    ? `: ${kindsLine(groups.rest)}`
-                    : null}
-                </p>
+            ) : undefined
+          }
+          toolbar={
+            showAll ? (
+              <DataTableToolbar>
+                <DataTableSearch
+                  label="Search providers"
+                  value={search}
+                  onChange={setSearch}
+                />
+              </DataTableToolbar>
+            ) : undefined
+          }
+          isFiltered={needle !== ""}
+          filteredTitle="No providers match"
+          onClearFilters={() => setSearch("")}
+          empty={{
+            title: "Nothing is set up yet",
+            description:
+              "Set a key from the terminal, or add an OAuth provider.",
+            action:
+              !showAll && groups.rest.length > 0 ? (
                 <Button
-                  size="sm"
                   variant="outline"
+                  size="sm"
                   onClick={() => setShowAll(true)}
                 >
                   Show all providers
                 </Button>
+              ) : undefined,
+          }}
+          footer={
+            // The rest of the catalog, as the table's last row: what is
+            // hidden belongs to this list, and the chevron says it opens.
+            !showAll && groups.inUse.length > 0 && groups.rest.length > 0 ? (
+              <div className="flex items-center justify-between gap-3 border-t border-border bg-muted/50 px-4 py-2">
+                <p className="text-sm text-muted-foreground">
+                  {groups.rest.length} more{" "}
+                  {groups.rest.length === 1 ? "provider" : "providers"}{" "}
+                  available
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowAll(true)}
+                >
+                  Show all
+                  <ChevronDown data-icon="inline-end" />
+                </Button>
               </div>
-            )}
-          </div>
-        )}
+            ) : undefined
+          }
+        />
       </SettingsSection>
 
       <SettingsSection
-        title="Connections"
-        hint="Personal accounts, like Gmail, that people have connected inside an app."
+        title="Organization connections"
+        hint="Personal accounts, like Gmail, that people have connected, and the apps they allow to use them."
       >
         <DataTable
           table={connectionsTable}
@@ -836,7 +888,7 @@ function ProvidersPage() {
           }
           empty={{
             title: "No connections yet",
-            description: "People connect accounts inside each app.",
+            description: "People connect an account once, from inside an app.",
           }}
         />
       </SettingsSection>
@@ -914,24 +966,7 @@ function ProvidersPage() {
         </ConfirmDialog>
       ) : null}
 
-      {disconnecting ? (
-        <ConfirmDialog
-          title={`Disconnect ${disconnecting.userEmail ?? disconnecting.userId}'s ${disconnecting.providerName} from ${disconnecting.app.name}?`}
-          confirmLabel="Disconnect"
-          destructive
-          pending={disconnectMutation.isPending}
-          onClose={() => setDisconnecting(null)}
-          onConfirm={() =>
-            disconnectMutation.mutate(
-              { data: { connectionId: disconnecting.id } },
-              { onSettled: () => setDisconnecting(null) },
-            )
-          }
-        >
-          {disconnecting.app.name} loses this person&apos;s account until they
-          connect it again there.
-        </ConfirmDialog>
-      ) : null}
+      {removal.dialogs}
     </SettingsTab>
   );
 }

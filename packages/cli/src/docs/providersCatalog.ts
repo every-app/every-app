@@ -191,7 +191,7 @@ export function providersCatalog(): string {
     "| --- | --- | --- | --- | --- | --- |",
     ...rows,
     "",
-    `OAuth presets (${code("oauth_client")}: registered when an app that lists one is deployed; the Gateway runs the flow; a person connects in each app, for the provider scopes that app lists): ${list(oauthClients.map(([id]) => id))}. Their consoles and redirect URIs are on [the provider pages](/docs/providers). Gateway services (${code("service")}: no host, no spec): ${list(services)}.`,
+    `OAuth presets (${code("oauth_client")}: registered when an app that lists one is deployed; the Gateway runs the flow; a person connects once, for the provider scopes their organization's apps list, and allows each app that uses it): ${list(oauthClients.map(([id]) => id))}. Their consoles and redirect URIs are on [the provider pages](/docs/providers). Gateway services (${code("service")}: no host, no spec): ${list(services)}.`,
   ]);
 }
 
@@ -240,7 +240,7 @@ function oauthSection(id: string, capability: OAuthClientCapability): string[] {
   return [
     `### ${id}`,
     "",
-    `**${capability.label}** (${code("oauth_client")}): the Gateway holds the client and runs the flow. A person connects in each app that lists it, for exactly the scopes that app's ${code("everyapp.config.ts")} lists; the app's calls to the provider's hosts go with that person's token, which the app never sees.`,
+    `**${capability.label}** (${code("oauth_client")}): the Gateway holds the client and runs the flow. A person connects once, for the scopes their organization's apps list for it in ${code("everyapp.config.ts")}, and allows each app that uses it; an allowed app's calls to the provider's hosts go with that person's token, which the app never sees.`,
     "",
     `- **Settings:** ${settingsOf(capability)}`,
     `- **Where the client comes from:** ${capability.console}`,

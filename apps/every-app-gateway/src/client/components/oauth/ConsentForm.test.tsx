@@ -91,6 +91,16 @@ function input(name: string, value: string): HTMLInputElement {
   return found;
 }
 
+/** Pick an option of a list the way a browser does. */
+function pick(name: string, value: string) {
+  const list = container.querySelector(`select[name="${name}"]`);
+  if (!(list instanceof HTMLSelectElement)) throw new Error(`no ${name} list`);
+  act(() => {
+    list.value = value;
+    list.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
 /** The hint beside an app's checkbox, or null without one. */
 function hint(appRowId: string): string | null {
   const label = input("app_ids", appRowId).closest("label")!;
@@ -165,9 +175,7 @@ describe("what the consent form posts", () => {
       container.querySelector('input[name="access"][value="write"]'),
     ).toBeNull();
     expect(input("access", "read").type).toBe("hidden");
-    expect(container.textContent).toContain(
-      "this app asked to read, not to add or change anything",
-    );
+    expect(container.textContent).toContain("AccessRead only");
     armAllow();
     press(button("Allow"));
     expect(parseDecisionForm(sent[0]!)).toMatchObject({ access: "read" });
@@ -204,7 +212,7 @@ describe("what the consent form posts", () => {
   it("asks a member of one organization nothing about it, and posts it", () => {
     render({ ...CONTEXT, organizations: [CONTEXT.organizations[0]!] });
     expect(
-      container.querySelector('input[type="radio"][name="organization_id"]'),
+      container.querySelector('select[name="organization_id"]'),
     ).toBeNull();
     expect(container.textContent).not.toContain("Organization");
     armAllow();
@@ -213,6 +221,26 @@ describe("what the consent form posts", () => {
     expect(parseDecisionForm(sent[0]!)).toMatchObject({
       decision: "approve",
       organization_id: "org-acme",
+    });
+  });
+
+  it("carries the organization picked from the list, with none of the first one's apps", () => {
+    render();
+    armAllow();
+    act(() => input("app_mode", "selected").click());
+    act(() => input("app_ids", "app-notes").click());
+    pick("organization_id", "org-other");
+    // The other organization has no apps to tick, so nothing to allow.
+    expect(container.textContent).toContain(
+      "You don't have access to any apps here yet.",
+    );
+    expect(button("Allow").disabled).toBe(true);
+    act(() => input("app_mode", "all").click());
+    press(button("Allow"));
+    expect(parseDecisionForm(sent[0]!)).toMatchObject({
+      organization_id: "org-other",
+      app_mode: "all",
+      app_ids: [],
     });
   });
 
@@ -401,7 +429,7 @@ describe("who the page says the client is", () => {
   it("verifies one that sends access to an app on this computer, and names localhost", () => {
     render(cimd("http://localhost:51001/callback"));
     expect(text()).toContain("Published by claude.ai");
-    expect(text()).toContain("Access will be sent to localhost.");
+    expect(text()).toContain("Redirects tolocalhost");
   });
 
   it("never verifies one that sends access to another site", () => {
@@ -410,13 +438,13 @@ describe("who the page says the client is", () => {
     expect(text()).toContain(
       "Its details are published on claude.ai, but it sends access to collector.example, a different site.",
     );
-    expect(text()).toContain("Access will be sent to collector.example.");
+    expect(text()).toContain("Redirects tocollector.example");
   });
 
   it("calls a registered client unverified", () => {
     render();
     expect(text()).toContain("Unverified");
-    expect(text()).toContain("Named by the app itself.");
+    expect(text()).toContain("Continue if you trust this application.");
     expect(text()).not.toContain("Published");
   });
 });

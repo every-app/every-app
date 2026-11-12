@@ -1,6 +1,6 @@
 # OAuth providers, simplified
 
-Date: 2026-11-02. Status: **proposal, second draft, after Ben's review of the first. No code has changed.** 0.3.0-rc.11 ships as it is. This is the plan for after it.
+Date: 2026-11-02. Status: **shipped** (#942). On 2026-11-10, [2026-11-oauth-one-connection.md](2026-11-oauth-one-connection.md) replaced rule 2 (one connection per person per app) and what this document says about per-app scopes. The rest stands.
 
 ## The rule
 

@@ -83,7 +83,7 @@ scribe lists talk under previousIds, so this deploy renames talk on example.com:
   Old host   keeps working: page loads and shared links redirect (308) to the new host once it answers;
              API calls with a bearer token, and every non-GET request, are served there as before
   Kept       the Worker every-acme-talk and its secrets, D1 every-acme-talk, KV every-acme-talk, and everything else named after it
-  Moves      who can open it, groups, tokens, AI and OAuth connections, caps, usage, email setup
+  Moves      who can open it, groups, tokens, AI connections, its access to OAuth connections, caps, usage, email setup
   Changes    its AI tools are named scribe_* (were talk_*); linked dev signs in again
 ? Rename talk to scribe? (y/N) y
 Renamed talk to scribe ✓

@@ -53,7 +53,7 @@ and turns every capability off (`apps/every-app-gateway/src/server/platform-poli
 | Member | Open the apps they are granted (directly or through a group); call those apps' tools with their token's scopes; manage their own tokens and connections | Act in another organization; open an app not granted to them; raise their role; read others' tokens |
 | Admin, owner | Invite, remove and deactivate members; grant apps; set caps, the default model, events and providers; the owner-only actions are role changes and the last owner | Change Worker secrets; deploy (unless browser installs are on); act in another organization. An owner is not the operator |
 | Operator | Everything: deploy, edit D1, set secrets, mint a setup link (`docs/adr/ADR-0003-self-host-authority.md`) | Nothing is withheld. Removing an operator happens in Cloudflare |
-| An app's code | Serve verified identities; call the AI proxy and the capabilities its manifest lists, for its own organization; list its organization's members who can open it; send mail within budgets | Mint identities; act for another organization; learn a provider key; reach another app's bindings; see a cookie or a bearer |
+| An app's code | Serve verified identities; call the AI proxy and the capabilities its manifest lists, for its own organization; list its organization's members who can open it; send mail within budgets | Mint identities; act for another organization; learn a provider key; use the OAuth connection of a person who hasn't allowed it; reach another app's bindings; see a cookie or a bearer |
 | An AI client over MCP | List and call the tools of the apps the person can open, within the connection's apps and scopes; read-only callers see no write tools | Use its token on an app route; call a tool with a scope it lacks |
 | A third-party app (hosted) | Serve its organization through a per-host session | Reach the internet except through the egress allowlist; see the first-party session cookie |
 | Cloudflare, dependencies | Trusted as given (runtime, D1, KV, Access, Email Sending; installed packages with the floors in `pnpm-workspace.yaml`) | Out of scope |
@@ -137,9 +137,9 @@ per package (`pnpm -C <package> exec vitest run <file>`, the Gateway with
 | B4 App → Gateway | A caller is the registry row its binding props name (its Worker, in its organization, by the app's id or, after a rename, an id it had), or nothing | `apps/every-app-gateway/src/server/app-gateway-entrypoint.test.ts` :: accepts valid props that match an active registry row |
 | B4 | A provider key never reaches an app | `apps/every-app-gateway/src/server/ai-proxy.test.ts` :: forwards request to OpenAI with gateway-managed key and strips internal headers |
 | B4 | A capability call carries the Gateway's key and nothing the app sent | `apps/every-app-gateway/src/server/integration-proxy.test.ts` :: forwards a call with the gateway's key and nothing the app sent |
-| B4 | A person's OAuth token is used only from the app it was connected in, for no more scopes than that app lists. An MCP app's own row (`<id>-mcp`) keeps what its server grants: the token goes to that server alone | `apps/every-app-gateway/src/server/oauth/spec-flow.sqlite.test.ts` :: refuses a token carrying scopes beyond what the app asked |
+| B4 | A person's OAuth token is used only for that person, by apps that person allowed, on that provider's hosts. It never holds a scope no app asked for. An MCP app's own row (`<id>-mcp`) keeps what its server grants: the token goes to that server alone | `apps/every-app-gateway/src/server/oauth/spec-flow.sqlite.test.ts` :: refuses a token carrying scopes beyond what the app asked; `apps/every-app-gateway/src/server/oauth/spec-flow.sqlite.test.ts` :: refuses a call from an app the person hasn't allowed |
 | B4 | A remote MCP app's key or OAuth client is a provider row (`<id>-mcp`) bound to the server's host; a key set for another spec of the row is sent nowhere | `apps/every-app-gateway/src/server/remote-mcp/remote-mcp.sqlite.test.ts` :: sends nothing with a key set for another spec of its row |
-| B4 | An OAuth MCP server is called with each member's own connection, made in the app | `apps/every-app-gateway/src/server/remote-mcp/remote-mcp.sqlite.test.ts` :: calls with each member's own connection |
+| B4 | An OAuth MCP server is called with each member's own connection, which they allowed the app to use | `apps/every-app-gateway/src/server/remote-mcp/remote-mcp.sqlite.test.ts` :: calls with each member's own connection |
 | B4 | The Gateway's client metadata document (`/oauth-clients/<id>-mcp`, public) is a public client whose one redirect URI is its own callback, the same for any well-formed id and read from no row | `apps/every-app-gateway/src/server/remote-mcp/remote-mcp.sqlite.test.ts` :: serves the app's client metadata document |
 | B4 | A host the Gateway holds a key for takes a remote app only with that provider or the app's own OAuth row; never an own static key | `apps/every-app-gateway/src/server/remote-mcp/remote-mcp.sqlite.test.ts` :: lets an app's own OAuth row reach a host the Gateway holds a key for |
 | B5 AI client → `/mcp` | Write tools are hidden from read-only callers | `packages/toolbus/src/policy.test.ts` :: hides write tools from read-only callers |
@@ -176,7 +176,7 @@ From `docs/hosted-vision.md`, section 3:
    Pinned by `packages/sdk/src/server/everyApp.test.ts` :: takes the
    audience from EVERYAPP_AUDIENCE, never the app id, outside dev.
 
-## Known gaps, top 10
+## Known gaps, top 11
 
 1. **Browser installs spend an account-wide token** (B7, high). With
    `BROWSER_APP_INSTALLS` on (off by default), an owner or admin signed in
@@ -215,6 +215,17 @@ From `docs/hosted-vision.md`, section 3:
    replacing the app's credential spec deletes those connections).
 10. **A sole owner has no recovery but the operator** (B2, medium), and only
     the holder can revoke a personal token (B5, low).
+11. **An app a person allowed can use every scope their OAuth connection
+    holds** (B4, medium), not only the scopes it lists. A person has one
+    connection per provider. It holds the scopes of every app in their
+    organization, and the Gateway can't narrow a token: an app allowed for
+    Search Console could also call Gmail. Allowing an app is a yes or no.
+    The Allow page shows only the scopes the app lists; Your connections →
+    Accounts lists every scope the connection holds. Reconnect there allows
+    each app the person already allowed for what it lists now, with no
+    page per app, since that page couldn't limit the app either. An app
+    the person hasn't allowed can't use the connection at all. On self-host only the
+    operator deploys apps.
 
 Lower, still open:
 

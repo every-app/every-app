@@ -404,7 +404,7 @@ export function describeRename(plan: RenamePlan, workerName: string): string[] {
     `Old host   keeps working: page loads and shared links redirect (308) to the new host once it answers;`,
     `           API calls with a bearer token, and every non-GET request, are served there as before`,
     `Kept       the Worker ${workerName} and its secrets${resourceList(plan.resources)}`,
-    `Moves      who can open it, groups, tokens, AI and OAuth connections, caps, usage, email setup`,
+    `Moves      who can open it, groups, tokens, AI connections, its access to OAuth connections, caps, usage, email setup`,
     `Changes    its AI tools are named ${app.appSlug}_* (were ${from.appSlug}_*); linked dev signs in again`,
   ];
 }

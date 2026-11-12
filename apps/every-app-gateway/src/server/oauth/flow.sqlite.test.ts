@@ -1,15 +1,17 @@
 /**
  * The Gateway-owned OAuth flow end to end against a migrated SQLite
- * database and a fake provider (docs/design/2026-11-oauth-simplify.md): a
- * GitHub preset added with a client pasted in the UI, a person connecting
- * in an app, the connection stored sealed as theirs in that app, an app's
- * call through the proxy with the held token, the refresh, the expiry, the
- * disconnect with a revoke; the state rules and the return rule; the
- * Google preset registered as a deploy registers it, with its client from
- * D1; and an MCP server's row:
- * `resource` on every leg, `iss` checked, scopes lenient for the app's own
- * row only. The generic
- * spec, the mint check and background use are in spec-flow.sqlite.test.ts.
+ * database and a fake provider
+ * (docs/design/2026-11-oauth-one-connection.md): a GitHub preset added
+ * with a client pasted in the UI, a person connecting from inside an app,
+ * the connection stored sealed as theirs with that app allowed to use it,
+ * an app's call through the proxy with the held token, the refresh, the
+ * expiry, the connections list with each connection's apps, one app's
+ * access taken away, the disconnect with a revoke; the state rules and the
+ * return rule; the Google preset registered as a deploy registers it, with
+ * its client from D1; and an MCP server's row: `resource` on every leg,
+ * `iss` checked, scopes lenient for the app's own row only. The generic
+ * spec, the Allow page's form, the mint check and background use are in
+ * spec-flow.sqlite.test.ts.
  */
 import { generateKeyPairSync } from "node:crypto";
 import {
@@ -59,7 +61,13 @@ import {
   providerBindingKey,
 } from "@every-app/sdk/internal";
 import { eq } from "drizzle-orm";
-import { apps, events, providerConnections, userAppAccess } from "@/db/schema";
+import {
+  apps,
+  events,
+  providerAppAccess,
+  providerConnections,
+  userAppAccess,
+} from "@/db/schema";
 import { DrizzleAppRegistry } from "@/perimeter/drizzleAppRegistry";
 import {
   clearAppCallerCacheForTests,
@@ -88,6 +96,7 @@ import {
   listOAuthProviders,
   listProviders,
   planPresetProviders,
+  removeAppAccess,
   setOAuthClient,
 } from "./service";
 
@@ -247,6 +256,48 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     return finished!;
   }
 
+  /**
+   * The signed-in person allows `app` to use the connection they have, on
+   * the Gateway's own page: the connect leads there, and its form is posted.
+   */
+  async function allow(app: string, provider = "github-oauth") {
+    const started = await browse(`/connect/${provider}?app=${app}`);
+    expect(started?.status).toBe(302);
+    const page = new URL(started!.headers.get("location")!, GATEWAY);
+    expect(page.origin + page.pathname).toBe(`${GATEWAY}/oauth/app-access`);
+    const answered = await serveConnectRoute(
+      new Request(`${GATEWAY}/connect/${provider}/allow`, {
+        method: "POST",
+        body: new URLSearchParams({
+          state: page.searchParams.get("state")!,
+          decision: "approve",
+        }),
+      }),
+      { fetchUpstream: github.fetch, now: () => now },
+    );
+    expect(answered?.status).toBe(303);
+  }
+
+  /** Every access row, as `user app`, sorted. */
+  async function accessRows(): Promise<string[]> {
+    const slugs = Object.fromEntries(
+      Object.entries(rows).map(([slug, rowId]) => [rowId, slug]),
+    );
+    return (await db.select().from(providerAppAccess))
+      .map((row) => `${row.userId} ${slugs[row.appRowId] ?? row.appRowId}`)
+      .sort();
+  }
+
+  /** Pat opens crm by a person's grant. */
+  async function grantPatCrm() {
+    await db.insert(userAppAccess).values({
+      id: "grant-pat-crm",
+      organizationId: acme,
+      userId: member,
+      appRowId: rows["crm"]!,
+    });
+  }
+
   /** An app's call through the AppGateway entrypoint, as a person or as background work. */
   async function appCall(
     appSlug: string,
@@ -392,7 +443,7 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     }
   });
 
-  it("connects a person in an app: PKCE S256, a one-use state, exactly the app's scopes, the tokens sealed, the return to the app", async () => {
+  it("connects a person from inside an app: PKCE S256, a one-use state, the scopes of every app that lists the provider, the tokens sealed, that app allowed, the return to the app", async () => {
     await addGitHub();
     const started = await browse(
       "/connect/github-oauth?app=crm&return=https://crm.apps.example.com/settings",
@@ -408,8 +459,9 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
       client_id: "gh-client-id",
       redirect_uri: `${GATEWAY}/connect/github-oauth/callback`,
       code_challenge_method: "S256",
-      // crm's scopes alone: not ci's `workflow`.
-      scope: "repo",
+      // crm's `repo` and ci's `workflow`, each once: one consent covers
+      // every app that lists GitHub.
+      scope: "repo,workflow",
     });
     // `oauth.pkce-on-connect`: a challenge, never the verifier.
     expect(params["code_challenge"]).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -443,12 +495,23 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     expect(row).toMatchObject({
       organizationId: acme,
       userId: owner,
-      appRowId: rows["crm"],
       label: "ben",
       externalId: "4242",
       status: "active",
     });
-    expect(JSON.parse(row!.scopes)).toEqual(["repo"]);
+    expect(JSON.parse(row!.scopes)).toEqual(["repo", "workflow"]);
+    // The app the connect started in is allowed, for the scopes it lists;
+    // ci is not, though the connection holds its scopes.
+    const access = await db.select().from(providerAppAccess);
+    expect(access).toMatchObject([
+      {
+        organizationId: acme,
+        providerId: "github-oauth",
+        userId: owner,
+        appRowId: rows["crm"],
+      },
+    ]);
+    expect(JSON.parse(access[0]!.scopes)).toEqual(["repo"]);
     expect(isSealed(row!.accessTokenEnc)).toBe(true);
     expect(row!.accessTokenEnc).not.toContain(issued.accessToken);
     expect(row!.refreshTokenEnc).not.toContain(issued.refreshToken!);
@@ -472,9 +535,9 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
         providerName: "GitHub",
         userId: owner,
         userEmail: "ben@acme.test",
-        app: { rowId: rows["crm"], id: "crm", name: "crm" },
+        apps: [{ rowId: rows["crm"], id: "crm", name: "crm" }],
         label: "ben",
-        scopes: ["repo"],
+        scopes: ["repo", "workflow"],
         status: "active",
       },
     ]);
@@ -580,7 +643,7 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
       ready: true,
       scopes: ["repo"],
       connectPath: "/connect/github-oauth?app=crm",
-      connection: { label: "ben", scopes: ["repo"], ready: true },
+      connection: { label: "ben", scopes: ["repo", "workflow"], ready: true },
       settings: [],
       setup: null,
       command: null,
@@ -618,7 +681,7 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     );
     expect(write.status).toBe(200);
     expect(github.state.apiRequests.at(-1)!.method).toBe("POST");
-    // ci has no connection of this person's: crm's is crm's alone.
+    // The connection holds ci's scopes, but Ben hasn't allowed ci to use it.
     const ci = await appCall(
       "ci",
       "/api/integrations/github-oauth/api.github.com/user",
@@ -763,9 +826,143 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     });
   });
 
-  it("disconnects: the row goes, GitHub's grant is revoked with the client, the event says so", async () => {
+  it("lists each connection once, with the apps its person allowed to use it", async () => {
     await addGitHub();
     await connect("github-oauth");
+    await allow("ci");
+    await grantPatCrm();
+    signIn(member, "pat@acme.test");
+    await connect("github-oauth");
+
+    const mine = await listConnections(org("owner", owner));
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatchObject({
+      providerId: "github-oauth",
+      userId: owner,
+      // By name: ci, then crm.
+      apps: [
+        { rowId: rows["ci"], id: "ci", name: "ci" },
+        { rowId: rows["crm"], id: "crm", name: "crm" },
+      ],
+      scopes: ["repo", "workflow"],
+    });
+    // A member sees their own; the organization's is an owner's or admin's.
+    const pats = await listConnections(org("member", member));
+    expect(pats).toMatchObject([
+      { userId: member, apps: [{ id: "crm" }], status: "active" },
+    ]);
+    await expect(
+      listConnections(org("member", member), { user: "all" }),
+    ).rejects.toMatchObject({ code: "ADMIN_REQUIRED" });
+    const all = await listConnections(org("owner", owner), { user: "all" });
+    expect(
+      Object.fromEntries(
+        all.map((each) => [each.userId, each.apps.map((app) => app.id)]),
+      ),
+    ).toEqual({ [owner]: ["ci", "crm"], [member]: ["crm"] });
+    expect(all).toHaveLength(2);
+  });
+
+  it("takes one app's access away and leaves the connection for the others; a member only their own", async () => {
+    await addGitHub();
+    await connect("github-oauth");
+    await allow("ci");
+    const [mine] = await listConnections(org("owner", owner));
+    const issued = { ...github.state.tokens[0]! };
+
+    // Pat is a member: Ben's connection isn't Pat's to change.
+    for (const ref of [
+      { connectionId: mine!.id },
+      { providerId: "github-oauth", userId: owner },
+    ]) {
+      await expect(
+        removeAppAccess(org("member", member), { ...ref, app: "ci" }),
+      ).rejects.toMatchObject({ code: "ADMIN_REQUIRED" });
+    }
+    expect(await accessRows()).toEqual([`${owner} ci`, `${owner} crm`]);
+
+    const taken = await removeAppAccess(org("owner", owner), {
+      providerId: "github-oauth",
+      app: "ci",
+    });
+    expect(taken).toMatchObject({
+      removed: true,
+      connection: { id: mine!.id, apps: [{ id: "crm" }] },
+    });
+    expect(await accessRows()).toEqual([`${owner} crm`]);
+    // The connection stays, its grant at GitHub with it, and crm uses it.
+    expect(await listConnections(org("owner", owner))).toMatchObject([
+      { id: mine!.id, status: "active", apps: [{ id: "crm" }] },
+    ]);
+    expect(github.state.revokeRequests).toEqual([]);
+    expect(github.accepts(issued.accessToken)).toBe(true);
+    expect(await eventTypes()).not.toContain("provider.disconnected");
+    const crm = await appCall(
+      "crm",
+      "/api/integrations/github-oauth/api.github.com/user",
+    );
+    expect(crm.status).toBe(200);
+    // ci asks Ben again before it uses the connection.
+    const ci = await appCall(
+      "ci",
+      "/api/integrations/github-oauth/api.github.com/user",
+    );
+    expect(ci.status).toBe(409);
+    await expect(ci.json()).resolves.toMatchObject({
+      code: "integration_not_connected",
+      connectPath: "/connect/github-oauth?app=ci",
+      reconnect: false,
+    });
+
+    // An app that isn't allowed has nothing to take.
+    await expect(
+      removeAppAccess(org("owner", owner), {
+        connectionId: mine!.id,
+        app: "ci",
+      }),
+    ).rejects.toMatchObject({ code: "CONNECTION_NOT_FOUND" });
+    await expect(
+      removeAppAccess(org("owner", owner), {
+        connectionId: "conn_missing",
+        app: "crm",
+      }),
+    ).rejects.toMatchObject({ code: "CONNECTION_NOT_FOUND" });
+
+    // A member takes an app off their own connection, here by its row id.
+    await grantPatCrm();
+    signIn(member, "pat@acme.test");
+    await connect("github-oauth");
+    const [pats] = await listConnections(org("member", member));
+    expect(
+      await removeAppAccess(org("member", member), {
+        connectionId: pats!.id,
+        app: rows["crm"]!,
+      }),
+    ).toMatchObject({ removed: true, connection: { id: pats!.id, apps: [] } });
+    // An owner takes one off anyone's.
+    await allow("crm");
+    expect(
+      await removeAppAccess(org("owner", owner), {
+        providerId: "github-oauth",
+        userId: member,
+        app: "crm",
+      }),
+    ).toMatchObject({ removed: true });
+    expect(await accessRows()).toEqual([`${owner} crm`]);
+    expect(await listConnections(org("member", member))).toMatchObject([
+      { id: pats!.id, apps: [] },
+    ]);
+  });
+
+  it("disconnects: the row goes with every app's access to it, GitHub's grant is revoked with the client, the event says so and names no app", async () => {
+    await addGitHub();
+    await connect("github-oauth");
+    await allow("ci");
+    // Pat's own connection is another row: it stays.
+    await grantPatCrm();
+    signIn(member, "pat@acme.test");
+    await connect("github-oauth");
+    signIn(owner, "ben@acme.test");
     const issued = { ...github.state.tokens[0]! };
     const [mine] = await listConnections(org("owner", owner));
     await expect(
@@ -776,24 +973,55 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
         github.fetch,
       ),
     ).rejects.toMatchObject({ code: "ADMIN_REQUIRED" });
+    expect(await accessRows()).toEqual(
+      [`${owner} ci`, `${owner} crm`, `${member} crm`].sort(),
+    );
     const result = await disconnect(
       org("owner", owner),
       null,
-      { providerId: "github-oauth", app: "crm" },
+      { providerId: "github-oauth" },
       github.fetch,
     );
-    expect(result).toMatchObject({ removed: true, revoked: true });
+    expect(result).toMatchObject({
+      removed: true,
+      revoked: true,
+      // What was removed, as it was.
+      connection: { id: mine!.id, apps: [{ id: "ci" }, { id: "crm" }] },
+    });
     expect(github.state.revokeRequests).toEqual([
       { token: issued.accessToken, clientVia: "basic" },
     ]);
     expect(github.accepts(issued.accessToken)).toBe(false);
     expect(await listConnections(org("owner", owner))).toEqual([]);
-    expect(await eventTypes()).toContain("provider.disconnected");
-    const after = await appCall(
-      "crm",
-      "/api/integrations/github-oauth/api.github.com/user",
-    );
-    expect(after.status).toBe(409);
+    // Every app Ben allowed stops at once; Pat's connection and access stay.
+    expect(await accessRows()).toEqual([`${member} crm`]);
+    expect(
+      await listConnections(org("owner", owner), { user: "all" }),
+    ).toMatchObject([{ userId: member, apps: [{ id: "crm" }] }]);
+    for (const app of ["crm", "ci"]) {
+      const after = await appCall(
+        app,
+        "/api/integrations/github-oauth/api.github.com/user",
+      );
+      expect(after.status, app).toBe(409);
+    }
+    // One event for the connection: the provider, the account, no app.
+    const disconnected = (
+      await db
+        .select({ data: events.data })
+        .from(events)
+        .where(eq(events.type, "provider.disconnected"))
+    ).map((row) => JSON.parse(row.data) as Record<string, unknown>);
+    expect(disconnected).toHaveLength(1);
+    expect(disconnected[0]).toMatchObject({
+      provider: { id: "github-oauth", name: "GitHub", kind: "oauth" },
+      account: { user: { id: owner }, label: "ben" },
+      revoked: true,
+    });
+    expect(disconnected[0]).not.toHaveProperty("app");
+    // Connecting again starts over: only the app it starts in is allowed.
+    await connect("github-oauth", "?app=ci");
+    expect(await accessRows()).toEqual([`${owner} ci`, `${member} crm`].sort());
   });
 
   it("registers Google from its preset as a deploy does, then runs it on a client pasted in the UI: offline access asked, the identity read, Google's hosts reached through the proxy", async () => {
@@ -886,7 +1114,7 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     expect(finished?.headers.get("location")).toBe("/admin/providers");
     expect((await listConnections(org("owner", owner)))[0]).toMatchObject({
       providerId: "google-workspace",
-      app: { id: "seo" },
+      apps: [{ id: "seo" }],
       label: "ben@gmail.test",
       scopes: ["webmasters.readonly", "openid", "email"],
     });
@@ -1139,7 +1367,13 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
         .from(providerConnections)
         .where(eq(providerConnections.providerId, "treg-mcp"));
       expect(JSON.parse(row!.scopes)).toEqual(["mcp:tools", "offline"]);
-      expect(row!.appRowId).toBe("app-treg");
+      // The connection is the person's; the MCP app it was made from is
+      // allowed to use it, for the scopes it lists.
+      const access = await db.select().from(providerAppAccess);
+      expect(access).toMatchObject([
+        { providerId: "treg-mcp", userId: owner, appRowId: "app-treg" },
+      ]);
+      expect(JSON.parse(access[0]!.scopes)).toEqual(["mcp:tools"]);
 
       // The refresh, a minute later, carries resource too.
       const registry = await gatewayProviders();
@@ -1173,6 +1407,7 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
       expect(refused?.status).toBe(400);
       expect(await refused?.text()).toContain("offline");
       expect(await db.select().from(providerConnections)).toEqual([]);
+      expect(await db.select().from(providerAppAccess)).toEqual([]);
     });
 
     it("checks the scopes of an ordinary OAuth spec that sets a resource: refused, nothing stored", async () => {

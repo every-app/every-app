@@ -1,15 +1,31 @@
 /**
- * The Gateway-owned OAuth flow (docs/design/2026-11-oauth-simplify.md), on
- * the gateway host, for a signed-in member connecting inside an app:
+ * The Gateway-owned OAuth flow
+ * (docs/design/2026-11-oauth-one-connection.md), on the gateway host, for
+ * a signed-in member connecting inside an app. A person has one connection
+ * to a provider, and each app they allow uses it:
  *
  *   GET /connect/<id>?app=<app id>&return=…
- *     → 302 to the provider's authorize URL, asking for exactly the scopes
- *       the app's everyapp.config.ts lists (plus the spec's identity
- *       scopes), PKCE S256 when the spec says, a one-use state
+ *     → the person's connection already holds what the app lists, and they
+ *       allowed the app: 302 to `return`
+ *     → it holds what the app lists, and they haven't allowed the app yet:
+ *       302 to the Gateway's own Allow page (/oauth/app-access), with a
+ *       one-use state; no provider is asked
+ *     → otherwise 302 to the provider's authorize URL, asking for every
+ *       scope the organization's apps list for it (plus the spec's
+ *       identity scopes), PKCE S256 when the spec says, a one-use state
  *   GET /connect/<id>/callback?code&state      ← the redirect URI registered
  *     → the code exchanged, the mint check (a token carrying scopes beyond
  *       those asked is dropped), the connection stored sealed as this
- *       person's in this app, 302 to `return`
+ *       person's, the app the connect started in allowed, 302 to `return`
+ *   POST /connect/<id>/allow  state, decision  ← the Allow page's form
+ *     → on "approve" the app allowed; either way 303 to `return`
+ *
+ * Reconnect on Your connections → Accounts (`startReconnect`, a server
+ * function) starts the same authorize step for the person's own
+ * connection, in the name of an app they allowed that needs it; its
+ * callback also allows every app they had allowed, for what each lists
+ * now. When the connection already holds all of that, no provider is
+ * asked and those apps are allowed there and then.
  *
  * A provider's `error`, a bad state or a refused token ends on a Gateway
  * page, never a redirect. Logs name the provider, the organization, the
@@ -20,14 +36,24 @@ import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import {
   OAUTH_TOKEN_BODY_LIMIT,
+  canonicalScopes,
   grantedScopes,
   isRemoteMcpProviderIdOf,
   joinScopes,
+  missingScopes,
   requestedScopes,
   scopeExcess,
   type OAuthClientCapability,
 } from "@every-app/sdk/internal";
 import { auth as betterAuth } from "@/auth";
+import {
+  ALLOW_APPROVE,
+  ALLOW_FIELDS,
+  ALLOW_PAGE,
+  ConnectionAction,
+  ReconnectOutcome,
+} from "@/schemas/app-access";
+import { PublicError } from "@/server/errors";
 import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
 import { userActor, userSubject } from "@/server/events/subjects";
@@ -35,23 +61,35 @@ import {
   resolveOrgContext,
   type OrgContext,
 } from "@/server/organization/orgContext";
-import { platformPolicy } from "@/server/platform-policy";
 import { gatewayProviders } from "@/server/providers";
 import { AppRepository } from "@/server/repositories/AppRepository";
-import { OAuthStateRepository } from "@/server/repositories/OAuthStateRepository";
-import { ProviderConnectionRepository } from "@/server/repositories/ProviderConnectionRepository";
+import {
+  OAuthStatePurpose,
+  OAuthStateRepository,
+} from "@/server/repositories/OAuthStateRepository";
+import { ProviderAppAccessRepository } from "@/server/repositories/ProviderAppAccessRepository";
+import {
+  ProviderConnectionRepository,
+  type ConnectionKey,
+} from "@/server/repositories/ProviderConnectionRepository";
 import { isUserBanned } from "@/server/user-ban";
-import { appForMember } from "./appAccess";
-import { resolveOAuthClient, type OAuthClientResolver } from "./client";
+import {
+  appForMember,
+  connectionAction,
+  declaredScopes,
+  memberAppByRow,
+  scopesListedFor,
+  type ConnectApp,
+} from "./appAccess";
+import { AllowRefusal, allowCheck } from "./appAccessConsent";
+import { resolveOAuthClient, type ResolvedOAuthClient } from "./client";
 import { errorPage } from "./page";
 import { redirectUriFor } from "./service";
-import { tokenCall, type Fetch } from "./tokens";
+import { OAUTH_USER_AGENT, tokenCall, type Fetch } from "./tokens";
 
 const CONNECT_PREFIX = "/connect/";
 /** Where the browser lands after a connect with no `return`. */
 export const DEFAULT_RETURN = "/connections/accounts";
-/** How long a state row lives. */
-const STATE_TTL_MS = 10 * 60 * 1000;
 const PROVIDER_ID = /^[a-z][a-z0-9-]{1,39}$/;
 const APP_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 /** Authorize parameters the Gateway sets itself; a spec's `authorizeParams` never replaces them. */
@@ -70,7 +108,6 @@ const OWN_PARAMS = new Set([
 
 interface ConnectRouteDeps {
   fetchUpstream?: Fetch;
-  resolveClient?: OAuthClientResolver;
   now?: () => number;
 }
 
@@ -85,13 +122,15 @@ function settings(): ConnectEnv {
   return env as ConnectEnv;
 }
 
-/** Which route a path is: the start, the callback, or neither. */
+type ConnectRouteKind = "start" | "callback" | "allow";
+
+/** Which route a path is: the start, the callback, the Allow page's form, or none. */
 function parseConnectPath(
   pathname: string,
-): { id: string; kind: "start" | "callback" } | null {
+): { id: string; kind: ConnectRouteKind } | null {
   if (!pathname.startsWith(CONNECT_PREFIX)) return null;
   const rest = pathname.slice(CONNECT_PREFIX.length);
-  const match = /^([^/]+)(\/callback)?\/?$/.exec(rest);
+  const match = /^([^/]+)(\/callback|\/allow)?\/?$/.exec(rest);
   if (!match) return null;
   let id: string;
   try {
@@ -100,12 +139,21 @@ function parseConnectPath(
     return null;
   }
   if (!PROVIDER_ID.test(id)) return null;
-  return { id, kind: match[2] === "/callback" ? "callback" : "start" };
+  return {
+    id,
+    kind:
+      match[2] === "/callback"
+        ? "callback"
+        : match[2] === "/allow"
+          ? "allow"
+          : "start",
+  };
 }
 
-function redirect(location: string): Response {
+/** A redirect: 302 after a GET, 303 after the Allow page's POST. */
+function redirect(location: string, status: 302 | 303 = 302): Response {
   return new Response(null, {
-    status: 302,
+    status,
     headers: { location, "cache-control": "no-store" },
   });
 }
@@ -130,7 +178,8 @@ async function s256(verifier: string): Promise<string> {
   return base64url(new Uint8Array(digest));
 }
 
-async function signedIn(
+/** The signed-in member behind a request with their organization, or null. */
+export async function signedIn(
   request: Request,
 ): Promise<{ id: string; email: string; org: OrgContext } | null> {
   const session = await betterAuth.api.getSession({ headers: request.headers });
@@ -226,6 +275,7 @@ async function readIdentity(
         headers: {
           authorization: `Bearer ${accessToken}`,
           accept: "application/json",
+          "user-agent": OAUTH_USER_AGENT,
         },
         redirect: "manual",
       }),
@@ -262,19 +312,15 @@ async function readIdentity(
   }
 }
 
-/** The scope strings an app's entry for the provider lists, or null when it lists no entry. */
-function declaredScopes(
-  manifest: Record<string, unknown> | null,
-  id: string,
-): string[] | null {
-  const capabilities = manifest?.["capabilities"];
-  if (!capabilities || typeof capabilities !== "object") return null;
-  const entry = (capabilities as Record<string, unknown>)[id];
-  if (!entry || typeof entry !== "object") return null;
-  const scopes = (entry as Record<string, unknown>)["scopes"];
-  return Array.isArray(scopes)
-    ? scopes.filter((scope): scope is string => typeof scope === "string")
-    : [];
+/**
+ * How the provider names an account, for telling one from another: its
+ * id there, else its label. Null when the provider says neither.
+ */
+function accountKey(account: {
+  externalId: string | null;
+  label: string | null;
+}): string | null {
+  return account.externalId ?? account.label;
 }
 
 async function serveStart(
@@ -293,7 +339,7 @@ async function serveStart(
     return errorPage(
       400,
       CANT_CONNECT,
-      "Connect from inside the app that needs this account: a connection belongs to one app.",
+      "Connect from inside the app that needs this account.",
     );
   }
   const registry = await gatewayProviders();
@@ -310,7 +356,6 @@ async function serveStart(
         organizationId: person.org.orgId,
         userId: person.id,
         slug,
-        sharedApps: platformPolicy(settings()).sharedApps,
       })
     : null;
   if (!app) {
@@ -328,7 +373,7 @@ async function serveStart(
       `${app.name} doesn't list ${capability.label} in its everyapp.config.ts, so it can't connect an account there.`,
     );
   }
-  const client = await (deps.resolveClient ?? resolveOAuthClient)({
+  const client = await resolveOAuthClient({
     id,
     capability,
     env: settings() as never,
@@ -342,22 +387,97 @@ async function serveStart(
     );
   }
   const flow = capability.flow;
-  const scopes = requestedScopes(flow, declared);
   const returnTo = safeReturnTo(url.searchParams.get("return"));
+  const now = (deps.now ?? Date.now)();
+  const key = {
+    organizationId: person.org.orgId,
+    providerId: id,
+    userId: person.id,
+  };
+  const connection = await ProviderConnectionRepository.find(key);
+  const access = connection
+    ? await ProviderAppAccessRepository.find({ ...key, appRowId: app.rowId })
+    : null;
+  const action = connectionAction(flow, connection, access, declared);
+  if (action === null) return redirect(returnTo);
+  if (action === ConnectionAction.Allow) {
+    // The connection holds what the app lists: no provider is asked. The
+    // person allows the app on the Gateway's own page, once.
+    const state = randomToken(32);
+    await OAuthStateRepository.put({
+      state,
+      ...key,
+      appRowId: app.rowId,
+      purpose: OAuthStatePurpose.Allow,
+      codeVerifier: "",
+      scopes: canonicalScopes(flow, declared),
+      returnTo,
+      now: new Date(now),
+    });
+    logEvent("oauth.allow_started", {
+      provider: id,
+      org: person.org.orgId,
+      user_id: person.id,
+      app_row_id: app.rowId,
+    });
+    return redirect(`${ALLOW_PAGE}?state=${encodeURIComponent(state)}`);
+  }
+  return redirect(
+    await authorizeUrl({
+      person: key,
+      id,
+      capability,
+      client,
+      app,
+      declared,
+      purpose: OAuthStatePurpose.Authorize,
+      returnTo,
+      now,
+    }),
+  );
+}
+
+/**
+ * Put a one-use state for the provider's callback and return the
+ * provider's authorize URL. The provider is asked once for what every app
+ * of the organization lists, so a later app needs the person's Allow and
+ * not another consent.
+ */
+async function authorizeUrl(input: {
+  person: { organizationId: string; userId: string };
+  id: string;
+  capability: OAuthClientCapability;
+  client: ResolvedOAuthClient;
+  /** The app the connect is in the name of: the callback allows it. */
+  app: ConnectApp;
+  /** What that app lists for the provider. */
+  declared: readonly string[];
+  purpose: OAuthStatePurpose.Authorize | OAuthStatePurpose.Reconnect;
+  returnTo: string;
+  now: number;
+}): Promise<string> {
+  const { person, id, capability, client, app } = input;
+  const flow = capability.flow;
+  const scopes = requestedScopes(flow, [
+    ...input.declared,
+    ...(await scopesListedFor({
+      organizationId: person.organizationId,
+      providerId: id,
+    })),
+  ]);
   const state = randomToken(32);
   const verifier = randomToken(48);
-  const now = (deps.now ?? Date.now)();
   await OAuthStateRepository.put({
     state,
+    organizationId: person.organizationId,
     providerId: id,
-    organizationId: person.org.orgId,
-    userId: person.id,
+    userId: person.userId,
     appRowId: app.rowId,
+    purpose: input.purpose,
     codeVerifier: verifier,
     scopes,
-    returnTo,
-    now: new Date(now),
-    ttlMs: STATE_TTL_MS,
+    returnTo: input.returnTo,
+    now: new Date(input.now),
   });
   const authorize = new URL(flow.authorizeUrl);
   for (const [name, value] of Object.entries(flow.authorizeParams ?? {})) {
@@ -378,12 +498,13 @@ async function serveStart(
   if (flow.resource) authorize.searchParams.set("resource", flow.resource);
   logEvent("oauth.connect_started", {
     provider: id,
-    org: person.org.orgId,
-    user_id: person.id,
+    org: person.organizationId,
+    user_id: person.userId,
     app_row_id: app.rowId,
+    purpose: input.purpose,
     scopes,
   });
-  return redirect(authorize.toString());
+  return authorize.toString();
 }
 
 async function serveCallback(
@@ -413,7 +534,13 @@ async function serveCallback(
   const state = stateParam
     ? await OAuthStateRepository.take(stateParam, new Date(now))
     : null;
-  if (!state || state.providerId !== id) {
+  // An Allow page's state asked no provider anything: it is not this
+  // route's to spend, and is spent all the same.
+  if (
+    !state ||
+    state.providerId !== id ||
+    state.purpose === OAuthStatePurpose.Allow
+  ) {
     logEvent("oauth.callback_refused", { ...log, reason: "state" }, "warn");
     return errorPage(
       400,
@@ -489,7 +616,7 @@ async function serveCallback(
       "The answer came from another authorization server than the one this connect started with. Nothing was connected. Start again.",
     );
   }
-  const client = await (deps.resolveClient ?? resolveOAuthClient)({
+  const client = await resolveOAuthClient({
     id,
     capability,
     env: settings() as never,
@@ -522,9 +649,10 @@ async function serveCallback(
       `${capability.label} didn't accept the code (${exchanged.error}). Start again.`,
     );
   }
-  // The mint check: the token may hold what was asked (the app's scopes
-  // and the spec's identity ones) and nothing more. Otherwise the tokens
-  // are dropped here: never stored, forwarded or logged.
+  // The mint check: the token may hold what was asked (the scopes the
+  // organization's apps list and the spec's identity ones) and nothing
+  // more. Otherwise the tokens are dropped here: never stored, forwarded
+  // or logged.
   // One carve-out: the calling app's own remote MCP row (`<app>-mcp`) keeps
   // what its server grants, never refused. The token reaches that server
   // alone, and the ToolBus's per-tool risk guards what it does. Any other
@@ -561,7 +689,7 @@ async function serveCallback(
     return errorPage(
       400,
       CANT_CONNECT,
-      `${capability.label} granted more than ${app.name} asked for (${excess.join(", ")}), so nothing was kept. This happens when the client remembers scopes approved for another app. Limit the client's scopes at the provider's console, or give ${app.name} a client of its own.`,
+      `${capability.label} granted more than the apps here list (${excess.join(", ")}), so nothing was kept. This happens when the client remembers scopes approved somewhere else. Limit the client's scopes at the provider's console.`,
     );
   }
   const identity = await readIdentity(
@@ -574,12 +702,35 @@ async function serveCallback(
     organizationId: person.org.orgId,
     providerId: id,
     userId: person.id,
-    appRowId: state.appRowId,
   };
   const existing = await ProviderConnectionRepository.find(key);
+  // The apps a person allowed were allowed the account they had connected.
+  // A first connection, another account, or one a provider that names
+  // accounts wouldn't name this time is not that account for certain, so
+  // each app asks again. A provider that names no account can't show a
+  // change, and its apps stay allowed across a reconnect. A connection
+  // that was never named (its account lookup failed, as GitHub's did
+  // before the Gateway sent a User-Agent) takes the name read now: the
+  // same person at the same provider, with nothing to tell the accounts
+  // apart.
+  const named = accountKey(identity);
+  const existingKey = existing ? accountKey(existing) : null;
+  const sameAccount =
+    existing !== null &&
+    (flow.identity
+      ? named !== null && (existingKey === null || existingKey === named)
+      : true);
+  if (!sameAccount) {
+    await ProviderAppAccessRepository.removeForConnection(key);
+  }
+  // An Allow page still open in another tab showed the account as it was:
+  // its form is spent here, so it can't allow an app the account that
+  // replaced it.
+  await OAuthStateRepository.removeAllow(key);
   await ProviderConnectionRepository.upsert(
     {
       ...key,
+      appRowId: state.appRowId,
       label: identity.label,
       externalId: identity.externalId,
       scopes: granted,
@@ -590,11 +741,40 @@ async function serveCallback(
     },
     settings() as never,
   );
+  // Connecting from inside an app allows that app in the same step, if
+  // the person still opens it and it still lists the provider: the
+  // minutes at the provider may have changed either.
+  const opened = await appForMember({
+    organizationId: person.org.orgId,
+    userId: person.id,
+    slug: app.appSlug,
+  });
+  const declared =
+    opened?.rowId === state.appRowId
+      ? declaredScopes(opened.manifest, id)
+      : null;
+  if (declared !== null) {
+    await ProviderAppAccessRepository.allow({
+      ...key,
+      appRowId: state.appRowId,
+      scopes: canonicalScopes(flow, declared),
+      now: new Date(now),
+    });
+  }
+  // Reconnect from Your connections → Accounts: the person's apps were
+  // allowed this same account, so each is allowed for what it lists now,
+  // where the new token holds it.
+  const reallowed =
+    state.purpose === OAuthStatePurpose.Reconnect && sameAccount
+      ? await reallowApps({ key, flow, holds: granted, now })
+      : [];
   logEvent("oauth.connected", {
     ...log,
     app_row_id: state.appRowId,
     scopes: granted,
     reconnected: existing !== null,
+    purpose: state.purpose,
+    reallowed: reallowed.map((app) => app.rowId),
   });
   const member = await userSubject(person.id).catch(() => null);
   await emit(async () => ({
@@ -616,9 +796,256 @@ async function serveCallback(
   return redirect(safeReturnTo(state.returnTo));
 }
 
+/** An app the person allowed to use their connection, as it is now. */
+interface AllowedApp {
+  app: ConnectApp;
+  /** What the app lists for the provider now. */
+  declared: string[];
+  /** What the person allowed it, canonical. */
+  allowed: string[];
+}
+
 /**
- * Serve `/connect/<id>` and `/connect/<id>/callback`, or null for a path
- * that is neither (the control plane's). GET only.
+ * The apps the person allowed to use their connection that they still
+ * open and that still list the provider. Any other access row is left as
+ * it is: the app can't use the connection either way.
+ */
+async function allowedApps(key: ConnectionKey): Promise<AllowedApp[]> {
+  const out: AllowedApp[] = [];
+  for (const row of await ProviderAppAccessRepository.listForConnection(key)) {
+    const app = await memberAppByRow({ ...key, appRowId: row.appRowId });
+    if (!app) continue;
+    const declared = declaredScopes(app.manifest, key.providerId);
+    if (declared === null) continue;
+    out.push({ app, declared, allowed: row.scopes });
+  }
+  return out;
+}
+
+/**
+ * Allow each app the person allowed for what it lists now, where it lists
+ * more than they allowed it and the connection (`holds`) has it. The apps
+ * allowed.
+ */
+async function reallowApps(input: {
+  key: ConnectionKey;
+  flow: OAuthClientCapability["flow"];
+  holds: readonly string[];
+  now: number;
+}): Promise<ConnectApp[]> {
+  const { key, flow } = input;
+  const out: ConnectApp[] = [];
+  for (const each of await allowedApps(key)) {
+    if (missingScopes(flow, input.holds, each.declared).length > 0) continue;
+    if (missingScopes(flow, each.allowed, each.declared).length === 0) continue;
+    await ProviderAppAccessRepository.allow({
+      ...key,
+      appRowId: each.app.rowId,
+      scopes: canonicalScopes(flow, each.declared),
+      now: new Date(input.now),
+    });
+    out.push(each.app);
+  }
+  return out;
+}
+
+type ReconnectResult =
+  | { outcome: ReconnectOutcome.Provider; url: string }
+  | {
+      outcome: ReconnectOutcome.Allowed;
+      /** The provider, by its label. */
+      provider: string;
+    };
+
+/**
+ * Reconnect on Your connections → Accounts, for the person's own
+ * connection to `providerId` and every app they allowed to use it. When
+ * the connection expired, or lacks a scope one of those apps lists, the
+ * provider is asked again, in the name of the app that needs it, for
+ * every scope the organization's apps list: the URL to send the browser
+ * to, whose callback allows each of those apps for what it lists now.
+ * Otherwise no provider is asked, and each app that lists more than the
+ * person allowed it is allowed for what it lists now: selecting
+ * Reconnect is the person's OK.
+ */
+export async function startReconnect(
+  input: ConnectionKey,
+): Promise<ReconnectResult> {
+  const registry = await gatewayProviders();
+  const capability = registry.get(input.providerId);
+  if (!capability || capability.mode !== "oauth_client") {
+    throw new PublicError(
+      "PROVIDER_NOT_FOUND",
+      `No OAuth provider ${input.providerId} is on this Gateway.`,
+    );
+  }
+  const connection = await ProviderConnectionRepository.find(input);
+  if (!connection) {
+    throw new PublicError("CONNECTION_NOT_FOUND", "No such connection");
+  }
+  const flow = capability.flow;
+  const now = Date.now();
+  const apps = await allowedApps(input);
+  const short = apps.filter(
+    (each) => missingScopes(flow, connection.scopes, each.declared).length > 0,
+  );
+  if (connection.status === "expired" || short.length > 0) {
+    const first = short[0] ?? apps[0];
+    if (!first) {
+      throw new PublicError(
+        "CONNECTION_UNUSED",
+        `No app you allowed uses this ${capability.label} connection. Connect it from inside the app that needs it.`,
+      );
+    }
+    const client = await resolveOAuthClient({
+      id: input.providerId,
+      capability,
+      env: settings() as never,
+      lookup: registry,
+    });
+    if (!client) {
+      throw new PublicError(
+        "OAUTH_CLIENT_REQUIRED",
+        `${capability.label} has no client on this Gateway yet. An owner or admin adds one under Manage workspace → Providers.`,
+      );
+    }
+    return {
+      outcome: ReconnectOutcome.Provider,
+      url: await authorizeUrl({
+        person: input,
+        id: input.providerId,
+        capability,
+        client,
+        app: first.app,
+        declared: first.declared,
+        purpose: OAuthStatePurpose.Reconnect,
+        returnTo: DEFAULT_RETURN,
+        now,
+      }),
+    };
+  }
+  const allowed = await reallowApps({
+    key: input,
+    flow,
+    holds: connection.scopes,
+    now,
+  });
+  logEvent("oauth.apps_reallowed", {
+    provider: input.providerId,
+    org: input.organizationId,
+    user_id: input.userId,
+    app_row_ids: allowed.map((app) => app.rowId),
+  });
+  return {
+    outcome: ReconnectOutcome.Allowed,
+    provider: capability.label,
+  };
+}
+
+const CANT_ALLOW = "Can't allow this app";
+
+/**
+ * The Allow page's form: the person allows the app the state names to use
+ * their connection, or leaves it as it was. The state is spent either
+ * way. What the page showed is checked again: the app still lists the
+ * provider and the person still opens it, and their connection still
+ * holds what the app lists.
+ */
+async function serveAllow(
+  request: Request,
+  id: string,
+  deps: ConnectRouteDeps,
+): Promise<Response> {
+  const person = await signedIn(request);
+  if (!person) {
+    return errorPage(
+      401,
+      CANT_ALLOW,
+      "Sign in to the Gateway in this browser, then open the app again.",
+    );
+  }
+  const now = (deps.now ?? Date.now)();
+  const log = { provider: id, org: person.org.orgId, user_id: person.id };
+  const form = await request.formData().catch(() => null);
+  const stateParam = form?.get(ALLOW_FIELDS.state);
+  const state =
+    typeof stateParam === "string" && stateParam
+      ? await OAuthStateRepository.take(stateParam, new Date(now))
+      : null;
+  if (
+    !state ||
+    state.providerId !== id ||
+    state.purpose !== OAuthStatePurpose.Allow
+  ) {
+    logEvent("oauth.allow_refused", { ...log, reason: "state" }, "warn");
+    return errorPage(
+      400,
+      CANT_ALLOW,
+      "This page was used already or expired. Open the app again.",
+    );
+  }
+  if (state.userId !== person.id || state.organizationId !== person.org.orgId) {
+    logEvent(
+      "oauth.allow_refused",
+      { ...log, reason: "foreign_state" },
+      "warn",
+    );
+    return errorPage(
+      400,
+      CANT_ALLOW,
+      "This was started by someone else, or in another organization. Open the app again.",
+    );
+  }
+  const returnTo = safeReturnTo(state.returnTo);
+  if (form?.get(ALLOW_FIELDS.decision) !== ALLOW_APPROVE) {
+    return redirect(returnTo, 303);
+  }
+  const check = await allowCheck(person, state);
+  if (check.refused !== null) {
+    logEvent(
+      "oauth.allow_refused",
+      { ...log, app_row_id: state.appRowId, reason: check.refused },
+      "warn",
+    );
+    if (check.refused === AllowRefusal.App) {
+      return errorPage(
+        404,
+        CANT_ALLOW,
+        "The app or the provider changed since this page opened. Open the app again.",
+      );
+    }
+    const { capability, app } = check;
+    // The person said yes to the scopes the page showed: an app that lists
+    // more by now asks again, with a page that shows them.
+    return errorPage(
+      409,
+      CANT_ALLOW,
+      check.refused === AllowRefusal.Connection
+        ? `Your ${capability.label} connection changed since this page opened. Open ${app.name} and connect again.`
+        : `${app.name} asks for more than this page showed. Open ${app.name} again.`,
+    );
+  }
+  const scopes = canonicalScopes(check.capability.flow, check.declared);
+  await ProviderAppAccessRepository.allow({
+    organizationId: person.org.orgId,
+    providerId: id,
+    userId: person.id,
+    appRowId: state.appRowId,
+    scopes,
+    now: new Date(now),
+  });
+  logEvent("oauth.app_allowed", {
+    ...log,
+    app_row_id: state.appRowId,
+    scopes,
+  });
+  return redirect(returnTo, 303);
+}
+
+/**
+ * Serve `/connect/<id>`, `/connect/<id>/callback` (GET) and
+ * `/connect/<id>/allow` (POST), or null for a path that is none of them
+ * (the control plane's).
  */
 export async function serveConnectRoute(
   request: Request,
@@ -627,13 +1054,19 @@ export async function serveConnectRoute(
   const parsed = parseConnectPath(new URL(request.url).pathname);
   if (!parsed) return null;
   const method = request.method.toUpperCase();
-  if (method !== "GET" && method !== "HEAD") {
+  if (parsed.kind === "allow") {
+    if (method !== "POST") {
+      return new Response(null, { status: 405, headers: { allow: "POST" } });
+    }
+  } else if (method !== "GET" && method !== "HEAD") {
     return new Response(null, { status: 405, headers: { allow: "GET" } });
   }
   try {
     return parsed.kind === "start"
       ? await serveStart(request, parsed.id, deps)
-      : await serveCallback(request, parsed.id, deps);
+      : parsed.kind === "callback"
+        ? await serveCallback(request, parsed.id, deps)
+        : await serveAllow(request, parsed.id, deps);
   } catch (error) {
     logEvent(
       "oauth.connect_failed",

@@ -298,7 +298,7 @@ Linked dev only listens on this machine (`127.0.0.1`, `::1`, `localhost`).
 ### LINKED_DEV_REFUSED
 The Gateway refused linked dev's token for this app: linked dev is off (`everyapp workspace linked-dev on`), or the person isn't an owner or admin, or can't open the app.
 ### LINKED_DEV_REVOKE_FAILED
-The token was forgotten locally, but the Gateway couldn't revoke the grant. Revoke it under Connections.
+The token was forgotten locally, but the Gateway couldn't revoke the grant. Revoke it under Your connections.
 ### LOCAL_DNS_STALE
 The app is live, but this machine's DNS still caches the name as missing. Wait or flush DNS.
 ### MANIFEST_NOT_FOUND
@@ -372,7 +372,7 @@ The app bundles a spec for a built-in provider; the catalog's entry is used.
 ### PROVIDER_CLIENT_INCOMPLETE
 Part of a key or client was given (an OAuth client id without its secret). Give all of it.
 ### PROVIDER_CONNECTION_NOT_FOUND
-No connection to that provider for that person (or app).
+No connection to that provider for that person, or none that the app `--app` names may use.
 ### PROVIDER_CONNECTION_WHICH
 `provider disconnect` needs exactly one of `--user <email>` and `--all`.
 ### PROVIDER_EXISTS

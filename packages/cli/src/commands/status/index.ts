@@ -11,6 +11,7 @@ import {
   declaresSettings,
   listAppSecretNames,
   listGatewaySecretNames,
+  oauthClientsHeld,
 } from "@/lib/app/settings";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { certificateStatus } from "@/lib/domains/certificates";
@@ -32,7 +33,7 @@ import {
   PROVIDER_APPS,
   providerAppKeySetting,
 } from "@every-app/sdk/internal";
-import { gatewayRegistry } from "@/lib/gateway/providers";
+import { gatewayRegistry, readUploadedClients } from "@/lib/gateway/providers";
 import { listApps, writeAppSecretNames, type RegisteredAppInfo } from "@/lib/gateway/registry";
 import { hasGatewaySchema } from "@/lib/gateway/schema";
 import { readOwnerOrganization } from "@/lib/gateway/setup-link";
@@ -387,6 +388,9 @@ async function readSettings(
   let unread: Unread | null = null;
   const gateway = gatewayNames ?? (await readOrUnread(() => listGatewaySecretNames(cf, gatewayOwn)));
   if ("error" in gateway) unread = gateway;
+  // The clients pasted under Manage workspace → Providers count as the Gateway counts them.
+  const pasted = await readOrUnread(() => readUploadedClients(db));
+  if ("error" in pasted) unread ??= pasted;
   for (const app of declaring) {
     const own = await readOrUnread(() => listAppSecretNames(cf, app.workerName));
     if ("error" in own) unread ??= own;
@@ -404,6 +408,16 @@ async function readSettings(
       gatewayNames: "error" in gateway ? null : gateway.value,
       secretNames,
       lookup: registry,
+      ...("error" in pasted
+        ? {}
+        : {
+            oauthReady: oauthClientsHeld({
+              manifest: app.manifest!,
+              lookup: registry,
+              gatewayNames: "error" in gateway ? null : gateway.value,
+              pasted: pasted.value,
+            }),
+          }),
     });
     setups.set(app.appSlug, setup);
   }

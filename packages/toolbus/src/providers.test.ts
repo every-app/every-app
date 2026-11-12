@@ -152,6 +152,23 @@ describe("the provider tool definitions", () => {
     );
     // One of connection or provider: the handler says which is missing.
     expect(disconnect.inputSchema["required"]).toBeUndefined();
+    // `app` takes that app's access away and leaves the connection, however the connection is named.
+    const disconnectFields = disconnect.inputSchema["properties"] as Record<
+      string,
+      { description: string }
+    >;
+    expect(disconnectFields["app"]!.description).toContain(
+      "leave the connection",
+    );
+    expect(disconnectFields["connection"]!.description).toContain(
+      "instead of provider and user",
+    );
+    // A connection is a person's to a provider, never an app's.
+    for (const tool of PROVIDER_TOOLS) {
+      expect(tool.description, tool.name).not.toMatch(
+        /inside each app|in one app|in more than one app/,
+      );
+    }
     const remove = PROVIDER_TOOLS.find(
       (tool) => tool.name === "provider_remove",
     )!;

@@ -3,11 +3,14 @@
  * gateway's own /mcp against a migrated SQLite database: a member lists
  * and removes their own connections and nobody else's, an owner or admin
  * the whole organization's (`all`, `user`); each connection is one
- * person's in one app, and the answer names both; no answer carries a
- * token; a disconnect emits `provider.disconnected` and says whether the
- * grant was revoked; and `everyapp_provider_add { preset }` registers a
- * preset as a row and answers the redirect URI. Drives serveGatewayMcp
- * with resolved callers, as provider-tools.sqlite.test.ts does.
+ * person's to one provider, and the answer names the person and the apps
+ * they allowed to use it; no answer carries a token; a disconnect removes
+ * the connection for every app, emits `provider.disconnected` and says
+ * whether the grant was revoked; with `app` it takes that one app's access
+ * away and leaves the connection; and `everyapp_provider_add { preset }`
+ * registers a preset as a row and answers the redirect URI. Drives
+ * serveGatewayMcp with resolved callers, as provider-tools.sqlite.test.ts
+ * does.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TestDb } from "@/test/sqlite-db";
@@ -41,10 +44,11 @@ vi.mock("better-auth/tanstack-start", () => ({
 import { generateKeyPairSync } from "node:crypto";
 import type { McpPrincipal } from "@every-app/toolbus";
 import { eq } from "drizzle-orm";
-import { events, providers } from "@/db/schema";
+import { events, providerAppAccess, providers } from "@/db/schema";
 import { resetAppSetupCacheForTests } from "@/server/app-setup";
 import type { McpCaller } from "@/server/mcp-auth/validate";
 import { resetGatewayProvidersForTests } from "@/server/providers";
+import { ProviderAppAccessRepository } from "@/server/repositories/ProviderAppAccessRepository";
 import { ProviderConnectionRepository } from "@/server/repositories/ProviderConnectionRepository";
 import { deployLiveApp } from "@/test/registry";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
@@ -183,11 +187,18 @@ type Listed = {
   provider: string;
   userId: string;
   userEmail?: string;
-  app: { rowId: string; id: string | null; name: string };
+  apps: { rowId: string; id: string; name: string }[];
   label: string | null;
   scopes: string[];
   status: string;
 };
+
+/** Each connection's person and the ids of the apps allowed to use it. */
+function appsByPerson(listed: Listed[]): Record<string, string[]> {
+  return Object.fromEntries(
+    listed.map((each) => [each.userId, each.apps.map((app) => app.id)]),
+  );
+}
 
 async function connections(
   as: McpCaller,
@@ -198,28 +209,47 @@ async function connections(
   ] as Listed[];
 }
 
-/** A connection as the callback writes one, with a sealed token nobody should see. */
+const APP_SCOPES: Record<string, string[]> = {
+  seo: ["webmasters.readonly"],
+  mail: ["gmail.modify"],
+};
+
+/**
+ * A person's connection as the callback writes one, with a sealed token
+ * nobody should see, and the apps they allowed to use it (seo, unless
+ * said).
+ */
 async function connect(input: {
   providerId?: string;
   userId: string;
-  app?: string;
+  apps?: string[];
   label: string;
 }): Promise<string> {
+  const person = {
+    organizationId,
+    providerId: input.providerId ?? "google-workspace",
+    userId: input.userId,
+  };
   const row = await ProviderConnectionRepository.upsert(
     {
-      organizationId,
-      providerId: input.providerId ?? "google-workspace",
-      userId: input.userId,
-      appRowId: appRows[input.app ?? "seo"]!,
+      ...person,
+      appRowId: appRows["seo"]!,
       label: input.label,
       externalId: null,
-      scopes: ["webmasters.readonly", "openid", "email"],
+      scopes: ["webmasters.readonly", "gmail.modify", "openid", "email"],
       accessToken: `ya29.secret-token-for-${input.label}`,
       refreshToken: `1//refresh-${input.label}`,
       expiresAt: Date.now() + 3_600_000,
     },
     hoisted.env as { BETTER_AUTH_SECRET?: string },
   );
+  for (const app of input.apps ?? ["seo"]) {
+    await ProviderAppAccessRepository.allow({
+      ...person,
+      appRowId: appRows[app]!,
+      scopes: APP_SCOPES[app]!,
+    });
+  }
   return row.id;
 }
 
@@ -292,24 +322,31 @@ beforeEach(async () => {
 });
 
 describe("the connection tools on /mcp", () => {
-  it("lists a member's own connections, each with its app, and with all the organization's for an owner or admin only, never a token", async () => {
-    await connect({ userId: memberId, label: "member@gmail.com" });
-    await connect({ userId: memberId, app: "mail", label: "member@gmail.com" });
+  it("lists a member's own connections, each once with the apps allowed to use it, and with all the organization's for an owner or admin only, never a token", async () => {
+    await connect({
+      userId: memberId,
+      apps: ["seo", "mail"],
+      label: "member@gmail.com",
+    });
     await connect({ userId: otherId, label: "other@gmail.com" });
 
+    // One connection to Google, however many apps use it.
     const own = await connections(member());
-    expect(
-      own.map((each) => [each.provider, each.app.id, each.label]).sort(),
-    ).toEqual([
-      ["google-workspace", "mail", "member@gmail.com"],
-      ["google-workspace", "seo", "member@gmail.com"],
-    ]);
+    expect(own).toHaveLength(1);
     expect(own[0]).toMatchObject({
+      provider: "google-workspace",
       userId: memberId,
       userEmail: "member@example.com",
-      scopes: ["webmasters.readonly", "openid", "email"],
+      // By name.
+      apps: [
+        { rowId: appRows["mail"], id: "mail", name: "mail" },
+        { rowId: appRows["seo"], id: "seo", name: "seo" },
+      ],
+      label: "member@gmail.com",
+      scopes: ["webmasters.readonly", "gmail.modify", "openid", "email"],
       status: "active",
     });
+    expect(own[0]).not.toHaveProperty("app");
     // Nothing in the answer looks like a token.
     const answer = await call("everyapp_provider_connections", {}, member());
     expect(answer.ok && answer.text).not.toMatch(/ya29|refresh-/);
@@ -318,13 +355,11 @@ describe("the connection tools on /mcp", () => {
       await refusal("everyapp_provider_connections", { all: true }, member()),
     ).toMatch(/^ADMIN_REQUIRED: /);
     const all = await connections(admin(), { all: true });
-    expect(all.map((each) => [each.userId, each.app.id]).sort()).toEqual(
-      [
-        [memberId, "mail"],
-        [memberId, "seo"],
-        [otherId, "seo"],
-      ].sort(),
-    );
+    expect(all).toHaveLength(2);
+    expect(appsByPerson(all)).toEqual({
+      [memberId]: ["mail", "seo"],
+      [otherId]: ["seo"],
+    });
     expect(
       (await connections(owner(), { all: true, provider: "nothing" })).length,
     ).toBe(0);
@@ -332,10 +367,112 @@ describe("the connection tools on /mcp", () => {
     expect(await connections(admin())).toEqual([]);
   });
 
-  it("lets a member disconnect their own connection only, an admin anyone's by email or id, by app or connection id, and emits provider.disconnected", async () => {
-    await connect({ userId: memberId, label: "member@gmail.com" });
-    await connect({ userId: memberId, app: "mail", label: "member@gmail.com" });
-    const others = await connect({ userId: otherId, label: "other@gmail.com" });
+  it("takes one app's access away with `app` and leaves the connection for the other apps: a member their own, an admin anyone's", async () => {
+    const mine = await connect({
+      userId: memberId,
+      apps: ["seo", "mail"],
+      label: "member@gmail.com",
+    });
+    const others = await connect({
+      userId: otherId,
+      apps: ["seo", "mail"],
+      label: "other@gmail.com",
+    });
+
+    // Another person's: refused for a member.
+    for (const target of [
+      { connection: others },
+      { provider: "google-workspace", user: "other@example.com" },
+    ]) {
+      expect(
+        await refusal(
+          "everyapp_provider_disconnect",
+          { ...target, app: "mail" },
+          member(),
+        ),
+      ).toMatch(/^ADMIN_REQUIRED: /);
+    }
+
+    // Their own, by provider and app.
+    expect(
+      await data(
+        "everyapp_provider_disconnect",
+        { provider: "google-workspace", app: "mail" },
+        member(),
+      ),
+    ).toMatchObject({
+      connection: {
+        id: mine,
+        provider: "google-workspace",
+        userId: memberId,
+        apps: [{ id: "seo" }],
+        status: "active",
+      },
+      app: "mail",
+      removed: true,
+      revoked: false,
+    });
+    // The connection is theirs still, with seo alone.
+    expect(
+      (await connections(member())).map((each) => [
+        each.id,
+        each.status,
+        each.apps.map((app) => app.id),
+      ]),
+    ).toEqual([[mine, "active", ["seo"]]]);
+    // An app that isn't allowed to use it has nothing to take.
+    for (const app of ["mail", "nothing"]) {
+      expect(
+        await refusal(
+          "everyapp_provider_disconnect",
+          { provider: "google-workspace", app },
+          member(),
+        ),
+      ).toMatch(/^CONNECTION_NOT_FOUND: /);
+    }
+
+    // An admin takes an app off another person's, by connection id or by email.
+    expect(
+      await data(
+        "everyapp_provider_disconnect",
+        { connection: others, app: "seo" },
+        admin(),
+      ),
+    ).toMatchObject({
+      connection: { id: others, userId: otherId, apps: [{ id: "mail" }] },
+      app: "seo",
+      removed: true,
+    });
+    expect(
+      await data(
+        "everyapp_provider_disconnect",
+        {
+          provider: "google-workspace",
+          user: "other@example.com",
+          app: "mail",
+        },
+        owner(),
+      ),
+    ).toMatchObject({ connection: { id: others, apps: [] }, removed: true });
+
+    // Both connections stay, and no disconnect was announced.
+    const all = await connections(owner(), { all: true });
+    expect(all.map((each) => each.status)).toEqual(["active", "active"]);
+    expect(appsByPerson(all)).toEqual({ [memberId]: ["seo"], [otherId]: [] });
+    expect(await providerEvents("provider.disconnected")).toEqual([]);
+  });
+
+  it("lets a member disconnect their own connection only, an admin anyone's by email or id, by provider or connection id, and emits provider.disconnected with no app", async () => {
+    const mine = await connect({
+      userId: memberId,
+      apps: ["seo", "mail"],
+      label: "member@gmail.com",
+    });
+    const others = await connect({
+      userId: otherId,
+      apps: ["seo", "mail"],
+      label: "other@gmail.com",
+    });
 
     // Another person's: refused for a member, before the service is asked.
     expect(
@@ -362,43 +499,36 @@ describe("the connection tools on /mcp", () => {
     expect(await refusal("everyapp_provider_disconnect", {}, member())).toMatch(
       /^INVALID_INPUT: /,
     );
-    // Connected in two apps: which one must be said.
+    // A connection id names the connection alone.
     expect(
       await refusal(
         "everyapp_provider_disconnect",
-        { provider: "google-workspace" },
+        { connection: mine, provider: "google-workspace" },
         member(),
       ),
-    ).toMatch(/^INVALID_INPUT: .*say which app/);
+    ).toMatch(/^INVALID_INPUT: /);
 
-    // Their own, by app.
+    // Their own, by provider: the one connection goes, for both apps.
     expect(
       await data(
         "everyapp_provider_disconnect",
-        { provider: "google-workspace", app: "mail" },
+        { provider: "google-workspace" },
         member(),
       ),
     ).toMatchObject({
       connection: {
+        id: mine,
         provider: "google-workspace",
         userId: memberId,
-        app: { id: "mail" },
+        apps: [{ id: "mail" }, { id: "seo" }],
       },
       removed: true,
       revoked: false,
     });
-    expect((await connections(member())).map((each) => each.app.id)).toEqual([
-      "seo",
-    ]);
-    // Now one is left, so the provider alone names it.
-    expect(
-      await data(
-        "everyapp_provider_disconnect",
-        { provider: "google-workspace" },
-        member(),
-      ),
-    ).toMatchObject({ removed: true });
     expect(await connections(member())).toEqual([]);
+    expect(
+      (await db.select().from(providerAppAccess)).map((row) => row.userId),
+    ).toEqual([otherId, otherId]);
     // Again: nothing to remove.
     expect(
       await refusal(
@@ -409,33 +539,43 @@ describe("the connection tools on /mcp", () => {
     ).toMatch(/^CONNECTION_NOT_FOUND: /);
 
     // An admin removes another person's by email, and by connection id.
-    await connect({ userId: otherId, app: "mail", label: "other@gmail.com" });
     expect(
       await data(
         "everyapp_provider_disconnect",
-        { provider: "google-workspace", user: "other@example.com", app: "seo" },
+        { provider: "google-workspace", user: "other@example.com" },
         admin(),
       ),
-    ).toMatchObject({ removed: true, connection: { userId: otherId } });
-    const [last] = await connections(owner(), { all: true });
+    ).toMatchObject({
+      removed: true,
+      connection: { id: others, userId: otherId },
+    });
+    const again = await connect({ userId: otherId, label: "other@gmail.com" });
     expect(
       await data(
         "everyapp_provider_disconnect",
-        { connection: last!.id },
+        { connection: again },
         owner(),
       ),
-    ).toMatchObject({ removed: true, connection: { app: { id: "mail" } } });
+    ).toMatchObject({
+      removed: true,
+      connection: { id: again, apps: [{ id: "seo" }] },
+    });
     expect(await connections(owner(), { all: true })).toEqual([]);
+    // Every app's access went with its connection.
+    expect(await db.select().from(providerAppAccess)).toEqual([]);
 
+    // One event a connection: the provider and the account, no app.
     const emitted = await providerEvents("provider.disconnected");
-    expect(emitted.length).toBe(4);
+    expect(emitted.length).toBe(3);
     for (const event of emitted) {
       expect(event.data).not.toMatch(/ya29|refresh-|token/i);
-      expect(JSON.parse(event.data)).toMatchObject({
+      const data = JSON.parse(event.data) as Record<string, unknown>;
+      expect(data).toMatchObject({
         provider: { id: "google-workspace", kind: "oauth" },
-        app: { id: expect.stringMatching(/^(seo|mail)$/) },
+        account: { user: { id: expect.stringMatching(/^user-/) } },
         revoked: false,
       });
+      expect(data).not.toHaveProperty("app");
     }
   });
 

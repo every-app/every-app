@@ -425,7 +425,7 @@ describe("listMcpApps, credentialState and mcpAppState", () => {
     expect(mcpAppState(old, [], credential)).toBe("needs setup");
   });
 
-  it("counts an OAuth provider's connections made in the app, and is ready with a client and one connection", () => {
+  it("counts an OAuth provider's connections the app may use, and is ready with a client and one connection", () => {
     const oauth = { mode: "oauth_client", label: "Linear", secrets: { clientId: "LINEAR_MCP_CLIENT_ID" }, api: ["mcp.linear.app"] } as unknown as Capability;
     const ctx = (connections: CredentialContext["connections"], names = ["LINEAR_MCP_CLIENT_ID"]): CredentialContext => ({
       gatewayNames: names,
@@ -444,20 +444,26 @@ describe("listMcpApps, credentialState and mcpAppState", () => {
     const member = credentialState(block(), null, ctx(people), "linear");
     expect(member).toMatchObject({ kind: "oauth", connected: 2, people: ["a@example.com", "b@example.com"] });
     expect(credentialReady(member)).toBe(true);
-    // Connections made in another app don't count.
+    // Connections another app alone may use don't count.
     expect(credentialReady(credentialState(block(), null, ctx(people), "other"))).toBe(false);
     expect(credentialReady(credentialState(block(), null, ctx(new Map()), "linear"))).toBe(false);
     expect(credentialReady(credentialState(block(), null, ctx(people, []), "linear"))).toBe(false);
     expect(credentialState({ ...block(), auth: { kind: "provider", provider: "gone" } }, null, { ...ctx(people), registry: { get: () => undefined, ids: () => [], bound: () => false } }, "linear")).toEqual({ kind: "missing", provider: "gone" });
   });
 
-  it("reads the context from the Gateway: its rows, the organization's active connections, the uploaded clients", async () => {
+  it("reads the context from the Gateway: its rows, the organization's active connections by the apps allowed to use them, the uploaded clients", async () => {
     const { organization } = await add({ url: "https://deepwiki.com/mcp", auth: { kind: "none" } });
     addUser("ben", organization.id);
+    // Ben allowed the app; Old's connection isn't active; Ada never allowed the app.
     sqlite.sqlite.exec(
       `INSERT INTO provider_connections (id, organization_id, provider_id, user_id, app_row_id, label, scopes, access_token_enc, status, created_at, updated_at)
-       VALUES ('c1', '${organization.id}', 'linear-mcp', 'ben', (SELECT id FROM apps WHERE app_slug = 'deepwiki'), 'Ben', '[]', 'x', 'active', 0, 0),
-              ('c2', '${organization.id}', 'linear-mcp', 'old', (SELECT id FROM apps WHERE app_slug = 'deepwiki'), 'Old', '[]', 'x', 'revoked', 0, 0)`,
+       SELECT id, '${organization.id}', 'linear-mcp', user_id, (SELECT id FROM apps WHERE app_slug = 'deepwiki'), label, '[]', 'x', status, 0, 0
+       FROM (SELECT 'c1' AS id, 'ben' AS user_id, 'Ben' AS label, 'active' AS status
+             UNION ALL SELECT 'c2', 'old', 'Old', 'revoked'
+             UNION ALL SELECT 'c3', 'ada', 'Ada', 'active');
+       INSERT INTO provider_app_access (organization_id, provider_id, user_id, app_row_id, scopes, created_at, updated_at)
+       SELECT organization_id, provider_id, user_id, (SELECT id FROM apps WHERE app_slug = 'deepwiki'), '[]', 0, 0
+       FROM provider_connections WHERE id IN ('c1', 'c2')`,
     );
     const read = await readCredentialContext(db(), { gatewayHost: "gw.example.com", appBaseDomain: "gw.example.com" }, ["X"]);
     expect([...read.connections]).toEqual([[connectionKey("linear-mcp", "deepwiki"), ["ben@example.com"]]]);

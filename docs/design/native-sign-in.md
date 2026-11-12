@@ -91,9 +91,9 @@ type NativeGrantProps = {
 
 The page is `routes/oauth/consent.tsx` with a second variant chosen by the resource:
 
-- **Who:** the client's name, with its verified domain when the client id is a metadata document ("openzen.app"), or "unverified: this app chose its own name" for a dynamically registered client.
-- **What:** "wants to use **OpenZen** (open-zen.<base>) as you, in **<organization>**: everything you can do there." No app picker, no read-only choice. For an organization's app the organization is fixed by the host; for a shared app on the hosted tier the person picks one of their organizations, as the MCP page does.
-- **Where the code goes:** "Back to the app on this computer (127.0.0.1)" for a loopback redirect, the host for an https one.
+- **Who:** the client's name, with its verified domain when the client id is a metadata document ("openzen.app"), or "Unverified: Continue if you trust this application." for a dynamically registered client.
+- **What:** the title, "<client> wants to use **OpenZen**", and the signed-in person's email. The grant is everything they can do in that app; the page has no separate line for it. No app picker, no read-only choice. For an organization's app the organization is fixed by the host and not shown; for a shared app on the hosted tier the person picks one of their organizations from a list, as the MCP page does.
+- **Where the code goes:** a "Redirects to" row: "This computer (127.0.0.1)" for a loopback redirect, the host for an https one.
 - Allow / Don't allow. The same transaction rules: 10 minutes, bound to the browser, spent once, decision from a same-origin form by a signed-in member.
 
 A person who can't open the app in the browser (no `user_app_access` row, deactivated, suspended organization) can't grant it: `consent.choices-validated-before-spend` extends to the app resource.
@@ -134,7 +134,7 @@ A bearer route takes a bearer only: the perimeter answers 401 to a cookie there 
 
 | Ends a native grant | How fast |
 | --- | --- |
-| The person revokes it under Settings → Connections (the AI connections page, with a second table "Apps on your devices") | next request |
+| The person revokes it under Your connections (the AI connections page, with a second table "Apps on your devices") | next request |
 | The app's "Sign out": RFC 7009 revocation at the token endpoint with the refresh token; the row becomes `ended` | next request |
 | Member removed from the organization, or deactivated | next request (the row is revoked on the way) |
 | The app deleted or disabled | next request once the origin leaves the resource list (within a minute); the rows are revoked when the app row goes through the Gateway (as app-bound PATs are), and by the hourly maintenance for an app the CLI deleted or disabled in the registry directly |

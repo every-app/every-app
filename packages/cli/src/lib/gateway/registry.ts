@@ -561,8 +561,10 @@ WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
  * names, everyone's access to it (direct and through groups), the personal
  * access tokens bound to it (revoked), its agent tools snapshot, its place
  * in AI connections, every organization's settings on it (a monthly
- * cap), and the serving of its previous hostnames (a renamed app's). The
- * same writes as the gateway's own delete (AppRepository.tombstone).
+ * cap), the access people gave it to their OAuth connections (the
+ * connections stay: other apps may use them), and the serving of its
+ * previous hostnames (a renamed app's). The same writes as the gateway's
+ * own delete (AppRepository.tombstone).
  */
 export function withoutAppData(
   app: Pick<AppRow, "id" | "organizationId">,
@@ -601,6 +603,10 @@ WHERE app_row_id = ?2 AND organization_id = ?3 AND revoked_at IS NULL`,
     },
     {
       sql: "DELETE FROM org_app_settings WHERE app_row_id = ?",
+      params: [app.id],
+    },
+    {
+      sql: "DELETE FROM provider_app_access WHERE app_row_id = ?",
       params: [app.id],
     },
     // A renamed app's previous hostnames stop being served; the ids stay its own.

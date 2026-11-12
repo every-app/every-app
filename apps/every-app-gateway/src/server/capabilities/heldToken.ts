@@ -1,6 +1,6 @@
 /**
  * An app's call to an OAuth provider's API with the token the Gateway
- * holds for a person in that app (docs/design/2026-11-oauth-simplify.md):
+ * holds for a person (docs/design/2026-11-oauth-one-connection.md):
  *
  *   ANY /api/integrations/<id>/<api host>/<path>     [x-everyapp-user: <user id>]
  *
@@ -11,8 +11,10 @@
  *  3. whose connection: the member `x-everyapp-user` names (an
  *     organization's own app only, the member still active and opening the
  *     app), else the person behind the call;
- *  4. that person's connection in this app exists and isn't expired;
- *  5. it holds every scope the app's entry declares;
+ *  4. that person's connection to the provider exists, they allowed this
+ *     app to use it, and it isn't expired;
+ *  5. it holds every scope the app's entry declares, and the person
+ *     allowed the app for every one of them;
  *  6. the host is one of the provider's (the route already parsed it);
  *  7. the token (refreshed first when due) goes on as the bearer, the
  *     app's own credentials and cookies stripped, no redirect followed,
@@ -64,7 +66,7 @@ export interface CallingApp {
 /**
  * What the proxy asks about members when background work names one
  * (`x-everyapp-user`): whether they may still use a connection in the app,
- * and dropping theirs when they may not.
+ * and taking the app's access to theirs away when they may not.
  */
 export interface MemberAccessPort {
   /** Active in the organization, not deactivated, and opens the app. */
@@ -73,7 +75,7 @@ export interface MemberAccessPort {
     userId: string;
     appRowId: string;
   }): Promise<boolean>;
-  /** They may not: their connections in the app go. */
+  /** They may not: the app's access to their connections goes. */
   revoke(input: {
     organizationId: string;
     userId: string;
@@ -220,8 +222,9 @@ export async function handleHeldTokenCall({
       appRowId: app.rowId!,
     });
     if (!may) {
-      // They left, were deactivated or lost the app: their connection in it
-      // goes now, and the answer is the same as for no connection.
+      // They left, were deactivated or lost the app: the app's access to
+      // their connection goes now, and the answer is the same as for no
+      // connection.
       await members
         .revoke({
           organizationId: caller.organizationId,
@@ -247,16 +250,26 @@ export async function handleHeldTokenCall({
       { reconnect: false },
     );
   }
-  // 4. The connection: this person's, in this app.
-  const connection = await connections.find({
+  // 4. The connection: this person's, which they allowed this app to use.
+  const owner = {
     organizationId: caller.organizationId,
     providerId: id,
     userId,
-    appRowId: app.rowId,
-  });
+  };
+  const connection = await connections.find(owner);
   if (!connection) {
     return notConnected(
-      `${capability.label} isn't connected for this person in this app yet. Send them to ${connectPath}.`,
+      `${capability.label} isn't connected for this person yet. Send them to ${connectPath}.`,
+      { reconnect: false },
+    );
+  }
+  const allowed = await connections.allowedScopes({
+    ...owner,
+    appRowId: app.rowId,
+  });
+  if (allowed === null) {
+    return notConnected(
+      `This person hasn't allowed this app to use their ${capability.label} connection yet. Send them to ${connectPath}.`,
       { reconnect: false },
     );
   }
@@ -266,16 +279,21 @@ export async function handleHeldTokenCall({
       { reconnect: true },
     );
   }
-  // 5. It holds every scope the app declares.
-  const missing = missingScopes(
-    capability.flow,
-    connection.scopes,
-    entryScopes(entry),
-  );
+  // 5. It holds every scope the app declares, and the person allowed the
+  // app for each: an app that lists more than it did then asks again.
+  const declared = entryScopes(entry);
+  const missing = missingScopes(capability.flow, connection.scopes, declared);
   if (missing.length > 0) {
     return notConnected(
       `This ${capability.label} connection lacks ${missing.join(", ")}, which this app needs; connect it again at ${connectPath}.`,
       { reconnect: true, missingScopes: missing },
+    );
+  }
+  const unallowed = missingScopes(capability.flow, allowed, declared);
+  if (unallowed.length > 0) {
+    return notConnected(
+      `This app now lists ${unallowed.join(", ")}, which this person hasn't allowed it to use on their ${capability.label} connection; send them to ${connectPath}.`,
+      { reconnect: true, missingScopes: unallowed },
     );
   }
   // 6. The host is one of the provider's.
@@ -312,6 +330,7 @@ export async function handleHeldTokenCall({
         providerId: id,
         capability,
         organizationId: caller.organizationId,
+        appRowId: app.rowId,
       });
     }
     return notConnected(
@@ -371,6 +390,7 @@ export async function handleHeldTokenCall({
       capability,
       organizationId: caller.organizationId,
       appId: app.appId,
+      appRowId: app.rowId,
     })
     .catch(() => undefined);
   return new Response(response.body, {

@@ -4,8 +4,10 @@ description: "Step-by-step guide: one Slack app's OAuth client (SLACK_CLIENT_ID 
 ---
 
 One Slack app, registered once at api.slack.com, whose OAuth client the
-Gateway holds. A member connects Slack inside each app that lists `slack`,
-for exactly the bot scopes that app's `everyapp.config.ts` names; the
+Gateway holds. A member connects Slack once, from inside an app that lists
+`slack`, for the bot scopes every app in the organization names in its
+`everyapp.config.ts`. Each other app that lists `slack` then asks that
+member to allow it, on the Gateway's own page. The
 Gateway runs the flow on its own callback, keeps the bot token Slack issues
 (the top-level token of `oauth.v2.access`; no user token) and puts it on
 the app's calls to `slack.com`. No app sees a token or the client. Open CRM
@@ -32,15 +34,15 @@ read only once `secret set` binds them to the row: set them again, or
 `secret unset` both to use a client pasted in Admin.
 
 An app lists Slack's own bot scopes as written (no prefix), comma-joined on
-the wire: `"slack": { scopes: ["channels:read", "chat:write"], why }`. The
-Gateway asks for exactly those (Slack's preset,
-`packages/sdk/src/internal/oauthPresets.ts`, adds none; the deploy of an
-app that lists `slack` registers it as a row) and refuses a bot
-token whose `scope` carries more, at connect and at every refresh. Slack's
-scopes add up per workspace installation of one Slack app: if two apps on
-this client list different scopes, a reinstall for one can carry the
-other's and be refused. Give each such app a Slack app of its own (If it
-fails).
+the wire: `"slack": { scopes: ["channels:read", "chat:write"], why }`. A
+connect asks for the scopes every app in the organization lists (Slack's
+preset, `packages/sdk/src/internal/oauthPresets.ts`, adds none; the deploy
+of an app that lists `slack` registers it as a row). The Gateway refuses a
+bot token whose `scope` carries more, at connect and at every refresh.
+Slack's scopes add up per workspace installation of one Slack app. Two
+apps on this client are fine: the connect asks for both apps' scopes. An
+installation that carries a scope no app in the organization lists is
+refused (If it fails).
 
 ## Costs and plans
 
@@ -61,7 +63,8 @@ an internal app installed in its own workspace.
 - Create the app in the browser, or generate the app configuration token
   that lets you create it.
 - Copy the Client ID and Client Secret off Basic Information (path A).
-- Click **Allow** on Slack's consent page when connecting in each app.
+- Click **Allow** on Slack's consent page when connecting, once, and on the
+  Gateway's page in each other app that uses Slack.
 
 ## Before you start
 
@@ -120,9 +123,9 @@ an internal app installed in its own workspace.
    post, manage channels and match members by email, such as
    `users:read.email`, `chat:write.public` and `channels:manage`; read its
    manifest rather than guessing). No user scopes: the Gateway keeps the
-   bot token only. The Gateway's authorize URL carries exactly an app's
-   list as `scope`; the manifest's list is what the console's own Install
-   button and a reinstall request, so keep it no wider than the apps'
+   bot token only. The Gateway's authorize URL carries the union of the
+   apps' lists as `scope`; the manifest's list is what the console's own
+   Install button and a reinstall request, so keep it no wider than that
    union. Slack's limits: `name` 35 characters, `description` 140;
    `display_name` takes a-z, 0-9, `-`, `_` and `.` only. Step 3b validates
    the file first.
@@ -221,7 +224,7 @@ an internal app installed in its own workspace.
    which shows Slack connected. No Connect button: the app's
    `integrationStatus()` says `configured: false` (Verify 1 again).
    `pnpm everyapp provider connections --all --json` lists the connection
-   with its app and scopes.
+   with the apps allowed to use it and its scopes.
 4. Logs, when a connect fails: Slack's refusal shows on the Gateway's
    error page; the Gateway's own log (**Workers & Pages** →
    `every-app-gateway` → **Observability** (**Logs** on older accounts) →
@@ -236,8 +239,8 @@ an internal app installed in its own workspace.
 | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | The app shows Slack as not set up, no Connect button; or `integration_not_configured` (503) | The Gateway holds no client, or one of the two names | `secret set` both, then Verify 1 |
 | `capability_not_requested` (403)                                               | The deployed manifest doesn't list `slack` | Add `"slack": { scopes: [...], why }` to its `everyapp.config.ts`, then `pnpm everyapp deploy --json` in its directory |
-| `integration_not_connected` (409)                                              | Nobody connected Slack in this app yet, the connection expired, or the app now lists a scope it lacks (`missingScopes`) | Connect (again) in the app at `connectPath`, so Slack asks for the new scopes |
-| After **Allow**, the Gateway's error page says Slack granted scopes the app doesn't list | The workspace's installation of this Slack app carries scopes another app on the same client asked for, so the Gateway refused the token | A Slack app per app: a provider of its own for the second app (a copy of this spec under another id and setting names, `pnpm everyapp provider show slack` prints it, added with `pnpm everyapp provider add --oauth <file>`), its own Slack app, and that id in the app's manifest |
+| `integration_not_connected` (409)                                              | The person the call is for hasn't connected Slack, hasn't allowed this app, the connection expired, or the app now lists a scope the connection lacks or the person hasn't allowed (`missingScopes`) | The person opens `connectPath` from the app: it leads to Slack, which asks for the new scopes, or to the Gateway's page that allows the app |
+| After **Allow**, the Gateway's error page says Slack granted more than the apps here list | The workspace's installation of this Slack app carries a scope no app in the organization lists (one an app listed before, or one added in Slack's console), so the Gateway refused the token | List the scope in an app that uses it and deploy. Or make a new Slack app that has only the listed scopes (steps 1 to 3) and set its client |
 | `invalid_scope` on Slack's page                                                | A scope an app lists doesn't exist, or is a user scope                                   | Fix the app's `scopes` (bot scopes only), deploy, connect again                                          |
 | `access_denied`                                                                | The person clicked Cancel on Slack's page                                                | Connect again and **Allow**                                                                              |
 | `SECRET_VALUE_REQUIRED`                                                        | Nothing was piped (path B: the field was missing, so `// empty` piped nothing) and there is no terminal to prompt at | `jq '.error' /tmp/slack-app.json`; or one of the setup rules' three ways (its `data.rerun` shows the `--from-env` form) |
@@ -266,7 +269,8 @@ an internal app installed in its own workspace.
   secret works for 24 hours unless revoked manually. The person sets
   `SLACK_CLIENT_SECRET` again at the hidden prompt (step 3a); no API
   returns the new secret.
-- **Remove.** People disconnect in each app or under Connections → Accounts
+- **Remove.** People disconnect under Your connections → Accounts, which
+  stops every app at once
   (owners and admins: `pnpm everyapp provider disconnect slack --all`).
   Then `pnpm everyapp secret unset SLACK_CLIENT_ID SLACK_CLIENT_SECRET --json --yes`
   (`--yes` only when the person said so). Then delete the app: the
@@ -292,4 +296,4 @@ an internal app installed in its own workspace.
 - https://community.n8n.io/t/slack-oauth-redirect-uri-did-not-match-any-configured-uris-self-hosted-on-windows/271936 (the redirect error's wording, with its `Passed URI:` line)
 - https://developers.cloudflare.com/workers/observability/logs/real-time-logs/ (Workers & Pages → Overview → the Worker → Logs → Live)
 - https://api.slack.com/apps (the console; `?new_app=1` opens the create dialog)
-- Local: `packages/sdk/src/internal/oauthPresets.ts` (the `slack` spec: comma-separated, no prefix, PKCE off, the bot token only), `docs/design/2026-11-oauth-simplify.md` (per-app connections, the shared-client limit) and docs/capabilities.md ("OAuth clients")
+- Local: `packages/sdk/src/internal/oauthPresets.ts` (the `slack` spec: comma-separated, no prefix, PKCE off, the bot token only), `docs/design/2026-11-oauth-one-connection.md` (one connection per person, the apps allowed to use it), `docs/design/2026-11-oauth-simplify.md` (the provider's own scopes, the mint check) and docs/capabilities.md ("OAuth clients")

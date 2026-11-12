@@ -265,7 +265,7 @@ function connectSection(company: Company, { id, client }: ClientEntry, heading: 
   const name = prose(shortLabel(client.label));
   const out: string[] = [`## ${heading}`, ""];
   out.push(
-    `Each person connects their own ${name} account in each app that uses it, for the scopes that app lists. Apps never see the tokens. [How connecting works](/docs/connect-oauth)`,
+    `Each person connects their own ${name} account once, then allows each app that uses it. Apps never see the tokens. [How connecting works](/docs/connect-oauth)`,
     "",
   );
   if (client.description && company.clients.length > 1) out.push(prose(sentence(client.description)), "");
@@ -311,7 +311,7 @@ function connectSection(company: Company, { id, client }: ClientEntry, heading: 
     "",
     `Use ${reference}${flow.scopePrefix ? `, short as above or in full (${code(`${flow.scopePrefix}…`)})` : ""}. ${
       flow.identityScopes.length > 0 ? `The Gateway adds ${flow.identityScopes.map(code).join(", ")} itself; don't list them. ` : ""
-    }The app calls ${name}'s API with \`integrationFetch()\`, and the Gateway adds the person's token. A token with more scopes than the app lists is refused.`,
+    }The app calls ${name}'s API with \`integrationFetch()\`, and the Gateway adds the person's token. A token with more scopes than your apps list is refused.`,
     "",
   );
 

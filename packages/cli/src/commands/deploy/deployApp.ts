@@ -102,6 +102,7 @@ import {
   describeUnmet,
   listGatewaySecretNames,
   namesToSet,
+  oauthClientsHeld,
 } from "@/lib/app/settings";
 import { emailInstaller } from "@/lib/app/emailRoutes";
 import type { D1Database } from "@/lib/cf/d1";
@@ -116,7 +117,7 @@ import { directoryExists } from "@/lib/file-operations";
 import { connectToGateway } from "@/lib/gateway/connect";
 import type { InstallRecord } from "@/lib/gateway/install";
 import { acquireAppLease, LeasePurpose } from "@/lib/gateway/lease";
-import { gatewayRegistry, registerPresetProviders } from "@/lib/gateway/providers";
+import { gatewayRegistry, readUploadedClients, registerPresetProviders } from "@/lib/gateway/providers";
 import {
   assertMayRenameShared,
   findRegisteredApp,
@@ -670,7 +671,7 @@ async function deploySteps(
     // What the app still needs set, once its upload is on record: a
     // warning with the one command, said again under Next. The Gateway
     // records the app's setup state when it next evaluates it.
-    await warnIfNeedsSetup({ cf, gateway: names, manifest, appId: manifest.id, secretNames, out, next, providers });
+    await warnIfNeedsSetup({ cf, db: registry, gateway: names, manifest, appId: manifest.id, secretNames, out, next, providers });
   } finally {
     await lease.release();
   }
@@ -876,6 +877,7 @@ async function renameIfAsked({
  */
 async function warnIfNeedsSetup({
   cf,
+  db,
   gateway,
   manifest,
   appId,
@@ -885,6 +887,8 @@ async function warnIfNeedsSetup({
   providers,
 }: {
   cf: CfRunner;
+  /** The Gateway's database: the OAuth clients pasted under Manage workspace → Providers. */
+  db: D1Database;
   /** The Gateway's names: its Worker holds the settings. */
   gateway: GatewayNames;
   manifest: EveryAppCliManifest;
@@ -900,7 +904,15 @@ async function warnIfNeedsSetup({
     return appSetupFrom({ manifest, appId, gatewayNames: [], secretNames: [], lookup: providers }).setup;
   }
   const gatewayNames = await listGatewaySecretNames(cf, gateway).catch(() => null);
-  const { setup } = appSetupFrom({ manifest, appId, gatewayNames, secretNames, lookup: providers });
+  const pasted = await readUploadedClients(db).catch(() => null);
+  const { setup } = appSetupFrom({
+    manifest,
+    appId,
+    gatewayNames,
+    secretNames,
+    lookup: providers,
+    ...(pasted ? { oauthReady: oauthClientsHeld({ manifest, lookup: providers, gatewayNames, pasted }) } : {}),
+  });
   if (setup.ready || !setup.command) return setup;
   const names = namesToSet(setup);
   const why = setup.unmet.find((setting) => setting.why);

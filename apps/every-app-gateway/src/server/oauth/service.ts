@@ -1,11 +1,12 @@
 /**
- * The OAuth providers service (docs/design/2026-11-oauth-simplify.md):
- * what Manage workspace → Providers, Connections → Accounts and the
- * `everyapp_provider_*` tools call. Adding a provider, replacing its
- * client, removing it, listing every connection and disconnecting someone
- * else's are an owner's or admin's; a person's own connections are
- * theirs. A connection is one person's in one app. Nothing here returns a
- * token or a client secret.
+ * The OAuth providers service
+ * (docs/design/2026-11-oauth-one-connection.md): what Manage workspace →
+ * Providers, Your connections → Accounts and the `everyapp_provider_*` tools
+ * call. Adding a provider, replacing its client, removing it, listing
+ * every connection and disconnecting someone else's are an owner's or
+ * admin's; a person's own connections are theirs. A connection is one
+ * person's to one provider, used by the apps that person allowed. Nothing
+ * here returns a token or a client secret.
  */
 import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
@@ -44,12 +45,19 @@ import {
 } from "@/server/providers";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { OAuthClientRepository } from "@/server/repositories/OAuthClientRepository";
+import { ProviderAppAccessRepository as Access } from "@/server/repositories/ProviderAppAccessRepository";
 import {
   ProviderConnectionRepository as Connections,
   type ProviderConnection,
 } from "@/server/repositories/ProviderConnectionRepository";
 import { ProviderRepository } from "@/server/repositories/ProviderRepository";
 import { SealingUnavailableError } from "@/server/secrets/sealed";
+import {
+  connectionAction,
+  declaredScopes,
+  memberAppByRow,
+  parseManifest,
+} from "./appAccess";
 import { resolveOAuthClient } from "./client";
 import { revokeAtProvider, type Fetch } from "./tokens";
 
@@ -105,28 +113,35 @@ export interface ProviderSummary {
   oauth?: OAuthProviderSummary;
 }
 
-/** The app a connection belongs to, as the lists name it. */
+/** An app the person allowed to use a connection, as the lists name it. */
 export interface ConnectionApp {
   /** apps.id. */
   rowId: string;
-  /** The app's id (its slug), or null once the app is gone. */
-  id: string | null;
+  /** The app's id (its slug). */
+  id: string;
   name: string;
 }
 
-/** One connection as the lists show it: one person's, in one app; never a token. */
+/** One connection as the lists show it: one person's, to one provider; never a token. */
 export interface ConnectionSummary {
   id: string;
   providerId: string;
   providerName: string;
   userId: string;
   userEmail: string | null;
-  app: ConnectionApp;
+  /** The apps the person allowed to use it, by name. An app that is gone is left out. */
+  apps: ConnectionApp[];
   /** How the provider names the account ("ben@example.com"). */
   label: string | null;
   /** The scopes the token holds, as the Gateway compares them (the provider's prefix taken off). */
   scopes: string[];
   status: "active" | "expired";
+  /**
+   * An app the person allowed needs them to select Reconnect: the
+   * connection expired, lacks a scope the app lists now, or the app lists
+   * more than the person allowed it.
+   */
+  needsReconnect: boolean;
   createdAt: number;
   lastUsedAt: number | null;
   expiresAt: number | null;
@@ -153,18 +168,6 @@ function requireAdmin(org: OrgContext): void {
       "ADMIN_REQUIRED",
       "Only an owner or admin can manage OAuth providers",
     );
-  }
-}
-
-function manifestOf(text: string | null): Record<string, unknown> | null {
-  if (!text) return null;
-  try {
-    const parsed: unknown = JSON.parse(text);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
   }
 }
 
@@ -421,7 +424,7 @@ async function checkNewRow(
   if (refusal) throw new PublicError(refusal.code, refusal.message);
   const settings = capabilitySettings(capability);
   for (const app of await AppRepository.findAllManifests()) {
-    const manifest = manifestOf(app.manifest);
+    const manifest = parseManifest(app.manifest);
     if (!manifest) continue;
     const own = secretNames(manifest as Parameters<typeof secretNames>[0]).map(
       (name) => name.toUpperCase(),
@@ -786,7 +789,7 @@ export async function removeProvider(
   }
   const apps = (await AppRepository.findAllManifests())
     .filter((app) =>
-      capabilityIdsOf(manifestOf(app.manifest)).includes(providerId),
+      capabilityIdsOf(parseManifest(app.manifest)).includes(providerId),
     )
     .map((app) => app.appSlug);
   if (apps.length > 0) {
@@ -825,26 +828,59 @@ export async function removeProvider(
   }));
 }
 
-/** The apps connections belong to, by row id: the organization's, and any shared app one names. */
+/** An app an access row names, with its deployed manifest. */
+interface AccessApp {
+  app: ConnectionApp;
+  manifest: Record<string, unknown> | null;
+}
+
+/** The apps access rows name, by row id: the organization's, and any shared app one names. An app that is gone has no entry. */
 async function appsByRow(
   org: OrgContext,
-  rows: readonly ProviderConnection[],
-): Promise<Map<string, ConnectionApp>> {
-  const out = new Map<string, ConnectionApp>();
-  for (const app of await AppRepository.findAll(org.orgId)) {
-    out.set(app.id, { rowId: app.id, id: app.appSlug, name: app.name });
-  }
-  for (const rowId of new Set(rows.map((row) => row.appRowId))) {
+  rowIds: Iterable<string>,
+): Promise<Map<string, AccessApp>> {
+  const out = new Map<string, AccessApp>();
+  const add = (app: {
+    id: string;
+    appSlug: string;
+    name: string;
+    manifest: string | null;
+  }) =>
+    out.set(app.id, {
+      app: { rowId: app.id, id: app.appSlug, name: app.name },
+      manifest: parseManifest(app.manifest),
+    });
+  for (const app of await AppRepository.findAll(org.orgId)) add(app);
+  for (const rowId of new Set(rowIds)) {
     if (out.has(rowId)) continue;
     const app = await AppRepository.findCallableById(rowId, org.orgId);
-    out.set(
-      rowId,
-      app
-        ? { rowId, id: app.appSlug, name: app.name }
-        : { rowId, id: null, name: rowId },
-    );
+    if (app) add(app);
   }
   return out;
+}
+
+/**
+ * Whether Reconnect has something to do for the connection: an app the
+ * person allowed, still opens and that still lists the provider (as
+ * Reconnect itself reads them, flow.ts) needs more than it has.
+ */
+async function needsReconnect(
+  capability: Capability | undefined,
+  row: ProviderConnection,
+  allowed: readonly (AccessApp & { scopes: string[] })[],
+): Promise<boolean> {
+  if (capability?.mode !== "oauth_client") return false;
+  for (const each of allowed) {
+    const declared = declaredScopes(each.manifest, row.providerId);
+    if (
+      declared === null ||
+      connectionAction(capability.flow, row, each, declared) === null
+    ) {
+      continue;
+    }
+    if (await memberAppByRow({ ...row, appRowId: each.app.rowId })) return true;
+  }
+  return false;
 }
 
 async function summarize(
@@ -852,11 +888,23 @@ async function summarize(
   rows: readonly ProviderConnection[],
 ): Promise<ConnectionSummary[]> {
   const registry = await gatewayProviders();
-  const apps = await appsByRow(org, rows);
+  const access = await Access.listByOrganization(org.orgId);
+  const apps = await appsByRow(
+    org,
+    access.map((each) => each.appRowId),
+  );
   const out: ConnectionSummary[] = [];
   for (const row of rows) {
     const capability = registry.get(row.providerId);
     const member = await userSubject(row.userId).catch(() => null);
+    const allowed = access.flatMap((each) => {
+      const named = apps.get(each.appRowId);
+      return each.providerId === row.providerId &&
+        each.userId === row.userId &&
+        named
+        ? [{ ...named, scopes: each.scopes }]
+        : [];
+    });
     out.push({
       id: row.id,
       providerId: row.providerId,
@@ -866,14 +914,13 @@ async function summarize(
           : row.providerId,
       userId: row.userId,
       userEmail: member?.email ?? null,
-      app: apps.get(row.appRowId) ?? {
-        rowId: row.appRowId,
-        id: null,
-        name: row.appRowId,
-      },
+      apps: allowed
+        .map((each) => each.app)
+        .sort((a, b) => a.name.localeCompare(b.name)),
       label: row.label,
       scopes: [...row.scopes],
       status: row.status,
+      needsReconnect: await needsReconnect(capability, row, allowed),
       createdAt: row.createdAt,
       lastUsedAt: row.lastUsedAt,
       expiresAt: row.expiresAt,
@@ -901,74 +948,99 @@ export async function listConnections(
   return summarize(org, rows);
 }
 
+/** How a disconnect or an app's removal names a connection: by its id, or by provider and person (default the caller). */
+export type ConnectionRef =
+  | { connectionId: string }
+  | { providerId: string; userId?: string };
+
 /**
- * The connection a disconnect names: by its id, or by provider, person
- * (default the caller) and app (its id or row id; needed only when the
- * person connected the provider in more than one app).
+ * The connection `input` names, which the caller may change: their own on
+ * any role, anyone's in the organization for an owner or admin.
  */
 async function connectionFor(
   org: OrgContext,
-  input:
-    | { connectionId: string }
-    | { providerId: string; userId?: string; app?: string },
+  input: ConnectionRef,
 ): Promise<ProviderConnection> {
-  if ("connectionId" in input) {
-    const row = await Connections.byId(input.connectionId);
-    if (!row || row.organizationId !== org.orgId) {
-      throw new PublicError("CONNECTION_NOT_FOUND", "No such connection");
-    }
-    return row;
-  }
-  const userId = input.userId ?? org.userId;
-  let rows = (await Connections.listByOrganization(org.orgId)).filter(
-    (row) => row.providerId === input.providerId && row.userId === userId,
-  );
-  if (input.app) {
-    const wanted = input.app;
-    const apps = await appsByRow(org, rows);
-    rows = rows.filter(
-      (row) => row.appRowId === wanted || apps.get(row.appRowId)?.id === wanted,
-    );
-  }
-  if (rows.length === 0) {
-    throw new PublicError("CONNECTION_NOT_FOUND", "No such connection");
-  }
-  if (rows.length > 1) {
-    const apps = await appsByRow(org, rows);
-    const names = rows.map((row) => apps.get(row.appRowId)?.id ?? row.appRowId);
-    throw new PublicError(
-      "INVALID_INPUT",
-      `${input.providerId} is connected in ${names.join(", ")}; say which app`,
-    );
-  }
-  return rows[0]!;
-}
-
-/**
- * Disconnect a connection: a person's own on any role, anyone's for an
- * owner or admin. Revokes at the provider when its flow names a revoke
- * endpoint and a client is live, then drops the tokens.
- */
-export async function disconnect(
-  org: OrgContext,
-  actor: EventActor | null | undefined,
-  input:
-    | { connectionId: string }
-    | { providerId: string; userId?: string; app?: string },
-  fetchUpstream: Fetch = (request) => fetch(request),
-): Promise<{
-  removed: boolean;
-  revoked: boolean;
-  connection: ConnectionSummary;
-}> {
   if (
     !("connectionId" in input) &&
     (input.userId ?? org.userId) !== org.userId
   ) {
     requireAdmin(org);
   }
+  const row =
+    "connectionId" in input
+      ? await Connections.byId(input.connectionId)
+      : await Connections.find({
+          organizationId: org.orgId,
+          providerId: input.providerId,
+          userId: input.userId ?? org.userId,
+        });
+  if (!row || row.organizationId !== org.orgId) {
+    throw new PublicError("CONNECTION_NOT_FOUND", "No such connection");
+  }
+  if (row.userId !== org.userId) requireAdmin(org);
+  return row;
+}
+
+/**
+ * Take one app's access to a connection away (`app`: its id or row id):
+ * a person's own on any role, anyone's for an owner or admin. The
+ * connection stays for the other apps, and the app asks the person again
+ * before it uses it.
+ */
+export async function removeAppAccess(
+  org: OrgContext,
+  input: ConnectionRef & { app: string },
+): Promise<{ removed: boolean; connection: ConnectionSummary }> {
   const connection = await connectionFor(org, input);
-  if (connection.userId !== org.userId) requireAdmin(org);
+  const [before] = await summarize(org, [connection]);
+  const app = before!.apps.find(
+    (each) => each.id === input.app || each.rowId === input.app,
+  );
+  if (!app) {
+    throw new PublicError(
+      "CONNECTION_NOT_FOUND",
+      `${input.app} isn't allowed to use this connection`,
+    );
+  }
+  const removed = await Access.remove({
+    organizationId: connection.organizationId,
+    providerId: connection.providerId,
+    userId: connection.userId,
+    appRowId: app.rowId,
+  });
+  logEvent("provider.app_access_removed", {
+    provider: connection.providerId,
+    org: org.orgId,
+    user_id: org.userId,
+    app_row_id: app.rowId,
+  });
+  return {
+    removed,
+    connection: {
+      ...before!,
+      apps: before!.apps.filter((each) => each.rowId !== app.rowId),
+    },
+  };
+}
+
+/**
+ * Disconnect a connection: a person's own on any role, anyone's for an
+ * owner or admin. Every app they allowed stops using it at once. Revokes
+ * at the provider when its flow names a revoke endpoint and a client is
+ * live, then drops the tokens.
+ */
+export async function disconnect(
+  org: OrgContext,
+  actor: EventActor | null | undefined,
+  input: ConnectionRef,
+  fetchUpstream: Fetch = (request) => fetch(request),
+): Promise<{
+  removed: boolean;
+  revoked: boolean;
+  connection: ConnectionSummary;
+}> {
+  const connection = await connectionFor(org, input);
   const who = await actorFor(org, actor);
   const [summary] = await summarize(org, [connection]);
   const registry = await gatewayProviders();
@@ -992,12 +1064,11 @@ export async function disconnect(
       });
     }
   }
-  const removed = await Connections.remove(connection.id);
+  const removed = await Connections.remove(connection);
   logEvent("provider.disconnected", {
     provider: connection.providerId,
     org: org.orgId,
     user_id: org.userId,
-    app_row_id: connection.appRowId,
     revoked,
   });
   const member = await userSubject(connection.userId).catch(() => null);
@@ -1015,11 +1086,6 @@ export async function disconnect(
           ? { id: member.id, email: member.email, name: member.name }
           : { id: connection.userId },
         label: connection.label,
-      },
-      app: {
-        id: summary!.app.id ?? "unknown",
-        rowId: connection.appRowId,
-        name: summary!.app.name,
       },
       revoked,
     }),

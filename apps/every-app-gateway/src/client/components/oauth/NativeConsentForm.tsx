@@ -1,27 +1,22 @@
-import { useState } from "react";
-import {
-  ArrowLeftRight,
-  BadgeCheck,
-  Laptop,
-  Send,
-  ShieldAlert,
-} from "lucide-react";
+import { useId, useState } from "react";
+import { ShieldAlert } from "lucide-react";
 import { CONSENT_FIELDS } from "@/schemas/consent-decision";
 import type { ConsentContext } from "@/server/mcp-auth/consent";
+import { BrandMark } from "@/client/components/BrandLink";
 import { Alert, AlertDescription } from "@/client/components/ui/alert";
-import { Badge } from "@/client/components/ui/badge";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/client/components/ui/card";
-import { FieldLegend, FieldSet } from "@/client/components/ui/field";
+  NativeSelect,
+  NativeSelectOption,
+} from "@/client/components/ui/native-select";
 import { domainCoversRedirect } from "./clientSite";
 import {
-  Choice,
+  ClientPublisher,
+  ConsentBox,
+  ConsentCard,
+  ConsentHeader,
+  ConsentRow,
   DecisionButtons,
-  initials,
+  InitialsTile,
   SignedInRow,
   useSendOnce,
 } from "./consentParts";
@@ -50,7 +45,8 @@ export function isNativeConsent(
  * one app as the person: the app variant of ConsentForm
  * (docs/design/native-sign-in.md section 6). There is nothing to choose but
  * the organization, and only for an app shared across several: the grant
- * is the one app, with everything the person can do there. It posts the
+ * is the one app, with everything the person can do there, which the title
+ * alone says. It posts the
  * app's origin as `resource`, which the decision checks against the stored
  * request, as ConsentForm posts `/mcp`.
  */
@@ -65,6 +61,7 @@ export function NativeConsentForm({
   const { app } = context.grant;
   const dev = context.grant.kind === "dev";
   const deliberate = useDeliberateAllow();
+  const organizationFieldId = useId();
   const { sentDecision, onSubmit } = useSendOnce();
   const [organizationId, setOrganizationId] = useState(
     context.defaultOrganizationId ?? organizations[0]?.id ?? "",
@@ -99,168 +96,127 @@ export function NativeConsentForm({
         name={CONSENT_FIELDS.resource}
         value={context.grant.resource}
       />
+      {organizations.length > 1 ? null : (
+        <input
+          type="hidden"
+          name={CONSENT_FIELDS.organizationId}
+          value={organizationId}
+        />
+      )}
 
-      <Card>
-        <CardHeader className="flex flex-col items-center text-center">
-          <div aria-hidden className="flex items-center gap-3">
-            <div className="grid size-12 shrink-0 place-items-center rounded-xl bg-primary/10 text-base font-semibold text-primary">
-              {initials(client.name)}
-            </div>
-            <ArrowLeftRight className="size-4 text-muted-foreground" />
-            <div className="grid size-12 shrink-0 place-items-center rounded-xl bg-muted text-base font-semibold">
-              {initials(app.name)}
-            </div>
-          </div>
-          <CardTitle className="mt-4 text-xl">
-            <h1 className="line-clamp-3 break-words" title={client.name}>
-              {dev
-                ? `${client.name} wants to develop ${app.name} as you`
-                : `${client.name} wants to use ${app.name}`}
-            </h1>
-          </CardTitle>
-          {verified ? (
-            <p className="mt-1 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
-              <BadgeCheck className="size-4 shrink-0 text-success" />
-              <span>
-                Published by{" "}
-                <strong className="font-medium text-foreground">
-                  {client.domain}
-                </strong>
-              </span>
-            </p>
-          ) : client.domain ? null : (
-            <p className="mt-1 text-sm text-muted-foreground">
-              <Badge
-                variant="outline"
-                size="sm"
-                className="mr-1.5 align-middle"
-              >
-                Unverified
-              </Badge>
-              This app chose its own name.
-            </p>
-          )}
-        </CardHeader>
+      <ConsentCard>
+        <BrandMark className="justify-center" />
 
-        <CardContent className="space-y-6">
-          {client.domain && !verified ? (
-            <Alert variant="warning">
-              <ShieldAlert />
-              <AlertDescription className="text-foreground">
-                Its details are published on <strong>{client.domain}</strong>,
-                but it sends access to <strong>{client.redirectHost}</strong>, a
-                different site. Continue only if you trust both.
-              </AlertDescription>
-            </Alert>
-          ) : null}
+        <ConsentHeader
+          from={<InitialsTile name={client.name} />}
+          to={
+            <InitialsTile
+              name={app.name}
+              className="border border-border bg-card text-foreground"
+            />
+          }
+          title={
+            dev
+              ? `${client.name} wants to develop ${app.name} as you`
+              : `${client.name} wants to use ${app.name}`
+          }
+        >
+          <ClientPublisher domain={client.domain} verified={verified} />
+        </ConsentHeader>
 
-          {organizations.length === 0 ? (
-            <Alert variant="warning">
-              <ShieldAlert />
-              <AlertDescription className="text-foreground">
-                You can't open {app.name} in any of your organizations, so there
-                is nothing to allow.
-              </AlertDescription>
-            </Alert>
-          ) : dev ? (
-            <div className="space-y-2 text-sm">
-              <p>
-                <code>everyapp dev</code> on this computer wants to use{" "}
-                <strong>{app.name}</strong>'s AI, email, providers and members
-                through this Gateway as you
-                {organization ? (
-                  <>
-                    , in <strong>{organization.name}</strong>
-                  </>
-                ) : null}
-                , while you develop it.
-              </p>
-              <p className="text-muted-foreground">
-                Calls bill {organization?.name ?? "the workspace"}'s providers.
-                The app's data stays on your computer. Revoke it any time under
-                Settings → Connections.
-              </p>
-            </div>
-          ) : (
-            <p className="text-sm">
-              It wants to use <strong>{app.name}</strong>{" "}
-              <span className="text-muted-foreground">({app.hostname})</span> as
-              you
+        {client.domain && !verified ? (
+          <Alert variant="warning">
+            <ShieldAlert />
+            <AlertDescription className="text-foreground">
+              Its details are published on <strong>{client.domain}</strong>, but
+              it sends access to <strong>{client.redirectHost}</strong>, a
+              different site. Continue only if you trust both.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        {organizations.length === 0 ? (
+          <Alert variant="warning">
+            <ShieldAlert />
+            <AlertDescription className="text-foreground">
+              You can't open {app.name} in any of your organizations, so there
+              is nothing to allow.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        {organizations.length > 0 && dev ? (
+          <div className="space-y-2 text-sm">
+            <p>
+              <code>everyapp dev</code> on this computer wants to use{" "}
+              <strong>{app.name}</strong>'s AI, email, providers and members
+              through this Gateway as you
               {organization ? (
                 <>
                   , in <strong>{organization.name}</strong>
                 </>
               ) : null}
-              : everything you can do there.
+              , while you develop it.
             </p>
-          )}
+            <p className="text-muted-foreground">
+              Calls bill {organization?.name ?? "the workspace"}'s providers.
+              The app's data stays on your computer. Revoke it any time under
+              Your connections.
+            </p>
+          </div>
+        ) : null}
 
-          <div className="divide-y divide-border rounded-lg border border-border bg-muted/50 text-sm">
-            <SignedInRow
-              email={context.email}
-              onSwitchAccount={onSwitchAccount}
-            />
-            <div className="flex items-center gap-3 px-3 py-2">
-              <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted">
-                {loopback ? (
-                  <Laptop className="size-4" />
-                ) : (
-                  <Send className="size-4" />
-                )}
-              </div>
-              <p className="min-w-0 flex-1 break-words">
+        <div className="space-y-4">
+          <SignedInRow
+            email={context.email}
+            onSwitchAccount={onSwitchAccount}
+          />
+
+          <ConsentBox>
+            <ConsentRow label="Redirects to">
+              <span title={client.redirectUri}>
                 {loopback ? (
                   <>
-                    Back to the app on this computer{" "}
-                    <span className="text-muted-foreground">
+                    This computer{" "}
+                    <span className="font-normal text-muted-foreground">
                       ({client.redirectHost})
                     </span>
                   </>
                 ) : (
-                  <>
-                    Access will be sent to{" "}
-                    <strong className="font-medium">
-                      {client.redirectHost}
-                    </strong>
-                  </>
+                  client.redirectHost
                 )}
-              </p>
-            </div>
-          </div>
-
-          {organizations.length > 1 ? (
-            <FieldSet>
-              <FieldLegend variant="label">Organization</FieldLegend>
-              <div className="grid gap-2.5">
-                {organizations.map((org) => (
-                  <Choice
-                    key={org.id}
-                    type="radio"
-                    name={CONSENT_FIELDS.organizationId}
-                    value={org.id}
-                    checked={organizationId === org.id}
-                    onChange={() => setOrganizationId(org.id)}
-                  >
-                    {org.name}
-                  </Choice>
-                ))}
-              </div>
-            </FieldSet>
-          ) : (
-            <input
-              type="hidden"
-              name={CONSENT_FIELDS.organizationId}
-              value={organizationId}
-            />
-          )}
+              </span>
+            </ConsentRow>
+            {organizations.length > 1 ? (
+              <ConsentRow
+                label="Organization"
+                htmlFor={organizationFieldId}
+                control
+              >
+                <NativeSelect
+                  id={organizationFieldId}
+                  name={CONSENT_FIELDS.organizationId}
+                  className="w-full"
+                  value={organizationId}
+                  onChange={(event) => setOrganizationId(event.target.value)}
+                >
+                  {organizations.map((org) => (
+                    <NativeSelectOption key={org.id} value={org.id}>
+                      {org.name}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </ConsentRow>
+            ) : null}
+          </ConsentBox>
 
           <DecisionButtons
             sentDecision={sentDecision}
             canAllow={Boolean(organization) && deliberate}
             denyLabel="Don't allow"
           />
-        </CardContent>
-      </Card>
+        </div>
+      </ConsentCard>
     </form>
   );
 }

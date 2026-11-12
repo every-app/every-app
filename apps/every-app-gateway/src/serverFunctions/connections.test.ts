@@ -1,7 +1,8 @@
 /**
  * Connected accounts' server functions: a member reads their own, an
- * owner or admin everyone's; a disconnect names the connection by id and
- * the service decides whose it may remove.
+ * owner or admin everyone's; a disconnect names the connection by id, an
+ * app's removal the connection and the app's row, and the service decides
+ * whose it may change.
  */
 import { describe, expect, it, vi } from "vitest";
 
@@ -12,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   service: {
     listConnections: vi.fn(),
     disconnect: vi.fn(),
+    removeAppAccess: vi.fn(),
   },
 }));
 
@@ -41,11 +43,13 @@ vi.mock("@/middleware/publicError", () => ({
   publicErrorMiddleware: mocks.publicErrorMiddleware,
 }));
 vi.mock("@/server/oauth/service", () => mocks.service);
+vi.mock("@/server/oauth/flow", () => ({ startReconnect: vi.fn() }));
 
 import {
   disconnectConnection,
   listAllConnections,
   listMyConnections,
+  removeConnectionApp,
 } from "./connections";
 
 type ServerFnBuilder = {
@@ -64,6 +68,7 @@ const fns = {
   listMyConnections,
   listAllConnections,
   disconnectConnection,
+  removeConnectionApp,
 } as unknown as Record<string, ServerFnBuilder>;
 
 const member = {
@@ -77,7 +82,11 @@ const admin = {
 
 describe("connection server functions", () => {
   it("gates the member functions on membership and the organization listing on admin", () => {
-    for (const name of ["listMyConnections", "disconnectConnection"]) {
+    for (const name of [
+      "listMyConnections",
+      "disconnectConnection",
+      "removeConnectionApp",
+    ]) {
       expect(fns[name]!.middlewares).toEqual([
         mocks.publicErrorMiddleware,
         mocks.organizationMemberMiddleware,
@@ -137,6 +146,50 @@ describe("connection server functions", () => {
       );
       await expect(
         fn.serverHandler({ data: { connectionId: "conn_2" }, context: member }),
+      ).rejects.toThrow(/owner or admin/);
+    });
+  });
+
+  describe("removeConnectionApp", () => {
+    const fn = fns["removeConnectionApp"]!;
+
+    it("validates the target: a connection id and the app's row id", () => {
+      expect(
+        fn.validatorFn!({ connectionId: "conn_1", appRowId: "app-row-1" }),
+      ).toEqual({ connectionId: "conn_1", appRowId: "app-row-1" });
+      expect(() => fn.validatorFn!({ connectionId: "conn_1" })).toThrow();
+      expect(() =>
+        fn.validatorFn!({ connectionId: "", appRowId: "app-row-1" }),
+      ).toThrow();
+      expect(() =>
+        fn.validatorFn!({ connectionId: "conn_1", appRowId: "" }),
+      ).toThrow();
+    });
+
+    it("takes that one app's access away through the service, as the caller, and disconnects nothing", async () => {
+      mocks.service.removeAppAccess.mockResolvedValueOnce({ removed: true });
+      mocks.service.disconnect.mockClear();
+      const result = await fn.serverHandler({
+        data: { connectionId: "conn_1", appRowId: "app-row-1" },
+        context: member,
+      });
+      expect(result).toEqual({ ok: true });
+      expect(mocks.service.removeAppAccess).toHaveBeenLastCalledWith(
+        member.org,
+        { connectionId: "conn_1", app: "app-row-1" },
+      );
+      expect(mocks.service.disconnect).not.toHaveBeenCalled();
+    });
+
+    it("lets the service's refusal through", async () => {
+      mocks.service.removeAppAccess.mockRejectedValueOnce(
+        new Error("Only an owner or admin can manage OAuth providers"),
+      );
+      await expect(
+        fn.serverHandler({
+          data: { connectionId: "conn_2", appRowId: "app-row-1" },
+          context: member,
+        }),
       ).rejects.toThrow(/owner or admin/);
     });
   });

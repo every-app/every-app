@@ -12,10 +12,14 @@
  * | `GET /oauth/authorize`                            | authorize.ts, then the page                 |
  * | `POST /oauth/consent/decision`                    | authorize.ts                                |
  * | `/oauth/consent`                                  | the TanStack page (null here)               |
+ * | `/oauth/app-access`                               | the TanStack page (null here), always       |
  *
  * Any other `/mcp/*`, `/oauth/*` or OAuth discovery path is 404. With
  * MCP_OAUTH_ENABLED off (or a GATEWAY_URL OAuth can't use), every OAuth path
- * is 404 and `/mcp` accepts personal access tokens only.
+ * but `/oauth/app-access` is 404 and `/mcp` accepts personal access tokens
+ * only. That page is where a person allows an app to use their connection
+ * to an OAuth provider (server/oauth/flow.ts): it is no part of the
+ * Gateway's own OAuth server, and is served whether that is on or off.
  *
  * Behind Cloudflare Access, `/mcp`, `/oauth/token`, `/oauth/register` and
  * `/.well-known/*` are bypassed (packages/perimeter/src/install/access-plan.ts):
@@ -27,6 +31,7 @@
  */
 import { env, waitUntil } from "cloudflare:workers";
 import { extractBearerCredential, logEvent } from "@every-app/perimeter";
+import { ALLOW_PAGE } from "@/schemas/app-access";
 import { isMcpOauthEnabled, isOauthPath } from "@/server/oauth-flag";
 import { serveGatewayMcp } from "@/server/toolbus/gateway-mcp";
 import { errorPage, handleAuthorize, handleConsentDecision } from "./authorize";
@@ -117,6 +122,7 @@ export async function serveMcpAuthRoute(
     return json(404, { error: "not_found" });
   }
   if (pathname !== MCP_PATH && !isOauthPath(pathname)) return null;
+  if (pathname === ALLOW_PAGE) return null;
   try {
     return await dispatch(request, pathname);
   } catch (error) {

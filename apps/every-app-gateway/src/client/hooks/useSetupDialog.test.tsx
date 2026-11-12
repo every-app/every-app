@@ -29,6 +29,7 @@ function app(overrides: Partial<UserAccessApp>): UserAccessApp {
     via: null,
     icon: null,
     setup: null,
+    connections: [],
     paused: false,
     ...overrides,
   };
@@ -90,7 +91,7 @@ it("opens the app whose id was given, as the list has it, and closes from the fo
   expect(latest.app).toBeNull();
   act(() => latest.open({ id: "row-inbox" }));
   expect(latest.app?.id).toBe("row-inbox");
-  expect(latest.app?.setup.command?.command).toContain("EMAIL_FROM");
+  expect(latest.app?.setup?.command?.command).toContain("EMAIL_FROM");
   act(() => latest.close());
   expect(latest.app).toBeNull();
 });
@@ -103,7 +104,7 @@ it("shows the list's latest setup while open", () => {
     command: { command: "pnpm everyapp secret set EMAIL_FROM_NAME" },
   };
   render([app({ setup: later }), SEO]);
-  expect(latest.app?.setup.command?.command).toBe(
+  expect(latest.app?.setup?.command?.command).toBe(
     "pnpm everyapp secret set EMAIL_FROM_NAME",
   );
 });

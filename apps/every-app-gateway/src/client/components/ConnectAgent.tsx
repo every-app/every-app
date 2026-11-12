@@ -151,10 +151,10 @@ export function ConnectAgentDocsLink() {
 }
 
 /**
- * The "Connect your agent" dialog, behind Connections → Connect an agent: the
- * steps, then where to see or revoke connections and the docs. An MCP app's
- * dialog is this one with its own title and last step (McpAppDialog). Render
- * it only while it is open.
+ * The "Connect your agent" dialog, behind Your connections → Connect an
+ * agent: the steps, then where to see or revoke connections and the docs. An
+ * MCP app's dialog is this one with its own title and last step
+ * (McpAppDialog). Render it only while it is open.
  */
 export function ConnectAgentDialog({
   title = COPY.title,
@@ -169,7 +169,7 @@ export function ConnectAgentDialog({
   intro?: ReactNode;
   lastStep?: ConnectStep;
   role: string | undefined;
-  /** False on Connections itself, which the link would only lead back to. */
+  /** False on Your connections itself, which the link would only lead back to. */
   connectionsLink?: boolean;
   onClose: () => void;
 }) {

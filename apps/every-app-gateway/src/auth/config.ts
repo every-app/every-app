@@ -532,8 +532,9 @@ export function createAuth() {
               organization.id,
               user.id,
             );
-            // Their OAuth connections in its apps go too (loaded here,
-            // so signing in never loads the connections' repository).
+            // Their OAuth connections in the organization go too, with
+            // the access its apps had to them (loaded here, so signing in
+            // never loads the connections' repository).
             const { ProviderConnectionRepository } = await import(
               "@/server/repositories/ProviderConnectionRepository"
             );

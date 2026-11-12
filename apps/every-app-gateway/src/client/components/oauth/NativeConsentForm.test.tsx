@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 /**
- * The native app's consent form rendered for real: which app it opens, as
- * whom and where the code goes (this computer for a loopback redirect), a
- * verified domain or the unverified mark, and what it posts: the app's
- * origin as `resource` and the organization, nothing to pick apps or access
- * with.
+ * The native app's consent form rendered for real: which app it opens, who
+ * is signed in and where the code goes (this computer for a loopback
+ * redirect), a verified domain or the unverified mark, and what it posts:
+ * the app's origin as `resource` and the organization, nothing to pick apps
+ * or access with.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -92,6 +92,16 @@ function button(label: string): HTMLButtonElement {
   return found;
 }
 
+/** Pick an option of a list the way a browser does. */
+function pick(name: string, value: string) {
+  const list = container.querySelector(`select[name="${name}"]`);
+  if (!(list instanceof HTMLSelectElement)) throw new Error(`no ${name} list`);
+  act(() => {
+    list.value = value;
+    list.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
 function text(): string {
   return (container.textContent ?? "").replace(/\s+/g, " ");
 }
@@ -124,17 +134,15 @@ afterEach(() => {
 });
 
 describe("what the native consent page says", () => {
-  it("names the app, its host and organization, and this computer", () => {
+  it("names the app, who is signed in, and this computer", () => {
     render();
     expect(container.querySelector("h1")?.textContent).toBe(
       "OpenZen for Mac wants to use OpenZen",
     );
-    expect(text()).toContain(
-      "It wants to use OpenZen (openzen.example.com) as you, in Acme: everything you can do there.",
-    );
-    expect(text()).toContain("Back to the app on this computer (127.0.0.1)");
-    expect(text()).toContain("Signed in as");
+    expect(text()).toContain("Redirects toThis computer (127.0.0.1)");
     expect(text()).toContain("member@example.com");
+    // One organization can open it: nothing is asked about it.
+    expect(text()).not.toContain("Organization");
     // Nothing to choose: one app, everything the member can do there.
     expect(container.querySelector('input[name="app_mode"]')).toBeNull();
     expect(container.querySelector('input[name="app_ids"]')).toBeNull();
@@ -145,7 +153,7 @@ describe("what the native consent page says", () => {
   it("marks a self-named client unverified", () => {
     render();
     expect(text()).toContain("Unverified");
-    expect(text()).toContain("This app chose its own name.");
+    expect(text()).toContain("Continue if you trust this application.");
   });
 
   it("shows a metadata-document client's domain as verified", () => {
@@ -172,8 +180,8 @@ describe("what the native consent page says", () => {
         redirectIsLoopback: false,
       },
     });
-    expect(text()).toContain("Access will be sent to elsewhere.example");
-    expect(text()).not.toContain("on this computer");
+    expect(text()).toContain("Redirects toelsewhere.example");
+    expect(text()).not.toContain("This computer");
     expect(text()).toContain("a different site");
     expect(text()).not.toContain("Published by");
   });
@@ -214,14 +222,7 @@ describe("what the native consent form posts", () => {
       organizations: [org("org-acme", "Acme"), org("org-beta", "Beta")],
     });
     armAllow();
-    act(() =>
-      container
-        .querySelector<HTMLInputElement>(
-          'input[name="organization_id"][value="org-beta"]',
-        )!
-        .click(),
-    );
-    expect(text()).toContain("as you, in Beta");
+    pick("organization_id", "org-beta");
     act(() => button("Allow").click());
     expect(parseDecisionForm(sent[0]!)).toMatchObject({
       organization_id: "org-beta",

@@ -19,9 +19,10 @@
  *  - `oauth_client`: an OAuth provider whose client the gateway holds and
  *    whose flow it runs. None is in the catalog: each is a registered row,
  *    written from a preset (./oauthPresets.ts: Google, Microsoft, Slack,
- *    GitHub and the rest) or an operator's spec. A person connects in an app,
- *    for exactly the provider scopes the app's manifest entry lists
- *    (`scopes`); the gateway keeps the tokens and puts the person's token
+ *    GitHub and the rest) or an operator's spec. A person connects once,
+ *    for the provider scopes the organization's apps list in their
+ *    manifest entries (`scopes`), and allows each app that asks to use the
+ *    connection; the gateway keeps the tokens and puts the person's token
  *    on the app's calls to the provider's `api` hosts. Each provider is a
  *    spec (./oauthSpec.ts), its differences data; ./oauthScopes.ts holds
  *    the one set of scope rules.
@@ -376,9 +377,9 @@ export interface OAuthFlow {
 
 /**
  * An OAuth provider the Gateway holds a client for and runs the flow for
- * (docs/design/2026-11-oauth-simplify.md). A person connects in an app;
- * the connection is theirs and that app's, for exactly the scopes the
- * app's `everyapp.config.ts` lists, and the app calls the provider's
+ * (docs/design/2026-11-oauth-one-connection.md). A person connects once;
+ * the connection is theirs, for the scopes the organization's apps list
+ * in `everyapp.config.ts`, and each app they allow calls the provider's
  * `api` hosts through the Gateway, which puts the token on.
  */
 export interface OAuthClientCapability {

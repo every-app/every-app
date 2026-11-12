@@ -1,10 +1,15 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Unplug } from "lucide-react";
 import { toast } from "sonner";
-import { ConfirmDialog } from "@/client/components/ConfirmDialog";
+import { ConnectionApps } from "@/client/components/ConnectionApps";
+import {
+  useConnectionRemoval,
+  type AppAccess,
+} from "@/client/components/ConnectionRemoval";
+import { ConnectionStatusBadge } from "@/client/components/ConnectionStatusBadge";
 import { ErrorState } from "@/client/components/ErrorState";
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
 import { SettingsSection } from "@/client/components/SettingsLayout";
@@ -19,7 +24,7 @@ import {
   dateSortValue,
 } from "@/client/components/table/DateCell";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
-import { Badge } from "@/client/components/ui/badge";
+import { Button } from "@/client/components/ui/button";
 import { DropdownMenuItem } from "@/client/components/ui/dropdown-menu";
 import { getRuleErrorMessage } from "@/client/errors";
 import {
@@ -27,16 +32,20 @@ import {
   useConnectedAccounts,
 } from "@/client/hooks/useConnectedAccounts";
 import { scopesText } from "@/client/lib/oauthProviders";
+import { ReconnectOutcome } from "@/schemas/app-access";
 import {
-  disconnectConnection,
+  reconnectConnection,
   type listMyConnections,
 } from "@/serverFunctions/connections";
 
 /**
- * Connections → Accounts (docs/design/2026-11-oauth-simplify.md): the OAuth
- * accounts this person connected through the Gateway, one row per
- * connection, each one app's, with the scopes it holds and Disconnect.
- * People connect inside each app, so nothing here starts a connect.
+ * Your connections → Accounts
+ * (docs/design/2026-11-oauth-one-connection.md): the OAuth accounts this person connected through the Gateway, one row per
+ * provider, with the scopes the connection holds and the apps they allowed
+ * to use it. One app's access can be taken away, and Disconnect stops every
+ * app at once. People connect from inside an app. Reconnect shows where an
+ * app they allowed needs more than the connection or their OK gives it,
+ * and gets it for every one of those apps at once.
  */
 export const Route = createFileRoute("/_app/connections/accounts")({
   component: AccountsTab,
@@ -46,9 +55,17 @@ type Account = Awaited<
   ReturnType<typeof listMyConnections>
 >["connections"][number];
 
-function accountColumns(
-  onDisconnect: (account: Account) => void,
-): ColumnDef<Account>[] {
+function accountColumns({
+  onDisconnect,
+  onRemoveApp,
+  onReconnect,
+  isReconnecting,
+}: {
+  onDisconnect: (account: Account) => void;
+  onRemoveApp: (access: AppAccess<Account>) => void;
+  onReconnect: (account: Account) => void;
+  isReconnecting: boolean;
+}): ColumnDef<Account>[] {
   return [
     {
       id: "account",
@@ -56,7 +73,7 @@ function accountColumns(
       header: ({ column }) => (
         <SortableHeader column={column} label="Account" />
       ),
-      meta: { label: "Account", cellClassName: "max-w-[280px]" },
+      meta: { label: "Account", cellClassName: "max-w-[320px]" },
       cell: ({ row: { original: account } }) => (
         <>
           <p className="truncate font-medium">{account.providerName}</p>
@@ -65,14 +82,22 @@ function accountColumns(
               {account.label}
             </p>
           ) : null}
+          {account.apps.length > 0 ? (
+            // The label keeps its place when the apps wrap onto more lines.
+            <div className="mt-1 flex items-baseline gap-1.5 text-xs text-muted-foreground">
+              <span className="shrink-0">Used by</span>
+              <ConnectionApps
+                apps={account.apps}
+                onRemove={(app) => onRemoveApp({ connection: account, app })}
+              />
+            </div>
+          ) : (
+            <p className="mt-1 text-xs text-muted-foreground">
+              No app can use it yet.
+            </p>
+          )}
         </>
       ),
-    },
-    {
-      id: "app",
-      accessorFn: (account) => account.app.name,
-      header: ({ column }) => <SortableHeader column={column} label="App" />,
-      meta: { label: "App", cellClassName: "max-w-[240px] truncate" },
     },
     {
       id: "access",
@@ -85,16 +110,12 @@ function accountColumns(
       ),
     },
     {
-      id: "status",
-      accessorFn: (account) => account.status,
+      accessorKey: "status",
       header: ({ column }) => <SortableHeader column={column} label="Status" />,
       meta: { label: "Status", card: CardSlot.BareDetail },
-      cell: ({ row: { original: account } }) =>
-        account.status === "expired" ? (
-          <Badge variant="warning">Reconnect in {account.app.name}</Badge>
-        ) : (
-          <Badge variant="success">Connected</Badge>
-        ),
+      cell: ({ row: { original: account } }) => (
+        <ConnectionStatusBadge connection={account} />
+      ),
     },
     {
       accessorKey: "createdAt",
@@ -119,14 +140,34 @@ function accountColumns(
       ),
     },
     {
+      // Its own column at the row's end, beside the menu, so the button
+      // lines up down the table.
+      id: "reconnect",
+      header: () => <span className="sr-only">Reconnect</span>,
+      enableSorting: false,
+      meta: {
+        headerClassName: "w-px",
+        cellClassName: "text-right",
+        card: CardSlot.Trailing,
+      },
+      cell: ({ row: { original: account } }) =>
+        account.needsReconnect ? (
+          <Button
+            size="sm"
+            disabled={isReconnecting}
+            onClick={() => onReconnect(account)}
+          >
+            Reconnect
+          </Button>
+        ) : null,
+    },
+    {
       id: "actions",
       header: () => <span className="sr-only">Actions</span>,
       enableSorting: false,
       meta: { headerClassName: "w-10" },
       cell: ({ row: { original: account } }) => (
-        <RowActionsMenu
-          label={`Actions for ${account.providerName} in ${account.app.name}`}
-        >
+        <RowActionsMenu label={`Actions for ${account.providerName}`}>
           <DropdownMenuItem
             variant="destructive"
             onClick={() => onDisconnect(account)}
@@ -142,20 +183,39 @@ function accountColumns(
 
 function AccountsTab() {
   const queryClient = useQueryClient();
-  const [disconnecting, setDisconnecting] = useState<Account | null>(null);
-
   const accountsQuery = useConnectedAccounts();
-  const disconnectMutation = useMutation({
-    mutationFn: disconnectConnection,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: CONNECTED_ACCOUNTS_KEY });
-      toast.success("Disconnected");
+  const refresh = () =>
+    queryClient.invalidateQueries({ queryKey: CONNECTED_ACCOUNTS_KEY });
+  const removal = useConnectionRemoval<Account>({
+    person: null,
+    onChanged: refresh,
+  });
+  const reconnectMutation = useMutation({
+    mutationFn: reconnectConnection,
+    onSuccess: async (result) => {
+      if (result.outcome === ReconnectOutcome.Provider) {
+        window.location.assign(result.url);
+        return;
+      }
+      await refresh();
+      toast.success(`${result.provider} reconnected`);
     },
     onError: (error) =>
-      toast.error(getRuleErrorMessage(error, "Failed to disconnect")),
+      toast.error(getRuleErrorMessage(error, "Failed to reconnect")),
   });
+  const { mutate: reconnect, isPending: isReconnecting } = reconnectMutation;
 
-  const columns = useMemo(() => accountColumns(setDisconnecting), []);
+  const columns = useMemo(
+    () =>
+      accountColumns({
+        onDisconnect: removal.askDisconnect,
+        onRemoveApp: removal.askRemoveApp,
+        onReconnect: (account) =>
+          reconnect({ data: { providerId: account.providerId } }),
+        isReconnecting,
+      }),
+    [reconnect, isReconnecting],
+  );
   const table = useDataTable({
     data: accountsQuery.data?.connections ?? [],
     columns,
@@ -167,7 +227,7 @@ function AccountsTab() {
     <>
       <SettingsSection
         title="Connected accounts"
-        hint="Accounts you've connected inside your apps, such as Gmail."
+        hint="Accounts you've connected, such as Gmail, and the apps you allow to use them."
       >
         <DataTable
           table={table}
@@ -183,29 +243,12 @@ function AccountsTab() {
           }
           empty={{
             title: "No connected accounts yet",
-            description: "Connect one inside an app.",
+            description: "Connect one from inside an app.",
           }}
         />
       </SettingsSection>
 
-      {disconnecting ? (
-        <ConfirmDialog
-          title={`Disconnect ${disconnecting.providerName} from ${disconnecting.app.name}?`}
-          confirmLabel="Disconnect"
-          destructive
-          pending={disconnectMutation.isPending}
-          onClose={() => setDisconnecting(null)}
-          onConfirm={() =>
-            disconnectMutation.mutate(
-              { data: { connectionId: disconnecting.id } },
-              { onSettled: () => setDisconnecting(null) },
-            )
-          }
-        >
-          {disconnecting.app.name} loses this account until you connect it again
-          there.
-        </ConfirmDialog>
-      ) : null}
+      {removal.dialogs}
     </>
   );
 }

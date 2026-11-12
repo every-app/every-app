@@ -83,6 +83,8 @@ const PUBLIC_ERROR_CODES = [
   "PROVIDER_HOSTED",
   "OAUTH_PROVIDER_REQUIRED",
   "OAUTH_CLIENT_REQUIRED",
+  // Reconnect on a connection no app the person allowed uses.
+  "CONNECTION_UNUSED",
   "SEALING_UNAVAILABLE",
   "ADMIN_REQUIRED",
 ] as const;

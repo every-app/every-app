@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 /**
- * Connections → Agents rendered for real with the server functions
+ * Your connections → Agents rendered for real with the server functions
  * mocked: AI apps in the first table, native apps under "Apps on your
  * devices" with the one app each opens, and signing one out revokes that
  * connection by id (the server function scopes it to the signed-in user).

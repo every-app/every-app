@@ -1083,7 +1083,7 @@ describe("lifetimes and revocation (`native.revocation-paths`, `native.per-reque
     expect((await connectionRow(row.id))?.revokedReason).toBe("ended");
   });
 
-  it("the person's revoke under Settings → Connections stops the next request and the refresh", async () => {
+  it("the person's revoke under Your connections stops the next request and the refresh", async () => {
     const client = await registerNativeClient();
     const { tokens } = await signIn({ clientId: client.client_id });
     const row = await onlyConnection();

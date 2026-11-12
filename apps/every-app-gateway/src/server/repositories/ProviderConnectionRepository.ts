@@ -1,32 +1,28 @@
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  inArray,
-  isNull,
-  lt,
-  ne,
-  not,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { apps, providerConnections } from "@/db/schema";
-import { accessToApp } from "./effective-access";
+import { providerAppAccess, providerConnections } from "@/db/schema";
 import { open, seal, type SealingEnv } from "@/server/secrets/sealed";
+import { ProviderAppAccessRepository } from "./ProviderAppAccessRepository";
+import { storedStrings } from "./stored-strings";
 
 /**
- * One person's connection to one OAuth provider, in one app
- * (docs/design/2026-11-oauth-simplify.md). Tokens are sealed on the way
- * in (`upsert`) and opened on the way out (`readTokens`); the listing
- * shapes never carry them. One row per (organization, provider, user,
- * app). The lifecycle deletes: a disconnect (`remove`), a member leaving
- * or deactivated (`removeForMember`), a member losing the app
- * (`removeForMemberApp`), the app deleted (`removeForApp`), the provider
- * removed (`removeAllForProvider`).
+ * One person's connection to one OAuth provider
+ * (docs/design/2026-11-oauth-one-connection.md). Tokens are sealed on the
+ * way in (`upsert`) and opened on the way out (`readTokens`); the listing
+ * shapes never carry them. One row per (organization, provider, user);
+ * the apps that may use it are ProviderAppAccessRepository's. The
+ * lifecycle deletes: a disconnect (`remove`), a member leaving or
+ * deactivated (`removeForMember`), the provider removed
+ * (`removeAllForProvider`). Each takes the access apps had with it.
  */
 type ConnectionStatus = "active" | "expired";
+
+/** What names one connection: the person's, to one provider, in one organization. */
+export interface ConnectionKey {
+  organizationId: string;
+  providerId: string;
+  userId: string;
+}
 
 /** A connection as Settings, Admin and the CLI list it: no token. */
 export interface ProviderConnection {
@@ -34,8 +30,6 @@ export interface ProviderConnection {
   organizationId: string;
   providerId: string;
   userId: string;
-  /** apps.id of the app the person connected in. */
-  appRowId: string;
   label: string | null;
   externalId: string | null;
   /** The scopes the token holds, canonical. */
@@ -59,7 +53,6 @@ const listed = {
   organizationId: providerConnections.organizationId,
   providerId: providerConnections.providerId,
   userId: providerConnections.userId,
-  appRowId: providerConnections.appRowId,
   label: providerConnections.label,
   externalId: providerConnections.externalId,
   scopes: providerConnections.scopes,
@@ -75,7 +68,6 @@ type ListedRow = {
   organizationId: string;
   providerId: string;
   userId: string;
-  appRowId: string;
   label: string | null;
   externalId: string | null;
   scopes: string;
@@ -86,27 +78,15 @@ type ListedRow = {
   lastUsedAt: Date | null;
 };
 
-function strings(json: string): string[] {
-  try {
-    const parsed: unknown = JSON.parse(json);
-    return Array.isArray(parsed)
-      ? parsed.filter((each): each is string => typeof each === "string")
-      : [];
-  } catch {
-    return [];
-  }
-}
-
 function shape(row: ListedRow): ProviderConnection {
   return {
     id: row.id,
     organizationId: row.organizationId,
     providerId: row.providerId,
     userId: row.userId,
-    appRowId: row.appRowId,
     label: row.label,
     externalId: row.externalId,
-    scopes: strings(row.scopes),
+    scopes: storedStrings(row.scopes),
     expiresAt: row.expiresAt?.getTime() ?? null,
     status: row.status === "expired" ? "expired" : "active",
     createdAt: row.createdAt.getTime(),
@@ -115,13 +95,8 @@ function shape(row: ListedRow): ProviderConnection {
   };
 }
 
-/** The person's connection to the provider in the app, or null. */
-async function find(input: {
-  organizationId: string;
-  providerId: string;
-  userId: string;
-  appRowId: string;
-}): Promise<ProviderConnection | null> {
+/** The person's connection to the provider, or null. */
+async function find(input: ConnectionKey): Promise<ProviderConnection | null> {
   const [row] = await db
     .select(listed)
     .from(providerConnections)
@@ -130,7 +105,6 @@ async function find(input: {
         eq(providerConnections.organizationId, input.organizationId),
         eq(providerConnections.providerId, input.providerId),
         eq(providerConnections.userId, input.userId),
-        eq(providerConnections.appRowId, input.appRowId),
       ),
     )
     .limit(1);
@@ -159,12 +133,12 @@ async function listByOrganization(
 }
 
 /**
- * The app's active connection to a provider that was used most recently
- * (then the most recently updated), of any member: what lists a remote
- * MCP server's tools when no one in particular is calling. Null when
- * there is none.
+ * The active connection to a provider that was used most recently (then
+ * the most recently updated), of any member who allowed the app: what
+ * lists a remote MCP server's tools when no one in particular is calling.
+ * Null when there is none.
  */
-async function latestActiveForProvider(
+async function latestActiveForApp(
   organizationId: string,
   providerId: string,
   appRowId: string,
@@ -172,11 +146,22 @@ async function latestActiveForProvider(
   const [row] = await db
     .select(listed)
     .from(providerConnections)
+    .innerJoin(
+      providerAppAccess,
+      and(
+        eq(
+          providerAppAccess.organizationId,
+          providerConnections.organizationId,
+        ),
+        eq(providerAppAccess.providerId, providerConnections.providerId),
+        eq(providerAppAccess.userId, providerConnections.userId),
+        eq(providerAppAccess.appRowId, appRowId),
+      ),
+    )
     .where(
       and(
         eq(providerConnections.organizationId, organizationId),
         eq(providerConnections.providerId, providerId),
-        eq(providerConnections.appRowId, appRowId),
         ne(providerConnections.status, "expired"),
       ),
     )
@@ -201,14 +186,15 @@ async function listByUser(userId: string): Promise<ProviderConnection[]> {
 
 /**
  * Write a connection, replacing the one the person had for the provider
- * in the app (a reconnect replaces tokens, scopes and label; the id and
- * `createdAt` stay). Tokens are sealed here.
+ * (a reconnect replaces tokens, scopes and label; the id and `createdAt`
+ * stay). Tokens are sealed here.
  */
 async function upsert(
   input: {
     organizationId: string;
     providerId: string;
     userId: string;
+    /** apps.id of the app the connect started in (the column the CLI before 0034 reads). */
     appRowId: string;
     label: string | null;
     externalId: string | null;
@@ -226,6 +212,7 @@ async function upsert(
   const refreshTokenEnc =
     input.refreshToken === null ? null : await seal(input.refreshToken, env);
   const values = {
+    appRowId: input.appRowId,
     label: input.label,
     externalId: input.externalId,
     scopes: JSON.stringify([...input.scopes]),
@@ -243,7 +230,6 @@ async function upsert(
       organizationId: input.organizationId,
       providerId: input.providerId,
       userId: input.userId,
-      appRowId: input.appRowId,
       createdAt: now,
       lastUsedAt: null,
       ...values,
@@ -253,7 +239,6 @@ async function upsert(
         providerConnections.organizationId,
         providerConnections.providerId,
         providerConnections.userId,
-        providerConnections.appRowId,
       ],
       set: values,
     })
@@ -376,20 +361,39 @@ async function touchLastUsed(
     .where(eq(providerConnections.id, id));
 }
 
-/** Remove one connection; false when it was already gone. */
-async function remove(id: string): Promise<boolean> {
+/**
+ * Remove one connection, and the access apps had to it; false when it
+ * was already gone. The access goes first: were the second delete to
+ * fail, the apps would ask again, never use a connection they weren't
+ * allowed.
+ */
+async function remove(
+  connection: ConnectionKey & { id: string },
+): Promise<boolean> {
+  await ProviderAppAccessRepository.removeForConnection(connection);
   const removed = await db
     .delete(providerConnections)
-    .where(eq(providerConnections.id, id))
+    .where(eq(providerConnections.id, connection.id))
     .returning({ id: providerConnections.id });
   return removed.length > 0;
 }
 
-/** Remove a member's connections in an organization (they left or were deactivated); the count. */
+/**
+ * Remove a member's connections in an organization (they left or were
+ * deactivated), and the access apps had to them; the count.
+ */
 async function removeForMember(
   organizationId: string,
   userId: string,
 ): Promise<number> {
+  await db
+    .delete(providerAppAccess)
+    .where(
+      and(
+        eq(providerAppAccess.organizationId, organizationId),
+        eq(providerAppAccess.userId, userId),
+      ),
+    );
   const removed = await db
     .delete(providerConnections)
     .where(
@@ -402,67 +406,14 @@ async function removeForMember(
   return removed.length;
 }
 
-/** Remove a member's connections in one app (they lost access to it); the count. */
-async function removeForMemberApp(input: {
-  organizationId: string;
-  userId: string;
-  appRowId: string;
-}): Promise<number> {
-  const removed = await db
-    .delete(providerConnections)
-    .where(
-      and(
-        eq(providerConnections.organizationId, input.organizationId),
-        eq(providerConnections.userId, input.userId),
-        eq(providerConnections.appRowId, input.appRowId),
-      ),
-    )
-    .returning({ id: providerConnections.id });
-  return removed.length;
-}
-
 /**
- * Remove the connections in an organization's own apps whose person no
- * longer opens the app (a grant revoked, a group changed or deleted,
- * "Available to everyone" turned off); the count. Shared apps have no
- * grants, so theirs stay.
+ * Remove every connection to a provider (its row or client was removed),
+ * and the access apps had to them; the count.
  */
-async function pruneWithoutAccess(organizationId: string): Promise<number> {
-  const removed = await db
-    .delete(providerConnections)
-    .where(
-      and(
-        eq(providerConnections.organizationId, organizationId),
-        inArray(
-          providerConnections.appRowId,
-          db
-            .select({ id: apps.id })
-            .from(apps)
-            .where(
-              and(
-                eq(apps.organizationId, organizationId),
-                eq(apps.scope, "org"),
-                not(accessToApp(providerConnections.userId, organizationId)),
-              ),
-            ),
-        ),
-      ),
-    )
-    .returning({ id: providerConnections.id });
-  return removed.length;
-}
-
-/** Remove every connection made in an app (it was deleted); the count. */
-async function removeForApp(appRowId: string): Promise<number> {
-  const removed = await db
-    .delete(providerConnections)
-    .where(eq(providerConnections.appRowId, appRowId))
-    .returning({ id: providerConnections.id });
-  return removed.length;
-}
-
-/** Remove every connection to a provider (its row or client was removed); the count. */
 async function removeAllForProvider(providerId: string): Promise<number> {
+  await db
+    .delete(providerAppAccess)
+    .where(eq(providerAppAccess.providerId, providerId));
   const removed = await db
     .delete(providerConnections)
     .where(eq(providerConnections.providerId, providerId))
@@ -495,7 +446,7 @@ export const ProviderConnectionRepository = {
   find,
   byId,
   listByOrganization,
-  latestActiveForProvider,
+  latestActiveForApp,
   listByUser,
   upsert,
   readTokens,
@@ -506,9 +457,6 @@ export const ProviderConnectionRepository = {
   touchLastUsed,
   remove,
   removeForMember,
-  removeForMemberApp,
-  pruneWithoutAccess,
-  removeForApp,
   removeAllForProvider,
   countByProvider,
 } as const;

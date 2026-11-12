@@ -23,6 +23,15 @@ import type { ResolvedOAuthClient } from "./client";
 
 export type Fetch = (request: Request) => Promise<Response>;
 
+/**
+ * The User-Agent on every call the Gateway makes to a provider for the OAuth
+ * flow (the token exchange and refresh, the account lookup, the revoke).
+ * A Worker's fetch sends none, and some APIs refuse a request without one:
+ * api.github.com answers 403, so a GitHub connection's account went
+ * unnamed and its revoke failed.
+ */
+export const OAUTH_USER_AGENT = "every-app-gateway";
+
 /** The parsed token answer the Gateway keeps. */
 interface IssuedTokens {
   accessToken: string;
@@ -97,6 +106,7 @@ export async function tokenCall({
   const headers = new Headers({
     "content-type": "application/x-www-form-urlencoded",
     accept: "application/json",
+    "user-agent": OAUTH_USER_AGENT,
   });
   for (const [name, value] of Object.entries(flow.tokenHeaders ?? {})) {
     headers.set(name, value);
@@ -404,6 +414,7 @@ export async function revokeAtProvider({
         method === "DELETE"
           ? "application/json"
           : "application/x-www-form-urlencoded",
+      "user-agent": OAUTH_USER_AGENT,
     });
     if (flow.inject === "basic" || method === "DELETE") {
       headers.set(

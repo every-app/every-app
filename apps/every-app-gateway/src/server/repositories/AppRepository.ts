@@ -9,6 +9,7 @@ import {
   mcpConnectionApps,
   mcpConnections,
   orgAppSettings,
+  providerAppAccess,
   providerConnections,
   remoteMcpTools,
   userAccessTokens,
@@ -19,6 +20,7 @@ import {
   deleteUpdate,
   type AppRow,
 } from "@every-app/perimeter/registry";
+import { remoteMcpProviderId } from "@every-app/sdk/internal";
 import {
   and,
   countDistinct,
@@ -252,9 +254,11 @@ async function findBinding(limit = BINDING_SWEEP_MAX) {
  * Everyone's access (direct and through groups), any personal access
  * tokens bound to it, its agent tools snapshot (for a remote MCP app,
  * what its server listed too), its place in AI connections, every
- * organization's settings on it (a monthly cap) and every OAuth
- * connection made in it go with it: the writes the CLI's `delete` makes
- * (`deleteUpdate` in the perimeter), plus the group grants and the cap.
+ * organization's settings on it (a monthly cap) and the access people
+ * gave it to their OAuth connections go with it: the writes the CLI's
+ * `delete` makes (`deleteUpdate` in the perimeter), plus the group grants
+ * and the cap. So do the connections to its own OAuth row (`<id>-mcp`, a
+ * remote MCP app's): no other app could use them.
  */
 async function tombstone(
   app: Pick<AppRow, "id" | "organizationId" | "status">,
@@ -262,6 +266,13 @@ async function tombstone(
   const update = deleteUpdate(app);
   if (!update) return;
   const { id, organizationId } = app;
+  // `<slug>-mcp`, as remoteMcpProviderId names the row an MCP app owns.
+  const ownProvider = db
+    .select({
+      id: sql<string>`${apps.appSlug} || ${remoteMcpProviderId("")}`,
+    })
+    .from(apps)
+    .where(and(eq(apps.id, id), eq(apps.organizationId, organizationId)));
   const now = new Date();
   await db.batch([
     db
@@ -382,17 +393,36 @@ async function tombstone(
           .where(and(eq(apps.id, id), eq(apps.organizationId, organizationId))),
       ),
     ),
-    // Every OAuth connection people made in it, in every organization (a
-    // shared app's are in each member's own): a connection is one app's.
-    db.delete(providerConnections).where(
+    // The access people gave it to their OAuth connections, in every
+    // organization (a shared app's are in each member's own). The
+    // connections stay: they are the person's, and other apps may use them.
+    db.delete(providerAppAccess).where(
       inArray(
-        providerConnections.appRowId,
+        providerAppAccess.appRowId,
         db
           .select({ id: apps.id })
           .from(apps)
           .where(and(eq(apps.id, id), eq(apps.organizationId, organizationId))),
       ),
     ),
+    // The members' connections to its own OAuth row (`<id>-mcp`): that row
+    // is this app's alone, so their tokens for its server go with it.
+    db
+      .delete(providerAppAccess)
+      .where(
+        and(
+          inArray(providerAppAccess.providerId, ownProvider),
+          eq(providerAppAccess.organizationId, organizationId),
+        ),
+      ),
+    db
+      .delete(providerConnections)
+      .where(
+        and(
+          inArray(providerConnections.providerId, ownProvider),
+          eq(providerConnections.organizationId, organizationId),
+        ),
+      ),
   ]);
 }
 

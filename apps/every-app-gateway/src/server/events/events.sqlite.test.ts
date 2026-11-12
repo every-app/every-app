@@ -1426,7 +1426,6 @@ describe("the event bus (SQLite)", () => {
       "provider.disconnected": catalogue.providerDisconnected({
         provider: { id: "github", name: "GitHub", kind: "oauth" },
         account: { user: { id: "u2", email: "jo@acme.example" }, label: "jo" },
-        app: { id: "agent", rowId: "app-row-2", name: "Agent" },
         revoked: true,
       }),
       "provider.connection_expired": catalogue.providerConnectionExpired({
@@ -1561,9 +1560,6 @@ describe("the event bus (SQLite)", () => {
       expect(line("provider.connected")).toBe(
         "jo@acme.example connected GitHub in Agent",
       );
-      expect(line("provider.disconnected")).toBe(
-        "jo@acme.example's GitHub account was disconnected from Agent",
-      );
       expect(line("provider.connection_expired")).toBe(
         "jo@acme.example's GitHub connection expired and needs reconnecting",
       );
@@ -1637,6 +1633,19 @@ describe("the event bus (SQLite)", () => {
       expect(summarize("app.crm.invoice.paid", { total: 1 }, ada)).toBe(
         "crm: invoice.paid",
       );
+    });
+
+    it("says an account was disconnected without naming an app: a connection is the person's, and every app stops using it", () => {
+      const disconnected = samples["provider.disconnected"]!;
+      expect(disconnected.data).not.toHaveProperty("app");
+      expect(
+        summarize("provider.disconnected", disconnected.data, {
+          kind: "user",
+          id: "u",
+          email: "ada@acme.example",
+          name: "Ada",
+        }),
+      ).toBe("jo@acme.example's GitHub account was disconnected");
     });
 
     it("keeps the dedupe keys per organization, app row, month and cap", () => {

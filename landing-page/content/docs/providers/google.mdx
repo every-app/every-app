@@ -6,13 +6,13 @@ metaTitle: "Connect Google accounts to your apps"
 metaDescription: "Gmail, Calendar, Drive, Search Console, Analytics and the other Google APIs, as the person who connects. Each person connects their own account."
 ---
 
-One OAuth client in your Google Cloud project lets each person connect their Google account in each app: Gmail, Calendar, Search Console, Analytics and the other Google APIs, for the scopes that app lists. Sign in with Google is a separate client, below.
+One OAuth client in your Google Cloud project lets each person connect their Google account once, for the scopes your apps list: Gmail, Calendar, Search Console, Analytics and the other Google APIs. Sign in with Google is a separate client, below.
 
 **Used by:** [OpenSEO](/docs/apps/openseo) for Search Console and Google Analytics (`webmasters.readonly` and `analytics.readonly`); [OpenCRM](/docs/apps/crm) for Gmail and Google Calendar (`gmail.readonly` and `calendar.readonly`).
 
 ## Connect accounts
 
-Each person connects their own Google account in each app that uses it, for the scopes that app lists. Apps never see the tokens. [How connecting works](/docs/connect-oauth)
+Each person connects their own Google account once, then allows each app that uses it. Apps never see the tokens. [How connecting works](/docs/connect-oauth)
 
 The redirect URI to register, with your Gateway's address (like `apps.example.com`):
 
@@ -45,7 +45,7 @@ capabilities: {
 },
 ```
 
-Use [Google's scopes](https://developers.google.com/identity/protocols/oauth2/scopes), short as above or in full (`https://www.googleapis.com/auth/…`). The Gateway adds `openid`, `email` itself; don't list them. The app calls Google's API with `integrationFetch()`, and the Gateway adds the person's token. A token with more scopes than the app lists is refused.
+Use [Google's scopes](https://developers.google.com/identity/protocols/oauth2/scopes), short as above or in full (`https://www.googleapis.com/auth/…`). The Gateway adds `openid`, `email` itself; don't list them. The app calls Google's API with `integrationFetch()`, and the Gateway adds the person's token. A token with more scopes than your apps list is refused.
 
 **Check it worked:** `everyapp provider show google-workspace` shows the client as set. Then open an app that lists it and select its **Connect** button.
 

@@ -816,7 +816,7 @@ function kindShown(capability: RegistrableCapability): string {
     case "ai":
       return "AI provider";
     case "oauth_client":
-      return `OAuth client  ${chalk.dim("each person connects their own account in each app")}`;
+      return `OAuth client  ${chalk.dim("each person connects their own account once, and allows each app")}`;
   }
 }
 

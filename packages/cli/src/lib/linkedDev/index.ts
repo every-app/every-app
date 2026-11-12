@@ -242,7 +242,7 @@ export async function unlinkGateway(options: UnlinkOptions): Promise<LinkedDevEn
     options.out.emit({
       type: "warning",
       code: "LINKED_DEV_REVOKE_FAILED",
-      message: `Forgot the token, but couldn't tell ${gateway} to revoke it: ${errorMessage(error)}\nRevoke it under Settings → Connections there.`,
+      message: `Forgot the token, but couldn't tell ${gateway} to revoke it: ${errorMessage(error)}\nRevoke it under Your connections there.`,
       data: { gateway, appId: options.appId },
     });
   }

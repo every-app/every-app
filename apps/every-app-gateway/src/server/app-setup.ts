@@ -66,11 +66,11 @@ export interface AppSetupDeps {
    */
   providers: () => Promise<ProviderRegistry>;
   /**
-   * Whether the Gateway holds a usable client for an OAuth provider: the
-   * Worker env's (while bound) or the sealed `oauth_clients` copy an add
-   * from Admin → Apps or a tool wrote (server/oauth/client.ts). Read only
-   * for a remote MCP app whose credential is an OAuth provider: its client
-   * comes either way, so the names alone can't say.
+   * Whether the Gateway holds a usable client for an OAuth provider the
+   * manifest lists: the Worker env's (while bound) or the one pasted under
+   * Manage workspace → Providers (server/oauth/client.ts, the SDK's
+   * `oauthClientSource`). The client comes either way, so the setting
+   * names alone can't say.
    */
   oauthClientReady?: (
     providerId: string,
@@ -86,6 +86,9 @@ const defaultDeps: AppSetupDeps = {
   providers: async () =>
     (await import("@/server/providers")).gatewayProviders(),
   oauthClientReady: async (providerId, capability, registry) => {
+    const key = `${providerId}\0${registry.bound(providerId)}`;
+    const held = clientsHeld.get(key);
+    if (held && held.at > Date.now() - CLIENT_HELD_TTL_MS) return held.ready;
     const { resolveOAuthClient } = await import("@/server/oauth/client");
     const client = await resolveOAuthClient({
       id: providerId,
@@ -93,9 +96,18 @@ const defaultDeps: AppSetupDeps = {
       env: env as never,
       lookup: registry,
     });
+    clientsHeld.set(key, { ready: client !== null, at: Date.now() });
     return client !== null;
   },
 };
+
+/**
+ * Whether each OAuth provider's client is held, per isolate for 30 s (as
+ * the registry is): the gate reads it on every request to an app that lists
+ * one, and a pasted client is a D1 read and an unseal.
+ */
+const CLIENT_HELD_TTL_MS = 30_000;
+const clientsHeld = new Map<string, { ready: boolean; at: number }>();
 
 const REPORTS_MAX_ENTRIES = 500;
 /** Per isolate, by row, version and recorded names: env changes mean a new version and fresh isolates. */
@@ -103,6 +115,7 @@ const reports = new Map<string, AppSettingsReport>();
 
 export function resetAppSetupCacheForTests(): void {
   reports.clear();
+  clientsHeld.clear();
 }
 
 function cacheKey(input: AppSetupInput): string {
@@ -208,18 +221,22 @@ export async function appSettingsReport(
   // (revived), and its version is null: its registration's revision keys
   // the cache instead.
   const remote = remoteMcpOf(manifest);
-  // A remote app's OAuth client comes from the env or from D1, so whether
-  // it is held is read (one D1 read) before the cache and keys it.
-  const oauthProvider =
-    remote?.auth.kind === "provider" ? remote.auth.provider : null;
-  const oauthCapability = oauthProvider ? registry.get(oauthProvider) : null;
-  const oauthReady =
-    oauthProvider &&
-    oauthCapability?.mode === "oauth_client" &&
-    deps.oauthClientReady
-      ? await deps.oauthClientReady(oauthProvider, oauthCapability, registry)
-      : undefined;
-  const key = `${cacheKey(input)}\0${remote?.rev ?? ""}\0${registryKey(registry, settings)}\0${oauthReady ?? ""}`;
+  // An OAuth provider's client comes from the env or from D1, so whether
+  // it is held is read before the cache and keys it.
+  const oauthReady = new Map<string, boolean>();
+  if (deps.oauthClientReady) {
+    for (const setting of settings) {
+      if (setting.kind !== "capability" || oauthReady.has(setting.id)) continue;
+      const capability = registry.get(setting.id);
+      if (capability?.mode !== "oauth_client") continue;
+      oauthReady.set(
+        setting.id,
+        await deps.oauthClientReady(setting.id, capability, registry),
+      );
+    }
+  }
+  const held = [...oauthReady].map(([id, ready]) => `${id}=${ready}`).join(",");
+  const key = `${cacheKey(input)}\0${remote?.rev ?? ""}\0${registryKey(registry, settings)}\0${held}`;
   const cached = reports.get(key);
   if (cached) return cached;
   const listsEmail = settings.some(
@@ -233,10 +250,8 @@ export async function appSettingsReport(
       readiness: (setting) =>
         setting.kind === "capability" && setting.id === "email"
           ? emailConfigured
-          : setting.kind === "capability" &&
-              setting.id === oauthProvider &&
-              oauthReady !== undefined
-            ? oauthReady
+          : setting.kind === "capability"
+            ? oauthReady.get(setting.id)
             : undefined,
       features: featureEntries(manifest),
     },

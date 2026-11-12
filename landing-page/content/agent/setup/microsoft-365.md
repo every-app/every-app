@@ -5,8 +5,9 @@ description: "Step-by-step guide: one Microsoft Entra app registration (MICROSOF
 
 An OAuth client registered in Microsoft Entra, held by the Gateway, so that
 each member can connect their own Microsoft account (work or school, or a
-personal Microsoft account) inside each app that lists `microsoft-365`, for
-exactly the Graph permissions that app's `everyapp.config.ts` names. Open
+personal Microsoft account) once, for the Graph permissions every app in
+the organization lists for `microsoft-365` in its `everyapp.config.ts`.
+Each app then asks the member to allow it, on the Gateway's own page. Open
 CRM (app id `crm`) lists `["Mail.Read"]`: it reads members' mail, never
 sends. The Gateway runs the flow on its own callback, keeps the tokens and
 puts them on the app's calls to `graph.microsoft.com`; no app sees a token
@@ -36,13 +37,14 @@ Both names already set as Worker secrets while the Gateway had no row (an older 
 
 An app lists Graph's own permission names, short (`Mail.Read`, joined onto `https://graph.microsoft.com/`) or in
 full: `"microsoft-365": { scopes: ["Mail.Read"], why }`. The Gateway adds `User.Read` (to name the account) and
-`offline_access` (for a refresh token) to every connect, so Open CRM's connect asks for
+`offline_access` (for a refresh token) to every connect, so with Open CRM as the only app that lists it a connect asks for
 `https://graph.microsoft.com/Mail.Read User.Read offline_access`. The registration's delegated permissions are the
 union of what every app you deploy lists, plus `User.Read` and `offline_access`: for Open CRM, `User.Read`,
-`Mail.Read` and `offline_access`. If Microsoft's token answer carries a permission beyond what the app listed, the
-Gateway refuses the token and drops it, at connect and at every refresh. Microsoft can hand back every permission a
-person ever consented to on one registration: two apps on this client with different permissions can get the
-narrower app's token refused. Give each such app a client of its own (below, If it fails).
+`Mail.Read` and `offline_access`. A connect asks for the permissions every app in the organization lists. If
+Microsoft's token answer carries a permission beyond those, the Gateway refuses the token and drops it. The same goes
+for a refresh that carries a permission the connection doesn't hold. Microsoft can hand back every permission a
+person ever consented to on one registration. Two apps on this client are fine: the connect asks for both apps'
+permissions. A permission no app in the organization lists gets the token refused (below, If it fails).
 
 ## Costs and plans
 
@@ -63,7 +65,8 @@ a `429` carries `Retry-After`, which Open CRM honors.
 - Sign in to Microsoft: the Entra admin center, or the browser approval `az login` opens.
 - Create the Azure free account, add the card, and pick the tenant when the sign-in sees several.
 - Copy the client secret's **Value** off the screen (it is shown once) and type it at the hidden prompt.
-- Connect their account in each app and accept Microsoft's consent screen. Register in the tenant the members' work
+- Connect their account once, from an app, and accept Microsoft's consent screen, then select Allow on the Gateway's
+  page in each other app. Register in the tenant the members' work
   mailboxes live in: a member from another organization's tenant sees "Need admin approval" (`AADSTS90094`) by
   Microsoft's default (a new multitenant app without a verified publisher, asking for more than sign-in), and that
   organization's admin consents (the If-it-fails row); personal Microsoft accounts are not affected. Publisher
@@ -122,7 +125,7 @@ secret exists.
    permissions**; search and tick `User.Read` (added automatically at registration) and `offline_access` (the
    Gateway asks for both on every connect), and each permission the apps list: for Open CRM, `Mail.Read`; never one
    no app lists. Click **Add permissions**. They see them under **Configured permissions**, each with
-   **Admin consent required: No**. The Gateway asks for exactly an app's list plus the two on its authorize URL, so
+   **Admin consent required: No**. The Gateway asks for the union of the apps' lists plus the two on its authorize URL, so
    members of this tenant and personal accounts consent themselves; registering them is what **Grant admin consent for <tenant>** covers
    (members from other tenants need it by Microsoft's default: Only a person can, above). Wait for the three rows.
    *Alternative:* `az ad app permission add --id <client id> --api 00000003-0000-0000-c000-000000000000 --api-permissions e1fe6dd8-ba31-4d61-89e7-88639da4683d=Scope 570282fd-fa5c-430d-a7fd-fc8dc98a9dca=Scope 7427e0e9-2fba-42fe-b0c0-848c9e6a8182=Scope`
@@ -172,8 +175,10 @@ secret exists.
    Microsoft 365**) and clicks its Connect button. Microsoft signs them in, shows a consent screen with the
    permissions in Microsoft's words (for Open CRM, reading mail, signing in and reading the profile, and **Maintain
    access to data you have given it access to**; the publisher shows as **Unverified**, which is expected), and the
-   Gateway returns them to the app, which shows the account connected.
-   `pnpm everyapp provider connections --all --json` lists the connection with its app and scopes. No Connect
+   Gateway returns them to the app, which shows the account connected. In another app that lists `microsoft-365`,
+   the Connect button opens the Gateway's page `Allow <app> to use your Microsoft 365 account?` instead.
+   `pnpm everyapp provider connections --all --json` lists the connection with the apps allowed to use it and its
+   scopes. No Connect
    button: the app's `integrationStatus()` says `configured: false`, the Gateway doesn't hold both settings (step 1
    of this section).
 4. The Gateway's logs, when a connect fails after consent: the dashboard, the setup rules' path:
@@ -190,8 +195,8 @@ secret exists.
 | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `integration_not_configured` (Gateway 503), or the app shows Microsoft as not set up with no Connect button | The Gateway holds neither or only one of the two settings, or a name differs | `pnpm everyapp secret list --json`; set what is missing (steps 5 and 6) |
 | `capability_not_requested` (403)                                                 | The deployed manifest doesn't list `microsoft-365` | Add `"microsoft-365": { scopes: ["Mail.Read"], why }` to `everyapp.config.ts`, deploy again |
-| `integration_not_connected` (409)                                                | The person hasn't connected in this app, the connection expired, or the app now lists a permission it lacks (`missingScopes`) | The person connects (again) in the app at `connectPath` |
-| After consent, the Gateway's error page says Microsoft granted permissions the app doesn't list; or a connection expires at refresh for the same reason | Two apps on this one registration and one person: Microsoft issued a token carrying what the person consented to for either app, and the Gateway refuses rather than narrow it | For good, a client per app: a provider of its own for the second app (a copy of this spec under another id and setting names, `pnpm everyapp provider show microsoft-365` prints it, added with `pnpm everyapp provider add --oauth <file>`), its own registration, and that id in the app's manifest. Meanwhile the member removes the app at https://myapplications.microsoft.com and connects again |
+| `integration_not_connected` (409)                                                | The person hasn't connected Microsoft 365, hasn't allowed this app, the connection expired, or the app now lists a permission the connection lacks or the person hasn't allowed (`missingScopes`) | The person opens `connectPath` from the app: it leads to Microsoft, or to the Gateway's page that allows the app |
+| After consent, the Gateway's error page says Microsoft granted more than the apps here list; or a connection expires at refresh for the same reason | Microsoft issued a token carrying a permission the person once consented to on this registration that no app in the organization lists now (at a refresh: that the connection doesn't hold), and the Gateway refuses rather than narrow it | The member removes the app at https://myapplications.microsoft.com, which withdraws what they consented to, and connects again. Or list the permission in an app that uses it and deploy |
 | `integration_upstream_failed` (502), log `integration.proxy.upstream_failed`      | The Gateway couldn't reach Microsoft | Try again |
 | `SECRET_VALUE_REQUIRED`                                                          | Nothing was piped and there is no terminal                                                     | One of the setup rules' three ways; `data.rerun` shows the `--from-env` form                                         |
 | `SECRET_SEVERAL_NAMES`                                                           | Two names with one piped or `--from-env` value                                                 | One `secret set` per name                                                                                    |
@@ -204,7 +209,7 @@ secret exists.
 | `AADSTS7000229` missing service principal (the smoke check; not in Microsoft's AADSTS reference) | The registration was made with `az` and has no Enterprise application in its tenant yet; the secret is fine, so don't rotate it | `az ad sp create --id <client id>`, or on Overview the **Create Service Principal** link (where **Managed application in local directory** would be); smoke check again |
 | `AADSTS50020` user does not exist in tenant                                      | The account signed in belongs to no tenant the registration accepts                            | Fix the audience as above; the member signs in with their mailbox's account                                  |
 | `AADSTS7000215` invalid client secret                                            | The Gateway's secret is wrong (a typo at the prompt, or not the **Value** column)              | New secret (Rotate, below), set it again                                                                     |
-| `AADSTS7000222` client secret expired                                            | The secret's expiry passed; every connect and refresh fails                                    | Rotate, below; members reconnect in each app                                                                 |
+| `AADSTS7000222` client secret expired                                            | The secret's expiry passed; every connect and refresh fails                                    | Rotate, below; members whose connection expired reconnect, once                                              |
 | `AADSTS90094` "Need admin approval"                                              | Microsoft's default for a member outside the registration's tenant: a new multitenant app without a verified publisher (risk-based step-up consent) | That organization's admin grants it in Entra → **Enterprise apps → EveryApp → Security → Permissions → Grant admin consent**; or register in the members' tenant |
 | `AADSTS65001`                                                                    | Consent hasn't been granted for that tenant (the default for members outside the registration's tenant, or a tenant that lets only admins consent) | As above                                                                                            |
 | `AADSTS65004`                                                                    | The member declined the consent screen                                                         | Connect again                                                                                                |
@@ -261,4 +266,4 @@ secret exists.
 - https://learn.microsoft.com/en-us/cli/azure/ad/app, https://learn.microsoft.com/en-us/cli/azure/ad/app/credential, https://learn.microsoft.com/en-us/cli/azure/ad/app/permission (Azure CLI 2.91, flags as used above)
 - https://developers.cloudflare.com/workers/observability/logs/real-time-logs/ and https://developers.cloudflare.com/workers/observability/logs/workers-logs/ (the dashboard's Logs and Observability pages)
 - `packages/sdk/src/internal/oauthPresets.ts` (`microsoft-365`: the `common` endpoints, the `https://graph.microsoft.com/` prefix, `User.Read` and `offline_access` as identity scopes) and `packages/sdk/src/internal/oauthScopes.ts` (`requestedScopes()`, the mint check `scopeExcess()`); `docs/capabilities.md`, "OAuth clients" (the generated table)
-- `docs/design/2026-11-oauth-simplify.md` (per-app connections, the provider's own scopes, the shared-client limit)
+- `docs/design/2026-11-oauth-one-connection.md` (one connection per person, the apps allowed to use it) and `docs/design/2026-11-oauth-simplify.md` (the provider's own scopes, the mint check)

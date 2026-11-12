@@ -19,8 +19,9 @@
  * `<id>-mcp` that `mcp add` writes in the app's batch; its key or OAuth
  * client is a Gateway setting `secret set` sets and binds to the row's
  * hosts (`providers.bound_to`), and an OAuth provider's connections are
- * `provider_connections`. `remote_mcp_tools` is what the Gateway last
- * listed, tool by tool.
+ * `provider_connections`, each a member's own, used by the apps they
+ * allowed (`provider_app_access`). `remote_mcp_tools` is what the Gateway
+ * last listed, tool by tool.
  *
  * Each change queues its event in the batch that writes it (the outbox,
  * ./events.ts):
@@ -576,7 +577,7 @@ export interface CredentialContext {
   gatewayNames: readonly string[];
   /** The catalog and the registered rows, as the Gateway resolves them. */
   registry: CapabilityLookup & { bound(id: string): boolean };
-  /** The install organization's active connections, by {@link connectionKey} (the provider, in an app): whose they are. */
+  /** The install organization's active connections, by {@link connectionKey} (the provider, and an app allowed to use them): whose they are. */
   connections: ReadonlyMap<string, string[]>;
   /** The providers with a client uploaded in the Gateway (Admin → Providers, or its own Add an MCP server). */
   uploadedClients: ReadonlySet<string>;
@@ -597,14 +598,14 @@ export type CredentialState =
       provider: string;
       /** The client: its id's setting, set and bound, or uploaded in the Gateway. */
       client: { setting: string; set: boolean; bound: boolean; uploaded: boolean };
-      /** How many members have connected it in the app, and who (emails). */
+      /** How many members have connected it and allowed the app, and who (emails). */
       connected: number;
       people: string[];
     }
   | { kind: "missing"; provider: string }
   | { kind: "predates"; problem: string };
 
-/** Where a connection is counted: its provider, in the app it was made in. */
+/** Where a connection is counted: its provider, for an app its person allowed to use it. */
 export function connectionKey(providerId: string, appId: string): string {
   return `${providerId} ${appId}`;
 }
@@ -671,11 +672,13 @@ export async function readCredentialContext(
   ]);
   const byProvider = new Map<string, string[]>();
   for (const connection of connections) {
-    if (connection.status !== "active" || !connection.app) continue;
-    const key = connectionKey(connection.providerId, connection.app.id);
-    const people = byProvider.get(key) ?? [];
-    people.push(connection.userEmail ?? connection.label ?? connection.userId);
-    byProvider.set(key, people);
+    if (connection.status !== "active") continue;
+    for (const app of connection.apps) {
+      const key = connectionKey(connection.providerId, app.id);
+      const people = byProvider.get(key) ?? [];
+      people.push(connection.userEmail ?? connection.label ?? connection.userId);
+      byProvider.set(key, people);
+    }
   }
   return { gatewayNames, registry, connections: byProvider, uploadedClients: new Set(uploaded.keys()) };
 }

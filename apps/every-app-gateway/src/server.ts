@@ -72,6 +72,7 @@ import {
   activateDeployingApps,
   followAppVersion,
 } from "./server/app-activation";
+import { refuseUnconnectedApp } from "./server/app-needs-connection";
 import { refuseUnreadyApp } from "./server/app-needs-setup";
 import { DrizzleAppRegistry } from "./perimeter/drizzleAppRegistry";
 import type { AppCallerProps } from "./server/app-gateway-entrypoint";
@@ -520,8 +521,11 @@ export default {
         return active;
       },
       // An app whose required settings aren't set doesn't open, on either
-      // class of host (server/app-needs-setup.ts).
+      // class of host (server/app-needs-setup.ts); nor, for a person, one
+      // whose OAuth provider they haven't connected and allowed
+      // (server/app-needs-connection.ts).
       needsSetup: refuseUnreadyApp,
+      needsConnection: refuseUnconnectedApp,
     };
     try {
       if (route.kind === "third_party") {

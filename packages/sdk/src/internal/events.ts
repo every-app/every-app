@@ -156,12 +156,12 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = [
   entry(
     "provider",
     "provider.connected",
-    "Someone connected an account at an OAuth provider in an app",
+    "Someone connected an account at an OAuth provider, from inside an app",
   ),
   entry(
     "provider",
     "provider.disconnected",
-    "An OAuth provider account was disconnected",
+    "An OAuth provider account was disconnected: every app stops using it",
   ),
   entry(
     "provider",

@@ -88,6 +88,7 @@ import {
   registryRow,
 } from "@/server/repositories/McpAppRepository";
 import { OAuthClientRepository } from "@/server/repositories/OAuthClientRepository";
+import { ProviderAppAccessRepository } from "@/server/repositories/ProviderAppAccessRepository";
 import { ProviderConnectionRepository } from "@/server/repositories/ProviderConnectionRepository";
 import { ProviderRepository } from "@/server/repositories/ProviderRepository";
 import { resolveOAuthClient } from "@/server/oauth/client";
@@ -811,7 +812,10 @@ async function setStatus(
  * Remove an MCP app of either kind: the tombstone, with everyone's
  * access, its tokens, its snapshot and its place in AI connections. The
  * provider row and the key or client it holds stay on the Gateway
- * (`provider remove` and `secret unset` clean up).
+ * (`provider remove` and `secret unset` clean up). The members'
+ * connections to its own OAuth row (`<id>-mcp`) go with the tombstone:
+ * that row is this app's alone. A connection to a provider other apps
+ * list stays.
  */
 async function remove(ctx: OrgContext, input: { id: string }): Promise<void> {
   assertAdmin(ctx);
@@ -901,8 +905,8 @@ const NO_CREDENTIAL: McpAppCredential = {
 /**
  * Where a remote app's credential stands, for `ctx`'s member: its
  * provider, an API key's setting and whether it is set and bound, an
- * OAuth provider's client, how many members have connected it in the app
- * and the member's own connection. Never a value or a token.
+ * OAuth provider's client, how many members allowed the app to use their
+ * connection, and the member's own connection. Never a value or a token.
  */
 async function credentialOf(
   ctx: OrgContext,
@@ -952,7 +956,7 @@ async function credentialOf(
   if (capability.mode !== "oauth_client") {
     return { ...NO_CREDENTIAL, kind: "api_key", ...named, state: "missing" };
   }
-  const [client, connections, row] = await Promise.all([
+  const [client, connections, access, row] = await Promise.all([
     resolveOAuthClient({
       id: providerId,
       capability,
@@ -960,12 +964,21 @@ async function credentialOf(
       lookup: registry,
     }),
     ProviderConnectionRepository.listByOrganization(ctx.orgId),
+    ProviderAppAccessRepository.listByOrganization(ctx.orgId),
     AppRepository.findByAppSlug(appSlug, ctx.orgId),
   ]);
-  // The app's own connections: each member's, made in this app.
+  // The connections this app may use: each member's own, which they
+  // allowed it.
+  const allowedBy = new Set(
+    access
+      .filter(
+        (each) => each.providerId === providerId && each.appRowId === row?.id,
+      )
+      .map((each) => each.userId),
+  );
   const ofApp = connections.filter(
     (connection) =>
-      connection.providerId === providerId && connection.appRowId === row?.id,
+      connection.providerId === providerId && allowedBy.has(connection.userId),
   );
   const active = ofApp.filter((connection) => connection.status === "active");
   const mine = ofApp.find((connection) => connection.userId === ctx.userId);
@@ -1002,8 +1015,9 @@ async function credentialSetupCommand(
 
 /**
  * For any member: whether an OAuth MCP app is connected for them (their
- * own connection, made in the app) and where they connect it. Null for a built-in, a removed app, or an app
- * whose credential isn't an OAuth provider. Never a token.
+ * own connection, which they allowed the app to use) and where they
+ * connect it. Null for a built-in, a removed app, or an app whose
+ * credential isn't an OAuth provider. Never a token.
  */
 async function connection(
   ctx: OrgContext,
@@ -1016,16 +1030,20 @@ async function connection(
   const providerId = block.auth.provider;
   const capability = (await gatewayProviders()).get(providerId);
   if (capability?.mode !== "oauth_client") return null;
-  const found = await ProviderConnectionRepository.find({
+  const owner = {
     organizationId: ctx.orgId,
     providerId,
     userId: ctx.userId,
-    appRowId: row.id,
-  });
+  };
+  const [found, allowed] = await Promise.all([
+    ProviderConnectionRepository.find(owner),
+    ProviderAppAccessRepository.find({ ...owner, appRowId: row.id }),
+  ]);
   return {
     providerName: capability.label,
     connectPath: remoteMcpConnectPath(providerId, row.appSlug),
-    connection: found ? { status: found.status, label: found.label } : null,
+    connection:
+      found && allowed ? { status: found.status, label: found.label } : null,
   };
 }
 

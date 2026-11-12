@@ -66,11 +66,13 @@ that command to the person; unattended (`--json`) it sets nothing and its
 `next` is `pnpm everyapp secret set <ID>_CLIENT_ID <ID>_CLIENT_SECRET`, or
 pass the values with `--from-env` (an owner or admin may paste them in
 Manage workspace → Providers instead). Only a person can make the OAuth app at the provider
-and approve a consent; after the client is set, each member connects their
-own account inside each app that lists the provider, for the scopes that
-app's `everyapp.config.ts` names (Connections → Accounts in the sidebar
-lists and disconnects them). Google, Microsoft 365 and Slack below are the
-same: their files set the client and the scopes to allow on it.
+and approve a consent. After the client is set, each member connects their
+own account once, from inside an app that lists the provider, for the
+scopes every app in the organization names in its `everyapp.config.ts`.
+Each other app then asks the member to allow it, on the Gateway's own page
+(Your connections → Accounts in the sidebar lists the connections with the
+apps allowed, and disconnects them). Google, Microsoft 365 and Slack below are
+the same: their files set the client and the scopes to allow on it.
 
 Which integrations a person needs: the apps they deploy decide. The four
 EveryApp apps (OpenSEO, OpenCRM, OpenAnalytics, OpenMail) are

@@ -14,9 +14,12 @@
  * the write lands, and nothing on a Gateway without the event tables or
  * before it has an organization.
  *
- * The OAuth side (migrations 0016 and 0025): the clients uploaded under
- * Admin → Providers, and the connections, each one person's in one app.
+ * The OAuth side (migrations 0016, 0025 and 0034;
+ * docs/design/2026-11-oauth-one-connection.md): the clients uploaded under
+ * Admin → Providers, the connections, each one person's to one provider,
+ * and the apps that person allowed to use theirs (`provider_app_access`).
  */
+import { DELETED_APP_STATUS } from "@every-app/perimeter/registry";
 import {
   capabilitySettings,
   checkProviderRow,
@@ -261,7 +264,7 @@ interface RemovedProvider {
   settings: string[];
   /** The registered apps that list it (removed anyway with --force). */
   apps: string[];
-  /** The connections (people's tokens, in each app) deleted with an OAuth provider's row. */
+  /** The connections (people's tokens) deleted with an OAuth provider's row, each with the access apps had to it. */
   connections: number;
   /** Whether a client uploaded under Admin → Providers was deleted with the row. */
   client: boolean;
@@ -312,13 +315,15 @@ export async function removeProvider(
       params: [id],
     },
   );
-  // An OAuth provider's connections and uploaded client go with the row:
-  // tokens for a provider the Gateway no longer serves open nothing, and a
-  // row added again under the id must not inherit them.
+  // An OAuth provider's connections, the access apps had to them and its
+  // uploaded client go with the row: tokens for a provider the Gateway no
+  // longer serves open nothing, and a row added again under the id must
+  // not inherit them.
   const results = await db.run([
     ...event,
     { sql: "DELETE FROM provider_connections WHERE provider_id = ? RETURNING id", params: [id] },
     { sql: "DELETE FROM oauth_clients WHERE provider_id = ? RETURNING provider_id", params: [id] },
+    { sql: "DELETE FROM provider_app_access WHERE provider_id = ?", params: [id] },
     { sql: "DELETE FROM providers WHERE id = ?", params: [id] },
   ]);
   const deleted = results.slice(event.length, event.length + 2);
@@ -421,10 +426,13 @@ export async function remoteMcpProviderRowWrites(
   );
   return [
     // A replaced spec (another server, other endpoints) never gets the
-    // tokens issued under the old one: its connections go, and members
-    // connect again.
+    // tokens issued under the old one: its connections go, with the access
+    // apps had to them, and members connect again.
     ...(plan.action === "replace"
-      ? [{ sql: "DELETE FROM provider_connections WHERE provider_id = ?", params: [plan.id] }]
+      ? [
+          { sql: "DELETE FROM provider_connections WHERE provider_id = ?", params: [plan.id] },
+          { sql: "DELETE FROM provider_app_access WHERE provider_id = ?", params: [plan.id] },
+        ]
       : []),
     plan.action === "replace"
       ? {
@@ -480,13 +488,15 @@ export async function bindProviderSettings(
   return results.flatMap((result) => result.map((each) => String(each["id"])));
 }
 
-// OAuth providers: the uploaded clients (migration 0016) and the connections (migration 0025).
+// OAuth providers: the uploaded clients (migration 0016), the connections (migration 0025) and the apps allowed to use them (migration 0034).
 
 /** A client uploaded under Admin → Providers, as the CLI reports it: the id, never the secret. */
 export interface UploadedClient {
   providerId: string;
   clientId: string;
   hasSecret: boolean;
+  /** The provider binding it was pasted for (the SDK's `providerBindingKey`), or null for none recorded. */
+  boundTo: string | null;
   addedBy: string | null;
   addedAt: number | null;
 }
@@ -495,7 +505,7 @@ export interface UploadedClient {
 export async function readUploadedClients(db: D1Database): Promise<Map<string, UploadedClient>> {
   const [rows = []] = await db.run([
     {
-      sql: "SELECT provider_id, client_id, client_secret_enc IS NOT NULL AS has_secret, added_by, added_at FROM oauth_clients",
+      sql: "SELECT provider_id, client_id, client_secret_enc IS NOT NULL AS has_secret, bound_to, added_by, added_at FROM oauth_clients",
     },
   ]);
   return new Map(
@@ -505,6 +515,7 @@ export async function readUploadedClients(db: D1Database): Promise<Map<string, U
         providerId: String(row["provider_id"]),
         clientId: String(row["client_id"]),
         hasSecret: Boolean(Number(row["has_secret"])),
+        boundTo: text(row["bound_to"]),
         addedBy: text(row["added_by"]),
         addedAt: row["added_at"] == null ? null : Number(row["added_at"]),
       },
@@ -512,10 +523,17 @@ export async function readUploadedClients(db: D1Database): Promise<Map<string, U
   );
 }
 
+/** An app a person allowed to use their connection: its id (slug), its row and its name. */
+interface ConnectionApp {
+  id: string;
+  rowId: string;
+  name: string;
+}
+
 /**
- * One person's connection to an OAuth provider in one app, as `provider
- * connections` reports it: never a token. `app` is null when the app's
- * row is gone (its connections go with it, so only in a race).
+ * One person's connection to an OAuth provider, as `provider connections`
+ * reports it: never a token. `apps` are the apps that person allowed to
+ * use it (`provider_app_access`), by name; a deleted app is left out.
  */
 export interface ProviderConnection {
   id: string;
@@ -524,7 +542,7 @@ export interface ProviderConnection {
   userId: string;
   userEmail: string | null;
   userName: string | null;
-  app: { id: string; rowId: string; name: string } | null;
+  apps: ConnectionApp[];
   label: string | null;
   /** The scopes the provider granted, canonical (Google's without its prefix). */
   scopes: string[];
@@ -540,9 +558,14 @@ interface ConnectionFilter {
   providerId?: string;
   /** A person's, by email (matched without case). */
   userEmail?: string;
-  /** The ones made in one app, by its id (slug). */
+  /** The ones an app is allowed to use, by its id (slug). */
   appSlug?: string;
 }
+
+/** The access rows `x` of connection `c`, each with its app's row `a`; a deleted app's left out. */
+const CONNECTION_APPS = `provider_app_access x JOIN apps a ON a.id = x.app_row_id
+    WHERE x.organization_id = c.organization_id AND x.provider_id = c.provider_id AND x.user_id = c.user_id
+      AND a.status != '${DELETED_APP_STATUS}'`;
 
 function connectionWhere(filter: ConnectionFilter): { sql: string; params: Array<string | number> } {
   const clauses: string[] = [];
@@ -560,7 +583,7 @@ function connectionWhere(filter: ConnectionFilter): { sql: string; params: Array
     params.push(filter.userEmail.trim().toLowerCase());
   }
   if (filter.appSlug) {
-    clauses.push("a.app_slug = ?");
+    clauses.push(`EXISTS (SELECT 1 FROM ${CONNECTION_APPS} AND a.app_slug = ?)`);
     params.push(filter.appSlug.trim());
   }
   return { sql: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
@@ -575,14 +598,21 @@ function safeStringArray(value: unknown): string[] {
   }
 }
 
-/** The connections `filter` names, newest first. */
+/** A connection's `apps` column (a JSON array of `{ id, rowId, name }`), by name. */
+function connectionApps(value: unknown): ConnectionApp[] {
+  return (JSON.parse(String(value)) as ConnectionApp[]).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The connections `filter` names, newest first, each with the apps allowed to use it. */
 export async function listConnections(db: D1Database, filter: ConnectionFilter = {}): Promise<ProviderConnection[]> {
   const where = connectionWhere(filter);
   const [rows = []] = await db.run([
     {
       sql: `SELECT c.id, c.organization_id, c.provider_id, c.user_id, u.email AS user_email, u.name AS user_name,
-  c.app_row_id, a.app_slug, a.name AS app_name, c.label, c.scopes, c.status, c.created_at, c.last_used_at, c.expires_at
-FROM provider_connections c LEFT JOIN users u ON u.id = c.user_id LEFT JOIN apps a ON a.id = c.app_row_id
+  c.label, c.scopes, c.status, c.created_at, c.last_used_at, c.expires_at,
+  (SELECT json_group_array(json_object('id', a.app_slug, 'rowId', a.id, 'name', a.name))
+    FROM ${CONNECTION_APPS}) AS apps
+FROM provider_connections c LEFT JOIN users u ON u.id = c.user_id
 ${where.sql}
 ORDER BY c.created_at DESC, c.id`,
       params: where.params,
@@ -595,10 +625,7 @@ ORDER BY c.created_at DESC, c.id`,
     userId: String(row["user_id"]),
     userEmail: text(row["user_email"]),
     userName: text(row["user_name"]),
-    app:
-      row["app_slug"] == null
-        ? null
-        : { id: String(row["app_slug"]), rowId: String(row["app_row_id"]), name: text(row["app_name"]) ?? String(row["app_slug"]) },
+    apps: connectionApps(row["apps"]),
     label: text(row["label"]),
     scopes: safeStringArray(row["scopes"]),
     status: String(row["status"] ?? "active"),
@@ -617,14 +644,15 @@ export async function countConnections(db: D1Database): Promise<Map<string, numb
 }
 
 /**
- * Delete the connections `filter` names (`provider disconnect`), queueing
- * `provider.disconnected` for each in the batch that deletes it, as the
- * operator, with `revoked: false`: the CLI holds no token and can't revoke
- * at the provider; the done event says where to. The rows deleted.
+ * Delete the connections `filter` names (`provider disconnect`), each with
+ * the access apps had to it, queueing `provider.disconnected` for each in
+ * the batch that deletes it, as the operator, with `revoked: false`: the
+ * CLI holds no token and can't revoke at the provider; the done event says
+ * where to. The rows deleted.
  */
 export async function removeConnections(
   db: D1Database,
-  filter: ConnectionFilter & { providerId: string; providerName: string },
+  filter: Omit<ConnectionFilter, "appSlug"> & { providerId: string; providerName: string },
   deployer: Deployer,
   now = Date.now(),
 ): Promise<ProviderConnection[]> {
@@ -647,15 +675,48 @@ export async function removeConnections(
             },
             ...(connection.label ? { label: connection.label } : {}),
           },
-          ...(connection.app ? { app: connection.app } : {}),
           revoked: false,
         },
         onlyIf: { sql: "EXISTS (SELECT 1 FROM provider_connections WHERE id = ?)", params: [connection.id] },
         now,
       })),
       { sql: "DELETE FROM provider_connections WHERE id = ?", params: [connection.id] },
+      {
+        sql: "DELETE FROM provider_app_access WHERE organization_id = ? AND provider_id = ? AND user_id = ?",
+        params: [connection.organizationId, connection.providerId, connection.userId],
+      },
     );
   }
   await db.run(statements);
   return connections;
+}
+
+/**
+ * Take one app's access to the connections `filter` names away (`provider
+ * disconnect --app`): the app's `provider_app_access` row for each, and
+ * nothing else. The connections stay for the other apps, so no token goes
+ * and no event is queued (the Gateway queues none for this either). The
+ * connections the app could use, as they are now, without it.
+ */
+export async function removeAppAccess(
+  db: D1Database,
+  filter: ConnectionFilter & { providerId: string; appSlug: string },
+): Promise<ProviderConnection[]> {
+  const appSlug = filter.appSlug.trim();
+  const connections = await listConnections(db, filter);
+  if (connections.length === 0) return [];
+  await db.run(
+    connections.flatMap((connection) =>
+      connection.apps
+        .filter((app) => app.id === appSlug)
+        .map((app) => ({
+          sql: "DELETE FROM provider_app_access WHERE organization_id = ? AND provider_id = ? AND user_id = ? AND app_row_id = ?",
+          params: [connection.organizationId, connection.providerId, connection.userId, app.rowId],
+        })),
+    ),
+  );
+  return connections.map((connection) => ({
+    ...connection,
+    apps: connection.apps.filter((app) => app.id !== appSlug),
+  }));
 }

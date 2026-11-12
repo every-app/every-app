@@ -276,7 +276,7 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
       providers,
       registered: rows.size,
       presets: presetsListed(),
-      next: "An app lists a provider's id under `capabilities` in its manifest (an OAuth provider with the provider's own `scopes` the app needs); a setting that isn't set is set from the terminal with `everyapp secret set NAME` (never through a tool). An OAuth provider is added from a preset with everyapp_provider_add { preset }; people then connect inside each app that lists it.",
+      next: "An app lists a provider's id under `capabilities` in its manifest (an OAuth provider with the provider's own `scopes` the app needs); a setting that isn't set is set from the terminal with `everyapp secret set NAME` (never through a tool). An OAuth provider is added from a preset with everyapp_provider_add { preset }; each person then connects it once, from inside an app that lists it, and allows each other app that asks.",
     };
   },
 
@@ -315,8 +315,8 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
         settings: [...summary.settings],
         bound: summary.bound,
         next: summary.bound
-          ? `Its client is set: people connect inside each app that lists ${summary.id} with the scopes it needs. Register ${summary.redirectUri} at ${summary.console} if not done yet.`
-          : `Register ${summary.redirectUri} at ${summary.console}, then set its client from the terminal: everyapp secret set ${summary.settings.join(" ")}, or paste it under Admin → Providers. People connect inside each app once it is set.`,
+          ? `Its client is set: each person connects once, from inside an app that lists ${summary.id}, and allows each other app that asks. Register ${summary.redirectUri} at ${summary.console} if not done yet.`
+          : `Register ${summary.redirectUri} at ${summary.console}, then set its client from the terminal: everyapp secret set ${summary.settings.join(" ")}, or paste it under Admin → Providers. Each person connects once, from inside an app, once it is set.`,
       };
     }
     if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
@@ -429,7 +429,7 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
           ? `Set ${settings.length === 1 ? "its key" : "its settings"} from the terminal: everyapp secret set ${settings.join(" ")}. The Gateway sends nothing to ${capability.label} until then.`
           : capability.mode === "ai"
             ? `Set its key from the terminal: everyapp secret set ${settings.join(" ")}. Apps list it under providers and call /api/ai/${id}/<route> with an OpenAI client; everyapp ai default ${id} makes it the Gateway's default model provider.`
-            : `Set its client from the terminal: everyapp secret set ${settings.join(" ")}, or paste it under Admin → Providers. People connect inside each app that lists ${id} once the client is set.`,
+            : `Set its client from the terminal: everyapp secret set ${settings.join(" ")}, or paste it under Admin → Providers. Each person connects once, from inside an app that lists ${id}, once the client is set.`,
     };
   },
 

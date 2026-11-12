@@ -141,6 +141,7 @@ import {
   appTools,
   events,
   oauthClients,
+  providerAppAccess,
   providerConnections,
   providers,
   remoteMcpTools,
@@ -242,6 +243,93 @@ async function mcpAppEvents() {
       actor: JSON.parse(event.actor) as Record<string, unknown>,
       data: JSON.parse(event.data) as Record<string, unknown>,
     }));
+}
+
+/**
+ * Treg added as an OAuth server: discovery answered, a pasted client, and
+ * so its own provider row `treg-mcp`.
+ */
+async function addOAuthTreg() {
+  setMcpOAuthFetchForTests(async (input) => {
+    if (input.includes("oauth-protected-resource")) {
+      return Response.json({
+        resource: TREG,
+        authorization_servers: ["https://auth.treg.to"],
+      });
+    }
+    if (input.includes("oauth-authorization-server")) {
+      return Response.json({
+        issuer: "https://auth.treg.to",
+        authorization_endpoint: "https://auth.treg.to/authorize",
+        token_endpoint: "https://auth.treg.to/token",
+        code_challenge_methods_supported: ["S256"],
+      });
+    }
+    return new Response("not found", { status: 404 });
+  });
+  return McpAppService.add(
+    as(admin, "admin"),
+    {
+      url: TREG,
+      name: "Treg",
+      auth: { kind: "oauth", clientId: "pasted", clientSecret: "shh" },
+    },
+    null,
+  );
+}
+
+/** A member's connection to a provider, as a connect leaves one. */
+async function seedConnection(
+  id: string,
+  providerId: string,
+  userId: string,
+  organizationId = acme,
+): Promise<void> {
+  await db.insert(providerConnections).values({
+    id,
+    organizationId,
+    providerId,
+    userId,
+    appRowId: "app-treg",
+    scopes: '["mcp"]',
+    accessTokenEnc: "sealed",
+    status: "active",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+}
+
+/** An app the member allowed to use that connection. */
+async function seedAccess(
+  providerId: string,
+  userId: string,
+  appRowId: string,
+  organizationId = acme,
+): Promise<void> {
+  await db.insert(providerAppAccess).values({
+    organizationId,
+    providerId,
+    userId,
+    appRowId,
+    scopes: '["mcp"]',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+}
+
+/** The connections left, by id, and the access rows as `organization provider app`, each sorted. */
+async function connectionsLeft() {
+  return {
+    connections: (await db.select().from(providerConnections))
+      .map((row) => row.id)
+      .sort(),
+    access: (await db.select().from(providerAppAccess))
+      .map(
+        (row) =>
+          `${row.organizationId === acme ? "acme" : row.organizationId} ${row.providerId} ${row.appRowId}`,
+      )
+      .sort(),
+  };
 }
 
 const TREG_TOOLS: ListedTool[] = [
@@ -488,6 +576,15 @@ describe("adding a remote MCP server", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+    await db.insert(providerAppAccess).values({
+      organizationId: acme,
+      providerId: "treg-mcp",
+      userId: owner,
+      appRowId: first.rowId,
+      scopes: "[]",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
     await McpAppService.add(
       as(owner, "owner"),
       { url: TREG, auth: { kind: "query", param: "key" } },
@@ -501,8 +598,10 @@ describe("adding a remote MCP server", () => {
     });
     expect(replaced!.addedAt).toEqual(written!.addedAt);
     expect(replaced!.boundTo).toBe("bound-key-of-the-bearer-spec");
-    // Its tokens never reach the replaced spec's server: dropped.
+    // Its tokens never reach the replaced spec's server: dropped, with the
+    // access apps had to them.
     expect(await db.select().from(providerConnections)).toEqual([]);
+    expect(await db.select().from(providerAppAccess)).toEqual([]);
   });
 
   it("refuses a bad header or a query credential without its parameter, with the rule's sentence, and writes nothing", async () => {
@@ -738,6 +837,57 @@ describe("adding a remote MCP server", () => {
       own: true,
       state: "not_connected",
       connections: 0,
+      viewer: null,
+    });
+  });
+
+  it("reads an OAuth server as connected for a member only once they allowed it to use their connection, and counts those connections alone", async () => {
+    const added = await addOAuthTreg();
+    const mine = async () =>
+      (await McpAppService.connection(as(member, "member"), { appId: "treg" }))
+        ?.connection;
+    const credential = async () =>
+      (await McpAppService.get(as(admin, "admin"), { id: added.rowId }))
+        .credential;
+
+    // The member's own connection to the provider, which Treg may not use yet.
+    const person = {
+      organizationId: acme,
+      providerId: "treg-mcp",
+      userId: member,
+    };
+    await db.insert(providerConnections).values({
+      id: "conn-member",
+      ...person,
+      appRowId: added.rowId,
+      label: "pat@treg",
+      externalId: null,
+      scopes: '["mcp"]',
+      accessTokenEnc: "sealed",
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    expect(await mine()).toBeNull();
+    expect(await credential()).toMatchObject({
+      kind: "oauth",
+      state: "not_connected",
+      connections: 0,
+    });
+
+    // They allow it: connected for them, and counted.
+    await db.insert(providerAppAccess).values({
+      ...person,
+      appRowId: added.rowId,
+      scopes: '["mcp"]',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    expect(await mine()).toEqual({ status: "active", label: "pat@treg" });
+    expect(await credential()).toMatchObject({
+      state: "connected",
+      connections: 1,
+      // The admin looking has none of their own.
       viewer: null,
     });
   });
@@ -1114,6 +1264,84 @@ describe("removing an MCP app", () => {
         status: "active",
       }),
     ).rejects.toMatchObject({ code: "APP_NOT_FOUND" });
+  });
+
+  it("removes the organization's connections to the app's own OAuth row with it, and leaves connections to other providers and another organization's", async () => {
+    const added = await addOAuthTreg();
+    expect(added.provider).toBe("treg-mcp");
+    // Two members connected Treg's server from inside it.
+    await seedConnection("conn-member-treg", "treg-mcp", member);
+    await seedConnection("conn-owner-treg", "treg-mcp", owner);
+    await seedAccess("treg-mcp", member, added.rowId);
+    await seedAccess("treg-mcp", owner, added.rowId);
+    // The member also connected GitHub, which another app uses.
+    await seedConnection("conn-member-github", "github-oauth", member);
+    await seedAccess("github-oauth", member, "app-crm");
+    // Another organization has a Treg of its own, on the same row.
+    await seedConnection("conn-elsewhere", "treg-mcp", member, "org-elsewhere");
+    await seedAccess("treg-mcp", member, "app-treg-elsewhere", "org-elsewhere");
+
+    await McpAppService.remove(as(admin, "admin"), { id: added.rowId });
+
+    expect((await row(added.rowId)).status).toBe("deleted");
+    // The row was Treg's alone: nothing else here could use those tokens.
+    expect(await connectionsLeft()).toEqual({
+      connections: ["conn-elsewhere", "conn-member-github"],
+      access: [
+        "acme github-oauth app-crm",
+        "org-elsewhere treg-mcp app-treg-elsewhere",
+      ],
+    });
+    // The provider row and its client stay, as before.
+    expect((await db.select().from(providers)).map((each) => each.id)).toEqual([
+      "treg-mcp",
+    ]);
+    expect(await db.select().from(oauthClients)).toHaveLength(1);
+  });
+
+  it("keeps the connections to a provider other apps list when an MCP app that uses it is removed", async () => {
+    // A server on a catalog provider's host, using that provider: not a
+    // row of its own.
+    const added = await McpAppService.add(
+      as(admin, "admin"),
+      {
+        url: "https://api.elevenlabs.io/v1/mcp",
+        id: "voices",
+        auth: { kind: "provider", provider: "elevenlabs" },
+      },
+      null,
+    );
+    expect(added.provider).toBe("elevenlabs");
+    await seedConnection("conn-member-elevenlabs", "elevenlabs", member);
+    await seedAccess("elevenlabs", member, added.rowId);
+    await seedAccess("elevenlabs", member, "app-studio");
+
+    await McpAppService.remove(as(admin, "admin"), { id: added.rowId });
+
+    expect((await row(added.rowId)).status).toBe("deleted");
+    // The removed app's access goes with it; the connection is the
+    // member's, and the other app goes on using it.
+    expect(await connectionsLeft()).toEqual({
+      connections: ["conn-member-elevenlabs"],
+      access: ["acme elevenlabs app-studio"],
+    });
+  });
+
+  it("removes the connections to the app's own OAuth row when the app is deleted from the Apps list, as when it is removed as an MCP app", async () => {
+    const added = await addOAuthTreg();
+    await seedConnection("conn-member-treg", "treg-mcp", member);
+    await seedAccess("treg-mcp", member, added.rowId);
+    await seedConnection("conn-member-github", "github-oauth", member);
+    await seedAccess("github-oauth", member, "app-crm");
+
+    // The Apps list deletes any app, an MCP app's row among them.
+    await AppService.delete(as(owner, "owner"), added.rowId);
+
+    expect((await row(added.rowId)).status).toBe("deleted");
+    expect(await connectionsLeft()).toEqual({
+      connections: ["conn-member-github"],
+      access: ["acme github-oauth app-crm"],
+    });
   });
 });
 

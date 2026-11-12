@@ -34,8 +34,8 @@ import {
 } from "@/serverFunctions/mcpConnections";
 
 /**
- * Connections → Agents: the AI apps (Claude, ChatGPT, Cursor…) the signed-in
- * user connected to the gateway's /mcp, in every organization, and under
+ * Your connections → Agents: the AI apps (Claude, ChatGPT, Cursor…) the
+ * signed-in user connected to the gateway's /mcp, in every organization, and under
  * "Apps on your devices" the native apps they signed in to one app with
  * (docs/design/native-sign-in.md), each with a way to revoke it. Revoking
  * stops the app on its next request. Only the person's own connections are

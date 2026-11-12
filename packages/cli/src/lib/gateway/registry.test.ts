@@ -345,7 +345,8 @@ describe("deployerFor", () => {
 describe("deleteApp", () => {
   /**
    * An owner, a member with access (directly and through a group) and a
-   * token, its tools, an AI connection and a cap.
+   * token, its tools, an AI connection, a cap, and the member's OAuth
+   * connection, which they allowed the app to use.
    */
   function withAppData(appRowId: string, organizationId: string): void {
     addUser("member", { organization: organizationId });
@@ -363,6 +364,10 @@ describe("deleteApp", () => {
         VALUES ('conn-1', 'member', '${organizationId}', 'c', 'Claude', 'https://claude.ai/cb', 'claude.ai', 'selected', 'read', 0);
       INSERT INTO mcp_connection_apps (connection_id, app_row_id) VALUES ('conn-1', '${appRowId}');
       INSERT INTO org_app_settings (organization_id, app_row_id, monthly_cost_cap_micros, updated_at) VALUES ('${organizationId}', '${appRowId}', 5000000, 0);
+      INSERT OR IGNORE INTO provider_connections (id, organization_id, provider_id, user_id, app_row_id, scopes, access_token_enc, status, created_at, updated_at)
+        VALUES ('conn_member', '${organizationId}', 'github-oauth', 'member', '${appRowId}', '[]', 'sealed', 'active', 0, 0);
+      INSERT INTO provider_app_access (organization_id, provider_id, user_id, app_row_id, scopes, created_at, updated_at)
+        VALUES ('${organizationId}', 'github-oauth', 'member', '${appRowId}', '[]', 0, 0);
     `);
   }
   const appData = () => ({
@@ -373,6 +378,7 @@ describe("deleteApp", () => {
     tools: sqlite.all("SELECT name FROM app_tools"),
     connections: sqlite.all("SELECT connection_id FROM mcp_connection_apps"),
     caps: sqlite.all("SELECT monthly_cost_cap_micros FROM org_app_settings"),
+    oauthAccess: sqlite.all("SELECT app_row_id FROM provider_app_access"),
   });
   const nothing = {
     access: [],
@@ -382,6 +388,7 @@ describe("deleteApp", () => {
     tools: [],
     connections: [],
     caps: [],
+    oauthAccess: [],
   };
 
   it("leaves a tombstone, with nothing of the app's access, tokens, tools, connections, cap or email configuration", async () => {
@@ -406,6 +413,8 @@ describe("deleteApp", () => {
     expect(appData()).toEqual(nothing);
     // The group itself stays, with its members: only its grant to the app goes.
     expect(sqlite.all("SELECT user_id FROM group_members")).toEqual([{ user_id: "member" }]);
+    // The member's OAuth connection stays too: only the app's access to it goes.
+    expect(sqlite.all("SELECT id FROM provider_connections")).toEqual([{ id: "conn_member" }]);
     expect(sqlite.all("SELECT revoked_at FROM user_access_tokens")[0]!["revoked_at"]).not.toBeNull();
     // Gone from the commands that act on an app, and from the list.
     await expect(readApp(db(), "todo")).rejects.toMatchObject({ code: "APP_NOT_FOUND" });

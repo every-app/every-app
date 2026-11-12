@@ -4,9 +4,10 @@ description: "Step-by-step guide: one Google OAuth client (GOOGLE_WORKSPACE_CLIE
 ---
 
 One OAuth client in a Google Cloud project the person owns, held by the
-Gateway, lets each member connect their own Google account inside each app
-that lists `google-workspace`, for exactly the scopes that app's
-`everyapp.config.ts` names. The Gateway runs the flow on its own callback,
+Gateway, lets each member connect their own Google account once, for the
+scopes every app in the organization lists for `google-workspace` in its
+`everyapp.config.ts`. Each app then asks the member to allow it, on the
+Gateway's own page. The Gateway runs the flow on its own callback,
 keeps the tokens and puts them on the app's calls to Google's APIs; no app
 sees a token or the client. The apps and their scopes today: OpenMail
 (app id `openmail`) `["gmail.modify", "gmail.send"]`; Open CRM (`crm`)
@@ -15,8 +16,9 @@ sees a token or the client. The apps and their scopes today: OpenMail
 a Cloud project with the APIs behind those scopes enabled, a consent screen
 listing the scopes, a Web application client whose redirect URI is the
 Gateway's `https://<gateway>/connect/google-workspace/callback`, and both
-settings on the Gateway. Each connection is one person's in one app: two
-apps on this client get separate tokens, each with its own app's scopes.
+settings on the Gateway. Each member has one connection to Google. Every
+app they allowed uses its one token, which holds the scopes of all the
+organization's apps: an allowed app can use every one of them.
 
 ## Settings
 
@@ -41,9 +43,10 @@ scopes, short (`gmail.modify`, joined onto
 `"google-workspace": { scopes: ["gmail.modify", "gmail.send"], why }`.
 The Gateway adds `openid` and `email` (to name the account) to every
 connect, asks Google with `access_type=offline` and `prompt=consent`, and
-never sends `include_granted_scopes`. If Google's token answer carries a
-scope beyond what the app listed, the token is refused and dropped, at
-connect and at every refresh.
+never sends `include_granted_scopes`. A connect asks for the scopes every
+app in the organization lists. If Google's token answer carries a scope
+beyond those, the token is refused and dropped. The same goes for a
+refresh that carries a scope the connection doesn't hold.
 
 The console rule: enable the APIs and allow on the consent screen the union
 of the scopes every app you deploy lists, nothing more. A scope no app asks
@@ -89,7 +92,8 @@ scope) need the verification and no assessment.
 - Create the OAuth client and download its JSON: no API or gcloud command
   creates a Web application client (step 6).
 - Add test users, publish the app, submit verification, pay an assessor.
-- Click Connect in each app and approve the consent screen with their account.
+- Click Connect in an app and approve the consent screen with their account,
+  once. In each other app, select Allow on the Gateway's page.
 - Allow the app in the Workspace admin console when `admin_policy_enforced`.
 
 ## Before you start
@@ -108,7 +112,7 @@ scope) need the verification and no assessment.
    "setup/google.md"` (this file). While its `set` is false this guide
    applies. With `set: true`: ask before replacing (a new secret for the
    same client is harmless, see Rotate; a different client id makes every
-   member connect again in every app). `APP_NOT_FOUND`: deploy the app
+   member connect again). `APP_NOT_FOUND`: deploy the app
    first.
 2. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true,
    and the Gateway's host (step 1 builds the redirect URI from it). Not
@@ -185,8 +189,9 @@ before step 8.
    hours to apply.
 7. **Person,** *External* only: https://console.cloud.google.com/auth/audience
    → Test users → Add users → each member's Google email (up to 100) → Save.
-   In Testing every consent expires after 7 days: members reconnect in each
-   app weekly. Publish app moves to In production and ends that: consents
+   In Testing every consent expires after 7 days: members reconnect
+   weekly, once for all their apps. Publish app moves to In production and
+   ends that: consents
    given from then on have no 7-day expiry and need no test user (one
    given in Testing keeps its 7 days). In production people see the
    unverified-app screen and the project has a lifetime cap of 100 new
@@ -225,9 +230,11 @@ before step 8.
    dialog instead, so finish those first): open the app, select its
    Connect Google button (OpenMail's mailbox setup, Open CRM's Settings →
    Connections, OpenSEO's project settings), choose the account (Testing:
-   "Google hasn't verified this app" → Continue) → Allow. Done when the
-   app shows the account connected. Each member does this in each app
-   they use.
+   "Google hasn't verified this app" → Continue) → Allow. Google's screen
+   lists the scopes of every app in the organization. Done when the
+   app shows the account connected. Each member does this once. In each
+   other app they use, its Connect Google button opens the Gateway's page
+   `Allow <app> to use your Google account?`, where they select Allow.
 
 ## Verify
 
@@ -242,9 +249,9 @@ before step 8.
    `connection: null`).
 3. App check: step 9. Google's account chooser means the client id and
    redirect URI match; the account shown as connected means the Gateway
-   exchanged the code with the secret and Google granted no more than the
-   app asked. `pnpm everyapp provider connections --all --json` lists the
-   connection with its app and scopes.
+   exchanged the code with the secret and Google granted no more than was
+   asked. `pnpm everyapp provider connections --all --json` lists the
+   connection with the apps allowed to use it and its scopes.
 4. Logs: the dashboard, the setup rules' path:
    **Workers & Pages** → `every-app-gateway` → **Observability** (**Logs** on older accounts) → **Live**
    (the stored Workers Logs are on the same page); filter
@@ -263,8 +270,8 @@ before step 8.
 | App shows Google as not set up, no Connect button | `integrationStatus()` answers `configured: false`: the Gateway holds no client (or one name only) | Step 8; then reload |
 | `integration_not_configured` (503) in the app's logs | A call while the Gateway holds no client | `secret list --json`; set both names |
 | `capability_not_requested` (403) | The deployed manifest doesn't list `google-workspace` | Add `"google-workspace": { scopes: [...], why }` to everyapp.config.ts, deploy |
-| `integration_not_connected` (409) | The person hasn't connected in this app, the connection expired, or the app now lists a scope the connection lacks (`missingScopes`) | The person connects (again) in the app at `connectPath` |
-| After Allow, the Gateway's error page says Google granted scopes the app doesn't list | Google granted more than the app lists, so the token was refused and dropped | Remove the extra scopes from the consent screen if no app lists them, and connect again; nothing to revoke |
+| `integration_not_connected` (409) | The person hasn't connected Google, hasn't allowed this app, the connection expired, or the app now lists a scope the connection lacks or the person hasn't allowed (`missingScopes`) | The person opens `connectPath` from the app: it leads to Google, or to the Gateway's page that allows the app |
+| After Allow, the Gateway's error page says Google granted more than the apps here list | Google granted a scope no app in the organization lists, so the token was refused and dropped | Remove the extra scopes from the consent screen if no app lists them, and connect again; nothing to revoke |
 | The Gateway's error page: connect from inside the app | `/connect/google-workspace` was opened without `?app=` | Connect from the app's own button (`connectUrl()`) |
 | Google "Error 400: redirect_uri_mismatch" | The URI on the client differs from step 1 | Fix it on the client; wait up to a few hours |
 | Google "Error 401: invalid_client" | Client id or secret wrong, or secret disabled | Rotate (below) and set both again |
@@ -283,7 +290,9 @@ before step 8.
   Verify and continue at the first step that isn't done.
 - A new scope: when an app adds a scope to its manifest, add it on the
   consent screen (step 5, step 3 for its API) before deploying the app;
-  people with an older connection see Reconnect in that app.
+  people whose connection lacks it see Reconnect in that app, and go
+  through Google once. The same goes for a new app that lists a scope no
+  other app does.
 - Rotate the secret, never the id: a new client id invalidates every
   connection's refresh token. Person: Clients → the client → Add secret
   (two at most; both work until one is disabled); the new secret is shown
@@ -311,7 +320,7 @@ before step 8.
 - https://developers.google.com/identity/protocols/oauth2/web-server (`access_type=offline`, `prompt`, `include_granted_scopes`, the response's `scope`; Settings)
 - https://searchconsole.googleapis.com/$discovery/rest?version=v1, https://analyticsdata.googleapis.com/$discovery/rest?version=v1beta, https://analyticsadmin.googleapis.com/$discovery/rest?version=v1beta (service names and the scopes each API takes; step 3)
 - https://developers.google.com/webmaster-tools/limits and https://developers.google.com/analytics/devguides/reporting/data/v1/quotas (quotas; Costs and plans)
-- `docs/design/2026-11-oauth-simplify.md` (per-app connections, the provider's own scopes, the mint check) and `docs/capabilities.md` "OAuth clients" (the generated table; Settings)
+- `docs/design/2026-11-oauth-one-connection.md` (one connection per person, the apps allowed to use it), `docs/design/2026-11-oauth-simplify.md` (the provider's own scopes, the mint check) and `docs/capabilities.md` "OAuth clients" (the generated table; Settings)
 - https://support.google.com/accounts/answer/16668185 (Google's sign-in error codes; If it fails)
 - https://docs.cloud.google.com/iap/docs/programmatic-oauth-clients (the API that created clients, shut down 2026-03-19; step 6)
 - https://developers.google.com/health/app-verification (assessor fees; Costs and plans)

@@ -118,7 +118,7 @@ everyapp events redeliver <delivery id>
 | `tool.error`                      | An AI client's tool call failed                                                 |
 | `connection.created`              | An AI app was connected                                                         |
 | `connection.revoked`              | An AI app connection was revoked                                                |
-| `connection.used`                 | Linked dev, or an app on a person's connection, used it (first call of the day) |
+| `connection.used`                 | Linked dev, or an app on a person's connection, used it (once a day per app)    |
 | `token.created`                   | A personal access token was created                                             |
 | `token.revoked`                   | A personal access token was revoked                                             |
 | `access.changed`                  | Cloudflare Access was turned on or off                                          |
@@ -133,8 +133,8 @@ everyapp events redeliver <delivery id>
 | `provider.added`                  | An API provider was registered                                                  |
 | `provider.removed`                | An API provider was removed                                                     |
 | `provider.updated`                | A provider's spec or OAuth client was replaced                                  |
-| `provider.connected`              | Someone connected an OAuth provider account in an app, with its scopes          |
-| `provider.disconnected`           | An OAuth provider account was disconnected from an app                          |
+| `provider.connected`              | Someone connected an OAuth provider account from inside an app, with its scopes |
+| `provider.disconnected`           | An OAuth provider account was disconnected: every app stops using it            |
 | `provider.connection_expired`     | An OAuth connection needs reconnecting                                          |
 | `subscription.created`            | An event subscription was added                                                 |
 | `subscription.updated`            | An event subscription was changed, paused or resumed                            |

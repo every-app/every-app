@@ -152,7 +152,7 @@ export async function serveGatewayMcp(
     );
   }
   // A credential narrowed to apps (a personal token bound to one app, a
-  // connection consented to "Only these apps") reaches those apps' tools
+  // connection consented to "Selected" apps) reaches those apps' tools
   // and nothing of the workspace's: the ToolBus hides every workspace tool
   // from it (policy.ts, reason app_scoped_credential), whatever the
   // person's role, so a crm-only token handed to a CI job cannot invite,

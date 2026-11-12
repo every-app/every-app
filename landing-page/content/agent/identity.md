@@ -107,7 +107,7 @@ Calls go over `EVERY_APP_GATEWAY` and act for the person behind the current requ
 - **Members**: `listMembers({ env })` through the `members` capability: the people who can open the app.
 - **Events**: `emit({ env, event, data })`, delivered as `app.<id>.<event>`.
 
-A refusal is JSON `{ error, message }` with `x-everyapp-error`. The ones an app should handle: `ai_provider_not_configured` and `integration_not_configured` (503, the key isn't set: show setup info), `capability_not_requested` and `provider_not_allowed` (403: add it to the manifest), `model_not_allowed` (403: `ai.models`), `integration_not_connected` (409: the person must connect, `connectUrl()`), and `app_monthly_cap_exceeded` (429: the app reached its cap; the operator raises it).
+A refusal is JSON `{ error, message }` with `x-everyapp-error`. The ones an app should handle: `ai_provider_not_configured` and `integration_not_configured` (503, the key isn't set: show setup info), `capability_not_requested` and `provider_not_allowed` (403: add it to the manifest), `model_not_allowed` (403: `ai.models`), `integration_not_connected` (409: the person must connect, or allow this app to use their connection, `connectUrl()` for both), and `app_monthly_cap_exceeded` (429: the app reached its cap; the operator raises it).
 
 ### Setup info: what to set, in the Gateway's words
 

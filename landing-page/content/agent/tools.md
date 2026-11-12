@@ -201,11 +201,14 @@ Provider tools (Gateway connector only; one audit row per call like the
          `presets`; one registered already is answered as it is), and
          answers the redirect URI to register at the provider's console. Every
          member gets `everyapp_provider_connections` (their own
-         connections, one per app they connected in, with the scopes each
-         holds; `all: true` the organization's, owners and admins) and
+         connections, one per provider, each with the apps allowed to use
+         it under `apps` and the scopes it holds; `all: true` the
+         organization's, owners and admins) and
          `everyapp_provider_disconnect` (their own; owners and admins
-         anyone's; by `connection` id, or `provider` with `app`).
-         Connecting is a browser flow inside each app (`connectUrl()`,
+         anyone's; by `connection` id or `provider`; with `app`, only that
+         app's access goes and the connection stays).
+         Connecting, and allowing an app to use a connection, are browser
+         flows started inside an app (`connectUrl()`,
          `<gateway>/connect/<provider>?app=<app>`), never a tool. No key, client or
          token ever passes through a tool: `everyapp secret set NAME` from
          the terminal, or Admin → Providers. Full reference:
@@ -273,9 +276,9 @@ claude.ai, Claude Desktop, ChatGPT: a custom connector with the URL
 Metadata Document (CIMD), finds the OAuth server from the 401 challenge, and
 the consent page opens. Cursor, Gemini CLI, MCP Inspector: the same URL, after
 dynamic client registration (`/oauth/register`; `MCP_DCR_ENABLED` controls it).
-Consent page: the organization, **All apps I can use, including future ones**
-or **Only these apps**, read & write (default) or **Read only**, then
-**Allow**. It grants `mcp:read` and, for read & write, `mcp:write`; an app
+Consent page: the organization, apps (**All**, which covers apps added later,
+or **Selected**), access (**Read & write**, the default, or **Read only**),
+then **Allow**. It grants `mcp:read` and, for read & write, `mcp:write`; an app
 shown as `(no AI tools yet)` has a snapshot with no tools; one with no
 snapshot yet shows no hint (its tools load on first use).
 Scripts and anything that takes a header: a personal access token. In the
@@ -296,8 +299,8 @@ claude mcp add --transport http everyapp https://<gateway>/mcp --header "Authori
 On an app host `/mcp` is the app's own private route, and an MCP-only token
 gets 403 `token_scope` everywhere there.
 
-Disconnecting: **Connections** in the sidebar (`/connections`) lists each
-OAuth connection; revoking one
+Disconnecting: **Your connections** in the sidebar (`/connections`) lists
+each OAuth connection; revoking one
 makes the client's next request fail `invalid_token`. Removing or
 deactivating a person ends all of theirs; tokens are revoked on Admin, Tokens.
 
@@ -324,7 +327,7 @@ purpose, and each is found by `everyapp_search_tools` and callable by name or
 through `everyapp_call_read`/`everyapp_call_write`, while a hidden tool stays
 `Unknown tool` there too; (4) the person
 cannot open the app: it is absent from `everyapp_list_apps`; grant access in
-Admin (a connection made with **Only these apps** needs a reconnect to add one).
+Admin (a connection made with **Selected** apps needs a reconnect to add one).
 401 vs 403 on `/mcp`: 401 means no credential or one that doesn't verify (an
 expired or revoked token, a bearer that isn't `epat_` on an app host, the token
 of a revoked connection); its body depends on the surface. On

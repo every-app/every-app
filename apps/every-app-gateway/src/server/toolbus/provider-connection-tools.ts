@@ -1,24 +1,26 @@
 /**
  * The handlers behind `everyapp_provider_connections` and
  * `everyapp_provider_disconnect` on the gateway's own /mcp
- * (docs/design/2026-11-oauth-simplify.md), run like the workspace tools
- * (workspace-tools.ts spreads them into its handler map) for a resolved
- * caller, through the OAuth service the UI's server functions use
- * (server/oauth/service.ts), so the roles are the same: a member sees and
- * removes their own connections, an owner or admin the organization's. A
- * connection is one person's in one app. No answer carries a token; a
- * disconnect revokes the grant at the provider where the spec knows how
- * and says whether it did.
+ * (docs/design/2026-11-oauth-one-connection.md), run like the workspace
+ * tools (workspace-tools.ts spreads them into its handler map) for a
+ * resolved caller, through the OAuth service the UI's server functions
+ * use (server/oauth/service.ts), so the roles are the same: a member sees
+ * and removes their own connections, an owner or admin the
+ * organization's. A connection is one person's to one provider, used by
+ * the apps that person allowed. No answer carries a token; a disconnect
+ * revokes the grant at the provider where the spec knows how and says
+ * whether it did, and with `app` it takes that one app's access away and
+ * leaves the connection.
  */
 import { eq, sql } from "drizzle-orm";
 import type { JsonObject, McpPrincipal } from "@every-app/toolbus";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { PublicError } from "@/server/errors";
 import { userActor } from "@/server/events/subjects";
 import {
   disconnect,
   listConnections,
+  removeAppAccess,
   type ConnectionSummary,
 } from "@/server/oauth/service";
 import type { OrgContext } from "@/server/organization/orgContext";
@@ -46,14 +48,15 @@ function listed(connection: ConnectionSummary): JsonObject {
     providerName: connection.providerName,
     userId: connection.userId,
     ...(connection.userEmail ? { userEmail: connection.userEmail } : {}),
-    app: {
-      rowId: connection.app.rowId,
-      id: connection.app.id,
-      name: connection.app.name,
-    },
+    apps: connection.apps.map((app) => ({
+      rowId: app.rowId,
+      id: app.id,
+      name: app.name,
+    })),
     label: connection.label,
     scopes: [...connection.scopes],
     status: connection.status,
+    needsReconnect: connection.needsReconnect,
     createdAt: new Date(connection.createdAt).toISOString(),
     lastUsedAt:
       connection.lastUsedAt === null
@@ -90,14 +93,6 @@ async function userIdOf(user: string): Promise<string | null> {
   return row?.id ?? null;
 }
 
-/** The service's refusal as the tool's `CODE: message`; anything else rethrown. */
-function refusalOf(error: unknown): JsonObject | null {
-  if (error instanceof PublicError) {
-    return refuse(error.code, error.message);
-  }
-  return null;
-}
-
 export const PROVIDER_CONNECTION_HANDLERS: Record<string, Handler> = {
   async provider_connections(ctx, args) {
     const all = args["all"] === true;
@@ -109,14 +104,9 @@ export const PROVIDER_CONNECTION_HANDLERS: Record<string, Handler> = {
     }
     const provider =
       typeof args["provider"] === "string" ? args["provider"] : null;
-    let connections: ConnectionSummary[];
-    try {
-      connections = await listConnections(ctx, all ? { user: "all" } : {});
-    } catch (error) {
-      const refusal = refusalOf(error);
-      if (refusal) return refusal;
-      throw error;
-    }
+    // The service's refusals (PublicError) reach the caller as
+    // `CODE: message` through the workspace tool runner.
+    let connections = await listConnections(ctx, all ? { user: "all" } : {});
     if (provider) {
       connections = connections.filter(
         (connection) => connection.providerId === provider,
@@ -127,8 +117,8 @@ export const PROVIDER_CONNECTION_HANDLERS: Record<string, Handler> = {
       scope: all ? "organization" : "own",
       next:
         connections.length === 0
-          ? "No connections. A person connects inside each app that lists the provider; everyapp_provider_list says which providers have a client."
-          : "An expired connection is connected again inside its app; everyapp_provider_disconnect removes one.",
+          ? "No connections. A person connects a provider once, from inside an app that lists it; everyapp_provider_list says which providers have a client."
+          : "A connection with needsReconnect is reconnected by its person, under Your connections → Accounts or from inside an app that uses it; everyapp_provider_disconnect removes one, or with `app` takes one app's access away.",
     };
   },
 
@@ -145,10 +135,10 @@ export const PROVIDER_CONNECTION_HANDLERS: Record<string, Handler> = {
         "name the connection (its id, from everyapp_provider_connections) or the provider",
       );
     }
-    if (connectionId && (provider || app || user)) {
+    if (connectionId && (provider || user)) {
       return refuse(
         "INVALID_INPUT",
-        "a connection id names the connection alone; leave provider, app and user out",
+        "a connection id names the connection alone; leave provider and user out",
       );
     }
     let userId: string | undefined;
@@ -168,24 +158,27 @@ export const PROVIDER_CONNECTION_HANDLERS: Record<string, Handler> = {
       }
       userId = found;
     }
-    let result: Awaited<ReturnType<typeof disconnect>>;
-    try {
-      result = await disconnect(
-        ctx,
-        await userActor(ctx.userId),
-        connectionId
-          ? { connectionId }
-          : {
-              providerId: provider!,
-              ...(userId ? { userId } : {}),
-              ...(app ? { app } : {}),
-            },
-      );
-    } catch (error) {
-      const refusal = refusalOf(error);
-      if (refusal) return refusal;
-      throw error;
+    const ref = connectionId
+      ? { connectionId }
+      : { providerId: provider!, ...(userId ? { userId } : {}) };
+    if (app) {
+      // One app's access: the connection stays for the other apps.
+      const taken = await removeAppAccess(ctx, { ...ref, app });
+      if (!taken.removed) {
+        return refuse(
+          "PROVIDER_CONNECTION_NOT_FOUND",
+          "the app's access was removed while this ran",
+        );
+      }
+      return {
+        connection: listed(taken.connection),
+        app,
+        removed: true,
+        revoked: false,
+        next: "That app can't use the connection until the person allows it again; the connection stays for the other apps.",
+      };
     }
+    const result = await disconnect(ctx, await userActor(ctx.userId), ref);
     if (!result.removed) {
       return refuse(
         "PROVIDER_CONNECTION_NOT_FOUND",
@@ -197,7 +190,7 @@ export const PROVIDER_CONNECTION_HANDLERS: Record<string, Handler> = {
       removed: true,
       revoked: result.revoked,
       next: result.revoked
-        ? "The grant was revoked at the provider; connecting again in the app asks for consent anew."
+        ? "The grant was revoked at the provider; connecting again asks for consent anew."
         : "The Gateway dropped the tokens; the grant stays at the provider until revoked in its console.",
     };
   },

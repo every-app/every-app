@@ -90,8 +90,8 @@ const addCommand = buildCommand({
       "it the Gateway's default model provider.",
       "",
       "--oauth takes an OAuth spec file (auth.kind oauth2-user), or a preset by name. An app lists",
-      "the scopes it needs in everyapp.config.ts, as the provider names them; people connect in each app.",
-      "--verbose adds the manifest entry.",
+      "the scopes it needs in everyapp.config.ts, as the provider names them; each person connects",
+      "once and allows each app. --verbose adds the manifest entry.",
       "",
       "Examples:",
       `  ${CLI} provider add google-workspace`,
@@ -156,17 +156,17 @@ const connectionsCommand = buildCommand({
         kind: "parsed",
         parse: String,
         placeholder: "app",
-        brief: "One app's connections, by its id: openmail",
+        brief: "The connections one app may use, by its id: openmail",
         optional: true,
       },
       ...connectFlags,
     },
   },
   docs: {
-    brief: "List the accounts people connected to OAuth providers in each app on the Gateway",
+    brief: "List the accounts people connected to OAuth providers on the Gateway, and the apps that use each",
     fullDescription: [
-      "A connection is one person's, in one app: who connected what, in which app, with the scopes",
-      "granted, the status and when it was last used. Never a token.",
+      "A connection is one person's, to one provider: who connected what, the apps they allowed to",
+      "use it, the scopes granted, the status and when it was last used. Never a token.",
       "",
       "Examples:",
       `  ${CLI} provider connections`,
@@ -201,19 +201,20 @@ const disconnectCommand = buildCommand({
         kind: "parsed",
         parse: String,
         placeholder: "app",
-        brief: "Only the connections made in this app, by its id: openmail",
+        brief: "Take only this app's access to the connection away and keep the connection, by its id: openmail",
         optional: true,
       },
       ...connectFlags,
     },
   },
   docs: {
-    brief: "Remove people's connections to an OAuth provider from the Gateway",
+    brief: "Remove people's connections to an OAuth provider from the Gateway, or one app's access to them",
     fullDescription: [
-      "The Gateway drops the tokens it held; the app gets \"not connected\" until the person",
-      "connects again in it. --user removes that person's connections in every app, --app narrows",
-      "it to one app. The CLI holds no token, so the grant stays at the provider until it is",
-      "revoked there (Disconnect in Connected accounts revokes it from the Gateway).",
+      "The Gateway drops the tokens it held; every app that used the connection gets \"not",
+      "connected\" until the person connects again. The CLI holds no token, so the grant stays at",
+      "the provider until it is revoked there (Disconnect in Connected accounts revokes it from the",
+      "Gateway). With --app the connection stays: that app alone loses its access, until the person",
+      "allows it again.",
       "",
       "Examples:",
       `  ${CLI} provider disconnect github-oauth --user ben@example.com`,
@@ -323,7 +324,7 @@ const mcpAlias = (verb: "on" | "off") =>
  * `everyapp provider add|list|show|remove|presets|connections|disconnect`:
  * the provider registry, the API providers the Gateway brokers
  * (docs/design/2026-10-provider-registry.md), and the OAuth providers people
- * connect their accounts to in each app (docs/design/2026-11-oauth-simplify.md).
+ * connect their accounts to (docs/design/2026-11-oauth-one-connection.md).
  * `on` and `off` are hidden: they run `mcp on|off` and say so, for
  * documents that still say `provider on`.
  */

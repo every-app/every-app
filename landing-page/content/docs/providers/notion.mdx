@@ -39,7 +39,7 @@ The app calls Notion's [API](https://developers.notion.com/reference/intro) with
 
 ## Connect accounts
 
-Each person connects their own Notion account in each app that uses it, for the scopes that app lists. Apps never see the tokens. [How connecting works](/docs/connect-oauth)
+Each person connects their own Notion account once, then allows each app that uses it. Apps never see the tokens. [How connecting works](/docs/connect-oauth)
 
 The redirect URI to register, with your Gateway's address (like `apps.example.com`):
 
@@ -71,7 +71,7 @@ capabilities: {
 },
 ```
 
-Use [Notion's scopes](https://developers.notion.com/reference). The app calls Notion's API with `integrationFetch()`, and the Gateway adds the person's token. A token with more scopes than the app lists is refused.
+Use [Notion's scopes](https://developers.notion.com/reference). The app calls Notion's API with `integrationFetch()`, and the Gateway adds the person's token. A token with more scopes than your apps list is refused.
 
 **Check it worked:** `everyapp provider show notion-oauth` shows the client as set. Then open an app that lists it and select its **Connect** button.
 

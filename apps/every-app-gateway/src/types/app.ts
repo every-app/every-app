@@ -1,5 +1,6 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type { AppSetup } from "@every-app/sdk/internal";
+import type { ConnectionNeed } from "@/schemas/app-access";
 import { apps } from "@/db/schema";
 
 /**
@@ -81,6 +82,12 @@ export type UserAccessApp = Pick<
   /** The path of the launcher icon the app's manifest names (`icon`), or null. */
   icon: string | null;
   setup: ListedAppSetup;
+  /**
+   * The OAuth providers the app requires that the viewer hasn't connected
+   * or allowed it yet (server/oauth/connection-needs.ts): it doesn't open
+   * for them until each is done, and the setup dialog shows the buttons.
+   */
+  connections: ConnectionNeed[];
   /**
    * The app has reached the viewer organization's monthly cap on its
    * provider calls this UTC month: it opens, but the Gateway refuses its

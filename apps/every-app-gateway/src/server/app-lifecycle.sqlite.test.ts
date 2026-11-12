@@ -42,6 +42,8 @@ import {
   appToolCatalogs,
   appTools,
   events,
+  providerAppAccess,
+  providerConnections,
   userAccessTokens,
   userAppAccess,
 } from "@/db/schema";
@@ -439,6 +441,31 @@ describe("app lifecycle (SQLite)", () => {
         emailInbound: '["*@example.com"]',
       })
       .where(eq(apps.id, registered.app.id));
+    // Its owner allowed it, and another app, to use their GitHub connection.
+    const person = {
+      organizationId: acme,
+      providerId: "github-oauth",
+      userId: acmeOwner,
+    };
+    await db.insert(providerConnections).values({
+      id: "conn-1",
+      ...person,
+      appRowId: registered.app.id,
+      scopes: '["repo"]',
+      accessTokenEnc: "sealed",
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db.insert(providerAppAccess).values(
+      [registered.app.id, "app-other"].map((appRowId) => ({
+        ...person,
+        appRowId,
+        scopes: '["repo"]',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })),
+    );
 
     await AppService.delete(ownerCtx(), registered.app.id);
 
@@ -450,6 +477,14 @@ describe("app lifecycle (SQLite)", () => {
       emailInbound: null,
     });
     expect(await db.select().from(userAppAccess)).toEqual([]);
+    // Its access to people's OAuth connections goes with it; the connection
+    // is the person's and stays, with the other app's access to it.
+    expect(
+      (await db.select().from(providerAppAccess)).map((row) => row.appRowId),
+    ).toEqual(["app-other"]);
+    expect(
+      (await db.select().from(providerConnections)).map((row) => row.id),
+    ).toEqual(["conn-1"]);
     const [pat] = await db
       .select()
       .from(userAccessTokens)

@@ -56,11 +56,24 @@ function logOnce(input: NeedsSetupInput): void {
  * `Sec-Fetch-Mode: cors`) or a client that asked for JSON: the one case a
  * redirect helps, since a person is there to read the dialog.
  */
-function isHtmlNavigation(request: Request): boolean {
+export function isHtmlNavigation(request: Request): boolean {
   return (
     request.method === "GET" &&
     (request.headers.get("accept") ?? "").includes("text/html") &&
     request.headers.get("sec-fetch-mode") !== "cors"
+  );
+}
+
+/** A page navigation sent to the launcher's setup dialog for the app. */
+export function toSetupDialog(appId: string): Response {
+  return withSecurityHeaders(
+    new Response(null, {
+      status: 302,
+      headers: {
+        location: `${env.GATEWAY_URL}/?setup=${encodeURIComponent(appId)}`,
+        "cache-control": "no-store",
+      },
+    }),
   );
 }
 
@@ -101,17 +114,7 @@ export async function refuseUnreadyApp(
   if (ready) return null;
   logOnce(input);
 
-  if (isHtmlNavigation(request)) {
-    return withSecurityHeaders(
-      new Response(null, {
-        status: 302,
-        headers: {
-          location: `${env.GATEWAY_URL}/?setup=${encodeURIComponent(app.appId)}`,
-          "cache-control": "no-store",
-        },
-      }),
-    );
-  }
+  if (isHtmlNavigation(request)) return toSetupDialog(app.appId);
   return withSecurityHeaders(
     new Response(JSON.stringify({ error: "app_needs_setup", app: app.appId }), {
       status: 503,
