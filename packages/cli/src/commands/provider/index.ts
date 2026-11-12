@@ -60,7 +60,6 @@ import { turnOff, turnOn } from "../mcp";
 import {
   addOAuth,
   disconnectProvider,
-  hostsCell,
   isOAuthCapability,
   listPresets,
   listProviderConnections,
@@ -122,7 +121,7 @@ Nothing was changed.`,
     return;
   }
   if (!spec) {
-    throw new EveryAppError("PROVIDER_SPEC_INVALID", "Give the provider to add\nA built-in provider's id (provider list), an OAuth preset's (provider presets), or a JSON spec file or https URL.", {
+    throw new EveryAppError("PROVIDER_SPEC_INVALID", "Give the provider to add\nA built-in provider's id (provider list --all), an OAuth preset's (provider presets), or a JSON spec file or https URL.", {
       rerun: `${CLI} provider list`,
       rerunNote: "names the built-in providers",
     });
@@ -141,7 +140,7 @@ Nothing was changed.`,
     throw new EveryAppError(
       "PROVIDER_NOT_FOUND",
       `${spec} isn't a provider's id`,
-      meant ? { data: { didYouMean: meant } } : { fix: `use an id from ${CLI} provider list or ${CLI} provider presets` },
+      meant ? { data: { didYouMean: meant } } : { fix: `use an id from ${CLI} provider list --all or ${CLI} provider presets` },
     );
   }
   await addFromSpec(options, spec);
@@ -174,7 +173,7 @@ export async function disconnect(flags: GatewayCommandFlags & DisconnectFlags, i
   await runCommand(flags, (out) => disconnectProvider({ flags, out }, id));
 }
 
-export async function list(flags: GatewayCommandFlags): Promise<void> {
+export async function list(flags: GatewayCommandFlags & { all?: boolean }): Promise<void> {
   await runCommand(flags, (out) => listProviders({ flags, out }));
 }
 
@@ -701,13 +700,17 @@ function providersOf(
 }
 
 /**
- * `provider list`: the catalog's API-key and AI entries and the
- * registered rows (every OAuth provider is one), with each setting's state (names only, as `secret
- * list` reads them), whether a row's key is bound, where each is from and
- * which apps list it. Rows the Gateway refuses are named under the table.
+ * `provider list`: the providers this Gateway uses (a key or client set, a
+ * registered row, or an app listing it), the ones an app is waiting on
+ * first, each with its key's state and the apps listing it; the rest of the
+ * catalog under them with --all or --verbose. `--json` carries every
+ * provider either way, each with `inUse`. Rows the Gateway refuses are named
+ * under the table.
  */
-export async function listProviders(options: ProviderOptions): Promise<void> {
-  const { out } = options;
+export async function listProviders(
+  options: ProviderOptions & { flags: GatewayCommandFlags & { all?: boolean }; columns?: number },
+): Promise<void> {
+  const { out, flags } = options;
   const gateway = await connect(options);
   const [registry, gatewayNames, apps, uploaded, connections] = await Promise.all([
     gatewayRegistry(gateway.db, gateway.install),
@@ -716,56 +719,149 @@ export async function listProviders(options: ProviderOptions): Promise<void> {
     readUploadedClients(gateway.db),
     countConnections(gateway.db),
   ]);
-  const providers = providersOf(registry, gatewayNames, apps, {
-    gatewayUrl: gateway.gatewayUrl,
-    gatewayNames,
-    uploaded,
-    connections,
-  });
-  const table = formatTable(
-    ["ID", "NAME", "KIND", "HOSTS", "SETTINGS", "SOURCE", "APPS"],
-    providers.map((provider) => [
-      provider.id,
-      provider.name,
-      provider.kind === "oauth client" ? "oauth" : provider.kind,
-      hostsCell([...provider.hosts, ...(provider.hostSetting ? [`<${provider.hostSetting}>`] : [])]),
-      [
-        // An uploaded client counts as set: the Gateway reads it when the env lacks the setting.
-        provider.client?.source === "uploaded"
-          ? `client ${chalk.green("uploaded")}`
-          : settingsShown(provider.settings),
-        ...(provider.source === "row" && provider.client?.source !== "uploaded"
-          ? [provider.bound ? chalk.green("bound") : chalk.yellow("not bound")]
-          : []),
-        ...(provider.connections !== undefined ? [`${provider.connections} connected`] : []),
-      ].join(", "),
-      provider.source === "row" ? `registered by ${provider.addedBy ?? "someone"}` : chalk.dim("catalog"),
-      provider.apps.join(", ") || chalk.dim("-"),
-    ]),
+  const providers = withInUse(
+    providersOf(registry, gatewayNames, apps, {
+      gatewayUrl: gateway.gatewayUrl,
+      gatewayNames,
+      uploaded,
+      connections,
+    }),
   );
-  const registered = providers.filter((provider) => provider.source === "row").length;
+  const gatewayHost = gateway.gatewayUrl.replace(/^https:\/\//, "");
+  const columns = options.columns ?? process.stdout.columns ?? 80;
+  const waiting = (provider: ListedProvider) => provider.apps.length > 0 && missingOf(provider).length > 0;
+  // The ones an app is waiting on first; the rest as the registry orders them.
+  const used = providers.filter((provider) => provider.inUse);
+  const shown = [...used.filter(waiting), ...used.filter((provider) => !waiting(provider))];
+  const rest = providers.filter((provider) => !provider.inUse);
+  const everything = flags.all === true || flags.verbose === true;
+  const cells = shown.map((provider) => [provider.id, keyCell(provider)] as const);
+  const before = (index: 0 | 1, title: string) =>
+    Math.max(title.length, ...cells.map((row) => stripVTControlCharacters(row[index]).length));
+  const appsWidth = columns - before(0, "PROVIDER") - before(1, "KEY") - 4;
+  const table =
+    shown.length > 0
+      ? formatTable(
+          ["PROVIDER", "KEY", "APPS"],
+          shown.map((provider, index) => [...cells[index]!, appsCell(provider.apps, appsWidth)]),
+        )
+      : [];
+  const catalog =
+    everything && rest.length > 0
+      ? [
+          `Not set up (${rest.length}):`,
+          ...formatTable(
+            ["PROVIDER", "NAME", "KIND"],
+            rest.map((provider) => [provider.id, provider.name, provider.kind === "oauth client" ? "oauth" : provider.kind]),
+          ),
+        ]
+      : [];
   const rejected = registry.rejected.map(({ id, code, message }) => ({ id, code, message }));
-  out.emit({
-    type: "done",
-    message: `${providers.length} providers: ${providers.length - registered} built in, ${registered} registered`,
-    display: [
-      ...table,
-      ...(rejected.length > 0
+  const needKeys = shown.filter((provider) => missingOf(provider).length > 0);
+  const next = [
+    ...shown.filter(waiting).map((provider) => ({
+      command: `${CLI} secret set ${missingOf(provider).join(" ")}`,
+      note: `${listed(provider.apps)} ${provider.apps.length === 1 ? "is" : "are"} waiting on it`,
+    })),
+    ...(shown.length === 0 ? [{ command: `${CLI} provider add openrouter`, note: "set a key apps can use" }] : []),
+    ...(everything
+      ? rest.length > 0
+        ? [{ command: `${CLI} provider add <id>`, note: "set one up" }]
+        : []
+      : rest.length > 0
+        ? [{ command: `${CLI} provider list --all`, note: shown.length > 0 ? `${rest.length} more you can add` : `the ${rest.length} you can add` }]
+        : []),
+  ];
+  const registered = providers.filter((provider) => provider.source === "row").length;
+  const headline =
+    shown.length === 0
+      ? `No providers in use on ${gatewayHost} yet`
+      : `${shown.length} ${shown.length === 1 ? "provider" : "providers"} in use on ${gatewayHost}${
+          needKeys.length > 0 ? `, ${needKeys.length} ${needKeys.length === 1 ? "needs" : "need"} a key` : ""
+        }`;
+  finish(out, {
+    headline,
+    blocks: [
+      table,
+      catalog,
+      rejected.length > 0
         ? [
-            "",
             chalk.yellow(`The Gateway doesn't serve ${listed(rejected.map((row) => row.id))}:`),
             ...rejected.map((row) => chalk.dim(`  ${row.id}: ${row.message} (${row.code})`)),
           ]
-        : []),
-      "",
-      chalk.dim(`MCP apps: ${CLI} mcp list`),
-    ].join("\n"),
+        : [],
+    ],
+    message: [
+      `${headline}; ${providers.length} in all: ${providers.length - registered} built in, ${registered} registered`,
+    ],
     data: {
       providers,
       ...(rejected.length > 0 ? { rejected } : {}),
       mcp: `${CLI} mcp list`,
+      ...(next.length > 0 ? { next } : {}),
     },
   });
+}
+
+/**
+ * Each provider with whether this Gateway uses it: a registered row, one an
+ * app lists, an uploaded client, every setting set, or a set setting only it
+ * reads (CLOUDFLARE_ACCOUNT_ID, set for Workers AI, doesn't make AI Gateway
+ * one).
+ */
+function withInUse(providers: ListedProvider[]): Array<ListedProvider & { inUse: boolean }> {
+  const readers = new Map<string, number>();
+  for (const provider of providers) {
+    for (const setting of provider.settings) readers.set(setting.name, (readers.get(setting.name) ?? 0) + 1);
+  }
+  return providers.map((provider) => ({
+    ...provider,
+    inUse:
+      provider.source === "row" ||
+      provider.apps.length > 0 ||
+      provider.client?.source === "uploaded" ||
+      (provider.settings.length > 0 && provider.settings.every((setting) => setting.set)) ||
+      provider.settings.some((setting) => setting.set && readers.get(setting.name) === 1),
+  }));
+}
+
+/** The settings a provider still needs; none once a client was uploaded (the Gateway reads it when the env lacks them). */
+function missingOf(provider: ListedProvider): string[] {
+  if (provider.client?.source === "uploaded") return [];
+  return provider.settings.filter((setting) => !setting.set).map((setting) => setting.name);
+}
+
+/** A provider's key at a glance: "set", "needs STRIPE_API_KEY", "needs A (+1 more)", "client uploaded, 2 connected", "set, not bound". */
+function keyCell(provider: ListedProvider): string {
+  const missing = missingOf(provider);
+  const oauth = provider.kind === "oauth client";
+  const state =
+    missing.length > 0
+      ? chalk.yellow(`needs ${missing[0]}${missing.length > 1 ? ` (+${missing.length - 1} more)` : ""}`)
+      : provider.client?.source === "uploaded"
+        ? `client ${chalk.green("uploaded")}`
+        : oauth
+          ? `client ${chalk.green("set")}`
+          : chalk.green("set");
+  return [
+    state,
+    ...(missing.length === 0 && provider.source === "row" && provider.client?.source !== "uploaded" && !provider.bound
+      ? [chalk.yellow("not bound")]
+      : []),
+    ...(provider.connections !== undefined ? [`${provider.connections} connected`] : []),
+  ].join(", ");
+}
+
+/** The apps listing a provider, as many as fit `width` columns and how many more: "openmail, openseo (+3 more)". */
+function appsCell(apps: readonly string[], width: number): string {
+  if (apps.length === 0) return chalk.dim("-");
+  const whole = apps.join(", ");
+  if (whole.length <= width) return whole;
+  for (let kept = apps.length - 1; kept >= 1; kept--) {
+    const cut = `${apps.slice(0, kept).join(", ")} (+${apps.length - kept} more)`;
+    if (cut.length <= width) return cut;
+  }
+  return apps.length === 1 ? whole : `${apps[0]} (+${apps.length - 1} more)`;
 }
 
 /** Each setting and whether it is set: "STRIPE_API_KEY set", "A not set, B not set". */
@@ -866,7 +962,7 @@ export async function showProvider(
         : rejected
           ? `The Gateway doesn't serve ${id}: ${rejected.message}`
           : `${id} isn't a provider this Gateway offers`,
-      { rerun: `${CLI} provider list`, rerunNote: "names every one" },
+      { rerun: `${CLI} provider list`, rerunNote: "names the ones in use; --all names every one" },
     );
   }
   const row = registry.rows().find((each) => each.id === id);

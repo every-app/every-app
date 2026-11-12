@@ -103,7 +103,7 @@ An app that needs a provider outside the catalog commits its spec as `.everyapp/
 everyapp provider add openrouter        # a catalog provider: where the key comes from, then asks for it
 everyapp provider add stripe.json       # register a spec (file or https URL), then its key
 everyapp provider add github-oauth [--client-id <id>]   # an OAuth preset: its row, then its client
-everyapp provider list                  # catalog and rows: settings set, apps listing each
+everyapp provider list [--all]          # the providers in use: key state, apps listing each; --all adds the rest of the catalog
 everyapp provider show stripe [--save]  # its setup facts; --json carries the whole spec
 everyapp provider remove stripe [--force]
 everyapp provider presets

@@ -370,6 +370,7 @@ describe("provider list", () => {
       addedBy: "dev@example.com",
       addedAt: expect.any(Number),
       apps: ["shop"],
+      inUse: true,
     });
     expect(providers.find((provider) => provider["id"] === "openrouter")).toEqual({
       id: "openrouter",
@@ -380,19 +381,86 @@ describe("provider list", () => {
       bound: true,
       source: "catalog",
       apps: ["shop"],
+      inUse: true,
     });
     expect(done()).toMatchObject({
-      message: `${providers.length} providers: ${providers.length - 1} built in, 1 registered`,
+      message: `2 providers in use on example.com, 1 needs a key; ${providers.length} in all: ${providers.length - 1} built in, 1 registered`,
       data: { mcp: "pnpm everyapp mcp list" },
     });
+    // --json is every provider, as before, each saying whether this Gateway uses it.
+    expect(providers.filter((provider) => provider["inUse"]).map((provider) => provider["id"])).toEqual(["openrouter", "northwind"]);
+    expect(providers.find((provider) => provider["id"] === "stripe")).toMatchObject({ inUse: false });
+  });
+
+  it("shows a person only the providers in use, the one an app waits on first, three columns and what to run next", async () => {
+    await add(specDir(NORTHWIND));
+    gatewayWorker().secrets["OPENROUTER_API_KEY"] = "sk-or";
+    gatewayWorker().secrets["GITHUB_API_TOKEN"] = "ghp";
+    // Shared with AI Gateway, which nothing uses: it stays out.
+    gatewayWorker().secrets["CLOUDFLARE_ACCOUNT_ID"] = "abc";
+    await registerApp("shop", { capabilities: { northwind: { access: "read" } }, providers: ["openrouter", "workers-ai"] });
+    await registerApp("mail", { providers: ["openrouter"] });
+    events = [];
+    await list();
+    const data = done()!["data"];
+    const rest = (data["providers"] as Array<{ inUse: boolean }>).filter((provider) => !provider.inUse).length;
+    expect(data["next"]).toEqual([
+      { command: "pnpm everyapp secret set WORKERS_AI_API_TOKEN", note: "shop is waiting on it" },
+      { command: "pnpm everyapp secret set NORTHWIND_API_KEY", note: "shop is waiting on it" },
+      { command: "pnpm everyapp provider list --all", note: `${rest} more you can add` },
+    ]);
+
+    const shown = await human((sink) => listProviders({ flags: {}, out: sink, createCf, columns: 80 }));
+    expect(shown.split("\n").slice(0, 8)).toEqual([
+      "✓ 4 providers in use on example.com, 2 need a key",
+      "",
+      "PROVIDER    KEY                         APPS",
+      "workers-ai  needs WORKERS_AI_API_TOKEN  shop",
+      "northwind   needs NORTHWIND_API_KEY     shop",
+      "openrouter  set                         mail, shop",
+      "github      set                         -",
+      "",
+    ]);
+    expect(shown).not.toContain("stripe");
+    expect(shown).not.toContain("ai-gateway");
+    expect(shown).toContain(`\nNext:\n  pnpm everyapp secret set WORKERS_AI_API_TOKEN  shop is waiting on it\n`);
+    expect(shown).toContain(`  pnpm everyapp provider list --all              ${rest} more you can add\n`);
+    for (const line of shown.split("\n")) expect(line.length).toBeLessThanOrEqual(80);
+
+    // A narrow terminal: the apps that fit and how many more, never a wrapped row.
+    const narrow = await human((sink) => listProviders({ flags: {}, out: sink, createCf, columns: 48 }));
+    expect(narrow).toContain("\nopenrouter  set                         mail (+1 more)\n");
+
+    // --all (and --verbose): the rest of the catalog under them.
+    for (const flags of [{ all: true }, { verbose: true }]) {
+      const all = await human((sink) => listProviders({ flags, out: sink, createCf, columns: 80 }));
+      expect(all).toContain("\ngithub      set                         -\n");
+      expect(all).toContain(`\n\nNot set up (${rest}):\nPROVIDER `);
+      expect(all).toMatch(/\nstripe +Stripe +api key\n/);
+      expect(all).toMatch(/\nai-gateway +Cloudflare AI Gateway +ai\n/);
+      expect(all).toContain("  pnpm everyapp provider add <id>  ");
+      expect(all).not.toContain("provider list --all");
+    }
+  });
+
+  it("says so when nothing is in use, and how to add one", async () => {
+    await list();
+    const total = (done()!["data"]["providers"] as unknown[]).length;
+    expect(done()!["data"]["next"]).toEqual([
+      { command: "pnpm everyapp provider add openrouter", note: "set a key apps can use" },
+      { command: "pnpm everyapp provider list --all", note: `the ${total} you can add` },
+    ]);
     const shown = await human((sink) => listProviders({ flags: {}, out: sink, createCf }));
-    expect(shown).toMatch(/^ID +NAME +KIND +HOSTS +SETTINGS +SOURCE +APPS\n/);
-    expect(shown).toMatch(
-      /\nnorthwind +Northwind +api key +api\.northwind\.io +NORTHWIND_API_KEY not set, not bound +registered by dev@example\.com +shop\n/,
+    expect(shown).toBe(
+      [
+        "✓ No providers in use on example.com yet",
+        "",
+        "Next:",
+        "  pnpm everyapp provider add openrouter  set a key apps can use",
+        `  pnpm everyapp provider list --all      the ${total} you can add`,
+        "",
+      ].join("\n"),
     );
-    expect(shown).toMatch(/\nopenrouter +OpenRouter +ai +openrouter\.ai +OPENROUTER_API_KEY set +catalog +shop\n/);
-    // Through launch week, where the MCP apps went.
-    expect(shown).toMatch(/\n\nMCP apps: pnpm everyapp mcp list\n/);
   });
 
   it("says which rows the Gateway doesn't serve, and why", async () => {
@@ -1024,8 +1092,7 @@ ORDER BY x.provider_id, x.user_id, a.app_slug`,
     const github = (done()!["data"]["providers"] as Array<Record<string, any>>).find((provider) => provider["id"] === "github-oauth")!;
     expect(github).toMatchObject({ kind: "oauth client", client: { source: "uploaded", clientId: "Iv1.ui" }, connections: 1, apps: ["shop"] });
     const table = await human((sink) => listProviders({ flags: {}, out: sink, createCf }));
-    // A long list of hosts is its first and how many more.
-    expect(table).toMatch(/github-oauth\s+GitHub\s+oauth\s+github\.com \(\+1 other\)\s+client uploaded, 1 connected/);
+    expect(table).toMatch(/\ngithub-oauth +client uploaded, 1 connected +shop\n/);
     // The secret set hint is gone once a client is uploaded.
     events = [];
     await show("github-oauth");
@@ -1507,7 +1574,7 @@ describe("provider add, one step: the key or client asked for in the same run", 
     await expect(run("nothing-here")(out())).rejects.toMatchObject({
       code: "PROVIDER_NOT_FOUND",
       message: "nothing-here isn't a provider's id",
-      fix: "use an id from pnpm everyapp provider list or pnpm everyapp provider presets",
+      fix: "use an id from pnpm everyapp provider list --all or pnpm everyapp provider presets",
       data: undefined,
     });
     // A part of an id, or a typo of one, names the id it is closest to, and that is the whole fix.
@@ -1527,7 +1594,7 @@ describe("provider add, one step: the key or client asked for in the same run", 
     expect(await human((sink) => run("nothing-here")(sink).catch((error) => reportFailure(sink, error)))).toBe(
       [
         "✗ nothing-here isn't a provider's id",
-        "  Fix: use an id from pnpm everyapp provider list or pnpm everyapp provider presets",
+        "  Fix: use an id from pnpm everyapp provider list --all or pnpm everyapp provider presets",
         "",
       ].join("\n"),
     );

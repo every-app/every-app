@@ -510,7 +510,7 @@ everyapp secret set OPENROUTER_API_KEY
 
 Scripts and agents set it in the same run with --from-env (the variables of the settings' names) or piped NAME=value lines; never on the command line.
 
-A built-in provider (provider list names them) is only its key. An OAuth preset (provider presets: google-workspace, slack, github-oauth) becomes a registered provider, then takes its client; deploying an app that lists one registers it too. Any other API is a spec: its id, name, the page the key comes from (docs), the only hosts the key is ever sent to and how (auth: bearer, header, query or basic), naming the Gateway setting that holds the key. The spec never holds the key. A URL is fetched on this machine. The rules a spec must pass: an id that isn't a built-in provider's, settings named after the id that nothing else reads, and public hosts that aren't the Gateway's own or its apps'. Run in an app's directory, it also writes .everyapp/providers/<id>.json for everyapp dev (your key goes in .dev.vars).
+A built-in provider (provider list --all names them) is only its key. An OAuth preset (provider presets: google-workspace, slack, github-oauth) becomes a registered provider, then takes its client; deploying an app that lists one registers it too. Any other API is a spec: its id, name, the page the key comes from (docs), the only hosts the key is ever sent to and how (auth: bearer, header, query or basic), naming the Gateway setting that holds the key. The spec never holds the key. A URL is fetched on this machine. The rules a spec must pass: an id that isn't a built-in provider's, settings named after the id that nothing else reads, and public hosts that aren't the Gateway's own or its apps'. Run in an app's directory, it also writes .everyapp/providers/<id>.json for everyapp dev (your key goes in .dev.vars).
 
 An OpenAI-compatible model provider is a spec with mode "ai": its baseUrl, the key's placement (auth), the models it serves and the defaultModel (embeddingsModel too, when it has one); the AI proxy serves it as a catalog AI provider, inference POSTs alone. Apps list it under providers and call /api/ai/<id>/v1/chat/completions; everyapp ai default <id> makes it the Gateway's default model provider.
 
@@ -534,13 +534,18 @@ everyapp provider add --oauth ./acme.json --from-env
 - `--from-env`: Set the key or client from the environment variables of its setting names (OPENROUTER_API_KEY; GITHUB_OAUTH_CLIENT_ID, GITHUB_OAUTH_CLIENT_SECRET); nothing is asked
 
 ### `everyapp provider list`
-List the API providers the Gateway offers: built in and registered, each key's state, the apps using each.
+List the API providers the Gateway uses: each key's state and the apps listing it; --all adds the ones it could.
 
-Nothing is changed. A key's value can't be read back; only whether it is set, and for a registered provider whether it was set for the hosts the row names now (bound).
+In use: its key or client is set, it was registered here, or an app lists it. The ones an app is waiting on come first, with the setting to set. --all (or --verbose) adds the rest of the built-in providers; --json always carries every provider, each with inUse. Hosts, setting names and who registered a provider are in provider show <id>.
+
+Nothing is changed. A key's value can't be read back; only whether it is set, and for a registered provider whether it was set for the hosts it names now (bound).
 
 ```sh
 everyapp provider list
+everyapp provider list --all
 ```
+
+- `--all`: Also list the built-in providers this Gateway doesn't use yet (by default only the ones in use)
 
 ### `everyapp provider show <id>`
 Show a provider: whether its key is set, where the key comes from and goes, who registered it and which apps use it.
@@ -552,7 +557,7 @@ everyapp provider show stripe
 everyapp provider show stripe --save
 ```
 
-- `<id>`: The provider's id (provider list names them): stripe
+- `<id>`: The provider's id (provider list --all names them): stripe
 - `--save`: Also write the spec to .everyapp/providers/<id>.json in this app's directory, for everyapp dev
 
 ### `everyapp provider remove <id>`
@@ -564,7 +569,7 @@ The Gateway stops serving it within 30 seconds. A provider a deployed app lists 
 everyapp provider remove stripe
 ```
 
-- `<id>`: The provider's id (provider list names them): stripe
+- `<id>`: The provider's id (provider list --all names them): stripe
 - `--force`: Remove it even though deployed apps list it (their calls to it stop)
 
 ### `everyapp provider presets`

@@ -196,7 +196,7 @@ export async function listPresets(options: Pick<ProviderOptions, "out">): Promis
 }
 
 /** A table's HOSTS cell: the first host, then how many more there are (`--json` and `provider show` name them all). */
-export function hostsCell(hosts: readonly string[]): string {
+function hostsCell(hosts: readonly string[]): string {
   const [first, ...others] = hosts;
   if (!first) return chalk.dim("-");
   return others.length > 0 ? `${first} ${chalk.dim(`(+${plural(others.length, "other")})`)}` : first;
@@ -569,7 +569,7 @@ export async function disconnectProvider(
     throw new EveryAppError(
       "PROVIDER_NOT_FOUND",
       capability ? `${id} isn't an OAuth provider: nobody connects to it` : `${id} isn't a provider this Gateway offers`,
-      { rerun: `${CLI} provider list`, rerunNote: "names every one" },
+      { rerun: `${CLI} provider list`, rerunNote: "names the ones in use; --all names every one" },
     );
   }
   const whose = flags.user ? `for ${flags.user}` : "on this Gateway";

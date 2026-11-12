@@ -402,8 +402,9 @@ serve itself, it never shadows a catalog id, and its key is read only for
 the hosts and auth it was set for (`secret set` binds it; a replaced row
 needs the key again). The gateway checks every row again each time it
 reads one and leaves out, logged `provider.row_invalid`, a row that fails.
-`pnpm everyapp provider list` lists the catalog and the rows with whether
-each setting is set and bound; `provider show <id>` shows one (its spec
+`pnpm everyapp provider list` lists the providers in use (a key set, a row,
+or an app listing it) with each key's state, and the rest of the catalog
+with `--all`; `provider show <id>` shows one (its spec
 with `--json`);
 `provider remove <id>` removes a row. The spec's fields, the auth kinds,
 the rules, the commands and their codes are the agent docs page

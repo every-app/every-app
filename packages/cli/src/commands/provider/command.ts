@@ -11,7 +11,7 @@ const connectFlags = {
 
 const idParameter = {
   placeholder: "id",
-  brief: "The provider's id (provider list names them): stripe",
+  brief: "The provider's id (provider list --all names them): stripe",
   parse: String,
 } as const;
 
@@ -73,7 +73,7 @@ const addCommand = buildCommand({
       "Scripts and agents set it in the same run with --from-env (the variables of the settings'",
       "names) or piped NAME=value lines; never on the command line.",
       "",
-      "A built-in provider (provider list names them) is only its key. An OAuth preset (provider",
+      "A built-in provider (provider list --all names them) is only its key. An OAuth preset (provider",
       "presets: google-workspace, slack, github-oauth) becomes a registered provider, then takes its",
       "client; deploying an app that lists one registers it too. Any other API is a spec: its id, name,",
       "the page the key comes from (docs), the only hosts the key is ever sent to and how (auth:",
@@ -229,15 +229,31 @@ const listCommand = buildCommand({
     const { list } = await import(".");
     return list;
   },
-  parameters: { positional: { kind: "tuple", parameters: [] }, flags: connectFlags },
+  parameters: {
+    positional: { kind: "tuple", parameters: [] },
+    flags: {
+      all: {
+        kind: "boolean",
+        brief: "Also list the built-in providers this Gateway doesn't use yet (by default only the ones in use)",
+        optional: true,
+      },
+      ...connectFlags,
+    },
+  },
   docs: {
-    brief: "List the API providers the Gateway offers: built in and registered, each key's state, the apps using each",
+    brief: "List the API providers the Gateway uses: each key's state and the apps listing it; --all adds the ones it could",
     fullDescription: [
-      "Nothing is changed. A key's value can't be read back; only whether it is set, and for a",
-      "registered provider whether it was set for the hosts the row names now (bound).",
+      "In use: its key or client is set, it was registered here, or an app lists it. The ones an",
+      "app is waiting on come first, with the setting to set. --all (or --verbose) adds the rest",
+      "of the built-in providers; --json always carries every provider, each with inUse. Hosts,",
+      "setting names and who registered a provider are in provider show <id>.",
       "",
-      "Example:",
+      "Nothing is changed. A key's value can't be read back; only whether it is set, and for a",
+      "registered provider whether it was set for the hosts it names now (bound).",
+      "",
+      "Examples:",
       `  ${CLI} provider list`,
+      `  ${CLI} provider list --all`,
     ].join("\n"),
   },
 });
