@@ -224,9 +224,11 @@ async function recordOfflineBacklog(): Promise<{ meetingId: string; seqs: () => 
   await page.evaluate(() => (location.hash = "#/"));
   await expect(page.getByText("Coming up")).toBeVisible();
   await page.evaluate(() => {
-    const w = window as unknown as { __segs: number[]; everyapp: { on(c: string, f: (e: { event: string; seq?: number }) => void): () => void } };
+    const w = window as unknown as { __segs: number[]; __segsOff?: () => void; everyapp: { on(c: string, f: (e: { event: string; seq?: number }) => void): () => void } };
+    // One listener at a time: an earlier backlog's listener would record every seq twice.
+    w.__segsOff?.();
     w.__segs = [];
-    w.everyapp.on("helper", (e) => {
+    w.__segsOff = w.everyapp.on("helper", (e) => {
       if (e.event === "transcript.segment" && typeof e.seq === "number") w.__segs.push(e.seq);
     });
   });
@@ -237,7 +239,8 @@ async function recordOfflineBacklog(): Promise<{ meetingId: string; seqs: () => 
   const seqs = () => page.evaluate(() => [...(window as unknown as { __segs: number[] }).__segs]);
   await mock.setMode("offline");
   writeFileSync(burstFile, "");
-  await expect.poll(async () => (await seqs()).length, { timeout: 15_000 }).toBeGreaterThan(60);
+  // Distinct segments, so the backlog really is more than one batch of 50.
+  await expect.poll(async () => new Set(await seqs()).size, { timeout: 15_000 }).toBeGreaterThan(60);
   rmSync(burstFile, { force: true });
   // Main noticed (the meeting page's own calls fail), so it will replay once the app is back.
   await expect.poll(connectionState, { timeout: 20_000 }).toBe("offline");
