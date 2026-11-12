@@ -797,6 +797,147 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     });
   });
 
+  it("refreshes once when parallel calls find the token due, so a provider that rotates refresh tokens keeps the connection", async () => {
+    const rotating = fakeOAuthProvider({
+      authorizeUrl: GITHUB.auth.authorizeUrl,
+      tokenUrl: GITHUB.auth.tokenUrl,
+      apiHost: "api.github.com",
+      clientId: "gh-client-id",
+      clientSecret: "gh-client-secret",
+      scopeDialect: "comma",
+      rotateRefreshToken: true,
+      identity: { path: "/user", body: { login: "ben", id: 4242 } },
+    });
+    await addGitHub();
+    await connect("github-oauth", "?app=crm", rotating.fetch, (url) =>
+      rotating.authorize(url),
+    );
+    const connection = (await listConnections(org("owner", owner)))[0]!;
+    const issued = { ...rotating.state.tokens[0]! };
+    await ProviderConnectionRepository.storeTokens(
+      connection.id,
+      {
+        accessToken: issued.accessToken,
+        refreshToken: issued.refreshToken,
+        expiresAt: Date.now() - 1,
+      },
+      fakeEnv,
+    );
+    const calls = await Promise.all(
+      [1, 2, 3, 4].map(() =>
+        appCall("crm", "/api/integrations/github-oauth/api.github.com/user", {
+          fetchUpstream: rotating.fetch,
+        }),
+      ),
+    );
+    expect(calls.map((call) => call.status)).toEqual([200, 200, 200, 200]);
+    // One refresh spent the refresh token; the others used what it stored.
+    expect(rotating.state.counters.refresh).toBe(1);
+    expect((await listConnections(org("owner", owner)))[0]).toMatchObject({
+      status: "active",
+    });
+    expect(await eventTypes()).not.toContain("provider.connection_expired");
+  });
+
+  it("keeps a connection when its refresh is refused because a parallel refresh already rotated the token", async () => {
+    const rotating = fakeOAuthProvider({
+      authorizeUrl: GITHUB.auth.authorizeUrl,
+      tokenUrl: GITHUB.auth.tokenUrl,
+      apiHost: "api.github.com",
+      clientId: "gh-client-id",
+      clientSecret: "gh-client-secret",
+      scopeDialect: "comma",
+      rotateRefreshToken: true,
+      identity: { path: "/user", body: { login: "ben", id: 4242 } },
+    });
+    await addGitHub();
+    await connect("github-oauth", "?app=crm", rotating.fetch, (url) =>
+      rotating.authorize(url),
+    );
+    const connection = (await listConnections(org("owner", owner)))[0]!;
+    const issued = { ...rotating.state.tokens[0]! };
+    await ProviderConnectionRepository.storeTokens(
+      connection.id,
+      {
+        accessToken: issued.accessToken,
+        refreshToken: issued.refreshToken,
+        expiresAt: Date.now() - 1,
+      },
+      fakeEnv,
+    );
+    const registry = await gatewayProviders();
+    const capability = registry.get("github-oauth");
+    if (capability?.mode !== "oauth_client") throw new Error("oauth row");
+    const client = await resolveOAuthClient({
+      id: "github-oauth",
+      capability,
+      env: fakeEnv as never,
+      lookup: registry,
+    });
+    // A slow first refresh: while it is at the provider, its lease lapses
+    // and a second call refreshes with the same token and stores the
+    // rotation; the provider then refuses the first as spent.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let first = true;
+    const slowFirst = async (request: Request): Promise<Response> => {
+      if (first && new URL(request.url).href === GITHUB.auth.tokenUrl) {
+        first = false;
+        await held;
+      }
+      return rotating.fetch(request);
+    };
+    const refresh = (at: number) =>
+      accessTokenFor({
+        connectionId: connection.id,
+        scopes: connection.scopes,
+        capability,
+        client: client!,
+        env: fakeEnv as never,
+        fetchUpstream: slowFirst,
+        now: at,
+        log: { provider: "github-oauth" },
+      });
+    const slow = refresh(now);
+    await vi.waitFor(() => expect(first).toBe(false));
+    const second = await refresh(now + 31_000);
+    expect(second.ok).toBe(true);
+    release();
+    await expect(slow).resolves.toEqual(second);
+    expect(rotating.state.counters.refresh).toBe(2);
+    expect((await listConnections(org("owner", owner)))[0]).toMatchObject({
+      status: "active",
+    });
+  });
+
+  it("refreshes a token the provider answers 401 for though it isn't due, and sends the request once more", async () => {
+    await addGitHub();
+    await connect("github-oauth");
+    const connection = (await listConnections(org("owner", owner)))[0]!;
+    const issued = { ...github.state.tokens[0]! };
+    // No lifetime stored, and an access token GitHub no longer takes.
+    await ProviderConnectionRepository.storeTokens(
+      connection.id,
+      {
+        accessToken: "gho_ended_early",
+        refreshToken: issued.refreshToken,
+        expiresAt: null,
+      },
+      fakeEnv,
+    );
+    const refreshesBefore = github.state.counters.refresh;
+    const called = await appCall(
+      "crm",
+      "/api/integrations/github-oauth/api.github.com/user",
+    );
+    expect(called.status).toBe(200);
+    await expect(called.json()).resolves.toMatchObject({ login: "ben" });
+    expect(github.state.counters.refresh).toBe(refreshesBefore + 1);
+    expect((await listConnections(org("owner", owner)))[0]).toMatchObject({
+      status: "active",
+    });
+  });
+
   it("reconnects a healthy connection with a fresh grant when asked, replacing it in place", async () => {
     await addGitHub();
     await connect("github-oauth");
@@ -1436,7 +1577,11 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
         now: now + 60_000,
         log: { provider: "treg-mcp" },
       });
-      expect(refreshed).toEqual({ ok: true, accessToken: "treg-access-2" });
+      expect(refreshed).toEqual({
+        ok: true,
+        accessToken: "treg-access-2",
+        version: 1,
+      });
       expect(forms[1]!.get("grant_type")).toBe("refresh_token");
       expect(forms[1]!.get("resource")).toBe(MCP_URL);
     });

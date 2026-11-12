@@ -1475,7 +1475,11 @@ describe("an OAuth provider driven by its spec (SQLite)", () => {
           connections: {
             find,
             allowedScopes,
-            accessToken: async () => ({ ok: true, accessToken: "t" }),
+            accessToken: async () => ({
+              ok: true,
+              accessToken: "t",
+              version: 0,
+            }),
             expired: async () => undefined,
             used: async () => undefined,
           },

@@ -168,6 +168,8 @@ describe("ProviderConnectionRepository", () => {
       accessToken: "gho_access",
       refreshToken: "ghr_refresh",
       expiresAt: 5000,
+      version: 0,
+      status: "active",
     });
     expect(
       await ProviderConnectionRepository.readTokens(created.id, other),
@@ -202,6 +204,8 @@ describe("ProviderConnectionRepository", () => {
       accessToken: "gho_access2",
       refreshToken: null,
       expiresAt: null,
+      version: 1,
+      status: "active",
     });
     expect(await ProviderConnectionRepository.find(key)).toMatchObject({
       id: created.id,
@@ -409,83 +413,136 @@ describe("ProviderConnectionRepository", () => {
     expect(await latest()).toMatchObject({ id: mine.id });
   });
 
-  it("leases a refresh once, stores the refreshed tokens, marks expired, touches, removes", async () => {
-    const conn = await ProviderConnectionRepository.upsert(
+  it("leases a refresh once per version of the tokens, for 30 seconds", async () => {
+    const Connections = ProviderConnectionRepository;
+    const conn = await Connections.upsert(
       { ...base, now: new Date(1000) },
       env,
     );
     const now = new Date(10_000);
+    expect(await Connections.claimRefresh(conn.id, 0, now)).toBe(true);
+    expect(await Connections.claimRefresh(conn.id, 0, now)).toBe(false);
+    // Still held a moment before it lapses, free a moment after.
+    expect(await Connections.claimRefresh(conn.id, 0, new Date(39_999))).toBe(
+      false,
+    );
+    expect(await Connections.claimRefresh(conn.id, 0, new Date(40_001))).toBe(
+      true,
+    );
+    await Connections.releaseRefresh(conn.id, 0);
+    expect(await Connections.claimRefresh(conn.id, 0, now)).toBe(true);
+    // Tokens another version by now: nothing to lease, nothing released.
+    await Connections.releaseRefresh(conn.id, 7);
+    expect(await Connections.claimRefresh(conn.id, 7, new Date(90_000))).toBe(
+      false,
+    );
+  });
+
+  it("stores refreshed tokens and marks expired only for the version that was read", async () => {
+    const Connections = ProviderConnectionRepository;
+    const conn = await Connections.upsert(
+      { ...base, now: new Date(1000) },
+      env,
+    );
+    expect(await Connections.readTokens(conn.id, env)).toMatchObject({
+      version: 0,
+      status: "active",
+    });
+    expect(await Connections.claimRefresh(conn.id, 0, new Date(10_000))).toBe(
+      true,
+    );
+    // A refresh that returned no refresh token keeps the old one; the
+    // lease goes with the store.
     expect(
-      await ProviderConnectionRepository.tryLease(conn.id, now, 40_000),
-    ).toBe(true);
-    expect(
-      await ProviderConnectionRepository.tryLease(conn.id, now, 40_000),
-    ).toBe(false);
-    expect(
-      await ProviderConnectionRepository.tryLease(
+      await Connections.storeTokens(
         conn.id,
-        new Date(50_000),
-        90_000,
+        {
+          accessToken: "gho_fresh",
+          refreshToken: null,
+          expiresAt: 99_000,
+          now: new Date(11_000),
+          version: 0,
+        },
+        env,
       ),
     ).toBe(true);
-    await ProviderConnectionRepository.releaseLease(conn.id);
+    expect(await Connections.readTokens(conn.id, env)).toEqual({
+      accessToken: "gho_fresh",
+      refreshToken: "ghr_refresh",
+      expiresAt: 99_000,
+      version: 1,
+      status: "active",
+    });
+    expect(await Connections.claimRefresh(conn.id, 1, new Date(11_000))).toBe(
+      true,
+    );
+
+    // A second refresh that read version 0 stores nothing and expires nothing.
     expect(
-      await ProviderConnectionRepository.tryLease(conn.id, now, 40_000),
-    ).toBe(true);
+      await Connections.storeTokens(
+        conn.id,
+        {
+          accessToken: "gho_stale",
+          refreshToken: "ghr_stale",
+          expiresAt: null,
+          version: 0,
+        },
+        env,
+      ),
+    ).toBe(false);
+    expect(await Connections.markExpired(conn.id, new Date(12_000), 0)).toBe(
+      false,
+    );
+    expect(await Connections.readTokens(conn.id, env)).toMatchObject({
+      accessToken: "gho_fresh",
+      version: 1,
+      status: "active",
+    });
 
-    await ProviderConnectionRepository.storeTokens(
-      conn.id,
-      {
-        accessToken: "gho_fresh",
-        refreshToken: null,
-        expiresAt: 99_000,
-        now: new Date(11_000),
-      },
-      env,
-    );
-    expect(await ProviderConnectionRepository.readTokens(conn.id, env)).toEqual(
-      {
-        accessToken: "gho_fresh",
-        refreshToken: "ghr_refresh",
-        expiresAt: 99_000,
-      },
-    );
     expect(
-      await ProviderConnectionRepository.tryLease(conn.id, now, 40_000),
+      await Connections.storeTokens(
+        conn.id,
+        {
+          accessToken: "gho_fresh2",
+          refreshToken: "ghr_rotated",
+          expiresAt: null,
+          scopes: ["repo"],
+          version: 1,
+        },
+        env,
+      ),
     ).toBe(true);
+    expect(await Connections.readTokens(conn.id, env)).toEqual({
+      accessToken: "gho_fresh2",
+      refreshToken: "ghr_rotated",
+      expiresAt: null,
+      version: 2,
+      status: "active",
+    });
+    expect((await Connections.byId(conn.id))?.scopes).toEqual(["repo"]);
 
-    await ProviderConnectionRepository.storeTokens(
-      conn.id,
-      {
-        accessToken: "gho_fresh2",
-        refreshToken: "ghr_rotated",
-        expiresAt: null,
-        scopes: ["repo"],
-      },
-      env,
+    // Expired by the one call that changes it, and not twice.
+    expect(await Connections.markExpired(conn.id, new Date(12_000), 2)).toBe(
+      true,
     );
-    expect(await ProviderConnectionRepository.readTokens(conn.id, env)).toEqual(
-      {
-        accessToken: "gho_fresh2",
-        refreshToken: "ghr_rotated",
-        expiresAt: null,
-      },
+    expect(await Connections.markExpired(conn.id, new Date(13_000), 2)).toBe(
+      false,
     );
-    expect((await ProviderConnectionRepository.byId(conn.id))?.scopes).toEqual([
-      "repo",
-    ]);
-
-    await ProviderConnectionRepository.markExpired(conn.id, new Date(12_000));
-    expect(await ProviderConnectionRepository.byId(conn.id)).toMatchObject({
+    expect(await Connections.byId(conn.id)).toMatchObject({
       status: "expired",
       updatedAt: 12_000,
     });
-    await ProviderConnectionRepository.touchLastUsed(conn.id, new Date(13_000));
-    expect((await ProviderConnectionRepository.byId(conn.id))?.lastUsedAt).toBe(
-      13_000,
-    );
-    expect(await ProviderConnectionRepository.remove(conn)).toBe(true);
-    expect(await ProviderConnectionRepository.remove(conn)).toBe(false);
+    // Connecting again is a new version: a refresh still out stores nothing.
+    await Connections.upsert({ ...base, now: new Date(14_000) }, env);
+    expect(await Connections.readTokens(conn.id, env)).toMatchObject({
+      version: 3,
+      status: "active",
+    });
+
+    await Connections.touchLastUsed(conn.id, new Date(15_000));
+    expect((await Connections.byId(conn.id))?.lastUsedAt).toBe(15_000);
+    expect(await Connections.remove(conn)).toBe(true);
+    expect(await Connections.remove(conn)).toBe(false);
   });
 });
 

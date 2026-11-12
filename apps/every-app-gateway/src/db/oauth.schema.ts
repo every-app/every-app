@@ -70,6 +70,11 @@ export const providerConnections = sqliteTable(
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
     // "active" | "expired".
     status: text("status").notNull(),
+    // Counts every write of the tokens (a connect, a refresh). A refresh
+    // stores its result, and a refused one marks the row expired, only
+    // while this is still the number it read: a write decided on tokens
+    // that have since been replaced changes nothing.
+    tokenVersion: integer("token_version").notNull().default(0),
     // While a refresh is under way, the lease's end; null otherwise.
     refreshingUntil: integer("refreshing_until", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),

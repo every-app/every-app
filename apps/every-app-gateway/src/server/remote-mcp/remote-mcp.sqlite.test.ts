@@ -163,6 +163,9 @@ let serverInfo: Record<string, string>;
 let redirectTo: string | null;
 /** The Authorization values the fake Treg accepts. */
 let accepted: Set<string>;
+/** What Treg's token endpoint answers a refresh with, and the refreshes it saw. */
+let tokenAnswer: (form: URLSearchParams) => Response;
+let refreshes: URLSearchParams[];
 
 function rpc(id: unknown, result: unknown): Response {
   return Response.json({ jsonrpc: "2.0", id, result });
@@ -170,6 +173,13 @@ function rpc(id: unknown, result: unknown): Response {
 
 /** A fake remote MCP server at UPSTREAM, in either era, recording what it saw. */
 async function fakeTreg(request: Request): Promise<Response> {
+  if (request.url === "https://auth.treg.example/token") {
+    const form = new URLSearchParams(await request.text());
+    refreshes.push(form);
+    // Not JSON by its content type, so the id rewrite below leaves it alone.
+    const answer = tokenAnswer(form);
+    return new Response(await answer.text(), { status: answer.status });
+  }
   const body = (await request.json()) as Record<string, unknown>;
   seen.push({
     url: request.url,
@@ -479,6 +489,7 @@ async function connectTreg(
     expiresAt?: number | null;
     lastUsedAt?: Date;
     allowed?: boolean;
+    refreshToken?: string;
   } = {},
 ): Promise<string> {
   const owner = { organizationId: orgId, providerId: "treg-mcp", userId };
@@ -490,7 +501,7 @@ async function connectTreg(
       externalId: null,
       scopes: ["mcp"],
       accessToken,
-      refreshToken: null,
+      refreshToken: options.refreshToken ?? null,
       expiresAt: options.expiresAt ?? null,
     },
     hoisted.env as never,
@@ -583,6 +594,9 @@ beforeEach(async () => {
       content: [{ type: "text", text: `ran ${name}` }],
       structuredContent: { ran: name, args },
     });
+  refreshes = [];
+  tokenAnswer = () =>
+    Response.json({ error: "invalid_grant" }, { status: 400 });
   setRemoteUpstreamFetchForTests(async (input, init) => {
     const request = new Request(input, init);
     const response = await fakeTreg(request);
@@ -1317,6 +1331,101 @@ describe("a remote MCP app whose credential is an OAuth provider", () => {
       `Treg rejected the connection (401). Reconnect your Treg MCP server account to use this tool: ${CONNECT}`,
     );
     expect(JSON.stringify(call)).not.toContain(OWNER_TOKEN);
+  });
+
+  it("refreshes a token the server answers 401 for though it isn't due, and sends the call once more", async () => {
+    // No lifetime from the server, so the clock never says it is due.
+    const connectionId = await connectTreg(ownerId, OWNER_TOKEN, {
+      refreshToken: "owner-refresh-1",
+    });
+    const ownerPat = await pat(ownerId);
+    await toolNames(ownerPat);
+    const NEXT = "owner-oauth-access-token-next";
+    accepted = new Set([`Bearer ${NEXT}`]);
+    tokenAnswer = (form) =>
+      form.get("refresh_token") === "owner-refresh-1"
+        ? Response.json({
+            access_token: NEXT,
+            refresh_token: "owner-refresh-2",
+            expires_in: 3600,
+          })
+        : Response.json({ error: "invalid_grant" }, { status: 400 });
+    seen = [];
+    const call = await callTool(ownerPat, "treg_get_user", { id: "u1" });
+    expect(call.result?.isError).toBeFalsy();
+    expect(call.result?.structuredContent).toMatchObject({ ran: "getUser" });
+    expect(refreshes).toHaveLength(1);
+    expect(
+      seen
+        .filter((request) => request.body["method"] === "tools/call")
+        .map((request) => request.headers["authorization"]),
+    ).toEqual([`Bearer ${OWNER_TOKEN}`, `Bearer ${NEXT}`]);
+    expect(
+      await ProviderConnectionRepository.readTokens(
+        connectionId,
+        hoisted.env as never,
+      ),
+    ).toMatchObject({
+      accessToken: NEXT,
+      refreshToken: "owner-refresh-2",
+      status: "active",
+    });
+    // The next call uses the stored token: no refresh, no 401.
+    seen = [];
+    const again = await callTool(ownerPat, "treg_get_user", { id: "u2" });
+    expect(again.result?.isError).toBeFalsy();
+    expect(refreshes).toHaveLength(1);
+    expect(JSON.stringify([call, again])).not.toContain(NEXT);
+  });
+
+  it("marks the connection expired when the server answers 401 and the refresh is refused too", async () => {
+    const connectionId = await connectTreg(ownerId, OWNER_TOKEN, {
+      refreshToken: "owner-refresh-1",
+    });
+    const ownerPat = await pat(ownerId);
+    await toolNames(ownerPat);
+    accepted = new Set();
+    const call = await callTool(ownerPat, "treg_get_user", { id: "u1" });
+    expect(call.result?.content[0]?.text).toBe(
+      `Treg rejected the connection (401). Reconnect your Treg MCP server account to use this tool: ${CONNECT}`,
+    );
+    expect(refreshes).toHaveLength(1);
+    expect(
+      (await ProviderConnectionRepository.byId(connectionId))?.status,
+    ).toBe("expired");
+    // Asked once: a later call answers from the row, not the provider.
+    const again = await callTool(ownerPat, "treg_get_user", { id: "u1" });
+    expect(again.result?.content[0]?.text).toBe(
+      `Reconnect your Treg MCP server account to use this tool: ${CONNECT}`,
+    );
+    expect(refreshes).toHaveLength(1);
+  });
+
+  it("says to try again, not to reconnect, when the token is due and the provider can't be reached", async () => {
+    const connectionId = await connectTreg(ownerId, OWNER_TOKEN, {
+      refreshToken: "owner-refresh-1",
+      expiresAt: Date.now() + 3_600_000,
+    });
+    const ownerPat = await pat(ownerId);
+    await toolNames(ownerPat);
+    await ProviderConnectionRepository.storeTokens(
+      connectionId,
+      {
+        accessToken: OWNER_TOKEN,
+        refreshToken: "owner-refresh-1",
+        expiresAt: Date.now() - 1,
+      },
+      hoisted.env as never,
+    );
+    tokenAnswer = () => new Response("down", { status: 503 });
+    const call = await callTool(ownerPat, "treg_get_user", { id: "u1" });
+    expect(call.result?.isError).toBe(true);
+    expect(call.result?.content[0]?.text).toBe(
+      "Treg MCP server could not refresh your connection's token; try again in a moment.",
+    );
+    expect(
+      (await ProviderConnectionRepository.byId(connectionId))?.status,
+    ).toBe("active");
   });
 
   it("serves the app's client metadata document (CIMD) publicly, the same for any well-formed id, so it says nothing about which apps exist", async () => {

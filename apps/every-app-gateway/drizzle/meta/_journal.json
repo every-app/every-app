@@ -232,6 +232,13 @@
       "when": 1794348083495,
       "tag": "0034_oauth_one_connection",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1794469015812,
+      "tag": "0035_connection_token_version",
+      "breakpoints": true
     }
   ]
 }

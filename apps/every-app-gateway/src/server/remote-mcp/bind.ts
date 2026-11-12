@@ -73,8 +73,17 @@ export type CredentialState =
       query: Record<string, string>;
       secrets: string[];
       key: string;
-      /** For an OAuth provider: whose connection it is, and where to reconnect it. */
-      oauth?: { connectionId: string; connectUrl: string; label: string };
+      /**
+       * For an OAuth provider: whose connection it is, where to reconnect
+       * it, and which write of its tokens this one is (`rejected`, when
+       * the server answers 401 for it).
+       */
+      oauth?: {
+        connectionId: string;
+        connectUrl: string;
+        label: string;
+        version: number;
+      };
     }
   /**
    * The member has no usable connection to the app's OAuth provider: a
@@ -89,6 +98,11 @@ interface CredentialDeps {
   fetchUpstream?: Fetch;
   resolveClient?: OAuthClientResolver;
   providers?: () => Promise<ProviderRegistry>;
+  /**
+   * The server answered 401 for the token of this version (a ready
+   * credential's `oauth.version`): refresh it, though it isn't due.
+   */
+  rejected?: number;
 }
 
 function settings(): CapabilitySettings & Record<string, unknown> {
@@ -260,9 +274,10 @@ async function oauthCredential(
     capability,
     client,
     organizationId: route.organizationId,
+    ...(deps.rejected === undefined ? {} : { rejected: deps.rejected }),
   });
   if (!token.ok) {
-    if (token.reason === "expired" || token.reason === "no_refresh_token") {
+    if (token.reason === "reconnect" && token.first) {
       waitUntil(
         held
           .expired({
@@ -285,16 +300,24 @@ async function oauthCredential(
       },
       "warn",
     );
+    // A refresh that failed for a passing reason (the provider was down,
+    // or another call's refresh didn't land in time) leaves the connection
+    // as it was: try again, not reconnect.
+    const passing = token.reason === "retry";
     if (caller) {
       return {
         kind: "connect",
-        message: connectMessage(label, connectUrl, true),
+        message: passing
+          ? `${label} could not refresh your connection's token; try again in a moment.`
+          : connectMessage(label, connectUrl, true),
         connectUrl,
       };
     }
     return {
       kind: "needs_setup",
-      reason: `the ${label} connection it lists with needs to be made again: connect at ${connectUrl}`,
+      reason: passing
+        ? `${label} could not refresh the token of the connection it lists with; try again in a moment`
+        : `the ${label} connection it lists with needs to be made again: connect at ${connectUrl}`,
     };
   }
   if (caller) {
@@ -318,7 +341,12 @@ async function oauthCredential(
     query: {},
     secrets: [token.accessToken],
     key: `oauth:${connection.id}:${token.accessToken}`,
-    oauth: { connectionId: connection.id, connectUrl, label },
+    oauth: {
+      connectionId: connection.id,
+      connectUrl,
+      label,
+      version: token.version,
+    },
   };
 }
 

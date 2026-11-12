@@ -498,6 +498,7 @@ async function gate(
   route: RemoteMcpRoute,
   block: RemoteMcpBlock,
   caller: CredentialCaller,
+  rejected?: number,
 ): Promise<{ credential: Usable } | { problem: string } | { connect: string }> {
   const appName = route.name ?? route.appSlug;
   const urlProblem = await urlRefusal(block, route.appSlug);
@@ -509,19 +510,42 @@ async function gate(
     );
     return { problem: `${appName}'s ${urlProblem.replace(/^its /, "")}.` };
   }
-  const credential = await credentialFor(
-    block,
-    route,
-    caller,
-    upstreamFetch
-      ? { fetchUpstream: (request) => upstreamFetch!(request) }
-      : {},
-  );
+  const credential = await credentialFor(block, route, caller, {
+    ...(upstreamFetch
+      ? { fetchUpstream: (request: Request) => upstreamFetch!(request) }
+      : {}),
+    ...(rejected === undefined ? {} : { rejected }),
+  });
   if (credential.kind === "needs_setup") {
     return { problem: `${appName} isn't ready: ${credential.reason}.` };
   }
   if (credential.kind === "connect") return { connect: credential.message };
   return { credential };
+}
+
+/**
+ * The server answered 401 for an OAuth connection's token though it wasn't
+ * due by the clock (the server gave no lifetime, or ended it early): the
+ * credential with that token refreshed, or null when there is none to try
+ * again with (not OAuth, not a 401, or the refresh gave nothing new).
+ */
+async function refreshedAfter401(
+  error: unknown,
+  route: RemoteMcpRoute,
+  block: RemoteMcpBlock,
+  caller: CredentialCaller,
+  credential: Usable,
+): Promise<Usable | null> {
+  if (!(error instanceof RemoteMcpError) || error.kind !== "unauthorized")
+    return null;
+  const oauth = credential.kind === "ready" ? credential.oauth : undefined;
+  if (!oauth) return null;
+  const again = await gate(route, block, caller, oauth.version);
+  if (!("credential" in again)) return null;
+  const next = again.credential;
+  return next.kind === "ready" && next.oauth?.version !== oauth.version
+    ? next
+    : null;
 }
 
 /** Whose client a credential is: none's, an API key's (one for everyone), or a connection's. */
@@ -553,28 +577,38 @@ async function listTools(
   // A listing never has a caller, so it never has to connect.
   if ("connect" in gated)
     return toolsError(500, "misconfigured", gated.connect);
-  const entry = entryFor(
-    route,
-    block,
-    gated.credential,
-    whoseOf(gated.credential),
-  );
-  let listed: Listing;
-  try {
-    listed = await listing(
+  let credential = gated.credential;
+  const list = () =>
+    listing(
       route,
       block,
       rowListing(route, block),
-      entry.client,
+      entryFor(route, block, credential, whoseOf(credential)).client,
       true,
       request.signal,
     );
+  let listed: Listing;
+  try {
+    try {
+      listed = await list();
+    } catch (error) {
+      const refreshed = await refreshedAfter401(
+        error,
+        route,
+        block,
+        null,
+        credential,
+      );
+      if (!refreshed) throw error;
+      credential = refreshed;
+      listed = await list();
+    }
   } catch (error) {
     logUpstreamFailure(route, "list", error);
     return toolsError(
       502,
       "upstream_failed",
-      upstreamFailure(route.name ?? route.appSlug, error, gated.credential),
+      upstreamFailure(route.name ?? route.appSlug, error, credential),
     );
   }
   const tools: ToolDescriptorV1[] = listed.catalog.tools;
@@ -671,8 +705,8 @@ async function callTool(
   // The member's own account isn't connected (or the organization's):
   // the model relays the connect link, and the member tries again.
   if ("connect" in gated) return errorResult("", gated.connect);
-  const credential = gated.credential;
-  const entry = entryFor(route, block, credential, whoseOf(credential));
+  let credential = gated.credential;
+  let entry = entryFor(route, block, credential, whoseOf(credential));
   const rowEntry = rowListing(route, block);
   let listed: Listing;
   try {
@@ -746,12 +780,27 @@ async function callTool(
       ),
     );
   };
+  const run = () =>
+    entry.client.callTool(upstreamName, call.arguments, request.signal);
   try {
-    const result = await entry.client.callTool(
-      upstreamName,
-      call.arguments,
-      request.signal,
-    );
+    let result: Awaited<ReturnType<typeof run>>;
+    try {
+      result = await run();
+    } catch (error) {
+      // A 401 is answered before the tool runs, so the call is sent once
+      // more with the refreshed token.
+      const refreshed = await refreshedAfter401(
+        error,
+        route,
+        block,
+        { id: user.id },
+        credential,
+      );
+      if (!refreshed) throw error;
+      credential = refreshed;
+      entry = entryFor(route, block, credential, whoseOf(credential));
+      result = await run();
+    }
     count(result.isError ? 400 : 200);
     const relayed: ToolCallResultV1 = {
       content: result.content as ToolCallResultV1["content"],

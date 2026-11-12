@@ -224,27 +224,53 @@ export async function tokenCall({
   };
 }
 
-/** How long one refresh may hold the lease. */
-const LEASE_MS = 30_000;
 /** A token this close to expiry is refreshed before use. */
 const REFRESH_SKEW_MS = 60_000;
+/** How long a call waits for another call's refresh: 50 looks, 200 ms apart. */
+const REFRESH_WAIT_LOOKS = 50;
+const REFRESH_WAIT_MS = 200;
 
 export type RefreshOutcome =
-  | { ok: true; accessToken: string }
+  | {
+      ok: true;
+      accessToken: string;
+      /** Which write of the tokens this is: pass it back as `rejected` when the provider answers 401. */
+      version: number;
+    }
   | {
       ok: false;
-      reason: "expired" | "unavailable" | "no_refresh_token" | "lost";
-    };
+      /**
+       * `reconnect`: the person has to connect again (`first` on the one
+       * call that found it out, which says so once). `retry`: nothing is
+       * wrong with the connection; the provider could not be asked just now.
+       */
+      reason: "reconnect";
+      first: boolean;
+    }
+  | { ok: false; reason: "retry" };
 
 /**
- * The connection's access token, refreshed first when it is within
- * {@link REFRESH_SKEW_MS} of expiry and a refresh token is held, under a
- * lease so parallel calls don't race the provider. A refresh the provider
- * refuses marks the connection expired (the caller emits the event once);
- * so does one whose answer names scopes beyond the connection's (the mint
- * check, against `scopes`), its tokens dropped. One that fails for another
- * reason keeps the old token for the caller to try with, or reports
- * `unavailable` when that one has already expired.
+ * The connection's access token, refreshed first when it is due: within
+ * {@link REFRESH_SKEW_MS} of expiry, or the one the provider just answered
+ * 401 for (`rejected`, the version a call was given).
+ *
+ * The stored tokens carry a version that every write of them raises, and
+ * each step here is one conditional UPDATE on the version it read:
+ *
+ * - the lease (one refresh at the provider at a time, since a provider
+ *   that rotates refresh tokens refuses a second use of one);
+ * - storing what the refresh returned;
+ * - marking the connection expired when the provider refuses the refresh,
+ *   or its answer names scopes beyond the connection's (the mint check).
+ *
+ * A step that finds the version changed writes nothing and looks again:
+ * someone else refreshed or reconnected, and theirs are the tokens to
+ * use. So a connection is only ever marked expired for the tokens it
+ * holds now, and exactly one call makes that change.
+ *
+ * A refresh that fails for another reason (the provider is down) keeps
+ * the old token for the caller to try with, or answers `retry` when that
+ * one is already past its expiry or was the one rejected.
  */
 export async function accessTokenFor({
   connectionId,
@@ -253,7 +279,8 @@ export async function accessTokenFor({
   client,
   env,
   fetchUpstream,
-  now = Date.now(),
+  rejected,
+  now,
   log,
 }: {
   connectionId: string;
@@ -263,108 +290,140 @@ export async function accessTokenFor({
   client: ResolvedOAuthClient;
   env: SealingEnv;
   fetchUpstream: Fetch;
+  /** The version of the access token the provider answered 401 for, if one was. */
+  rejected?: number;
+  /** A fixed clock, for tests. */
   now?: number;
   log: { provider: string; org?: string };
 }): Promise<RefreshOutcome> {
-  const tokens = await ProviderConnectionRepository.readTokens(
-    connectionId,
-    env,
-  );
-  if (!tokens) return { ok: false, reason: "lost" };
-  const fresh =
-    tokens.expiresAt === null || tokens.expiresAt - now > REFRESH_SKEW_MS;
-  if (fresh) return { ok: true, accessToken: tokens.accessToken };
-  if (!tokens.refreshToken) {
-    if (tokens.expiresAt !== null && tokens.expiresAt <= now) {
-      await ProviderConnectionRepository.markExpired(
-        connectionId,
-        new Date(now),
+  const clock = now === undefined ? () => Date.now() : () => now;
+  const Connections = ProviderConnectionRepository;
+  const reconnect = (first: boolean): RefreshOutcome => ({
+    ok: false,
+    reason: "reconnect",
+    first,
+  });
+  for (let look = 0; look <= REFRESH_WAIT_LOOKS; look += 1) {
+    const at = clock();
+    const tokens = await Connections.readTokens(connectionId, env);
+    // Gone, or sealed under a key this Gateway no longer has.
+    if (!tokens) {
+      return reconnect(
+        await Connections.markExpired(connectionId, new Date(at)),
       );
-      return { ok: false, reason: "no_refresh_token" };
     }
-    return { ok: true, accessToken: tokens.accessToken };
-  }
-  const leased = await ProviderConnectionRepository.tryLease(
-    connectionId,
-    new Date(now),
-    LEASE_MS,
-  );
-  if (!leased) {
-    // Another call is refreshing: give it a moment, then read what it stored.
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      const again = await ProviderConnectionRepository.readTokens(
-        connectionId,
-        env,
+    if (tokens.status === "expired") return reconnect(false);
+    const use: RefreshOutcome = {
+      ok: true,
+      accessToken: tokens.accessToken,
+      version: tokens.version,
+    };
+    const refused = tokens.version === rejected;
+    const lapsed = tokens.expiresAt !== null && tokens.expiresAt <= at;
+    const due =
+      refused ||
+      (tokens.expiresAt !== null && tokens.expiresAt - at <= REFRESH_SKEW_MS);
+    if (!due) return use;
+    if (!tokens.refreshToken) {
+      if (!refused && !lapsed) return use;
+      return reconnect(
+        await Connections.markExpired(
+          connectionId,
+          new Date(at),
+          tokens.version,
+        ),
       );
-      if (!again) return { ok: false, reason: "lost" };
-      if (
-        again.expiresAt === null ||
-        again.expiresAt - Date.now() > REFRESH_SKEW_MS
-      ) {
-        return { ok: true, accessToken: again.accessToken };
+    }
+    const leased = await Connections.claimRefresh(
+      connectionId,
+      tokens.version,
+      new Date(at),
+    );
+    if (!leased) {
+      // Another call is refreshing these tokens, or just has: wait for
+      // what it stores. A token still good is used when the wait runs out.
+      if (look === REFRESH_WAIT_LOOKS) {
+        return refused || lapsed ? { ok: false, reason: "retry" } : use;
+      }
+      await new Promise((resolve) => setTimeout(resolve, REFRESH_WAIT_MS));
+      continue;
+    }
+    const result = await tokenCall({
+      capability,
+      client,
+      fields: {
+        grant_type: "refresh_token",
+        refresh_token: tokens.refreshToken,
+      },
+      fetchUpstream,
+      now: at,
+      log: { ...log, grant: "refresh_token" },
+    });
+    if (!result.ok && result.kind === "failed") {
+      await Connections.releaseRefresh(connectionId, tokens.version);
+      return refused || lapsed ? { ok: false, reason: "retry" } : use;
+    }
+    let expire = !result.ok;
+    let granted: string[] | null = null;
+    if (result.ok) {
+      // The mint check again: a refreshed token that names scopes beyond
+      // the connection's is dropped, never stored or used, and the
+      // connection needs a reconnect. One that names none keeps the
+      // stored scopes.
+      const named = "scope" in result.tokens.body;
+      granted = named
+        ? grantedScopes(capability.flow, result.tokens.body, scopes)
+        : null;
+      const excess =
+        named && granted
+          ? scopeExcess(capability.flow, granted, scopes)
+          : named
+            ? ["(unreadable)"]
+            : [];
+      if (excess.length > 0) {
+        logEvent(
+          "oauth.refresh_refused",
+          { ...log, reason: "scope_excess", excess: excess.slice(0, 10) },
+          "warn",
+        );
+        expire = true;
       }
     }
-    return tokens.expiresAt !== null && tokens.expiresAt <= now
-      ? { ok: false, reason: "unavailable" }
-      : { ok: true, accessToken: tokens.accessToken };
-  }
-  const result = await tokenCall({
-    capability,
-    client,
-    fields: { grant_type: "refresh_token", refresh_token: tokens.refreshToken },
-    fetchUpstream,
-    now,
-    log: { ...log, grant: "refresh_token" },
-  });
-  if (result.ok) {
-    // The mint check again: a refreshed token that names scopes beyond the
-    // connection's is dropped, never stored or used, and the connection
-    // needs a reconnect. One that names none keeps the stored scopes.
-    const named = "scope" in result.tokens.body;
-    const granted = named
-      ? grantedScopes(capability.flow, result.tokens.body, scopes)
-      : null;
-    const excess =
-      named && granted
-        ? scopeExcess(capability.flow, granted, scopes)
-        : named
-          ? ["(unreadable)"]
-          : [];
-    if (excess.length > 0) {
-      logEvent(
-        "oauth.refresh_refused",
-        { ...log, reason: "scope_excess", excess: excess.slice(0, 10) },
-        "warn",
-      );
-      await ProviderConnectionRepository.markExpired(
+    if (expire) {
+      const first = await Connections.markExpired(
         connectionId,
-        new Date(now),
+        new Date(at),
+        tokens.version,
       );
-      return { ok: false, reason: "expired" };
+      if (first) return reconnect(true);
+      // The tokens were replaced while the provider was asked (this
+      // call's lease ran out, or the person reconnected): look again.
+      continue;
     }
-    await ProviderConnectionRepository.storeTokens(
+    if (!result.ok) continue;
+    const stored = await Connections.storeTokens(
       connectionId,
       {
         accessToken: result.tokens.accessToken,
         // A provider that rotates sends a new one; one that doesn't keeps ours.
         refreshToken: result.tokens.refreshToken,
         expiresAt: result.tokens.expiresAt,
-        ...(named && granted ? { scopes: granted } : {}),
-        now: new Date(now),
+        ...(granted ? { scopes: granted } : {}),
+        now: new Date(at),
+        version: tokens.version,
       },
       env,
     );
-    return { ok: true, accessToken: result.tokens.accessToken };
+    if (stored) {
+      return {
+        ok: true,
+        accessToken: result.tokens.accessToken,
+        version: tokens.version + 1,
+      };
+    }
+    // Replaced meanwhile: use what is stored, not what this call got.
   }
-  if (result.kind === "refused") {
-    await ProviderConnectionRepository.markExpired(connectionId, new Date(now));
-    return { ok: false, reason: "expired" };
-  }
-  await ProviderConnectionRepository.releaseLease(connectionId);
-  return tokens.expiresAt !== null && tokens.expiresAt <= now
-    ? { ok: false, reason: "unavailable" }
-    : { ok: true, accessToken: tokens.accessToken };
+  return { ok: false, reason: "retry" };
 }
 
 /**

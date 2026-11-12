@@ -53,15 +53,22 @@ export interface HeldTokenPort {
     userId: string;
     appRowId: string;
   }): Promise<string[] | null>;
-  /** The access token to send, refreshed when due. */
+  /**
+   * The access token to send, refreshed when due, or when it is the one
+   * the provider just answered 401 for (`rejected`, the outcome's version).
+   */
   accessToken(input: {
     connection: HeldConnection;
     providerId: string;
     capability: OAuthClientCapability;
     client: ResolvedOAuthClient;
     organizationId: string;
+    rejected?: number;
   }): Promise<RefreshOutcome>;
-  /** The provider refused a refresh, on a call from `appRowId`: the connection is expired until reconnected. */
+  /**
+   * The connection just became expired (an outcome with `first`), on a
+   * call from `appRowId`: the log line and the event, once.
+   */
   expired(input: {
     connection: HeldConnection;
     providerId: string;
@@ -135,9 +142,11 @@ export function gatewayHeldTokens(options: {
       capability,
       client,
       organizationId,
+      rejected,
     }) {
       return accessTokenFor({
         connectionId: connection.id,
+        ...(rejected === undefined ? {} : { rejected }),
         scopes: connection.scopes,
         capability,
         client,

@@ -46,7 +46,13 @@ interface ConnectionTokens {
   accessToken: string;
   refreshToken: string | null;
   expiresAt: number | null;
+  /** Which write of the tokens this is: what a later write is checked against. */
+  version: number;
+  status: ConnectionStatus;
 }
+
+/** How long one refresh may hold the lease. */
+const REFRESH_LEASE_MS = 30_000;
 
 const listed = {
   id: providerConnections.id,
@@ -223,6 +229,7 @@ async function upsert(
     refreshingUntil: null,
     updatedAt: now,
   };
+  const bumped = sql`${providerConnections.tokenVersion} + 1`;
   const [row] = await db
     .insert(providerConnections)
     .values({
@@ -240,7 +247,8 @@ async function upsert(
         providerConnections.providerId,
         providerConnections.userId,
       ],
-      set: values,
+      // A refresh still out with the old tokens stores nothing over these.
+      set: { ...values, tokenVersion: bumped },
     })
     .returning(listed);
   return shape(row!);
@@ -256,6 +264,8 @@ async function readTokens(
       accessTokenEnc: providerConnections.accessTokenEnc,
       refreshTokenEnc: providerConnections.refreshTokenEnc,
       expiresAt: providerConnections.expiresAt,
+      version: providerConnections.tokenVersion,
+      status: providerConnections.status,
     })
     .from(providerConnections)
     .where(eq(providerConnections.id, id))
@@ -272,12 +282,27 @@ async function readTokens(
     accessToken,
     refreshToken,
     expiresAt: row.expiresAt?.getTime() ?? null,
+    version: row.version,
+    status: row.status === "expired" ? "expired" : "active",
   };
 }
 
+/** The row, while its tokens are still write `version` (any write, when undefined). */
+function atVersion(id: string, version: number | undefined) {
+  return version === undefined
+    ? eq(providerConnections.id, id)
+    : and(
+        eq(providerConnections.id, id),
+        eq(providerConnections.tokenVersion, version),
+      );
+}
+
 /**
- * Store the tokens a refresh returned and release the lease. A refresh
- * that returned no new refresh token keeps the old one (pass null).
+ * Store the tokens a refresh returned: the row is active again, its lease
+ * released, its version one higher. A refresh that returned no new refresh
+ * token keeps the old one (pass null). With `version`, only while the
+ * tokens are still the ones the refresh read; false when they were
+ * replaced meanwhile, and nothing is written.
  */
 async function storeTokens(
   id: string,
@@ -287,16 +312,17 @@ async function storeTokens(
     expiresAt: number | null;
     scopes?: readonly string[];
     now?: Date;
+    version?: number;
   },
   env: SealingEnv,
-): Promise<void> {
+): Promise<boolean> {
   const now = tokens.now ?? new Date();
   const accessTokenEnc = await seal(tokens.accessToken, env);
   const refreshTokenEnc =
     tokens.refreshToken === null
       ? undefined
       : await seal(tokens.refreshToken, env);
-  await db
+  const stored = await db
     .update(providerConnections)
     .set({
       accessTokenEnc,
@@ -305,26 +331,31 @@ async function storeTokens(
       ...(tokens.scopes ? { scopes: JSON.stringify([...tokens.scopes]) } : {}),
       status: "active",
       refreshingUntil: null,
+      tokenVersion: sql`${providerConnections.tokenVersion} + 1`,
       updatedAt: now,
     })
-    .where(eq(providerConnections.id, id));
+    .where(atVersion(id, tokens.version))
+    .returning({ id: providerConnections.id });
+  return stored.length > 0;
 }
 
 /**
- * Take the refresh lease: one conditional UPDATE that wins only when no
- * lease is held or the held one has lapsed. True when this caller won.
+ * Take the refresh lease for tokens at `version`: one conditional UPDATE
+ * that wins only while those are still the stored tokens and no lease is
+ * held (or the held one has lapsed). True when this caller won; it then
+ * holds the lease for {@link REFRESH_LEASE_MS}.
  */
-async function tryLease(
+async function claimRefresh(
   id: string,
+  version: number,
   now: Date,
-  untilMs: number,
 ): Promise<boolean> {
   const won = await db
     .update(providerConnections)
-    .set({ refreshingUntil: new Date(untilMs) })
+    .set({ refreshingUntil: new Date(now.getTime() + REFRESH_LEASE_MS) })
     .where(
       and(
-        eq(providerConnections.id, id),
+        atVersion(id, version),
         or(
           isNull(providerConnections.refreshingUntil),
           lt(providerConnections.refreshingUntil, now),
@@ -335,20 +366,32 @@ async function tryLease(
   return won.length > 0;
 }
 
-/** Give a lease back without new tokens (the refresh failed for a reason worth retrying). */
-async function releaseLease(id: string): Promise<void> {
+/** Give the lease back without new tokens (the refresh failed for a reason worth retrying). */
+async function releaseRefresh(id: string, version: number): Promise<void> {
   await db
     .update(providerConnections)
     .set({ refreshingUntil: null })
-    .where(eq(providerConnections.id, id));
+    .where(atVersion(id, version));
 }
 
-/** The provider refused the refresh: the person has to connect again. */
-async function markExpired(id: string, now: Date = new Date()): Promise<void> {
-  await db
+/**
+ * The person has to connect again. With `version`, only while the tokens
+ * are still the ones that were refused. True when this call is the one
+ * that changed the row from active to expired (the caller says so once).
+ */
+async function markExpired(
+  id: string,
+  now: Date = new Date(),
+  version?: number,
+): Promise<boolean> {
+  const changed = await db
     .update(providerConnections)
     .set({ status: "expired", refreshingUntil: null, updatedAt: now })
-    .where(eq(providerConnections.id, id));
+    .where(
+      and(atVersion(id, version), ne(providerConnections.status, "expired")),
+    )
+    .returning({ id: providerConnections.id });
+  return changed.length > 0;
 }
 
 async function touchLastUsed(
@@ -451,8 +494,8 @@ export const ProviderConnectionRepository = {
   upsert,
   readTokens,
   storeTokens,
-  tryLease,
-  releaseLease,
+  claimRefresh,
+  releaseRefresh,
   markExpired,
   touchLastUsed,
   remove,

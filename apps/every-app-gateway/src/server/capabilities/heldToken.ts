@@ -317,14 +317,14 @@ export async function handleHeldTokenCall({
     organizationId: caller.organizationId,
   });
   if (!token.ok) {
-    if (token.reason === "unavailable") {
+    if (token.reason === "retry") {
       return capabilityRefusal(
         502,
         "integration_upstream_failed",
         `${capability.label} could not refresh the connection's token; try again.`,
       );
     }
-    if (token.reason === "expired") {
+    if (token.first) {
       await connections.expired({
         connection,
         providerId: id,
@@ -378,6 +378,46 @@ export async function handleHeldTokenCall({
       "integration_upstream_failed",
       `${capability.label} could not be reached.`,
     );
+  }
+  // The provider no longer takes this token though it isn't due by the
+  // clock (it gave no lifetime, or ended it early): refresh it and send
+  // the request once more. Only a request without a body, which can be
+  // sent twice.
+  if (response.status === 401 && !body) {
+    const again = await connections.accessToken({
+      connection,
+      providerId: id,
+      capability,
+      client,
+      organizationId: caller.organizationId,
+      rejected: token.version,
+    });
+    if (again.ok && again.version !== token.version) {
+      const retryHeaders = new Headers(headers);
+      retryHeaders.set("authorization", `Bearer ${again.accessToken}`);
+      try {
+        const retried = await fetchUpstream(
+          new Request(upstream, {
+            method,
+            headers: retryHeaders,
+            signal: request.signal,
+            redirect: "manual",
+          }),
+        );
+        await response.body?.cancel().catch(() => undefined);
+        response = retried;
+      } catch {
+        // The first answer stands.
+      }
+    } else if (!again.ok && again.reason === "reconnect" && again.first) {
+      await connections.expired({
+        connection,
+        providerId: id,
+        capability,
+        organizationId: caller.organizationId,
+        appRowId: app.rowId,
+      });
+    }
   }
   const responseHeaders = new Headers(response.headers);
   responseHeaders.delete("set-cookie");
