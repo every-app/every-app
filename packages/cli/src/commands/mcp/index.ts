@@ -115,7 +115,8 @@ import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal, confirmAtTerminal, confirmYesAtTerminal, type Confirm } from "@/lib/output/prompt";
 import { runCommand } from "@/lib/output/run";
-import { formatFacts, formatTable } from "@/lib/output/table";
+import { commandLines, factLines, finish as finishResult } from "@/lib/output/result";
+import { formatFacts, formatTable, type Fact } from "@/lib/output/table";
 import { listed, plural } from "@/lib/output/text";
 import { readSecretValue } from "@/lib/secretValue";
 import { cliVersion } from "@/lib/version";
@@ -236,14 +237,29 @@ type Connection = Awaited<ReturnType<typeof connect>>;
 /** The step `on` and `off` report under (as since #489). */
 const STEP = "provider.update";
 
-/** A done event: the message plain, the first line bright and the rest dim for a person. */
-function finish(out: EventSink, lines: readonly string[], data: Record<string, unknown>, extra: readonly string[] = []): void {
-  out.emit({
-    type: "done",
-    message: stripVTControlCharacters(lines.join("\n")),
-    display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line)), ...extra].join("\n"),
-    data,
-  });
+/** What a person sees of a result; `ticked: false` when nothing was done (a link to open, a state to read). */
+type Short = { headline: string; ticked?: boolean; blocks?: ReadonlyArray<readonly string[]> };
+
+/**
+ * A done event (docs/cli-output.md). A person sees `short`: what happened,
+ * then only what they must know or do. `lines` is the whole account: the
+ * message under --json, and all but its first line dim with --verbose.
+ */
+function finish(
+  out: EventSink,
+  lines: readonly string[],
+  data: Record<string, unknown>,
+  short: Short,
+): void {
+  finishResult(out, { ...short, message: lines, detail: lines.slice(1), data });
+}
+
+/** Who can use a newly added app, as the Access row of its result. */
+function accessFact(hasOwner: boolean): Fact {
+  return {
+    label: "Access",
+    value: `${hasOwner ? "owners and admins" : "the owner, once they claim the Gateway"} ${chalk.dim("· grant others in Admin → Apps → Manage access")}`,
+  };
 }
 
 /** Who can use a newly added app, in a sentence. */
@@ -690,6 +706,8 @@ export async function addServer(options: McpOptions<AddFlags>, url: string): Pro
   let connectLink: { url: string } | null = null;
   let verify: Record<string, unknown> | null = null;
   let credentialLine = "It takes no credential.";
+  // What a person must know of the credential: one row, or none when it is set and working.
+  let credentialFact: Fact | null = null;
   const next: Array<{ command: string; note: string }> = [];
 
   if (chosen.kind === "static" && ownRow) {
@@ -731,6 +749,7 @@ export async function addServer(options: McpOptions<AddFlags>, url: string): Pro
       : !bound
         ? `${setting} is set for other hosts: ${CLI} secret set ${setting}`
         : `${setting} is set; the Gateway sends it to ${host} and nowhere else.`;
+    credentialFact = { label: "Credential", value: !set ? `${setting} not set` : !bound ? `${setting} set for other hosts` : `${setting} set` };
   } else if (chosen.kind === "oauth" && ownRow && client && discovery) {
     const clientSetting = remoteMcpClientIdSetting(id);
     if (client.registered !== "existing") {
@@ -741,6 +760,7 @@ export async function addServer(options: McpOptions<AddFlags>, url: string): Pro
     connectLink = { url: connectUrl(gateway.gatewayUrl, ownRow.id, id) };
     credential = { kind: "oauth", setting: clientSetting, set: true, bound: true };
     credentialLine = `Each member connects their own ${app.name} account: ${connectLink.url}`;
+    credentialFact = { label: "Connect", value: `${chalk.cyan(connectLink.url)} ${chalk.dim("· each member, once")}` };
   } else if (chosen.kind === "provider" && plan.provider) {
     const { capability } = plan.provider;
     const settings = capabilitySettings(capability);
@@ -750,7 +770,9 @@ export async function addServer(options: McpOptions<AddFlags>, url: string): Pro
     if (capability.mode === "oauth_client") {
       connectLink = { url: connectUrl(gateway.gatewayUrl, plan.provider.id, id) };
       credentialLine = `It signs in with ${capability.label}: each member connects their own account at ${connectLink.url}`;
+      credentialFact = { label: "Connect", value: `${chalk.cyan(connectLink.url)} ${chalk.dim("· each member, once")}` };
     } else {
+      credentialFact = { label: "Credential", value: `${settings[0]} ${set && bound ? "set" : set ? "set for other hosts" : "not set"}` };
       credentialLine = `It uses ${capability.label}'s key ${settings[0]}${set && bound ? ", set on the Gateway." : `, which isn't set${set ? " for its hosts" : ""}: ${CLI} secret set ${settings[0]}`}`;
     }
     if (capability.mode === "api_key" && (!set || !bound)) {
@@ -783,6 +805,7 @@ export async function addServer(options: McpOptions<AddFlags>, url: string): Pro
       : []),
   ];
   next.push({ command: `${CLI} mcp show ${id}`, note: "its tools, once the Gateway lists them" });
+  const working = verify && verify["ok"] === true && verify["tools"] !== null ? plural(Number(verify["tools"]), "tool") : null;
   finish(out, lines, {
     id,
     name: app.name,
@@ -799,6 +822,15 @@ export async function addServer(options: McpOptions<AddFlags>, url: string): Pro
     probe,
     mcp,
     next,
+  }, {
+    headline: `Added ${app.name} to ${organization.name}`,
+    blocks: [
+      factLines([
+        accessFact(added.hasOwner),
+        ...(credentialFact ? [credentialFact] : []),
+        ...(working ? [{ label: "Tools", value: working }] : []),
+      ]),
+    ],
   });
 }
 
@@ -1123,7 +1155,16 @@ function connectResult(
   name: string,
   result: Awaited<ReturnType<typeof openConnectPage>>,
   mcpUrl: string,
-): { lines: string[]; data: Record<string, unknown>; next: Array<{ command: string; note: string }> } {
+): { lines: string[]; short: Short; data: Record<string, unknown>; next: Array<{ command: string; note: string }> } {
+  // Connected: that is the result. Otherwise the link is, on a line of its own.
+  const short: Short =
+    result.connected === true
+      ? { headline: `${result.by ?? "An account"} connected ${name}` }
+      : {
+          headline: result.connected === false ? `No account connected ${name} yet` : `Connect an account to ${name} in the browser`,
+          ticked: false,
+          blocks: [factLines([{ label: "Connect", value: result.url }])],
+        };
   const lines =
     result.connected === true
       ? [
@@ -1137,6 +1178,7 @@ function connectResult(
         ];
   return {
     lines,
+    short,
     data: {
       connect: { url: result.url },
       opened: result.opened,
@@ -1219,14 +1261,23 @@ async function alreadyAdded(
     if (await confirm(question, [...lines, `It opens ${trouble.next.url} in your browser.`])) {
       const result = await openConnectPage(options, gateway, { id, name: app.name, row: app, provider: credential.provider, snapshot });
       const ended = connectResult(id, app.name, result, mcp.url);
-      finish(out, ended.lines, { ...data, ...ended.data, next: ended.next });
+      finish(out, ended.lines, { ...data, ...ended.data, next: ended.next }, ended.short);
       return;
     }
     // The question showed where it stands: only the command is left to say.
-    finish(out, ["Nothing changed."], { ...data, next });
+    finish(out, ["Nothing changed."], { ...data, next }, { headline: "Nothing changed", ticked: false });
     return;
   }
-  finish(out, lines, { ...data, next: next.length > 0 ? next : [{ command: `${CLI} mcp show ${id}`, note: "its tools" }] });
+  // What is wrong, one fact per line; the command that fixes it is under Next.
+  const wrong = [
+    ...(setting ? [`${setting} isn't set`] : []),
+    ...(trouble ? [trouble.line] : []),
+  ];
+  finish(out, lines, { ...data, next: next.length > 0 ? next : [{ command: `${CLI} mcp show ${id}`, note: "its tools" }] }, {
+    headline: `${app.name} is added already (${state})`,
+    ticked: false,
+    blocks: [wrong],
+  });
 }
 
 export async function connectApp(options: McpOptions<ConnectFlags>, id: string): Promise<void> {
@@ -1259,7 +1310,7 @@ export async function connectApp(options: McpOptions<ConnectFlags>, id: string):
   const { snapshot } = await readMcpAppDetail(gateway.db, { ...ref, app }, remote);
   const result = await openConnectPage(options, gateway, { id, name, row: app, provider: credential.provider, snapshot });
   const ended = connectResult(id, name, result, `${gateway.gatewayUrl}/mcp`);
-  finish(out, ended.lines, { id, name, kind: ref.kind, ...ended.data, next: ended.next });
+  finish(out, ended.lines, { id, name, kind: ref.kind, ...ended.data, next: ended.next }, ended.short);
 }
 
 export async function turnOn(options: McpOptions, id: string): Promise<void> {
@@ -1271,6 +1322,7 @@ export async function turnOn(options: McpOptions, id: string): Promise<void> {
   let was: string;
   let organization: { id: string; name: string };
   let accessText: string | null = null;
+  let access: Fact | null = null;
   if (ref.kind === "builtin") {
     const result = await turnProviderAppOn(gateway.db, {
       id,
@@ -1280,7 +1332,10 @@ export async function turnOn(options: McpOptions, id: string): Promise<void> {
     });
     was = result.was;
     organization = result.organization;
-    if (was === "new" || was === "revived") accessText = accessLine(result.hasOwner);
+    if (was === "new" || was === "revived") {
+      accessText = accessLine(result.hasOwner);
+      access = accessFact(result.hasOwner);
+    }
   } else {
     const app = liveRemote(ref);
     const { changed } = await setMcpAppStatus(gateway.db, app, "active", gateway.deployer, options.now?.());
@@ -1336,6 +1391,16 @@ export async function turnOn(options: McpOptions, id: string): Promise<void> {
     ...(connectLink ? { connect: connectLink } : {}),
     mcp,
     ...(next.length > 0 ? { next } : {}),
+  }, {
+    headline: was === "existing" ? `${name} was already on for ${organization.name}` : `Turned ${name} on for ${organization.name}`,
+    blocks: [
+      factLines([
+        ...(access ? [access] : []),
+        ...(connectLink && !unset
+          ? [{ label: "Connect", value: `${chalk.cyan(connectLink.url)} ${chalk.dim("· each member, once")}` }]
+          : []),
+      ]),
+    ],
   });
 }
 
@@ -1373,6 +1438,15 @@ export async function turnOff(options: McpOptions, id: string): Promise<void> {
     wasOn,
     key,
     ...(credential ? { credential: credentialData(credential) } : {}),
+  }, {
+    headline: wasOn
+      ? `Turned ${name} off${where}`
+      : live
+        ? `${name} was already off${where}`
+        : ref.kind === "remote"
+          ? `${name} was already removed${where}`
+          : `${name} isn't on${where}`,
+    blocks: [wasOn ? commandLines("Undo", [`${CLI} mcp on ${id}`]) : []],
   });
 }
 
@@ -1404,6 +1478,7 @@ export async function removeApp(options: McpOptions, id: string): Promise<void> 
       ? `Its provider row ${provider}${providerSettings.length > 0 ? ` and ${listed(providerSettings)}` : ""} stay: ${CLI} provider remove ${provider}${providerSettings.length > 0 ? ` and ${CLI} secret unset ${providerSettings.join(" ")}` : ""} clean them up.`
       : `${provider} stays, with its key and connections, for whatever else uses it.`
     : null;
+  const builtinKeyStays = ref.kind === "builtin" && key && key.set ? key.name : null;
   const lines = [
     `${message}.`,
     removed
@@ -1427,6 +1502,31 @@ export async function removeApp(options: McpOptions, id: string): Promise<void> 
     key,
     ...(credential ? { credential: credentialData(credential) } : {}),
     ...(provider ? { provider: { id: provider, own, kept: true, settings: providerSettings } } : {}),
+  }, {
+    headline: removed
+      ? `Removed ${name}${where}`
+      : ref.app
+        ? `${name} was already removed${where}`
+        : `${name} isn't added${where}`,
+    blocks: removed
+      ? [
+          factLines(
+            [
+              ...(provider ? [{ label: "provider", value: own ? provider : `${provider} ${chalk.dim("· other apps may use it")}` }] : []),
+              ...(own && providerSettings.length > 0
+                ? [{ label: providerSettings.length === 1 ? "secret" : "secrets", value: providerSettings.join(", ") }]
+                : []),
+              ...(builtinKeyStays ? [{ label: "secret", value: `${builtinKeyStays} ${chalk.dim("· an app may use it too")}` }] : []),
+            ],
+            "Left behind",
+          ),
+          commandLines("Clean up", [
+            ...(own && provider ? [`${CLI} provider remove ${provider}`] : []),
+            ...(own && providerSettings.length > 0 ? [`${CLI} secret unset ${providerSettings.join(" ")}`] : []),
+            ...(builtinKeyStays ? [`${CLI} secret unset ${builtinKeyStays}`] : []),
+          ]),
+        ]
+      : [],
   });
 }
 
@@ -1707,7 +1807,9 @@ export async function refreshApp(options: McpOptions, id?: string): Promise<void
   const live = ref.app && ref.app.status !== "deleted" ? ref.app : null;
   if (!live) {
     const message = `${name} isn't on, so it has no tools to list again`;
-    finish(out, [`${message}.`, "Nothing changed."], { id, name, kind: ref.kind, refreshed: false }, []);
+    finish(out, [`${message}.`, "Nothing changed."], { id, name, kind: ref.kind, refreshed: false }, {
+      headline: `${name} isn't on: no tools to list again`,
+    });
     return;
   }
   out.emit({ type: "step", step: "mcp.refresh", status: "start", message: `Dropping ${name}'s tools snapshot...` });
@@ -1721,7 +1823,10 @@ export async function refreshApp(options: McpOptions, id?: string): Promise<void
       ? `The Gateway lists its tools again on the next request to ${gateway.gatewayUrl}/mcp, or within the hour.`
       : `It's off: the Gateway lists its tools again once it's on (${CLI} mcp on ${id}).`,
   ];
-  finish(out, lines, { id, name, kind: ref.kind, refreshed: true, dropped: snapshotData(dropped) });
+  finish(out, lines, { id, name, kind: ref.kind, refreshed: true, dropped: snapshotData(dropped) }, {
+    headline: `${name}'s tools will be listed again${live.status === "active" ? " on its next use" : " once it's on"}`,
+    blocks: [live.status === "active" ? [] : commandLines("Turn on", [`${CLI} mcp on ${id}`])],
+  });
 }
 
 export async function changeTool(options: McpOptions<ToolFlags>, id: string, toolName: string): Promise<void> {
@@ -1780,5 +1885,13 @@ export async function changeTool(options: McpOptions<ToolFlags>, id: string, too
     before: changed.before,
     override: changed.after,
     rev: changed.rev,
+  }, {
+    headline: `Changed ${changed.listedName ?? changed.serverName} on ${id}`,
+    blocks: [
+      factLines([
+        { label: "Risk", value: after.risk ? `${after.risk} ${chalk.dim("· your override")}` : "the app's default" },
+        { label: "Tool", value: after.enabled === false ? "off" : "on" },
+      ]),
+    ],
   });
 }

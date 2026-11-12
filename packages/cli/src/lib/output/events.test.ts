@@ -474,6 +474,30 @@ describe("createHumanSink", () => {
     expect(alone.lines()).toEqual(["✓ Set CLOUDFLARE_ACCESS_AUD on the Gateway"]);
   });
 
+  it("holds a result's detail back behind one dim line, shows it with --verbose, and never gives it to a script", () => {
+    const done = {
+      type: "done",
+      message: "Removed treg from Acme\nIts tools left /mcp.",
+      display: "✓ Removed treg from Acme",
+      detail: "Its tools left /mcp.",
+      data: { next: ["everyapp mcp list"] },
+    } as const;
+    const short = human();
+    short.sink.emit(done);
+    expect(short.lines()).toEqual(["✓ Removed treg from Acme", "", "Next:", "  everyapp mcp list", "", "More: --verbose"]);
+
+    const verbose = human({ verbose: true });
+    verbose.sink.emit(done);
+    expect(verbose.lines()).toEqual(["✓ Removed treg from Acme", "", "Its tools left /mcp.", "", "Next:", "  everyapp mcp list"]);
+
+    const written: string[] = [];
+    createNdjsonSink((line) => written.push(line)).emit(done);
+    const event = JSON.parse(written[0]!) as Record<string, unknown>;
+    expect(event["message"]).toBe(done.message);
+    expect(event).not.toHaveProperty("detail");
+    expect(event).not.toHaveProperty("display");
+  });
+
   it("ticks a result that is only a message: its first line, the rest dim under it", () => {
     const { sink, lines } = human();
     sink.emit({ type: "done", message: "Logged in to Cloudflare\nas ben@example.com" });

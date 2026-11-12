@@ -18,7 +18,7 @@ import { existingGateway } from "@/lib/gateway/connect";
 import { applyGateway } from "@/lib/gateway/apply";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
-import { createNdjsonSink } from "@/lib/output/events";
+import { createHumanSink, createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { buildGatewayRelease } from "@/test/gatewayRelease";
 import { makeTestHome } from "@/test/home";
@@ -336,6 +336,102 @@ describe("mcp remove", () => {
     expect(done()!["message"]).toContain(`pnpm everyapp mcp add ${TREG} --name treg adds it again`);
     expect(gatewayWorker().secrets["TREG_MCP_TOKEN"]).toBe("treg-secret");
     expect((await query("SELECT id FROM providers")).map((row) => row["id"])).toEqual(["treg-mcp"]);
+  });
+});
+
+describe("what a person sees", () => {
+  /** A command's output through the human sink, as plain text. */
+  async function shown(run: (out: EventSink) => Promise<void>, verbose = false): Promise<string> {
+    let text = "";
+    const sink = createHumanSink({ verbose, write: (chunk) => void (text += chunk), writeProblem: () => undefined });
+    await run(sink);
+    return text.replace(/\u001b\[[0-9;]*m/g, "");
+  }
+
+  it("mcp remove: what happened, what was left behind and the commands that clean it up; the account only with --verbose", async () => {
+    await addTreg(settingNow("treg-secret"));
+    const where = String(done()!["data"]["organization"]["name"]);
+    const short = await shown((sink) => removeApp({ ...options(), out: sink }, "treg"));
+    expect(short).toBe(
+      [
+        `✓ Removed treg from ${where}`,
+        "",
+        "Left behind:",
+        "  provider  treg-mcp",
+        "  secret    TREG_MCP_TOKEN",
+        "",
+        "Clean up:",
+        "  pnpm everyapp provider remove treg-mcp",
+        "  pnpm everyapp secret unset TREG_MCP_TOKEN",
+        "",
+        "More: --verbose",
+        "",
+      ].join("\n"),
+    );
+
+    // Removed already: nothing left to say but that, and the account under --verbose.
+    const again = await shown((sink) => removeApp({ ...options(), out: sink }, "treg"), true);
+    expect(again.endsWith(
+      [
+        `✓ treg was already removed from ${where}`,
+        "",
+        "Nothing changed.",
+        `pnpm everyapp mcp add ${TREG} --name treg adds it again, from scratch.`,
+        "",
+      ].join("\n"),
+    )).toBe(true);
+  });
+
+  it("mcp off: one line, and the command that undoes it", async () => {
+    await addTreg();
+    const where = String(done()!["data"]["organization"]["name"]);
+    expect(await shown((sink) => turnOff({ ...options(), out: sink }, "treg"))).toBe(
+      [`✓ Turned treg off for ${where}`, "", "Undo:  pnpm everyapp mcp on treg", "", "More: --verbose", ""].join("\n"),
+    );
+  });
+});
+
+describe("what a person sees of an OAuth server", () => {
+  async function shown(run: (out: EventSink) => Promise<void>): Promise<string> {
+    let text = "";
+    const sink = createHumanSink({ write: (chunk) => void (text += chunk), writeProblem: () => undefined });
+    await run(sink);
+    return text.replace(/\u001b\[[0-9;]*m/g, "");
+  }
+
+  it("mcp add of one added already: where it stands, what is wrong, the command; mcp connect: the link on its own line", async () => {
+    await addO();
+    const again = await shown((sink) =>
+      addServer({ ...options<AddFlags>({ flags: { ...flags, name: "o" }, fetch: oauthServer().fetcher }), out: sink }, O_MCP),
+    );
+    expect(again).toBe(
+      [
+        "o is added already (needs setup)",
+        "",
+        "Nobody has connected an account yet",
+        "",
+        "Next:",
+        "  pnpm everyapp mcp connect o  connect an account to o",
+        "",
+        "More: --verbose",
+        "",
+      ].join("\n"),
+    );
+
+    const link = await shown((sink) => connectApp({ ...options<ConnectFlags>(), out: sink }, "o"));
+    expect(link).toBe(
+      [
+        "Connect an account to o in the browser",
+        "",
+        `Connect  ${CONNECT_O}`,
+        "",
+        "Next:",
+        "  pnpm everyapp mcp show o  who has connected, and its tools",
+        "",
+        "More: --verbose",
+        "",
+      ].join("\n"),
+    );
   });
 });
 

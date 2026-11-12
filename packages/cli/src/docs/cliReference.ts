@@ -246,7 +246,7 @@ export function cliReference(): string {
     "Not repeated under each command below:",
     "",
     "- `--json`: NDJSON events on stdout, never prompts.",
-    "- `--verbose`: every step, the output of what everyapp runs, and stack traces.",
+    "- `--verbose`: every step, the detail a result's short form holds back (it then ends `More: --verbose`), the output of what everyapp runs, and stack traces.",
     "- `--no-color`, `-h`/`--help`, `-v`/`--version`.",
     "- `--gateway <url|name>`: which Gateway, when the account holds several (default `EVERYAPP_GATEWAY_URL`). On every command that reaches a Gateway. On the commands that call a Gateway tool (`workspace`, `events`, `ai`, `call`) the default is `EVERYAPP_GATEWAY_URL`, else the Gateway you signed in to with `login --gateway`, else the one your Cloudflare login finds.",
     "- `--account-id <id>`: which Cloudflare account, when the login sees several (default `CLOUDFLARE_ACCOUNT_ID`).",

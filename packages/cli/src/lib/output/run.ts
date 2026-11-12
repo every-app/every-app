@@ -1,7 +1,7 @@
 import { setExitCode } from "@/lib/exit-code";
 import { createHumanSink, createNdjsonSink, type EventSink } from "./events";
 import { reportFailure } from "./report";
-import { isTerminal } from "./terminal";
+import { isTerminal, setVerboseRun } from "./terminal";
 
 /**
  * NDJSON events on stdout with --json, and nothing else there; lines for a
@@ -9,6 +9,7 @@ import { isTerminal } from "./terminal";
  * stack).
  */
 export function eventSink(json?: boolean, verbose?: boolean): EventSink {
+  setVerboseRun(Boolean(verbose) && !json);
   return json
     ? createNdjsonSink()
     : createHumanSink({ verbose, terminal: isTerminal() });

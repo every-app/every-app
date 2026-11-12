@@ -47,7 +47,7 @@ export const resultJsonFlag = {
 export const verboseFlag = {
   kind: "boolean",
   brief:
-    "Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace",
+    "Show every step and progress line, the detail a result's short form leaves out, the output of what everyapp runs, and an unexpected error's stack trace",
   optional: true,
 } as const;
 

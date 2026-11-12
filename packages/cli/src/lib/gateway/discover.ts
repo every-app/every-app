@@ -45,6 +45,7 @@ import type { CfWhoami } from "@/lib/cf/schemas";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
 import { CLI, thisCommand, thisCommandWithout } from "@/lib/output/command";
 import { choose, tellPerson } from "@/lib/output/prompt";
+import { isVerboseRun } from "@/lib/output/terminal";
 import chalk from "chalk";
 import { readInstall, type InstallRecord } from "./install";
 import { listGatewayDatabases } from "./resources";
@@ -506,7 +507,10 @@ async function pickOnce(
   if (again) return again;
   const remembered = pickedAmong(candidates, await checkoutPick());
   if (remembered && !alwaysAsk) {
-    tellPerson(chalk.dim(`Using ${gatewayLabel(remembered)} (pick another with --gateway)`));
+    // Said on every run that has a choice: its name, and how to change it only with --verbose.
+    tellPerson(
+      chalk.dim(`Gateway: ${gatewayLabel(remembered)}${isVerboseRun() ? " (pick another with --gateway)" : ""}`),
+    );
     await rememberPick(remembered);
     return remembered;
   }

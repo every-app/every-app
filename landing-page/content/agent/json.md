@@ -25,6 +25,8 @@ Every command takes `--json`. With it, stdout is one JSON event per line, nothin
 
 A `message`'s first line is the headline; the lines after it are detail.
 
+Without `--json`, a person sees a short form of the same result: what happened, then only what they must know or do next. When it holds detail back, its last line is `More: --verbose`, and the same command with `--verbose` prints the full account. That is the same with or without a terminal. `--json` always carries the full account (`message`, `data`), so an agent doesn't need `--verbose` for it.
+
 ## Exit codes
 
 | Code | When |

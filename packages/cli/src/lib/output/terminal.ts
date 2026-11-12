@@ -34,6 +34,18 @@ export function handTerminalOver(): void {
   for (const release of drawing) release();
 }
 
+/**
+ * Whether this run has --verbose, for lines written beside the sink (the
+ * Gateway a run uses): set once, when the command's sink is made.
+ */
+let verboseRun = false;
+export function setVerboseRun(verbose: boolean): void {
+  verboseRun = verbose;
+}
+export function isVerboseRun(): boolean {
+  return verboseRun;
+}
+
 /** Whether stdout is a terminal a spinner can redraw. */
 export function isTerminal(): boolean {
   return (

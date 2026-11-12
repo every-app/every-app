@@ -108,6 +108,13 @@ type EveryAppEvent = EventBase &
         data?: EventData;
         /** How a person sees the result, drawn by the command (tables); never in --json. */
         display?: string;
+        /**
+         * What a person sees only with --verbose, dim under the result: the
+         * account of what happened that the short form leaves out. Without
+         * --verbose the run ends with a dim `More: --verbose` instead. Never
+         * in --json, whose `message` and `data` say it all.
+         */
+        detail?: string;
       }
   );
 
@@ -133,7 +140,12 @@ export function createNdjsonSink(
   const sink = emitter(
     (event) => {
       // `display` is drawn for a person; a script reads `data`.
-      const line = event.type === "done" || event.type === "step" ? { ...event, display: undefined } : event;
+      const line =
+        event.type === "done"
+          ? { ...event, display: undefined, detail: undefined }
+          : event.type === "step"
+            ? { ...event, display: undefined }
+            : event;
       write(`${JSON.stringify({ v: 1, ts: now().toISOString(), ...line })}\n`);
     },
     false,
@@ -169,7 +181,8 @@ export function createNdjsonSink(
  *    Problems go to stderr. `done` is a ticked headline (its message's
  *    first line, the rest dim under it) or what its command drew
  *    (`display`), then the facts, the run's time when it took 10 seconds
- *    or more, and `data.next`.
+ *    or more, and `data.next`. Its `detail` shows with --verbose; without,
+ *    the last line is a dim `More: --verbose` (docs/cli-output.md).
  *  - Piped, a step that runs long says so every 30 seconds (`still
  *    building the Gateway · 1m`), so a CI log shows it's alive.
  *  - Ctrl-C (lib/interrupt.ts): the spinner becomes the line saying what's
@@ -346,6 +359,7 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
         const took = now() - began;
         const allFacts = [...facts, ...factsIn(event.data?.["facts"])];
         const next = nextItems(event.data?.["next"]);
+        const detail = text(event.detail);
         const lines = [
           // An empty `display`: the steps said it all.
           ...(event.display !== undefined
@@ -355,11 +369,13 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
             : event.message
               ? headed(chalk.green("✓"), event.message)
               : []),
+          ...(verbose && detail ? ["", ...detail.split("\n").map((line) => chalk.dim(line))] : []),
           ...(allFacts.length > 0 ? ["", ...formatFacts(allFacts)] : []),
           ...(took >= 10_000 && event.display === undefined
             ? [chalk.dim(`Done in ${duration(took)}${warned > 0 ? ` with ${plural(warned, "warning")}` : ""}`)]
             : []),
           ...(next.length > 0 ? ["", "Next:", ...formatNext(next)] : []),
+          ...(!verbose && detail ? ["", chalk.dim(VERBOSE_HINT)] : []),
         ];
         if (lines.length > 0) screen.lines(lines.join("\n"));
         return;
@@ -404,6 +420,9 @@ export function stepInsteadOfDone(out: EventSink, step: string): EventSink {
 export function ticked(done: string, after?: string): string {
   return `${chalk.green("✓")} ${done}${after ? chalk.dim(` · ${after}`) : ""}`;
 }
+
+/** The last line of a result whose detail was held back (docs/cli-output.md). */
+const VERBOSE_HINT = "More: --verbose";
 
 type StepEvent = Extract<EventInput<EveryAppEvent>, { type: "step" }>;
 

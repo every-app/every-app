@@ -546,7 +546,7 @@ describe("two Gateways in one account", () => {
       expect(pick).not.toHaveBeenCalled();
       expect(next.gateway?.names.worker).toBe("every-app-gateway-demo");
       expect(stripVTControlCharacters(String(stderr.mock.calls.at(-1)?.[0]))).toBe(
-        "Using demo.acme.com (pick another with --gateway)\n",
+        "Gateway: demo.acme.com\n",
       );
     } finally {
       stderr.mockRestore();
