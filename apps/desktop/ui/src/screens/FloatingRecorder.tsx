@@ -6,12 +6,9 @@ import type { Segment } from "../types";
 /*
  * The floating recorder, in the bottom-right corner of the screen while recording: a small
  * capsule with Every App's mark and a meter, and on hover a panel with the live transcript. Always
- * dark, like the meeting apps it floats over. Sizes and colors follow Granola's pill (Ben's
- * reference screenshots), in points.
+ * dark, like the meeting apps it floats over. Sizes follow Granola's pill (Ben's reference
+ * screenshots), in points; the bars are the foreground colour, like the rest of the pill.
  */
-
-/** The bars' green. */
-const LIVE_GREEN = "oklch(76% 0.19 133)";
 
 /** `level` (0–1, already the louder side, see lib/levels) smoothed toward each new value. */
 function useSmoothed(level: number, animate: boolean): number {
@@ -29,7 +26,7 @@ function useSmoothed(level: number, animate: boolean): number {
   return animate ? value : level;
 }
 
-/** Three green bars that move with the sound; flat when silent. */
+/** Three bars in the foreground colour that move with the sound; flat when silent. */
 export function LiveBars({
   level,
   animate = true,
@@ -48,8 +45,8 @@ export function LiveBars({
       {barHeights(smoothed).map((height, i) => (
         <span
           key={i}
-          className="w-[2.5px] rounded-full transition-[height] duration-75 ease-out"
-          style={{ height, backgroundColor: LIVE_GREEN }}
+          className="w-[2.5px] rounded-full bg-foreground transition-[height] duration-75 ease-out"
+          style={{ height }}
         />
       ))}
     </span>

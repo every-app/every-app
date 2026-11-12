@@ -14,7 +14,7 @@ pnpm test             # vitest: PKCE, discovery, redirect parser, refresh/rotati
 pnpm types:check
 pnpm build && pnpm e2e  # Electron e2e smoke: the built app + fake helper against a mock /api/v1 (below)
 pnpm package          # an unsigned (ad hoc) release-flavor .app in dist/release/, with the universal helper
-pnpm icons            # redraws the app icon (build/icon.icns) and tray icons (macOS: sips, iconutil)
+pnpm icons            # rebuilds the app icon (build/icon.icns, from build/icon-source.png) and, on macOS, the tray icons (sips)
 pnpm check:icon       # checks a packaged app's CFBundleIconFile + .icns sizes (default: the .app under dist/)
 pnpm package:local    # "Every App Dev" with the real helper: build, sign locally, install, launch (below)
 pnpm dist             # release DMG + zip for arm64 and for x64, signed and notarized from env (below)
@@ -194,6 +194,6 @@ There is a DMG and a zip for arm64 and another for x64 (a universal build would 
 | `ui/` | `@every-app/desktop-ui`: the screens, components and a playground (`ui/README.md`) |
 | `mac/` | the Swift package for `everyapp-helper` (`mac/README.md`) |
 | `docs/` | `release.md` (signing, notarizing, the update feed), `desktop-plan.md` (the original plan, the helper protocol), `scribe.md` (Scribe's backend and its contract with this app) |
-| `scripts/` | `release-mac.sh` (a whole release), `fake-helper.mjs`, `package-local.mjs`, `release-helper.mjs` (the universal helper for releases), `make-icons.mjs` (draws `build/icon.{svg,icns}` and `resources/tray/*Template.png`) |
+| `scripts/` | `release-mac.sh` (a whole release), `fake-helper.mjs`, `package-local.mjs`, `release-helper.mjs` (the universal helper for releases), `make-icons.mjs` (makes `build/icon.icns` from the logo in `build/icon-source.png`, and draws `resources/tray/*Template.png`) |
 | `build/` | entitlements, the app icon |
 | `test/` | vitest suites and `fakeServer.ts` (a fake Scribe app + Gateway) |

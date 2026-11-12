@@ -1,26 +1,115 @@
 #!/usr/bin/env node
-// `pnpm icons`: draws Every App's icons as SVG and rasterizes them with macOS's sips and iconutil.
-// Run on a Mac after changing a design; the output is committed.
+// `pnpm icons`: makes Every App's icons. The output is committed.
 //
-//   build/icon.svg, build/icon.icns     the app icon: a rounded square with a soft blue gradient
-//                                       and a speech bubble holding a waveform. electron-builder
-//                                       picks up build/icon.icns by itself.
+//   build/icon.icns                     the app icon: Every App's logo (the pine tree,
+//                                       build/icon-source.png, the same image as the site's
+//                                       android-chrome-512x512.png) cut to the macOS rounded
+//                                       square: an 824 pt body on the 1024 pt grid. Runs
+//                                       anywhere (sharp);
+//                                       electron-builder picks up build/icon.icns by itself.
+//                                       A larger source (1024 px or more) makes the largest
+//                                       size sharper: replace icon-source.png and run this.
 //   resources/tray/*Template{,@2x}.png  the menu-bar icons (16 pt, @1x and @2x), template images
 //                                       (black + alpha; macOS tints them for the menu bar):
 //                                       idle = waveform, recording = filled square with the
 //                                       waveform cut out, attention = waveform with a dot.
+//                                       macOS only (sips); skipped elsewhere.
 //
-// sips rasterizes an SVG at its viewBox size, so each size gets its own SVG with a scale
+// sips rasterizes an SVG at its viewBox size, so each tray size gets its own SVG with a scale
 // transform, and the tray shapes are even-odd paths rather than masks (masks come out soft).
 
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-
-if (process.platform !== "darwin") throw new Error("make-icons needs macOS (sips, iconutil).");
+import sharp from "sharp";
 
 const root = resolve(import.meta.dirname, "..");
+const buildDir = join(root, "build");
+
+// ── App icon (1024 grid; the body is the 824 pt macOS rounded square) ─────────────────────────
+const GRID = 1024;
+const BODY = 824;
+const INSET = (GRID - BODY) / 2;
+const RADIUS = 185;
+
+const bodyMask = Buffer.from(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${BODY}" height="${BODY}"><rect width="${BODY}" height="${BODY}" rx="${RADIUS}"/></svg>`,
+);
+// Two steps: sharp drops the alpha channel after compositing if both are asked for in one pipeline.
+const square = await sharp(join(buildDir, "icon-source.png")).resize(BODY, BODY, { kernel: "lanczos3" }).removeAlpha().png().toBuffer();
+const body = await sharp(square)
+  .ensureAlpha()
+  .composite([{ input: bodyMask, blend: "dest-in" }])
+  .png()
+  .toBuffer();
+const master = await sharp({ create: { width: GRID, height: GRID, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+  .composite([{ input: body, left: INSET, top: INSET }])
+  .png()
+  .toBuffer();
+
+const sized = (px) => (px === GRID ? sharp(master) : sharp(master).resize(px, px, { kernel: "lanczos3" }));
+
+/** The .icns run-length coding: a control byte below 128 copies n+1 bytes, else repeats the next byte n-125 times. */
+function packRuns(bytes) {
+  const out = [];
+  let i = 0;
+  while (i < bytes.length) {
+    let run = 1;
+    while (i + run < bytes.length && run < 130 && bytes[i + run] === bytes[i]) run++;
+    if (run >= 3) {
+      out.push(run + 125, bytes[i]);
+      i += run;
+      continue;
+    }
+    const start = i;
+    while (i < bytes.length && i - start < 128) {
+      if (i + 2 < bytes.length && bytes[i] === bytes[i + 1] && bytes[i] === bytes[i + 2]) break;
+      i++;
+    }
+    out.push(i - start - 1, ...bytes.subarray(start, i));
+  }
+  return Buffer.from(out);
+}
+
+/** The 16 and 32 px entries as iconutil writes them: "ARGB", then each channel run-length coded. */
+async function argb(px) {
+  const rgba = await sized(px).raw().toBuffer();
+  const channel = (offset) => packRuns(Uint8Array.from({ length: px * px }, (_, i) => rgba[i * 4 + offset]));
+  return Buffer.concat([Buffer.from("ARGB"), channel(3), channel(0), channel(1), channel(2)]);
+}
+const png = (px) => sized(px).png({ compressionLevel: 9 }).toBuffer();
+
+// The entries iconutil writes for a full iconset: 16, 32, 128, 256 and 512 pt, each @1x and @2x.
+const entries = [
+  ["ic12", await png(64)], // 32 pt @2x
+  ["ic07", await png(128)],
+  ["ic13", await png(256)], // 128 pt @2x
+  ["ic08", await png(256)],
+  ["ic04", await argb(16)],
+  ["ic14", await png(512)], // 256 pt @2x
+  ["ic09", await png(512)],
+  ["ic05", await argb(32)],
+  ["ic10", await png(1024)], // 512 pt @2x
+  ["ic11", await png(32)], // 16 pt @2x
+].map(([type, data]) => {
+  const header = Buffer.alloc(8);
+  header.write(type, "latin1");
+  header.writeUInt32BE(data.length + 8, 4);
+  return Buffer.concat([header, data]);
+});
+const icnsHeader = Buffer.alloc(8);
+icnsHeader.write("icns", "latin1");
+icnsHeader.writeUInt32BE(8 + entries.reduce((n, e) => n + e.length, 0), 4);
+writeFileSync(join(buildDir, "icon.icns"), Buffer.concat([icnsHeader, ...entries]));
+console.log(`wrote ${join(buildDir, "icon.icns")}`);
+
+if (process.platform !== "darwin") {
+  console.log("skipped the tray icons: they need macOS (sips)");
+  process.exit(0);
+}
+
+// ── Tray icons (16 pt) ─────────────────────────────────────────────────────────────────────────
 const tmp = mkdtempSync(join(tmpdir(), "everyapp-icons-"));
 
 /** An SVG of `size` px whose content is drawn in a `unit`-sized coordinate space. */
@@ -41,38 +130,6 @@ const rr = (x, y, w, h, r) => {
 };
 const circle = (cx, cy, r) => `M${cx - r} ${cy}A${r} ${r} 0 1 0 ${cx + r} ${cy}A${r} ${r} 0 1 0 ${cx - r} ${cy}Z`;
 
-// ── App icon (1024 grid; the body is the 824 pt macOS rounded square) ─────────────────────────
-const appDefs = `
-  <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8FA8FF"/><stop offset="1" stop-color="#4C5FD7"/></linearGradient>
-  <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6F86F5"/><stop offset="1" stop-color="#4A5BD0"/></linearGradient>
-  <radialGradient id="shine" cx="0.3" cy="0.15" r="0.9"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.28"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>`;
-const appBars = [
-  [340, 444, 80],
-  [418, 396, 176],
-  [496, 350, 268],
-  [574, 408, 152],
-  [652, 452, 64],
-];
-const appBody = [
-  `<rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>`,
-  `<rect x="100" y="100" width="824" height="824" rx="185" fill="url(#shine)"/>`,
-  `<path d="M332 292H692A92 92 0 0 1 784 384V584A92 92 0 0 1 692 676H468L372 752Q360 761 360 746V676H332A92 92 0 0 1 240 584V384A92 92 0 0 1 332 292Z" fill="#FFFFFF" fill-opacity="0.96"/>`,
-  `<g fill="url(#bar)">${appBars.map(([x, y, h]) => `<rect x="${x}" y="${y}" width="44" height="${h}" rx="22"/>`).join("")}</g>`,
-].join("");
-
-const buildDir = join(root, "build");
-writeFileSync(join(buildDir, "icon.svg"), svg(1024, 1024, appBody, appDefs));
-const iconset = join(tmp, "icon.iconset");
-mkdirSync(iconset);
-for (const pt of [16, 32, 128, 256, 512]) {
-  for (const scale of [1, 2]) {
-    const px = pt * scale;
-    rasterize(svg(px, 1024, appBody, appDefs), join(iconset, `icon_${pt}x${pt}${scale === 2 ? "@2x" : ""}.png`));
-  }
-}
-execFileSync("iconutil", ["-c", "icns", iconset, "-o", join(buildDir, "icon.icns")]);
-
-// ── Tray icons (16 pt) ─────────────────────────────────────────────────────────────────────────
 const waveBars = [
   [3, 4],
   [5.5, 8],
@@ -98,4 +155,4 @@ for (const [name, body] of Object.entries(tray)) {
 }
 
 rmSync(tmp, { recursive: true, force: true });
-console.log(`wrote ${join(buildDir, "icon.icns")}, ${join(buildDir, "icon.svg")} and ${trayDir}`);
+console.log(`wrote ${trayDir}`);
