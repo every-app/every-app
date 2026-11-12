@@ -152,7 +152,7 @@ the pushed branch is the repository's default.
   on main is green; docs/design/2026-11-simplify-releases.md), whose release
   workflow then publishes. `pnpm everyapp install <public repo url>
   --dry-run` says whether this CLI would install what is out there;
-  `pnpm release publish` runs it on every public app.
+  `pnpm release ship` runs it on every public app after a release.
 - Downloads from GitHub are anonymous, so a private repository's releases
   answer 404 (`NO_RELEASE`) even to its own members: the URL form only works
   once the repository is public. Until then, download the asset with

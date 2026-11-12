@@ -5,41 +5,46 @@
  * publishes exactly what that commit says. Nothing is rewritten on the way
  * out and nothing has to be put back.
  *
- *   pnpm release <patch|minor|major|x.y.z>    1. bump: a "Release x.y.z" commit on a new branch
- *   pnpm release publish [--dry-run]          2. publish main's version to npm (after the merge)
+ *   pnpm release <patch|minor|major|x.y.z>    1. bump: a "Release x.y.z" commit, pushed, its pull request opened
+ *   pnpm release ship [--dry-run]             2. after the merge: push main to the public repository, which publishes
  *
  * bump writes the version into packages/sdk, packages/cli and
  * apps/every-app-gateway package.json and the SDK's SDK_VERSION
- * (scripts/lib/versions.mjs), on a branch `release/<version>`, and commits.
- * Merge it like any pull request.
+ * (scripts/lib/versions.mjs), on a branch `release/<version>`, commits,
+ * pushes the branch and opens its pull request (--no-push stops after the
+ * commit). Merge it like any pull request.
  *
- * Normally nothing more: once the release commit reaches the public
- * repository (Ben pushes main there by hand), its Release workflow
+ * ship is the release: the public repository's Release workflow
  * (.github/workflows/release.yml) publishes the Gateway release and both
- * packages. publish is the same publish by hand, from a clean checkout of a
- * commit that is on origin/main (npm only; the Gateway release stays the
- * workflow's):
- *   1. checks the version is the same everywhere and not on npm yet;
- *   2. builds the SDK, then the CLI, and checks the built CLI says it;
- *   3. asks the built CLI whether it would install each public app's latest
- *      release (a warning only: the apps re-pin after the publish);
- *   4. publishes the SDK, then the CLI, under `latest` (npm asks for web
- *      authentication). A package already on npm at this version is skipped,
- *      so a publish that stopped half way is finished by running it again;
- *   5. says where the Gateway release comes from: the public Release workflow.
- * --dry-run does 1–3 and says what it would publish.
+ * npm packages when main arrives there with a version that isn't out yet.
+ * From a clean main that is origin/main, it
+ *   1. shows the version, what the push publishes, and the commits the
+ *      public main doesn't have;
+ *   2. checks the Leak Check is green on that commit, and that the push is
+ *      a fast-forward;
+ *   3. asks, and only on yes pushes main to the public repository;
+ *   4. watches the Release workflow, and says how to run it again if it fails;
+ *   5. asks the built CLI whether it would install each public app's latest
+ *      release, and names the apps to re-pin.
+ * It needs a terminal, because it asks. --dry-run does 1 and 2 and pushes
+ * nothing.
  *
- * See .github/RELEASE.md and docs/design/2026-11-simplify-releases.md.
+ * See .github/RELEASE.md.
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import readline from "node:readline/promises";
+import { ShipRefusal, planLines, planShip, pushShip } from "./lib/ship.mjs";
 import { PUBLISHED, currentVersion, nextVersion, writeVersion } from "./lib/versions.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PUBLIC_REPO = "every-app/every-app";
-const USAGE = "usage: pnpm release <patch|minor|major|x.y.z>   or   pnpm release publish [--dry-run]";
+// Read anonymously over HTTPS (it is public); pushed over SSH, as it always was by hand.
+const PUBLIC_READ_URL = `https://github.com/${PUBLIC_REPO}.git`;
+const PUBLIC_PUSH_URL = `git@github.com:${PUBLIC_REPO}.git`;
+const USAGE = "usage: pnpm release <patch|minor|major|x.y.z> [--no-push]   or   pnpm release ship [--dry-run]";
 
 function fail(message) {
   console.error(`\nrelease: ${message}`);
@@ -74,7 +79,7 @@ function current() {
   }
 }
 
-function bump(how) {
+function bump(how, { push }) {
   requireCleanTree();
   run("git", ["fetch", "--quiet", "origin", "main"]);
   if (git("rev-parse", "HEAD") !== git("rev-parse", "origin/main")) {
@@ -94,19 +99,25 @@ function bump(how) {
   git("switch", "-c", branch);
   writeVersion(ROOT, version);
   git("commit", "-am", `Release ${version}`);
-  console.log(`
-${from} → ${version}, committed on ${branch}.
-
-Merge it like any pull request:
-
-  git push -u origin ${branch} && gh pr create --fill
-
-After the merge, push main to the public repository; its Release workflow
-publishes the Gateway release and both packages:
-
-  git switch main && git pull && git push git@github.com:${PUBLIC_REPO}.git main:main
-  gh run list -R ${PUBLIC_REPO} --workflow release.yml --limit 3
-`);
+  console.log(`\n${from} → ${version}, committed on ${branch}.`);
+  const byHand = `git push -u origin ${branch} && gh pr create --fill`;
+  if (!push) {
+    console.log(`\nPush it and open its pull request:\n\n  ${byHand}\n`);
+  } else {
+    run("git", ["push", "-u", "origin", branch]);
+    const opened = spawnSync(
+      "gh",
+      [
+        "pr", "create", "--base", "main", "--head", branch,
+        "--title", `Release ${version}`,
+        "--body", `${from} → ${version} for @every-app/sdk, everyapp and the Gateway (\`pnpm release\`).\n\nMerging publishes nothing. After the merge, \`pnpm release ship\` pushes main to the public repository, whose Release workflow publishes.`,
+      ],
+      { cwd: ROOT, encoding: "utf8" },
+    );
+    if (opened.status === 0) console.log(`\nPull request: ${opened.stdout.trim()}`);
+    else console.log(`\nThe branch is pushed, but the pull request wasn't opened (${(opened.stderr || "gh failed").trim()}). Open it:\n\n  gh pr create --fill`);
+  }
+  console.log(`\nMerge it, then release from main:\n\n  git switch main && git pull && pnpm release ship\n`);
 }
 
 /**
@@ -140,91 +151,131 @@ function checkPublicApps() {
   return refused;
 }
 
-/** What npm would publish from `dir` has its entry point and no local secrets file. */
-function checkPackedFiles(dir, name) {
-  const packed = JSON.parse(
-    execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], { cwd: path.join(ROOT, dir), encoding: "utf8" }),
+/** owner/name of the repository `origin` is, on github.com. */
+function originRepo() {
+  const match = /github\.com[:/]([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(git("remote", "get-url", "origin"));
+  if (!match) fail("origin isn't a github.com repository, so its Leak Check can't be read.");
+  return match[1];
+}
+
+/** The Leak Check's conclusion on `sha` in the private repository: "success", another conclusion, "running", or "none". */
+function leakCheck(sha) {
+  const result = spawnSync(
+    "gh",
+    ["api", `repos/${originRepo()}/commits/${sha}/check-runs`, "--paginate", "--jq", ".check_runs[] | [.name, .status, (.conclusion // \"\")] | @tsv"],
+    { cwd: ROOT, encoding: "utf8" },
   );
-  const files = packed[0].files.map((file) => file.path);
-  const secrets = files.filter((file) => /(^|\/)(\.dev\.vars|\.env)(\.|$)/.test(file) && !/\.example$/.test(file));
-  if (secrets.length > 0) fail(`${name} would publish ${secrets.join(", ")}`);
-  if (!files.some((file) => file.startsWith("dist/"))) fail(`${name} would publish no dist/: was it built?`);
-  console.log(`${name}: ${files.length} files to publish, no .dev.vars or .env`);
+  if (result.status !== 0) fail(`couldn't read the checks on ${sha.slice(0, 8)} (gh: ${result.stderr.trim()})`);
+  const runs = result.stdout.split("\n").map((line) => line.split("\t")).filter(([name]) => /^leak check/i.test(name ?? ""));
+  if (runs.length === 0) return "none";
+  if (runs.some(([, status]) => status !== "completed")) return "running";
+  return runs.every(([, , conclusion]) => conclusion === "success") ? "success" : runs.find(([, , c]) => c !== "success")[2];
 }
 
-/** Whether the public repository's main has HEAD (the Gateway tag must point at a public commit). */
-function publicHasHead(head) {
-  const fetched = spawnSync("git", ["fetch", "--quiet", `https://github.com/${PUBLIC_REPO}.git`, "main"], {
-    cwd: ROOT,
-    encoding: "utf8",
-  });
-  if (fetched.status !== 0) return null;
-  return spawnSync("git", ["merge-base", "--is-ancestor", head, "FETCH_HEAD"], { cwd: ROOT }).status === 0;
+/** What a push at `version` makes the public Release workflow publish: the parts that aren't out yet. */
+function unreleased(version) {
+  const gateway = spawnSync("gh", ["release", "view", `gateway-v${version}`, "-R", PUBLIC_REPO], { encoding: "utf8" });
+  return [
+    ...(gateway.status === 0 ? [] : [`the Gateway release gateway-v${version}`]),
+    ...PUBLISHED.filter(({ name }) => !onNpm(name, version)).map(({ name }) => `${name}@${version} on npm`),
+  ];
 }
 
-function publish({ dryRun }) {
-  requireCleanTree();
-  const version = current();
-  const head = git("rev-parse", "HEAD");
-  run("git", ["fetch", "--quiet", "origin", "main"]);
-  if (spawnSync("git", ["merge-base", "--is-ancestor", head, "origin/main"], { cwd: ROOT }).status !== 0) {
-    fail(`HEAD (${head.slice(0, 9)}) isn't on origin/main. Publish from main, after the release commit is merged.`);
+/** The public Release workflow's run for `sha`, once it exists; null if none shows up in time. */
+function releaseRun(sha) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const result = spawnSync(
+      "gh",
+      ["run", "list", "-R", PUBLIC_REPO, "--workflow", "release.yml", "--commit", sha, "--limit", "1", "--json", "databaseId", "--jq", ".[0].databaseId // empty"],
+      { encoding: "utf8" },
+    );
+    const id = result.stdout.trim();
+    if (result.status === 0 && id) return id;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);
   }
-  const pending = PUBLISHED.filter(({ name }) => !onNpm(name, version));
-  console.log(
-    pending.length === 0
-      ? `\nBoth packages are on npm at ${version} already.`
-      : `\nTo publish at ${version}: ${pending.map(({ name }) => name).join(", ")}`,
-  );
+  return null;
+}
 
-  if (pending.length > 0) {
-    run("pnpm", ["-C", "packages/sdk", "build"]);
-    run("pnpm", ["-C", "packages/cli", "build"]);
-    if (!fs.existsSync(path.join(ROOT, "packages/cli/starter/everyapp.config.ts"))) {
-      fail("the CLI build didn't pack starter/ into packages/cli/starter");
+async function ship({ dryRun }) {
+  // Before anything is read: it asks before it pushes, and only a person answers.
+  if (!dryRun && !(process.stdin.isTTY && process.stdout.isTTY)) {
+    fail("ship asks before it pushes, so it needs a terminal. Run it yourself; to see what it would push: pnpm release ship --dry-run");
+  }
+  const version = current();
+  let plan;
+  try {
+    plan = planShip({ root: ROOT, publicUrl: PUBLIC_READ_URL });
+  } catch (error) {
+    if (error instanceof ShipRefusal) fail(error.message);
+    throw error;
+  }
+  const publishes = unreleased(version);
+  console.log(
+    [
+      "",
+      `Push main to ${PUBLIC_REPO}`,
+      "",
+      `  Version    ${version}`,
+      `  Publishes  ${publishes.length > 0 ? publishes.join(", ") : `nothing: ${version} is released already`}`,
+      ...planLines(plan),
+    ].join("\n"),
+  );
+  if (plan.commits.length === 0) {
+    console.log(`\nNothing to push.${publishes.length > 0 ? ` To publish what is missing, run the workflow again:\n\n  gh workflow run release.yml -R ${PUBLIC_REPO}` : ""}\n`);
+    return;
+  }
+  const leak = leakCheck(plan.head);
+  console.log(`  Leak Check ${leak === "success" ? "green" : leak} on ${plan.head.slice(0, 8)}`);
+  if (leak !== "success") {
+    fail(
+      leak === "running"
+        ? "the Leak Check on main hasn't finished. Run this again when it has."
+        : leak === "none"
+          ? `no Leak Check ran on ${plan.head.slice(0, 8)}, so nothing says these commits are safe to make public.`
+          : `the Leak Check on main is ${leak}. Fix what it found before anything is pushed.`,
+    );
+  }
+  if (dryRun) {
+    console.log("\n(dry run) Nothing pushed.\n");
+    return;
+  }
+
+  const ask = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const what = `${plan.commits.length} commit${plan.commits.length === 1 ? "" : "s"}`;
+  const answer = await ask.question(
+    `\nPush ${what} to ${PUBLIC_REPO}${publishes.length > 0 ? ` and publish ${version}` : " (publishes nothing)"}? This can't be undone. [y/N] `,
+  );
+  ask.close();
+  if (!/^y(es)?$/i.test(answer.trim())) {
+    console.log("\nNothing pushed.\n");
+    return;
+  }
+  pushShip({ root: ROOT, publicUrl: PUBLIC_PUSH_URL, head: plan.head });
+  console.log(`\nPushed ${plan.head.slice(0, 8)} to ${PUBLIC_REPO}.`);
+
+  const again = `gh workflow run release.yml -R ${PUBLIC_REPO}`;
+  if (publishes.length > 0) {
+    console.log("\nWaiting for the Release workflow...");
+    const id = releaseRun(plan.head);
+    if (!id) {
+      fail(`the Release workflow hasn't started for ${plan.head.slice(0, 8)}. Look, or start it:\n\n  gh run list -R ${PUBLIC_REPO} --workflow release.yml --limit 3\n  ${again}`);
     }
-    const said = execFileSync(process.execPath, [path.join(ROOT, "packages/cli/bin/everyapp.js"), "--version"], {
-      cwd: ROOT,
-      encoding: "utf8",
-    }).trim();
-    // From a checkout it adds its commit: "everyapp 0.3.1 (checkout 6afd18bb)".
-    if (said.replace(/ \(checkout [0-9a-f]+\)$/, "") !== `everyapp ${version}`) fail(`the built CLI says "${said}", not "everyapp ${version}"`);
-    console.log(`\nThe built CLI says: ${said}`);
-    for (const { dir, name } of pending) checkPackedFiles(dir, name);
+    const watched = spawnSync("gh", ["run", "watch", id, "-R", PUBLIC_REPO, "--exit-status"], { stdio: "inherit" });
+    if (watched.status !== 0) {
+      fail(`the Release workflow failed. Each step skips what is out already, so run it again once it is fixed:\n\n  ${again}`);
+    }
+    console.log(`\nReleased ${version}: the Gateway release and both npm packages are out.`);
   }
 
   const refused = checkPublicApps();
-
-  for (const { dir, name } of pending) {
-    if (dryRun) {
-      console.log(`\n(dry run) would publish ${name}@${version} under latest from ${dir}`);
-      continue;
-    }
-    // --tag latest is explicit: npm refuses a prerelease without a tag.
-    run("pnpm", ["publish", "--tag", "latest", "--access", "public", "--no-git-checks"], path.join(ROOT, dir));
-  }
-
-  const isPublic = publicHasHead(head);
   console.log(`
-${dryRun ? "(dry run) " : ""}${pending.length > 0 && !dryRun ? `Published ${pending.map(({ name }) => `${name}@${version}`).join(" and ")}.\n\n` : ""}The Gateway release (gateway-v${version}) is the public repository's Release workflow's: it runs when main reaches ${PUBLIC_REPO}.${
-    isPublic === false
-      ? `\n${head.slice(0, 9)} isn't on ${PUBLIC_REPO}'s main yet: push it: git push git@github.com:${PUBLIC_REPO}.git main:main`
-      : isPublic === null
-        ? `\nCouldn't read ${PUBLIC_REPO}'s main.`
-        : ""
-  }
-To watch it, or to run it again:
+Re-pin each app to ${version} (or merge its Dependabot pull request):
 
-  gh run list -R ${PUBLIC_REPO} --workflow release.yml --limit 3
-  gh workflow run release.yml -R ${PUBLIC_REPO}
+  pnpm pack-for-app <app directory> --npm ${version}
 `);
-
   if (refused.length > 0) {
-    console.log(`Warning: everyapp ${version} won't install these apps' latest releases:
+    console.log(`Warning: everyapp ${version} won't install these apps' latest releases until they are re-pinned and released again:
 ${refused.map(({ repo, why }) => `\n  ${repo}\n    ${why}`).join("\n")}
-
-Release each again: pin ${version} in the app (pnpm pack-for-app <app> --npm ${version}),
-merge, and let its main reach the public repository, whose release workflow publishes it.
 `);
   }
 }
@@ -234,11 +285,14 @@ if (!command || command === "--help" || command === "-h") {
   console.log(USAGE);
   process.exit(command ? 0 : 1);
 }
-if (command === "publish") {
+if (command === "ship") {
   const unknown = rest.filter((arg) => arg !== "--dry-run");
   if (unknown.length > 0) fail(`unknown ${unknown.join(" ")}\n${USAGE}`);
-  publish({ dryRun: rest.includes("--dry-run") });
+  await ship({ dryRun: rest.includes("--dry-run") });
+} else if (command === "publish") {
+  fail(`publish is gone: the public repository's Release workflow publishes. pnpm release ship pushes main there; gh workflow run release.yml -R ${PUBLIC_REPO} finishes a run that failed.`);
 } else {
-  if (rest.length > 0) fail(USAGE);
-  bump(command);
+  const unknown = rest.filter((arg) => arg !== "--no-push");
+  if (unknown.length > 0) fail(USAGE);
+  bump(command, { push: !rest.includes("--no-push") });
 }

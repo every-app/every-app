@@ -11,29 +11,33 @@ everything built from it. The design is
 ## Releasing
 
 1. `pnpm release <patch|minor|major|x.y.z>` (`scripts/release.mjs`) writes
-   the next version into those four places and commits `Release <version>`
-   on a new branch `release/<version>`. Push it, open the pull request,
-   merge it. Plain semver: `patch` for anything, `minor` for a breaking
+   the next version into those four places, commits `Release <version>` on
+   a new branch `release/<version>`, pushes it and opens its pull request
+   (`--no-push` stops after the commit). Merge it. Merging publishes
+   nothing. Plain semver: `patch` for anything, `minor` for a breaking
    change (pre-1.0).
-2. Push `main` to every-app/every-app (by hand, once the Leak Check on
-   `main` is green): `git push git@github.com:every-app/every-app.git
-   main:main`. That's the release: its Release workflow
+2. `pnpm release ship`, from `main` after the merge, at a terminal. It
+   shows the version, what will be published and the commits the public
+   `main` doesn't have, checks that the Leak Check on `main` is green and
+   that the push is a fast-forward, asks, and on yes pushes `main` to
+   every-app/every-app. `--dry-run` shows the same and pushes nothing.
+   That push is the release: the public Release workflow
    (`.github/workflows/release.yml`) sees a version that isn't released
    yet. It builds, checks that the built CLI says the version, creates the
    Gateway release `gateway-v<version>` at that commit (the
    `every-app-gateway-release.tar.gz` a CLI with no checkout downloads),
    and publishes `@every-app/sdk` and then `everyapp` to npm under `latest`
-   by trusted publishing (no npm token; provenance). Each step skips what
-   is out already, so `gh workflow run release.yml -R every-app/every-app`
-   finishes a run that failed half way.
+   by trusted publishing (no npm token; provenance). `ship` watches that
+   run. Each step skips what is out already, so `gh workflow run
+   release.yml -R every-app/every-app` finishes a run that failed half way.
 3. Re-pin the first-party apps to the version
    (`pnpm pack-for-app <app> --npm <version>`, or the app's Dependabot pull
-   request).
+   request). `ship` ends by asking the built CLI whether it would install
+   each public app's latest release, and names the ones that need it.
 
-By hand, `pnpm release publish` (from `main`, after the merge) publishes
-the two npm packages the same way, with npm's web authentication. It also
-asks the built CLI whether it would install each public app's latest
-release, and names the apps to re-release. `--dry-run` stops before npm.
+Only Ben runs `ship`: it makes commits public and publishes to npm, and
+neither can be taken back. The push it makes by hand is `git push
+git@github.com:every-app/every-app.git main:main`.
 
 Before a big release, the optional pre-release check on the staging
 Gateway is [docs/runbooks/pre-release-check.md](../docs/runbooks/pre-release-check.md).
