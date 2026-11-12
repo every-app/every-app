@@ -1,29 +1,27 @@
 ---
 title: Apps
-description: Open source apps that run behind your Gateway, and how to install them.
+description: Open source apps you can install on your Gateway.
 metaTitle: "Open source apps for your Gateway"
 ---
 
-Each app is open source and runs behind your Gateway, in your own Cloudflare account. Run one as it is, or fork it as the start of your own.
+Each app is open source and runs in your own Cloudflare account. Run it as it is, or have your agent change it.
 
-- **[OpenSEO](/docs/apps/openseo)**: SEO research you pay for by use, not by the month.
-- **[OpenCRM](/docs/apps/crm)**: A CRM that fills itself in.
-- **[OpenAnalytics](/docs/apps/analytics)**: Web analytics on your own Cloudflare account. No cookies.
-- **[OpenMail](/docs/apps/openmail)**: An inbox where an AI agent drafts your replies and you hit send.
-- **[OpenScribe](/docs/apps/openscribe)**: Meeting notes for Mac, saved in your own Cloudflare account.
+- [OpenSEO](/docs/apps/openseo): SEO research you pay for by use, not by the month.
+- [OpenCRM](/docs/apps/crm): A CRM that fills itself in.
+- [OpenScribe](/docs/apps/openscribe): Meeting notes for Mac, saved in your own Cloudflare account.
+- [OpenAnalytics](/docs/apps/analytics): Web analytics on your own Cloudflare account. No cookies.
+- [OpenMail](/docs/apps/openmail): An inbox where an AI agent drafts your replies and you hit send.
 
 ## Install one
+
+Turn on R2 in your Cloudflare dashboard once (R2 Object Storage, then Get started). Every app but OpenAnalytics stores files there.
 
 ```bash
 everyapp install https://github.com/every-app/open-crm
 ```
 
-It puts the app at `<app>.<your gateway domain>`, then asks for the keys it needs. Until the required ones are set, the app shows **Needs setup** and won't open. Skipped that step, or changing a key later? `everyapp configure crm` asks again. Run the install command again to update; your data stays.
+The install asks for the keys the app needs. Each app's page lists them. If you skip one, the app shows **Needs setup** until you run `everyapp configure crm`.
 
-Keys several apps use, like `OPENROUTER_API_KEY`, are set once on the Gateway and shared.
+To update an app, run its install command again. Your data stays.
 
-OpenSEO, OpenCRM and OpenMail need R2. Enable it once in your Cloudflare dashboard (R2 Object Storage, then Get started), or the install stops with `R2_NOT_ENABLED`.
-
-Every member of your workspace can open these apps once installed. [Invite people](/docs/people)
-
-Each app's page lists what it asks for. The full settings for agents are in [the apps reference](/docs/agent/apps).
+Every member of your workspace can open an installed app. [Invite people](/docs/people)

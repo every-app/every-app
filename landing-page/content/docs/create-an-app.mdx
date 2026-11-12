@@ -1,9 +1,9 @@
 ---
 title: Create an app
-description: Start from the starter app, tell your coding agent what you want, try it, and put it online.
+description: Start from the starter, tell your coding agent what you want, and put it online.
 ---
 
-You need pnpm (`npm install -g pnpm`) and git. Run these in the folder you keep your projects in.
+You need pnpm (`npm install -g pnpm`) and git.
 
 <Steps>
 <Step>
@@ -15,18 +15,14 @@ everyapp create my-app
 cd my-app
 ```
 
-You get a simple todo list in its own git repository. Each person sees only their own todos.
-
-The name becomes the app's address: `my-app.apps.yourcompany.com`. Use lowercase letters, numbers and dashes.
-
-The app uses the published EveryApp packages from npm. If you set up from a clone of the EveryApp repository instead, run `pnpm everyapp create ../my-app` there: that app is linked to your clone, so it deploys with your clone's CLI.
+You get a small todo app in its own git repository. The name becomes its address, `my-app.apps.yourcompany.com`.
 
 </Step>
 <Step>
 
 ### Tell your agent what you want
 
-Open the `my-app` folder in your coding agent and describe the app in a few sentences:
+Open the `my-app` folder in your coding agent and describe the app:
 
 ```text
 Turn this into a shared todo list for my household. I want separate lists
@@ -45,9 +41,7 @@ You don't need a login page. The Gateway handles sign-in, and the app includes n
 pnpm dev
 ```
 
-Open `http://my-app.localhost:8787`. You're signed in as a dev user, and changes show up as your agent makes them. If the port is taken, the terminal prints the command to run instead. Press Ctrl+C to stop.
-
-Already have a Gateway with AI and providers set up? Run `pnpm everyapp dev --gateway https://<your gateway>` instead: you sign in once in the browser, the app runs here as you, and its AI, email and provider calls go through your Gateway, so no key is copied to your computer. Owners and admins only, after `pnpm everyapp workspace linked-dev on`. The app's data stays on your computer.
+Open `http://my-app.localhost:8787`. You're signed in as a test user, and changes show up as your agent makes them.
 
 </Step>
 <Step>
@@ -58,46 +52,16 @@ Already have a Gateway with AI and providers set up? Run `pnpm everyapp dev --ga
 pnpm run deploy
 ```
 
-When it's done, you'll see:
-
-```text
-Live          https://my-app.apps.yourcompany.com
-Who can open  Private to owners and admins · change it at https://apps.yourcompany.com/admin/apps
-```
-
-Open your Gateway and the app is in **All apps**. No Gateway yet? The deploy offers to install one first.
-
-If it stops for something only you can do, the lines it printed say what. [Troubleshooting](/docs/troubleshooting#elifecycle-command-failed-with-exit-code-2-or-130)
+The app is now at `https://my-app.apps.yourcompany.com`, private to owners and admins. To share it, see [Invite people](/docs/people#choose-who-can-open-an-app).
 
 </Step>
 </Steps>
 
-## Apps that use AI
+To ship a change later, run `pnpm run deploy` again. [Update and remove](/docs/update)
 
-Ask your agent for the AI feature you want. It sets the app up to call a model through your Gateway, so the app never holds a key.
+## When your app needs more
 
-Add a model key to the Gateway once, and every app can use it:
-
-```bash
-everyapp provider add openrouter
-```
-
-It tells you where to get the key, then asks for it. You pay OpenRouter for what your apps use. Your coding agent can walk you through it: ask it to follow [setup/openrouter](/docs/agent/setup/openrouter). [AI providers](/docs/agent/secrets#ai-providers)
-
-## Keys only one app uses
-
-If the app needs a key of its own, like a `GITHUB_TOKEN`, your agent lists it in `everyapp.config.ts`. After you deploy, run this in the app's folder and paste the key:
-
-```bash
-everyapp configure my-app
-```
-
-Only that app gets the key, and later deploys keep it. Until every required key is set, the app shows **Needs setup**. For `pnpm dev`, put it in the app's `.dev.vars` file as `GITHUB_TOKEN=...`.
-
-## Share it
-
-To let others install your app, run `everyapp release` in its folder and attach the file to a GitHub release. They install it with:
-
-```bash
-everyapp install https://github.com/owner/repo
-```
+- **AI.** Ask your agent for the feature. The app calls a model through your Gateway and never holds a key. Add the key once with `everyapp provider add openrouter`. [AI models](/docs/ai)
+- **A key of its own.** Your agent lists it in `everyapp.config.ts`. After you deploy, run `everyapp configure my-app` and paste the key. For `pnpm dev`, put it in the app's `.dev.vars` file.
+- **A database, files or queues.** [Cloudflare resources](/docs/resources)
+- **Other people installing it.** Run `everyapp release` in its folder and attach the file to a GitHub release. They run `everyapp install https://github.com/owner/repo`.

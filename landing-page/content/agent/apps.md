@@ -17,7 +17,7 @@ A Gateway key serves every app that lists it: one `OPENROUTER_API_KEY` or `EMAIL
 | id | Name | Repository | R2 | Who opens it after install |
 |---|---|---|---|---|
 | `openseo` | OpenSEO | https://github.com/every-app/open-seo | yes | every member |
-| `crm` | OpenCRM | https://github.com/every-app/open-crm | no | every member |
+| `crm` | OpenCRM | https://github.com/every-app/open-crm | yes | every member |
 | `analytics` | OpenAnalytics | https://github.com/every-app/open-analytics | no | every member |
 | `openmail` | OpenMail | https://github.com/every-app/open-mail | yes | every member |
 | `repolens` | RepoLens | not public yet | no | owners and admins |
