@@ -299,9 +299,10 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
         return;
       case "warning": {
         if (QUIET_WARNINGS.has(event.code) && !verbose) return;
-        warned += 1;
+        const note = NOTE_WARNINGS.has(event.code);
+        if (!note) warned += 1;
         problem([
-          ...headed(chalk.yellow("!"), event.message),
+          ...headed(note ? chalk.dim("i") : chalk.yellow("!"), event.message),
           ...nextCommand(event.data, { url: true }),
         ]);
         return;
@@ -914,6 +915,13 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
  * a new hostname is unknown until cf, attached with --verbose, asks).
  */
 const QUIET_WARNINGS = new Set(["CUSTOM_DOMAIN_OWNER_UNCHECKED"]);
+
+/**
+ * Warnings a person reads as a note: shown with `i`, not counted in the
+ * run's "with N warnings", since nothing went wrong. LOCAL_DNS_STALE: the
+ * app is live; this computer's DNS cache catches up by itself.
+ */
+const NOTE_WARNINGS = new Set(["LOCAL_DNS_STALE"]);
 
 /** A lease came free after a wait (lib/gateway/lease.ts): "✓ Other deploy finished · 41s". */
 function leaseWaited(event: StepEvent): Shown | null {

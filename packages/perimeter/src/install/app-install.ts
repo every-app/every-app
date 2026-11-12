@@ -537,14 +537,14 @@ export async function installApp<C>(
     });
     next.push({
       command: `${CLI} email set --inbound <address>`,
-      note: `routes mail to ${manifest.id}`,
+      note: `optional: routes mail on your domain to ${manifest.id}`,
     });
   }
   // Until a sender is set, the app sends as the Gateway's sender.
   if (sendersSettable && senders.length === 0) {
     next.push({
       command: `${CLI} email set --sender '*@<domain>'`,
-      note: `lets ${manifest.id} send as your domain`,
+      note: `optional: lets ${manifest.id} send as your domain`,
     });
   }
   // A helper Worker the manifest dropped keeps running (with its crons)

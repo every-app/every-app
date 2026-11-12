@@ -336,8 +336,8 @@ describe("deploy of an app that receives mail", () => {
     // With EMAIL_FROM unset the app needs setup too: that entry has its own test.
     await expect(deploy()).resolves.toMatchObject({
       next: expect.arrayContaining([
-        { command: "pnpm everyapp email set --inbound <address>", note: "routes mail to inbox" },
-        { command: "pnpm everyapp email set --sender '*@<domain>'", note: "lets inbox send as your domain" },
+        { command: "pnpm everyapp email set --inbound <address>", note: "optional: routes mail on your domain to inbox" },
+        { command: "pnpm everyapp email set --sender '*@<domain>'", note: "optional: lets inbox send as your domain" },
       ]),
     });
     const hints = events.filter((event) => event["step"] === "app.email");
@@ -357,7 +357,7 @@ describe("deploy of an app that receives mail", () => {
   it("ends with how to send as your own domain on a deploy of an app that declares sending with no senders stored", async () => {
     const sender = {
       command: "pnpm everyapp email set --sender '*@<domain>'",
-      note: "lets inbox send as your domain",
+      note: "optional: lets inbox send as your domain",
     };
     // With EMAIL_FROM unset the app needs setup too (its own entry, its own
     // test); only the mail hints are at issue here.

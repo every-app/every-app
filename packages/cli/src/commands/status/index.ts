@@ -59,6 +59,7 @@ interface StatusFlags {
   gateway?: string;
   json?: boolean;
   verbose?: boolean;
+  all?: boolean;
 }
 
 /**
@@ -95,6 +96,7 @@ export async function status(flags: StatusFlags,
       gateway,
       out,
       checkout: root ? () => checkoutSource(root) : null,
+      allSettings: flags.all === true || flags.verbose === true,
     });
   });
 }
@@ -120,9 +122,12 @@ export async function reportStatus({
   gateway,
   out,
   checkout,
+  allSettings = false,
 }: {
   gateway: FoundGateway;
   out: EventSink;
+  /** List every app setting, not only those an app is waiting for. */
+  allSettings?: boolean;
   /**
    * What this checkout's Gateway is, without building it; null when
    * everyapp doesn't run from a checkout.
@@ -292,6 +297,7 @@ export async function reportStatus({
     skippedWorkers: new Set(desired.skipped.map((row) => row.workerName)),
     emailProblems: "error" in emailProblems ? [] : emailProblems.value,
     problems,
+    allSettings,
   });
   out.emit({
     type: "done",

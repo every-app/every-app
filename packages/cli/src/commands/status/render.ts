@@ -59,6 +59,7 @@ export function renderStatus({
   skippedWorkers,
   emailProblems,
   problems,
+  allSettings = false,
 }: {
   install: InstallRecord;
   /** A named Gateway's Worker (`every-app-gateway-demo`), shown on its line; null for the default. */
@@ -79,6 +80,8 @@ export function renderStatus({
   skippedWorkers: Set<string>;
   emailProblems: EmailRouteProblem[];
   problems: Problem[];
+  /** Every setting of every app (`--all`); otherwise only those an app is waiting for. */
+  allSettings?: boolean;
 }): string {
   const uploaded = install.liveVersionId !== null;
   const facts: Fact[] = [
@@ -115,8 +118,16 @@ export function renderStatus({
   const mailing = apps.filter(
     (app) => app.email.senders.length > 0 || app.email.inbound.length > 0 || app.email.routed.length > 0,
   );
-  // Each app's settings, for the apps that declare any.
-  const settings = apps.flatMap((app) => (app.setup ? settingsRows(app.id, app.setup.settings) : []));
+  // The settings an app is waiting for, and those nobody could check; with
+  // --all, every app's every setting.
+  const settings = apps.flatMap(({ id, setup }) => {
+    if (!setup) return [];
+    const unmet = new Set(setup.unmet.map((setting) => setting.id));
+    const shown = allSettings
+      ? setup.settings
+      : setup.settings.filter((setting) => setting.set === null || unmet.has(setting.id));
+    return settingsRows(id, shown);
+  });
   // Each app's features in one line, for the apps that declare any.
   const features = apps.flatMap((app) => {
     const line = app.setup ? featuresLine(app.setup.features) : null;

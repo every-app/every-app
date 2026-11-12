@@ -321,17 +321,21 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
 
   const methods = describeSignInMethods(allowed);
   const appsWithSurface = plan.destinations.length - 1;
-  const lines = [
-    teamCreated
-      ? ticked(`Zero Trust team ${teamDomain}`, "created")
-      : chalk.dim(`Zero Trust team ${teamDomain}.`),
+  // Only what this run changed: a person needs that, not a list of what
+  // was already so. The settings are written every run, so they are said
+  // only beside a change.
+  const changes = [
+    ...(teamCreated ? [ticked(`Zero Trust team ${teamDomain}`, "created")] : []),
     ...(providersAdded.length > 0 ? [ticked("Sign-in methods", `added ${listed(providersAdded)}`)] : []),
-    policyOutcome === "unchanged"
-      ? chalk.dim(`Access policy "${policy.name}" asks the Gateway who is a member.`)
-      : ticked(`Access policy "${policy.name}"`, `${policyOutcome}: asks the Gateway who is a member`),
-    ...[...new Set([gateway, apps])].map((outcome) => applicationLine(outcome)),
-    ticked("Gateway settings", `${ACCESS_SETTINGS.join(", ")} · one new version`),
+    ...(policyOutcome === "unchanged"
+      ? []
+      : [ticked(`Access policy "${policy.name}"`, `${policyOutcome}: asks the Gateway who is a member`)]),
+    ...[...new Set([gateway, apps])].flatMap((outcome) => applicationLine(outcome)),
   ];
+  const lines =
+    changes.length > 0 || changedAccess
+      ? [...changes, ticked("Gateway settings", `${ACCESS_SETTINGS.join(", ")} · one new version`)]
+      : [ticked("Cloudflare Access is in step with this Gateway")];
   const notes = [
     `People sign in to Access with ${methods}, and get in when they are a member or invited here: invite someone in Manage workspace → Users and they can sign in at once.`,
     `MCP clients and personal access tokens keep working: the Gateway's /mcp, the OAuth endpoints, /health and ${plural(appsWithSurface, "app")}'s public routes are let through without a login; deploy keeps them current.`,
@@ -339,12 +343,15 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
   out.emit({
     type: "done",
     message: [`Cloudflare Access is on for ${gatewayHost} and *.${base}.`, ...notes].join(" "),
-    display: [
-      ...lines,
-      "",
-      ...formatFacts([{ label: "Sign in", value: chalk.cyan(`https://${gatewayHost}`) }]),
-      ...notes.map((note) => chalk.dim(note)),
-    ].join("\n"),
+    display: (changes.length > 0 || changedAccess
+      ? [
+          ...lines,
+          "",
+          ...formatFacts([{ label: "Sign in", value: chalk.cyan(`https://${gatewayHost}`) }]),
+          ...notes.map((note) => chalk.dim(note)),
+        ]
+      : lines
+    ).join("\n"),
     data: {
       team: { domain: teamDomain, created: teamCreated },
       signInMethods: providers.map((provider) => signInMethodData(provider, allowed)),
@@ -433,11 +440,8 @@ export async function updateAccessIfOn(
   });
 }
 
-function applicationLine({ application, outcome }: ApplicationOutcome): string {
-  const name = application.name ?? application.id;
-  return outcome === "unchanged"
-    ? chalk.dim(`Access application "${name}" is as it should be.`)
-    : ticked(`Access application "${name}"`, outcome);
+function applicationLine({ application, outcome }: ApplicationOutcome): string[] {
+  return outcome === "unchanged" ? [] : [ticked(`Access application "${application.name ?? application.id}"`, outcome)];
 }
 
 /**

@@ -140,9 +140,10 @@ async function status() {
 }
 
 /** What a person sees: the report on stdout, colors stripped. */
-async function shown(cloudflare = account) {
+async function shown(cloudflare = account, allSettings = false) {
   let text = "";
   await reportStatus({
+    allSettings,
     gateway: await found(cloudflare),
     out: createHumanSink({ write: (chunk) => (text += chunk), writeProblem: (chunk) => (text += chunk) }),
     checkout,
@@ -490,16 +491,25 @@ describe("everyapp status", () => {
     expect((await readApp(db(), "crm")).secretNames).toEqual([]);
     const report = await shown();
     expect(report).toMatch(/\ncrm +! needs setup +https:\/\/crm\.example\.com/);
+    // Only what crm waits for.
     expect(report).toContain(
+      [
+        "APP  SETTING               WHERE    STATUS",
+        "crm  OPENROUTER_API_KEY    Gateway  ! not set",
+        "crm  TOKEN_ENCRYPTION_KEY  crm      ! not set",
+        "",
+        "APP  FEATURES",
+        "crm  GitHub off · Rendering off",
+      ].join("\n"),
+    );
+    // --all (or --verbose) lists the optional ones too.
+    expect(await shown(account, true)).toContain(
       [
         "APP  SETTING               WHERE    STATUS",
         "crm  OPENROUTER_API_KEY    Gateway  ! not set",
         "crm  CONTEXT_API_KEY       Gateway  not set (optional)",
         "crm  TOKEN_ENCRYPTION_KEY  crm      ! not set",
         "crm  GITHUB_TOKEN          crm      not set (optional)",
-        "",
-        "APP  FEATURES",
-        "crm  GitHub off · Rendering off",
       ].join("\n"),
     );
     expect(report).toContain(
@@ -529,7 +539,9 @@ describe("everyapp status", () => {
     expect(live).toMatch(/\ncrm +✓ live +https:\/\/crm\.example\.com/);
     // One line per app: each feature's state.
     expect(live).toContain(["APP  FEATURES", "crm  GitHub ✓ · Rendering off"].join("\n"));
-    expect(live).toContain("crm  TOKEN_ENCRYPTION_KEY  crm      ✓ set");
+    // Nothing is waiting, so no settings table; --all still lists them.
+    expect(live).not.toContain("SETTING");
+    expect(await shown(account, true)).toContain("crm  TOKEN_ENCRYPTION_KEY  crm      ✓ set");
   });
 
   it("says once when the Workers' secrets can't be listed, blocks on nothing, and records nothing", async () => {

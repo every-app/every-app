@@ -10,6 +10,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readAccessOffChoice } from "@/lib/access/record";
 import { cfD1Database } from "@/lib/cf/d1";
@@ -19,7 +20,7 @@ import { GATEWAY_SCHEMA } from "@/lib/gateway/schema";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { EveryAppCliManifest } from "@/lib/manifest";
-import { createNdjsonSink } from "@/lib/output/events";
+import { createHumanSink, createNdjsonSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
@@ -386,6 +387,23 @@ describe("access on, from nothing", () => {
     expect(done()).toMatchObject({
       data: { team: { created: false }, policy: { outcome: "unchanged" }, applications: { gateway: { outcome: "unchanged" }, apps: { outcome: "unchanged" } } },
     });
+  });
+
+  it("shows a person only what a run changed, and one line when nothing did", async () => {
+    await seedPeople();
+    const shown = async (options: Parameters<typeof on>[0] = {}) => {
+      let text = "";
+      const write = (chunk: string) => (text += chunk);
+      await on({ ...options, out: createHumanSink({ write, writeProblem: write }) });
+      return stripVTControlCharacters(text);
+    };
+
+    const first = await shown({ team: "acme" });
+    expect(first).toContain("✓ Zero Trust team acme.cloudflareaccess.com · created");
+    expect(first).toContain("✓ Gateway settings");
+    expect(first).toContain("Sign in  https://");
+
+    expect((await shown()).trim()).toBe("✓ Cloudflare Access is in step with this Gateway");
   });
 
   it("replaces a policy's email list with the Gateway's answer, so invitations need no rerun", async () => {

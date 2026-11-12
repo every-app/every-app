@@ -921,6 +921,21 @@ describe("createHumanSink", () => {
     ]);
   });
 
+  it("shows a stale DNS cache as a note, not counted among the run's warnings", () => {
+    const { sink, lines, problems } = human();
+    sink.emit({ type: "step", step: "app.deploy", status: "ok", data: { appId: "todo", gatewayHost: "apps.example.com" } });
+    sink.emit({
+      type: "warning",
+      code: "LOCAL_DNS_STALE",
+      step: "app.live",
+      message: "todo is live at https://todo.apps.example.com, but this computer doesn't see it yet.",
+    });
+    sink.emit({ type: "done" });
+
+    expect(problems()).toEqual(["i todo is live at https://todo.apps.example.com, but this computer doesn't see it yet."]);
+    expect(lines().join("\n")).not.toContain("warning");
+  });
+
   it("puts problems on stderr: a headline, its detail, then what to do", () => {
     const { sink, lines, problems } = human();
     sink.emit({ type: "step", step: "app.deploy", status: "ok", data: { appId: "todo", gatewayHost: "apps.example.com" } });
