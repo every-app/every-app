@@ -15,7 +15,7 @@ OpenAI (Realtime, chat) ──(key)─┤
                      ┌─────────▼──────────┐
                      │  Scribe backend     │  meetings, transcripts, notes, sharing,
                      │  (Worker + D1)      │  /api/v1 for the desktop app, update feed
-                     │  app id: talk       │
+                     │  app id: scribe     │
                      └─────────▲──────────┘
        HTTPS, bearer token     │                    ▲  WebSocket, ephemeral key
       ┌────────────────────────┴───────────────┐    │
@@ -29,7 +29,7 @@ OpenAI (Realtime, chat) ──(key)─┤
       └─────────────────────────────────────────┘
 ```
 
-- **The Scribe backend** is an Every App app (app id `talk`; TanStack Start on a Worker, D1) in every-app/open-scribe's `web/`. It holds all data and every key-bearing call. It serves the browser and `/api/v1`, which the desktop app calls, plus (for now) the private update feed. The desktop names that app id in one place, `src/shared/features.ts`.
+- **The Scribe backend** is an Every App app (app id `scribe`, which was `talk`; TanStack Start on a Worker, D1) in every-app/open-scribe's `web/`. It holds all data and every key-bearing call. It serves the browser and `/api/v1`, which the desktop app calls, plus (for now) the private update feed. The desktop names the app id it calls in one place, `src/shared/features.ts`, and that is still `talk`.
 - **The desktop app** owns sign-in (tokens encrypted with safeStorage), the tray, calendar reminders, call prompts and updates. It never holds an API key.
 - **`everyapp-helper`** (`mac/`) is a headless Swift process inside the app (`Contents/MacOS/everyapp-helper`), driven over stdin/stdout (`desktop-plan.md`, "Helper protocol (v1)"). It captures the mic and system audio, streams them to OpenAI with a short-lived key the backend mints, posts transcript segments to the backend, and watches which apps use the mic to detect calls. TCC charges its capture to the app.
 - Audio is never uploaded to the backend and never stored. Only text leaves the Mac.

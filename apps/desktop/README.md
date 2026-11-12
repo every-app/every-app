@@ -160,11 +160,11 @@ Dev builds also have Help → **Reset Onboarding**, which clears only the onboar
 
 ```sh
 # in the Scribe repository's web/: everyapp dev  (seed it as you like), then here:
-EVERYAPP_DESKTOP_DEV_APP_URL=http://talk.localhost:8787 EVERYAPP_DESKTOP_DEV_TOKEN=dev pnpm package:local
+EVERYAPP_DESKTOP_DEV_APP_URL=http://scribe.localhost:8787 EVERYAPP_DESKTOP_DEV_TOKEN=dev pnpm package:local
 # the same with the fake helper (no audio, a made-up transcript):
-EVERYAPP_DESKTOP_FAKE_HELPER=1 EVERYAPP_DESKTOP_DEV_APP_URL=http://talk.localhost:8787 EVERYAPP_DESKTOP_DEV_TOKEN=dev pnpm package:local
+EVERYAPP_DESKTOP_FAKE_HELPER=1 EVERYAPP_DESKTOP_DEV_APP_URL=http://scribe.localhost:8787 EVERYAPP_DESKTOP_DEV_TOKEN=dev pnpm package:local
 # or, unpackaged:
-EVERYAPP_DESKTOP_DEV_APP_URL=http://talk.localhost:8787 EVERYAPP_DESKTOP_DEV_TOKEN=dev pnpm dev
+EVERYAPP_DESKTOP_DEV_APP_URL=http://scribe.localhost:8787 EVERYAPP_DESKTOP_DEV_TOKEN=dev pnpm dev
 ```
 
 `package:local` writes `~/Library/Application Support/com.everyapp.desktop.dev/dev-signin.json`. **Dev builds never touch safeStorage**: a rebuilt Every App Dev can't open the last build's "com.everyapp.desktop.dev Safe Storage" item, and macOS would otherwise show a Keychain password dialog (blocking launch) that stops a computer-use tester. Every dev sign-in, pasted token or OAuth, lasts until quit. `EVERYAPP_DESKTOP_DEV_KEYCHAIN=1` opts back in to test the stored sign-in (ignored while a dev sign-in or `EVERYAPP_DESKTOP_DEV_NO_KEYCHAIN=1` is in use). The app reads that file, or the env vars, at launch and signs in with the token **in memory only** (it never stores it, so rebuilds don't matter). Only dev builds read it: unpackaged, or the "Every App Dev" product. Plain `http://` is accepted only for `localhost`, `*.localhost` and `127.0.0.1`. You can also paste the URL and any token in the sign-in screen ("Use an access token instead").

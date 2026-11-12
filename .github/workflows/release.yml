@@ -159,14 +159,15 @@ jobs:
         run: |
           set -euo pipefail
           # npm can take a few minutes to list a new version (0.3.0's SDK: 3-4
-          # minutes), so wait up to 10, asking past npm's cache each time.
-          attempts=20
+          # minutes, 0.3.1's CLI: about 5), so wait up to 10 for each package,
+          # asking past npm's cache every 15 s.
+          attempts=40
           for name in @every-app/sdk everyapp; do
             for attempt in $(seq 1 "$attempts"); do
               [ "$(npm view "$name@$VERSION" version --prefer-online 2>/dev/null)" = "$VERSION" ] && { echo "npm lists $name@$VERSION (attempt $attempt of $attempts)"; break; }
-              [ "$attempt" = "$attempts" ] && { echo "::error::npm doesn't list $name@$VERSION after $attempts attempts, 30 s apart"; exit 1; }
-              echo "npm doesn't list $name@$VERSION yet (attempt $attempt of $attempts); trying again in 30 s"
-              sleep 30
+              [ "$attempt" = "$attempts" ] && { echo "::error::npm doesn't list $name@$VERSION after $attempts attempts, 15 s apart"; exit 1; }
+              echo "npm doesn't list $name@$VERSION yet (attempt $attempt of $attempts); trying again in 15 s"
+              sleep 15
             done
           done
           echo "::notice::Released $VERSION: Gateway https://github.com/$GITHUB_REPOSITORY/releases/tag/gateway-v$VERSION, npm @every-app/sdk@$VERSION and everyapp@$VERSION."

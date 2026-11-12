@@ -121,11 +121,9 @@ Only Ben runs `ship`: it makes commits public and publishes to npm, and
 neither can be taken back. The push it makes by hand is `git push
 git@github.com:every-app/every-app.git main:main`.
 
-- **`ship` has not released anything yet.** Its checks and its refusals
-  are tested against throwaway repositories; the question, the push and
-  the workflow watch have never run for real. The first release with
-  `ship` is its test: run `pnpm release ship --dry-run` first and read
-  what it would push.
+- **npm can take several minutes to list a version** after the publish
+  step succeeds (0.3.1, the first release `ship` made); `ship` waits on
+  the workflow, which waits for npm.
 - **It pushes over SSH.** `ssh -T git@github.com` must greet you by name on
   the machine that runs it.
 - **Re-pinning the apps is by hand**, with the command `ship` prints. It
