@@ -34,7 +34,8 @@ for arch in "${ARCHS[@]}"; do
     --scratch-path "${ROOT}/.build/helper-${arch}" \
     -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker "${PLIST}" >&2
   # Without the ATS exception the helper can't reach a local server (http://talk.localhost).
-  if ! launchctl plist __TEXT,__info_plist "${BIN}" 2>/dev/null | grep -q NSAppTransportSecurity; then
+  # Captured first: `| grep -q` can SIGPIPE the producer and fail under pipefail.
+  if ! grep -q NSAppTransportSecurity <<< "$(launchctl plist __TEXT,__info_plist "${BIN}" 2>/dev/null)"; then
     echo "error: ${BIN} doesn't embed ${PLIST} (no NSAppTransportSecurity)" >&2
     exit 1
   fi
@@ -46,7 +47,7 @@ lipo -create "${SLICES[@]}" -output "${OUT}"
 SIGN_ID="-"
 if [[ -n "${EVERYAPP_DESKTOP_SIGN_ID:-}" ]]; then
   SIGN_ID="${EVERYAPP_DESKTOP_SIGN_ID}"
-elif security find-identity -v -p codesigning 2>/dev/null | grep -q '"Scrawl Dev"'; then
+elif grep -q '"Scrawl Dev"' <<< "$(security find-identity -v -p codesigning 2>/dev/null)"; then
   SIGN_ID="Scrawl Dev"
 else
   echo "warning: no EVERYAPP_DESKTOP_SIGN_ID and no \"Scrawl Dev\" cert; signing ad hoc (TCC asks again after each rebuild)" >&2

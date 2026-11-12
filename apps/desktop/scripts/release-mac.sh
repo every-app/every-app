@@ -222,7 +222,8 @@ codesign --verify --deep --strict "${APP}" || die "codesign --verify --deep --st
 note "codesign --verify --deep --strict: ok"
 HELPER_IN_APP="${APP}/Contents/MacOS/${HELPER_NAME}"
 [[ -x "${HELPER_IN_APP}" ]] || die "The app has no Contents/MacOS/${HELPER_NAME}."
-codesign -dv "${HELPER_IN_APP}" 2>&1 | grep -q "Identifier=${HELPER_ID}" || die "The bundled helper lost its identifier ${HELPER_ID}."
+# Not `codesign | grep -q`: grep -q exits at the first match, codesign gets SIGPIPE, and pipefail fails the check.
+grep -q "^Identifier=${HELPER_ID}$" <<< "$(codesign -dv "${HELPER_IN_APP}" 2>&1)" || die "The bundled helper lost its identifier ${HELPER_ID}."
 note "helper in the app: $(lipo -archs "${HELPER_IN_APP}"), identifier ${HELPER_ID}"
 for key in NSMicrophoneUsageDescription NSAudioCaptureUsageDescription; do
   /usr/libexec/PlistBuddy -c "Print :${key}" "${APP}/Contents/Info.plist" > /dev/null || die "Info.plist lacks ${key}."
