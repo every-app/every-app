@@ -404,6 +404,27 @@ describe("createHumanSink", () => {
     ]);
   });
 
+  it("says under the first line when previousIds named nothing to rename", () => {
+    const { sink, lines } = human();
+    sink.emit({
+      type: "step",
+      step: "app.deploy",
+      status: "ok",
+      data: { appId: "scribe", gatewayHost: "apps.example.com", organizationName: "Example Inc", firstDeploy: true },
+    });
+    sink.emit({
+      type: "step",
+      step: "app.rename",
+      status: "skip",
+      message: "No app on apps.example.com is or was talk, so there is nothing to rename: scribe is deployed as a new app.",
+      data: { appId: "scribe", previousIds: ["talk"], newApp: true },
+    });
+    expect(lines()).toEqual([
+      "Deploying scribe to apps.example.com (Example Inc)",
+      "  No talk here to rename: a new app",
+    ]);
+  });
+
   it("shows a redeploy as a line per step", () => {
     const redeploy = () => {
       const { sink, lines } = human();

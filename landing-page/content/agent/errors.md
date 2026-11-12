@@ -232,7 +232,7 @@ The Gateway refused the admin command's credential (401/403), or `/mcp` redirect
 ### GATEWAY_RELEASE_LATEST
 No Gateway release for this everyapp version; the latest one was used. If it is older than this everyapp, other commands refuse it (`GATEWAY_OUTDATED`) until a newer one is deployed.
 ### GATEWAY_RELEASE_UNAVAILABLE
-The live Gateway's release isn't available to rebind. Run `everyapp update`, then this again.
+The live Gateway's release isn't available to rebind. Run `everyapp update`, then this again. A rename is refused with it before anything is written (`data.rename` has `from`); an app that an earlier everyapp renamed without publishing its new hostname gets it with `data.rename.previousHostnames`: the old hostname still serves the app, and `everyapp update`, then the deploy again, finishes the rename.
 ### GATEWAY_TOOL_ERROR
 The Gateway's tool refused the call; the headline is its message and `data.code` its code (`LAST_OWNER`, `GROUP_NOT_FOUND`, `INVALID_INPUT`, …). A tool the credential can't see answers as unknown: sign in with read & write and all apps. `everyapp call --list` shows what it may call.
 ### GATEWAY_UNREACHABLE
@@ -368,7 +368,7 @@ The member is deactivated. `everyapp workspace reactivate <email>` first.
 ### POSTGRES_URL_MISSING
 A Postgres app needs `POSTGRES_DATABASE_URL` in `.everyapp/secrets.env`.
 ### PREVIOUS_ID_UNKNOWN
-`previousIds` names an id no app on this Gateway has (or had), so the deploy can't tell which app to rename and creates none. Fix the id, or remove `previousIds` to deploy a new app. [Renaming an app](/docs/agent/deploy#renaming-an-app)
+`previousIds` of an app that is already registered names an id another app on this Gateway had; a previous id stays the app's that had it. Drop it from `previousIds`. An id no app has or had is no error: it is history, and an app that isn't registered yet is then installed as a new one. [Renaming an app](/docs/agent/deploy#renaming-an-app)
 ### PRISMA_MISSING
 A Prisma app needs `prisma` in its devDependencies.
 ### PROVIDER_APP_UNKNOWN
@@ -458,7 +458,7 @@ The new hostname didn't answer during this run, so the old hostname still serves
 ### RENAME_TARGET_EXISTS
 The new id is already an app on this Gateway (or a deleted one's, or another app's previous id); two apps can't be merged. Rename to another id, or drop the other app from `previousIds`.
 ### RENAME_UNSUPPORTED
-That app can't be renamed this way: it is deployed through the hosted deploy API (its Worker must carry its id), or the rename would change nothing.
+That app can't be renamed this way: it is deployed through the hosted deploy API (its Worker must carry its id), or the rename would change nothing. The Gateway's own installs (a browser install, the hosted deploy API) also answer it for a manifest whose `previousIds` name an app there: rename it with `everyapp deploy` or `everyapp install` first.
 ### REPEATED_FLAG
 A flag was given twice (exit 252).
 ### RESERVED_APP_ID

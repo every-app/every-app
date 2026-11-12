@@ -58,21 +58,26 @@ The rules are pure functions beside `planRegistration` (`packages/perimeter/src/
 
 | `id` registered? | `previousIds` names | Result |
 |---|---|---|
-| no | one app (by its id, or an id it had) | **rename** that app |
-| no | nothing | `PREVIOUS_ID_UNKNOWN`: never a new app |
+| no | one live app (by its id, or an id it had) | **rename** that app; listed ids nothing answers to are ignored |
+| no | nothing live (never there, or deleted) | a **new app** under `id`, nothing asked (`app.rename` `skip`, `data.newApp`) |
 | no | two apps | `RENAME_AMBIGUOUS` |
-| yes | only its own previous ids | a normal deploy |
+| yes | its own previous ids, or ids nothing has | a normal deploy |
 | yes | another live app | `RENAME_TARGET_EXISTS` (no merging) |
-| yes | an id it never had | `PREVIOUS_ID_UNKNOWN` |
+| yes | another app's previous id | `PREVIOUS_ID_UNKNOWN` (it stays that app's) |
 | deleted (tombstone) | a live app | `RENAME_TARGET_EXISTS` (the id stays reserved) |
+
+`previousIds` is the app's history, and a release carries the same list to every Gateway. One that installed the app before the rename has the old id and is renamed; one that never did has nothing to rename and gets a new app, as it would without the list. The price is that a mistyped previous id no longer stops the deploy: it deploys a second, empty app, and the run says "No tlak here to rename: a new app" under its first line. The refusals left are the ones where a listed id does name something on the Gateway and the manifest can't mean it.
 
 On a rename:
 
+0. Before anything is asked or written, the deploy establishes that it can finish: the live Gateway's release can be had again (step 4 redeploys it; `GATEWAY_RELEASE_UNAVAILABLE` with `everyapp update` as the way on, as when a published CLI faces a Gateway built from a checkout), and no DNS record answers the new hostname (`DNS_RECORD_CONFLICT`, `--force-dns`). Once the registry says `scribe`, the launcher tile and the tool names follow it, so a deploy that then can't publish `scribe.<base>` would leave them ahead of the hostname.
 1. `app.rename` (start) carries the plan. A person sees it above the question. `--yes` answers for CI, and unattended without it the run stops with `CONFIRMATION_REQUIRED` (rerun with `--yes`, `authorize: true`). A shared app takes a platform owner or admin, as its deploy does.
 2. One D1 batch: the row takes the new id and hostname (only while it still has the old id), and a previous-id row is inserted. Then the ordinary pipeline runs and finds the app registered under `scribe`.
 3. After the upload, `previousIds` is synced: an id it dropped is retired, and one it lists again is served again.
 4. `app.bind` redeploys the Gateway when the published hostnames changed. That publishes `scribe.<base>` and keeps `talk.<base>`.
 5. Once `https://scribe.<base>` answers over HTTPS, `moved_at` is set and page loads on `talk.<base>` start redirecting. Until then, or with `--no-wait`, the old host serves the app in full (`RENAME_NOT_MOVED`, a warning), so nobody is sent to a host still waiting for its certificate. The next deploy finishes it.
+
+What can still stop a run after the rename is written is what can stop any deploy (a build that fails, a migration, the Gateway's lease). The app then answers to `scribe` in the registry while `talk.<base>` serves it in full, and deploying again finishes it. An everyapp from before step 0 could also stop at step 4 with `GATEWAY_RELEASE_UNAVAILABLE`; the next deploy of that app now refuses up front with the same code, says that `scribe.<base>` isn't published and `talk.<base>` still serves the app, and gives the way on: `everyapp update`, then deploy again.
 
 What a person sees (from the test harness):
 
@@ -116,7 +121,7 @@ The `AppGateway` entrypoint: until its next upload, the old Worker's binding pro
 
 The old hostname is served while its id is in `previousIds`. A deploy without it retires the hostname (`retired_at`), the Gateway stops publishing it, and native tokens issued for it stop validating. Putting it back serves it again. The id itself stays the app's either way, because the Worker is named after it. Deleting the app retires its previous hostnames; reviving it doesn't bring them back. Renaming back (`id: "talk", previousIds: ["scribe"]`) reclaims `talk`'s own row.
 
-Not supported: renaming a dispatch-tier (hosted third-party) app, whose Worker must carry its id (`RENAME_UNSUPPORTED`). The hosted deploy API and browser installs refuse a manifest that would rename (`RENAME_UNSUPPORTED`), and send it to `everyapp deploy`/`install`.
+Not supported: renaming a dispatch-tier (hosted third-party) app, whose Worker must carry its id (`RENAME_UNSUPPORTED`). The hosted deploy API and browser installs refuse a manifest that would rename (`RENAME_UNSUPPORTED`), and send it to `everyapp deploy`/`install`. One whose `previousIds` name no app of the organization installs there as a new app, as it does from the CLI.
 
 ## 6. Security
 
@@ -129,7 +134,7 @@ Not supported: renaming a dispatch-tier (hosted third-party) app, whose Worker m
 
 Not run by this PR. Once it ships:
 
-1. **Release it.** Ben runs `pnpm publish:rc` (CLI, SDK and the Gateway release with migration `0033`).
+1. **Release it.** Ben runs `pnpm release patch`, then `pnpm release ship` (CLI, SDK and the Gateway release; migration `0033` shipped in 0.3.0).
 2. **Update the Gateway** talk runs on, before any app deploy: `pnpm everyapp update`. A newer CLI refuses an older Gateway with `GATEWAY_OUTDATED` anyway. This applies `0033` and ships the new perimeter. Nothing changes for any app yet.
 3. **In the app repository** (private-open-scribe):
    - pin the new `everyapp` and `@every-app/sdk` versions (`docs/runbooks/app-releases.md`);
@@ -142,4 +147,9 @@ Not run by this PR. Once it ships:
    - the desktop app works unchanged: its `/api/v1` calls with its token on `talk.<base>` are served there;
    - an old `/s/<token>` link opens, after one redirect.
    If the deploy ended with `RENAME_NOT_MOVED` (the new certificate was slow), `talk.<base>` still serves Scribe in full. Deploy again later to turn the redirect on.
-6. **Later, optional:** point the desktop app at `scribe.<base>`. Once no client uses `talk.<base>`, drop `previousIds` and deploy to stop serving it. Anyone signed in to the desktop app on the old host then signs in again. Nothing requires this; keeping `previousIds: ["talk"]` costs nothing.
+   If the deploy refuses with `GATEWAY_RELEASE_UNAVAILABLE` before asking, nothing was renamed: run `pnpm everyapp update` (step 2), then deploy again.
+6. **The public release** (`every-app/open-scribe`, installed by people who never had `talk`, and by people who did). Its manifest carries `id: "scribe", previousIds: ["talk"]` for both: a Gateway with `talk` is renamed after the question, and one without installs `scribe` as a new app. Two things come first:
+   - the everyapp that does this is released (the first one after 0.3.0), because what decides is the everyapp the person installs with, not the one the app's repository pins. everyapp 0.3.0 refuses that release on a Gateway without `talk` (`PREVIOUS_ID_UNKNOWN`), and an app release can't yet ask for a newer everyapp, so someone on 0.3.0 has to update theirs (`npx everyapp@latest install …` does);
+   - for browser installs, the person's Gateway runs a release with the same rule (the Gateway release that ships with that everyapp). An older Gateway answers `RENAME_UNSUPPORTED` in the browser, and `everyapp install` works.
+   Until then, a public release keeps `id: "talk"`.
+7. **Later, optional:** point the desktop app at `scribe.<base>`. Once no client uses `talk.<base>`, drop `previousIds` and deploy to stop serving it. Anyone signed in to the desktop app on the old host then signs in again. Nothing requires this; keeping `previousIds: ["talk"]` costs nothing.

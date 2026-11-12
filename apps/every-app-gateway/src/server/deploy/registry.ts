@@ -12,9 +12,10 @@
  * Self-hosted installs use service_binding and the CLI's install-org
  * naming rules on APP_BASE_DOMAIN instead.
  */
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   appNames,
+  DELETED_APP_STATUS,
   markDeployedUpdate,
   orgKeyCandidates,
   planRegistration,
@@ -203,19 +204,6 @@ async function register(
   const orgKey = await orgKeyFor(organizationId);
   const stored = await findOrgApp(organizationId, appSlug);
   const existingApp = stored ? toAppRow(stored) : null;
-  // A rename (`previousIds`, docs/design/2026-11-app-rename.md) is
-  // `everyapp deploy`'s or `everyapp install`'s, which show what moves and
-  // ask first: here a manifest naming previous ids for an app that isn't
-  // registered yet is refused, never deployed as a new app.
-  const listed = (input.manifest as { previousIds?: unknown } | null)
-    ?.previousIds;
-  if (!existingApp && Array.isArray(listed) && listed.length > 0) {
-    throw new DeployError(
-      "RENAME_UNSUPPORTED",
-      409,
-      `"${appSlug}" lists previousIds, which renames an app; rename it with everyapp deploy or everyapp install, then install it here.`,
-    );
-  }
   const previousIds = await db
     .select({
       organizationId: appPreviousIds.organizationId,
@@ -225,6 +213,38 @@ async function register(
     })
     .from(appPreviousIds)
     .where(eq(appPreviousIds.organizationId, organizationId));
+  // A rename (`previousIds`, docs/design/2026-11-app-rename.md) is
+  // `everyapp deploy`'s or `everyapp install`'s, which show what moves and
+  // ask first: here a manifest whose previous ids name an app of this
+  // organization (as its id, or one it had), for an app that isn't
+  // registered yet, is refused, never deployed as a second app. Ids that
+  // name nothing here are the app's history elsewhere: a new app.
+  const listed = (input.manifest as { previousIds?: unknown } | null)
+    ?.previousIds;
+  if (!existingApp && Array.isArray(listed) && listed.length > 0) {
+    const ids = listed.filter((id): id is string => typeof id === "string");
+    const named =
+      previousIds.some((row) => ids.includes(row.appSlug)) ||
+      (ids.length > 0 &&
+        (
+          await db
+            .select({ status: apps.status })
+            .from(apps)
+            .where(
+              and(
+                eq(apps.organizationId, organizationId),
+                inArray(apps.appSlug, ids),
+              ),
+            )
+        ).some((row) => row.status !== DELETED_APP_STATUS));
+    if (named) {
+      throw new DeployError(
+        "RENAME_UNSUPPORTED",
+        409,
+        `"${appSlug}" lists previousIds, which renames an app here; rename it with everyapp deploy or everyapp install, then install it here.`,
+      );
+    }
+  }
   // A renamed app's Worker carries an id it had; a new app can't take one.
   const previousAppIds = existingApp
     ? previousIds

@@ -111,6 +111,7 @@ import { isCfError } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
 import { listWorkerSecrets } from "@/lib/cf/secrets";
 import { deleteWorkflowIfExists, getWorkflow } from "@/lib/cf/workflows";
+import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { preflightAppHost } from "@/lib/domains/preflight";
 import { afterMigration, EveryAppError, type Rollback } from "@/lib/errors";
 import { directoryExists } from "@/lib/file-operations";
@@ -130,7 +131,9 @@ import {
   describeRename,
   finishMoves,
   planRenameFor,
+  renameNeedsGateway,
   syncPreviousIds,
+  unmovedPreviousIds,
   writeRename,
 } from "@/lib/gateway/rename";
 import type { PreviousIdRow, RenamePlan } from "@every-app/perimeter/registry";
@@ -377,10 +380,16 @@ async function deploySteps(
     });
     providers = await gatewayRegistry(registry, install);
   }
-  // A rename (`previousIds` names the app this one was): planned, shown and
-  // confirmed before anything is registered; written before the usual
-  // registration, which then finds the app under its new id.
-  const renamed = await renameIfAsked({
+  // The Gateway a rebind deploys: the live one again
+  // (lib/gateway/liveRelease.ts). A deploy that will rebind refuses before
+  // anything is written when it can't be had (GATEWAY_RELEASE_UNAVAILABLE).
+  const gateway = gatewayFor(options.reconcile, install, out, options.verbose);
+  // A rename (`previousIds` names the app this one was): planned, checked
+  // against everything it needs (the Gateway's release, the new hostname),
+  // shown and confirmed before anything is registered; written before the
+  // usual registration, which then finds the app under its new id.
+  const { renamed, history, renamedHost } = await renameIfAsked({
+    cf,
     registry,
     manifest,
     install,
@@ -391,6 +400,8 @@ async function deploySteps(
     yes: options.yes,
     confirm: options.confirm,
     gatewayUrl,
+    source: gateway.source,
+    forceDns: options.forceDns,
   });
   // A person's first line, before anything can stop the run: where this
   // goes, and whether the app has ever been live (a first deploy that
@@ -425,11 +436,41 @@ async function deploySteps(
         : {}),
     },
   });
-  // The Gateway a rebind deploys: the live one again. A deploy that will
-  // bind the app refuses before anything is registered when it can't be
-  // had (GATEWAY_RELEASE_UNAVAILABLE); a redeploy of a bound app needs none.
-  const gateway = gatewayFor(options.reconcile, install, out, options.verbose);
-  if (!registered || !install.liveAppWorkers.includes(registered.workerName)) await gateway.source();
+  // `previousIds` names nothing on this Gateway: said once, so a mistyped
+  // id isn't a silent second app.
+  if (history) {
+    out.emit({
+      type: "step",
+      step: "app.rename",
+      status: "skip",
+      message: `No app on ${new URL(gatewayUrl).host} is or was ${history.join(" or ")}, so there is nothing to rename: ${manifest.id} is deployed as a new app.`,
+      data: { appId: manifest.id, previousIds: history, newApp: true, gatewayUrl },
+    });
+  }
+  // A deploy that will bind the app, or publish its hostname, needs the
+  // live Gateway's release, and refuses before anything is registered when
+  // it can't be had; a redeploy of a bound, published app needs none. An
+  // app whose hostname the Gateway doesn't publish is one a rename left
+  // unfinished (an everyapp before the check above): the refusal says so.
+  const unbound = !registered || !install.liveAppWorkers.includes(registered.workerName);
+  const unpublished =
+    registered !== null &&
+    isOneLabelBelow(registered.hostname, install.appBaseDomain) &&
+    !install.liveDomains.includes(registered.hostname);
+  if (unbound || unpublished) {
+    try {
+      await gateway.source();
+    } catch (error) {
+      if (!registered || !unpublished || !isReleaseUnavailable(error)) throw error;
+      const unmoved = await unmovedPreviousIds(registry, registered.id);
+      if (unmoved.length === 0) throw error;
+      throw renameNeedsGateway(error, {
+        appId: manifest.id,
+        hostname: registered.hostname,
+        previousHostnames: unmoved.map((row) => row.hostname),
+      });
+    }
+  }
   const identityKey = install.jwtPublicKey;
   if (!identityKey) {
     throw new EveryAppError(
@@ -491,15 +532,17 @@ async function deploySteps(
   // created or uploaded; the reconcile that publishes it checks again. One
   // that isn't one label below the base is never published, so it is
   // neither checked nor a reason to redeploy the gateway (said at the end).
-  const { outsideBase, newHost } = await preflightAppHost({
-    cf,
-    names,
-    out,
-    install,
-    hostname,
-    forceDns: options.forceDns,
-    cfAsks: interactive && out.verbose,
-  });
+  const { outsideBase, newHost } =
+    renamedHost ??
+    (await preflightAppHost({
+      cf,
+      names,
+      out,
+      install,
+      hostname,
+      forceDns: options.forceDns,
+      cfAsks: interactive && out.verbose,
+    }));
 
   // 3. Everything that touches the app's Worker and data, one deploy at a time.
   const lease = await acquireAppLease(
@@ -791,6 +834,7 @@ function hostnamesOf(rows: readonly PreviousIdRow[], ids: readonly string[]): st
  * for CI), then write it. Null when it's no rename.
  */
 async function renameIfAsked({
+  cf,
   registry,
   manifest,
   install,
@@ -801,10 +845,13 @@ async function renameIfAsked({
   yes,
   confirm,
   gatewayUrl,
+  source,
+  forceDns,
 }: {
+  cf: CfRunner;
   registry: D1Database;
   manifest: EveryAppCliManifest;
-  install: Pick<InstallRecord, "appBaseDomain">;
+  install: Pick<InstallRecord, "appBaseDomain" | "liveDomains" | "zoneId" | "zoneName">;
   names: GatewayNames;
   deployer: Deployer;
   out: EventSink;
@@ -812,16 +859,51 @@ async function renameIfAsked({
   yes?: boolean;
   confirm?: Confirm;
   gatewayUrl: string;
-}): Promise<RenamePlan | null> {
+  /** The live Gateway's release, which publishing the new hostname deploys again. */
+  source: () => Promise<unknown>;
+  forceDns?: boolean;
+}): Promise<{
+  renamed: RenamePlan | null;
+  history: string[] | null;
+  /** The new hostname's check, made before the rename was written. */
+  renamedHost: Awaited<ReturnType<typeof preflightAppHost>> | null;
+}> {
   const planned = await planRenameFor(registry, {
     manifest,
     appBaseDomain: install.appBaseDomain,
     gatewayName: names.name,
   });
-  if (!planned) return null;
+  if (!planned) return { renamed: null, history: null, renamedHost: null };
+  // Nothing here answers to a previous id: a new app.
+  if (planned.kind === "new") return { renamed: null, history: planned.previousIds, renamedHost: null };
   const { plan, organization } = planned;
   const { from } = plan;
   if (plan.app.scope === "shared") await assertMayRenameShared(registry, deployer, organization);
+  // Everything the rename needs, before it is asked about or written: once
+  // the registry says the new id, the app's tile and tools follow it, so a
+  // deploy that then can't publish the new hostname leaves them pointing
+  // at a host that doesn't answer. Publishing redeploys the live Gateway,
+  // so its release must be obtainable, and the hostname must be free in DNS.
+  try {
+    await source();
+  } catch (error) {
+    if (!isReleaseUnavailable(error)) throw error;
+    throw renameNeedsGateway(error, {
+      appId: manifest.id,
+      hostname: plan.app.hostname!,
+      from: from.appSlug,
+      fromHostname: from.hostname,
+    });
+  }
+  const renamedHost = await preflightAppHost({
+    cf,
+    names,
+    out,
+    install,
+    hostname: plan.app.hostname!,
+    forceDns,
+    cfAsks: interactive && out.verbose,
+  });
   const lines = describeRename(plan, plan.app.workerName!);
   const data = {
     from: from.appSlug,
@@ -861,8 +943,11 @@ async function renameIfAsked({
     message: `Renamed ${from.appSlug} to ${manifest.id}: https://${plan.app.hostname}, with https://${from.hostname} serving it until the new hostname answers.`,
     data,
   });
-  return plan;
+  return { renamed: plan, history: null, renamedHost };
 }
+
+const isReleaseUnavailable = (error: unknown): error is EveryAppError =>
+  error instanceof EveryAppError && error.code === "GATEWAY_RELEASE_UNAVAILABLE";
 
 /**
  * After the upload is recorded: the manifest's settings against the

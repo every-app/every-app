@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
+import { EveryAppError } from "@/lib/errors";
 import { applyGateway } from "@/lib/gateway/apply";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
@@ -232,12 +233,137 @@ describe("deploy with previousIds", () => {
     expect(account.customDomains.get("talk.example.com")).toBe("every-app-gateway");
   });
 
-  it("refuses what isn't the rename of one app, before anything changes", async () => {
-    // Nothing on the Gateway answers to talk: never a new app.
-    const unknown = await errorOf(deploy(SCRIBE, { yes: true }));
-    expect(unknown.code).toBe("PREVIOUS_ID_UNKNOWN");
-    expect(appRows()).toEqual([]);
+  it("installs under the new id when the Gateway never had a previous one: previousIds is history", async () => {
+    // Unattended, no --yes: nothing is renamed, so nothing is asked.
+    const result = await deploy(SCRIBE);
 
+    expect(result).toMatchObject({ liveUrl: "https://scribe.example.com", workerName: "every-acme-scribe" });
+    expect(appRows()).toEqual([
+      expect.objectContaining({ app_slug: "scribe", hostname: "scribe.example.com", worker_name: "every-acme-scribe", status: "active" }),
+    ]);
+    expect(previousIds()).toEqual([]);
+    expect(events.some((event) => event["step"] === "app.rename" && event["status"] === "start")).toBe(false);
+    expect(events.find((event) => event["step"] === "app.rename")).toMatchObject({
+      status: "skip",
+      data: { appId: "scribe", previousIds: ["talk"], newApp: true },
+    });
+    expect(account.customDomains.has("talk.example.com")).toBe(false);
+
+    // Its next deploys are plain ones, and say nothing about a rename.
+    events = [];
+    await deploy(SCRIBE);
+    expect(events.some((event) => event["step"] === "app.rename")).toBe(false);
+    expect(appRows()).toHaveLength(1);
+  });
+
+  it("renames the one app previousIds names, whatever older ids this Gateway never had", async () => {
+    await deploy(TALK);
+    const [talk] = appRows();
+
+    await deploy({ ...SCRIBE, previousIds: ["chat", "talk"] }, { yes: true });
+
+    expect(appRows()).toEqual([expect.objectContaining({ id: talk!["id"], app_slug: "scribe", worker_name: "every-acme-talk" })]);
+    expect(previousIds().map((row) => row["app_slug"])).toEqual(["talk"]);
+  });
+
+  it("installs as new when the app a previous id named was deleted", async () => {
+    await deploy(TALK);
+    gateway().sqlite.prepare("UPDATE apps SET status = 'deleted'").run();
+
+    await deploy(SCRIBE);
+
+    expect(appRows().map((row) => [row["app_slug"], row["worker_name"], row["status"]])).toEqual([
+      ["scribe", "every-acme-scribe", "active"],
+      ["talk", "every-acme-talk", "deleted"],
+    ]);
+  });
+
+  describe("when the live Gateway's release can't be had again", () => {
+    const unavailable = () =>
+      new EveryAppError("GATEWAY_RELEASE_UNAVAILABLE", "The live Gateway 0.3.0 can't be fetched again: test\nUpdate the Gateway first.", {
+        rerun: "everyapp update",
+        rerunNote: "then run this again",
+        data: { live: "0.3.0", origin: { kind: "checkout" }, why: "test" },
+      });
+    const noRelease = {
+      ...seams,
+      openRelease: async () => {
+        throw unavailable();
+      },
+      source: async () => {
+        throw unavailable();
+      },
+    };
+
+    it("refuses the rename before it asks or writes anything", async () => {
+      await deploy(TALK);
+      const before = appRows();
+      const uploads = account.deploys.length;
+      const confirm = vi.fn(async () => true);
+
+      const error = await errorOf(deploy(SCRIBE, { interactive: true, confirm, reconcile: noRelease }));
+
+      expect(error).toMatchObject({ code: "GATEWAY_RELEASE_UNAVAILABLE", rerun: "everyapp update" });
+      expect(error.message).toContain("Nothing was renamed or deployed");
+      expect(confirm).not.toHaveBeenCalled();
+      expect(appRows()).toEqual(before);
+      expect(previousIds()).toEqual([]);
+      expect(account.deploys.length).toBe(uploads);
+
+      // Once it can be had (after `everyapp update`), the same deploy renames.
+      await deploy(SCRIBE, { yes: true });
+      expect(appRows()[0]).toMatchObject({ app_slug: "scribe", hostname: "scribe.example.com" });
+    });
+
+    it("says how to finish a rename an earlier everyapp wrote and couldn't publish", async () => {
+      await deploy(TALK);
+      // What an everyapp before this check left: the registry renamed, the new hostname unpublished.
+      const [talk] = gateway().all("SELECT id, organization_id FROM apps");
+      gateway().sqlite.prepare("UPDATE apps SET app_slug = 'scribe', hostname = 'scribe.example.com'").run();
+      gateway()
+        .sqlite.prepare(
+          "INSERT INTO app_previous_ids (organization_id, app_slug, app_row_id, hostname, renamed_at) VALUES (?, 'talk', ?, 'talk.example.com', 1)",
+        )
+        .run(String(talk!["organization_id"]), String(talk!["id"]));
+      const uploads = account.deploys.length;
+
+      const error = (await errorOf(deploy(SCRIBE, { reconcile: noRelease }))) as EveryAppError;
+
+      expect(error).toMatchObject({ code: "GATEWAY_RELEASE_UNAVAILABLE", rerun: "everyapp update" });
+      expect(error.message).toContain("https://scribe.example.com isn't published yet");
+      expect(error.message).toContain("https://talk.example.com still serves it");
+      expect(error.data).toMatchObject({
+        live: "0.3.0",
+        rename: { appId: "scribe", hostname: "scribe.example.com", previousHostnames: ["talk.example.com"] },
+      });
+      // Before the build and the upload, not after them.
+      expect(account.deploys.length).toBe(uploads);
+
+      // `everyapp update`, then the deploy again: published, and moved.
+      await deploy(SCRIBE);
+      expect(account.customDomains.get("scribe.example.com")).toBe("every-app-gateway");
+      expect(previousIds()[0]!["moved_at"]).not.toBeNull();
+    });
+  });
+
+  it("refuses the rename before writing it when a DNS record already answers the new hostname", async () => {
+    await deploy(TALK);
+    const before = appRows();
+    account.dnsRecords.push({ zoneId: "zone-1", name: "scribe.example.com", type: "A", content: "192.0.2.1" });
+
+    const error = await errorOf(deploy(SCRIBE, { yes: true }));
+
+    expect(error.code).toBe("DNS_RECORD_CONFLICT");
+    expect(appRows()).toEqual(before);
+    expect(previousIds()).toEqual([]);
+
+    // --force-dns publishes over it, as for any new hostname.
+    await deploy(SCRIBE, { yes: true, forceDns: true });
+    expect(appRows()[0]).toMatchObject({ app_slug: "scribe" });
+    expect(account.customDomains.get("scribe.example.com")).toBe("every-app-gateway");
+  });
+
+  it("refuses what isn't the rename of one app, before anything changes", async () => {
     await deploy(TALK);
     await deploy({ ...TALK, id: "scribe", name: "Scribe" });
     const before = appRows();
@@ -247,9 +373,21 @@ describe("deploy with previousIds", () => {
     expect(
       (await errorOf(deploy({ ...TALK, id: "notes", previousIds: ["talk", "scribe"] }, { yes: true }))).code,
     ).toBe("RENAME_AMBIGUOUS");
-    // A registered app listing an id it never had.
-    expect((await errorOf(deploy({ ...TALK, previousIds: ["nope"] }))).code).toBe("PREVIOUS_ID_UNKNOWN");
     expect(appRows()).toEqual(before);
     expect(previousIds()).toEqual([]);
+
+  });
+
+  it("refuses a registered app that lists an id another app had", async () => {
+    await deploy(TALK);
+    await deploy({ ...TALK, id: "memo", name: "Memo", previousIds: ["talk"] }, { yes: true });
+    await deploy({ ...TALK, id: "scribe", name: "Scribe" });
+    const before = appRows();
+
+    const taken = await errorOf(deploy(SCRIBE));
+
+    expect(taken.code).toBe("PREVIOUS_ID_UNKNOWN");
+    expect(taken.message).toContain("another app on this Gateway had");
+    expect(appRows()).toEqual(before);
   });
 });

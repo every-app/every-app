@@ -63,25 +63,36 @@ interface RenameManifest {
   previousIds?: readonly string[];
 }
 
-interface PlannedRename {
-  plan: RenamePlan;
-  organization: Organization;
-}
+/** What a deploy does about the manifest's `previousIds` ({@link planRenameFor}). */
+type PlannedRename =
+  /** One registered app answers to them: it is renamed. */
+  | { kind: "rename"; plan: RenamePlan; organization: Organization }
+  /**
+   * No app on this Gateway answers to any of them, and `id` isn't
+   * registered: the app is installed as a new one, and the ids are history.
+   */
+  | { kind: "new"; previousIds: string[] };
 
 const listed = (ids: readonly string[]) => ids.map((id) => `"${id}"`).join(", ");
 
 /**
  * What a deploy of `manifest` does about its `previousIds`, decided before
- * anything is registered:
+ * anything is registered. `previousIds` is the app's history, the same in
+ * every copy of a release, so an id in it that this Gateway never had is no
+ * mistake: a Gateway that installed the app under its new id has none of them.
  *
- * - `id` is registered (a tombstone too): a deploy as usual; each listed id
- *   must be one of that app's previous ids. One that is another app is
- *   RENAME_TARGET_EXISTS (two apps don't merge); one that is nothing is
- *   PREVIOUS_ID_UNKNOWN.
- * - `id` isn't, and one app answers to the listed ids (as its id or a
- *   previous one): the rename of that app, planned (null when nothing is listed).
- * - None does: PREVIOUS_ID_UNKNOWN, never a new app. More than one:
- *   RENAME_AMBIGUOUS.
+ * - `id` is registered (a tombstone too): a deploy as usual (null). A
+ *   listed id that is another app is RENAME_TARGET_EXISTS (two apps don't
+ *   merge), and one that is another app's previous id is
+ *   PREVIOUS_ID_UNKNOWN (it stays that app's).
+ * - `id` isn't, and one live app answers to the listed ids (as its id or a
+ *   previous one): the rename of that app, planned. Ids nothing answers to
+ *   are ignored.
+ * - `id` isn't, and nothing live answers to them (never there, or
+ *   deleted): a new app under `id`, as without `previousIds`.
+ * - More than one app answers: RENAME_AMBIGUOUS.
+ *
+ * Null when the manifest lists nothing, or the deploy is a plain one.
  */
 export function planRenameFor(
   db: D1Database,
@@ -106,8 +117,10 @@ async function planRenameIn(
 ): Promise<PlannedRename | null> {
   const previous = [...(manifest.previousIds ?? [])];
   if (previous.length === 0) return null;
+  const fresh: PlannedRename = { kind: "new", previousIds: previous };
   const found = await installOrganization(db);
-  if (!found) throw unknownPreviousIds(manifest.id, previous);
+  // A Gateway with no organization yet has no app to rename.
+  if (!found) return fresh;
   const { organization } = found;
   const slugs = [manifest.id, ...previous];
   const marks = slugs.map(() => "?").join(", ");
@@ -130,9 +143,11 @@ async function planRenameIn(
   if (target) {
     const others = live.filter((app) => app.id !== target.id);
     if (others.length > 0) throw targetExists(manifest.id, others.map((app) => app.appSlug));
-    const own = new Set(previousIds.filter((row) => row.appRowId === target.id).map((row) => row.appSlug));
-    const unknown = previous.filter((id) => !own.has(id));
-    if (unknown.length > 0) throw unknownPreviousIds(manifest.id, unknown, true);
+    // An id another app had stays that app's; one nothing had is history.
+    const taken = previous.filter((id) =>
+      previousIds.some((row) => row.appSlug === id && row.appRowId !== target.id),
+    );
+    if (taken.length > 0) throw takenPreviousIds(manifest.id, taken);
     return null;
   }
 
@@ -145,7 +160,7 @@ async function planRenameIn(
     if (owner) owners.set(id, owner);
   }
   const rowIds = new Set(owners.values());
-  if (rowIds.size === 0) throw unknownPreviousIds(manifest.id, previous);
+  if (rowIds.size === 0) return fresh;
   if (rowIds.size > 1) {
     throw new EveryAppError(
       "RENAME_AMBIGUOUS",
@@ -153,8 +168,6 @@ async function planRenameIn(
       { fix: "list only the ids of the one app being renamed under previousIds in everyapp.config.ts" },
     );
   }
-  const unknown = previous.filter((id) => !owners.has(id));
-  if (unknown.length > 0) throw unknownPreviousIds(manifest.id, unknown);
   const [rowId] = rowIds;
   const [fromRows = [], ownPrevious = []] = await db.run([
     { sql: `SELECT ${APP_COLUMNS} FROM apps WHERE id = ?`, params: [rowId!] },
@@ -163,15 +176,10 @@ async function planRenameIn(
       params: [rowId!],
     },
   ]);
-  if (!fromRows[0]) throw unknownPreviousIds(manifest.id, previous);
+  // The app that had the id is gone (deleted): nothing to rename.
+  if (!fromRows[0]) return fresh;
   const from = toAppRow(fromRows[0]);
-  if (from.status === DELETED_APP_STATUS) {
-    throw new EveryAppError(
-      "PREVIOUS_ID_UNKNOWN",
-      `${listed(previous)} was deleted from this Gateway, so there is no app to rename to "${manifest.id}". Nothing was deployed.`,
-      { fix: `remove previousIds from everyapp.config.ts to deploy "${manifest.id}" as a new app` },
-    );
-  }
+  if (from.status === DELETED_APP_STATUS) return fresh;
   const orgKey = text(keys[0]?.["org_key"]);
   if (!orgKey) throw new Error(`Organization ${organization.slug} has no key, yet it has apps.`);
   // Who holds the hostname the new id gets: read once the rules name it.
@@ -202,20 +210,15 @@ async function planRenameIn(
     hostnamePreviousOwner: hostPrevious[0] ? toPreviousIdRow(hostPrevious[0]) : null,
     now,
   });
-  return { plan, organization };
+  return { kind: "rename", plan, organization };
 }
 
-function unknownPreviousIds(appId: string, ids: readonly string[], registered = false): EveryAppError {
+/** A registered app lists an id that is another app's previous id. */
+function takenPreviousIds(appId: string, ids: readonly string[]): EveryAppError {
   return new EveryAppError(
     "PREVIOUS_ID_UNKNOWN",
-    registered
-      ? `previousIds lists ${listed(ids)}, which ${ids.length === 1 ? "isn't" : "aren't"} an id "${appId}" had on this Gateway\nA previous id says which app this one was; this Gateway knows of no such rename. Nothing was deployed.`
-      : `previousIds lists ${listed(ids)}, but no app on this Gateway has ${ids.length === 1 ? "that id" : "those ids"}\nWith previousIds, a deploy renames an existing app to "${appId}"; it never creates a new one. Nothing was deployed.`,
-    {
-      fix: registered
-        ? `drop ${listed(ids)} from previousIds in everyapp.config.ts`
-        : `check the id (everyapp status lists this Gateway's apps), or remove previousIds from everyapp.config.ts to deploy "${appId}" as a new app`,
-    },
+    `previousIds lists ${listed(ids)}, which ${ids.length === 1 ? "is an id" : "are ids"} another app on this Gateway had, not "${appId}"\nA previous id stays the app's that had it. Nothing was deployed.`,
+    { fix: `drop ${listed(ids)} from previousIds in everyapp.config.ts` },
   );
 }
 
@@ -309,6 +312,41 @@ export async function syncPreviousIds(
 /** The served previous hostnames whose page loads don't redirect yet. */
 function pendingMoves(rows: readonly PreviousIdRow[]): PreviousIdRow[] {
   return rows.filter((row) => row.retiredAt === null && row.movedAt === null);
+}
+
+/**
+ * The app's served previous hostnames that don't redirect yet: after a
+ * rename, until its new hostname has answered.
+ */
+export async function unmovedPreviousIds(db: D1Database, appRowId: string): Promise<PreviousIdRow[]> {
+  return pendingMoves(await registryCall(() => readPreviousIds(db, appRowId)));
+}
+
+/**
+ * GATEWAY_RELEASE_UNAVAILABLE for a deploy that renames, or finishes a
+ * rename: publishing the new hostname redeploys the live Gateway, which
+ * can't be had again (lib/gateway/liveRelease.ts). Same code, `rerun`
+ * (`everyapp update`) and data as the error it is given, with what it means
+ * for the rename and `data.rename`.
+ */
+export function renameNeedsGateway(
+  error: EveryAppError,
+  rename: { appId: string; hostname: string } & (
+    | { from: string; fromHostname: string }
+    | { previousHostnames: string[] }
+  ),
+): EveryAppError {
+  const [why = ""] = error.message.split("\n");
+  const { appId, hostname } = rename;
+  const what =
+    "from" in rename
+      ? `Renaming ${rename.from} to ${appId} publishes https://${hostname}, which redeploys the live Gateway as it is. Nothing was renamed or deployed. Update the Gateway first.`
+      : `${appId} was renamed, but https://${hostname} isn't published yet: ${rename.previousHostnames.map((host) => `https://${host}`).join(", ")} still serves it. Nothing changed in this run. Update the Gateway, then deploy again to finish the rename.`;
+  return new EveryAppError(error.code, `${why}\n${what}`, {
+    rerun: error.rerun,
+    rerunNote: "from" in rename ? error.rerunNote : "then deploy again",
+    data: { ...error.data, rename },
+  });
 }
 
 /** How {@link finishMoves} reaches the new hostname and waits (tests). */

@@ -697,8 +697,12 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
     // A rename (lib/gateway/rename.ts): what moved, the old host's move,
     // and retired hostnames. The plan itself is the prompt's context.
     "app.rename": (event) => {
-      if (event.status !== "ok") return null;
       const data = event.data ?? {};
+      // `previousIds` names nothing on this Gateway: a new app, not a rename.
+      if (event.status === "skip" && data["newApp"] === true) {
+        return { line: chalk.dim(`  No ${strings(data["previousIds"]).join(" or ")} here to rename: a new app`) };
+      }
+      if (event.status !== "ok") return null;
       const retired = strings(data["retired"]);
       if (retired.length > 0) {
         const hosts = strings(data["hostnames"]);

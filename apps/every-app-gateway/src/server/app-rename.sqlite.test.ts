@@ -26,6 +26,7 @@ import {
   currentAppResources,
   resetAppResourcesForTests,
 } from "@/server/mcp-auth/resources";
+import { registerDispatchApp } from "@/server/deploy/registry";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { McpConnectionRepository } from "@/server/repositories/McpConnectionRepository";
 import { markAppDeployed, registerApp } from "@/test/registry";
@@ -165,5 +166,36 @@ describe("a renamed app (SQLite)", () => {
     await expect(
       new DrizzleAppRegistry(db as never).findByHostname(OLD),
     ).resolves.toBeNull();
+  });
+
+  it("installs a release whose previousIds name nothing here as a new app, and refuses one that would rename", async () => {
+    const install = (id: string, previousIds: string[]) =>
+      registerDispatchApp({
+        serviceBinding: true,
+        organizationId,
+        appSlug: id,
+        name: id,
+        description: id,
+        manifest: { id, previousIds },
+        configuredThirdPartyDomain: null,
+        appBaseDomain: "apps.example.com",
+        thirdPartyDomain: null,
+      });
+
+    // This Gateway never had "chat": the list is history, the app is new.
+    const plan = await install("notes", ["chat"]);
+    expect(plan.app).toMatchObject({
+      appSlug: "notes",
+      hostname: "notes.apps.example.com",
+    });
+    expect(plan.app.id).not.toBe(rowId);
+
+    // An app here is, or was, the listed id: a rename, which only the CLI does.
+    await expect(install("memo", ["scribe"])).rejects.toMatchObject({
+      code: "RENAME_UNSUPPORTED",
+    });
+    await expect(install("memo", ["chat", "talk"])).rejects.toMatchObject({
+      code: "RENAME_UNSUPPORTED",
+    });
   });
 });

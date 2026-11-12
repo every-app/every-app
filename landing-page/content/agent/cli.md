@@ -133,7 +133,7 @@ Deploys the app in this directory as a private Cloudflare Worker defined by clou
 
 No Gateway in any account the login sees, and none named? At a terminal it offers to install one at apps.<zone> (what everyapp setup does), then deploys; otherwise it stops with action_required install_gateway and the setup command to run.
 
-A rename: change id in everyapp.config.ts and list the old one under previousIds. When the new id isn't registered and a previous one is, the deploy shows what moves (the id and hostname; the Worker, its data and the Gateway's state stay) and asks first (--yes for CI); the old hostname keeps working. A previousIds entry that names no app stops the deploy.
+A rename: change id in everyapp.config.ts and list the old one under previousIds. When the new id isn't registered and a previous one is, the deploy shows what moves (the id and hostname; the Worker, its data and the Gateway's state stay) and asks first (--yes for CI); the old hostname keeps working. When no app has or had any of the previous ids, there is nothing to rename and the app is deployed as a new one.
 
 Nothing else asks first. Install and build output goes to a log file, never to stdout. Safe to run again: a redeploy of an app the Gateway already serves never touches the Gateway.
 
