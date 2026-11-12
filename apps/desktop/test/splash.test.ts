@@ -31,6 +31,7 @@ function fakeWindow(focused = true) {
     blur: () => ((state.focused = false), win.dispatchEvent(new Event("blur"))),
     focus: () => ((state.focused = true), win.dispatchEvent(new Event("focus"))),
     hide: () => ((state.visibility = "hidden"), doc.dispatchEvent(new Event("visibilitychange"))),
+    unhide: () => ((state.visibility = "visible"), doc.dispatchEvent(new Event("visibilitychange"))),
   };
 }
 
@@ -38,51 +39,81 @@ describe("trackAway", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it("reports away after the delay, and back at once", () => {
+  it("reports away after the delay once it's minimized or hidden, and back at once when restored", () => {
     const w = fakeWindow();
     const onChange = vi.fn();
     const stop = trackAway(w.target, 300, onChange);
-    w.blur();
+    w.hide();
     vi.advanceTimersByTime(299);
     expect(onChange).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(onChange).toHaveBeenLastCalledWith(true);
-    w.focus();
+    w.unhide();
     expect(onChange).toHaveBeenLastCalledWith(false);
     expect(onChange).toHaveBeenCalledTimes(2);
     stop();
   });
 
-  it("ignores a quick trip away", () => {
+  it("ignores a quick trip out of sight", () => {
     const w = fakeWindow();
     const onChange = vi.fn();
     trackAway(w.target, 300, onChange);
-    w.blur();
+    w.hide();
     vi.advanceTimersByTime(100);
-    w.focus();
+    w.unhide();
     vi.advanceTimersByTime(1000);
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("counts a hidden window as away, and starts away if it isn't focused", () => {
+  it("is never away when the window opens unfocused", () => {
     const w = fakeWindow(false);
     const onChange = vi.fn();
     trackAway(w.target, 300, onChange);
+    vi.advanceTimersByTime(60_000);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("is not away when it opens unfocused and is hidden before it was ever in front", () => {
+    const w = fakeWindow(false);
+    const onChange = vi.fn();
+    trackAway(w.target, 300, onChange);
+    w.hide();
+    vi.advanceTimersByTime(60_000);
+    expect(onChange).not.toHaveBeenCalled();
+    // Once it has been in front, hiding it counts.
+    w.unhide();
+    w.focus();
+    w.hide();
     vi.advanceTimersByTime(300);
     expect(onChange).toHaveBeenLastCalledWith(true);
-    const v = fakeWindow();
-    const onV = vi.fn();
-    trackAway(v.target, 300, onV);
-    v.hide();
+  });
+
+  it("is not away while visible but unfocused", () => {
+    const w = fakeWindow();
+    const onChange = vi.fn();
+    trackAway(w.target, 300, onChange);
+    w.blur();
+    vi.advanceTimersByTime(60_000);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("comes back when it's visible again, focused or not", () => {
+    const w = fakeWindow();
+    const onChange = vi.fn();
+    trackAway(w.target, 300, onChange);
+    w.blur();
+    w.hide();
     vi.advanceTimersByTime(300);
-    expect(onV).toHaveBeenLastCalledWith(true);
+    expect(onChange).toHaveBeenLastCalledWith(true);
+    w.unhide();
+    expect(onChange).toHaveBeenLastCalledWith(false);
   });
 
   it("stops listening", () => {
     const w = fakeWindow();
     const onChange = vi.fn();
     trackAway(w.target, 300, onChange)();
-    w.blur();
+    w.hide();
     vi.advanceTimersByTime(1000);
     expect(onChange).not.toHaveBeenCalled();
   });

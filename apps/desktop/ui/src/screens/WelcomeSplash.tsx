@@ -6,7 +6,7 @@ import { EveryAppLogo } from "./OnboardingScreen";
 export const SPLASH_TIMING = {
   fadeIn: 450,
   fadeOut: 300,
-  /** The window has to stay out of front this long before the splash comes up. */
+  /** The window has to stay out of sight this long before the splash comes up. */
   awayDelay: 300,
 } as const;
 

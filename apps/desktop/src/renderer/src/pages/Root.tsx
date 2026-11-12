@@ -1,5 +1,5 @@
 // The window: sign-in and first-run permissions until they're done, then the app frame around
-// the routed page, with "Enjoy Every App" over it while the window isn't in front (splash.ts).
+// the routed page, with "Enjoy Every App" over it while the window is out of sight (splash.ts).
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Outlet, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";

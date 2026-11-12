@@ -1,8 +1,9 @@
-// When "Enjoy Every App" (WelcomeSplash in @every-app/desktop-ui) is up: while the window isn't in
-// front (it lost focus, or it's hidden), so Mission Control, App Exposé and the Dock's previews
-// show it rather than an unreadable shrunken window. It fades out as the window comes back. Not
-// during a recording: then the window is the notes beside the call. The hook is in useSplash.ts;
-// timings are SPLASH_TIMING, passed in by Root.
+// When "Enjoy Every App" (WelcomeSplash in @every-app/desktop-ui) is up: only while the window is
+// out of sight (minimized, hidden, or fully covered: the page's visibilityState is "hidden"), and
+// only once it has been in front in this run. Never over a window the person can see: one that
+// opens without focus, or sits unfocused beside another app, shows its content. It fades out as
+// the window comes back. Not during a recording. The hook is in useSplash.ts; timings are
+// SPLASH_TIMING, passed in by Root.
 
 import type { AppSnapshot } from "@shared/ipc";
 
@@ -28,31 +29,33 @@ export interface AwayTarget {
 }
 
 /**
- * Calls `onChange(true)` once the window has been out of front for `delayMs` (a quick trip to
- * another app or a menu doesn't flash it), and `onChange(false)` as soon as it's back.
- * Answers a function that stops listening.
+ * Calls `onChange(true)` once the window has been out of sight for `delayMs`, and
+ * `onChange(false)` as soon as it's visible again. Out of sight is the page being hidden
+ * (minimized, hidden, fully covered); losing focus isn't. Nothing is reported until the window has
+ * been in front (visible and focused) once, so a window that opens unfocused or hidden never
+ * starts away. Answers a function that stops listening.
  */
 export function trackAway(target: AwayTarget, delayMs: number, onChange: (away: boolean) => void): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let away = false;
-  const inFront = () => target.document.visibilityState === "visible" && target.document.hasFocus();
+  let beenInFront = false;
   const update = () => {
     clearTimeout(timer);
     timer = undefined;
-    if (inFront()) {
+    const visible = target.document.visibilityState === "visible";
+    if (visible && target.document.hasFocus()) beenInFront = true;
+    if (visible) {
       if (away) onChange((away = false));
-    } else if (!away) {
+    } else if (beenInFront && !away) {
       timer = setTimeout(() => onChange((away = true)), delayMs);
     }
   };
   target.addEventListener("focus", update);
-  target.addEventListener("blur", update);
   target.document.addEventListener("visibilitychange", update);
   update();
   return () => {
     clearTimeout(timer);
     target.removeEventListener("focus", update);
-    target.removeEventListener("blur", update);
     target.document.removeEventListener("visibilitychange", update);
   };
 }
