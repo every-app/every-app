@@ -167,7 +167,8 @@ export async function update({ config, checkout, sandbox }) {
     config,
     cwd: checkout,
     log: path.join(sandbox.dir, "update.log"),
-    args: ["update", "--gateway", sandbox.name, "--yes"],
+    // A sandbox takes the branch under test: --unmerged says so (the guard is for live Gateways).
+    args: ["update", "--gateway", sandbox.name, "--yes", "--unmerged"],
   });
 }
 

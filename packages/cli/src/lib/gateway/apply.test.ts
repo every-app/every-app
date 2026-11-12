@@ -19,12 +19,12 @@ import { buildGatewayRelease } from "@/test/gatewayRelease";
 import { makeTestHome } from "@/test/home";
 import { loseLeaseAtCheck, OTHER_HOLDER } from "@/test/loseLease";
 import { handleInterrupt, resetInterruptsForTests } from "@/lib/interrupt";
-import { applyGateway } from "./apply";
+import { applyGateway, checkCheckout } from "./apply";
 import { readInstall, writeInstall } from "./install";
 import { holdLease } from "@/test/holdLease";
 import { LeasePurpose } from "./lease";
 import { reconcileGateway } from "./reconcile";
-import { openRelease, type GatewayRelease } from "./release";
+import { openRelease, type CandidateRelease, type GatewayRelease } from "./release";
 import { ensureGatewayResources } from "./resources";
 import { readRestorePoint } from "./restorePoints";
 
@@ -447,13 +447,20 @@ describe("applyGateway", () => {
     ).resolves.toEqual(before);
   });
 
-  it("deploys an older build of the same version, saying so", async () => {
+  it("refuses an older build of the same version, and deploys it with --downgrade, saying so", async () => {
     const newer = await laterBuild();
     try {
       await deployGateway({ release: newer });
       events.length = 0;
-      // An older checkout's release: same version, from before.
-      await deployGateway({ reason: "upgrade" });
+      // An older checkout's release: same version, from before. Refused,
+      // with nothing changed, until --downgrade says to.
+      await expect(deployGateway({ reason: "upgrade" })).rejects.toMatchObject({
+        code: "GATEWAY_DOWNGRADE",
+        authorize: true,
+        rerun: expect.stringMatching(/ --downgrade$/),
+      });
+      expect((await readInstall(gatewayD1()))!.releaseSha256).toBe(newer.manifest.sha256);
+      await deployGateway({ reason: "upgrade", allowDowngrade: true });
       expect(events).toContainEqual(
         expect.objectContaining({
           type: "warning",
@@ -538,6 +545,54 @@ describe("applyGateway", () => {
     }
   });
 
+  describe("the checkout guard", () => {
+    const from = (checkout: CandidateRelease["checkout"]): CandidateRelease => ({
+      treeSha256: "tree",
+      origin: { kind: "checkout" },
+      version: "0.3.0",
+      order: { schema: 1, committedAt: 1 },
+      ...(checkout ? { checkout } : {}),
+    });
+
+    it("lets through a checkout on its main branch with nothing uncommitted, and one git can't read", () => {
+      expect(() => checkCheckout(from({ hash: "abc1234", uncommitted: false, notOn: null }))).not.toThrow();
+      expect(() => checkCheckout(from(undefined))).not.toThrow();
+    });
+
+    it("refuses uncommitted Gateway changes, naming --unmerged as the way past", () => {
+      expect(() => checkCheckout(from({ hash: "abc1234", uncommitted: true, notOn: null }))).toThrow(
+        expect.objectContaining({
+          code: "CHECKOUT_UNCOMMITTED",
+          message: expect.stringMatching(/^This checkout's Gateway has changes git hasn't committed\nNothing changed\./),
+          authorize: true,
+          rerun: expect.stringMatching(/ --unmerged$/),
+          data: { commit: "abc1234", uncommitted: true, notOn: null },
+        }),
+      );
+    });
+
+    it("refuses a commit that isn't on the remote's main branch", () => {
+      expect(() => checkCheckout(from({ hash: "abc1234", uncommitted: false, notOn: "origin/main" }))).toThrow(
+        expect.objectContaining({
+          code: "CHECKOUT_UNMERGED",
+          message: expect.stringMatching(/^This checkout is at abc1234, which isn't on origin\/main\nNothing changed\./),
+          authorize: true,
+          rerun: expect.stringMatching(/ --unmerged$/),
+        }),
+      );
+    });
+
+    it("deploys either with --unmerged, and never looks at a release that isn't a checkout's", () => {
+      expect(() => checkCheckout(from({ hash: "abc1234", uncommitted: true, notOn: "origin/main" }), true)).not.toThrow();
+      expect(() =>
+        checkCheckout({
+          ...from({ hash: "abc1234", uncommitted: true, notOn: "origin/main" }),
+          origin: { kind: "file", path: "/tmp/release.tar.gz" },
+        }),
+      ).not.toThrow();
+    });
+  });
+
   it("checks the release again once it holds the lease, and says it puts an older one back", async () => {
     await deployGateway();
     const newer = await laterBuild();
@@ -547,6 +602,7 @@ describe("applyGateway", () => {
       let raced = false;
       const waiting = deployGateway({
         reason: "upgrade",
+        allowDowngrade: true,
         leaseWaitMs: 60_000,
         sleep: async () => {
           if (raced) return;

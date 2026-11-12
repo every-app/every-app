@@ -62,7 +62,7 @@ import {
   restorePointNote,
 } from "@/lib/migrations/remote";
 import { GATEWAY_RESTORE_TARGET } from "./restorePoints";
-import { CLI } from "@/lib/output/command";
+import { CLI, thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { plural } from "@/lib/output/text";
 import {
@@ -111,6 +111,8 @@ export interface ApplyGatewayOptions {
    * it said anything was starting: setup's own host.
    */
   checkedDomains?: readonly string[];
+  /** Replace a live Gateway that is newer than this release (--downgrade). */
+  allowDowngrade?: boolean;
   /** A person at a terminal answers cf's own prompts. */
   interactive: boolean;
   /** Asks that person before replacing a version everyapp didn't record (tests). */
@@ -200,15 +202,16 @@ export function olderThanInstalled(
  * A release older than the live one. A rebind (`reconcile`) never changes
  * the Gateway's code, so one that waited for the lease while an upgrade
  * went live is refused (GATEWAY_UPDATED; run it again and it takes the new
- * release). `setup` and `update` deploy it, saying so (GATEWAY_DOWNGRADE):
- * a rollback is a deploy of the older release, and `db restore` for its
- * database.
+ * release). `setup` and `update` refuse it too (GATEWAY_DOWNGRADE), unless
+ * told to with --downgrade: then they deploy it, saying so. A rollback is
+ * that deploy of the older release, and `db restore` for its database.
  */
-function checkDowngrade(
+export function checkDowngrade(
   out: EventSink,
   reason: ApplyReason,
   release: CandidateRelease,
   install: InstallRecord,
+  allowDowngrade = false,
 ): void {
   if (!olderThanInstalled(release, install)) return;
   if (reason === "reconcile") {
@@ -221,12 +224,72 @@ function checkDowngrade(
   const checkout = release.origin.kind === "checkout";
   const what = checkout ? "This checkout's Gateway" : `The Gateway from ${describeOrigin(release.origin)}`;
   const live = release.version === install.releaseVersion ? "" : ` (${install.releaseVersion})`;
+  const headline = `${what} (${release.version}) is older than the live one${live}`;
+  const forward = `${checkout ? "git pull" : "update everyapp"}, then update the Gateway again`;
+  // The older Gateway knows fewer migrations than the database has.
+  const schemaAhead = release.order.schema < install.releaseOrder.schema;
+  const data = { live: install.releaseVersion, candidate: release.version, schemaAhead };
+  if (!allowDowngrade) {
+    throw new EveryAppError(
+      "GATEWAY_DOWNGRADE",
+      [
+        headline,
+        "Nothing changed. Deploying it puts the older code back and leaves the database as it is.",
+        schemaAhead
+          ? `The database has migrations this older Gateway doesn't know. They stay, so the older code must run on them; ${CLI} db restore --gateway puts the database back to before its last migrating update, and loses what was written since.`
+          : "Its database has no migration this older Gateway doesn't know.",
+      ].join("\n"),
+      {
+        fix: `to go forward instead: ${forward}`,
+        rerun: thisCommand(["--downgrade"]),
+        authorize: true,
+        data,
+      },
+    );
+  }
   out.emit({
     type: "warning",
     code: "GATEWAY_DOWNGRADE",
-    message: `${what} (${release.version}) is older than the live one${live}\nDeploying it anyway. To go forward again, ${checkout ? "git pull" : "update everyapp"} and run ${CLI} update.`,
-    data: { live: install.releaseVersion, candidate: release.version },
+    message: `${headline}\nDeploying it for --downgrade${schemaAhead ? "; the database keeps the migrations it doesn't know" : ""}. To go forward again, ${forward}.`,
+    data,
   });
+}
+
+/**
+ * A live Gateway replaced from a checkout takes whatever the checkout holds,
+ * and a migration it applies can't be taken back. So the checkout must be
+ * what its main branch holds: no uncommitted change to the Gateway's
+ * sources (CHECKOUT_UNCOMMITTED), and HEAD on the remote's main branch
+ * (CHECKOUT_UNMERGED), unless told otherwise with --unmerged. A first
+ * install replaces nothing and is never refused.
+ */
+export function checkCheckout(release: CandidateRelease, allowUnmerged = false): void {
+  const state = release.checkout;
+  if (allowUnmerged || release.origin.kind !== "checkout" || !state) return;
+  const next = {
+    rerun: thisCommand(["--unmerged"]),
+    authorize: true,
+    data: { commit: state.hash, uncommitted: state.uncommitted, notOn: state.notOn },
+  };
+  const why =
+    "Nothing changed. An update deploys this checkout's Gateway as it is on disk, and a migration it applies to the live database can't be taken back.";
+  if (state.uncommitted) {
+    throw new EveryAppError(
+      "CHECKOUT_UNCOMMITTED",
+      `This checkout's Gateway has changes git hasn't committed\n${why}`,
+      { fix: "commit or stash them (git status shows which files)", ...next },
+    );
+  }
+  if (state.notOn) {
+    throw new EveryAppError(
+      "CHECKOUT_UNMERGED",
+      `This checkout is at ${state.hash}, which isn't on ${state.notOn}\n${why}`,
+      {
+        fix: "switch to the main branch and git pull, or merge this commit there first",
+        ...next,
+      },
+    );
+  }
 }
 
 /**
@@ -292,7 +355,9 @@ export async function applyGateway(
     // Only now is the install record the last deploy's for sure: another
     // upgrade may have finished while this one waited for the lease.
     const install = await readInstall(db);
-    if (install?.liveVersionId) checkDowngrade(options.out, reason, candidate(release), install);
+    if (install?.liveVersionId) {
+      checkDowngrade(options.out, reason, candidate(release), install, options.allowDowngrade);
+    }
     // A Worker holding the row's hostname while the row names no version:
     // this install's own upload, from a run that stopped after it. Skipping
     // assertReplaceable's question isn't a silent takeover: one edited in

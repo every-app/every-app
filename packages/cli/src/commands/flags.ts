@@ -77,6 +77,22 @@ export const forceDnsFlag = {
   optional: true,
 } as const;
 
+/** `setup` and `update`: replace a live Gateway that is newer than the one this run deploys. */
+export const downgradeFlag = {
+  kind: "boolean",
+  brief:
+    "Replace a live Gateway that is newer than this one (a rollback: the older code goes back, the database keeps its migrations)",
+  optional: true,
+} as const;
+
+/** `setup` and `update` from a checkout: replace a live Gateway from one that isn't its main branch. */
+export const unmergedFlag = {
+  kind: "boolean",
+  brief:
+    "From a checkout: replace the live Gateway even when the checkout has uncommitted Gateway changes or isn't on the remote's main branch (a fork, or a branch you deploy on purpose)",
+  optional: true,
+} as const;
+
 /**
  * What a deploy of an app may take over, with the person's yes: `deploy`
  * and `install` declare all five, and each refusal's `rerun` adds the one

@@ -33,6 +33,7 @@ import {
   RELEASE_TARBALL,
   type CandidateRelease,
   type CheckoutCommit,
+  type CheckoutState,
   type GatewayRelease,
 } from "./release";
 
@@ -123,6 +124,45 @@ async function unreleasedCommit(root: string, version: string): Promise<Checkout
 }
 
 /**
+ * How the checkout stands in git: whether the Gateway's sources have
+ * uncommitted changes, and whether HEAD is on the remote's main branch
+ * (`origin/HEAD`'s, else `origin/main`; nothing is fetched). Null without
+ * git. A checkout with no such branch (no remote, a tarball of the
+ * sources) is never called off it.
+ */
+export async function checkoutState(root: string): Promise<CheckoutState | null> {
+  const git = (args: string[]) => promisify(execFile)("git", args, { cwd: root });
+  const said = (args: string[]) =>
+    git(args).then(
+      ({ stdout }) => stdout.trim() || null,
+      () => null,
+    );
+  try {
+    const [head, changes] = await Promise.all([
+      git(["rev-parse", "--short", "HEAD"]),
+      git(["status", "--porcelain", "--", ...GATEWAY_SOURCES]),
+    ]);
+    const main =
+      (await said(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])) ??
+      ((await said(["rev-parse", "--verify", "--quiet", "refs/remotes/origin/main"])) ? "origin/main" : null);
+    // Exits 1 when HEAD isn't an ancestor of main.
+    const onMain = main
+      ? await git(["merge-base", "--is-ancestor", "HEAD", main]).then(
+          () => true,
+          () => false,
+        )
+      : true;
+    return {
+      hash: head.stdout.trim(),
+      uncommitted: changes.stdout.trim() !== "",
+      notOn: onMain ? null : main,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The release this checkout would build, as far as its sources tell:
  * their tree hash, the Gateway's version (and the commit, when the version
  * alone doesn't say what it is), its newest migration and when its sources
@@ -140,11 +180,12 @@ export async function checkoutSource(root: string): Promise<CandidateRelease> {
     readJson("package.json"),
   ]);
   const version = String((pkg as { version?: unknown }).version ?? "unknown");
-  const commit = await unreleasedCommit(root, version);
+  const [commit, checkout] = await Promise.all([unreleasedCommit(root, version), checkoutState(root)]);
   return {
     treeSha256,
     origin: { kind: "checkout" },
     ...(commit ? { commit } : {}),
+    ...(checkout ? { checkout } : {}),
     version,
     order: {
       schema: newestMigration((journal as { entries?: Array<{ when: number }> }).entries ?? []),

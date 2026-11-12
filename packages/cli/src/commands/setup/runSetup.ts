@@ -83,7 +83,7 @@ import {
 import { preflightDomains } from "@/lib/domains/preflight";
 import { listZones, registerDomainUrl, zoneUrl } from "@/lib/domains/zones";
 import { ActionRequiredError, CancelledError, errorMessage, EveryAppError } from "@/lib/errors";
-import { isLiveRelease } from "@/lib/gateway/apply";
+import { checkCheckout, checkDowngrade, isLiveRelease } from "@/lib/gateway/apply";
 import { GatewayChange } from "@/lib/gateway/change";
 import { requestedGatewayUrl } from "@/lib/gateway/connect";
 import { discoverGateway, refuseUnchecked, requireGateway, type Discovery } from "@/lib/gateway/discover";
@@ -121,6 +121,10 @@ export interface SetupFlags {
   release?: string;
   "account-id"?: string;
   "force-dns"?: boolean;
+  /** Replace a live Gateway newer than the one this run deploys. */
+  downgrade?: boolean;
+  /** From a checkout: replace a live Gateway from uncommitted changes or a commit off the main branch. */
+  unmerged?: boolean;
   /** Upload the Gateway even when it is up to date (hidden; key rotation). */
   redeploy?: boolean;
   json?: boolean;
@@ -844,6 +848,13 @@ async function deployOrRepairGateway({
     }
   }
 
+  if (live) {
+    // Before building too: what is refused is refused before a minute's build,
+    // and again under the lease (lib/gateway/apply.ts), where the row is final.
+    if (!flags.downgrade) checkDowngrade(out, "upgrade", source, live);
+    checkCheckout(source, flags.unmerged);
+  }
+
   const name = releaseName(source);
   const change = live
     ? GatewayChange.Upgrade
@@ -887,6 +898,7 @@ async function deployOrRepairGateway({
       interactive: deps.interactive,
       ...(updateOnly && databaseId ? { existing: { databaseId } } : {}),
       forceDns: flags["force-dns"],
+      allowDowngrade: flags.downgrade,
       checkedDomains,
       sleep: deps.seams?.sleep,
       leaseWaitMs: deps.seams?.leaseWaitMs,

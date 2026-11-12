@@ -1,6 +1,6 @@
 import { buildCommand } from "@stricli/core";
 import { CLI } from "@/lib/output/command";
-import { accountFlag, forceDnsFlag, gatewayFlag, jsonFlag, verboseFlag, yesFlag } from "../flags";
+import { downgradeFlag, accountFlag, forceDnsFlag, gatewayFlag, jsonFlag, verboseFlag, yesFlag, unmergedFlag } from "../flags";
 
 export const updateCommand = buildCommand({
   loader: async () => {
@@ -20,6 +20,8 @@ export const updateCommand = buildCommand({
         optional: true,
       },
       "force-dns": forceDnsFlag,
+      downgrade: downgradeFlag,
+      unmerged: unmergedFlag,
       redeploy: {
         kind: "boolean",
         brief:
@@ -47,9 +49,15 @@ export const updateCommand = buildCommand({
       "     the login's accounts (--account-id when there is one in more than one)",
       "  2. Upgrades it (migrations first, with a restore point). When it runs that Gateway",
       "     already, binds and publishes every registered app if the live Gateway doesn't, and",
-      "     otherwise says it is up to date. A live Gateway newer than this one is replaced",
-      "     with a warning (GATEWAY_DOWNGRADE): that is how a rollback goes; in a checkout, git pull",
-      "     to go forward",
+      "     otherwise says it is up to date. A live Gateway newer than this one is left alone",
+      "     (GATEWAY_DOWNGRADE) unless --downgrade says to replace it: that is how a rollback",
+      "     goes. The older code goes back and the database keeps its migrations; in a checkout,",
+      "     git pull to go forward",
+      "",
+      "From a checkout, a live Gateway is replaced only by what the remote's main branch holds: an",
+      "update stops when the Gateway's sources have uncommitted changes (CHECKOUT_UNCOMMITTED) or",
+      "the commit isn't on origin/main (CHECKOUT_UNMERGED), because a migration it applies can't be",
+      "taken back. --unmerged deploys it anyway (a fork, or a branch you deploy on purpose).",
       "",
       "A checkout's Gateway is named by its version when it is that version's release (the",
       "gateway-v<version> tag), and by the checkout's commit otherwise.",

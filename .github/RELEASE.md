@@ -52,13 +52,18 @@ places, in this order (`packages/cli/src/lib/gateway/source.ts`):
    it builds from `apps/every-app-gateway`
    (`packages/cli/src/lib/gateway/checkoutRelease.ts`), kept under the
    checkout's `node_modules/.cache/everyapp/` by the tree hash of its
-   sources. A checkout behind the live Gateway is told to `git pull`.
+   sources. A checkout behind the live Gateway is told to `git pull`, and
+   one with uncommitted Gateway changes or at a commit that isn't on
+   `origin/main` doesn't replace a live Gateway without `--unmerged`.
 3. The published release of every-app/every-app for the CLI's own
    version: the GitHub Release tagged `gateway-v<version>`, or when there
    is none yet, the newest stable one (`/releases/latest`), said so.
 
 A downloaded release lands in a private temp dir and is checked against
 the SHA-256 its own `release.json` records before anything is deployed.
+`setup` and `update` refuse to put a Gateway older than the live one over
+it (`GATEWAY_DOWNGRADE`); `--downgrade` is the rollback, which puts the
+older code back and leaves the database's migrations where they are.
 Every other command refuses a Gateway whose database is older than the
 CLI's (`GATEWAY_OUTDATED`; `update` brings it up), and an app's deploy
 warns when its `@every-app/sdk` isn't the CLI's version

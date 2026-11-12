@@ -123,6 +123,10 @@ A cf call ran past its time limit. Retryable.
 cf failed for a reason not recognized. The message is cf's; `--verbose` shows its output.
 ### CF_VERSION_DIFFERS
 The app's `cf` version isn't the one everyapp is tested with.
+### CHECKOUT_UNCOMMITTED
+From a checkout of the Every App repository, `update` (or `setup` over a live Gateway) found uncommitted changes in the Gateway's sources, so nothing changed: it deploys the checkout as it is on disk, and a migration it applies can't be taken back. Commit or stash them. `data.rerun` adds `--unmerged` (`data.authorize`: ask first) to deploy it anyway.
+### CHECKOUT_UNMERGED
+From a checkout, `update` (or `setup` over a live Gateway) is at a commit (`data.commit`) that isn't on the remote's main branch (`data.notOn`, usually `origin/main`): a branch, or commits not pushed. Nothing changed. Switch to the main branch and `git pull`, or merge the commit first. On a fork or a branch you deploy on purpose, `data.rerun` adds `--unmerged` (`data.authorize`: ask first).
 ### CLOUDFLARE_LOGIN_FAILED
 cf's login didn't complete. Run `everyapp login` again, or set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 ### CLOUDFLARE_TOKEN_REJECTED
@@ -216,7 +220,7 @@ Building the Gateway from this checkout failed. Fix the build error (often `pnpm
 ### GATEWAY_CHECK_FAILED
 Discovery couldn't tell whether a Gateway exists, so nothing changed. Retry; if it repeats, check the login can read D1 in that account.
 ### GATEWAY_DOWNGRADE
-Warning: `setup` or `update` is deploying a Gateway older than the live one (a rollback). To go forward again, `git pull` and `everyapp update`.
+`setup` or `update` would replace the live Gateway with an older one, so nothing changed. To go forward instead, update everyapp (in a checkout, `git pull`) and run `everyapp update`. To roll back on purpose, `data.rerun` adds `--downgrade` (`data.authorize`: ask first): the older code goes back and the database keeps its migrations. `data.schemaAhead` says whether the database has migrations the older Gateway doesn't know; `everyapp db restore --gateway` puts the database back to before its last migrating update, and loses what was written since. With `--downgrade` it is a warning and the deploy goes ahead.
 ### GATEWAY_NOT_FOUND
 No Gateway in any account this login sees (`data.accounts`). Log in to the right account, pass `--account-id`, or `everyapp setup`.
 ### GATEWAY_NOT_INSTALLED
@@ -718,7 +722,7 @@ Cloudflare didn't list the zone's certificates. Check again.
 ### CERT_PENDING (status)
 A hostname's certificate hasn't come yet. Wait.
 ### CHECKOUT_BEHIND
-This checkout's Gateway is older than the live one; an update from here puts the older Gateway back (`GATEWAY_DOWNGRADE`). `git pull`.
+This checkout's Gateway is older than the live one; an update from here is refused (`GATEWAY_DOWNGRADE`) unless `--downgrade` says to put the older Gateway back. `git pull`.
 ### DEPLOY_RUNNING
 A deploy is running. Wait.
 ### EMAIL_INBOUND_UNDECLARED (status)

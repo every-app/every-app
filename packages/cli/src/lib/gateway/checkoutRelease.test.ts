@@ -13,6 +13,7 @@ import { buildGatewayRelease } from "@/test/gatewayRelease";
 import {
   buildReleaseFromCheckout,
   checkoutSource,
+  checkoutState,
   hashCheckoutTree,
   openCheckoutRelease,
   releaseCacheDir,
@@ -212,8 +213,62 @@ describe("the Gateway build cache", () => {
       origin: { kind: "checkout" },
       // No gateway-v0.2.0 tag: the version alone doesn't say what it is.
       commit: { hash: expect.stringMatching(/^[0-9a-f]{7,}$/), uncommittedChanges: false },
+      // No remote: nothing to be off.
+      checkout: { hash: expect.stringMatching(/^[0-9a-f]{7,}$/), uncommitted: false, notOn: null },
       version: "0.2.0",
       order: { schema: 0, committedAt },
+    });
+  });
+
+  describe("how the checkout stands in git", () => {
+    /** `origin/main` at the commit HEAD is at now, as a fetch would leave it. */
+    const originMainHere = () =>
+      execFileSync("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], { cwd: root });
+
+    it("is on main with nothing uncommitted, at the remote's main commit or behind it", async () => {
+      commit("2026-10-01T00:00:00Z");
+      originMainHere();
+      await expect(checkoutState(root)).resolves.toMatchObject({ uncommitted: false, notOn: null });
+
+      // Behind origin/main (not pulled yet): still on it.
+      write("packages/cli/src/cli.ts", "export const cli = 2;\n");
+      commit("2026-10-02T00:00:00Z");
+      originMainHere();
+      execFileSync("git", ["checkout", "-q", "--detach", "HEAD~1"], { cwd: root });
+      await expect(checkoutState(root)).resolves.toMatchObject({ uncommitted: false, notOn: null });
+    });
+
+    it("says a commit the remote's main branch doesn't have: a branch, or one not pushed", async () => {
+      commit("2026-10-01T00:00:00Z");
+      originMainHere();
+      write("apps/every-app-gateway/src/server.ts", "export const gateway = 2;\n");
+      commit("2026-10-02T00:00:00Z");
+
+      await expect(checkoutState(root)).resolves.toMatchObject({ uncommitted: false, notOn: "origin/main" });
+    });
+
+    it("compares with the branch origin/HEAD names, when the remote's main branch has another name", async () => {
+      commit("2026-10-01T00:00:00Z");
+      execFileSync("git", ["update-ref", "refs/remotes/origin/trunk", "HEAD"], { cwd: root });
+      execFileSync("git", ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk"], { cwd: root });
+      write("apps/every-app-gateway/src/server.ts", "export const gateway = 2;\n");
+      commit("2026-10-02T00:00:00Z");
+
+      await expect(checkoutState(root)).resolves.toMatchObject({ notOn: "origin/trunk" });
+    });
+
+    it("says uncommitted changes to the Gateway's sources, and not to anything else", async () => {
+      commit("2026-10-01T00:00:00Z");
+      write("packages/cli/src/cli.ts", "export const cli = 2;\n");
+      await expect(checkoutState(root)).resolves.toMatchObject({ uncommitted: false });
+
+      write("apps/every-app-gateway/src/server.ts", "export const gateway = 2;\n");
+      await expect(checkoutState(root)).resolves.toMatchObject({ uncommitted: true });
+    });
+
+    it("is unknown without git", async () => {
+      fs.rmSync(path.join(root, ".git"), { recursive: true, force: true });
+      await expect(checkoutState(root)).resolves.toBeNull();
     });
   });
 

@@ -106,6 +106,26 @@ export interface CandidateRelease extends ReleaseSource {
    * version's release (checkoutRelease.ts `unreleasedCommit`).
    */
   commit?: CheckoutCommit;
+  /**
+   * How the checkout stands in git, for the guard on replacing a live
+   * Gateway from it (lib/gateway/apply.ts `checkCheckout`); absent for a
+   * release that isn't a checkout's, or a checkout git can't read.
+   */
+  checkout?: CheckoutState;
+}
+
+/** Whether a checkout's Gateway is what its main branch holds. */
+export interface CheckoutState {
+  /** HEAD's short hash. */
+  hash: string;
+  /** The Gateway's sources have changes git hasn't committed. */
+  uncommitted: boolean;
+  /**
+   * The remote's main branch (`origin/main`) when HEAD isn't on it: a
+   * branch, or commits not pushed. Null when HEAD is on it, or when the
+   * checkout has no such branch to compare with.
+   */
+  notOn: string | null;
 }
 
 /** The commit a checkout is at, and whether the Gateway's sources changed since. */

@@ -259,6 +259,8 @@ The flags people use: --domain, --account-id, and --yes for a script (it answers
 - `--name <name>`: A second Gateway in the same Cloudflare account, by name (1 to 16 lowercase letters or digits): its Worker is every-app-gateway-<name> and its apps every-<name>--…; setup finds or installs that one only. Without it, the Gateway is every-app-gateway, as always
 - `--release <value>`: The Gateway release to deploy: a GitHub repository URL (its latest release) or release page, a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz (default: this checkout's build, or without a checkout, the published release for this everyapp version)
 - `--force-dns`: Publish new hostnames even where a DNS record answers them (one at a hostname is replaced)
+- `--downgrade`: Replace a live Gateway that is newer than this one (a rollback: the older code goes back, the database keeps its migrations)
+- `--unmerged`: From a checkout: replace the live Gateway even when the checkout has uncommitted Gateway changes or isn't on the remote's main branch (a fork, or a branch you deploy on purpose)
 - `--redeploy` (hidden): Upload the Gateway even when it is up to date (after a change in the dashboard, such as a key rotation)
 - `--no-access`: Leave Cloudflare Access off (not recommended): by default setup puts it in front of the Gateway once the owner exists. Remembered, so a later unattended setup leaves it off too; everyapp access on turns it on
 - `--team <value>`: The Zero Trust team's name, when the Cloudflare account has none yet: people sign in at <name>.cloudflareaccess.com, and it can't be changed later (ignored once a team exists)
@@ -271,12 +273,16 @@ Update the Gateway to a newer release.
 Deploys a newer Gateway over the one your Cloudflare login finds, where it is, keeping its data, users and apps. It never installs a Gateway: with none, it stops and says to run everyapp setup. The Gateway comes from --release (a GitHub repository or release URL, a tarball's URL, or a downloaded every-app-gateway-release.tar.gz); otherwise this checkout's build when everyapp runs from one; otherwise the published release for this everyapp version (https://github.com/every-app/every-app, gateway-v<version>).
 
 1. Logs in to Cloudflare (cf auth login, or CLOUDFLARE_API_TOKEN) and finds the Gateway in the login's accounts (--account-id when there is one in more than one)
-2. Upgrades it (migrations first, with a restore point). When it runs that Gateway already, binds and publishes every registered app if the live Gateway doesn't, and otherwise says it is up to date. A live Gateway newer than this one is replaced with a warning (GATEWAY_DOWNGRADE): that is how a rollback goes; in a checkout, git pull to go forward
+2. Upgrades it (migrations first, with a restore point). When it runs that Gateway already, binds and publishes every registered app if the live Gateway doesn't, and otherwise says it is up to date. A live Gateway newer than this one is left alone (GATEWAY_DOWNGRADE) unless --downgrade says to replace it: that is how a rollback goes. The older code goes back and the database keeps its migrations; in a checkout, git pull to go forward
+
+From a checkout, a live Gateway is replaced only by what the remote's main branch holds: an update stops when the Gateway's sources have uncommitted changes (CHECKOUT_UNCOMMITTED) or the commit isn't on origin/main (CHECKOUT_UNMERGED), because a migration it applies can't be taken back. --unmerged deploys it anyway (a fork, or a branch you deploy on purpose).
 
 A checkout's Gateway is named by its version when it is that version's release (the gateway-v<version> tag), and by the checkout's commit otherwise. With --json, each step is an NDJSON event.
 
 - `--release <value>`: The Gateway release to deploy: a GitHub repository URL (its latest release) or release page, a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz (default: this checkout's build, or without a checkout, the published release for this everyapp version)
 - `--force-dns`: Publish new hostnames even where a DNS record answers them (one at a hostname is replaced)
+- `--downgrade`: Replace a live Gateway that is newer than this one (a rollback: the older code goes back, the database keeps its migrations)
+- `--unmerged`: From a checkout: replace the live Gateway even when the checkout has uncommitted Gateway changes or isn't on the remote's main branch (a fork, or a branch you deploy on purpose)
 - `--redeploy` (hidden): Upload the Gateway even when it is up to date (after a change in the dashboard, such as a key rotation)
 - `--yes`: Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)
 

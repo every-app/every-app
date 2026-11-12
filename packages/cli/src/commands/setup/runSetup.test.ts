@@ -9,7 +9,7 @@ import fs from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readInstall } from "@/lib/gateway/install";
 import { markDeployed, register } from "@/lib/gateway/registry";
-import { openRelease, RELEASE_TARBALL } from "@/lib/gateway/release";
+import { openRelease, RELEASE_TARBALL, type CandidateRelease } from "@/lib/gateway/release";
 import { gatewayReleaseSource } from "@/lib/gateway/source";
 import { gatewayNames } from "@every-app/perimeter/manifest";
 import { ensureGatewayResources, removeLeftoverActivationQueue } from "@/lib/gateway/resources";
@@ -636,7 +636,7 @@ describe("everyapp setup", () => {
     await expect(removeLeftoverActivationQueue(account.cf, gatewayNames("demo"))).resolves.toBeNull();
   });
 
-  it("deploys a checkout behind the live Gateway, saying so (GATEWAY_DOWNGRADE)", async () => {
+  it("refuses a Gateway older than the live one, and deploys it with --downgrade, saying so (GATEWAY_DOWNGRADE)", async () => {
     const newer = await buildGatewayRelease({ builtAt: "2026-10-13T00:00:00.000Z" });
     await setup(
       { domain: GW },
@@ -645,7 +645,30 @@ describe("everyapp setup", () => {
     const deploys = account.deploys.length;
     events = [];
 
-    const { exitCode } = await setup();
+    // Refused before anything is opened or built.
+    const neverOpened = vi.fn(async (): Promise<never> => {
+      throw new Error("the refusal comes before the release is opened");
+    });
+    const refused = await setup({}, { openRelease: neverOpened });
+    expect(refused.exitCode).toBe(1);
+    expect(neverOpened).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      code: "GATEWAY_DOWNGRADE",
+      message: expect.stringMatching(
+        // Before the release is opened, the source says what it is: a checkout's.
+        /^This checkout's Gateway \(0\.2\.0\) is older than the live one\nNothing changed\. .+\nIts database has no migration this older Gateway doesn't know\.$/,
+      ),
+      data: {
+        rerun: expect.stringMatching(/ --downgrade$/),
+        authorize: true,
+        schemaAhead: false,
+      },
+    });
+    expect(account.deploys).toHaveLength(deploys);
+    events = [];
+
+    const { exitCode } = await setup({ downgrade: true });
 
     expect(exitCode).toBe(0);
     expect(events).toContainEqual(
@@ -661,6 +684,52 @@ describe("everyapp setup", () => {
     await expect(readInstall(gatewayD1())).resolves.toMatchObject({
       releaseOrder: older.order,
     });
+  });
+
+  it("refuses to replace a live Gateway from a checkout with uncommitted changes or off its main branch, unless --unmerged", async () => {
+    await setup({ domain: GW });
+    const deploys = account.deploys.length;
+    // A newer Gateway in this checkout, as its sources say before any build.
+    const newer = await buildGatewayRelease({ builtAt: "2026-10-13T00:00:00.000Z" });
+    const from = (checkout: NonNullable<CandidateRelease["checkout"]>) => ({
+      openRelease: () => openRelease(newer),
+      source: async () => ({ ...(await releaseSource(newer)), checkout }),
+    });
+
+    for (const [checkout, code] of [
+      [{ hash: "abc1234", uncommitted: true, notOn: null }, "CHECKOUT_UNCOMMITTED"],
+      [{ hash: "abc1234", uncommitted: false, notOn: "origin/main" }, "CHECKOUT_UNMERGED"],
+    ] as const) {
+      events = [];
+      const refused = await setup({}, from(checkout));
+      expect(refused.exitCode).toBe(1);
+      expect(events.at(-1)).toMatchObject({
+        type: "error",
+        code,
+        data: { rerun: expect.stringMatching(/ --unmerged$/), authorize: true },
+      });
+      // Before the build, and before anything is migrated or uploaded.
+      expect(events).not.toContainEqual(expect.objectContaining({ step: "setup.gateway", status: "start" }));
+      expect(account.deploys).toHaveLength(deploys);
+    }
+
+    events = [];
+    const { exitCode, result } = await setup(
+      { unmerged: true },
+      from({ hash: "abc1234", uncommitted: true, notOn: "origin/main" }),
+    );
+    expect(exitCode).toBe(0);
+    expect(result).toMatchObject({ gateway: "upgraded" });
+    expect(account.deploys).toHaveLength(deploys + 1);
+  });
+
+  it("installs a first Gateway from any checkout: there is nothing live to replace", async () => {
+    const { exitCode, result } = await setup(
+      { domain: GW },
+      { source: async () => ({ ...(await releaseSource(tarball)), checkout: { hash: "abc1234", uncommitted: true, notOn: "origin/main" } }) },
+    );
+    expect(exitCode).toBe(0);
+    expect(result).toMatchObject({ gateway: "installed" });
   });
 
   describe("from a published release, with no checkout", () => {
@@ -720,7 +789,7 @@ describe("everyapp setup", () => {
       expect(account.deploys).toHaveLength(1);
     });
 
-    it("warns of a release older than the live Gateway, by its release.json, whichever source each came from", async () => {
+    it("refuses a release older than the live Gateway, by its release.json, whichever source each came from", async () => {
       const newer = await buildGatewayRelease({ builtAt: "2026-10-13T00:00:00.000Z" });
       await setup({ domain: GW, release: newer }, published(fetch, newer));
       const deploys = account.deploys.length;
@@ -730,7 +799,13 @@ describe("everyapp setup", () => {
       const github = fakeGithubReleases({
         "every-app/every-app": [{ tag: "gateway-v0.3.0", assets: { [RELEASE_TARBALL]: tarball } }],
       });
-      const { exitCode } = await setup({}, published(github.fetch));
+      const refused = await setup({}, published(github.fetch));
+      expect(refused.exitCode).toBe(1);
+      expect(events.at(-1)).toMatchObject({ type: "error", code: "GATEWAY_DOWNGRADE" });
+      expect(account.deploys).toHaveLength(deploys);
+      events = [];
+
+      const { exitCode } = await setup({ downgrade: true }, published(github.fetch));
 
       expect(exitCode).toBe(0);
       expect(events).toContainEqual(
