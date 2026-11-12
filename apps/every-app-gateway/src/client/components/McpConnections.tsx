@@ -55,6 +55,17 @@ export function useRevokeMcpConnection(successMessage: string) {
   });
 }
 
+/** The text `useTableSearch` finds a connection by. */
+export function mcpConnectionSearchText(connection: McpConnection) {
+  return [
+    connection.clientName,
+    connection.clientDomain,
+    connection.redirectHost,
+    connection.organizationName,
+    connection.app?.name,
+  ];
+}
+
 /** The client's name, and its verified domain or where it sends access. */
 function ClientCell({ connection }: { connection: McpConnection }) {
   return (

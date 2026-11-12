@@ -3,6 +3,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { auditSubjectLabel } from "@every-app/sdk/internal";
 import { cn } from "cn";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
+import type { LoadMore } from "@/client/components/table/DataTablePagination";
 import { DATE_CELL, DateCell } from "@/client/components/table/DateCell";
 import { Badge } from "@/client/components/ui/badge";
 import type { AuditRow } from "@/types/audit";
@@ -14,7 +15,8 @@ interface AuditTableProps {
   /** A load failure, shown above the rows (or in their place). */
   error?: ReactNode;
   toolbar?: ReactNode;
-  footer?: ReactNode;
+  /** The rows the server has yet to send, fetched as the pages turn. */
+  loadMore: LoadMore;
   /** True when a filter narrows the list; an empty table then offers to clear them. */
   isFiltered: boolean;
   onClearFilters: () => void;
@@ -147,7 +149,7 @@ export function AuditTable({
   isLoading,
   error,
   toolbar,
-  footer,
+  loadMore,
   isFiltered,
   onClearFilters,
 }: AuditTableProps) {
@@ -155,6 +157,7 @@ export function AuditTable({
     data: events,
     columns,
     getRowId: (event) => event.id,
+    withLoadMore: true,
   });
 
   return (
@@ -163,7 +166,7 @@ export function AuditTable({
       isLoading={isLoading}
       error={error}
       toolbar={toolbar}
-      footer={footer}
+      loadMore={loadMore}
       isFiltered={isFiltered}
       onClearFilters={onClearFilters}
       filteredTitle="No audit events match"

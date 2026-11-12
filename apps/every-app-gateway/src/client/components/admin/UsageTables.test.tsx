@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 /**
  * The By app table's Monthly cap cell rendered for real, one row per
- * state: nothing binds, the workspace default, the app's own cap, "no
- * cap" against a default, a paused app, a past month, and a deleted app.
+ * state: no cap, the workspace default, the app's own cap, a paused app, a
+ * past month, a deleted app and an unmetered one. The row's menu opens the
+ * cap dialog.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -54,7 +55,7 @@ function row(name: string, overrides: Partial<UsageAppRow> = {}): UsageAppRow {
 
 function render(
   rows: UsageAppRow[],
-  options: { isCurrentMonth?: boolean; hasDefault?: boolean } = {},
+  options: { isCurrentMonth?: boolean } = {},
 ) {
   act(() =>
     root.render(
@@ -62,7 +63,6 @@ function render(
         rows={rows}
         isLoading={false}
         isCurrentMonth={options.isCurrentMonth ?? true}
-        hasDefault={options.hasDefault ?? false}
         onSetCap={onSetCap}
       />,
     ),
@@ -70,13 +70,13 @@ function render(
 }
 
 /**
- * The cells of the Monthly cap column, as text, in row order; the
- * progress bar's hidden presentation span is left out.
+ * The cells of the Monthly cap column (the one before the menu), as text, in
+ * row order; the progress bar's hidden presentation span is left out.
  */
 function capCells(): string[] {
   return [...container.querySelectorAll("tbody tr")].map((tr) => {
     const cells = tr.querySelectorAll("td");
-    const cell = cells[cells.length - 1]?.cloneNode(true) as
+    const cell = cells[cells.length - 2]?.cloneNode(true) as
       | HTMLElement
       | undefined;
     cell
@@ -86,83 +86,85 @@ function capCells(): string[] {
   });
 }
 
-function capButton(label: string, app: string): HTMLButtonElement | null {
+/** The row's menu button, in the table (the phone's rows repeat it). */
+function menu(app: string): HTMLButtonElement | null {
   return container.querySelector<HTMLButtonElement>(
-    `button[aria-label="${label} monthly cap for ${app}"]`,
+    `table button[aria-label="Actions for ${app}"]`,
   );
 }
 
-it("reads Unlimited with Set cap when nothing binds and there is no default", () => {
+/** The table's progress bars (the phone's rows repeat them). */
+const bars = () => container.querySelectorAll('table [data-slot="progress"]');
+
+it("reads No cap, with no bar, when nothing binds", () => {
   render([row("Notes")]);
-  expect(capCells()).toEqual(["UnlimitedSet cap"]);
-  expect(capButton("Set", "Notes")).not.toBeNull();
-  expect(container.querySelector('[data-slot="progress"]')).toBeNull();
+  expect(capCells()).toEqual(["No cap"]);
+  expect(bars()).toHaveLength(0);
 });
 
-it("shows the default's progress with its source, and Edit", () => {
-  render(
-    [
-      row("Notes", {
-        effectiveMonthlyCostCapMicros: 20_000_000,
-        costCapSource: "default",
-      }),
-    ],
-    { hasDefault: true },
-  );
-  expect(capCells()).toEqual(["$4.20 of $20.00 · defaultEdit"]);
-  expect(capButton("Edit", "Notes")).not.toBeNull();
-  const bar = container.querySelector('[data-slot="progress"]');
-  expect(bar?.getAttribute("aria-label")).toBe(
+it("reads No cap the same way for an app told to ignore the default", () => {
+  render([row("Notes", { capUnlimited: true })]);
+  expect(capCells()).toEqual(["No cap"]);
+});
+
+it("shows the default's progress, and a bar", () => {
+  render([
+    row("Notes", {
+      effectiveMonthlyCostCapMicros: 20_000_000,
+      costCapSource: "default",
+    }),
+  ]);
+  expect(capCells()).toEqual(["$4.20 of $20.00"]);
+  expect(bars()[0]?.getAttribute("aria-label")).toBe(
     "Notes: $4.20 of $20.00 of provider-reported cost this month",
   );
 });
 
-it("shows the app's own cap as before, without a source", () => {
-  render(
-    [
-      row("Notes", {
-        monthlyCostCapMicros: 50_000_000,
-        effectiveMonthlyCostCapMicros: 50_000_000,
-        costCapSource: "app",
-      }),
-    ],
-    { hasDefault: true },
+it("shows the app's own cap the same way", () => {
+  render([
+    row("Notes", {
+      monthlyCostCapMicros: 50_000_000,
+      effectiveMonthlyCostCapMicros: 50_000_000,
+      costCapSource: "app",
+    }),
+  ]);
+  expect(capCells()).toEqual(["$4.20 of $50.00"]);
+  expect(bars()).toHaveLength(1);
+});
+
+it("says paused in red with a red bar", () => {
+  render([
+    row("Notes", {
+      costMicros: 20_500_000,
+      effectiveMonthlyCostCapMicros: 20_000_000,
+      costCapSource: "default",
+      paused: true,
+    }),
+  ]);
+  expect(capCells()).toEqual(["$20.50 of $20.00"]);
+  expect(container.querySelector("tbody .text-destructive")?.textContent).toBe(
+    "$20.50 of $20.00",
   );
-  expect(capCells()).toEqual(["$4.20 of $50.00Edit"]);
-});
-
-it("reads No cap with Edit for an app told to ignore the default", () => {
-  render([row("Notes", { capUnlimited: true })], { hasDefault: true });
-  expect(capCells()).toEqual(["No capEdit"]);
-  expect(capButton("Edit", "Notes")).not.toBeNull();
-});
-
-it("reads Unlimited again for a leftover no-cap row once the default is gone", () => {
-  render([row("Notes", { capUnlimited: true })], { hasDefault: false });
-  expect(capCells()).toEqual(["UnlimitedSet cap"]);
-});
-
-it("says Paused in red with a red bar and offers Raise, which opens the dialog for that row", () => {
-  const paused = row("Notes", {
-    costMicros: 20_500_000,
-    effectiveMonthlyCostCapMicros: 20_000_000,
-    costCapSource: "default",
-    paused: true,
-  });
-  render([paused], { hasDefault: true });
-  expect(capCells()).toEqual(["Paused · $20.50 of $20.00Raise"]);
-  const line = container.querySelector("tbody td:last-child span");
-  expect(line?.className).toContain("text-destructive");
   expect(
     container.querySelector('[data-slot="progress-indicator"]')?.className,
   ).toContain("bg-destructive");
-  const raise = capButton("Raise", "Notes");
-  expect(raise).not.toBeNull();
-  act(() => raise!.click());
-  expect(onSetCap).toHaveBeenCalledWith(paused);
 });
 
-it("shows a past month's cap alone, its source kept, with no bar", () => {
+it("opens the cap dialog for the row from its menu", () => {
+  const notes = row("Notes");
+  render([notes, row("Todo")]);
+  act(() => menu("Notes")!.click());
+  const items = [
+    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ];
+  expect(items.map((item) => item.textContent?.trim())).toEqual([
+    "Edit monthly cap",
+  ]);
+  act(() => items[0]!.click());
+  expect(onSetCap).toHaveBeenCalledWith(notes);
+});
+
+it("shows a past month's cap alone, with no bar", () => {
   render(
     [
       row("Notes", {
@@ -175,20 +177,20 @@ it("shows a past month's cap alone, its source kept, with no bar", () => {
         costCapSource: "app",
       }),
     ],
-    { isCurrentMonth: false, hasDefault: true },
+    { isCurrentMonth: false },
   );
-  expect(capCells()).toEqual(["$20.00 · defaultEdit", "$12.50Edit"]);
-  expect(container.querySelector('[data-slot="progress"]')).toBeNull();
+  expect(capCells()).toEqual(["$20.00", "$12.50"]);
+  expect(bars()).toHaveLength(0);
 });
 
-it("gives a deleted app neither a cap nor a button", () => {
+it("gives a deleted app neither a cap nor a menu", () => {
   render([row("Gone", { callable: false, appSlug: "gone" })]);
   expect(capCells()).toEqual([""]);
   expect(container.querySelector("tbody button")).toBeNull();
 });
 
-it("reads Not metered with no button for an MCP server added by URL, even under a default", () => {
-  render([row("Treg", { metered: false })], { hasDefault: true });
+it("reads Not metered with no menu for an MCP server added by URL", () => {
+  render([row("Treg", { metered: false })]);
   expect(capCells()).toEqual(["Not metered"]);
   expect(container.querySelector("tbody button")).toBeNull();
 });

@@ -12,6 +12,7 @@ import {
   dateSortValue,
 } from "@/client/components/table/DateCell";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
+import { useTableSearch } from "@/client/components/table/useTableSearch";
 import { Badge } from "@/client/components/ui/badge";
 import type { AdminUser } from "@/types/admin-user";
 import { UserActionsMenu, type UserActions } from "./UserActionsMenu";
@@ -102,6 +103,15 @@ function ActionsCell({ user }: { user: AdminUser }) {
   return <UserActionsMenu user={user} {...context} />;
 }
 
+function userSearchText(user: AdminUser) {
+  return [
+    user.name,
+    user.email,
+    formatRole(user.role || "member"),
+    user.banned ? "Deactivated" : STATUS_LABELS[user.status || "active"],
+  ];
+}
+
 const columns: ColumnDef<AdminUser>[] = [
   {
     id: "user",
@@ -143,8 +153,9 @@ export function UsersTable({
   error,
   ...context
 }: UsersTableProps) {
+  const { rows, search } = useTableSearch(users, userSearchText, "users");
   const table = useDataTable({
-    data: users,
+    data: rows,
     columns,
     getRowId: (user) => user.id,
     withSorting: true,
@@ -159,6 +170,7 @@ export function UsersTable({
         table={table}
         isLoading={isLoading}
         error={error}
+        search={search}
         empty={{ title: "No users yet" }}
       />
     </UserRowContext.Provider>

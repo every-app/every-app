@@ -11,6 +11,7 @@ import {
   dateSortValue,
 } from "@/client/components/table/DateCell";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
+import { useTableSearch } from "@/client/components/table/useTableSearch";
 import type { AdminGroup } from "@/types/group";
 import { CountCell } from "./CountCell";
 import { GroupActionsMenu } from "./GroupActionsMenu";
@@ -77,6 +78,10 @@ function ActionsCell({ group }: { group: AdminGroup }) {
   );
 }
 
+function groupSearchText(group: AdminGroup) {
+  return [group.name, group.description];
+}
+
 const columns: ColumnDef<AdminGroup>[] = [
   {
     id: "group",
@@ -129,8 +134,9 @@ export function GroupsTable({
   createAction,
   ...actions
 }: GroupsTableProps) {
+  const { rows, search } = useTableSearch(groups, groupSearchText, "groups");
   const table = useDataTable({
-    data: groups,
+    data: rows,
     columns,
     getRowId: (group) => group.id,
     withSorting: true,
@@ -142,6 +148,7 @@ export function GroupsTable({
         table={table}
         isLoading={isLoading}
         error={error}
+        search={search}
         empty={{
           title: "No groups yet",
           description:

@@ -1,4 +1,4 @@
-import { useMemo, useState, type ComponentProps, type ReactNode } from "react";
+import { useMemo, type ComponentProps, type ReactNode } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Info } from "lucide-react";
 import { EmptyState } from "@/client/components/EmptyState";
@@ -7,12 +7,9 @@ import {
   DataTable,
   useDataTable,
 } from "@/client/components/table/DataTable";
-import {
-  DataTableSearch,
-  DataTableToolbar,
-} from "@/client/components/table/DataTableToolbar";
 import { DATE_CELL, DateCell } from "@/client/components/table/DateCell";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
+import { useTableSearch } from "@/client/components/table/useTableSearch";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import {
@@ -32,9 +29,6 @@ import type { AppWithAccessCount } from "@/types/app";
 import { AppActionsMenu } from "./AppActionsMenu";
 import { CountCell } from "./CountCell";
 import { deployedBy } from "./deployedBy";
-
-// The search box only shows once the catalog is long enough to need it.
-const SEARCH_THRESHOLD = 3;
 
 type AppColumn = ColumnDef<AppWithAccessCount>;
 type OnApp = (app: AppWithAccessCount) => void;
@@ -251,14 +245,17 @@ function actionsColumn(
   };
 }
 
-/** One table of the Apps tab: its rows, with a search once there are enough. */
+function appSearchText(app: AppWithAccessCount) {
+  return [app.name, app.appId, app.description];
+}
+
+/** One table of the Apps tab. */
 function CatalogTable({
   apps,
   columns,
   isLoading,
   error,
-  searchLabel,
-  noMatch,
+  noun,
   empty,
 }: {
   apps: AppWithAccessCount[];
@@ -266,33 +263,16 @@ function CatalogTable({
   isLoading: boolean;
   /** A load failure. With no rows it replaces the table. */
   error?: ReactNode;
-  searchLabel: string;
-  noMatch: (query: string) => string;
+  /** What the rows are, for the search box: "apps". */
+  noun: string;
   empty: Pick<
     ComponentProps<typeof EmptyState>,
     "title" | "description" | "action"
   >;
 }) {
-  const [searchQuery, setSearchQuery] = useState("");
-  const showSearch = apps.length > SEARCH_THRESHOLD;
-  // A hidden search box must not keep filtering, e.g. after a delete.
-  const query = showSearch ? searchQuery.trim().toLowerCase() : "";
-
-  const filteredApps = useMemo(
-    () =>
-      query
-        ? apps.filter(
-            (app) =>
-              app.name.toLowerCase().includes(query) ||
-              app.appId.toLowerCase().includes(query) ||
-              app.description.toLowerCase().includes(query),
-          )
-        : apps,
-    [apps, query],
-  );
-
+  const { rows, search } = useTableSearch(apps, appSearchText, noun);
   const table = useDataTable({
-    data: filteredApps,
+    data: rows,
     columns,
     getRowId: (app) => app.id,
     withSorting: true,
@@ -303,28 +283,8 @@ function CatalogTable({
       table={table}
       isLoading={isLoading}
       error={error}
-      toolbar={
-        showSearch ? (
-          <DataTableToolbar
-            actions={
-              query ? (
-                <span className="text-sm tabular-nums text-muted-foreground">
-                  {filteredApps.length} of {apps.length}
-                </span>
-              ) : null
-            }
-          >
-            <DataTableSearch
-              label={searchLabel}
-              value={searchQuery}
-              onChange={setSearchQuery}
-            />
-          </DataTableToolbar>
-        ) : null
-      }
-      empty={
-        query ? { kind: "filtered", title: noMatch(searchQuery.trim()) } : empty
-      }
+      search={search}
+      empty={empty}
     />
   );
 }
@@ -365,8 +325,7 @@ export function AppsTable({
       columns={columns}
       isLoading={isLoading}
       error={error}
-      searchLabel="Search apps"
-      noMatch={(query) => `No apps match "${query}"`}
+      noun="apps"
       empty={{
         title: FIRST_SCREEN.empty.adminTableTitle,
         description: FIRST_SCREEN.empty.adminTableDescription,
@@ -435,8 +394,7 @@ export function McpAppsTable({
       apps={apps}
       columns={columns}
       isLoading={isLoading}
-      searchLabel={copy.searchLabel}
-      noMatch={copy.noMatch}
+      noun={copy.noun}
       empty={{ title: copy.empty }}
     />
   );

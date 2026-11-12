@@ -14,6 +14,7 @@ import {
   createdAtColumn,
   isNative,
   lastUsedColumn,
+  mcpConnectionSearchText,
   type McpConnection,
   organizationColumn,
   revokeColumn,
@@ -22,6 +23,7 @@ import {
 } from "@/client/components/McpConnections";
 import { SettingsSection } from "@/client/components/SettingsLayout";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
+import { useTableSearch } from "@/client/components/table/useTableSearch";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import { authClient } from "@/client/auth-client";
@@ -99,8 +101,9 @@ function AgentsTab() {
       }),
     [revokeMutation.isPending],
   );
+  const search = useTableSearch(agents, mcpConnectionSearchText, "agents");
   const table = useDataTable({
-    data: agents,
+    data: search.rows,
     columns,
     getRowId: (connection) => connection.id,
     withSorting: true,
@@ -147,6 +150,7 @@ function AgentsTab() {
                 />
               ) : undefined
             }
+            search={search.search}
             empty={{ title: "No agents connected yet" }}
           />
         </SettingsSection>

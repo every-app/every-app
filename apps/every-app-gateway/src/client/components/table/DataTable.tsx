@@ -15,13 +15,22 @@ import {
   createContext,
   Fragment,
   useContext,
+  useEffect,
   type ComponentProps,
   type MouseEvent,
   type ReactNode,
 } from "react";
 import { cn } from "cn";
 import { EmptyState } from "@/client/components/EmptyState";
-import { DataTablePagination } from "@/client/components/table/DataTablePagination";
+import {
+  DataTablePagination,
+  type LoadMore,
+} from "@/client/components/table/DataTablePagination";
+import {
+  DataTableSearch,
+  DataTableToolbar,
+} from "@/client/components/table/DataTableToolbar";
+import type { TableSearch } from "@/client/components/table/useTableSearch";
 import { Button } from "@/client/components/ui/button";
 import { Skeleton } from "@/client/components/ui/skeleton";
 import {
@@ -77,16 +86,21 @@ type UseDataTableOptions<TData> = Omit<
 > & {
   withSorting?: boolean;
   withExpanded?: boolean;
-  withPagination?: boolean;
+  /**
+   * The rows grow at the end as `DataTable`'s `loadMore` fetches more, and
+   * the page stays put while they do. Rows that start differently (new
+   * filters) go back to the first page.
+   */
+  withLoadMore?: boolean;
 };
 
 // One empty array for every table with no rows yet. See `useDataTable`.
 const NO_ROWS: never[] = [];
 
 /**
- * A TanStack table with the row models a page asks for. `withPagination`
- * shows ten rows at a time (`initialState.pagination.pageSize` changes that),
- * and `DataTable` adds the row that turns the page.
+ * A TanStack table with the row models a page asks for. Every table shows
+ * ten rows at a time (`initialState.pagination.pageSize` changes that), and
+ * `DataTable` adds the row that turns the page once there is more than one.
  *
  * `data` and `columns` must keep their identity between renders. A new
  * `data` array resets the page index, and that reset renders again, so an
@@ -97,18 +111,22 @@ const NO_ROWS: never[] = [];
  * shared array, so `query.data ?? []` is safe while the query loads.
  */
 export function useDataTable<TData>(options: UseDataTableOptions<TData>) {
-  const { withSorting, withExpanded, withPagination, data, ...tableOptions } =
+  const { withSorting, withExpanded, withLoadMore, data, ...tableOptions } =
     options;
-  return useReactTable({
+  const table = useReactTable({
     ...tableOptions,
     data: data.length === 0 ? NO_ROWS : data,
     getCoreRowModel: getCoreRowModel(),
     ...(withSorting ? { getSortedRowModel: getSortedRowModel() } : {}),
     ...(withExpanded ? { getExpandedRowModel: getExpandedRowModel() } : {}),
-    ...(withPagination
-      ? { getPaginationRowModel: getPaginationRowModel() }
-      : {}),
+    getPaginationRowModel: getPaginationRowModel(),
+    ...(withLoadMore ? { autoResetPageIndex: false } : {}),
   });
+  const firstRow = data[0];
+  useEffect(() => {
+    if (withLoadMore) table.setPageIndex(0);
+  }, [withLoadMore, firstRow, table]);
+  return table;
 }
 
 /** The frame around the rows, for table components that pass it through. */
@@ -126,7 +144,8 @@ type DataTableFrameProps = {
    */
   error?: ReactNode;
   toolbar?: ReactNode;
-  footer?: ReactNode;
+  /** More rows the server holds: the last page's Next fetches them. */
+  loadMore?: LoadMore;
 };
 
 /** The column whose cell is the row's kebab menu: a card puts it top right. */
@@ -288,37 +307,71 @@ function DataTableCard<TData>({
  * shows one.
  *
  * The table component owns sorting and filters, and passes them to
- * `useDataTable`. Put a `DataTableToolbar` in `toolbar`.
+ * `useDataTable`. A search box is `search` (`useTableSearch`); other filters
+ * are a `DataTableToolbar` in `toolbar`.
  */
 export function DataTable<TData>({
   table,
   isLoading = false,
   empty,
-  isFiltered = false,
-  onClearFilters,
-  filteredTitle = "Nothing matches these filters",
+  search,
+  isFiltered: isFilteredProp = false,
+  onClearFilters: onClearFiltersProp,
+  filteredTitle: filteredTitleProp = "Nothing matches these filters",
   error,
-  toolbar,
-  footer,
+  toolbar: toolbarProp,
+  loadMore,
   onRowClick,
   activeRowId,
   scrollClassName,
-}: DataTableFrameProps & {
-  table: TanStackTable<TData>;
-  /** Shown when there are no rows and no filters. */
-  empty: Pick<
-    ComponentProps<typeof EmptyState>,
-    "kind" | "icon" | "title" | "description" | "action"
-  >;
-  /** Makes each row clickable, for example to open its details beside the table. */
-  onRowClick?: (row: Row<TData>, event: MouseEvent<HTMLElement>) => void;
-  /** Highlights the row whose details are open. */
-  activeRowId?: string;
-  /** Caps the table height, for example `max-h-96`. The header stays in view while the rows scroll. */
-  scrollClassName?: string;
-}) {
+}: DataTableFrameProps &
+  (
+    | { search?: undefined }
+    | {
+        /**
+         * The table's search box (`useTableSearch`), in place of `toolbar`,
+         * `isFiltered`, `onClearFilters` and `filteredTitle`. It shows once
+         * there is something to search.
+         */
+        search: TableSearch;
+        toolbar?: never;
+        isFiltered?: never;
+        onClearFilters?: never;
+        filteredTitle?: never;
+      }
+  ) & {
+    table: TanStackTable<TData>;
+    /** Shown when there are no rows and no filters. */
+    empty: Pick<
+      ComponentProps<typeof EmptyState>,
+      "kind" | "icon" | "title" | "description" | "action"
+    >;
+    /** Makes each row clickable, for example to open its details beside the table. */
+    onRowClick?: (row: Row<TData>, event: MouseEvent<HTMLElement>) => void;
+    /** Highlights the row whose details are open. */
+    activeRowId?: string;
+    /** Caps the table height, for example `max-h-96`. The header stays in view while the rows scroll. */
+    scrollClassName?: string;
+  }) {
   const columns = table.getVisibleLeafColumns();
   const rows = table.getRowModel().rows;
+
+  const isFiltered = search ? search.value.trim() !== "" : isFilteredProp;
+  const onClearFilters = search
+    ? () => search.onChange("")
+    : onClearFiltersProp;
+  const filteredTitle = search ? search.noMatch : filteredTitleProp;
+  const toolbar = !search ? (
+    toolbarProp
+  ) : isLoading || rows.length > 0 || isFiltered ? (
+    <DataTableToolbar>
+      <DataTableSearch
+        label={search.label}
+        value={search.value}
+        onChange={search.onChange}
+      />
+    </DataTableToolbar>
+  ) : null;
 
   // A load that failed before any row arrived: the failure stands alone.
   if (error && !isLoading && rows.length === 0) {
@@ -349,13 +402,9 @@ export function DataTable<TData>({
       <TableCard>
         {toolbar}
         {emptyState}
-        {footer}
       </TableCard>
     ) : (
-      <>
-        {emptyState}
-        {footer}
-      </>
+      emptyState
     );
   }
 
@@ -457,10 +506,7 @@ export function DataTable<TData>({
               ))}
         </InCardContext.Provider>
       </div>
-      {table.options.getPaginationRowModel ? (
-        <DataTablePagination table={table} />
-      ) : null}
-      {footer}
+      <DataTablePagination table={table} loadMore={loadMore} />
     </TableCard>
   );
 }

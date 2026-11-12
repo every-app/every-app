@@ -165,6 +165,17 @@ function button(label: string, scope: Element = document.body) {
   return found;
 }
 
+const pagination = () =>
+  container.querySelector('[data-slot="data-table-pagination"]');
+
+function nextPage() {
+  const found = container.querySelector<HTMLElement>(
+    '[aria-label="Go to next page"]',
+  );
+  if (!found) throw new Error("no next page button");
+  return found;
+}
+
 async function press(element: HTMLElement) {
   await act(async () => element.click());
   await settle();
@@ -218,28 +229,40 @@ describe("the Activity page's views", () => {
     expect(text[2]).toContain("crm");
     expect(text[3]).toContain("Gateway");
     expect(text[3]).toContain("An app's tools changed");
-    expect(body()).toContain("Showing 4 events");
-    expect(body()).not.toContain("Load more");
+    // Every row fits on one page, and the server has no more.
+    expect(pagination()).toBeNull();
   });
 
-  it("asks for the next page by the cursor the last page gave", async () => {
+  it("pages ten at a time, and asks the server for more by the cursor the last batch gave", async () => {
     mocks.search.view = "audit";
-    const cursor = { time: T0 - 180_000, id: "e4" };
+    const batch = Array.from({ length: 20 }, (_, index) =>
+      row({ id: `e${index}`, time: T0 - index * 60_000 }),
+    );
+    const cursor = { time: T0 - 19 * 60_000, id: "e19" };
     mocks.listAuditEvents
-      .mockResolvedValueOnce({ events: ROWS, nextBefore: cursor })
+      .mockResolvedValueOnce({ events: batch, nextBefore: cursor })
       .mockResolvedValueOnce({
-        events: [row({ id: "e5", time: T0 - 240_000 })],
+        events: [row({ id: "e20", time: T0 - 20 * 60_000 })],
         nextBefore: null,
       });
     await render();
-    expect(container.querySelectorAll("tbody tr")).toHaveLength(4);
-    await press(button("Load more"));
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(10);
+    expect(pagination()?.textContent).toContain("1–10 of 20+");
+
+    // The second page is already loaded.
+    await press(nextPage());
+    expect(pagination()?.textContent).toContain("11–20 of 20+");
+    expect(mocks.listAuditEvents).toHaveBeenCalledTimes(1);
+
+    // The third is fetched, then shown.
+    await press(nextPage());
     expect(mocks.listAuditEvents).toHaveBeenCalledTimes(2);
     expect(mocks.listAuditEvents.mock.calls[1]![0]).toMatchObject({
       data: { before: cursor },
     });
-    expect(container.querySelectorAll("tbody tr")).toHaveLength(5);
-    expect(body()).toContain("Showing 5 events");
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
+    expect(pagination()?.textContent).toContain("21–21 of 21");
+    expect(nextPage().getAttribute("aria-disabled")).toBe("true");
   });
 
   it("says the log couldn't load rather than showing it empty, and offers a retry", async () => {

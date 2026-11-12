@@ -28,6 +28,7 @@ import {
   dateSortValue,
 } from "@/client/components/table/DateCell";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
+import { useTableSearch } from "@/client/components/table/useTableSearch";
 import { Button } from "@/client/components/ui/button";
 import {
   DropdownMenuItem,
@@ -72,6 +73,16 @@ export const Route = createFileRoute("/_app/connections/accounts")({
 type Account = Awaited<
   ReturnType<typeof listMyConnections>
 >["connections"][number];
+
+function accountSearchText(account: Account) {
+  const name = connectionName(account);
+  return [
+    name.title,
+    name.subtitle,
+    account.providerName,
+    ...account.apps.map((app) => app.name),
+  ];
+}
 
 function accountColumns({
   onDisconnect,
@@ -288,8 +299,9 @@ function AccountsTab() {
     () => [...(accountsQuery.data?.connections ?? [])].sort(compareConnections),
     [accountsQuery.data],
   );
+  const search = useTableSearch(accounts, accountSearchText, "accounts");
   const table = useDataTable({
-    data: accounts,
+    data: search.rows,
     columns,
     getRowId: (account) => account.id,
     withSorting: true,
@@ -314,6 +326,7 @@ function AccountsTab() {
                 />
               ) : undefined
             }
+            search={search.search}
             empty={{
               title: "No connected accounts yet",
               description: "Connect one from inside an app.",

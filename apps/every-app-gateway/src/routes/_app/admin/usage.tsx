@@ -186,7 +186,6 @@ function UsagePage() {
               rows={summary?.byApp ?? []}
               isLoading={usageQuery.isLoading}
               isCurrentMonth={isCurrentMonth}
-              hasDefault={hasDefault}
               onSetCap={onSetCap}
             />
           </SettingsSection>

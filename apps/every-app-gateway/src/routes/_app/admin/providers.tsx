@@ -29,15 +29,12 @@ import {
   useInDataTableCard,
 } from "@/client/components/table/DataTable";
 import {
-  DataTableSearch,
-  DataTableToolbar,
-} from "@/client/components/table/DataTableToolbar";
-import {
   DATE_CELL,
   DateCell,
   dateSortValue,
 } from "@/client/components/table/DateCell";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
+import { useTableSearch } from "@/client/components/table/useTableSearch";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import {
@@ -226,22 +223,22 @@ function orderProviders(providers: readonly Provider[]): Provider[] {
   );
 }
 
-function matchesProvider(provider: Provider, needle: string): boolean {
+function providerSearchText(provider: Provider) {
   return [
     provider.name,
     provider.id,
     KIND_LABEL[provider.kind],
     ...provider.apps.map((app) => app.name),
-  ].some((text) => text.toLowerCase().includes(needle));
+  ];
 }
 
-function matchesConnection(connection: Connection, needle: string): boolean {
+function connectionSearchText(connection: Connection) {
   return [
     personOf(connection),
-    connection.label ?? "",
+    connection.label,
     connection.providerName,
     ...connection.apps.map((app) => app.name),
-  ].some((text) => text.toLowerCase().includes(needle));
+  ];
 }
 
 /** A change made from the terminal, by name; no value passes through the browser. */
@@ -695,23 +692,6 @@ function removalText(provider: Provider): string {
   return `Its OAuth client is deleted, and ${connections} connected ${connections === 1 ? "account is" : "accounts are"} disconnected.`;
 }
 
-/** A searchable table's toolbar. */
-function SearchToolbar({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <DataTableToolbar>
-      <DataTableSearch label={label} value={value} onChange={onChange} />
-    </DataTableToolbar>
-  );
-}
-
 /**
  * Manage workspace → Providers (docs/design/2026-11-oauth-simplify.md):
  * every provider the Gateway brokers, what needs setting up first, then
@@ -734,8 +714,6 @@ function ProvidersPage() {
   const [forgetting, setForgetting] = useState<OAuthProvider | null>(null);
   const [removing, setRemoving] = useState<Provider | null>(null);
   const [terminal, setTerminal] = useState<TerminalStep | null>(null);
-  const [providerSearch, setProviderSearch] = useState("");
-  const [connectionSearch, setConnectionSearch] = useState("");
 
   const providersQuery = useQuery({
     queryKey: PROVIDERS_KEY,
@@ -816,19 +794,20 @@ function ProvidersPage() {
       }),
     [aiDefault],
   );
-  const providerNeedle = providerSearch.trim().toLowerCase();
-  const providers = useMemo(() => {
-    const ordered = orderProviders(providersQuery.data?.providers ?? []);
-    return providerNeedle
-      ? ordered.filter((provider) => matchesProvider(provider, providerNeedle))
-      : ordered;
-  }, [providersQuery.data, providerNeedle]);
+  const orderedProviders = useMemo(
+    () => orderProviders(providersQuery.data?.providers ?? []),
+    [providersQuery.data],
+  );
+  const providerSearch = useTableSearch(
+    orderedProviders,
+    providerSearchText,
+    "providers",
+  );
   const providersTable = useDataTable({
-    data: providers,
+    data: providerSearch.rows,
     columns: providerCols,
     getRowId: (provider) => provider.id,
     withSorting: true,
-    withPagination: true,
   });
 
   const connectionCols = useMemo(
@@ -839,21 +818,16 @@ function ProvidersPage() {
       }),
     [removal.askDisconnect, removal.askRemoveApp],
   );
-  const connectionNeedle = connectionSearch.trim().toLowerCase();
-  const connections = useMemo(() => {
-    const all = connectionsQuery.data?.connections ?? [];
-    return connectionNeedle
-      ? all.filter((connection) =>
-          matchesConnection(connection, connectionNeedle),
-        )
-      : all;
-  }, [connectionsQuery.data, connectionNeedle]);
+  const connectionSearch = useTableSearch(
+    connectionsQuery.data?.connections ?? [],
+    connectionSearchText,
+    "connections",
+  );
   const connectionsTable = useDataTable({
-    data: connections,
+    data: connectionSearch.rows,
     columns: connectionCols,
     getRowId: (connection) => connection.id,
     withSorting: true,
-    withPagination: true,
   });
 
   // A custom provider's redirect URI, before it exists: the same path every
@@ -894,16 +868,7 @@ function ProvidersPage() {
               />
             ) : undefined
           }
-          toolbar={
-            <SearchToolbar
-              label="Search providers"
-              value={providerSearch}
-              onChange={setProviderSearch}
-            />
-          }
-          isFiltered={providerNeedle !== ""}
-          filteredTitle="No providers match"
-          onClearFilters={() => setProviderSearch("")}
+          search={providerSearch.search}
           empty={{ title: "No providers" }}
         />
       </SettingsSection>
@@ -924,16 +889,7 @@ function ProvidersPage() {
               />
             ) : undefined
           }
-          toolbar={
-            <SearchToolbar
-              label="Search connections"
-              value={connectionSearch}
-              onChange={setConnectionSearch}
-            />
-          }
-          isFiltered={connectionNeedle !== ""}
-          filteredTitle="No connections match"
-          onClearFilters={() => setConnectionSearch("")}
+          search={connectionSearch.search}
           empty={{
             title: "No connections yet",
             description: "People connect an account once, from inside an app.",

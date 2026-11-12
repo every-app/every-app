@@ -22,6 +22,7 @@ import {
   useDataTable,
 } from "@/client/components/table/DataTable";
 import { DateCell } from "@/client/components/table/DateCell";
+import { useTableSearch } from "@/client/components/table/useTableSearch";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import {
@@ -85,6 +86,15 @@ const STATUS_BADGES: Record<
   failed: { label: "Failed", variant: "warning" },
   dead: { label: "Dead", variant: "destructive" },
 };
+
+function subscriptionSearchText(subscription: EventSubscription) {
+  return [
+    subscription.name,
+    subscription.description,
+    subscriptionTarget(subscription),
+    ...subscription.events,
+  ];
+}
 
 function NameCell({ subscription }: { subscription: EventSubscription }) {
   return (
@@ -333,8 +343,13 @@ export function EventSubscriptionsTable({
   addAction,
   ...actions
 }: EventSubscriptionsTableProps) {
+  const { rows, search } = useTableSearch(
+    subscriptions,
+    subscriptionSearchText,
+    "subscriptions",
+  );
   const table = useDataTable({
-    data: subscriptions,
+    data: rows,
     columns,
     getRowId: (subscription) => subscription.id,
   });
@@ -345,6 +360,7 @@ export function EventSubscriptionsTable({
         table={table}
         isLoading={isLoading}
         error={error}
+        search={search}
         empty={{
           icon: Webhook,
           title: "No event subscriptions yet",

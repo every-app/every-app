@@ -20,7 +20,6 @@ import {
 import { AuditTable } from "@/client/components/admin/AuditTable";
 import { ToolCallsTable } from "@/client/components/admin/ToolCallsTable";
 import { DataTableToolbar } from "@/client/components/table/DataTableToolbar";
-import { Button } from "@/client/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -52,6 +51,7 @@ export const Route = createFileRoute("/_app/admin/activity")({
   component: ActivityPage,
 });
 
+/** Rows per fetch from the server; the table shows ten at a time. */
 const PAGE_SIZE = 50;
 
 /** The "no filter" choice of a select. */
@@ -249,6 +249,7 @@ function ToolCallsView({ range, setRange }: ViewProps) {
   const loadMore = async () => {
     const result = await query.fetchNextPage();
     if (result.isError) toast.error("Failed to load more tool calls");
+    return !result.isError;
   };
 
   return (
@@ -290,25 +291,11 @@ function ToolCallsView({ range, setRange }: ViewProps) {
           />
         </DataTableToolbar>
       }
-      footer={
-        calls.length > 0 ? (
-          <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5">
-            <span className="text-sm tabular-nums text-muted-foreground">
-              Showing {calls.length} {calls.length === 1 ? "call" : "calls"}
-            </span>
-            {query.hasNextPage ? (
-              <Button
-                variant="outline"
-                size="sm"
-                pending={query.isFetchingNextPage}
-                onClick={() => void loadMore()}
-              >
-                Load more
-              </Button>
-            ) : null}
-          </div>
-        ) : null
-      }
+      loadMore={{
+        hasMore: query.hasNextPage,
+        isLoading: query.isFetchingNextPage,
+        load: loadMore,
+      }}
     />
   );
 }
@@ -372,6 +359,7 @@ function AuditView({ range, setRange }: ViewProps) {
   const loadMore = async () => {
     const result = await query.fetchNextPage();
     if (result.isError) toast.error("Failed to load more audit events");
+    return !result.isError;
   };
 
   return (
@@ -411,25 +399,11 @@ function AuditView({ range, setRange }: ViewProps) {
           />
         </DataTableToolbar>
       }
-      footer={
-        events.length > 0 ? (
-          <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5">
-            <span className="text-sm tabular-nums text-muted-foreground">
-              Showing {events.length} {events.length === 1 ? "event" : "events"}
-            </span>
-            {query.hasNextPage ? (
-              <Button
-                variant="outline"
-                size="sm"
-                pending={query.isFetchingNextPage}
-                onClick={() => void loadMore()}
-              >
-                Load more
-              </Button>
-            ) : null}
-          </div>
-        ) : null
-      }
+      loadMore={{
+        hasMore: query.hasNextPage,
+        isLoading: query.isFetchingNextPage,
+        load: loadMore,
+      }}
     />
   );
 }

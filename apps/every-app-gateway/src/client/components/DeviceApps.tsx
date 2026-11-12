@@ -7,6 +7,7 @@ import {
   createdAtColumn,
   isNative,
   lastUsedColumn,
+  mcpConnectionSearchText,
   type McpConnection,
   organizationColumn,
   revokeColumn,
@@ -15,6 +16,7 @@ import {
 } from "@/client/components/McpConnections";
 import { SettingsSection } from "@/client/components/SettingsLayout";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
+import { useTableSearch } from "@/client/components/table/useTableSearch";
 
 /**
  * Apps on your devices: the native apps the signed-in person signed in to
@@ -39,8 +41,9 @@ export function DeviceApps() {
       }),
     [revokeMutation.isPending],
   );
+  const search = useTableSearch(devices, mcpConnectionSearchText, "apps");
   const table = useDataTable({
-    data: devices,
+    data: search.rows,
     columns,
     getRowId: (connection) => connection.id,
     withSorting: true,
@@ -54,7 +57,11 @@ export function DeviceApps() {
         title="Apps on your devices"
         hint="Desktop and phone apps you've signed in to, and local projects linked with everyapp dev."
       >
-        <DataTable table={table} empty={{ title: "No apps on your devices" }} />
+        <DataTable
+          table={table}
+          search={search.search}
+          empty={{ title: "No apps on your devices" }}
+        />
       </SettingsSection>
 
       {signingOut ? (

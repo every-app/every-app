@@ -13,6 +13,7 @@ import {
   dateSortValue,
 } from "@/client/components/table/DateCell";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
+import { useTableSearch } from "@/client/components/table/useTableSearch";
 import { DropdownMenuItem } from "@/client/components/ui/dropdown-menu";
 import { tokenAccessOf, type TokenAccess } from "@/server/user-pat-scopes";
 import type { UserAccessToken } from "@/types/user-token";
@@ -23,6 +24,10 @@ const ACCESS_LABELS: Record<TokenAccess, string> = {
   full: "Full",
   deploy: "Deploy key",
 };
+
+function tokenSearchText(token: UserAccessToken) {
+  return [token.name, token.tokenPrefix, token.appName, token.appSlug];
+}
 
 interface UserTokensTableProps {
   tokens: UserAccessToken[];
@@ -151,8 +156,9 @@ export function UserTokensTable({
     [isRevoking, onRevoke],
   );
 
+  const { rows, search } = useTableSearch(tokens, tokenSearchText, "tokens");
   const table = useDataTable({
-    data: tokens,
+    data: rows,
     columns,
     getRowId: (token) => token.id,
     withSorting: true,
@@ -163,6 +169,7 @@ export function UserTokensTable({
       table={table}
       isLoading={isLoading}
       error={error}
+      search={search}
       empty={{ title: "No tokens yet" }}
     />
   );

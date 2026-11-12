@@ -12,10 +12,7 @@ import {
   DataTable,
   useDataTable,
 } from "@/client/components/table/DataTable";
-import {
-  DataTableSearch,
-  DataTableToolbar,
-} from "@/client/components/table/DataTableToolbar";
+import { useTableSearch } from "@/client/components/table/useTableSearch";
 import { useAppForm } from "@/client/components/form/useAppForm";
 import { Alert, AlertDescription } from "@/client/components/ui/alert";
 import { Button } from "@/client/components/ui/button";
@@ -223,10 +220,8 @@ function presetColumns(
   ];
 }
 
-function matchesPreset(preset: OAuthPresetSummary, needle: string): boolean {
-  return [preset.name, preset.id, preset.description ?? ""].some((text) =>
-    text.toLowerCase().includes(needle),
-  );
+function presetSearchText(preset: OAuthPresetSummary) {
+  return [preset.name, preset.id, preset.description];
 }
 
 /** The presets, searchable and paged; Custom is the footer's, for a provider with no preset. */
@@ -239,21 +234,12 @@ function PresetPicker({
   onPick: (id: string) => void;
   onClose: () => void;
 }) {
-  const [search, setSearch] = useState("");
-  const needle = search.trim().toLowerCase();
-  const rows = useMemo(
-    () =>
-      needle
-        ? presets.filter((preset) => matchesPreset(preset, needle))
-        : presets,
-    [presets, needle],
-  );
+  const { rows, search } = useTableSearch(presets, presetSearchText, "presets");
   const columns = useMemo(() => presetColumns(onPick), [onPick]);
   const table = useDataTable({
     data: rows,
     columns,
     getRowId: (preset) => preset.id,
-    withPagination: true,
     initialState: { pagination: { pageIndex: 0, pageSize: PRESETS_PAGE_SIZE } },
   });
   return (
@@ -264,19 +250,8 @@ function PresetPicker({
       <section aria-label="Presets" className="min-w-0">
         <DataTable
           table={table}
-          toolbar={
-            <DataTableToolbar>
-              <DataTableSearch
-                label="Search presets"
-                value={search}
-                onChange={setSearch}
-              />
-            </DataTableToolbar>
-          }
+          search={search}
           onRowClick={(row) => onPick(row.original.id)}
-          isFiltered={needle !== ""}
-          filteredTitle="No presets match"
-          onClearFilters={() => setSearch("")}
           empty={{ title: "No presets" }}
         />
       </section>
