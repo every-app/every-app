@@ -21,7 +21,7 @@ pnpm dist             # release DMG + zip (universal), signed and notarized from
 pnpm release          # scripts/release-mac.sh: the whole release, verified (docs/release.md)
 ```
 
-`pnpm -C ui test` and `pnpm -C ui playground` cover the screens on their own. The unit tests and type checks run on Linux too (CI runs them in `pr-checks.yml`, the e2e and the Swift helper in `desktop.yml`); the helper, packaging and signing need macOS.
+`pnpm -C ui test` and `pnpm -C ui playground` cover the screens on their own. The unit tests and type checks run on Linux too (CI runs them in `pr-checks.yml`, and the Swift helper's build and tests in `desktop.yml`; the e2e smoke is run by hand); the helper, packaging and signing need macOS.
 
 To run Scribe against a local backend, start `everyapp dev` in the Scribe repository's `web/` and sign in with a token ("Signed in against local `everyapp dev`" below).
 
@@ -122,7 +122,7 @@ The flows:
 
 It always uses a temporary `--user-data-dir`, so it never takes the installed Every App Dev's lock or touches its settings or logs (an unpackaged run with that switch keeps its logs in the profile). On failure it keeps a screenshot and a trace in `test-results/e2e`.
 
-CI runs it as the e2e job of `.github/workflows/desktop.yml` on ubuntu-latest under `xvfb-run` and uploads `test-results/` when it fails. The mock also runs alone (`node e2e/mock-api.mjs`, port 8788). `POST /__mock/mode {"mode":"online"|"offline"|"unauthorized"}` switches it, and `GET /__mock/requests` lists what it received, including every segments POST with its size. Like the Worker before its fix, the mock answers 500 "too many SQL variables" to more than 50 segments in one POST (`MOCK_MAX_SEGMENTS_PER_POST`).
+CI doesn't run it, and nothing else in CI opens the real app, so run it by hand. On a Mac that is the command above; on Linux, `xvfb-run -a pnpm e2e` (with `xvfb libgbm1 libnss3 libasound2t64 libgtk-3-0t64 libxss1` installed, and `pnpm install` run with scripts on so Electron's binary is there). The mock also runs alone (`node e2e/mock-api.mjs`, port 8788). `POST /__mock/mode {"mode":"online"|"offline"|"unauthorized"}` switches it, and `GET /__mock/requests` lists what it received, including every segments POST with its size. Like the Worker before its fix, the mock answers 500 "too many SQL variables" to more than 50 segments in one POST (`MOCK_MAX_SEGMENTS_PER_POST`).
 
 ## Where tokens live
 

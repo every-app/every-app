@@ -1,6 +1,6 @@
 // The Electron e2e smoke (e2e/smoke.spec.ts): the built app (`pnpm build`, not packaged) with the
-// fake helper against the in-memory mock /api/v1 (e2e/mock-api.mjs). `pnpm e2e` locally;
-// CI runs it under xvfb-run (.github/workflows/ci.yml, job desktop-e2e).
+// fake helper against the in-memory mock /api/v1 (e2e/mock-api.mjs). Run by hand, `pnpm e2e`
+// (`xvfb-run -a pnpm e2e` on Linux); no CI job runs it.
 
 import { defineConfig } from "@playwright/test";
 

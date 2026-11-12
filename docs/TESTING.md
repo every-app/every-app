@@ -67,10 +67,10 @@ SDK's built `dist/`.
 repository only: nightly, on every push to main (a newer push cancels the
 run still going), on every pull request that touches `packages/cli`,
 `apps/every-app-gateway`, `packages/sdk`, the lockfile or the workflow
-itself (about five minutes), and on demand for any other branch with
+itself (under three minutes), and on demand for any other branch with
 `gh workflow run integration.yml --ref <branch>`.
-Its jobs (the last three are steps of one build job, which installs and
-builds once):
+Its jobs run side by side, each under three minutes on a 2-core runner
+(split a job that grows past that, rather than let the run get slower):
 
 - Integration tests: `pnpm -C packages/cli test:integration` (every test
   file that imports `@/test/gatewayRelease` or `@/test/gatewayWorker`, so
@@ -79,15 +79,18 @@ builds once):
   (the `*.sqlite.test.ts` and `*.e2e.test.ts` files). Each package's
   `vitest.config.ts` sorts the files into its `unit` and `integration`
   projects; `vitest run <file>` with no `--project` runs a file from either.
-- Build every package: `pnpm -r run build`, the landing page's production
-  build and the gateway's `cf build` included.
-- cf deploy --dry-run: `pnpm -C apps/every-app-gateway build:release -- --skip-build`
-(packing the Build Output from the step above), then
+  Each project runs as two jobs, `--shard=1/2` and `--shard=2/2`, with
+  `--maxWorkers=100%`.
+- Build the other packages: `pnpm -r run build` for everything but the
+  gateway and the CLI (the SDK, the landing page's production build, the
+  starter, the desktop app). The next two jobs build those two.
+- Gateway release and cf dry run: `pnpm -C apps/every-app-gateway build:release`
+(the production `cf build`, packed as a release), then
 `EVERYAPP_CF_DRY_RUN=1 pnpm -C packages/cli exec vitest run src/lib/cfDryRun.test.ts`
 runs `cf deploy --prebuilt --dry-run` on the gateway release and the starter,
 so a cf or Vite plugin bump that changes the Build Output fails here, not in
 a live deploy.
-- everyapp from dist/ (the built CLI): `pnpm -C packages/cli test:built` runs
+- Built CLI: after building the SDK and the CLI, `pnpm -C packages/cli test:built` runs
 `packages/cli/src/bin/builtCli.test.ts`, the CLI as people run it:
 `bin/everyapp.js` over `dist/` as a child process, against a fresh app in a
 temp directory outside the checkout with no Cloudflare account (help for

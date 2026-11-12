@@ -1,7 +1,10 @@
 name: Integration
-# The slow checks, kept out of pull requests (pr-checks.yml runs types, lint
-# and unit tests): the integration test projects, then one build job (the full
-# workspace build, the cf dry run and the built CLI). Private repository only
+# The heavier checks (pr-checks.yml runs types, lint and unit tests): the
+# integration test projects in two shards each, and three build jobs side by
+# side (the gateway release with the cf dry run, the built CLI, and every
+# other package's build). Every job stays under three minutes on a 2-core
+# runner; when one grows past that, split it rather than let the run's wall
+# clock grow. Private repository only
 # (each job's `if`; the public copy can't name it): every-app/every-app
 # mirrors main and doesn't run them. They run nightly, on main (a newer push
 # cancels a run still going, so a burst of merges ends in one full run), on
@@ -12,9 +15,9 @@ name: Integration
 # and on a pull request that touches what they test: the CLI, the gateway,
 # the SDK, the lockfile or this file (#842 and #844 each turned main red
 # while their own checks were green; neither touched anything else). A
-# docs or README pull request never runs them. About five minutes of wall
-# clock, twelve runner minutes, per run; a newer push to the same pull
-# request cancels the run still going.
+# docs or README pull request never runs them. Under three minutes of wall
+# clock per run; a newer push to the same pull request cancels the run still
+# going.
 on:
   workflow_dispatch:
   pull_request:
@@ -36,17 +39,20 @@ concurrency:
   cancel-in-progress: true
 jobs:
   integration-tests:
-    name: Integration tests (${{ matrix.package }})
+    name: Integration tests (${{ matrix.package }} ${{ matrix.shard }}/2)
     if: github.repository_owner == 'every-app' && github.repository != 'every-app/every-app'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         # packages/cli: every file that installs a Gateway into the fake
         # Cloudflare account. apps/every-app-gateway: the *.sqlite.test.ts
-        # and *.e2e.test.ts files. See each vitest.config.ts.
+        # and *.e2e.test.ts files. See each vitest.config.ts. Each project
+        # is about 2.5 CPU-minutes of tests, so two shards (vitest splits the
+        # files) with both of the runner's cores each.
         package: [packages/cli, apps/every-app-gateway]
+        shard: [1, 2]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -62,14 +68,18 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build the SDK
         run: pnpm -C packages/sdk build
+      # --maxWorkers=100%: vitest's default leaves one of the runner's two
+      # cores idle, which ran these files one at a time.
       - name: Run the integration project
-        run: pnpm -C ${{ matrix.package }} test:integration
+        run: pnpm -C ${{ matrix.package }} test:integration --maxWorkers=100% --shard=${{ matrix.shard }}/2
 
-  build:
-    name: Build every package
+  # The three build jobs below were one job that built everything in turn
+  # (five minutes). Between them they still build every package.
+  gateway-release:
+    name: Gateway release and cf dry run
     if: github.repository_owner == 'every-app' && github.repository != 'every-app/every-app'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -82,16 +92,13 @@ jobs:
           cache: 'pnpm'
       - name: Install all dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-      # The landing page's production build, the gateway's `cf build`, the
-      # starter's and the CLI's bundles. The SDK's dist/ and the CLI's dist/,
-      # which the steps below need, come from here.
-      - name: Build workspace packages
-        id: build
-        run: pnpm -r run build
-      # Packs the production Build Output the step above wrote into the
-      # release tarball (--skip-build: no second `cf build`).
+      - name: Build the SDK
+        run: pnpm -C packages/sdk build
+      # The gateway's production `cf build`, packed into the release tarball,
+      # as release.yml does it. (The `tsc --noEmit` half of the gateway's
+      # `build` script is pr-checks.yml's Type Check (gateway).)
       - name: Build the gateway release
-        run: pnpm -C apps/every-app-gateway build:release -- --skip-build
+        run: pnpm -C apps/every-app-gateway build:release
       # `cf deploy --prebuilt --dry-run` with the real cf, of the gateway release
       # (patched as for an install) and the starter template (built with deploy
       # inputs and checked against the app policy): packages/cli/src/lib/cfDryRun.test.ts.
@@ -102,6 +109,26 @@ jobs:
         run: pnpm -C packages/cli exec vitest run src/lib/cfDryRun.test.ts
         env:
           EVERYAPP_CF_DRY_RUN: '1'
+
+  built-cli:
+    name: Built CLI
+    if: github.repository_owner == 'every-app' && github.repository != 'every-app/every-app'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '^22.18.0'
+          cache: 'pnpm'
+      - name: Install all dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build the SDK and the CLI
+        run: pnpm -C packages/sdk build && pnpm -C packages/cli build
       # The CLI as people run it: bin/everyapp.js over the dist/ tsup built, as a
       # child process, against a fresh app in a temp directory with no Cloudflare
       # account (packages/cli/src/bin/builtCli.test.ts). Every other test resolves
@@ -112,7 +139,27 @@ jobs:
       # zod 3; #543) while every other check was green. This step runs help for
       # every route, create, db migrate, dev to its first page, the capability
       # manifests, release and status (against a fake account) on the built CLI.
-      # It runs when the build passed, even if the dry run failed.
       - name: everyapp from dist/ against a fresh app
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: pnpm -C packages/cli test:built
+
+  build:
+    name: Build the other packages
+    if: github.repository_owner == 'every-app' && github.repository != 'every-app/every-app'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '^22.18.0'
+          cache: 'pnpm'
+      - name: Install all dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      # Every `build` script the two jobs above don't run: the SDK, the
+      # landing page's production build, the starter and the desktop app.
+      - name: Build workspace packages
+        run: pnpm -r --filter '!every-app-gateway' --filter '!everyapp' run build

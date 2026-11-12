@@ -3,11 +3,12 @@ name: Desktop
 # plain install. Its type checks and unit tests (apps/desktop and
 # apps/desktop/ui) already run there, in the `packages` halves.
 #
-# - e2e: the built Electron app with the fake helper against a mock /api/v1,
-#   under a virtual display on Linux (apps/desktop/README.md, "End-to-end
-#   smoke"). Screenshots and traces are uploaded when it fails.
 # - helper: the Swift helper (apps/desktop/mac) builds and its tests pass.
 #   macOS only.
+#
+# Nothing in CI opens the real app: the Electron e2e smoke
+# (apps/desktop/README.md, "End-to-end smoke") is run by hand, `pnpm build &&
+# pnpm e2e` in apps/desktop on a Mac, or under `xvfb-run -a` on Linux.
 #
 # Packaging, signing and notarizing need a Mac with the release credentials
 # and never run here (apps/desktop/docs/release.md).
@@ -15,15 +16,13 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - 'apps/desktop/**'
-      - 'pnpm-lock.yaml'
+      - 'apps/desktop/mac/**'
       - '.github/workflows/desktop.yml'
   push:
     branches:
       - main
     paths:
-      - 'apps/desktop/**'
-      - 'pnpm-lock.yaml'
+      - 'apps/desktop/mac/**'
       - '.github/workflows/desktop.yml'
 permissions:
   contents: read
@@ -31,32 +30,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  e2e:
-    name: Electron e2e
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '^22.18.0'
-          cache: 'pnpm'
-      # Scripts on, for Electron's binary (pnpm-workspace.yaml allows only
-      # the builds it lists).
-      - run: pnpm install --frozen-lockfile
-      # Electron's runtime libraries and a virtual X server.
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends xvfb libgbm1 libnss3 libasound2t64 libgtk-3-0t64 libxss1
-      - run: pnpm -C apps/desktop build
-      - run: xvfb-run -a pnpm -C apps/desktop e2e
-        env:
-          CI: 'true'
-      - if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-e2e-results
-          path: apps/desktop/test-results/
-          retention-days: 7
   helper:
     name: Swift helper
     # Private repository only, like integration.yml: macOS minutes.
