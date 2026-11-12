@@ -1096,6 +1096,103 @@ describe("handleGatewayRequest", () => {
     expectSecurityHeaders(res);
   });
 
+  describe("a page load by someone who can't open the app", () => {
+    const BROWSER = {
+      accept: "text/html,application/xhtml+xml,*/*;q=0.8",
+      cookie: "session=abc",
+    };
+    const refused = (session: AuthenticatedSession, app = TODO) =>
+      handleGatewayRequest(
+        req("/tasks", { headers: BROWSER }),
+        deps({
+          launcherUrl: "https://home.example.com",
+          resolveApp: async () => app,
+          authenticator: {
+            sessionCookieNames: [],
+            authenticate: async () => session,
+            hasAppAccess: async () => false,
+          },
+        }),
+      );
+
+    it("answers a 403 page naming the account, the app and its organization", async () => {
+      const res = await refused(
+        { ...SESSION, orgName: "Acme & Co" },
+        {
+          ...TODO,
+          manifest: validateManifest({ id: "todo", name: "To-do <list>" }),
+        },
+      );
+      expect(res.status).toBe(403);
+      expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+      expect(res.headers.get("cache-control")).toBe("no-store");
+      expect(res.headers.get("content-security-policy")).toBe(
+        "default-src 'none'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+      );
+      expectSecurityHeaders(res);
+      const html = await res.text();
+      expect(html).toContain("<h1>You can&#39;t open To-do &lt;list&gt;</h1>");
+      expect(html).toContain("signed in as <strong>a@b.com</strong>");
+      expect(html).toContain(
+        "owner or admin of <strong>Acme &amp; Co</strong>",
+      );
+      expect(html).toContain('<a href="https://home.example.com">');
+      expect(html).not.toContain("<script");
+    });
+
+    it("names neither the app nor its organization to someone signed in to another", async () => {
+      const res = await refused(
+        { ...SESSION, orgId: "org_2", orgName: "Elsewhere" },
+        {
+          ...TODO,
+          manifest: validateManifest({ id: "todo", name: "Secret plans" }),
+        },
+      );
+      expect(res.status).toBe(403);
+      const html = await res.text();
+      expect(html).toContain("<h1>You can&#39;t open this app</h1>");
+      expect(html).toContain("the app at todo.example.com");
+      expect(html).not.toContain("Secret plans");
+      expect(html).not.toContain("Elsewhere");
+    });
+
+    it("keeps the JSON for a request that didn't ask for HTML", async () => {
+      const res = await handleGatewayRequest(
+        req("/tasks", { headers: { accept: "*/*", cookie: "session=abc" } }),
+        deps({
+          launcherUrl: "https://home.example.com",
+          authenticator: {
+            sessionCookieNames: [],
+            authenticate: async () => SESSION,
+            hasAppAccess: async () => false,
+          },
+        }),
+      );
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({
+        error: "forbidden",
+        reason: "no_app_access",
+      });
+    });
+
+    it("keeps the JSON for a token without access, whatever it accepts", async () => {
+      const res = await handleGatewayRequest(
+        req("/tasks", {
+          headers: { accept: "text/html", authorization: "Bearer epat_valid" },
+        }),
+        deps({
+          authenticator: {
+            sessionCookieNames: [],
+            authenticate: async () => PAT_SESSION,
+            hasAppAccess: async () => false,
+          },
+        }),
+      );
+      expect(res.status).toBe(403);
+      expect(await res.json()).toMatchObject({ reason: "no_app_access" });
+    });
+  });
+
   it("400s with security headers when the Host header is empty", async () => {
     const res = await handleGatewayRequest(
       new Request("https://todo.example.com/x", { headers: { host: "" } }),
@@ -1833,6 +1930,24 @@ describe("server-function guard", () => {
     await expect(res.json()).resolves.toMatchObject({
       error: "server_fn_denied",
     });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("answers a page, still 403, when a browser opens one as a page", async () => {
+    const { res, fetcher } = await call(
+      `${SERVER_FN}?createServerFn&payload=%7B%7D`,
+      {
+        accept: "text/html,application/xhtml+xml",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-dest": "document",
+        "sec-fetch-site": "none",
+      },
+    );
+    expect(res.status).toBe(403);
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(await res.text()).toContain(
+      "<h1>This address isn&#39;t a page</h1>",
+    );
     expect(fetcher).not.toHaveBeenCalled();
   });
 

@@ -75,6 +75,7 @@ import {
 import { stripThirdPartyAppHeaders } from "./hostSession";
 import { cacheFingerprintedAsset } from "./assetCache";
 import { relayWebSocket } from "./webSocketLifetime";
+import { noAppAccessPage, notAPagePage } from "./refusalPage";
 
 /** What {@link GatewayDeps.interceptMcp} receives. */
 export interface McpInterceptInput {
@@ -142,6 +143,12 @@ export interface GatewayDeps {
   audienceFor?(app: RegisteredApp): string;
   /** Optional login URL to 302 to for unauthenticated HTML navigations. */
   loginUrl?: string;
+  /**
+   * The launcher's URL: the page that tells a signed-in person they can't
+   * open an app links to it (their own apps, and Sign out, are there).
+   * Unset, the page has no link.
+   */
+  launcherUrl?: string;
   /**
    * The origin of the OAuth authorization server that issues tokens for
    * app hosts ("Sign in with Every App", docs/design/native-sign-in.md):
@@ -561,6 +568,8 @@ export async function handleGatewayRequest(
   if (isServerFnPath(url.pathname)) {
     const decision = evaluateServerFnRequest(request.headers);
     if (!decision.allowed) {
+      // A person who followed a link to one reads a page, not JSON.
+      if (request.method === "GET" && wantsHtml(request)) return notAPagePage();
       return json(403, { error: "server_fn_denied", reason: decision.reason });
     }
   }
@@ -813,6 +822,24 @@ export async function handleGatewayRequest(
       bearerPresent,
     );
   } else {
+    // Signed in with a browser session, and this account can't open the
+    // app. A page load gets a page that says so (refusalPage.ts); the app
+    // and its organization are named only to someone signed in to that
+    // organization.
+    if (wantsHtml(request)) {
+      return noAppAccessPage({
+        email: session.email,
+        host: parsed.host,
+        named:
+          session.orgId === app.organizationId
+            ? {
+                appName: app.manifest.name ?? app.appId,
+                organizationName: session.orgName,
+              }
+            : undefined,
+        launcherUrl: deps.launcherUrl,
+      });
+    }
     return json(403, { error: "forbidden", reason: "no_app_access" });
   }
 

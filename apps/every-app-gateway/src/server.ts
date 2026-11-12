@@ -513,6 +513,7 @@ export default {
       registry,
       privateKeyPem: env.JWT_PRIVATE_KEY,
       issuer: env.GATEWAY_URL,
+      launcherUrl: env.GATEWAY_URL,
       resolveApp: async () => app,
       activate: async (binding: RegisteredApp) => {
         const active = await activateApp(env, binding);
