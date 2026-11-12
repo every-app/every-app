@@ -468,6 +468,59 @@ function Home() {
           </section>
 
           <section
+            id="desktop"
+            aria-labelledby="desktop-title"
+            className="border-t border-stone-900 px-6 py-16"
+          >
+            <div className="mx-auto grid w-full max-w-6xl items-center gap-10 lg:grid-cols-2 lg:gap-16">
+              <div className="min-w-0">
+                <h2
+                  id="desktop-title"
+                  className="mb-6 text-2xl font-semibold tracking-tight text-white"
+                >
+                  EveryApp for Mac
+                </h2>
+                <p className="mb-3 text-lg font-medium text-white">
+                  Open source alternative to Wispr Flow and Granola
+                </p>
+                <p className="mb-8 max-w-xl text-base text-stone-400">
+                  OpenScribe records your meetings, transcribes them live and
+                  writes the notes, kept in your own Cloudflare account.
+                </p>
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
+                  <Link
+                    to="/openscribe"
+                    className="inline-flex h-12 items-center gap-2.5 rounded-md bg-stone-100 px-5 text-sm font-medium text-[#0a0f0d] transition-colors hover:bg-white"
+                  >
+                    Get OpenScribe
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </Link>
+                  <a
+                    href="https://github.com/every-app/open-scribe"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`text-sm ${linkClass}`}
+                  >
+                    View on GitHub
+                  </a>
+                </div>
+              </div>
+              {/* The notes column of the app's own meeting screen, from its
+                  UI playground (apps/desktop/ui) with its sample notes. */}
+              <figure className="w-full rounded-[12px] border border-white/[0.12] bg-stone-950/70 p-1.5 shadow-[0_24px_64px_-24px_rgba(0,0,0,0.8)] md:rounded-2xl md:p-2">
+                <img
+                  src="/media/every-app-for-mac.webp"
+                  alt="The notes OpenScribe wrote for a customer call in EveryApp for Mac, with tabs for the notes, your jottings and the transcript."
+                  width={1420}
+                  height={1040}
+                  loading="lazy"
+                  className="block w-full rounded-[6px] md:rounded-[8px]"
+                />
+              </figure>
+            </div>
+          </section>
+
+          <section
             id="why"
             aria-labelledby="why-title"
             className="border-t border-stone-900 px-6 py-16"
