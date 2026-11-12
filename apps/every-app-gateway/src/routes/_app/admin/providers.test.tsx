@@ -1,16 +1,19 @@
 // @vitest-environment happy-dom
 /**
  * Manage workspace → Providers rendered for real (React in a DOM) with the
- * server functions mocked: one table lists what is set up first, then what
- * still needs setting up, with the rest of the catalog behind Show all,
- * never a Gateway service; it says where each OAuth client comes from and
- * never a value; Add OAuth provider lists the presets with the built-in
- * ones marked, and picking GitHub shows the redirect URI to register; a
- * registered row's menu offers Replace client and Remove; the Organization
- * connections table lists the organization's, each one person's to one
- * provider with the apps allowed to use it, one app's access taken away
- * by the connection's id and the app's row id, and Disconnect. No scope
- * sets, no organization connect, no background.
+ * server functions mocked: one searchable table lists every provider, what
+ * needs setting up first, then what is set up, then the rest, the ones
+ * more apps list first in each, never
+ * a Gateway service, and never a client's value; every row has a menu,
+ * whose terminal-set key, client or provider shows the command, and Remove
+ * provider on a registered row, disabled while an app on the Gateway lists
+ * it; Add OAuth provider lists
+ * the presets, and picking GitHub shows the redirect URI to register; the
+ * searchable Organization connections table lists the organization's, each
+ * one person's to one provider with the apps allowed to use it and its
+ * scopes folded to the first, one app's access taken away by the
+ * connection's id and the app's row id, and Disconnect. No scope sets, no
+ * organization connect, no background.
  */
 import { act, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -69,7 +72,8 @@ const github = {
   hosts: ["api.github.com"],
   configured: true,
   settings: ["GITHUB_OAUTH_CLIENT_ID", "GITHUB_OAUTH_CLIENT_SECRET"],
-  apps: [{ name: "crm", needs: false }],
+  apps: [{ rowId: "app_crm", name: "crm", needs: false }],
+  inUse: true,
   oauth: {
     id: "github-oauth",
     name: "GitHub",
@@ -101,6 +105,7 @@ const google = {
     client: { source: "env", clientId: "123.apps" },
     redirectUri: "https://apps.acme.com/connect/google-workspace/callback",
     connections: 0,
+    settings: ["GOOGLE_WORKSPACE_CLIENT_ID", "GOOGLE_WORKSPACE_CLIENT_SECRET"],
   },
 };
 const dataforseo = {
@@ -111,7 +116,7 @@ const dataforseo = {
   hosts: ["api.dataforseo.com"],
   configured: false,
   settings: ["DATAFORSEO_API_KEY"],
-  apps: [{ name: "notes", needs: true }],
+  apps: [{ rowId: "app_notes", name: "notes", needs: true }],
 };
 const openrouter = {
   id: "openrouter",
@@ -176,7 +181,7 @@ const presets = [
     id: "github-oauth",
     name: "GitHub",
     description: "Repositories, issues, pull requests.",
-    hint: "Register an OAuth App (not a GitHub App).",
+    hint: "An OAuth App, not a `GitHub App`.",
     console: "https://github.com/settings/developers",
     settings: {
       clientId: "GITHUB_OAUTH_CLIENT_ID",
@@ -304,13 +309,13 @@ function menuItems(): string[] {
   );
 }
 
-/** The providers table's rows: it is the page's first table while it lists any. */
+/** The page's tables: providers, then connections. */
+function table(index: 0 | 1): HTMLTableElement {
+  return container.querySelectorAll("table")[index]!;
+}
+
 function providerRows(): HTMLTableRowElement[] {
-  return [
-    ...container
-      .querySelector("table")!
-      .querySelectorAll<HTMLTableRowElement>("tbody tr"),
-  ];
+  return [...table(0).querySelectorAll<HTMLTableRowElement>("tbody tr")];
 }
 
 function rowNames(): string[] {
@@ -325,62 +330,96 @@ function providerRow(name: string): HTMLTableRowElement {
   return row;
 }
 
-/**
- * A provider's cells: provider, kind over where it comes from, apps, status,
- * client over its connections (or the hosts), Set up, menu.
- */
+/** A provider's cells: provider over its kind, apps, status, Set up, menu. */
 function cells(name: string): string[] {
   return [...providerRow(name).querySelectorAll("td")].map(
     (cell) => cell.textContent?.trim() ?? "",
   );
 }
 
-async function showAll() {
-  await press(button("Show all"));
+async function search(label: string, text: string) {
+  const input = document.querySelector<HTMLInputElement>(
+    `input[aria-label="${label}"]`,
+  )!;
+  await act(async () => {
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+    setValue.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await settle();
 }
 
-describe("the providers before Show all", () => {
-  it("lists what is set up first, then what still needs setting up, and folds the rest away, never a Gateway service", async () => {
+async function pressMenuItem(label: string) {
+  await press(
+    [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (element) => element.textContent?.trim() === label,
+    )!,
+  );
+}
+
+const dialogText = () =>
+  document.body.querySelector('[role="alertdialog"], [role="dialog"]')
+    ?.textContent ?? "";
+
+describe("the providers table", () => {
+  it("lists every provider, what needs setting up first, then what is set up, then the rest, more apps first in each, never a Gateway service", async () => {
     await render();
     expect(rowNames()).toEqual([
-      "OpenRouter",
-      "Google Workspace",
-      "GitHub",
       "DataForSEO",
+      "GitHub",
+      "Google Workspace",
+      "OpenRouter",
+      "Exa",
     ]);
-    expect(cells("OpenRouter").slice(1, 4)).toEqual([
-      "AI defaultBuilt in",
+    expect(cells("OpenRouter").slice(0, 3)).toEqual([
+      "OpenRouteropenrouter · AI default",
       "none",
       "Ready",
     ]);
-    expect(cells("GitHub").slice(1, 5)).toEqual([
-      "OAuthRegistered here",
+    expect(cells("GitHub").slice(0, 3)).toEqual([
+      "GitHubgithub-oauth · OAuth",
       "crm",
       "Ready",
-      "Pasted here2 connections",
     ]);
-    expect(cells("DataForSEO").slice(1, 5)).toEqual([
-      "API keyBuilt in",
+    expect(cells("DataForSEO").slice(0, 3)).toEqual([
+      "DataForSEOdataforseo · API key",
       "notes",
       "Needs setup",
-      "api.dataforseo.com",
     ]);
-    expect(body()).toContain("1 more provider available");
-    expect(
-      container.querySelector('input[aria-label="Search providers"]'),
-    ).toBeNull();
-    expect(body()).not.toContain("Slack");
+    expect(cells("Exa").slice(0, 3)).toEqual([
+      "Exaexa · API key",
+      "none",
+      "Not set",
+    ]);
+    expect(body()).not.toContain("Show all");
     expect(body()).not.toContain("Gateway service");
+    expect(body()).not.toContain("Iv1.public");
+  });
+
+  it("filters by name, kind or app", async () => {
+    await render();
+    await search("Search providers", "goo");
+    expect(rowNames()).toEqual(["Google Workspace"]);
+    await search("Search providers", "notes");
+    expect(rowNames()).toEqual(["DataForSEO"]);
+    await search("Search providers", "nothing like it");
+    expect(body()).toContain("No providers match");
   });
 
   it("shows the terminal command, never a field, for a key an app needs", async () => {
     await render();
     await press(button("Set up", providerRow("DataForSEO")));
     const dialog = document.body.querySelector('[role="dialog"]')!;
-    expect(dialog.textContent).toContain("Set up DataForSEO");
-    expect(dialog.textContent).toContain("notes needs it.");
+    expect(dialog.textContent).toContain("Set the DataForSEO key");
+    expect(dialog.querySelector("[data-slot='dialog-description']")).toBeNull();
     expect(dialog.textContent).toContain(
       "pnpm everyapp secret set DATAFORSEO_API_KEY",
+    );
+    expect(dialog.textContent).toContain(
+      "Apps can use this key only to call api.dataforseo.com.",
     );
     expect(dialog.querySelector("input")).toBeNull();
     expect(dialog.querySelector("a")?.getAttribute("href")).toBe(
@@ -390,86 +429,111 @@ describe("the providers before Show all", () => {
 
   it("opens the client dialog for an OAuth provider an app needs", async () => {
     mocks.listProviders.mockResolvedValue({
-      providers: [{ ...slack, apps: [{ name: "chat", needs: true }] }],
+      providers: [
+        {
+          ...slack,
+          apps: [{ rowId: "app_chat", name: "chat", needs: true }],
+        },
+      ],
     });
     await render();
     expect(rowNames()).toEqual(["Slack"]);
-    expect(cells("Slack")[3]).toBe("Needs setup");
+    expect(cells("Slack")[2]).toBe("Needs setup");
     await press(button("Set up", providerRow("Slack")));
     const dialog = document.body.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain("Slack");
     expect(dialog.textContent).toContain(slack.oauth.redirectUri);
-  });
-
-  it("says nothing is set up on a fresh workspace, and still offers Show all", async () => {
-    // An OAuth preset isn't listed until a deploy or an admin registers it.
-    mocks.listProviders.mockResolvedValue({ providers: [exa, email] });
-    await render();
-    expect(body()).toContain("Nothing is set up yet");
-    expect(body()).not.toContain("Exa");
-    await showAll();
-    expect(rowNames()).toEqual(["Exa"]);
-  });
-
-  it("expands to every provider but the Gateway services, and filters by name", async () => {
-    await render();
-    await showAll();
-    const rows = rowNames;
-    expect(rows()).toHaveLength(5);
-    expect(rows()).not.toContain("email");
-    const search = container.querySelector<HTMLInputElement>(
-      'input[aria-label="Search providers"]',
-    )!;
-    await act(async () => {
-      const setValue = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        "value",
-      )!.set!;
-      setValue.call(search, "goo");
-      search.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    await settle();
-    expect(rows()).toEqual(["Google Workspace"]);
+    expect(dialog.textContent).toContain(
+      `Apps can use connected accounts only to call ${slack.oauth.hosts.join(", ")}.`,
+    );
   });
 });
 
-describe("the providers table", () => {
-  it("says where each client comes from, counts connections, and never shows a secret", async () => {
+describe("a provider's menu", () => {
+  it("disables Remove on a registered row an app on the Gateway lists", async () => {
     await render();
-    await showAll();
-    const table = container.querySelector("table")!.textContent ?? "";
-    expect(table).toContain("GitHub");
-    expect(table).toContain("Pasted here");
-    expect(table).toContain("Set from the terminal");
-    expect(table).toContain("Registered here");
-    expect(table).toContain("Built in");
-    expect(table).toContain("api.dataforseo.com");
-    expect(table).toContain("Ready");
-    expect(table).toContain("Not set");
-    expect(body()).not.toContain("Iv1.public");
-  });
-
-  it("offers Replace client, Forget pasted client and Remove on a registered row, and no way to connect", async () => {
-    await render();
-    await showAll();
     await openRowMenu("GitHub");
     expect(menuItems()).toEqual([
       "Replace client",
       "Forget pasted client",
       "Remove provider",
     ]);
+    const remove = [...document.querySelectorAll('[role="menuitem"]')].find(
+      (element) => element.textContent?.startsWith("Remove provider"),
+    )!;
+    expect(remove.hasAttribute("data-disabled")).toBe(true);
   });
 
-  it("offers Remove on an OAuth preset's row, and no menu on a built-in API-key entry", async () => {
+  it("removes a terminal-set client from the terminal, and a registered row no app lists here", async () => {
+    mocks.removeProvider.mockResolvedValue(undefined);
     await render();
-    await showAll();
     await openRowMenu("Google Workspace");
-    expect(menuItems()).toEqual(["Replace client", "Remove provider"]);
-    expect(
-      container.querySelector(
-        'table button[aria-label="Actions for DataForSEO"]',
-      ),
-    ).toBeNull();
+    expect(menuItems()).toEqual([
+      "Replace client",
+      "Remove client",
+      "Remove provider",
+    ]);
+    await pressMenuItem("Remove client");
+    expect(dialogText()).toContain(
+      "pnpm everyapp secret unset GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET",
+    );
+    await press(button("Close", document.querySelector('[role="dialog"]')!));
+
+    await openRowMenu("Google Workspace");
+    await pressMenuItem("Remove provider");
+    expect(dialogText()).toContain("Its OAuth client is deleted.");
+    await press(
+      [
+        ...document.querySelectorAll<HTMLButtonElement>(
+          '[role="alertdialog"] button',
+        ),
+      ].find((element) => element.textContent?.trim() === "Remove provider")!,
+    );
+    expect(mocks.removeProvider.mock.calls[0]![0]).toEqual({
+      data: { providerId: "google-workspace" },
+    });
+  });
+
+  it("sets a built-in key from the terminal, and removes it there once set", async () => {
+    await render();
+    await openRowMenu("DataForSEO");
+    expect(menuItems()).toEqual(["Set key"]);
+    await act(async () => {
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+    await settle();
+    await openRowMenu("OpenRouter");
+    expect(menuItems()).toEqual(["Replace key", "Remove key"]);
+    await pressMenuItem("Remove key");
+    expect(dialogText()).toContain(
+      "pnpm everyapp secret unset OPENROUTER_API_KEY",
+    );
+  });
+
+  it("removes a provider registered from the terminal there", async () => {
+    const acme = {
+      ...exa,
+      id: "acme",
+      name: "Acme",
+      source: "row",
+      configured: true,
+      settings: ["ACME_API_KEY"],
+      setFromTerminal: true,
+    };
+    mocks.listProviders.mockResolvedValue({ providers: [acme] });
+    await render();
+    await openRowMenu("Acme");
+    expect(menuItems()).toEqual([
+      "Replace key",
+      "Remove key",
+      "Remove provider",
+    ]);
+    await pressMenuItem("Remove provider");
+    expect(dialogText()).toContain("pnpm everyapp provider remove acme");
+    expect(dialogText()).toContain("pnpm everyapp secret unset ACME_API_KEY");
+    expect(mocks.removeProvider).not.toHaveBeenCalled();
   });
 });
 
@@ -482,7 +546,27 @@ describe("Add OAuth provider", () => {
     expect(list).toContain("Google Workspace");
     expect(list).not.toContain("Built in");
     expect(list).toContain("GitHub");
-    expect(list).toContain("Custom");
+    expect(dialog.querySelector("[data-slot='dialog-description']")).toBeNull();
+    const rowOf = (name: string) =>
+      [...dialog.querySelectorAll("tbody tr")].find((row) =>
+        row.textContent?.startsWith(name),
+      );
+    expect(
+      rowOf("GitHub")?.querySelector("svg"),
+      "a preset shows its brand mark",
+    ).toBeTruthy();
+    expect(button("Custom provider", dialog)).toBeTruthy();
+
+    await search("Search presets", "repositories");
+    expect(
+      [...dialog.querySelectorAll("tbody tr")].map(
+        (row) => row.querySelector("button")?.textContent,
+      ),
+    ).toEqual(["GitHub"]);
+    await search("Search presets", "nothing like it");
+    expect(dialog.textContent).toContain("No presets match");
+    expect(button("Custom provider", dialog)).toBeTruthy();
+    await search("Search presets", "repositories");
 
     await press(
       [...dialog.querySelectorAll("button")].find((element) =>
@@ -492,11 +576,51 @@ describe("Add OAuth provider", () => {
     const step = document.body.querySelector('[role="dialog"]')!;
     expect(step.textContent).toContain(REDIRECT);
     expect(step.textContent).not.toMatch(/scope set/i);
-    expect(step.textContent).toContain("GITHUB_OAUTH_CLIENT_SECRET");
+    expect(
+      step.querySelector("[data-slot='dialog-description'] code")?.textContent,
+      "a hint's backticked words read as code",
+    ).toBe("GitHub App");
+    expect(step.textContent).toContain(
+      "Apps can use connected accounts only to call api.github.com.",
+    );
+    expect(step.textContent).toContain(
+      "Leave both blank to set the client later.",
+    );
+    expect(step.textContent, "no terminal alternative").not.toContain(
+      "GITHUB_OAUTH_CLIENT_SECRET",
+    );
+    expect(
+      step.querySelector("[data-slot='field-description']"),
+      "no hints under the fields",
+    ).toBeNull();
     const secret = [...step.querySelectorAll("input")].find(
       (input) => input.type === "password",
     );
     expect(secret, "the secret field hides what is typed").toBeDefined();
+  });
+});
+
+describe("the presets", () => {
+  it("pages six at a time", async () => {
+    const many = Array.from({ length: 8 }, (_, index) => ({
+      ...presets[1]!,
+      id: `preset-${index}`,
+      name: `Preset ${index}`,
+    }));
+    mocks.listOAuthPresets.mockResolvedValue({ presets: many });
+    await render();
+    await press(button("Add OAuth provider"));
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    const names = () =>
+      [...dialog.querySelectorAll("tbody tr")].map(
+        (row) => row.querySelector("button")?.textContent,
+      );
+    expect(names()).toHaveLength(6);
+    expect(dialog.textContent).toContain("1–6 of 8");
+    await press(
+      dialog.querySelector<HTMLElement>('[aria-label="Go to next page"]')!,
+    );
+    expect(names()).toEqual(["Preset 6", "Preset 7"]);
   });
 });
 
@@ -530,7 +654,7 @@ describe("the connections table", () => {
       "ada@acme.comada",
       "GitHub",
       "CICRM",
-      "repo, read:user",
+      "repo+1 more",
       "Connected",
     ]);
     expect(connectionRow("bo@acme.com").slice(0, 5)).toEqual([
@@ -541,6 +665,24 @@ describe("the connections table", () => {
       "Expired",
     ]);
     expect(body()).not.toMatch(/organization's|background|each app/i);
+  });
+
+  it("opens a connection's scopes, and folds them again", async () => {
+    await render();
+    await press(button("+1 more", table(1)));
+    expect(connectionRow("ada@acme.com")[3]).toBe("repo, read:userShow less");
+    await press(button("Show less", table(1)));
+    expect(connectionRow("ada@acme.com")[3]).toBe("repo+1 more");
+  });
+
+  it("filters by person, provider or app", async () => {
+    await render();
+    await search("Search connections", "bo@");
+    expect(table(1).querySelectorAll("tbody tr")).toHaveLength(1);
+    expect(connectionRow("bo@acme.com")[0]).toBe("bo@acme.combo");
+    await search("Search connections", "crm");
+    expect(connectionRow("ada@acme.com")[0]).toBe("ada@acme.comada");
+    expect(table(1).querySelectorAll("tbody tr")).toHaveLength(1);
   });
 
   it("takes one app's access away by the connection's id and the app's row id, then lists again", async () => {
@@ -607,24 +749,20 @@ describe("rows this build can't fully read", () => {
     });
     await render();
     expect(body()).not.toContain("Something went wrong");
-    expect(rowNames()).toEqual(["GitHub"]);
-    expect(body()).toContain("2 more providers available");
-    await showAll();
-    const table = container.querySelector("table")!.textContent ?? "";
-    expect(table).toContain("Exa");
-    expect(table).toContain("DataForSEO");
+    expect(rowNames()).toEqual(["GitHub", "DataForSEO", "Exa"]);
+    expect(cells("DataForSEO")[2]).toBe("Not set");
   });
 
   it("shows a row that fails to render with its name and a line where a cell failed, and the rest of the page as usual", async () => {
-    const broken = { ...google, id: "broken", name: "Broken", oauth: {} };
+    const broken = { ...google, id: "broken", name: "Broken", apps: [null] };
     mocks.listProviders.mockResolvedValue({
       providers: [openrouter, broken, dataforseo],
     });
     const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
     await render();
     quiet.mockRestore();
-    expect(rowNames()).toEqual(["OpenRouter", "Broken", "DataForSEO"]);
+    expect(rowNames()).toEqual(["DataForSEO", "Broken", "OpenRouter"]);
     expect(providerRow("Broken").textContent).toContain("Couldn't show this");
-    expect(cells("DataForSEO")[3]).toBe("Needs setup");
+    expect(cells("DataForSEO")[2]).toBe("Needs setup");
   });
 });

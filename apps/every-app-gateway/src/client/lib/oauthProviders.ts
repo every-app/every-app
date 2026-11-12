@@ -23,21 +23,6 @@ interface CustomProviderForm {
   pkce: boolean;
 }
 
-/** What the Client column says. */
-export function clientSourceLabel(client: { source: "env" | "d1" | null }): {
-  label: string;
-  tone: "set" | "unset";
-} {
-  switch (client.source) {
-    case "env":
-      return { label: "Set from the terminal", tone: "set" };
-    case "d1":
-      return { label: "Pasted here", tone: "set" };
-    default:
-      return { label: "No client", tone: "unset" };
-  }
-}
-
 /** A connection's scopes as a line: the provider's own names, or "no scopes". */
 export function scopesText(scopes: readonly string[]): string {
   return scopes.length > 0 ? scopes.join(", ") : "no scopes";

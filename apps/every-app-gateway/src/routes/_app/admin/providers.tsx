@@ -2,9 +2,10 @@ import { Component, useMemo, useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { flexRender, type ColumnDef } from "@tanstack/react-table";
-import { ChevronDown, KeyRound, Plus, Trash2, Unplug } from "lucide-react";
+import { KeyRound, Plus, Trash2, Unplug } from "lucide-react";
 import { toast } from "sonner";
 import { AddOAuthProviderDialog } from "@/client/components/admin/AddOAuthProviderDialog";
+import { ProviderHosts } from "@/client/components/admin/ProviderHosts";
 import { ReplaceOAuthClientDialog } from "@/client/components/admin/ReplaceOAuthClientDialog";
 import { CodeBlock } from "@/client/components/CodeBlock";
 import { ConfirmDialog } from "@/client/components/ConfirmDialog";
@@ -15,6 +16,7 @@ import {
 } from "@/client/components/ConnectionRemoval";
 import { ConnectionStatusBadge } from "@/client/components/ConnectionStatusBadge";
 import { ErrorState } from "@/client/components/ErrorState";
+import { ProviderMark } from "@/client/components/ProviderIcon";
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
 import {
   SettingsSection,
@@ -48,7 +50,7 @@ import {
 } from "@/client/components/ui/dialog";
 import { DropdownMenuItem } from "@/client/components/ui/dropdown-menu";
 import { getRuleErrorMessage } from "@/client/errors";
-import { clientSourceLabel, scopesText } from "@/client/lib/oauthProviders";
+import { scopesText } from "@/client/lib/oauthProviders";
 import { getAiDefault } from "@/serverFunctions/ai";
 import { listAllConnections } from "@/serverFunctions/connections";
 import {
@@ -85,10 +87,8 @@ const KIND_LABEL: Record<Provider["kind"], string> = {
   service: "Gateway service",
 };
 
-const SOURCE_LABEL: Record<Provider["source"], string> = {
-  catalog: "Built in",
-  row: "Registered here",
-};
+/** The CLI as the Gateway's commands name it. */
+const CLI = "pnpm everyapp";
 
 /** The columns that hold a row's controls: the Set up button, then the menu (the id `DataTable` puts top right on a card). */
 const SETUP_COLUMN = "setup";
@@ -111,9 +111,9 @@ function providerDocsUrl(id: string): string {
 
 /**
  * A row as this page reads it. A list from an older Gateway build (before
- * `configured`, `settings` and `apps`, as a cache restored from the browser
- * can be) reads as not set up and listed by no app, instead of throwing
- * and blanking the tab.
+ * `configured`, `settings`, `apps` and `setFromTerminal`, as a cache
+ * restored from the browser can be) reads as not set up and listed by no
+ * app, instead of throwing and blanking the tab.
  */
 function readProvider(provider: Provider): Provider {
   const row = provider as Partial<Provider> & Pick<Provider, "id">;
@@ -124,15 +124,20 @@ function readProvider(provider: Provider): Provider {
     configured: row.configured === true,
     settings: Array.isArray(row.settings) ? row.settings : [],
     apps: Array.isArray(row.apps) ? row.apps : [],
+    setFromTerminal: row.setFromTerminal === true,
+    inUse: row.inUse === true,
   };
 }
 
+/** Gateway services (email, members) are internals and never list. */
 function readProviders(data: { providers: Provider[] }): {
   providers: Provider[];
 } {
   return {
     providers: Array.isArray(data.providers)
-      ? data.providers.map(readProvider)
+      ? data.providers
+          .map(readProvider)
+          .filter((provider) => provider.kind !== "service")
       : [],
   };
 }
@@ -181,19 +186,22 @@ function guardCells(columns: ColumnDef<Provider>[]): ColumnDef<Provider>[] {
 
 /** Where a provider stands, in the order the table lists them. */
 enum ProviderState {
-  Ready,
   /**
-   * Not set, and waited on: an installed app stays closed without it, or
-   * it was registered here (an OAuth preset a deploy registered, until its
-   * client is set). These rows carry Set up.
+   * Not set, and waited on: an installed app stays closed without it, it
+   * was registered here (an OAuth preset a deploy registered, until its
+   * client is set), or its pasted client no longer opens. These rows carry
+   * Set up, and list first: they are what keeps apps closed.
    */
   NeedsSetup,
+  Ready,
   NotSet,
 }
 
 function providerState(provider: Provider): ProviderState {
   if (provider.configured) return ProviderState.Ready;
-  return provider.source === "row" || provider.apps.some((app) => app.needs)
+  return provider.source === "row" ||
+    provider.oauth?.client.stale === true ||
+    provider.apps.some((app) => app.needs)
     ? ProviderState.NeedsSetup
     : ProviderState.NotSet;
 }
@@ -206,36 +214,52 @@ const STATE_BADGE: Record<ProviderState, ReactNode> = {
 };
 
 /**
- * What the table lists before Show all, in its order: what is set up, then
- * what still needs setting up. The rest of the catalog waits behind Show
- * all. Gateway services (email, members) are internals and never list.
+ * What needs setting up first, then what is set up, then the rest of the
+ * catalog; in each, the providers more apps list first, then by name.
  */
-function partitionProviders(providers: readonly Provider[]): {
-  inUse: Provider[];
-  rest: Provider[];
-} {
-  const listed = providers.filter((provider) => provider.kind !== "service");
-  return {
-    inUse: listed
-      .filter((provider) => providerState(provider) !== ProviderState.NotSet)
-      .sort((a, b) => providerState(a) - providerState(b)),
-    rest: listed.filter(
-      (provider) => providerState(provider) === ProviderState.NotSet,
-    ),
-  };
+function orderProviders(providers: readonly Provider[]): Provider[] {
+  return [...providers].sort(
+    (a, b) =>
+      providerState(a) - providerState(b) ||
+      b.apps.length - a.apps.length ||
+      a.name.localeCompare(b.name),
+  );
 }
 
-/** How a key is set: from the terminal, by name; the value never passes through the browser. */
-function SetKeyDialog({
-  provider,
+function matchesProvider(provider: Provider, needle: string): boolean {
+  return [
+    provider.name,
+    provider.id,
+    KIND_LABEL[provider.kind],
+    ...provider.apps.map((app) => app.name),
+  ].some((text) => text.toLowerCase().includes(needle));
+}
+
+function matchesConnection(connection: Connection, needle: string): boolean {
+  return [
+    personOf(connection),
+    connection.label ?? "",
+    connection.providerName,
+    ...connection.apps.map((app) => app.name),
+  ].some((text) => text.toLowerCase().includes(needle));
+}
+
+/** A change made from the terminal, by name; no value passes through the browser. */
+interface TerminalStep {
+  title: string;
+  description?: string;
+  code: string;
+  /** The provider the key is set for: where to get it, and the hosts it goes to. */
+  docsFor?: Provider;
+}
+
+function TerminalDialog({
+  step,
   onClose,
 }: {
-  provider: Provider;
+  step: TerminalStep;
   onClose: () => void;
 }) {
-  const needing = provider.apps
-    .filter((app) => app.needs)
-    .map((app) => app.name);
   return (
     <Dialog
       open
@@ -245,73 +269,143 @@ function SetKeyDialog({
     >
       <DialogContent showCloseButton={false} className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Set up {provider.name}</DialogTitle>
-          <DialogDescription>
-            {needing.length > 0 ? `${needing.join(", ")} needs it. ` : null}
-            Keys are set from the terminal, so the value never passes through
-            the browser.
-          </DialogDescription>
+          <DialogTitle>{step.title}</DialogTitle>
+          {step.description ? (
+            <DialogDescription>{step.description}</DialogDescription>
+          ) : null}
         </DialogHeader>
-        <CodeBlock
-          code={`pnpm everyapp secret set ${provider.settings.join(" ")}`}
-          successMessage="Command copied"
-        />
-        <p className="text-xs text-muted-foreground">
-          Where to get the key:{" "}
-          <a
-            className="underline underline-offset-4 hover:text-foreground"
-            href={providerDocsUrl(provider.id)}
-            target="_blank"
-            rel="noreferrer"
-          >
-            the {provider.name} page
-          </a>
-          .
-        </p>
+        <CodeBlock code={step.code} successMessage="Command copied" />
+        {step.docsFor ? (
+          <ProviderHosts hosts={step.docsFor.hosts} what="this key" />
+        ) : null}
+        {step.docsFor ? (
+          <p className="text-xs text-muted-foreground">
+            Where to get the key:{" "}
+            <a
+              className="underline underline-offset-4 hover:text-foreground"
+              href={providerDocsUrl(step.docsFor.id)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              the {step.docsFor.name} page
+            </a>
+            .
+          </p>
+        ) : null}
         <DialogFooter showCloseButton />
       </DialogContent>
     </Dialog>
   );
 }
 
-interface ProviderMenuHandlers {
+function setKeyStep(provider: Provider): TerminalStep {
+  return {
+    title: `${provider.configured ? "Replace" : "Set"} the ${provider.name} key`,
+    code: `${CLI} secret set ${provider.settings.join(" ")}`,
+    docsFor: provider,
+  };
+}
+
+function removeKeyStep(provider: Provider): TerminalStep {
+  const apps = provider.apps.map((app) => app.name);
+  return {
+    title: `Remove the ${provider.name} key`,
+    description: `Keys are removed from the terminal.${apps.length > 0 ? ` ${apps.join(", ")} can't call ${provider.name} until a key is set again.` : ""}`,
+    code: `${CLI} secret unset ${provider.settings.join(" ")}`,
+  };
+}
+
+function removeTerminalClientStep(entry: OAuthProvider): TerminalStep {
+  return {
+    title: `Remove the ${entry.name} client`,
+    description:
+      "This client was set from the terminal, so it is removed there. New connections stop until a client is set again.",
+    code: `${CLI} secret unset ${entry.settings.join(" ")}`,
+  };
+}
+
+function removeTerminalProviderStep(provider: Provider): TerminalStep {
+  return {
+    title: `Remove ${provider.name}`,
+    description: `${provider.name} was registered from the terminal, so it is removed there, then its key.`,
+    code: `${CLI} provider remove ${provider.id}\n${CLI} secret unset ${provider.settings.join(" ")}`,
+  };
+}
+
+interface ProviderActionHandlers {
+  /** Opens what the provider lacks: the client dialog, or the key's terminal command. */
+  onSetUp: (provider: Provider) => void;
   onReplaceClient: (provider: OAuthProvider) => void;
   onForgetClient: (provider: OAuthProvider) => void;
+  onTerminal: (step: TerminalStep) => void;
   onRemove: (provider: Provider) => void;
 }
 
-interface ProviderActionHandlers extends ProviderMenuHandlers {
-  /** Opens what the provider lacks: the client dialog, or the key's terminal command. */
-  onSetUp: (provider: Provider) => void;
-}
-
-/** A provider's menu: its client for an OAuth one, Remove for a registered row; none for a built-in key. */
+/**
+ * Every provider's menu: its client or its key, set, replaced or removed,
+ * and Remove provider on a registered one, disabled while any app on the
+ * Gateway lists it (the Gateway refuses it then). What the terminal set,
+ * the terminal removes:
+ * those items show the command.
+ */
 function ProviderMenu({
   provider,
+  onSetUp,
   onReplaceClient,
   onForgetClient,
+  onTerminal,
   onRemove,
-}: { provider: Provider } & ProviderMenuHandlers) {
+}: { provider: Provider } & ProviderActionHandlers) {
   const entry = provider.oauth;
-  if (!entry && provider.source === "catalog") return null;
+  const removable = provider.source === "row";
   return (
     <RowActionsMenu label={`Actions for ${provider.name}`}>
       {entry ? (
-        <DropdownMenuItem onClick={() => onReplaceClient(entry)}>
-          <KeyRound />
-          {entry.client.source ? "Replace client" : "Set client"}
-        </DropdownMenuItem>
-      ) : null}
-      {entry?.client.source === "d1" ? (
-        <DropdownMenuItem onClick={() => onForgetClient(entry)}>
-          <Unplug />
-          Forget pasted client
-        </DropdownMenuItem>
-      ) : null}
-      {provider.source === "row" ? (
+        <>
+          <DropdownMenuItem onClick={() => onReplaceClient(entry)}>
+            <KeyRound />
+            {entry.client.source ? "Replace client" : "Set client"}
+          </DropdownMenuItem>
+          {entry.client.source === "d1" ? (
+            <DropdownMenuItem onClick={() => onForgetClient(entry)}>
+              <Unplug />
+              Forget pasted client
+            </DropdownMenuItem>
+          ) : null}
+          {entry.client.source === "env" ? (
+            <DropdownMenuItem
+              onClick={() => onTerminal(removeTerminalClientStep(entry))}
+            >
+              <Unplug />
+              Remove client
+            </DropdownMenuItem>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <DropdownMenuItem onClick={() => onSetUp(provider)}>
+            <KeyRound />
+            {provider.configured ? "Replace key" : "Set key"}
+          </DropdownMenuItem>
+          {provider.configured ? (
+            <DropdownMenuItem
+              onClick={() => onTerminal(removeKeyStep(provider))}
+            >
+              <Unplug />
+              Remove key
+            </DropdownMenuItem>
+          ) : null}
+        </>
+      )}
+      {removable ? (
         <DropdownMenuItem
           variant="destructive"
-          onClick={() => onRemove(provider)}
+          disabled={provider.inUse}
+          onClick={() =>
+            provider.setFromTerminal
+              ? onTerminal(removeTerminalProviderStep(provider))
+              : onRemove(provider)
+          }
         >
           <Trash2 />
           Remove provider
@@ -321,27 +415,27 @@ function ProviderMenu({
   );
 }
 
-/**
- * A phone's row is one line: a provider's name, its status and Set up. The
- * table keeps the rest: the id, its kind and where it comes from, the apps
- * that list it, and the client or hosts.
- */
-function NameCell({ provider }: { provider: Provider }) {
+/** A row's name over its id and kind (a person's email over their account's name): one line on a phone. */
+function TitleCell({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle?: ReactNode;
+}) {
   const inCard = useInDataTableCard();
   return (
     <>
-      <p className="truncate font-medium">{provider.name}</p>
-      {inCard ? null : (
-        <p className="truncate font-mono text-xs text-muted-foreground">
-          {provider.id}
-        </p>
-      )}
+      <p className="truncate font-medium">{title}</p>
+      {!inCard && subtitle ? (
+        <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
+      ) : null}
     </>
   );
 }
 
-/** What a provider is, over where it comes from. */
-function KindCell({
+/** The line under a provider's name: its id, what the CLI and an app's config call it, then its kind (the default model's provider says so). */
+function ProviderSubtitle({
   provider,
   isAiDefault,
 }: {
@@ -350,72 +444,61 @@ function KindCell({
 }) {
   return (
     <>
-      <p>{isAiDefault ? "AI default" : KIND_LABEL[provider.kind]}</p>
-      <p className="text-xs text-muted-foreground">
-        {SOURCE_LABEL[provider.source]}
-      </p>
+      <span className="font-mono">{provider.id}</span>
+      {" · "}
+      {isAiDefault ? "AI default" : KIND_LABEL[provider.kind]}
     </>
   );
 }
 
-/** The apps that list a provider, by name. */
-function AppsCell({ provider }: { provider: Provider }) {
-  if (provider.apps.length === 0)
-    return <span className="text-muted-foreground">none</span>;
-  const names = provider.apps.map((app) => app.name).join(", ");
-  return (
-    <span className="line-clamp-3" title={names}>
-      {names}
-    </span>
-  );
-}
-
-/**
- * An OAuth provider's client, by where it comes from and never its value,
- * over how many people have connected. Any other provider lists the hosts
- * its key goes to.
- */
-function ClientCell({ provider }: { provider: Provider }) {
-  const entry = provider.oauth;
-  if (!entry) {
-    if (provider.hosts.length === 0) return null;
-    const hosts = provider.hosts.join(", ");
-    // Capped, so a long list of hosts doesn't take the Apps column's room.
-    return (
-      <span
-        className="line-clamp-2 max-w-60 text-xs text-muted-foreground"
-        title={hosts}
-      >
-        {hosts}
-      </span>
-    );
+/** Both tables' Apps column: chips, each with its remove button when `onRemove` is given. */
+function AppsCell<TApp extends { rowId: string; name: string }>({
+  apps,
+  onRemove,
+}: {
+  apps: readonly TApp[];
+  onRemove?: (app: TApp) => void;
+}) {
+  const inCard = useInDataTableCard();
+  if (apps.length === 0) {
+    return inCard ? null : <span className="text-muted-foreground">none</span>;
   }
-  const view = clientSourceLabel(entry.client);
-  const stale = entry.client.stale ? (
-    <Badge variant="warning" size="sm" className="ml-2">
-      Pasted for other endpoints
-    </Badge>
-  ) : null;
-  return (
-    <>
-      <p className={view.tone === "unset" ? "text-muted-foreground" : ""}>
-        {view.label}
-        {stale}
-      </p>
-      <p className="text-xs text-muted-foreground">
-        {entry.connections}{" "}
-        {entry.connections === 1 ? "connection" : "connections"}
-      </p>
-    </>
+  return <ConnectionApps apps={apps} onRemove={onRemove} />;
+}
+
+/** The first scope and how many more, until opened. */
+function ScopesCell({ scopes }: { scopes: readonly string[] }) {
+  const [open, setOpen] = useState(false);
+  if (scopes.length <= 1) return <>{scopesText(scopes)}</>;
+  const toggle = (
+    <Button
+      variant="link"
+      size="xs"
+      className="h-auto px-0 font-sans text-xs text-muted-foreground hover:text-foreground"
+      aria-expanded={open}
+      onClick={() => setOpen(!open)}
+    >
+      {open ? "Show less" : `+${scopes.length - 1} more`}
+    </Button>
+  );
+  return open ? (
+    <div className="flex flex-col items-start gap-0.5 whitespace-normal">
+      <span className="wrap-anywhere">{scopesText(scopes)}</span>
+      {toggle}
+    </div>
+  ) : (
+    <div className="flex items-center gap-1.5">
+      <span className="truncate">{scopes[0]}</span>
+      {toggle}
+    </div>
   );
 }
 
 function providerColumns({
   aiDefault,
-  onSetUp,
-  ...menu
+  ...handlers
 }: ProviderActionHandlers & {
-  /** The provider the default model runs on, or null: its kind says so. */
+  /** The provider the default model runs on, or null: the line under its name says so. */
   aiDefault: string | null;
 }): ColumnDef<Provider>[] {
   return guardCells([
@@ -424,33 +507,34 @@ function providerColumns({
       header: ({ column }) => (
         <SortableHeader column={column} label="Provider" />
       ),
-      meta: { label: "Provider", cellClassName: "max-w-[260px]" },
+      meta: { label: "Provider", cellClassName: "max-w-[240px]" },
       cell: ({ row: { original: provider } }) => (
-        <NameCell provider={provider} />
-      ),
-    },
-    {
-      accessorKey: "kind",
-      header: ({ column }) => <SortableHeader column={column} label="Kind" />,
-      meta: {
-        label: "Kind",
-        cellClassName: "whitespace-nowrap",
-        card: CardSlot.Hidden,
-      },
-      cell: ({ row: { original: provider } }) => (
-        <KindCell provider={provider} isAiDefault={provider.id === aiDefault} />
+        <div className="flex min-w-0 items-center gap-3">
+          {/* A fixed slot, so names line up whether or not a provider has a mark. */}
+          <span className="flex size-5 shrink-0 items-center justify-center">
+            <ProviderMark id={provider.id} className="size-4.5" />
+          </span>
+          <div className="min-w-0">
+            <TitleCell
+              title={provider.name}
+              subtitle={
+                <ProviderSubtitle
+                  provider={provider}
+                  isAiDefault={provider.id === aiDefault}
+                />
+              }
+            />
+          </div>
+        </div>
       ),
     },
     {
       id: "apps",
       header: "Apps",
       enableSorting: false,
-      meta: {
-        cellClassName: "min-w-32 max-w-[280px]",
-        card: CardSlot.Hidden,
-      },
+      meta: { cellClassName: "max-w-[280px]", card: CardSlot.Footer },
       cell: ({ row: { original: provider } }) => (
-        <AppsCell provider={provider} />
+        <AppsCell apps={provider.apps} />
       ),
     },
     {
@@ -466,16 +550,7 @@ function providerColumns({
         STATE_BADGE[providerState(provider)],
     },
     {
-      id: "client",
-      header: "OAuth client",
-      enableSorting: false,
-      meta: { card: CardSlot.Hidden },
-      cell: ({ row: { original: provider } }) => (
-        <ClientCell provider={provider} />
-      ),
-    },
-    {
-      // Its own column, so the buttons line up whether or not a row has a menu.
+      // Its own column, so the buttons line up whether or not a row needs one.
       id: SETUP_COLUMN,
       header: () => <span className="sr-only">Set up</span>,
       enableSorting: false,
@@ -491,7 +566,7 @@ function providerColumns({
             size="sm"
             variant="outline"
             className="text-foreground"
-            onClick={() => onSetUp(provider)}
+            onClick={() => handlers.onSetUp(provider)}
           >
             Set up
           </Button>
@@ -503,50 +578,10 @@ function providerColumns({
       enableSorting: false,
       meta: { headerClassName: "w-10" },
       cell: ({ row: { original: provider } }) => (
-        <ProviderMenu provider={provider} {...menu} />
+        <ProviderMenu provider={provider} {...handlers} />
       ),
     },
   ]);
-}
-
-/**
- * A phone's row says whose connection it is, the provider and its status,
- * over the apps allowed to use it. The table keeps the rest: the account's
- * name at the provider, the scopes and when it was last used.
- */
-function WhoCell({ connection }: { connection: Connection }) {
-  const inCard = useInDataTableCard();
-  const who = personOf(connection);
-  return (
-    <>
-      <p className="truncate font-medium">{who}</p>
-      {!inCard && connection.label && connection.label !== who ? (
-        <p className="truncate text-xs text-muted-foreground">
-          {connection.label}
-        </p>
-      ) : null}
-    </>
-  );
-}
-
-/** The apps a person allowed, each with the button that takes its access away. */
-function AllowedAppsCell({
-  connection,
-  onRemoveApp,
-}: {
-  connection: Connection;
-  onRemoveApp: (access: AppAccess<Connection>) => void;
-}) {
-  const inCard = useInDataTableCard();
-  if (connection.apps.length === 0) {
-    return inCard ? null : <span className="text-muted-foreground">none</span>;
-  }
-  return (
-    <ConnectionApps
-      apps={connection.apps}
-      onRemove={(app) => onRemoveApp({ connection, app })}
-    />
-  );
 }
 
 function connectionColumns({
@@ -563,7 +598,12 @@ function connectionColumns({
       header: ({ column }) => <SortableHeader column={column} label="Who" />,
       meta: { label: "Who", cellClassName: "max-w-[240px]" },
       cell: ({ row: { original: connection } }) => (
-        <WhoCell connection={connection} />
+        <TitleCell
+          title={personOf(connection)}
+          subtitle={
+            connection.label !== personOf(connection) ? connection.label : null
+          }
+        />
       ),
     },
     {
@@ -571,7 +611,11 @@ function connectionColumns({
       header: ({ column }) => (
         <SortableHeader column={column} label="Provider" />
       ),
-      meta: { label: "Provider", card: CardSlot.BareDetail },
+      meta: {
+        label: "Provider",
+        cellClassName: "whitespace-nowrap",
+        card: CardSlot.BareDetail,
+      },
     },
     {
       id: "apps",
@@ -579,7 +623,10 @@ function connectionColumns({
       enableSorting: false,
       meta: { cellClassName: "max-w-[280px]", card: CardSlot.Footer },
       cell: ({ row: { original: connection } }) => (
-        <AllowedAppsCell connection={connection} onRemoveApp={onRemoveApp} />
+        <AppsCell
+          apps={connection.apps}
+          onRemove={(app) => onRemoveApp({ connection, app })}
+        />
       ),
     },
     {
@@ -587,11 +634,12 @@ function connectionColumns({
       header: "Scopes",
       enableSorting: false,
       meta: {
-        cellClassName: "font-mono text-xs text-muted-foreground",
+        cellClassName: "max-w-[240px] font-mono text-xs text-muted-foreground",
         card: CardSlot.Hidden,
       },
-      cell: ({ row: { original: connection } }) =>
-        scopesText(connection.scopes),
+      cell: ({ row: { original: connection } }) => (
+        <ScopesCell scopes={connection.scopes} />
+      ),
     },
     {
       accessorKey: "status",
@@ -618,7 +666,7 @@ function connectionColumns({
       ),
     },
     {
-      id: "actions",
+      id: ACTIONS_COLUMN,
       header: () => <span className="sr-only">Actions</span>,
       enableSorting: false,
       meta: { headerClassName: "w-10" },
@@ -639,18 +687,45 @@ function connectionColumns({
   ];
 }
 
+/** What removing a registered provider takes with it. */
+function removalText(provider: Provider): string {
+  if (!provider.oauth) return "No app uses it, so nothing stops working.";
+  const { connections } = provider.oauth;
+  if (connections === 0) return "Its OAuth client is deleted.";
+  return `Its OAuth client is deleted, and ${connections} connected ${connections === 1 ? "account is" : "accounts are"} disconnected.`;
+}
+
+/** A searchable table's toolbar. */
+function SearchToolbar({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <DataTableToolbar>
+      <DataTableSearch label={label} value={value} onChange={onChange} />
+    </DataTableToolbar>
+  );
+}
+
 /**
  * Manage workspace → Providers (docs/design/2026-11-oauth-simplify.md):
- * one table of the providers the Gateway brokers, first what is set up and
- * what still needs it, with the rest of the catalog behind Show all, ten
- * rows to a page: the apps that list each one, where its key or client comes from (never a
- * value), and an OAuth one's connection count; Add OAuth provider from a
- * preset or a custom spec with the client pasted in; Set up, Replace or
- * Forget a client; Remove a registered provider; and, under Organization
- * connections, every connection in the organization
+ * every provider the Gateway brokers, what needs setting up first, then
+ * what is set up, then the rest of the catalog, searchable and ten rows to
+ * a page: the apps that list each one and its status; Add OAuth provider
+ * from a preset or a custom spec with the client pasted in; Set up,
+ * Replace or Forget a client, set or remove a key (from the terminal: the
+ * menu shows the command); Remove a registered provider no app on the
+ * Gateway lists; and,
+ * under Organization connections, every connection in the organization
  * (docs/design/2026-11-oauth-one-connection.md): one person's to one
- * provider, with the apps they allowed to use it, ten to a page. One app's access can be
- * taken away, and Disconnect stops every app at once. Owners and admins.
+ * provider, with the apps they allowed to use it, searchable and ten to a
+ * page. One app's access can be taken away, and Disconnect stops every
+ * app at once. Owners and admins.
  */
 function ProvidersPage() {
   const queryClient = useQueryClient();
@@ -658,9 +733,9 @@ function ProvidersPage() {
   const [replacing, setReplacing] = useState<OAuthProvider | null>(null);
   const [forgetting, setForgetting] = useState<OAuthProvider | null>(null);
   const [removing, setRemoving] = useState<Provider | null>(null);
-  const [settingKey, setSettingKey] = useState<Provider | null>(null);
-  const [showAll, setShowAll] = useState(false);
-  const [search, setSearch] = useState("");
+  const [terminal, setTerminal] = useState<TerminalStep | null>(null);
+  const [providerSearch, setProviderSearch] = useState("");
+  const [connectionSearch, setConnectionSearch] = useState("");
 
   const providersQuery = useQuery({
     queryKey: PROVIDERS_KEY,
@@ -733,36 +808,29 @@ function ProvidersPage() {
         onSetUp: (provider) =>
           provider.oauth
             ? setReplacing(provider.oauth)
-            : setSettingKey(provider),
+            : setTerminal(setKeyStep(provider)),
         onReplaceClient: setReplacing,
         onForgetClient: setForgetting,
+        onTerminal: setTerminal,
         onRemove: setRemoving,
       }),
     [aiDefault],
   );
-  const groups = useMemo(
-    () => partitionProviders(providersQuery.data?.providers ?? []),
-    [providersQuery.data],
-  );
-  const needle = search.trim().toLowerCase();
-  const listed = useMemo(() => {
-    if (!showAll) return groups.inUse;
-    const all = [...groups.inUse, ...groups.rest];
-    return needle
-      ? all.filter(
-          (provider) =>
-            provider.name.toLowerCase().includes(needle) ||
-            provider.id.includes(needle),
-        )
-      : all;
-  }, [groups, showAll, needle]);
+  const providerNeedle = providerSearch.trim().toLowerCase();
+  const providers = useMemo(() => {
+    const ordered = orderProviders(providersQuery.data?.providers ?? []);
+    return providerNeedle
+      ? ordered.filter((provider) => matchesProvider(provider, providerNeedle))
+      : ordered;
+  }, [providersQuery.data, providerNeedle]);
   const providersTable = useDataTable({
-    data: listed,
+    data: providers,
     columns: providerCols,
     getRowId: (provider) => provider.id,
     withSorting: true,
     withPagination: true,
   });
+
   const connectionCols = useMemo(
     () =>
       connectionColumns({
@@ -771,8 +839,17 @@ function ProvidersPage() {
       }),
     [removal.askDisconnect, removal.askRemoveApp],
   );
+  const connectionNeedle = connectionSearch.trim().toLowerCase();
+  const connections = useMemo(() => {
+    const all = connectionsQuery.data?.connections ?? [];
+    return connectionNeedle
+      ? all.filter((connection) =>
+          matchesConnection(connection, connectionNeedle),
+        )
+      : all;
+  }, [connectionsQuery.data, connectionNeedle]);
   const connectionsTable = useDataTable({
-    data: connectionsQuery.data?.connections ?? [],
+    data: connections,
     columns: connectionCols,
     getRowId: (connection) => connection.id,
     withSorting: true,
@@ -818,55 +895,16 @@ function ProvidersPage() {
             ) : undefined
           }
           toolbar={
-            showAll ? (
-              <DataTableToolbar>
-                <DataTableSearch
-                  label="Search providers"
-                  value={search}
-                  onChange={setSearch}
-                />
-              </DataTableToolbar>
-            ) : undefined
+            <SearchToolbar
+              label="Search providers"
+              value={providerSearch}
+              onChange={setProviderSearch}
+            />
           }
-          isFiltered={needle !== ""}
+          isFiltered={providerNeedle !== ""}
           filteredTitle="No providers match"
-          onClearFilters={() => setSearch("")}
-          empty={{
-            title: "Nothing is set up yet",
-            description:
-              "Set a key from the terminal, or add an OAuth provider.",
-            action:
-              !showAll && groups.rest.length > 0 ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowAll(true)}
-                >
-                  Show all providers
-                </Button>
-              ) : undefined,
-          }}
-          footer={
-            // The rest of the catalog, as the table's last row: what is
-            // hidden belongs to this list, and the chevron says it opens.
-            !showAll && groups.inUse.length > 0 && groups.rest.length > 0 ? (
-              <div className="flex items-center justify-between gap-3 border-t border-border bg-muted/50 px-4 py-2">
-                <p className="text-sm text-muted-foreground">
-                  {groups.rest.length} more{" "}
-                  {groups.rest.length === 1 ? "provider" : "providers"}{" "}
-                  available
-                </p>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowAll(true)}
-                >
-                  Show all
-                  <ChevronDown data-icon="inline-end" />
-                </Button>
-              </div>
-            ) : undefined
-          }
+          onClearFilters={() => setProviderSearch("")}
+          empty={{ title: "No providers" }}
         />
       </SettingsSection>
 
@@ -886,6 +924,16 @@ function ProvidersPage() {
               />
             ) : undefined
           }
+          toolbar={
+            <SearchToolbar
+              label="Search connections"
+              value={connectionSearch}
+              onChange={setConnectionSearch}
+            />
+          }
+          isFiltered={connectionNeedle !== ""}
+          filteredTitle="No connections match"
+          onClearFilters={() => setConnectionSearch("")}
           empty={{
             title: "No connections yet",
             description: "People connect an account once, from inside an app.",
@@ -903,11 +951,8 @@ function ProvidersPage() {
         />
       ) : null}
 
-      {settingKey ? (
-        <SetKeyDialog
-          provider={settingKey}
-          onClose={() => setSettingKey(null)}
-        />
+      {terminal ? (
+        <TerminalDialog step={terminal} onClose={() => setTerminal(null)} />
       ) : null}
 
       {replacing ? (
@@ -917,6 +962,7 @@ function ProvidersPage() {
             name: replacing.name,
             redirectUri: replacing.redirectUri,
             console: replacing.console,
+            hosts: replacing.hosts,
             clientSource: replacing.client.source,
           }}
           onSubmit={async (client) => {
@@ -961,8 +1007,7 @@ function ProvidersPage() {
             )
           }
         >
-          Its client and every connection go with it. Refused while an app lists
-          it.
+          {removalText(removing)}
         </ConfirmDialog>
       ) : null}
 

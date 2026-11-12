@@ -19,6 +19,17 @@ const TARGET = fs
   .readdirSync(MIGRATIONS_DIR)
   .find((file) => /^\d{4}_oauth_presets_registered\.sql$/.test(file));
 
+/**
+ * A spec without its `hint`: the migration's copy is the preset as shipped
+ * then, and a hint is display text a later release may reword without a
+ * data migration (oauthPresets.ts).
+ */
+function withoutHint(spec: unknown): unknown {
+  const { hint, ...rest } = spec as Record<string, unknown>;
+  void hint;
+  return rest;
+}
+
 function statements(file: string): string[] {
   return fs
     .readFileSync(`${MIGRATIONS_DIR}/${file}`, "utf8")
@@ -110,7 +121,9 @@ describe(`migration ${TARGET}`, () => {
       if (!parsed.ok) throw new Error(JSON.stringify(parsed.problems));
       expect(parsed.id).toBe(row.id);
       // The SQL's copy is the preset as shipped, so `isPresetRow` holds.
-      expect(JSON.parse(row.spec)).toEqual(OAUTH_PRESETS[row.id]);
+      expect(withoutHint(JSON.parse(row.spec))).toEqual(
+        withoutHint(OAUTH_PRESETS[row.id]),
+      );
       expect(row.addedBy).toBe("everyapp");
       expect(row.boundTo).toBe(providerBindingKey(parsed.capability as never));
     }
@@ -134,7 +147,9 @@ describe(`migration ${TARGET}`, () => {
     await run(client, TARGET!);
     const rows = await providerRows();
     expect(rows.map((row) => row.id)).toEqual(["slack"]);
-    expect(JSON.parse(rows[0]!.spec)).toEqual(OAUTH_PRESETS["slack"]);
+    expect(withoutHint(JSON.parse(rows[0]!.spec))).toEqual(
+      withoutHint(OAUTH_PRESETS["slack"]),
+    );
   });
 
   it("rebinds a Google client pasted for the built-in to the row, and leaves a row there already alone", async () => {

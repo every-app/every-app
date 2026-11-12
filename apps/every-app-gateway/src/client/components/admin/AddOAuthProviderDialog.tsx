@@ -1,11 +1,21 @@
 import { useMemo, useState } from "react";
 import { revalidateLogic } from "@tanstack/react-form";
 import { useQuery } from "@tanstack/react-query";
+import type { ColumnDef } from "@tanstack/react-table";
 import { CircleAlert } from "lucide-react";
 import { z } from "zod";
 import { PROVIDER_ID } from "@every-app/sdk/internal";
-import { cn } from "cn";
 import { ErrorState } from "@/client/components/ErrorState";
+import { ProviderMark } from "@/client/components/ProviderIcon";
+import {
+  CardSlot,
+  DataTable,
+  useDataTable,
+} from "@/client/components/table/DataTable";
+import {
+  DataTableSearch,
+  DataTableToolbar,
+} from "@/client/components/table/DataTableToolbar";
 import { useAppForm } from "@/client/components/form/useAppForm";
 import { Alert, AlertDescription } from "@/client/components/ui/alert";
 import { Button } from "@/client/components/ui/button";
@@ -29,7 +39,8 @@ import {
   listOAuthPresets,
   type OAuthPresetSummary,
 } from "@/serverFunctions/providers";
-import { RedirectUriSection, TerminalAlternative } from "./OAuthClientFields";
+import { HintText, RedirectUriSection } from "./OAuthClientFields";
+import { ProviderHosts } from "./ProviderHosts";
 
 /** The presets change only with a Gateway release: read once a visit. */
 const OAUTH_PRESETS_QUERY_KEY = ["admin", "oauthPresets"] as const;
@@ -52,7 +63,7 @@ const customSchema = z.object({
     .trim()
     .regex(
       PROVIDER_ID,
-      "An id is 2 to 40 lowercase letters, digits and dashes, starting with a letter.",
+      "An ID is 2 to 40 lowercase letters, digits and dashes, starting with a letter.",
     ),
   console: z
     .string()
@@ -109,7 +120,7 @@ interface AddOAuthProviderDialogProps {
 /**
  * Adds an OAuth provider (docs/design/2026-10-oauth-providers.md section
  * 4): step one picks a preset (Google, Microsoft, Slack, GitHub and the other
- * shipped presets, or Custom), step two shows the redirect URI to register
+ * shipped presets, searchable and paged, or Custom provider), step two shows the redirect URI to register
  * at the provider's console and takes the client id and secret, plus, for
  * Custom, the provider's URLs and hosts. Scopes are each app's, in its
  * everyapp.config.ts. The secret is sent once and never shown again.
@@ -127,7 +138,7 @@ export function AddOAuthProviderDialog({
 
   return (
     <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
-      <DialogContent showCloseButton={false} className="sm:max-w-lg">
+      <DialogContent showCloseButton={false} className="sm:max-w-2xl">
         {!presets ? (
           <>
             <DialogHeader>
@@ -172,6 +183,53 @@ export function AddOAuthProviderDialog({
   );
 }
 
+/** The picker shows this many presets a page. */
+const PRESETS_PAGE_SIZE = 6;
+
+function presetColumns(
+  onPick: (id: string) => void,
+): ColumnDef<OAuthPresetSummary>[] {
+  return [
+    {
+      id: "name",
+      header: "Provider",
+      meta: { cellClassName: "w-56" },
+      cell: ({ row: { original: preset } }) => (
+        <div className="flex items-center gap-3">
+          {/* A fixed slot, so names line up whether or not a row has a mark. */}
+          <span className="flex size-5 shrink-0 items-center justify-center">
+            <ProviderMark id={preset.id} className="size-4.5" />
+          </span>
+          {/* A button for the keyboard; the whole row takes a click. */}
+          <button
+            type="button"
+            onClick={() => onPick(preset.id)}
+            className="cursor-pointer truncate rounded-sm text-left font-medium focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+          >
+            {preset.name}
+          </button>
+        </div>
+      ),
+    },
+    {
+      id: "description",
+      header: "What it reaches",
+      meta: {
+        cellClassName: "whitespace-normal text-muted-foreground",
+        card: CardSlot.BareDetail,
+      },
+      cell: ({ row: { original: preset } }) => preset.description,
+    },
+  ];
+}
+
+function matchesPreset(preset: OAuthPresetSummary, needle: string): boolean {
+  return [preset.name, preset.id, preset.description ?? ""].some((text) =>
+    text.toLowerCase().includes(needle),
+  );
+}
+
+/** The presets, searchable and paged; Custom is the footer's, for a provider with no preset. */
 function PresetPicker({
   presets,
   onPick,
@@ -181,68 +239,56 @@ function PresetPicker({
   onPick: (id: string) => void;
   onClose: () => void;
 }) {
+  const [search, setSearch] = useState("");
+  const needle = search.trim().toLowerCase();
+  const rows = useMemo(
+    () =>
+      needle
+        ? presets.filter((preset) => matchesPreset(preset, needle))
+        : presets,
+    [presets, needle],
+  );
+  const columns = useMemo(() => presetColumns(onPick), [onPick]);
+  const table = useDataTable({
+    data: rows,
+    columns,
+    getRowId: (preset) => preset.id,
+    withPagination: true,
+    initialState: { pagination: { pageIndex: 0, pageSize: PRESETS_PAGE_SIZE } },
+  });
   return (
     <>
       <DialogHeader>
         <DialogTitle>Add OAuth provider</DialogTitle>
-        <DialogDescription>
-          Pick the provider. Apps then reach it with each person&apos;s own
-          account, through the Gateway; the client secret stays here.
-        </DialogDescription>
       </DialogHeader>
-      <ul
-        className="flex max-h-[55vh] flex-col gap-1.5 overflow-y-auto"
-        aria-label="Presets"
-      >
-        {presets.map((preset) => (
-          <li key={preset.id}>
-            <PresetButton
-              title={preset.name}
-              description={preset.description ?? undefined}
-              onClick={() => onPick(preset.id)}
-            />
-          </li>
-        ))}
-        <li>
-          <PresetButton
-            title="Custom"
-            description="Any OAuth 2 provider: its authorize and token URLs and API hosts."
-            onClick={() => onPick(CUSTOM)}
-          />
-        </li>
-      </ul>
-      <DialogFooter>
+      <section aria-label="Presets" className="min-w-0">
+        <DataTable
+          table={table}
+          toolbar={
+            <DataTableToolbar>
+              <DataTableSearch
+                label="Search presets"
+                value={search}
+                onChange={setSearch}
+              />
+            </DataTableToolbar>
+          }
+          onRowClick={(row) => onPick(row.original.id)}
+          isFiltered={needle !== ""}
+          filteredTitle="No presets match"
+          onClearFilters={() => setSearch("")}
+          empty={{ title: "No presets" }}
+        />
+      </section>
+      <DialogFooter className="sm:justify-between">
+        <Button variant="outline" onClick={() => onPick(CUSTOM)}>
+          Custom provider
+        </Button>
         <Button variant="ghost" onClick={onClose}>
           Cancel
         </Button>
       </DialogFooter>
     </>
-  );
-}
-
-function PresetButton({
-  title,
-  description,
-  onClick,
-}: {
-  title: string;
-  description?: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex w-full cursor-pointer flex-col items-start gap-0.5 rounded-lg border border-border px-3 py-2 text-left",
-        "hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
-      )}
-    >
-      <span className="text-sm font-medium">{title}</span>
-      {description ? (
-        <span className="text-xs text-muted-foreground">{description}</span>
-      ) : null}
-    </button>
   );
 }
 
@@ -306,10 +352,13 @@ function ClientForm({
             {custom ? "Add a custom OAuth provider" : `Add ${preset.name}`}
           </DialogTitle>
           <DialogDescription>
-            {custom
-              ? "Describe the provider, register the redirect URI on its OAuth app, then paste the client."
-              : (preset.hint ??
-                "Make an OAuth app at the provider, register the redirect URI, then paste its client id and secret.")}
+            {custom ? (
+              "Describe the provider, register the redirect URI on its OAuth app, then paste the client."
+            ) : preset.hint ? (
+              <HintText text={preset.hint} />
+            ) : (
+              "Make an OAuth app at the provider, register the redirect URI, then paste its client ID and secret."
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -337,8 +386,7 @@ function ClientForm({
               <form.AppField name="id">
                 {(field) => (
                   <field.TextField
-                    label="Id"
-                    description="What apps list under capabilities; also the prefix of its settings."
+                    label="ID"
                     placeholder="acme-cloud"
                     spellCheck={false}
                   />
@@ -349,7 +397,6 @@ function ClientForm({
                   <field.TextField
                     label="Console URL"
                     type="url"
-                    description="Where the OAuth app is made."
                     placeholder="https://console.acme.com/apps"
                     spellCheck={false}
                   />
@@ -379,7 +426,6 @@ function ClientForm({
                 {(field) => (
                   <field.TextField
                     label="API hosts"
-                    description="The only hosts the token is sent to, comma separated."
                     placeholder="api.acme.com"
                     spellCheck={false}
                   />
@@ -389,7 +435,6 @@ function ClientForm({
                 {(field) => (
                   <field.SelectField
                     label="Scope separator"
-                    description="How the provider joins scopes. Each app lists the scopes it needs in its everyapp.config.ts."
                     items={[
                       { value: "space", label: "Space (most providers)" },
                       { value: "comma", label: "Comma" },
@@ -409,12 +454,7 @@ function ClientForm({
                 )}
               </form.AppField>
               <form.AppField name="pkce">
-                {(field) => (
-                  <field.CheckboxField
-                    label="PKCE"
-                    description="Off only for a provider that refuses code_challenge."
-                  />
-                )}
+                {(field) => <field.CheckboxField label="PKCE" />}
               </form.AppField>
               <form.Subscribe selector={(state) => state.values.id}>
                 {(id) =>
@@ -429,20 +469,22 @@ function ClientForm({
               </form.Subscribe>
             </>
           ) : (
-            <RedirectUriSection
-              redirectUri={preset.redirectUri}
-              console={preset.console}
-              providerName={preset.name}
-            />
+            <>
+              <RedirectUriSection
+                redirectUri={preset.redirectUri}
+                console={preset.console}
+                providerName={preset.name}
+              />
+              <ProviderHosts hosts={preset.hosts} what="connected accounts" />
+            </>
           )}
 
           <form.AppField name="clientId">
             {(field) => (
               <field.TextField
-                label="Client id"
+                label="Client ID"
                 autoComplete="off"
                 spellCheck={false}
-                description="Leave both blank to add the provider now and set the client later."
               />
             )}
           </form.AppField>
@@ -453,11 +495,13 @@ function ClientForm({
                 type="password"
                 autoComplete="new-password"
                 spellCheck={false}
-                description="Stored sealed; never shown again. Blank for a public client."
               />
             )}
           </form.AppField>
-          {!custom ? <TerminalAlternative settings={preset.settings} /> : null}
+
+          <p className="text-xs text-muted-foreground">
+            Leave both blank to set the client later.
+          </p>
 
           {error ? (
             <Alert variant="destructive">

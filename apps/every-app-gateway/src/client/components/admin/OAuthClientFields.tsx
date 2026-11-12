@@ -36,27 +36,22 @@ export function RedirectUriSection({
         ) : (
           ` at ${providerName}`
         )}
-        , then paste its client id and secret.
+        , then paste its client ID and secret.
       </p>
       <CodeBlock code={redirectUri} successMessage="Redirect URI copied" />
     </section>
   );
 }
 
-/** The terminal alternative, for a provider whose settings have names. */
-export function TerminalAlternative({
-  settings,
-}: {
-  settings: { clientId: string; clientSecret: string | null };
-}) {
-  const names = [settings.clientId, settings.clientSecret]
-    .filter((name): name is string => Boolean(name))
-    .join(" ");
-  return (
-    <p className="text-xs text-muted-foreground">
-      From a terminal instead:{" "}
-      <span className="font-mono">pnpm everyapp secret set {names}</span> (a
-      secret set there wins over one pasted here).
-    </p>
+/** A preset's hint, its `backticked` words as code. */
+export function HintText({ text }: { text: string }) {
+  return text.split("`").map((part, index) =>
+    index % 2 === 1 ? (
+      <code key={index} className="font-mono text-[0.92em]">
+        {part}
+      </code>
+    ) : (
+      part
+    ),
   );
 }

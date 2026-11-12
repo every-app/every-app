@@ -19,12 +19,13 @@ import {
   OAUTH_CLIENT_SECRET_MAX,
 } from "@/schemas/oauth-provider";
 import { RedirectUriSection } from "./OAuthClientFields";
+import { ProviderHosts } from "./ProviderHosts";
 
 const schema = z.object({
   clientId: z
     .string()
     .trim()
-    .min(1, "Enter the client id.")
+    .min(1, "Enter the client ID.")
     .max(OAUTH_CLIENT_ID_MAX, "Too long."),
   clientSecret: z.string().max(OAUTH_CLIENT_SECRET_MAX, "Too long."),
 });
@@ -35,6 +36,8 @@ interface ReplaceOAuthClientDialogProps {
     name: string;
     redirectUri: string;
     console: string;
+    /** The only hosts the Gateway sends the provider's tokens to. */
+    hosts: readonly string[];
     /** The live client's source, for the warning about a terminal-set one. */
     clientSource: "env" | "d1" | null;
   };
@@ -89,7 +92,7 @@ export function ReplaceOAuthClientDialog({
               <DialogDescription>
                 {replacing
                   ? "Every connection keeps working until its token expires; people then connect again with the new client."
-                  : "Paste the client id and secret of the OAuth app you made at the provider."}
+                  : "Paste the client ID and secret of the OAuth app you made at the provider."}
               </DialogDescription>
             </DialogHeader>
 
@@ -110,11 +113,12 @@ export function ReplaceOAuthClientDialog({
               console={provider.console}
               providerName={provider.name}
             />
+            <ProviderHosts hosts={provider.hosts} what="connected accounts" />
 
             <form.AppField name="clientId">
               {(field) => (
                 <field.TextField
-                  label="Client id"
+                  label="Client ID"
                   autoComplete="off"
                   spellCheck={false}
                   autoFocus
@@ -128,7 +132,6 @@ export function ReplaceOAuthClientDialog({
                   type="password"
                   autoComplete="new-password"
                   spellCheck={false}
-                  description="Stored sealed; never shown again. Blank for a public client."
                 />
               )}
             </form.AppField>

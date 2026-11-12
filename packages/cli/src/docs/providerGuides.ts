@@ -380,7 +380,6 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
       "Name it (people see the name). For **Supported account types**, choose any Entra ID tenant plus personal Microsoft accounts.",
       "Under **Redirect URI**, platform **Web**, paste the redirect URI above, and select **Register**. Copy the **Application (client) ID**.",
       "Under **API permissions → Add a permission → Microsoft Graph → Delegated**, add `User.Read` and `offline_access` (the Gateway asks for them on every connect) and the scopes your apps list, like `Mail.Read` for OpenCRM.",
-      "If two apps share this registration with different scopes, Microsoft may hand back both apps' scopes and the Gateway refuses the token. Give each such app its own registration.",
       "Under **Certificates & secrets → New client secret**, add one (24 months at most) and copy its **Value** right away. Note the expiry date.",
     ],
   },

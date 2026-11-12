@@ -107,8 +107,19 @@ export interface ProviderSummary {
   configured: boolean;
   /** The Gateway settings it needs, by name: what `everyapp secret set` takes. */
   settings: string[];
-  /** The organization's apps that list it, and whether it keeps each one closed. */
-  apps: { name: string; needs: boolean }[];
+  /** The organization's apps that list it (apps.id, name), and whether it keeps each one closed. */
+  apps: { rowId: string; name: string; needs: boolean }[];
+  /**
+   * A registered row whose key was set from the terminal: removing it is
+   * the terminal's too (`everyapp provider remove`, then `secret unset`).
+   */
+  setFromTerminal: boolean;
+  /**
+   * Whether any app on this Gateway, in any organization, lists it under
+   * capabilities: Remove provider is refused while one does. Never which
+   * apps, since another organization's are not this one's to see.
+   */
+  inUse: boolean;
   /** For an OAuth provider, its full summary. */
   oauth?: OAuthProviderSummary;
 }
@@ -330,8 +341,23 @@ async function appsByProvider(
       }
       out.set(setting.id, [
         ...(out.get(setting.id) ?? []),
-        { name: app.name, needs: setting.blocking },
+        { rowId: app.id, name: app.name, needs: setting.blocking },
       ]);
+    }
+  }
+  return out;
+}
+
+/**
+ * The apps on this Gateway, every organization's, that list each provider
+ * under capabilities, by provider id (app slugs): what Remove provider is
+ * refused for, and what the Admin list marks in use.
+ */
+async function appsListingProviders(): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  for (const app of await AppRepository.findAllManifests()) {
+    for (const id of capabilityIdsOf(parseManifest(app.manifest))) {
+      out.set(id, [...(out.get(id) ?? []), app.appSlug]);
     }
   }
   return out;
@@ -344,6 +370,12 @@ export async function listProviders(
   const registry = await gatewayProviders();
   const counts = await Connections.countByProvider(org.orgId);
   const apps = await appsByProvider(org);
+  const listing = await appsListingProviders();
+  const terminalRows = new Set(
+    (await ProviderRepository.all())
+      .filter((row) => row.boundTo)
+      .map((row) => row.id),
+  );
   const out: ProviderSummary[] = [];
   for (const [id, capability] of registry.entries()) {
     const summary: ProviderSummary = {
@@ -355,6 +387,8 @@ export async function listProviders(
       configured: false,
       settings: neededSettings(capability),
       apps: apps.get(id) ?? [],
+      setFromTerminal: terminalRows.has(id),
+      inUse: listing.has(id),
     };
     if (capability.mode === "oauth_client") {
       summary.oauth = await oauthSummary(org, id, capability, registry, counts);
@@ -528,7 +562,7 @@ async function storeClient(
 ): Promise<void> {
   const clientId = input.clientId.trim();
   if (!clientId) {
-    throw new PublicError("INVALID_INPUT", "A client id is required");
+    throw new PublicError("INVALID_INPUT", "A client ID is required");
   }
   const secret = input.clientSecret?.trim() || null;
   if (capability.secrets.clientSecret && !secret) {
@@ -787,11 +821,7 @@ export async function removeProvider(
       `${providerId}'s settings are set from the terminal; remove it there: everyapp provider remove ${providerId}, then everyapp secret unset ${settings.join(" ") || "<its settings>"}`,
     );
   }
-  const apps = (await AppRepository.findAllManifests())
-    .filter((app) =>
-      capabilityIdsOf(parseManifest(app.manifest)).includes(providerId),
-    )
-    .map((app) => app.appSlug);
+  const apps = (await appsListingProviders()).get(providerId) ?? [];
   if (apps.length > 0) {
     throw new PublicError(
       "PROVIDER_IN_USE",

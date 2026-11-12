@@ -87,7 +87,7 @@ const PRESETS = {
         "https://www.googleapis.com/auth/userinfo.profile",
       ],
     },
-    hint: "A Web application OAuth client in Google Cloud, with the Gateway's callback as its redirect URI and the scopes your apps list on its consent screen.",
+    hint: "A Web application OAuth client in Google Cloud, with the scopes your apps list on its consent screen.",
   },
   // The multi-tenant Entra endpoints: register the client for accounts in
   // any organization and personal accounts.
@@ -121,7 +121,7 @@ const PRESETS = {
       },
       tolerated: ["openid", "profile", "email"],
     },
-    hint: "An app registration in Entra for accounts in any organization and personal accounts, with the Gateway's callback as a Web redirect URI. If two apps share this client with different scopes, Microsoft may hand back both apps' scopes and the Gateway refuses the token: give each app its own client.",
+    hint: "An app registration in Entra for accounts in any organization and personal accounts, with a Web redirect URI.",
   },
   // A Slack app's bot token: the top-level token of `oauth.v2.access`.
   slack: {
@@ -148,7 +148,7 @@ const PRESETS = {
         id: "team_id",
       },
     },
-    hint: "A Slack app with the Gateway's callback as its redirect URL and the bot scopes your apps list. The Gateway takes its Client ID and Client Secret, not a bot token (xoxb-).",
+    hint: "A Slack app with the bot scopes your apps list. Paste its Client ID and Client Secret, not a bot token (`xoxb-`).",
   },
   "github-oauth": {
     id: "github-oauth",
@@ -177,7 +177,7 @@ const PRESETS = {
         id: "id",
       },
     },
-    hint: "Register an OAuth App (not a GitHub App) and paste its client id and secret. GitHub's `repo` scope is read and write.",
+    hint: "An OAuth App, not a GitHub App.",
   },
   "notion-oauth": {
     id: "notion-oauth",
@@ -197,7 +197,7 @@ const PRESETS = {
       scopeSeparator: "space",
       authorizeParams: { owner: "user" },
     },
-    hint: "Notion has no scopes: an app lists scopes: [] and the person picks the pages to share on Notion's consent screen. Make the integration public to get a client id and secret. Apps send `Notion-Version` on every call.",
+    hint: "A public integration: only a public one has a client ID and secret.",
   },
   "linear-oauth": {
     id: "linear-oauth",
@@ -217,7 +217,6 @@ const PRESETS = {
       pkce: false,
       scopeSeparator: "comma",
     },
-    hint: "Linear's scopes are read, write, issues:create and comments:create; its API is GraphQL over POST.",
   },
   "gitlab-oauth": {
     id: "gitlab-oauth",
@@ -271,7 +270,6 @@ const PRESETS = {
         scopes: ["read:me", "offline_access"],
       },
     },
-    hint: "Calls go to api.atlassian.com/ex/jira/<cloud id>/… ; the cloud id comes from /oauth/token/accessible-resources.",
   },
   "hubspot-oauth": {
     id: "hubspot-oauth",
@@ -339,7 +337,6 @@ const PRESETS = {
       // Dropbox grants account_info.read to every app.
       tolerated: ["account_info.read"],
     },
-    hint: "`token_access_type=offline` is what yields a refresh token.",
   },
   spotify: {
     id: "spotify",

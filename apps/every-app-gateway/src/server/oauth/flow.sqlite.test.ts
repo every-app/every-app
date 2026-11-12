@@ -417,6 +417,9 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     expect(providers.get("google-workspace")).toMatchObject({
       configured: false,
       apps: [{ name: "seo", needs: true }],
+      // The seo app lists it: Remove provider is refused, so the list says so.
+      inUse: true,
+      setFromTerminal: false,
     });
 
     const settings = fakeEnv as Record<string, string>;
