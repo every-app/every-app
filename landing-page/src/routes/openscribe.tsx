@@ -21,7 +21,7 @@ import { buildPageSeo } from "@/lib/seo";
 
 const title = "OpenScribe: open-source AI meeting notes for Mac";
 const description =
-  "Open source alternative to Wispr Flow and Granola. Don't give another company all your meeting notes and voice dictations: transcribe them and save them in your own Cloudflare account.";
+  "Open source alternative to Wispr Flow and Granola. Don't give another company all your meeting notes: transcribe your meetings and save the notes in your own Cloudflare account.";
 
 // The commands the desktop app's onboarding shows
 // (apps/desktop/src/shared/setup.ts), with the public repository.
@@ -417,8 +417,8 @@ function OpenScribe() {
               style={{ animationDelay: "50ms" }}
             >
               Own your transcriptions. Don&apos;t give another company all your
-              meeting notes and voice dictations. Transcribe them and save them
-              in your own Cloudflare account.
+              meeting notes. Transcribe your meetings and save the notes in your
+              own Cloudflare account.
             </p>
             <div className="landing-reveal" style={{ animationDelay: "100ms" }}>
               <DownloadButton />
@@ -506,7 +506,7 @@ function OpenScribe() {
               <Step number={2} title="Set up your Gateway">
                 <p>
                   You need a Cloudflare account on Workers Paid and a domain on
-                  Cloudflare. It takes about 15 minutes.{" "}
+                  Cloudflare. It takes about 20 minutes.{" "}
                   <Link
                     to="/docs/$"
                     params={{ _splat: "quickstart" }}
