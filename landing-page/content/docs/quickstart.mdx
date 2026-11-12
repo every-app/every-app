@@ -1,0 +1,98 @@
+---
+title: Quick start
+description: From nothing to your first apps, in about 20 minutes.
+metaDescription: "Set up EveryApp in your Cloudflare account and install your first apps: paste one prompt into your coding agent, or run a few commands."
+---
+
+You'll set up your Gateway, the address where your team signs in and opens apps, then install your first apps on it.
+
+## Let your agent do it
+
+Paste this prompt into Claude Code, Codex or Cursor. It runs the steps on this page and stops when it needs you.
+
+<CopySetupPrompt />
+
+[See the full prompt](#the-full-prompt)
+
+## Before you start
+
+- A Cloudflare account on the Workers Paid plan, $5 a month. [Sign up](https://dash.cloudflare.com/sign-up), then [choose Paid](https://dash.cloudflare.com/?to=/:account/workers/plans).
+- A domain on Cloudflare. [Buy one there](https://dash.cloudflare.com/?to=/:account/registrar/register), or [bring one you own](/docs/domain#use-a-domain-you-already-own).
+- [Node.js](https://nodejs.org) 22.18 or newer.
+
+EveryApp is in early development, so expect some rough edges. [For early adopters](/docs/early-adopters)
+
+## Or do it yourself
+
+<Steps>
+<Step>
+
+### Install everyapp
+
+```bash
+npm install -g everyapp
+```
+
+</Step>
+<Step>
+
+### Set up your Gateway
+
+```bash
+everyapp setup
+```
+
+It asks you to do three things:
+
+1. **Log in to Cloudflare.** A page opens in your browser. Approve it.
+2. **Choose your address.** Press Enter to use `apps.yourcompany.com`. Your apps go below it, like `crm.apps.yourcompany.com`. The address can't change later.
+3. **Create your owner account.** After 5 to 10 minutes a page opens. Enter your name, email and a password. Don't share this link: whoever opens it first becomes the owner.
+
+Then it asks whether to put Cloudflare Access in front of your Gateway. Press Enter for yes. People then sign in at Cloudflare before they can reach anything of yours.
+
+If setup stops, run `everyapp setup` again. It picks up where it left off.
+
+</Step>
+<Step>
+
+### Install your first apps
+
+```bash
+everyapp install https://github.com/every-app/open-crm
+everyapp install https://github.com/every-app/open-seo
+everyapp install https://github.com/every-app/open-scribe
+```
+
+Each install asks for the keys the app needs:
+
+- [OpenCRM](/docs/apps/crm) needs none.
+- [OpenSEO](/docs/apps/openseo) needs an OpenRouter key and a DataForSEO key. Turn on R2 in your Cloudflare dashboard first (R2 Object Storage, then Get started).
+- [OpenScribe](/docs/apps/openscribe) needs an OpenAI key.
+
+If you skip a key, the app shows **Needs setup** until you add it.
+
+</Step>
+<Step>
+
+### Open them
+
+Go to your Gateway's address and sign in. Your apps are there.
+
+</Step>
+</Steps>
+
+Something went wrong? [Troubleshooting](/docs/troubleshooting)
+
+## Next
+
+- [Install more apps](/docs/apps)
+- [Create your own app](/docs/create-an-app)
+- [Invite people](/docs/people)
+- [Connect Claude or ChatGPT](/docs/connect-ai) so your assistant can use your apps
+- Put your apps on your phone: open `https://apps.yourcompany.com/pwa` and follow the steps
+
+## The full prompt
+
+This is what the button at the top copies.
+
+<include lang="text">./setup-prompt.txt</include>

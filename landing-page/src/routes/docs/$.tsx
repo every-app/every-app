@@ -15,18 +15,20 @@ import { docs } from "@/lib/source";
 // Pages from earlier versions of the docs, by their old slug. "" is /docs.
 const movedPages: Record<string, string> = {
   introduction: "",
-  quickstart: "gateway",
+  gateway: "quickstart",
+  cloudflare: "quickstart",
+  "apps/repolens": "apps",
   architecture: "how-it-works",
   "build-an-app": "create-an-app",
   "build-your-own-app": "create-an-app",
   "deploy-existing-apps": "create-an-app",
   cli: "commands",
-  "getting-started/quickstart": "gateway",
+  "getting-started/quickstart": "quickstart",
   "build-an-app/create-app": "create-an-app",
   "build-an-app/start-from-template": "create-an-app",
   "build-an-app/local-dev": "create-an-app",
   "how-it-works/overview": "",
-  "how-it-works/gateway": "gateway",
+  "how-it-works/gateway": "quickstart",
   "how-it-works/security": "how-it-works",
   "how-it-works/sdk": "how-it-works",
   "reference/cli": "commands",
@@ -79,7 +81,7 @@ function Page() {
         <DocsArticle
           entry={entry}
           actions={
-            <div className="flex flex-row gap-2 items-center border-b -mt-4 pb-6">
+            <div className="mt-12 flex flex-row items-center gap-2 border-t pt-6">
               <MarkdownCopyButton markdownUrl={markdownUrl} />
               <ViewOptionsPopover markdownUrl={markdownUrl} />
             </div>

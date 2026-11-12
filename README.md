@@ -59,7 +59,7 @@ npm install -g everyapp
 everyapp setup --domain apps.yourcompany.com
 ```
 
-Or [paste one prompt into Claude Code, Codex or Cursor](https://everyapp.com/docs/gateway#or-let-your-coding-agent-do-it) and let it set everything up.
+Or [paste one prompt into Claude Code, Codex or Cursor](https://everyapp.com/docs/quickstart) and let it set everything up.
 
 Then install an app with `everyapp install https://github.com/every-app/open-seo`, or [build your own](https://everyapp.com/docs/create-an-app) with `everyapp create my-app`.
 

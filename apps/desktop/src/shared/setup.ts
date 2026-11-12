@@ -1,9 +1,9 @@
 // The setup commands onboarding shows to someone without a Gateway, from
-// landing-page/content/docs/gateway.mdx. The window shows them; main copies them by id
+// landing-page/content/docs/quickstart.mdx. The window shows them; main copies them by id
 // ("clipboard:copySetup"), so the window never puts free text on the clipboard. No Electron import.
 
 /** The person's setup guide, linked from onboarding. */
-export const GATEWAY_GUIDE_URL = "https://everyapp.com/docs/gateway";
+export const GATEWAY_GUIDE_URL = "https://everyapp.com/docs/quickstart";
 
 /** Scribe's backend repository (the OpenScribe project). */
 export const OPENSCRIBE_REPOSITORY = "https://github.com/every-app/open-scribe";

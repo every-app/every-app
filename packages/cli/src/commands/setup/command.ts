@@ -105,7 +105,7 @@ export const setupCommand = buildCommand({
       "questions; never cf's). With --json each step is an NDJSON event; a run that stops on",
       "something only a person can do exits 2 with action_required.",
       `Then: ${CLI} create ../my-app, cd into it, ${CLI} dev, ${CLI} deploy.`,
-      "More: https://everyapp.com/docs/gateway",
+      "More: https://everyapp.com/docs/quickstart",
     ].join("\n"),
   },
 });

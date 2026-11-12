@@ -487,7 +487,7 @@ async function main() {
     if (res.status !== 404) error(`${path} answers ${res.status}, not 404`);
   }
   for (const [from, to] of [
-    ["/docs/quickstart", "/docs/gateway"],
+    ["/docs/gateway", "/docs/quickstart"],
     ["/docs/introduction", "/docs"],
     ["/docs/reference/cli", "/docs/commands"],
   ]) {

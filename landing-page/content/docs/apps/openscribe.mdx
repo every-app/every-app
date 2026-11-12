@@ -1,0 +1,31 @@
+---
+title: OpenScribe
+description: Meeting notes for Mac, saved in your own Cloudflare account.
+metaTitle: "OpenScribe: open-source AI meeting notes for Mac"
+metaDescription: "Every App for Mac records and transcribes your meetings. OpenScribe turns each transcript into notes and keeps them in your own Cloudflare account."
+---
+
+> **Meeting notes for Mac, saved in your own Cloudflare account.**
+>
+> Every App for Mac records and transcribes your meetings. OpenScribe turns each transcript into notes and keeps them on your Gateway. Audio is never stored.
+
+Notes are private by default. You can share them with your workspace, or publish one with a link you can revoke. In the app it's called Scribe.
+
+## Install
+
+```bash
+everyapp install https://github.com/every-app/open-scribe
+```
+
+Then it asks for:
+
+- `OPENAI_API_KEY` (required): transcribes the meeting and writes the notes.
+- Optional: a Google Workspace OAuth client, so it can remind you when a meeting starts ([Connect accounts](/docs/connect-oauth)).
+
+Run the install command again to update. `everyapp configure talk` changes a key later. The app's id is `talk`.
+
+## Record a meeting
+
+Download Every App for Mac from [everyapp.com/openscribe](/openscribe). Sign in with your app's address, like `https://talk.apps.yourcompany.com`.
+
+Code: [github.com/every-app/open-scribe](https://github.com/every-app/open-scribe)

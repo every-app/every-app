@@ -74,7 +74,7 @@ The flags people use: --domain, --account-id, and --yes for a script (it answers
 questions; never cf's). With --json each step is an NDJSON event; a run that stops on
 something only a person can do exits 2 with action_required.
 Then: everyapp create ../my-app, cd into it, everyapp dev, everyapp deploy.
-More: https://everyapp.com/docs/gateway
+More: https://everyapp.com/docs/quickstart
 
 FLAGS
      [--domain]                    Where the Gateway lives: any hostname under one of the account's domains, e.g. apps.example.com (asked at a terminal; remembered after that)

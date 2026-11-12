@@ -3,7 +3,7 @@ title: Driving setup for a person
 description: How an agent sets EveryApp up for a person end to end with --json: what only the person can do, prerequisites, the setup steps, Cloudflare Access, create, deploy and share, updates, verification, recovery and the safety rules.
 ---
 
-This is the agent's side of [/docs/gateway](/docs/gateway), [/docs/create-an-app](/docs/create-an-app) and [/docs/people](/docs/people). The step-by-step guide is [setup/gateway](/docs/agent/setup/gateway); every integration has one ([setup guides](/docs/agent/setup/guides)). Commands are `everyapp …` (`npm install -g everyapp`); always add `--json` ([the protocol](/docs/agent/json)).
+This is the agent's side of [/docs/quickstart](/docs/quickstart), [/docs/create-an-app](/docs/create-an-app) and [/docs/people](/docs/people). The step-by-step guide is [setup/gateway](/docs/agent/setup/gateway); every integration has one ([setup guides](/docs/agent/setup/guides)). Commands are `everyapp …` (`npm install -g everyapp`); always add `--json` ([the protocol](/docs/agent/json)).
 
 A fresh `setup` takes 5 to 20 minutes: 5 to 10 for the Gateway upload and its certificate, then up to 15 waiting for the person to open the owner link. Use a long timeout or run it in the background and read its output.
 

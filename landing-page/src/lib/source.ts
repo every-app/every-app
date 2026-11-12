@@ -91,7 +91,7 @@ export function isBlogPostVisible(post: { draft?: boolean }): boolean {
 const getDocsUrl = createGetUrl("/docs");
 const getAgentUrl = createGetUrl("/docs/agent");
 
-/** The URL serving a docs page as Markdown: `/docs/gateway.md`, `/docs/index.md`. */
+/** The URL serving a docs page as Markdown: `/docs/quickstart.md`, `/docs/index.md`. */
 export function getPageMarkdownUrl(slugs: string[]): string {
   return getDocsUrl(markdownSegments(slugs));
 }

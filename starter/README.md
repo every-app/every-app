@@ -28,7 +28,7 @@ pnpm run deploy
 
 It prints the app's address and who can open it. Run it again for every change you want live.
 
-The first deploy puts the app's Worker, its D1 database and its hostname with a certificate in your Cloudflare account, then redeploys the Gateway so it serves the app (upgrading the Gateway when your EveryApp checkout is newer than the one online). No Gateway yet? It offers to install one first. Later deploys change only the app. What it all costs: https://everyapp.com/docs#what-it-costs.
+The first deploy puts the app's Worker, its D1 database and its hostname with a certificate in your Cloudflare account, then redeploys the Gateway so it serves the app (upgrading the Gateway when your EveryApp checkout is newer than the one online). No Gateway yet? It offers to install one first. Later deploys change only the app. What it all costs: https://everyapp.com/docs/how-it-works#what-it-costs.
 
 ## Use it from Claude, ChatGPT or Cursor
 

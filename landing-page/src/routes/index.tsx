@@ -350,7 +350,7 @@ function Home() {
                   Or,{" "}
                   <Link
                     to="/docs/$"
-                    params={{ _splat: "gateway" }}
+                    params={{ _splat: "quickstart" }}
                     className={linkClass}
                   >
                     set up manually

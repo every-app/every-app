@@ -318,7 +318,7 @@ function Onboarding(props: Partial<OnboardingScreenProps> & Pick<OnboardingScree
       onSubmitToken={noop}
       setupCommands={SETUP_COMMANDS}
       onCopyCommand={noop}
-      guideUrl="https://everyapp.com/docs/gateway"
+      guideUrl="https://everyapp.com/docs/quickstart"
       onGrant={noop}
       onContinue={noop}
       onCheckAgain={noop}

@@ -24,10 +24,11 @@ export function DocsArticle({
     <DocsPage toc={toc}>
       <DocsTitle>{entry.title}</DocsTitle>
       <DocsDescription>{entry.description}</DocsDescription>
-      {actions}
       <DocsBody>
         <MDX components={mdxComponents} />
       </DocsBody>
+      {/* Page tools (copy as Markdown) sit under the article, out of the reader's way. */}
+      {actions}
     </DocsPage>
   );
 }

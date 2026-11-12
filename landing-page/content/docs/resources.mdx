@@ -1,5 +1,5 @@
 ---
-title: Cloudflare resources your app can use
+title: Cloudflare resources
 description: Databases, files, queues, AI, a headless browser and more. Declare them in everyapp.config.ts and the deploy makes them in your Cloudflare account.
 ---
 
@@ -29,7 +29,7 @@ Your app runs in your own Cloudflare account, so it can use what Cloudflare offe
 
 ## One-time steps that are yours
 
-- **Workers Paid** ($5 a month) is already needed for the Gateway ([Set up Cloudflare](/docs/cloudflare)). AI, Browser Rendering and Queues bill by use on top.
+- **Workers Paid** ($5 a month) is already needed for the Gateway ([Quick start](/docs/quickstart#before-you-start)). AI, Browser Rendering and Queues bill by use on top.
 - **R2**: if a deploy stops with `R2_NOT_ENABLED`, open R2 Object Storage in your dashboard once and choose Get started.
 - **Secrets Store**: if a deploy stops with `SECRETS_STORE_MISSING`, create a store once in your dashboard (Secrets Store → Create store).
 - **Email sending**: the domain the app sends from must be set up for Email Sending, the same step as the Gateway's sender. [Send email](/docs/people#send-email)

@@ -23,7 +23,7 @@ Docs: https://everyapp.com/llms.txt (read index.md and setup.md there).
 
 Your agent installs the CLI, sets up your Gateway on your Cloudflare account, installs the three apps, and lets OpenMail send and receive mail on your domain. It stops when it needs you: approving the Cloudflare login, creating your owner account, pasting an API key. It takes about 15 minutes.
 
-If you'd rather run it yourself, the commands are on [Set up your Gateway](/docs/gateway).
+If you'd rather run it yourself, the commands are on the [quick start](/docs/quickstart).
 
 ## 2. Connect Claude Code
 

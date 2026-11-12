@@ -142,7 +142,6 @@ const OPENSEO = "[OpenSEO](/docs/apps/openseo)";
 const CRM = "[OpenCRM](/docs/apps/crm)";
 const INBOX = "[OpenMail](/docs/apps/openmail)";
 const ANALYTICS = "[OpenAnalytics](/docs/apps/analytics)";
-const REPOLENS = "[RepoLens](/docs/apps/repolens)";
 
 /**
  * The scopes an OAuth provider's "Use it in an app" example lists, by
@@ -279,7 +278,6 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
   },
   github: {
     blurb: "Repositories, issues, pull requests and releases. Use a token for your own repositories; let people connect their accounts for theirs.",
-    usedBy: [`${REPOLENS} reads traffic, stars and downloads with a token`],
     key: [
       "Open [Settings → Developer settings → Fine-grained tokens → Generate new token](https://github.com/settings/personal-access-tokens/new).",
       "Name it after your Gateway and pick an expiry. Under **Resource owner**, pick the account or organization whose repositories the app reads.",
