@@ -13,6 +13,7 @@
 #   scripts/release-mac.sh --release           the same for a tag everyapp-desktop-v<version> already at HEAD
 #   scripts/release-mac.sh --publish X.Y.Z     publish releases/X.Y.Z/: upload it to the feed (latest-mac.yml
 #                                              last), check the feed serves it, push main and the tag
+#                                              (rebasing the release commit first if main moved on)
 #   scripts/release-mac.sh --dry-run --unsigned   no credentials: ad hoc signing, no notarization,
 #                                              proves the pipeline end to end
 #
@@ -72,19 +73,71 @@ FEED="${FEED%/}"
 CHANNEL="${FEED##*/}"
 
 # ── Publish: upload a built release, check the feed serves it, push main + the tag ──
+# What changed on main under ${DESKTOP_REL} that the built app contains: everything there except the
+# docs, the tests, the update feed's Worker and this script.
+built_from() {
+  git -C "${ROOT}" diff --name-only "$1" "$2" -- "${DESKTOP_REL}" |
+    grep -Ev "^${DESKTOP_REL}/(docs|test|e2e|updates|mac/Tests|ui/playground)/|\.md$|\.test\.tsx?$|^${DESKTOP_REL}/scripts/release-mac\.sh$" || true
+}
+
+# main moved on while the release was building. When the release is exactly the version commit on
+# top of an older main, checked out clean, rebase it onto origin/main and move the tag with it.
+# Returns 1, leaving git as it was, for any other state.
+follow_main() {
+  local version="$1" tag="$2" commit base changed answer="" subject body
+  commit="$(git -C "${ROOT}" rev-parse "${tag}^{commit}")"
+  [[ "$(git -C "${ROOT}" cat-file -t "refs/tags/${tag}")" == tag ]] || return 1
+  [[ "$(git -C "${ROOT}" symbolic-ref -q --short HEAD)" == main && "$(git -C "${ROOT}" rev-parse HEAD)" == "${commit}" ]] || return 1
+  [[ -z "$(git -C "${ROOT}" status --porcelain)" ]] || return 1
+  [[ "$(git -C "${ROOT}" rev-list --count origin/main.."${commit}")" == 1 ]] || return 1
+  base="$(git -C "${ROOT}" rev-parse -q --verify "${commit}^")" || return 1
+  git -C "${ROOT}" merge-base --is-ancestor "${base}" origin/main || return 1
+  [[ "$(git -C "${ROOT}" diff --name-only "${base}" "${commit}")" == "${DESKTOP_REL}/package.json" ]] || return 1
+
+  changed="$(built_from "${base}" origin/main)"
+  if [[ -n "${changed}" ]]; then
+    warn "main changed the app's source while ${version} was building, so the built app differs from the source ${tag} would point at:"
+    sed 's/^/    /' <<< "${changed}"
+    if [[ -t 0 ]]; then read -r -p $'\n'"Publish the ${version} that is already built anyway? [y/N] " answer; fi
+    if [[ ! "${answer}" =~ ^[Yy] ]]; then
+      printf '\n\033[31merror:\033[0m %s\n\n  %s\n  %s\n\n' "Not published. To build ${version} again from the new main, from ${DESKTOP_REL}:" \
+        "git tag -d ${tag} && git reset -q --hard origin/main && rm -rf releases/${version}" \
+        "scripts/release-mac.sh --release --bump ${version}" >&2
+      exit 1
+    fi
+  fi
+
+  if ! git -C "${ROOT}" rebase -q origin/main > /dev/null 2>&1; then
+    git -C "${ROOT}" rebase --abort > /dev/null 2>&1 || true
+    return 1
+  fi
+  subject="$(git -C "${ROOT}" tag -l --format='%(contents:subject)' "${tag}")"
+  body="$(git -C "${ROOT}" tag -l --format='%(contents:body)' "${tag}")"
+  git -C "${ROOT}" tag -f -a "${tag}" -m "${subject}" ${body:+-m "${body}"} > /dev/null || return 1
+  note "main moved on while ${version} was building: rebased the release commit onto it and moved ${tag}."
+}
+
 publish() {
   local version="$1" dir="${DESKTOP}/releases/$1" tag="${TAG_PREFIX}$1"
   [[ -f "${dir}/latest-mac.yml" ]] || die "No release in ${dir#"${ROOT}/"} (build it with --release first)."
   git -C "${ROOT}" rev-parse -q --verify "refs/tags/${tag}" > /dev/null || die "No tag ${tag}: publish only what a --release run built."
   grep -qx "version: ${version}" "${dir}/latest-mac.yml" || die "${dir#"${ROOT}/"}/latest-mac.yml isn't for ${version}."
 
-  # Git first: if main moved on, stop before anything goes live.
+  # Git first: if main moved on and the release can't follow it, stop before anything goes live.
   step "Pushing ${tag} (and main, if it doesn't have it yet)"
-  git -C "${ROOT}" fetch -q origin main
-  local refs=("refs/tags/${tag}")
-  git -C "${ROOT}" merge-base --is-ancestor "${tag}^{commit}" origin/main || refs+=("${tag}^{commit}:refs/heads/main")
-  git -C "${ROOT}" push --atomic origin "${refs[@]}" ||
-    die "Couldn't push. If main moved on, bring ${tag} onto main, then run: scripts/release-mac.sh --publish ${version}"
+  local stuck="Couldn't push. If main moved on, bring ${tag} onto main, then run: scripts/release-mac.sh --publish ${version}"
+  local attempt refs
+  for attempt in 1 2; do
+    git -C "${ROOT}" fetch -q origin main
+    refs=("refs/tags/${tag}")
+    if ! git -C "${ROOT}" merge-base --is-ancestor "${tag}^{commit}" origin/main; then
+      git -C "${ROOT}" merge-base --is-ancestor origin/main "${tag}^{commit}" || follow_main "${version}" "${tag}" || die "${stuck}"
+      refs+=("${tag}^{commit}:refs/heads/main")
+    fi
+    if git -C "${ROOT}" push --atomic origin "${refs[@]}"; then break; fi
+    [[ "${attempt}" == 1 ]] || die "${stuck}"
+    note "The push was refused; fetching main and trying once more."
+  done
 
   step "Uploading to ${FEED} (latest-mac.yml last)"
   local files=() f name
