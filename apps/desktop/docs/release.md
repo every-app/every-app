@@ -20,11 +20,9 @@ Keep all of this in your login Keychain and shell, **never in the repo**.
 
 ```sh
 # ~/.everyapp-desktop-release.env (chmod 600)
-export APPLE_API_KEY=~/.private_keys/AuthKey_ABC123XYZ.p8   # path to the .p8
+export APPLE_API_KEY=/Users/<you>/.private_keys/AuthKey_ABC123XYZ.p8   # full path: fish doesn't expand ~ here
 export APPLE_API_KEY_ID=ABC123XYZ
 export APPLE_API_ISSUER=00000000-0000-0000-0000-000000000000
-export EVERYAPP_DESKTOP_UPDATE_URL=https://talk.<base>/api/v1/updates/mac   # see "Update feed"
-export EVERYAPP_DESKTOP_UPDATE_BUCKET=<the UPDATES bucket's name>            # for the printed upload commands
 # Only if the keychain holds more than one Developer ID:
 # export EVERYAPP_DESKTOP_SIGN_ID="Developer ID Application: Ben Senescu (TEAMID)"
 ```
@@ -45,9 +43,9 @@ The fallback for notarization is `APPLE_ID` + `APPLE_APP_SPECIFIC_PASSWORD` (fro
    ```
    If you already tagged HEAD as `everyapp-desktop-v<version>`, leave out `--bump`.
 5. The output lands in `apps/desktop/releases/<version>/` (git-ignored): the DMG, the zip, `latest-mac.yml`, blockmaps and `SHA256SUMS`.
-6. The script prints the upload commands (run them from the repository root). Run the ones for your feed, **with `latest-mac.yml` last**, then push the bump commit (through a pull request if `main` is protected) and the tag:
+6. The script prints the upload commands (run them from `apps/desktop`). Run them **with `latest-mac.yml` last**, then push the bump commit and the tag. Push the commit straight to `main` rather than squash-merging a pull request, or the tag points at a commit `main` doesn't have:
    ```sh
-   git push origin everyapp-desktop-v<version>
+   git push origin main everyapp-desktop-v<version>
    ```
 
 What the script checks before building:
@@ -55,7 +53,6 @@ What the script checks before building:
 - notarization credentials;
 - a clean tree;
 - the tag (or `--bump`);
-- `EVERYAPP_DESKTOP_UPDATE_URL`;
 - that the output folder doesn't already exist.
 
 It lists everything missing and stops. In a dry run, the tree, tag and feed checks only warn.
@@ -86,36 +83,32 @@ While it runs, play a YouTube video through the speakers (not headphones) and ta
 
 ## Update feed
 
-electron-updater reads `latest-mac.yml` from the feed and installs from the zip. The feed URL is baked into the app at build time from `EVERYAPP_DESKTOP_UPDATE_URL`, the only place that names it. If it's unset, the app has no updater. Changing the feed later means one manual reinstall for everyone on the old one, so **settle it before the first Every App release** (TODO.md).
+electron-updater reads `latest-mac.yml` from the feed and installs from the zip. The feed URL is baked into the app at build time, so changing it later means one manual reinstall for everyone on the old one.
 
-**Today: Scribe's backend, behind config.** The feed is still the one the Talk web app serves: the R2 bucket bound to Scribe's Worker (app id `talk`) as `UPDATES` (find its name in the Cloudflare dashboard; locally `every-talk--updates`), served by `GET`/`HEAD /api/v1/updates/mac/:file` to any signed-in member:
+The feed is **`https://updates.everyapp.com/mac`**: public, the same signed builds for every workspace, no token on update checks. The app does nothing without a workspace, so anyone downloading it is harmless. `updates/` is the Worker that serves it, read-only, from the R2 bucket `everyapp-desktop-updates` (files under `mac/`):
+
+- only `latest-mac.yml` and `EveryApp-<version>[-…].zip|dmg` (and their `.blockmap`s); anything else 404s;
+- `latest-mac.yml` is `no-cache`; release files are `immutable` for a year;
+- single `bytes=` Range requests, so blockmap differential downloads work.
+
+Deploy it (once, and after changing `updates/`) from `apps/desktop`, logged in to Every App's main Cloudflare account:
 
 ```sh
-export EVERYAPP_DESKTOP_UPDATE_URL=https://talk.<base>/api/v1/updates/mac
+pnpm exec wrangler r2 bucket create everyapp-desktop-updates    # once
+pnpm deploy:updates
 ```
 
-The app sends the Scribe sign-in's bearer only when the feed is on the signed-in backend's own https origin (refreshed once after a 401; the check is skipped while signed out), and nothing to any other host (`src/main/updateAuth.ts`).
+`scripts/release-mac.sh` bakes in that feed unless `EVERYAPP_DESKTOP_UPDATE_URL` says otherwise, and `--unsigned` builds get a placeholder (they can't install a signed update). **A build signed by a different Apple team needs its own feed** (another channel in `updates/index.ts`, e.g. `/mac-business`): Squirrel.Mac refuses an update signed by a different team, so the old feed's last release has to tell people to download the new app instead.
 
-**Before the first release on that feed**, its route needs one change in the Scribe repository: it serves only `Talk-<x.y.z>…` files, and releases are now `EveryApp-<x.y.z>-universal-mac.zip` and `EveryApp-<x.y.z>-universal.dmg` (plus their `.blockmap`s). Until then an upload under the new names 404s.
-
-**Where it should move.** An updater for the whole app shouldn't live in one feature's backend: it would break if Scribe is renamed, moved or not installed on a workspace. The options, for Ben (TODO.md):
-
-| Option | How | Trade-offs |
-| --- | --- | --- |
-| **A. A public feed Every App owns** (lean) | Signed, notarized builds on a public origin Every App runs, e.g. `https://everyapp.com/desktop/mac/` (an R2 bucket behind the site) or GitHub Releases on the public every-app/every-app (the `github` provider). | One feed for every workspace, hosted or self-hosted, and no token on update checks. The repository is mirrored publicly anyway. Anyone can download the app (it does nothing without a workspace). |
-| B. The Gateway serves it | A Gateway route (say `/desktop/updates/mac/:file`) over an R2 bucket the Gateway owns, for signed-in members. | Private, but needs a native token the Gateway itself accepts: today a native token opens exactly one app (`landing-page/content/agent/native.md`), so this is a new audience on the perimeter and a security review. Each self-hosted Gateway would need the builds uploaded to its own bucket. |
-| C. Stay on Scribe's backend | As today. | Works now; ties the app's updates to one feature. |
-
-Uploads (the script prints them, with `$EVERYAPP_DESKTOP_UPDATE_BUCKET` filled in; run from the repository root):
+Uploads (the script prints them; run from `apps/desktop`):
 
 ```sh
-npx wrangler@4 r2 object put "$BUCKET/mac/<file>" --file apps/desktop/releases/<version>/<file> --remote      # each zip, dmg, blockmap
-npx wrangler@4 r2 object put "$BUCKET/mac/latest-mac.yml" --file apps/desktop/releases/<version>/latest-mac.yml --content-type text/yaml --remote   # last
+pnpm exec wrangler r2 object put "everyapp-desktop-updates/mac/<file>" --file releases/<version>/<file> --remote   # each zip, dmg, blockmap
+pnpm exec wrangler r2 object put "everyapp-desktop-updates/mac/latest-mac.yml" --file releases/<version>/latest-mac.yml --remote   # last
 ```
 
 - **`latest-mac.yml` goes last**, so no client ever sees a feed naming a file that isn't there yet.
-- **Never re-upload a different file under a published name.** Release files are served `immutable` for a year; bump the version instead. `latest-mac.yml` is `no-cache`.
-- Range requests work, so blockmap differential downloads do.
+- **Never re-upload a different file under a published name.** Bump the version instead.
 
 ## Check that an update keeps the sign-in (alpha checklist)
 

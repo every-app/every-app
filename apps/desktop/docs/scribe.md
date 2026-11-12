@@ -67,7 +67,6 @@ The window and the helper call only `/api/v1` (no server functions). The contrac
 | `POST /api/v1/meetings/:id/finish` | stop; the backend writes the notes in the background |
 | `POST/DELETE /api/v1/meetings/:id/share…` | public links |
 | folders, templates | `GET/POST /api/v1/folders`, `PATCH/DELETE …/:id`, `PUT/DELETE …/:id/meetings/:meetingId`; `GET/POST /api/v1/templates`, `GET/PATCH/DELETE …/:id`, `POST …/:id/duplicate` |
-| `GET /api/v1/updates/mac/:file` | the update feed for now (`release.md`, "Update feed") |
 
 ## Meeting reminders and links
 

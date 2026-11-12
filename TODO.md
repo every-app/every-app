@@ -35,7 +35,6 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
 
 ### Desktop app (`apps/desktop`)
 
-- [ ] **Where the update feed lives.** Today it's Scribe's backend (`talk.<base>/api/v1/updates/mac`), behind one setting. Lean: a public feed Every App owns (everyone gets the same signed builds, no token on update checks), over the Gateway serving it (a new token audience on the perimeter, a bucket per self-hosted Gateway). Options in `apps/desktop/docs/release.md`, "Update feed". Settle it before the first release.
 - [ ] **One sign-in per feature?** A native token opens one app, so a second feature (dictation, notes) on another backend means a second grant: a sign-in per feature, or a Gateway-level grant that covers the workspace's apps?
 - [ ] **OpenScribe's install command.** Onboarding shows `everyapp install https://github.com/every-app/private-open-scribe` (`apps/desktop/src/shared/setup.ts`), but that repository is private and `install` needs a published release. Make it public with a release, or give the real command.
 
@@ -60,7 +59,7 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
 
 - [ ] **Simpler releases** ([docs/design/2026-11-simplify-releases.md](docs/design/2026-11-simplify-releases.md), "Waiting on Ben"): the first `pnpm release patch` (→ 0.3.0), then drop the `next` dist-tag.
 - [ ] **Check the desktop app on a Mac** (it was moved from private-talk and renamed on Linux): `apps/desktop/mac/scripts/test.sh` or the Desktop workflow's Swift job, `pnpm -C apps/desktop package:local`, then: Keychain Access shows "com.everyapp.desktop.dev Safe Storage" (with `EVERYAPP_DESKTOP_DEV_KEYCHAIN=1`), data is in `~/Library/Application Support/com.everyapp.desktop.dev`, the menus say "Every App Dev", `everyapp-dev://scribe/record` opens it.
-- [ ] **Scribe's side of the desktop rename** (every-app/private-open-scribe): the web app opens `talk://record…`, and must open `everyapp://scribe/record…`; the update route serves only `Talk-*` files and must also serve `EveryApp-*` before a release goes out on it.
+- [ ] **Scribe's side of the desktop rename** (every-app/private-open-scribe): the web app opens `talk://record…`, and must open `everyapp://scribe/record…`.
 - [ ] **The remote MCP apps live check** (#938): add an OAuth server with DCR (Linear's), connect two members, call, refresh, disconnect. A live test, on a test Gateway.
 - [ ] **The ElevenLabs live check** (#969): after `update` (which adds the `/oauth-clients/*` Access bypass), `mcp add https://api.elevenlabs.io/v1/mcp`, connect, call one tool. A live test.
 - [ ] **Remote MCP apps on everyapp.team are added again after #938.** Migration 0031 drops `remote_mcp_credentials`; an old app reads "registered before provider credentials" until `mcp remove`, then `mcp add`.

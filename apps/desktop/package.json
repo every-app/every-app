@@ -18,7 +18,8 @@
     "release": "bash scripts/release-mac.sh",
     "icons": "node scripts/make-icons.mjs",
     "check:icon": "node scripts/check-app-icon.mjs",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "deploy:updates": "wrangler deploy -c updates/wrangler.jsonc"
   },
   "dependencies": {
     "electron-updater": "^6.8.11"
@@ -43,7 +44,8 @@
     "tailwindcss": "^4.3.3",
     "typescript": "~5.9.3",
     "vite": "^8.3.5",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "wrangler": "^4.152.0"
   },
   "engines": {
     "node": ">=22"

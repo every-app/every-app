@@ -1,0 +1,13 @@
+{
+  // The desktop app's public update feed (index.ts; docs/release.md, "Update feed").
+  // Deploy: pnpm -C apps/desktop deploy:updates (on Ben's main Cloudflare account).
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "everyapp-desktop-updates",
+  "main": "index.ts",
+  "compatibility_date": "2026-10-26",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "updates.everyapp.com", "custom_domain": true }],
+  "r2_buckets": [{ "binding": "UPDATES", "bucket_name": "everyapp-desktop-updates" }],
+  "observability": { "enabled": true },
+}

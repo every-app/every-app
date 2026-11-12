@@ -19,10 +19,8 @@
 #                      keychain)
 #   APPLE_API_KEY (path to the .p8), APPLE_API_KEY_ID, APPLE_API_ISSUER     notarization, or
 #   APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
-#   EVERYAPP_DESKTOP_UPDATE_URL    the update feed the app will check (required for --release), e.g.
-#                      https://talk.<base>/api/v1/updates/mac
-#   EVERYAPP_DESKTOP_UPDATE_BUCKET the deployed R2 bucket bound as UPDATES, for the printed upload commands
-#                      (Cloudflare dashboard; locally every-talk--updates, the Scribe backend's)
+#   EVERYAPP_DESKTOP_UPDATE_URL    the update feed baked into the app (default https://updates.everyapp.com/mac,
+#                      served by updates/; a build signed by another team needs its own feed)
 set -euo pipefail
 
 DESKTOP="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -34,7 +32,9 @@ TAG_PREFIX="$(ident releaseTagPrefix)"
 PRODUCT="$(ident release.productName)"
 HELPER_NAME="$(ident helper.binary)"
 HELPER_ID="$(ident helper.bundleId)"
+DEFAULT_FEED="https://updates.everyapp.com/mac"
 PLACEHOLDER_FEED="https://updates.invalid/everyapp/mac/"
+UPDATE_BUCKET="everyapp-desktop-updates"  # updates/wrangler.jsonc
 
 MODE="dry-run"
 UNSIGNED=0
@@ -123,11 +123,11 @@ elif git -C "${ROOT}" rev-parse -q --verify "refs/tags/${TAG}" > /dev/null; then
   problem "Tag ${TAG} already exists; pick another --bump."
 fi
 
-FEED="${EVERYAPP_DESKTOP_UPDATE_URL:-}"
-if [[ -z "${FEED}" ]]; then
-  soft "EVERYAPP_DESKTOP_UPDATE_URL isn't set: the app wouldn't know where to look for updates (docs/release.md, \"Update feed\")."
-  [[ "${MODE}" == "dry-run" ]] && FEED="${PLACEHOLDER_FEED}" && note "dry run: using the placeholder feed ${FEED}"
-fi
+# An unsigned build can't install a signed update, so it never points at the real feed.
+FEED="${EVERYAPP_DESKTOP_UPDATE_URL:-${DEFAULT_FEED}}"
+[[ "${UNSIGNED}" == 1 ]] && FEED="${PLACEHOLDER_FEED}"
+CHANNEL="${FEED%/}"
+CHANNEL="${CHANNEL##*/}"
 if [[ "${MODE}" == "release" && -e "${OUT}" ]]; then problem "${OUT} already exists (a release is never overwritten)."; fi
 
 if [[ ${#PROBLEMS[@]} -gt 0 ]]; then
@@ -269,23 +269,13 @@ for f in "${OUT}"/*; do
   name="$(basename "${f}")"
   [[ "${name}" == latest-mac.yml || "${name}" == SHA256SUMS ]] || FILES+=("${name}")
 done
-REL="${OUT#"${ROOT}/"}"
-BUCKET_NAME="${EVERYAPP_DESKTOP_UPDATE_BUCKET:-<the UPDATES bucket from the Cloudflare dashboard>}"
-step "Nothing was uploaded. To publish, run ONE of these (the feed file goes last):"
+step "Nothing was uploaded. To publish on ${FEED}, run these (latest-mac.yml goes last):"
 cat << EOF
 
-  cd "${ROOT}"
-  # A) The private feed: the R2 bucket bound to the Scribe backend (app id talk) as UPDATES
-  #    (docs/release.md, "Update feed").
-  #    Release files are cached as immutable: never re-upload a different file under a published name.
-  BUCKET="${BUCKET_NAME}"
-$(for f in "${FILES[@]}"; do echo "  npx wrangler@4 r2 object put \"\$BUCKET/mac/${f}\" --file ${REL}/${f} --remote"; done)
-  npx wrangler@4 r2 object put "\$BUCKET/mac/latest-mac.yml" --file ${REL}/latest-mac.yml --content-type text/yaml --remote
-
-  # B) GitHub Releases (needs a token in the app for a private repo; see docs/release.md):
-  gh release create ${TAG} --repo every-app/private-every-app --title "${PRODUCT} desktop ${VERSION}" --notes "${PRODUCT} desktop ${VERSION}" \\
-$(for f in "${FILES[@]}"; do echo "    ${REL}/${f} \\"; done)
-    ${REL}/latest-mac.yml
+  cd "${DESKTOP}"
+  # Release files are cached as immutable: never re-upload a different file under a published name.
+$(for f in "${FILES[@]}"; do echo "  pnpm exec wrangler r2 object put \"${UPDATE_BUCKET}/${CHANNEL}/${f}\" --file releases/${VERSION}/${f} --remote"; done)
+  pnpm exec wrangler r2 object put "${UPDATE_BUCKET}/${CHANNEL}/latest-mac.yml" --file releases/${VERSION}/latest-mac.yml --remote
 
 EOF
 if [[ "${MODE}" == "release" ]]; then
