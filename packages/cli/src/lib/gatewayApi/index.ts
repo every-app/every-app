@@ -361,11 +361,14 @@ async function rpc(
     const unknownTool = typeof error["message"] === "string" && error["message"].startsWith("Unknown tool");
     throw new EveryAppError(
       "GATEWAY_TOOL_ERROR",
-      `${gateway} refused ${name ?? method}: ${String(error["message"] ?? "error")}`,
+      `${gateway} refused ${name ?? method}: ${String(error["message"] ?? "error")}${
+        // Why a tool that exists may be missing for this credential; what to do is the fix.
+        unknownTool ? "\nA read-only credential sees no write tools. One limited to some apps sees no workspace tools." : ""
+      }`,
       {
         ...(unknownTool
           ? {
-              fix: `${CLI} call --list shows the tools this credential may call. A read-only credential sees no write tool, and one narrowed to some apps (a token bound to one app, a sign-in approved for selected apps) sees no workspace tool: use a read & write, all-apps token or sign-in, as an owner or admin for the workspace tools`,
+              fix: `use a read & write token or sign-in for all apps (as an owner or admin for workspace tools). ${CLI} call --list shows what this one may call`,
             }
           : {}),
         data: { gateway, tool: name ?? null, rpcCode: error["code"] ?? null },

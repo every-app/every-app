@@ -416,7 +416,7 @@ describe("everyapp dev", () => {
       expect.objectContaining({
         type: "warning",
         message:
-          "northwind isn't in the built-in provider catalog\nIf it's registered on your Gateway, pnpm everyapp provider show northwind --save writes .everyapp/providers/northwind.json, which this run reaches it from (start dev again after). The deploy checks it against the Gateway's registered providers.",
+          "northwind isn't in the built-in provider catalog\nThis run can't reach it. If your Gateway has it, save its spec to .everyapp/providers/northwind.json and start dev again.\nDeploy checks it against your Gateway.",
         data: {
           id: "northwind",
           file: ".everyapp/providers/northwind.json",
@@ -434,7 +434,7 @@ describe("everyapp dev", () => {
     expect(warnings()).toEqual([
       expect.objectContaining({
         message:
-          "northwind isn't in the built-in provider catalog\nThis run reaches it from .everyapp/providers/northwind.json with your key from .dev.vars; the deploy checks it against the Gateway's registered providers.",
+          "northwind isn't in the built-in provider catalog\nReached from .everyapp/providers/northwind.json, with your key in .dev.vars.\nDeploy checks it against your Gateway.",
         data: { id: "northwind", file: ".everyapp/providers/northwind.json", found: true },
       }),
     ]);

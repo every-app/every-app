@@ -383,7 +383,7 @@ export function requireGateway(
       `No Gateway${host ? ` at ${host}` : ""} in ${accounts.length === 1 ? `${accounts[0]}, the only account this login sees` : `the ${accounts.length} accounts this login sees`}`,
       ...(accounts.length === 1 ? [] : [`${accounts.join(", ")}.`]),
       ...login,
-      `Or log in to the Gateway's account: ${CLI} login`,
+      `If it is in another account: ${CLI} login`,
     ].join("\n"),
     { rerun: `${CLI} setup --domain <hostname>`, rerunNote: "to install one", data },
   );
