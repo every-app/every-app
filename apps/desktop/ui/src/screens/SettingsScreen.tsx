@@ -2,9 +2,14 @@ import { cn } from "cn";
 import {
   Bell,
   CalendarDays,
+  Keyboard,
   Mic,
   Monitor,
   Moon,
+  Palette,
+  PhoneIncoming,
+  PictureInPicture2,
+  Power,
   Sun,
   Volume2,
 } from "lucide-react";
@@ -22,7 +27,7 @@ import type {
 } from "../types";
 import { Avatar } from "./AppFrame";
 import { SelfTest, type SelfTestProps } from "./SelfTest";
-import { ScreenBody, ScreenTitle } from "./parts";
+import { ROW_LEAD, ScreenBody, ScreenTitle } from "./parts";
 
 export type CalendarConnection =
   | { state: "connected"; email: string | null }
@@ -81,6 +86,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
       </Section>
       <Section title="General">
         <Row
+          icon={Power}
           title="Open at login"
           detail={
             props.launchAtLoginHint ? (
@@ -100,6 +106,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
           }
         />
         <Row
+          icon={PhoneIncoming}
           title="Ask to record calls"
           detail="When Zoom, Meet, Teams or Slack starts a call, Scribe asks first. It never records on its own."
           control={
@@ -112,6 +119,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
         />
         {props.floatingRecorder !== undefined && (
           <Row
+            icon={PictureInPicture2}
             title="Show the floating recorder while recording"
             detail="A small recorder in the corner of the screen, over your meeting. Hover over it to read the live transcript; click it to open the meeting."
             control={
@@ -125,6 +133,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
         )}
         {props.recordShortcut !== undefined && (
           <Row
+            icon={Keyboard}
             title={
               <>
                 Record shortcut{" "}
@@ -154,6 +163,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
           />
         )}
         <Row
+          icon={Palette}
           title="Appearance"
           control={
             <ThemePicker value={props.theme} onChange={props.onThemeChange} />
@@ -206,7 +216,9 @@ function Row({
 }) {
   return (
     <div className="flex min-h-12 items-center gap-3 px-4 py-2.5">
-      {Icon && <Icon className="size-4 shrink-0 text-foreground/55" />}
+      <span className={ROW_LEAD}>
+        {Icon && <Icon className="size-4 text-foreground/55" />}
+      </span>
       <div className="min-w-0 flex-1">
         <div className="text-[13px] font-medium">{title}</div>
         {detail && (
@@ -221,7 +233,9 @@ function Row({
 function SkeletonRow() {
   return (
     <div aria-busy className="flex min-h-12 items-center gap-3 px-4 py-2.5">
-      <Skeleton className="size-4 rounded" />
+      <span className={ROW_LEAD}>
+        <Skeleton className="size-4 rounded" />
+      </span>
       <Skeleton className="h-3.5 w-40" />
       <Skeleton className="ml-auto h-6 w-16" />
     </div>
@@ -252,25 +266,14 @@ function AccountRow({ account, onSignOut }: SettingsScreenProps) {
   );
 }
 
+/** Each permission's name and one line about it, in Settings and in onboarding alike. */
 export const permissionInfo: Record<
   PermissionKind,
-  { icon: ComponentType<{ className?: string }>; title: string; detail: string }
+  { icon: ComponentType<{ className?: string }>; title: string; detail?: string }
 > = {
-  mic: {
-    icon: Mic,
-    title: "Microphone",
-    detail: "Your side of the call.",
-  },
-  systemAudio: {
-    icon: Volume2,
-    title: "System audio",
-    detail: "Everyone else on the call, from your Mac's sound output.",
-  },
-  notifications: {
-    icon: Bell,
-    title: "Notifications",
-    detail: 'Reminders before meetings, and "Record this call?".',
-  },
+  mic: { icon: Mic, title: "Microphone" },
+  systemAudio: { icon: Volume2, title: "System audio", detail: "Record meeting participants' audio." },
+  notifications: { icon: Bell, title: "Notifications", detail: "Get notified before meetings." },
 };
 
 export function PermissionControl({

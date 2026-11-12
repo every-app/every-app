@@ -1,6 +1,5 @@
 // The window: sign-in and first-run permissions until they're done, then the app frame around
-// the routed page, with "Enjoy Every App" over it right after first run and while the window
-// isn't in front (splash.ts).
+// the routed page, with "Enjoy Every App" over it while the window isn't in front (splash.ts).
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Outlet, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
@@ -10,7 +9,6 @@ import type { AppSnapshot, Located } from "@shared/ipc";
 import type { NavTarget, PermissionKind, SetupCommandId, Space } from "@every-app/desktop-ui";
 import { SCRIBE } from "@shared/features";
 import { GATEWAY_GUIDE_URL, SETUP_COMMANDS } from "@shared/setup";
-import { playTestTone } from "../testTone";
 import { AppFrame, OfflineBanner, OnboardingScreen, SignInAgainBanner, SPLASH_TIMING, TitleBar, WelcomeSplash } from "@every-app/desktop-ui";
 import { useRecordingElapsed } from "../useRecordingElapsed";
 import { Button } from "@every-app/desktop-ui/components/button";
@@ -22,7 +20,7 @@ import { retryUnsavedJottings } from "../jottings";
 import { installUpdate, rememberDeferred, updatePillOf } from "../update";
 import { useLevels } from "../live";
 import { splashShownOf } from "../splash";
-import { useWelcome, useWindowAway } from "../useSplash";
+import { useWindowAway } from "../useSplash";
 import { accountFrom, loadable } from "../map";
 import { notify } from "../notice";
 import { bridge, useAppState } from "../bridge";
@@ -37,43 +35,31 @@ const Palette = lazy(() => import("../Palette").then((m) => ({ default: m.Palett
 export function Root() {
   const state = useAppState();
   const [onboarded, setOnboarded] = useState(() => localStorage.getItem(ONBOARDED_KEY) === "1");
-  const [welcome, startWelcome] = useWelcome(SPLASH_TIMING.welcome);
   // An expired sign-in keeps the app on screen (see connection.ts); only a real sign-out leaves.
   const gateRef = useRef<Gate>("loading");
   const gate = gateOf(state, gateRef.current);
   gateRef.current = gate;
-  // "Enjoy Every App" goes up when the app first shows after onboarding. When the Gateway hadn't
-  // got Scribe, onboarding finished before the sign-in, so it waits until the app is on screen.
-  const [welcomePending, setWelcomePending] = useState(false);
-  const showingApp = !!state && gate !== "welcome" && onboarded;
-  useEffect(() => {
-    if (showingApp && welcomePending) {
-      setWelcomePending(false);
-      startWelcome();
-    }
-  }, [showingApp, welcomePending, startWelcome]);
   if (!state) return <TitleBar />;
   const finishOnboarding = () => {
     localStorage.setItem(ONBOARDED_KEY, "1");
     setOnboarded(true);
-    setWelcomePending(true);
   };
   // Signed out: the Gateway first. When the Gateway hasn't got the app yet, permissions and
   // "add the app" come before the sign-in (which needs the app), all on this screen.
   if (gate === "welcome") return <Welcome state={state} onboarded={onboarded} onPermissionsDone={finishOnboarding} />;
-  // Signed in for the first time: permissions, then the splash.
+  // Signed in for the first time: permissions, then straight to the home page.
   if (!onboarded) return <FirstRun state={state} onDone={finishOnboarding} />;
   return (
     <>
       <Layout state={state} />
-      <Splash state={state} welcome={welcome} />
+      <Splash state={state} />
     </>
   );
 }
 
-function Splash({ state, welcome }: { state: AppSnapshot; welcome: boolean }) {
+function Splash({ state }: { state: AppSnapshot }) {
   const away = useWindowAway(SPLASH_TIMING.awayDelay);
-  return <WelcomeSplash shown={splashShownOf({ welcome, away, recording: state.recording.state })} />;
+  return <WelcomeSplash shown={splashShownOf({ away, recording: state.recording.state })} />;
 }
 
 /** The address field's first value: the last app signed in to, shown as its Gateway when it's at
@@ -111,7 +97,6 @@ function useCopyCommand() {
 function usePermissionsStep(state: AppSnapshot) {
   const permissions = uiPermissions(state.permissions);
   const [systemAudioAsked, setSystemAudioAsked] = useState(false);
-  const [testingSound, setTestingSound] = useState(false);
   const onGrant = (kind: PermissionKind) => {
     if (kind === "systemAudio") setSystemAudioAsked(true);
     void grantPermission(bridge, kind, permissions[kind]).then(
@@ -120,31 +105,7 @@ function usePermissionsStep(state: AppSnapshot) {
       (e: unknown) => notify(cleanError(e), "error"),
     );
   };
-  // System audio can only be confirmed by hearing it: a short self-test while a chime plays.
-  const onTestSound = () => {
-    setTestingSound(true);
-    const run = bridge["selftest:run"]();
-    try {
-      playTestTone();
-    } catch {
-      // No audio output: the check below says it heard nothing.
-    }
-    const stop = setTimeout(() => void bridge["selftest:stop"]().catch(() => {}), 2500);
-    run
-      .then((report) => {
-        if (report.system.status !== "ok") {
-          notify(
-            "Didn't hear the test sound. Turn the volume up, or allow Every App in System Settings → Privacy & Security → Screen & System Audio Recording.",
-          );
-        }
-      })
-      .catch((e: unknown) => notify(cleanError(e), "error"))
-      .finally(() => {
-        clearTimeout(stop);
-        setTestingSound(false);
-      });
-  };
-  return { permissions, systemAudioAsked, onGrant, onTestSound, testingSound };
+  return { permissions, systemAudioAsked, onGrant };
 }
 
 function Welcome({

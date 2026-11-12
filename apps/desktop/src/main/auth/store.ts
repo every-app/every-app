@@ -17,7 +17,7 @@ export interface Cipher {
 interface Contents {
   version: 1;
   credentials?: Credentials;
-  clients: Record<string, { clientId: string; lastUsed: number }>;
+  clients: Record<string, { clientId: string; lastUsed: number; name?: string }>;
 }
 
 export type LoadProblem = "unreadable" | undefined;
@@ -59,12 +59,12 @@ export class SecretStore implements ClientIdCache {
     this.write();
   }
 
-  entry(issuer: string): { clientId: string; lastUsed: number } | undefined {
+  entry(issuer: string): { clientId: string; lastUsed: number; name?: string } | undefined {
     return this.contents.clients[normalized(issuer)];
   }
 
-  save(clientId: string, issuer: string, lastUsed: number): void {
-    this.contents.clients[normalized(issuer)] = { clientId, lastUsed };
+  save(clientId: string, issuer: string, lastUsed: number, name?: string): void {
+    this.contents.clients[normalized(issuer)] = { clientId, lastUsed, name };
     this.write();
   }
 

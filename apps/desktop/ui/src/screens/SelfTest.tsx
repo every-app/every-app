@@ -1,6 +1,7 @@
 import { cn } from "cn";
 import {
   AlertTriangle,
+  AudioLines,
   CheckCircle2,
   Loader2,
   Mic,
@@ -10,6 +11,7 @@ import {
 import { Button } from "../components/ui/button";
 import { selfTestRows, type SelfTestRow } from "../lib/selftest";
 import type { SelfTestReport } from "../types";
+import { ROW_LEAD } from "./parts";
 
 export type SelfTestState =
   | { kind: "idle" }
@@ -52,6 +54,9 @@ export function SelfTest({
   return (
     <div data-slot="selftest" className="flex flex-col gap-2.5 px-4 py-3">
       <div className="flex items-center gap-3">
+        <span className={ROW_LEAD}>
+          <AudioLines className="size-4 text-foreground/55" />
+        </span>
         <div className="min-w-0 flex-1">
           <div className="text-[13px] font-medium">
             Check microphone &amp; Mac audio
@@ -81,7 +86,7 @@ export function SelfTest({
       {state.kind === "error" && (
         <p
           role="alert"
-          className="flex items-start gap-2 text-[12px] text-destructive"
+          className="flex items-start gap-2 pl-12 text-[12px] text-destructive"
         >
           <XCircle className="mt-px size-3.5 shrink-0" />
           {state.message}
@@ -90,7 +95,7 @@ export function SelfTest({
       {rows && (
         <ul
           aria-label="Microphone and Mac audio"
-          className="flex flex-col gap-1.5"
+          className="flex flex-col gap-1.5 pl-12"
         >
           {rows.map((row) => (
             <Row

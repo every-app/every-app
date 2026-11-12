@@ -61,7 +61,7 @@ export function ConsentForm({
   onSwitchAccount,
 }: {
   context: Context;
-  onSwitchAccount: () => void;
+  onSwitchAccount?: () => void;
 }) {
   const { client, organizations } = context;
   const deliberate = useDeliberateAllow();

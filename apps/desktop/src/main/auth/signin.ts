@@ -9,22 +9,23 @@
 // A cached client the Gateway no longer knows (`invalid_client`) is forgotten and the sign-in
 // runs once more with a fresh registration.
 
-import { OAuthClient, OAuthError, type AuthorizationServerMetadata, type OAuthGrant } from "./oauth";
+import { CLIENT_NAME, OAuthClient, OAuthError, type AuthorizationServerMetadata, type OAuthGrant } from "./oauth";
 import { createPkce, randomToken } from "./pkce";
 import type { CallbackExpectation } from "./redirect";
 import { AuthError } from "./errors";
 import { normalized, originOf } from "./url";
 
-/** Where a cached client id lives, with when it was last used for a sign-in or refresh. */
+/** Where a cached client id lives, with when it was last used for a sign-in or refresh and the
+ * name it was registered under (the consent page shows that name). */
 export interface ClientIdCache {
-  entry(issuer: string): { clientId: string; lastUsed: number } | undefined;
-  save(clientId: string, issuer: string, lastUsed: number): void;
+  entry(issuer: string): { clientId: string; lastUsed: number; name?: string } | undefined;
+  save(clientId: string, issuer: string, lastUsed: number, name?: string): void;
   forget(issuer: string): void;
 }
 
 export function touchClient(cache: ClientIdCache, issuer: string, now = Date.now()): void {
   const entry = cache.entry(issuer);
-  if (entry) cache.save(entry.clientId, issuer, now);
+  if (entry) cache.save(entry.clientId, issuer, now, entry.name);
 }
 
 /** The Gateway drops a client unused for 60 days, and its authorize page then shows an error
@@ -80,12 +81,13 @@ export class SignInFlow {
   private async clientId(metadata: AuthorizationServerMetadata): Promise<{ clientId: string; fresh: boolean }> {
     const now = this.now();
     const cached = this.cache.entry(metadata.issuer);
-    if (cached && now - cached.lastUsed < CLIENT_MAX_IDLE_MS) return { clientId: cached.clientId, fresh: false };
+    // A client registered under an earlier name registers again, so the consent page shows this one.
+    if (cached && cached.name === CLIENT_NAME && now - cached.lastUsed < CLIENT_MAX_IDLE_MS) return { clientId: cached.clientId, fresh: false };
     if (!metadata.registrationEndpoint) {
       throw new OAuthError("registrationFailed", "It doesn't offer dynamic client registration.");
     }
     const id = await this.client.register(metadata.registrationEndpoint);
-    this.cache.save(id, metadata.issuer, now);
+    this.cache.save(id, metadata.issuer, now, CLIENT_NAME);
     return { clientId: id, fresh: true };
   }
 }

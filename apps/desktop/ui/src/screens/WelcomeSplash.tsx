@@ -2,12 +2,10 @@ import { cn } from "cn";
 import { useEffect, useRef, useState } from "react";
 import { EveryAppLogo } from "./OnboardingScreen";
 
-/** How long the fades last, in ms, and how long the one after first run stays up. */
+/** How long the fades last, in ms. */
 export const SPLASH_TIMING = {
   fadeIn: 450,
   fadeOut: 300,
-  /** After first run: up this long (fade-in included), then it fades out. */
-  welcome: 1800,
   /** The window has to stay out of front this long before the splash comes up. */
   awayDelay: 300,
 } as const;

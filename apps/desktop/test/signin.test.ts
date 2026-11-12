@@ -2,7 +2,7 @@ import { isSignInEndpoint } from "../src/main/auth/url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthService } from "../src/main/auth/service";
 import { OAuthAuthProvider } from "../src/main/auth/providers";
-import { OAuthClient, OAuthError, type OAuthGrant } from "../src/main/auth/oauth";
+import { CLIENT_NAME, OAuthClient, OAuthError, type OAuthGrant } from "../src/main/auth/oauth";
 import { CLIENT_MAX_IDLE_MS } from "../src/main/auth/signin";
 import { SecretStore } from "../src/main/auth/store";
 import { FakeServer } from "./fakeServer";
@@ -39,7 +39,7 @@ describe("Sign in with Every App", () => {
     const registers = fake.requests.filter((r) => r.path === "/gw/register");
     expect(registers).toHaveLength(1);
     const reg = JSON.parse(registers[0]!.body);
-    expect(reg).toMatchObject({ token_endpoint_auth_method: "none", redirect_uris: ["http://127.0.0.1/callback"], client_name: "Every App" });
+    expect(reg).toMatchObject({ token_endpoint_auth_method: "none", redirect_uris: ["http://127.0.0.1/callback"], client_name: "Every App for Mac" });
     expect(reg.scope).toBeUndefined();
     const authorize = new URL(opened[0]!);
     expect(authorize.searchParams.get("resource")).toBe(fake.origin);
@@ -67,7 +67,7 @@ describe("Sign in with Every App", () => {
 
   it("re-registers when the callback says invalid_client", async () => {
     const { store } = tempStore();
-    store.save("client_gone", fake.issuer, Date.now());
+    store.save("client_gone", fake.issuer, Date.now(), CLIENT_NAME);
     const auth = service(store);
     await auth.signIn(fake.origin);
     expect(auth.state.status).toBe("signedIn");
@@ -89,7 +89,16 @@ describe("Sign in with Every App", () => {
     const { store } = tempStore();
     await service(store).signIn(fake.origin);
     const old = store.entry(fake.issuer)!;
-    store.save(old.clientId, fake.issuer, Date.now() - CLIENT_MAX_IDLE_MS - 1000);
+    store.save(old.clientId, fake.issuer, Date.now() - CLIENT_MAX_IDLE_MS - 1000, CLIENT_NAME);
+    await service(store).signIn(fake.origin);
+    expect(store.entry(fake.issuer)!.clientId).not.toBe(old.clientId);
+  });
+
+  it("registers again when the cached client has an earlier name", async () => {
+    const { store } = tempStore();
+    await service(store).signIn(fake.origin);
+    const old = store.entry(fake.issuer)!;
+    store.save(old.clientId, fake.issuer, Date.now(), "Every App");
     await service(store).signIn(fake.origin);
     expect(store.entry(fake.issuer)!.clientId).not.toBe(old.clientId);
   });

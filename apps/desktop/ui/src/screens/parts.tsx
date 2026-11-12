@@ -262,3 +262,9 @@ export function clock(ms: number): string {
   const mm = h ? String(m).padStart(2, "0") : String(m);
   return `${h ? `${h}:` : ""}${mm}:${String(s).padStart(2, "0")}`;
 }
+
+/**
+ * A settings row's leading column, as wide as the account's avatar (size-9), so the titles in
+ * every section start at one edge whether a row leads with the avatar or an icon.
+ */
+export const ROW_LEAD = "flex w-9 shrink-0 justify-center";

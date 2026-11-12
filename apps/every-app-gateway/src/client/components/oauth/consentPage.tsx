@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CircleAlert } from "lucide-react";
 import { signOutAndForget } from "@/client/sign-out";
+import { useSignInMethods } from "@/client/sign-in-methods";
 import { StatusScreen } from "@/client/components/StatusScreen";
 import { Alert, AlertDescription } from "@/client/components/ui/alert";
 
@@ -9,7 +10,10 @@ import { Alert, AlertDescription } from "@/client/components/ui/alert";
  * app-access.tsx): the page's context, loaded once outside the persisted
  * query cache, since it holds a one-use handle or state that has no
  * business in localStorage. A signed-out visitor is sent to sign in and
- * back to the same page, which is also what switching account does.
+ * back to the same page, which is also what switching account does. Behind
+ * Cloudflare Access there is no switching here: the outer ring signs the
+ * browser straight back in as the person Access names, so `switchAccount`
+ * is undefined there (and until the sign-in methods say).
  */
 export function useConsentPage<Result extends object>(
   path: string,
@@ -38,7 +42,11 @@ export function useConsentPage<Result extends object>(
       cancelled = true;
     };
   }, [query]);
-  const switchAccount = () => void signOutAndForget().then(signInAndReturn);
+  const { data: methods } = useSignInMethods();
+  const switchAccount =
+    methods && !methods.accessEmail
+      ? () => void signOutAndForget().then(signInAndReturn)
+      : undefined;
   return { query, context, switchAccount };
 }
 

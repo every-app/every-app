@@ -43,7 +43,17 @@ describe("OnboardingScreen: connect your Gateway", () => {
     expect(screen.getByText("Add Scribe to it")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Copy everyapp setup" }));
     expect(onCopyCommand).toHaveBeenCalledWith("gateway");
-    expect(screen.getByText("Scribe today. More apps soon.")).toBeTruthy();
+    expect(screen.getByText("More apps soon.")).toBeTruthy();
+    expect(screen.getByText(/runs in your Cloudflare account/)).toBeTruthy();
+  });
+
+  it("offers a token sign-in only for a local http:// address", () => {
+    const { rerender } = render(
+      <OnboardingScreen step="gateway" appName="Scribe" address="apps.acme.com" onSubmitToken={() => {}} />,
+    );
+    expect(screen.queryByRole("button", { name: /Paste a token instead/ })).toBeNull();
+    rerender(<OnboardingScreen step="gateway" appName="Scribe" address="http://localhost:8787" onSubmitToken={() => {}} />);
+    expect(screen.getByRole("button", { name: /Paste a token instead/ })).toBeTruthy();
   });
 
   it("shows the error, and the browser wait as its own screen", () => {
@@ -75,11 +85,11 @@ describe("OnboardingScreen: permissions", () => {
         appName="Scribe"
         permissions={{ mic: "granted", systemAudio: "unknown", notifications: "undetermined" }}
         systemAudioAsked
-        onTestSound={() => {}}
       />,
     );
     expect(screen.getByRole("button", { name: "Continue" })).toHaveProperty("disabled", false);
-    expect(screen.getByRole("button", { name: "Play a test sound" })).toBeTruthy();
+    expect(screen.getByText("Asked")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Play a test sound" })).toBeNull();
     expect(screen.queryByText("Set up later in Settings")).toBeNull();
   });
 

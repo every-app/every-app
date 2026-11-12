@@ -29,7 +29,7 @@ export function AppAccessForm({
   onSwitchAccount,
 }: {
   context: OkContext;
-  onSwitchAccount: () => void;
+  onSwitchAccount?: () => void;
 }) {
   const { app, provider, account, why, scopes } = context;
   const deliberate = useDeliberateAllow();

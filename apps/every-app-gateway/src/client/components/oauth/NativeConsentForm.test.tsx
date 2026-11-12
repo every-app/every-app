@@ -76,10 +76,16 @@ function recordSubmission(event: Event) {
   submit.preventDefault();
 }
 
-function render(context: NativeConsentContext = CONTEXT) {
+function render(
+  context: NativeConsentContext = CONTEXT,
+  onSwitchAccount: (() => void) | null = () => undefined,
+) {
   act(() =>
     root.render(
-      <NativeConsentForm context={context} onSwitchAccount={() => undefined} />,
+      <NativeConsentForm
+        context={context}
+        onSwitchAccount={onSwitchAccount ?? undefined}
+      />,
     ),
   );
 }
@@ -148,6 +154,16 @@ describe("what the native consent page says", () => {
     expect(container.querySelector('input[name="app_ids"]')).toBeNull();
     expect(container.querySelector('input[name="access"]')).toBeNull();
     expect(button("Don't allow")).toBeTruthy();
+  });
+
+  it("offers Switch account only when there is a way to switch", () => {
+    render();
+    expect(button("Switch account")).toBeTruthy();
+    act(() => root.render(<></>));
+    // Behind Cloudflare Access the page passes none: Access signs the browser straight back in.
+    render(CONTEXT, null);
+    expect(text()).toContain("Signed in as member@example.com");
+    expect(text()).not.toContain("Switch account");
   });
 
   it("marks a self-named client unverified", () => {

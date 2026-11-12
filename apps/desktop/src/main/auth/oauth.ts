@@ -80,7 +80,7 @@ export class OAuthError extends Error {
   }
 }
 
-export const CLIENT_NAME = "Every App";
+export const CLIENT_NAME = "Every App for Mac";
 /** Registered once; the Gateway matches it on any loopback port (RFC 8252 §7.3). */
 export const REGISTERED_REDIRECT_URI = "http://127.0.0.1/callback";
 

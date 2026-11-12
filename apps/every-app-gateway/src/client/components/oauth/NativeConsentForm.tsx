@@ -55,7 +55,7 @@ export function NativeConsentForm({
   onSwitchAccount,
 }: {
   context: NativeConsentContext;
-  onSwitchAccount: () => void;
+  onSwitchAccount?: () => void;
 }) {
   const { client, organizations } = context;
   const { app } = context.grant;

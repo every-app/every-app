@@ -1,20 +1,18 @@
-// When "Enjoy Every App" (WelcomeSplash in @every-app/desktop-ui) is up:
-// The hooks are in useSplash.ts; timings are SPLASH_TIMING, passed in by Root.
-// - once, right after first run, for SPLASH_TIMING.welcome (a click or key ends it early);
-// - while the window isn't in front (it lost focus, or it's hidden), so Mission Control, App
-//   Exposé and the Dock's previews show it rather than an unreadable shrunken window. It fades out
-//   as the window comes back. Not during a recording: then the window is the notes beside the call.
+// When "Enjoy Every App" (WelcomeSplash in @every-app/desktop-ui) is up: while the window isn't in
+// front (it lost focus, or it's hidden), so Mission Control, App Exposé and the Dock's previews
+// show it rather than an unreadable shrunken window. It fades out as the window comes back. Not
+// during a recording: then the window is the notes beside the call. The hook is in useSplash.ts;
+// timings are SPLASH_TIMING, passed in by Root.
 
 import type { AppSnapshot } from "@shared/ipc";
 
 export interface SplashInputs {
-  welcome: boolean;
   away: boolean;
   recording: AppSnapshot["recording"]["state"];
 }
 
-export function splashShownOf({ welcome, away, recording }: SplashInputs): boolean {
-  return welcome || (away && recording === "idle");
+export function splashShownOf({ away, recording }: SplashInputs): boolean {
+  return away && recording === "idle";
 }
 
 /** The bits of `window` trackAway listens to. */

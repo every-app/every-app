@@ -1,14 +1,15 @@
 import { cn } from "cn";
-import { AlertCircle, ArrowUpRight, Bell, Check, ChevronDown, Copy, Mic, RefreshCw, Volume2 } from "lucide-react";
-import { useState, type ComponentType, type ReactNode } from "react";
+import { AlertCircle, ArrowUpRight, Check, ChevronDown, Copy, RefreshCw } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { Button } from "../components/ui/button";
 import type { PermissionKind, Permissions, PermissionStatus } from "../types";
 import { TITLE_BAR_HEIGHT, TitleBar } from "./AppFrame";
+import { permissionInfo } from "./SettingsScreen";
 
 /**
  * First run: connect your Gateway, then permissions. When the Gateway answers but hasn't got
  * the app yet, one more step asks to install it (sign-in waits for it: a desktop sign-in is for
- * one app). The "Enjoy Every App" splash follows; it isn't drawn here.
+ * one app). The app's home page follows.
  *
  * The window is two halves: Every App's brand panel on the left (always the brand's dark forest,
  * in both themes) and one job per screen on the right. The panel's headline and the right side's
@@ -32,6 +33,7 @@ export interface OnboardingScreenProps {
   connecting?: "checking" | "browser" | null;
   onCancelConnect?: () => void;
   error?: string | null;
+  /** A token sign-in, for local development: offered only for a plain http:// address. */
   onSubmitToken?: (token: string) => void;
   defaultShowToken?: boolean;
   setupCommands?: Record<SetupCommandId, string>;
@@ -46,8 +48,6 @@ export interface OnboardingScreenProps {
   /** System audio was asked for: macOS can't report the grant, so this is as far as we know. */
   systemAudioAsked?: boolean;
   onGrant?: (kind: PermissionKind) => void;
-  onTestSound?: () => void;
-  testingSound?: boolean;
   onContinue?: () => void;
   onLater?: () => void;
 
@@ -83,8 +83,6 @@ const LEAD = "mt-2 text-[14px] leading-relaxed text-muted-foreground";
 /** Primary buttons: Mac-sized, and quiet while disabled. */
 const PRIMARY = "h-9 px-4 text-[13px] disabled:bg-foreground/[0.08] disabled:text-foreground/35 disabled:opacity-100";
 
-const PROMISES = ["Hosted in your own cloud.", "Shared with participants.", "Secured by Cloudflare's network."];
-
 export function OnboardingScreen(props: OnboardingScreenProps) {
   const eyebrow = props.step === "add-app" ? "One more thing" : `Step ${props.step === "gateway" ? 1 : 2} of 2`;
   return (
@@ -118,23 +116,19 @@ function BrandPanel({ appName }: { appName: string }) {
       className="drag-region flex w-[34%] min-w-[300px] max-w-[400px] shrink-0 flex-col border-r border-white/[0.06] px-10 pb-9 text-stone-300 min-[1100px]:px-12"
       style={{ background: FOREST, paddingTop: TOP }}
     >
-      {/* The top is left to the window's traffic lights. */}
+      {/* The top is left to the window's traffic lights. The feature's name sits above the
+          headline, so the headline (not the name) lines up with the right side's heading. */}
+      <p className="-mt-7 mb-2.5 h-[18px] text-[13px] font-semibold text-stone-400">{appName}</p>
       <p className="text-[32px] font-semibold leading-[1.04] tracking-[-0.032em] text-white min-[1100px]:text-[40px]">
         Private
         <br />
         meeting notes.
       </p>
-      <ul className="mt-6 space-y-1 text-[14px] leading-[1.6] text-stone-400 min-[1100px]:text-[15px]">
-        {PROMISES.map((p) => (
-          <li key={p}>{p}</li>
-        ))}
-      </ul>
-      {/* One row when there's room; in a narrow window the line about more apps goes under the mark. */}
-      <div className="mt-auto flex flex-wrap items-center gap-x-2.5 gap-y-1.5 pt-6">
-        <EveryAppLogo className="size-[22px] rounded-[6px] shadow-[0_0_0_0.5px_rgb(255_255_255/0.16)]" />
-        <span className="whitespace-nowrap text-[13px] font-semibold text-stone-300">Every App</span>
-        <span className="basis-full text-[12px] text-stone-500 min-[1100px]:ml-auto min-[1100px]:basis-auto">
-          {appName} today. More apps soon.
+      <div className="mt-auto flex items-center gap-2.5 pt-6">
+        <EveryAppLogo className="size-[30px] rounded-[8px] shadow-[0_0_0_0.5px_rgb(255_255_255/0.16)]" />
+        <span className="leading-tight">
+          <span className="block text-[13px] font-semibold text-stone-300">Every App</span>
+          <span className="block text-[12px] text-stone-500">More apps soon.</span>
         </span>
       </div>
     </aside>
@@ -271,11 +265,7 @@ function Connect({
             {connecting === "checking" ? "Checking" : "Continue"}
           </Button>
         </div>
-        {error ? (
-          <ErrorLine>{error}</ErrorLine>
-        ) : (
-          <p className="mt-2.5 text-[12.5px] text-muted-foreground">Your browser opens next to confirm it's you.</p>
-        )}
+        {error && <ErrorLine>{error}</ErrorLine>}
       </form>
 
       {setupCommands && (
@@ -294,7 +284,8 @@ function Connect({
           {showSetup && (
             <div className="mt-4 border-l border-border pl-4">
               <p className="text-[12px] leading-relaxed text-muted-foreground">
-                You need Cloudflare's Workers Paid plan ($5 a month) and a domain on Cloudflare.
+                Every App runs in your Cloudflare account, so you can share meeting notes with participants and your
+                team. You need a Cloudflare Workers Paid plan ($5 a month) and a domain on Cloudflare.
               </p>
               <ol className="mt-4 space-y-3.5">
                 {steps.map((s, i) => (
@@ -316,7 +307,9 @@ function Connect({
         </section>
       )}
 
-      {onSubmitToken && (
+      {/* Signing in with a token is for a local `everyapp dev` (Cloudflare Access refuses
+          tokens on a real Gateway's app hosts), so it's offered only for a plain http:// address. */}
+      {onSubmitToken && plainHttp && (
         <div className="mt-4">
           <button
             type="button"
@@ -376,27 +369,10 @@ function Browser({ address, onCancelConnect, error }: OnboardingScreenProps) {
 
 /* Permissions --------------------------------------------------------------------------- */
 
-const permissionRows: {
-  kind: PermissionKind;
-  icon: ComponentType<{ className?: string }>;
-  title: string;
-  detail: (appName: string) => string;
-  optional?: boolean;
-}[] = [
-  { kind: "mic", icon: Mic, title: "Microphone", detail: () => "Your side of the call." },
-  {
-    kind: "systemAudio",
-    icon: Volume2,
-    title: "System audio",
-    detail: (appName) => `Everyone else, from your Mac's sound output. ${appName} takes the sound, never the screen.`,
-  },
-  {
-    kind: "notifications",
-    icon: Bell,
-    title: "Notifications",
-    detail: () => 'A nudge before meetings, and "Record this call?".',
-    optional: true,
-  },
+const permissionKinds: { kind: PermissionKind; optional?: boolean }[] = [
+  { kind: "mic" },
+  { kind: "systemAudio" },
+  { kind: "notifications", optional: true },
 ];
 
 /** What a row shows: system audio that was asked for but can't be confirmed is "asked". */
@@ -413,46 +389,36 @@ function Grant({
   permissions,
   systemAudioAsked = false,
   onGrant,
-  onTestSound,
-  testingSound,
   onContinue,
   onLater,
 }: OnboardingScreenProps) {
   const statuses = Object.fromEntries(
-    permissionRows.map((r) => [r.kind, rowStatus(r.kind, permissions, systemAudioAsked)]),
+    permissionKinds.map((r) => [r.kind, rowStatus(r.kind, permissions, systemAudioAsked)]),
   ) as Record<PermissionKind, RowStatus>;
-  const next = permissionRows.find((r) => statuses[r.kind] === "undetermined" || statuses[r.kind] === "unknown")?.kind;
+  const next = permissionKinds.find((r) => statuses[r.kind] === "undetermined" || statuses[r.kind] === "unknown")?.kind;
   const ready = statuses.mic === "granted" && (statuses.systemAudio === "granted" || statuses.systemAudio === "asked");
   return (
     <>
       <h1 className={H2}>Let {appName} listen</h1>
-      <p className={LEAD}>Only after you press record, and it asks before recording a call. macOS confirms each one.</p>
       <ul className="mt-7 divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
-        {permissionRows.map((row) => {
+        {permissionKinds.map((row) => {
           const status = statuses[row.kind];
+          const info = permissionInfo[row.kind];
           return (
-            <li key={row.kind} className="flex items-center gap-3.5 px-4 py-3.5">
-              <row.icon
+            <li key={row.kind} className="flex min-h-14 items-center gap-3.5 px-4 py-3">
+              <info.icon
                 className={cn("size-[17px] shrink-0", status === "granted" ? "text-success" : "text-foreground/60")}
               />
               <span className="min-w-0 flex-1 text-left">
                 <span className="block text-[13px] font-medium">
-                  {row.title}
+                  {info.title}
                   {row.optional && <span className="font-normal text-muted-foreground"> · recommended</span>}
                 </span>
-                <span className="block text-[12px] leading-snug text-muted-foreground">
-                  {status === "asked"
-                    ? `Allowed in macOS? ${appName} confirms it the first time it hears your Mac play sound.`
-                    : row.detail(appName)}
-                </span>
+                {info.detail && (
+                  <span className="block text-[12px] leading-snug text-muted-foreground">{info.detail}</span>
+                )}
               </span>
-              <PermissionAction
-                status={status}
-                isNext={row.kind === next}
-                onGrant={() => onGrant?.(row.kind)}
-                onTestSound={onTestSound}
-                testingSound={testingSound}
-              />
+              <PermissionAction status={status} isNext={row.kind === next} onGrant={() => onGrant?.(row.kind)} />
             </li>
           );
         })}
@@ -475,19 +441,7 @@ function Grant({
   );
 }
 
-function PermissionAction({
-  status,
-  isNext,
-  onGrant,
-  onTestSound,
-  testingSound,
-}: {
-  status: RowStatus;
-  isNext: boolean;
-  onGrant: () => void;
-  onTestSound?: () => void;
-  testingSound?: boolean;
-}) {
+function PermissionAction({ status, isNext, onGrant }: { status: RowStatus; isNext: boolean; onGrant: () => void }) {
   if (status === "granted") {
     return (
       <span className="inline-flex shrink-0 items-center gap-1 text-[12.5px] font-medium text-success">
@@ -495,12 +449,9 @@ function PermissionAction({
       </span>
     );
   }
+  // macOS can't report the system-audio grant: it was asked for, which is as far as we know.
   if (status === "asked") {
-    return onTestSound ? (
-      <Button size="sm" variant="outline" className="shrink-0" onClick={onTestSound} pending={testingSound}>
-        {testingSound ? "Listening" : "Play a test sound"}
-      </Button>
-    ) : null;
+    return <span className="shrink-0 text-[12.5px] text-muted-foreground">Asked</span>;
   }
   if (status === "denied") {
     return (

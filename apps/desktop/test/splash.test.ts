@@ -2,13 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { splashShownOf, trackAway, type AwayTarget } from "../src/renderer/src/splash";
 
 describe("splashShownOf", () => {
-  it("is up after first run, and while the window is away unless recording", () => {
-    expect(splashShownOf({ welcome: true, away: false, recording: "idle" })).toBe(true);
-    expect(splashShownOf({ welcome: true, away: false, recording: "recording" })).toBe(true);
-    expect(splashShownOf({ welcome: false, away: true, recording: "idle" })).toBe(true);
-    expect(splashShownOf({ welcome: false, away: true, recording: "recording" })).toBe(false);
-    expect(splashShownOf({ welcome: false, away: true, recording: "starting" })).toBe(false);
-    expect(splashShownOf({ welcome: false, away: false, recording: "idle" })).toBe(false);
+  it("is up while the window is away unless recording", () => {
+    expect(splashShownOf({ away: true, recording: "idle" })).toBe(true);
+    expect(splashShownOf({ away: true, recording: "recording" })).toBe(false);
+    expect(splashShownOf({ away: true, recording: "starting" })).toBe(false);
+    expect(splashShownOf({ away: false, recording: "idle" })).toBe(false);
   });
 });
 

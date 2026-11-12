@@ -320,7 +320,6 @@ function Onboarding(props: Partial<OnboardingScreenProps> & Pick<OnboardingScree
       onCopyCommand={noop}
       guideUrl="https://everyapp.com/docs/gateway"
       onGrant={noop}
-      onTestSound={noop}
       onContinue={noop}
       onCheckAgain={noop}
       {...props}

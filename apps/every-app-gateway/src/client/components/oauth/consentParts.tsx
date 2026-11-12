@@ -5,7 +5,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import { ArrowLeftRight, BadgeCheck, CheckIcon, User } from "lucide-react";
+import { ArrowLeftRight, BadgeCheck, CheckIcon } from "lucide-react";
 import { cn } from "cn";
 import { CONSENT_FIELDS } from "@/schemas/consent-decision";
 import { Badge } from "@/client/components/ui/badge";
@@ -126,11 +126,11 @@ export function ClientPublisher({
   }
   if (domain) return null;
   return (
-    <p className="mt-2 text-sm text-balance text-muted-foreground">
-      <Badge variant="outline" size="sm" className="mr-1.5 align-middle">
+    <p className="mt-2 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
+      <Badge variant="outline" size="sm">
         Unverified
       </Badge>
-      Continue if you trust this application.
+      <span>Continue if you trust this application.</span>
     </p>
   );
 }
@@ -202,35 +202,36 @@ export function DecisionButtons({
   );
 }
 
-/** Who is signed in, with the way to switch accounts. */
+/**
+ * Who is signed in, one centered line under the header, with the way to
+ * switch accounts when there is one (behind Cloudflare Access there isn't:
+ * the browser can only be the person Access says it is).
+ */
 export function SignedInRow({
   email,
   onSwitchAccount,
 }: {
   email: string;
-  onSwitchAccount: () => void;
+  onSwitchAccount?: () => void;
 }) {
   return (
-    <div className="flex items-center gap-3 text-sm">
-      <div
-        aria-hidden
-        className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted/50"
-      >
-        <User className="size-4" />
-      </div>
-      {/* One line on any screen: an address too long for it ends in an ellipsis. */}
-      <div className="min-w-0 flex-1 truncate font-medium" title={email}>
-        {email}
-      </div>
-      <Button
-        type="button"
-        variant="link"
-        className="h-auto p-0"
-        onClick={onSwitchAccount}
-      >
-        Switch account
-      </Button>
-    </div>
+    <p className="text-center text-sm text-muted-foreground wrap-anywhere">
+      Signed in as{" "}
+      <strong className="font-medium text-foreground">{email}</strong>
+      {onSwitchAccount ? (
+        <>
+          {" · "}
+          <Button
+            type="button"
+            variant="link"
+            className="h-auto p-0 align-baseline"
+            onClick={onSwitchAccount}
+          >
+            Switch account
+          </Button>
+        </>
+      ) : null}
+    </p>
   );
 }
 
