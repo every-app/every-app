@@ -56,7 +56,8 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
 
 ## Waiting on Ben
 
-- [ ] **Simpler releases** ([docs/design/2026-11-simplify-releases.md](docs/design/2026-11-simplify-releases.md), "Waiting on Ben"): the first `pnpm release patch` (→ 0.3.0), then drop the `next` dist-tag.
+- [ ] **Link `everyapp` to the checkout** on the Mac and the dev box (`.github/RELEASE.md`, "Day to day": three lines, once per machine), and check `ssh -T git@github.com` on the Mac before the first `pnpm release ship`.
+- [ ] **Tear down the `demo` staging Gateway** (`demo.everyapp.dev`), if nothing else uses it: the pre-release check it was for is retired. The teardown command is in `docs/runbooks/pre-release-check.md`'s last version (`git log -- docs/runbooks/pre-release-check.md`).
 - [ ] **Check the desktop app on a Mac** (it was moved from private-talk and renamed on Linux): `apps/desktop/mac/scripts/test.sh` or the Desktop workflow's Swift job, `pnpm -C apps/desktop package:local`, then: Keychain Access shows "com.everyapp.desktop.dev Safe Storage" (with `EVERYAPP_DESKTOP_DEV_KEYCHAIN=1`), data is in `~/Library/Application Support/com.everyapp.desktop.dev`, the menus say "Every App Dev", `everyapp-dev://scribe/record` opens it.
 - [ ] **Scribe's side of the desktop rename** (every-app/private-open-scribe): the web app opens `talk://record…`, and must open `everyapp://scribe/record…`.
 - [ ] **The remote MCP apps live check** (#938): add an OAuth server with DCR (Linear's), connect two members, call, refresh, disconnect. A live test, on a test Gateway.

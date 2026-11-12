@@ -49,7 +49,7 @@ git restore pnpm-workspace.yaml pnpm-lock.yaml && pnpm install    # back to the 
 | `pnpm link` | Writes a `link:` override into the app's `pnpm-workspace.yaml` and lockfile | **Needed** (no pnpm option avoids it). Must never be committed |
 | `create` from a checkout | Writes `link:` specifiers into the new app's committed `package.json` | **Contradicts** AGENTS.md's "never commit a link" |
 | `.github/RELEASE.md` | Opens with "Publishing is paused" | **False** since 2026-10-25 |
-| Pre-release check | Staging Gateway `demo` (docs/runbooks/pre-release-check.md) | Keep as an optional check before a big release, not a step of every release |
+| Pre-release check | Staging Gateway `demo` (the runbook `docs/runbooks/pre-release-check.md`, deleted 2026-11-12) | Retired: `main` runs on everyapp.team before a release (`.github/RELEASE.md`, "Day to day") |
 
 ## 1. Sync: push by hand, with a leak check on every pull request
 

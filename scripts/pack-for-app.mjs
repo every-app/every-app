@@ -6,12 +6,12 @@
  *
  *   pnpm pack-for-app <app dir> --npm <version> [--workflow] [--no-install]
  *
- * --npm takes one exact version or a caret range (`^0.3.0-rc.10`, what
+ * --npm takes one exact version or a caret range (`^0.3.0`, what
  * `everyapp create` writes).
  *
  * Apps never carry the SDK or CLI as tarballs (no vendor/, no `file:`
  * specifiers). Unreleased platform code is tried locally with `pnpm link`
- * (docs/runbooks/app-releases.md) and shipped by publishing an rc.
+ * (docs/runbooks/app-releases.md) and shipped by releasing (.github/RELEASE.md).
  *
  * In order:
  *
@@ -70,13 +70,13 @@ function indentOf(file) {
 const args = process.argv.slice(2);
 if (args.includes("--help") || args.includes("-h")) usage();
 if (args.includes("--vendor")) {
-  usage("--vendor is gone: apps never carry the SDK or CLI as tarballs. Try unreleased code with `pnpm link` (docs/runbooks/app-releases.md), then publish an rc and pin it with --npm.");
+  usage("--vendor is gone: apps never carry the SDK or CLI as tarballs. Try unreleased code with `pnpm link` (docs/runbooks/app-releases.md), then release (.github/RELEASE.md) and pin it with --npm.");
 }
 const npmAt = args.indexOf("--npm");
 if (npmAt === -1) usage("--npm <version>, please");
 const version = args[npmAt + 1];
 if (!version || version.startsWith("--") || !/^\^?\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {
-  usage("--npm takes an exact version or a caret range, e.g. --npm 0.3.0-rc.10 or --npm ^0.3.0-rc.10");
+  usage("--npm takes an exact version or a caret range, e.g. --npm 0.3.0 or --npm ^0.3.0");
 }
 args.splice(npmAt, 2);
 const flags = new Set(args.filter((arg) => arg.startsWith("--")));

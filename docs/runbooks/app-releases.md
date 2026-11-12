@@ -23,19 +23,19 @@ on `R2_NOT_ENABLED`, the account having never enabled R2).
    an app pins the exact version:
 
    ```json
-   "dependencies":    { "@every-app/sdk": "0.3.0-rc.15" },
-   "devDependencies": { "everyapp": "0.3.0-rc.15" }
+   "dependencies":    { "@every-app/sdk": "0.3.0" },
+   "devDependencies": { "everyapp": "0.3.0" }
    ```
 
    Exact, not a range: a release is built from what the lockfile says, and
-   a pre-release range would float. A repository with pnpm's
+   a range would float. A repository with pnpm's
    `minimumReleaseAge` must list `everyapp` in `minimumReleaseAgeExclude`
    (OpenCRM and OpenSEO do; `@every-app/*` covers the SDK), or a fresh
    publish waits out the window.
 
    There is no fallback to tarballs: when the published version predates
    something the app needs (an SDK export, a CLI check), the answer is a
-   new rc, not packages packed from a checkout (vendoring was retired on
+   new release (`.github/RELEASE.md`), not packages packed from a checkout (vendoring was retired on
    2026-10-26; a vendored Mission Control had shipped code that was never
    committed). The CLI in the app runs `dev`,
    `db migrate` and `release` on its own (its bundle inlines the SDK, the
@@ -81,7 +81,7 @@ on `R2_NOT_ENABLED`, the account having never enabled R2).
 From an EveryApp checkout, with the app's repository cloned beside it:
 
 ```sh
-pnpm pack-for-app ../open-crm --npm 0.3.0-rc.3 --workflow
+pnpm pack-for-app ../open-crm --npm 0.3.0 --workflow
 ```
 
 `scripts/pack-for-app.mjs` with `--npm <version>` points the app's
@@ -92,7 +92,7 @@ an older version of the script left (and `vendor/README.md`), copies `starter/.g
 `pnpm install` in the app so its lockfile records the pin. Commit
 `package.json`, `pnpm-lock.yaml` and the workflow (and `vendor/`'s removal).
 
-`--npm` takes an exact version or a caret range (`^0.3.0-rc.10`, what
+`--npm` takes an exact version or a caret range (`^0.3.0`, what
 `everyapp create` writes); `--no-install` skips the install.
 
 ## Unreleased platform code in an app: `pnpm link`, never vendor

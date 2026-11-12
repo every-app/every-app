@@ -8,6 +8,88 @@ when they disagree. A checkout says the newest release, and so does
 everything built from it. The design is
 [docs/design/2026-11-simplify-releases.md](../docs/design/2026-11-simplify-releases.md).
 
+## Day to day: test `main`, then release
+
+Commits land on private `main` for a day or two. During that time the
+`everyapp` command on a maintainer's machine is the checkout's, and
+everyapp.team runs the Gateway built from that checkout. Nothing is
+published until the release. The commands are fish.
+
+**Once per machine.** `everyapp` becomes a link to the checkout's launcher
+(`packages/cli/bin/everyapp.js`), which works from any directory:
+
+```fish
+npm uninstall -g everyapp
+mkdir -p ~/.local/bin; and ln -sf ~/workspaces/private-every-app/packages/cli/bin/everyapp.js ~/.local/bin/everyapp
+fish_add_path ~/.local/bin
+```
+
+Keep that checkout on `main`; work on branches happens in worktrees.
+
+**Use today's `main` CLI.** The next `everyapp` installs the dependencies
+if the lockfile changed and rebuilds itself; `everyapp --version` names the
+commit (`everyapp 0.3.0 (checkout 6afd18bb)`).
+
+```fish
+git -C ~/workspaces/private-every-app pull
+```
+
+**Put today's `main` Gateway on everyapp.team.** It builds the Gateway from
+the checkout (a minute or two), migrates the database with a restore point,
+then uploads. It stops if the checkout has uncommitted Gateway changes or
+isn't on `origin/main`. Only a person runs this; an agent never does.
+
+```fish
+everyapp update --gateway https://everyapp.team
+```
+
+**Go back to the last release.** The checkout's CLI deploys the newest
+published Gateway release over the live one. `--downgrade` says the
+rollback is meant. The code goes back; the database keeps its migrations,
+which is the reason for the rule below.
+
+```fish
+everyapp update --gateway https://everyapp.team --release https://github.com/every-app/every-app --downgrade
+```
+
+To put the database back as well, to before its last migrating update
+(this loses what was written since; it asks first):
+
+```fish
+everyapp db restore --gateway
+```
+
+For the released CLI itself, without changing the link: `npx
+everyapp@latest <command>`.
+
+**Cut the release.** See "Releasing" below.
+
+```fish
+pnpm release patch
+# merge the pull request it opens, then:
+git switch main; and git pull; and pnpm release ship
+```
+
+**The rule that makes this safe: until the release, a Gateway migration on
+`main` only adds** (a table, a column, an index). Going back to the last
+release leaves the migrations in place, and the released apps and CLIs
+keep running against a Gateway that is ahead of them, so a migration that
+drops or renames what the last release reads breaks both. Drop it in the
+release after.
+
+While everyapp.team runs a checkout's Gateway:
+
+- An app's pinned `everyapp` (from its `node_modules`) can redeploy an
+  existing app, but can't bind a new app or hostname or delete one
+  (`GATEWAY_RELEASE_UNAVAILABLE`): the live Gateway came from a checkout it
+  doesn't have. Use the linked `everyapp` for those.
+- The apps keep their pinned `@every-app/sdk`. A Gateway ahead of an app's
+  SDK is what every user has after updating their Gateway, so it has to
+  work; nothing checks it but using the apps.
+- A worktree whose branch adds a migration can't talk to everyapp.team
+  (`GATEWAY_OUTDATED`) and must not update it. Try it on a sandbox:
+  `pnpm e2e` ([docs/runbooks/e2e.md](../docs/runbooks/e2e.md)).
+
 ## Releasing
 
 1. `pnpm release <patch|minor|major|x.y.z>` (`scripts/release.mjs`) writes
@@ -39,8 +121,18 @@ Only Ben runs `ship`: it makes commits public and publishes to npm, and
 neither can be taken back. The push it makes by hand is `git push
 git@github.com:every-app/every-app.git main:main`.
 
-Before a big release, the optional pre-release check on the staging
-Gateway is [docs/runbooks/pre-release-check.md](../docs/runbooks/pre-release-check.md).
+- **`ship` has not released anything yet.** Its checks and its refusals
+  are tested against throwaway repositories; the question, the push and
+  the workflow watch have never run for real. The first release with
+  `ship` is its test: run `pnpm release ship --dry-run` first and read
+  what it would push.
+- **It pushes over SSH.** `ssh -T git@github.com` must greet you by name on
+  the machine that runs it.
+- **Re-pinning the apps is by hand**, with the command `ship` prints. It
+  opens no pull requests in the app repositories.
+- **There is no staging step.** The days on everyapp.team above are the
+  check before a release; `pnpm e2e` gives a sandbox Gateway for anything
+  riskier.
 
 ## Gateway releases
 
@@ -70,8 +162,7 @@ it (`GATEWAY_DOWNGRADE`); `--downgrade` is the rollback, which puts the
 older code back and leaves the database's migrations where they are.
 Every other command refuses a Gateway whose database is older than the
 CLI's (`GATEWAY_OUTDATED`; `update` brings it up, and a person at a terminal is
-offered that update on the spot), and an app's deploy
-warns when its `@every-app/sdk` isn't the CLI's version
+offered that update on the spot), and an app's deploy warns when its `@every-app/sdk` isn't the CLI's version
 (`SDK_VERSION_MISMATCH`; not for an SDK linked from a checkout).
 
 The Release workflow builds `every-app-gateway-release.tar.gz` with
