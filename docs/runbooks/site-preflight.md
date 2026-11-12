@@ -1,6 +1,26 @@
 # Site preflight: everyapp.com before and after a deploy
 
-The landing page (`landing-page/`: the home page, the user docs at `/docs`, the agent docs at `/docs/agent`, `/llms.txt` and `/llms-full.txt`) is deployed by hand with `pnpm -C landing-page run deploy` (plain `pnpm deploy` is pnpm's own command), and only by Ben. This runbook is the check that runs before that deploy, against the local build, and again right after it, against the live site. Both runs are the same script, `landing-page/scripts/preflight.js`; it has no dependencies and takes the site's origin as its argument.
+The landing page (`landing-page/`: the home page, the user docs at `/docs`, the agent docs at `/docs/agent`, `/llms.txt` and `/llms-full.txt`) is deployed by the `Deploy website` workflow when a merge to `main` changes it ([below](#the-deploy-workflow)), or by hand with `pnpm -C landing-page run deploy` (plain `pnpm deploy` is pnpm's own command), and by hand only by Ben. This runbook is the check that runs before a deploy, against the local build (the workflow runs it too), and again right after it, against the live site. Both runs are the same script, `landing-page/scripts/preflight.js`; it has no dependencies and takes the site's origin as its argument.
+
+## The deploy workflow
+
+`.github/workflows/deploy-website.yml` runs on a push to `main` that changes `landing-page/**`, `docs/security.md` (the build mirrors it into the agent docs) or the workflow file, and never on a pull request. It installs the site's dependencies, builds, runs the preflight below against the build, and uploads with `wrangler deploy`; a failed preflight stops it before the upload. Only `every-app/private-every-app` on `main` deploys: the public copy of the repository carries the file and skips the job.
+
+It needs two values in the repository's `production` environment, which is restricted to `main`:
+
+- the secret `CLOUDFLARE_API_TOKEN`: a token for the account that holds the Worker, with Account > Workers Scripts > Edit and Account > Account Settings > Read on that account, Zone > Workers Routes > Edit on the `everyapp.com` zone, and User > User Details > Read and User > Memberships > Read (the "Edit Cloudflare Workers" template, minus KV, R2 and Tail);
+- the variable `CLOUDFLARE_ACCOUNT_ID`.
+
+The Worker has no runtime secrets and no bindings beyond its assets. The first step fails with the name of whichever value is missing.
+
+To deploy by hand (to refresh the star counts and the share card on `/openscribe`, which are fixed at build time), and to watch it:
+
+```bash
+gh workflow run deploy-website.yml --repo every-app/private-every-app --ref main
+gh run watch --repo every-app/private-every-app --exit-status
+```
+
+To roll back, use the Cloudflare dashboard > Workers > `every-app-landing-page` > Deployments, or revert the commit on `main` (the revert deploys on merge). The redirect Worker (`landing-page/redirect`) is not part of the workflow.
 
 ## Before the deploy: the local build
 
