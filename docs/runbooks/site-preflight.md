@@ -4,7 +4,7 @@ The landing page (`landing-page/`: the home page, the user docs at `/docs`, the 
 
 ## The deploy workflow
 
-`.github/workflows/deploy-website.yml` runs on a push to `main` that changes `landing-page/**`, `docs/security.md` (the build mirrors it into the agent docs) or the workflow file, and never on a pull request. It installs the site's dependencies, builds, runs the preflight below against the build, and uploads with `wrangler deploy`; a failed preflight stops it before the upload. Only `every-app/private-every-app` on `main` deploys: the public copy of the repository carries the file and skips the job.
+`.github/workflows/deploy-website.yml` runs on a push to `main` that changes `landing-page/**`, `docs/security.md` (the build mirrors it into the agent docs) or the workflow file, and never on a pull request. It installs the site's dependencies, builds, runs the preflight below against the build, and uploads with `wrangler deploy`; a failed preflight stops it before the upload. Only `every-app/private-every-app` on `main` deploys: the public copy of the repository carries the file and skips the job. A pull request that changes `landing-page/**` or `docs/security.md` gets the same build and preflight, without the upload, from `.github/workflows/site-preflight.yml`.
 
 It needs two values in the repository's `production` environment, which is restricted to `main`:
 

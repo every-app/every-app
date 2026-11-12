@@ -113,10 +113,23 @@ function pagesInOrder<T extends { url: string }>(
  * references an agent answers from.
  */
 export async function llmsIndex(): Promise<string> {
-  const [user, agentDocs] = await Promise.all([
+  const [listed, agentDocs] = await Promise.all([
     docsLlms.index(),
     agentLlms.index(),
   ]);
+  // Pages the sidebar leaves out (a guide another page links to when a step
+  // needs it) are still listed here: an agent finds pages through this file.
+  const inSidebar = new Set(urlsInOrder(source.getPageTree()));
+  const more = source
+    .getPages()
+    .filter((page) => !inSidebar.has(page.url))
+    .map(
+      (page) =>
+        `- [${page.data.title}](${page.url}): ${page.data.description ?? ""}`,
+    );
+  const user = more.length
+    ? `${listed.trimEnd()}\n\n- **More guides**\n${more.join("\n")}\n`
+    : listed;
   return [
     "# EveryApp",
     "",

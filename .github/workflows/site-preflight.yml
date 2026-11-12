@@ -1,0 +1,66 @@
+name: Site preflight
+
+# Builds landing-page/ and runs the preflight the deploy runs
+# (deploy-website.yml), on pull requests that change what the deploy watches.
+# A broken link, redirect or llms.txt then fails the pull request, not the
+# deploy after its merge. It deploys nothing and uses no secrets.
+on:
+  pull_request:
+    paths:
+      - landing-page/**
+      # The build mirrors it into the agent docs (scripts/sync-agent-docs.js).
+      - docs/security.md
+      - .github/workflows/site-preflight.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    name: Site preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: landing-page
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        # The version is package.json's packageManager.
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '^22.18.0'
+          cache: pnpm
+
+      # Only the site's own dependencies, and no install scripts: the root
+      # postinstall builds the SDK, which the site doesn't use.
+      - name: Install the site's dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter 'landing-page...'
+
+      - name: Build
+        run: pnpm run build
+        env:
+          # scripts/sync-openscribe-data.js reads public repositories' counts;
+          # with a token GitHub's API doesn't rate-limit the runner's address.
+          GITHUB_TOKEN: ${{ github.token }}
+
+      # The deploy's own check: crawl the build, stop on a broken link or page.
+      - name: Preflight the build
+        run: |
+          pnpm exec vite preview --port 4322 --strictPort </dev/null >"$RUNNER_TEMP/preview.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -sf -o /dev/null http://localhost:4322/ && break
+            sleep 1
+          done
+          pnpm run preflight || { cat "$RUNNER_TEMP/preview.log"; exit 1; }

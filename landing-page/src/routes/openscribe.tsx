@@ -516,7 +516,7 @@ function OpenScribe() {
                   Cloudflare. It takes about 15 minutes.{" "}
                   <Link
                     to="/docs/$"
-                    params={{ _splat: "gateway" }}
+                    params={{ _splat: "quickstart" }}
                     className={linkClass}
                   >
                     The full guide
