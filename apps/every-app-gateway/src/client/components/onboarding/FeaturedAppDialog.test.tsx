@@ -62,3 +62,16 @@ it("tells a member who installs it, with no command", () => {
     document.body.querySelector(`a[href="${openseo.repo}"]`),
   ).not.toBeNull();
 });
+
+it("leaves the needs list out for an app that opens with nothing set", () => {
+  const analytics = FEATURED_APPS.find((app) => app.id === "analytics")!;
+  act(() => {
+    root.render(
+      <FeaturedAppDialog app={analytics} canRun={true} onClose={vi.fn()} />,
+    );
+  });
+  const text = document.body.textContent ?? "";
+  expect(text).toContain(`pnpm everyapp install ${analytics.repo}`);
+  expect(text).not.toContain("What it needs");
+  expect(text).not.toContain("Needs setup");
+});

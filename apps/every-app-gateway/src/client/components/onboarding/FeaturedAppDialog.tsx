@@ -54,15 +54,17 @@ export function FeaturedAppContent({ app, canRun }: FeaturedAppContentProps) {
       ) : (
         <p className="text-sm text-muted-foreground">{copy.memberLine}</p>
       )}
-      <div className="flex flex-col gap-1.5">
-        <p className="text-sm font-medium">{copy.needsHeading}</p>
-        <ul className="list-disc pl-5 text-sm text-muted-foreground">
-          {app.needs.map((need) => (
-            <li key={need}>{need}</li>
-          ))}
-        </ul>
-        <p className="text-xs text-muted-foreground">{copy.needsNote}</p>
-      </div>
+      {app.needs.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <p className="text-sm font-medium">{copy.needsHeading}</p>
+          <ul className="list-disc pl-5 text-sm text-muted-foreground">
+            {app.needs.map((need) => (
+              <li key={need}>{need}</li>
+            ))}
+          </ul>
+          <p className="text-xs text-muted-foreground">{copy.needsNote}</p>
+        </div>
+      )}
     </>
   );
 }

@@ -21,9 +21,9 @@ export const FIRST_SCREEN = {
     commandHeading: "Run this in a terminal",
     commandNote:
       "Run it in the folder where you set up EveryApp. When it finishes, refresh this page. Run it again later to update.",
-    needsHeading: "Before it opens",
+    needsHeading: "What it needs",
     needsNote:
-      "After the install, the app shows Needs setup here, with the command that sets them.",
+      "If a key is missing after the install, the app shows Needs setup here, with the command that sets it.",
     memberLine: "Ask an owner or admin to install it.",
     repoLinkLabel: "View on GitHub",
   },

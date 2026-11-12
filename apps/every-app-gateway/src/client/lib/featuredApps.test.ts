@@ -42,7 +42,24 @@ describe("the featured apps", () => {
     expect(app.line.length).toBeLessThanOrEqual(90);
     expect(app.line.endsWith(".")).toBe(true);
     expect(app.line).not.toContain("organization");
-    expect(app.needs.length).toBeGreaterThan(0);
+  });
+
+  // What each app's everyapp.config.ts requires and whether its
+  // cloudflare.config.ts binds an R2 bucket, checked on 2026-11-12.
+  it("say what each app needs before it opens, and nothing it doesn't", () => {
+    const r2 = "R2 turned on in your Cloudflare account";
+    expect(
+      Object.fromEntries(FEATURED_APPS.map((app) => [app.id, app.needs])),
+    ).toEqual({
+      openseo: [r2, "An OpenRouter key", "A DataForSEO key"],
+      crm: [r2],
+      analytics: [],
+      openmail: [
+        r2,
+        "A key for an AI model, such as OpenRouter",
+        "A mail domain on Cloudflare",
+      ],
+    });
   });
 
   it.each(FEATURED_APPS)(
