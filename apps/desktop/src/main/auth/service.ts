@@ -15,7 +15,7 @@ import { locateApp, type Located } from "./locate";
 import { SignInFlow, touchClient } from "./signin";
 import type { SecretStore } from "./store";
 import { typedAppUrl } from "./url";
-import { exampleBackendUrl, SCRIBE } from "@shared/features";
+import { backendAppIds, exampleBackendUrl, SCRIBE } from "@shared/features";
 
 const TYPE_APP_URL = `Type the ${SCRIBE.label} app URL, like ${exampleBackendUrl(SCRIBE)}.`;
 
@@ -113,7 +113,7 @@ export class AuthService extends EventEmitter<{ change: [AuthSnapshot] }> {
 
   /** The first screen's address, a Gateway's or the app's own: where to sign in (locate.ts). */
   locate(text: string): Promise<Located> {
-    return locateApp(text, SCRIBE.backend.appId, this.oauth, SCRIBE.label);
+    return locateApp(text, backendAppIds(SCRIBE), this.oauth, SCRIBE.label);
   }
 
   async signIn(appUrlText: string): Promise<void> {

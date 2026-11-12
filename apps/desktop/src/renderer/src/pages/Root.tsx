@@ -7,7 +7,7 @@ import { ArrowLeft } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { AppSnapshot, Located } from "@shared/ipc";
 import type { NavTarget, PermissionKind, SetupCommandId, Space } from "@every-app/desktop-ui";
-import { SCRIBE } from "@shared/features";
+import { backendAppIds, SCRIBE } from "@shared/features";
 import { GATEWAY_GUIDE_URL, SETUP_COMMANDS } from "@shared/setup";
 import { AppFrame, OfflineBanner, OnboardingScreen, SignInAgainBanner, SPLASH_TIMING, TitleBar, WelcomeSplash } from "@every-app/desktop-ui";
 import { useRecordingElapsed } from "../useRecordingElapsed";
@@ -68,8 +68,10 @@ function addressFrom(appUrl: string | undefined): string {
   if (!appUrl) return "";
   try {
     const url = new URL(appUrl);
-    const prefix = `${SCRIBE.backend.appId}.`;
-    const host = url.host.startsWith(prefix) ? url.host.slice(prefix.length) : url.host;
+    const prefix = backendAppIds(SCRIBE)
+      .map((appId) => `${appId}.`)
+      .find((p) => url.host.startsWith(p));
+    const host = prefix ? url.host.slice(prefix.length) : url.host;
     return url.protocol === "http:" ? `http://${host}` : host;
   } catch {
     return "";

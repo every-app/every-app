@@ -1,5 +1,5 @@
 // The update feed can be private, behind the Gateway on the Scribe app itself
-// (https://talk.<base>/api/v1/updates/mac/). electron-updater then needs the same bearer as the
+// (https://scribe.<base>/api/v1/updates/mac/, or talk.<base> where it's signed in there). electron-updater then needs the same bearer as the
 // API. It's sent only when the feed is on the signed-in app's own origin, so a token never goes to
 // another host. No Electron import (tested).
 
