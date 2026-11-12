@@ -25,7 +25,8 @@
  *   3. asks, and only on yes pushes main to the public repository;
  *   4. watches the Release workflow, and says how to run it again if it fails;
  *   5. asks the built CLI whether it would install each public app's latest
- *      release, and names the apps to re-pin.
+ *      release, and names the ones it wouldn't: those are re-pinned and
+ *      released again. The others keep their pins.
  * It needs a terminal, because it asks. --dry-run does 1 and 2 and pushes
  * nothing.
  *
@@ -36,7 +37,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import readline from "node:readline/promises";
-import { ShipRefusal, planLines, planShip, pushShip } from "./lib/ship.mjs";
+import { ShipRefusal, planLines, planShip, pushShip, repinLines } from "./lib/ship.mjs";
 import { PUBLISHED, currentVersion, nextVersion, writeVersion } from "./lib/versions.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -267,17 +268,7 @@ async function ship({ dryRun }) {
     console.log(`\nReleased ${version}: the Gateway release and both npm packages are out.`);
   }
 
-  const refused = checkPublicApps();
-  console.log(`
-Re-pin each app to ${version} (or merge its Dependabot pull request):
-
-  pnpm pack-for-app <app directory> --npm ${version}
-`);
-  if (refused.length > 0) {
-    console.log(`Warning: everyapp ${version} won't install these apps' latest releases until they are re-pinned and released again:
-${refused.map(({ repo, why }) => `\n  ${repo}\n    ${why}`).join("\n")}
-`);
-  }
+  console.log(repinLines({ version, refused: checkPublicApps() }).join("\n"));
 }
 
 const [command, ...rest] = process.argv.slice(2);

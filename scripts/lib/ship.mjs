@@ -62,3 +62,34 @@ export function planLines({ head, publicHead, commits }, limit = 15) {
     ...(commits.length > limit ? [`    and ${commits.length - limit} more`] : []),
   ];
 }
+
+/**
+ * ship's closing lines about the apps' pins. An app re-pins when it needs
+ * something from the new version, not because a release happened: `refused`
+ * is the public apps whose latest release this CLI won't install
+ * ({ repo, why }), and only those are told to.
+ */
+export function repinLines({ version, refused }) {
+  if (refused.length === 0) {
+    return [
+      "",
+      `No app needs re-pinning: everyapp ${version} installs every public app's latest release.`,
+      "Re-pin an app when it needs something from this version (.github/RELEASE.md, \"When an app re-pins\").",
+      "",
+    ];
+  }
+  return [
+    "",
+    `everyapp ${version} won't install ${refused.length === 1 ? "this app's latest release" : "these apps' latest releases"}. Re-pin ${refused.length === 1 ? "it" : "each"} and release it again:`,
+    ...refused.flatMap(({ repo, why }) => [
+      "",
+      `  ${repo}`,
+      `    ${why}`,
+      "",
+      `  pnpm pack-for-app ../${repo.replace(/\/+$/, "").split("/").at(-1)} --npm ${version}`,
+    ]),
+    "",
+    "No other app needs re-pinning.",
+    "",
+  ];
+}

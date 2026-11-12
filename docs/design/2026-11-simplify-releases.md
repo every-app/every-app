@@ -111,6 +111,8 @@ made-up values in tests; one-off fixtures go in `.gitleaksignore` by fingerprint
   ```
 
   `pack-for-app --npm` stays for doing it by hand.
+  *Since 2026-11-12:* Dependabot was never set up, and an app doesn't re-pin at every release: only
+  when it needs something from the new version (`.github/RELEASE.md`, "When an app re-pins").
 - **App releases only from the public repository.** In each app's `release.yml`, add
   `if: "!startsWith(github.event.repository.name, 'private-')"` to the job. The private copies stop
   publishing releases nobody can download.

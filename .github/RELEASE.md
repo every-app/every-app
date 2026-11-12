@@ -112,10 +112,10 @@ While everyapp.team runs a checkout's Gateway:
    by trusted publishing (no npm token; provenance). `ship` watches that
    run. Each step skips what is out already, so `gh workflow run
    release.yml -R every-app/every-app` finishes a run that failed half way.
-3. Re-pin the first-party apps to the version
-   (`pnpm pack-for-app <app> --npm <version>`, or the app's Dependabot pull
-   request). `ship` ends by asking the built CLI whether it would install
-   each public app's latest release, and names the ones that need it.
+3. `ship` ends by asking the built CLI whether it would install each
+   public app's latest release. When it would, it says no app needs
+   re-pinning. When it wouldn't, it names the app and prints that app's
+   re-pin command.
 
 Only Ben runs `ship`: it makes commits public and publishes to npm, and
 neither can be taken back. The push it makes by hand is `git push
@@ -126,11 +126,25 @@ git@github.com:every-app/every-app.git main:main`.
   the workflow, which waits for npm.
 - **It pushes over SSH.** `ssh -T git@github.com` must greet you by name on
   the machine that runs it.
-- **Re-pinning the apps is by hand**, with the command `ship` prints. It
-  opens no pull requests in the app repositories.
+- **Re-pinning an app is by hand**, with `pnpm pack-for-app <app> --npm
+  <version>`. `ship` opens no pull requests in the app repositories.
 - **There is no staging step.** The days on everyapp.team above are the
   check before a release; `pnpm e2e` gives a sandbox Gateway for anything
   riskier.
+
+## When an app re-pins
+
+A release doesn't make the apps re-pin. Each app pins the exact `everyapp`
+and `@every-app/sdk` it was built with and keeps working on a newer
+Gateway: the pins of the public apps differ, and 0.3.1 installed all of
+them. Re-pin an app (`docs/runbooks/app-releases.md`) when:
+
+- it wants a new SDK export, or an SDK fix that runs in its Worker;
+- a newer CLI refuses its published release (`RELEASE_INVALID`), which is
+  what `ship`'s closing check finds;
+- its `release.yml` needs a newer `everyapp release --publish`.
+
+Never because the Gateway moved.
 
 ## Gateway releases
 

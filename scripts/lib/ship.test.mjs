@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { ShipRefusal, planLines, planShip, pushShip } from "./ship.mjs";
+import { ShipRefusal, planLines, planShip, pushShip, repinLines } from "./ship.mjs";
 
 const dirs = [];
 afterEach(() => {
@@ -141,5 +141,32 @@ describe("pnpm release ship", () => {
     const result = spawnSync(process.execPath, [SCRIPT, "publish"], { encoding: "utf8" });
     assert.equal(result.status, 1);
     assert.match(result.stderr, /publish is gone/);
+  });
+});
+
+describe("repinLines", () => {
+  it("says no app needs re-pinning when every public app installs", () => {
+    const text = repinLines({ version: "0.3.2", refused: [] }).join("\n");
+    assert.match(text, /^\nNo app needs re-pinning: everyapp 0\.3\.2 installs every public app's latest release\.\n/);
+    assert.doesNotMatch(text, /pack-for-app/);
+  });
+
+  it("names only the apps this CLI refuses, each with its own command", () => {
+    const lines = repinLines({
+      version: "0.3.2",
+      refused: [{ repo: "https://github.com/every-app/open-crm", why: "RELEASE_INVALID: the release has no manifest" }],
+    });
+    assert.deepEqual(lines, [
+      "",
+      "everyapp 0.3.2 won't install this app's latest release. Re-pin it and release it again:",
+      "",
+      "  https://github.com/every-app/open-crm",
+      "    RELEASE_INVALID: the release has no manifest",
+      "",
+      "  pnpm pack-for-app ../open-crm --npm 0.3.2",
+      "",
+      "No other app needs re-pinning.",
+      "",
+    ]);
   });
 });

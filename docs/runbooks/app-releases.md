@@ -28,7 +28,9 @@ on `R2_NOT_ENABLED`, the account having never enabled R2).
    ```
 
    Exact, not a range: a release is built from what the lockfile says, and
-   a range would float. A repository with pnpm's
+   a range would float. The pin moves when the app needs something from a
+   newer version, not at every release (`.github/RELEASE.md`, "When an app
+   re-pins"). A repository with pnpm's
    `minimumReleaseAge` must list `everyapp` in `minimumReleaseAgeExclude`
    (OpenCRM and OpenSEO do; `@every-app/*` covers the SDK), or a fresh
    publish waits out the window.
@@ -128,8 +130,8 @@ the app, so the app's CI fails rather than ships it.
 
 To ship it, release from the platform checkout (`pnpm release patch`,
 `.github/RELEASE.md`), then pin it in the app with
-`pnpm pack-for-app <app> --npm <version>` (or merge the app's Dependabot
-pull request) and merge that.
+`pnpm pack-for-app <app> --npm <version>` and merge that. Apps that don't
+need it keep their pins.
 
 The app's default branch is what the workflow releases from. A repository
 whose default branch isn't `main` (OpenMail's is `everyapp` until it is

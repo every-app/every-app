@@ -1,8 +1,8 @@
 /**
  * The app's @every-app/sdk against this everyapp. They ship as one
  * version (`pnpm release`, scripts/release.mjs, publishes both at once). A
- * mismatch is only a warning: an app re-pins at the next release, and
- * until then it may well deploy with a newer CLI.
+ * mismatch is only a warning: an app re-pins when it needs something from
+ * a newer version, and until then it may well deploy with a newer CLI.
  *
  * A linked SDK (`pnpm link <checkout>/packages/sdk`, or `everyapp create`
  * from a checkout) says nothing: it is whatever that checkout holds, not a
