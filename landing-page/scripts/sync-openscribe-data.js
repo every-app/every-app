@@ -2,10 +2,9 @@
 
 // Writes src/lib/openscribe-data.generated.json, which the /openscribe page
 // and its share card (scripts/generate-social-cards.js) read: the two GitHub
-// repositories' counts, topics and languages, and the desktop app's current
-// version. Everything starts from the committed
-// src/lib/openscribe-data.fallback.json and is replaced by what GitHub and the
-// update feed answer, so a build with no network, a rate-limited one, or one
+// repositories' counts, topics and languages. Everything starts from the
+// committed src/lib/openscribe-data.fallback.json and is replaced by what
+// GitHub answers, so a build with no network, a rate-limited one, or one
 // that runs before a repository is public still succeeds with the fallback.
 // The repository URLs live in the fallback file and nowhere else.
 
@@ -19,7 +18,6 @@ const FALLBACK_FILE = join(
   "../src/lib/openscribe-data.fallback.json",
 );
 const OUT_FILE = join(__dirname, "../src/lib/openscribe-data.generated.json");
-const UPDATE_FEED = "https://updates.everyapp.com/mac/latest-mac.yml";
 const TIMEOUT_MS = 5000;
 
 // GitHub's own language colours (github-linguist).
@@ -105,16 +103,6 @@ async function repository(fallback) {
   }
 }
 
-async function appVersion(fallback) {
-  try {
-    const manifest = await (await get(UPDATE_FEED)).text();
-    return manifest.match(/^version:\s*(\d+\.\d+\.\d+)\s*$/m)?.[1] ?? fallback;
-  } catch (error) {
-    console.warn(`Desktop version: not shown (${error.message})`);
-    return fallback;
-  }
-}
-
 function withColors(repo) {
   return {
     ...repo,
@@ -126,8 +114,7 @@ function withColors(repo) {
 }
 
 const fallback = JSON.parse(readFileSync(FALLBACK_FILE, "utf8"));
-const [version, everyApp, openScribe] = await Promise.all([
-  appVersion(fallback.appVersion),
+const [everyApp, openScribe] = await Promise.all([
   repository(fallback.repos.everyApp),
   repository(fallback.repos.openScribe),
 ]);
@@ -136,7 +123,6 @@ writeFileSync(
   OUT_FILE,
   `${JSON.stringify(
     {
-      appVersion: version,
       repos: {
         everyApp: withColors(everyApp),
         openScribe: withColors(openScribe),

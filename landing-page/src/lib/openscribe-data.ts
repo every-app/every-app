@@ -2,7 +2,7 @@ import generated from "@/lib/openscribe-data.generated.json";
 
 // What scripts/sync-openscribe-data.js writes before dev, build and
 // types:check: the committed openscribe-data.fallback.json, replaced by what
-// GitHub and the update feed answered.
+// GitHub answered.
 
 export type RepoLanguage = { name: string; percent: number; color: string };
 
@@ -25,14 +25,11 @@ export type Repo = {
 };
 
 type OpenScribeData = {
-  /** Every App for Mac's current version, or null when the feed didn't answer. */
-  appVersion: string | null;
   repos: { everyApp: Repo; openScribe: Repo };
 };
 
 const data: OpenScribeData = generated;
 
-export const APP_VERSION = data.appVersion;
 export const EVERY_APP_REPO = data.repos.everyApp;
 export const OPENSCRIBE_REPO = data.repos.openScribe;
 

@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
-  APP_VERSION,
   DOWNLOAD_URLS,
   EVERY_APP_REPO,
   OPENSCRIBE_CARD_PATH,
@@ -148,49 +147,43 @@ function DownloadButton() {
   }, []);
 
   return (
-    <div>
-      <div className="inline-flex text-[#0a0f0d]">
-        <a
-          href={DOWNLOAD_URLS.appleSilicon}
-          className="inline-flex h-14 items-center gap-3 rounded-l-md bg-stone-100 pr-6 pl-5 text-base font-medium transition-colors hover:bg-white"
+    <div className="inline-flex text-[#0a0f0d]">
+      <a
+        href={DOWNLOAD_URLS.appleSilicon}
+        className="inline-flex h-14 items-center gap-3 rounded-l-md bg-stone-100 pr-6 pl-5 text-base font-medium transition-colors hover:bg-white"
+      >
+        <AppleLogo className="h-5 w-5 -translate-y-px" />
+        Download for macOS
+      </a>
+      <details ref={menuRef} className="group relative">
+        <summary
+          aria-label="Other downloads"
+          className="ml-px flex h-14 w-12 cursor-pointer list-none items-center justify-center rounded-r-md bg-stone-100 transition-colors hover:bg-white [&::-webkit-details-marker]:hidden"
         >
-          <AppleLogo className="h-5 w-5 -translate-y-px" />
-          Download for macOS
-        </a>
-        <details ref={menuRef} className="group relative">
-          <summary
-            aria-label="Other downloads"
-            className="ml-px flex h-14 w-12 cursor-pointer list-none items-center justify-center rounded-r-md bg-stone-100 transition-colors hover:bg-white [&::-webkit-details-marker]:hidden"
+          <ChevronDown
+            className="h-4 w-4 transition-transform group-open:rotate-180"
+            aria-hidden="true"
+          />
+        </summary>
+        <div className="absolute top-full right-0 z-10 mt-2 w-56 overflow-hidden rounded-md border border-stone-800 bg-[#141a17] py-1 text-sm text-stone-200 shadow-xl">
+          <a
+            href={DOWNLOAD_URLS.appleSilicon}
+            className="block px-4 py-2.5 transition-colors hover:bg-white/[0.06] hover:text-white"
           >
-            <ChevronDown
-              className="h-4 w-4 transition-transform group-open:rotate-180"
-              aria-hidden="true"
-            />
-          </summary>
-          <div className="absolute top-full right-0 z-10 mt-2 w-56 overflow-hidden rounded-md border border-stone-800 bg-[#141a17] py-1 text-sm text-stone-200 shadow-xl">
-            <a
-              href={DOWNLOAD_URLS.appleSilicon}
-              className="block px-4 py-2.5 transition-colors hover:bg-white/[0.06] hover:text-white"
-            >
-              Apple Silicon
-              <span className="block text-xs text-stone-500">
-                Macs from late 2020 on
-              </span>
-            </a>
-            <a
-              href={DOWNLOAD_URLS.intel}
-              className="block px-4 py-2.5 transition-colors hover:bg-white/[0.06] hover:text-white"
-            >
-              Intel
-              <span className="block text-xs text-stone-500">Older Macs</span>
-            </a>
-          </div>
-        </details>
-      </div>
-      <p className="mt-4 text-sm text-stone-500">
-        Every App for Mac{APP_VERSION ? ` ${APP_VERSION}` : ""}. macOS 15 or
-        later.
-      </p>
+            Apple Silicon
+            <span className="block text-xs text-stone-500">
+              Macs from late 2020 on
+            </span>
+          </a>
+          <a
+            href={DOWNLOAD_URLS.intel}
+            className="block px-4 py-2.5 transition-colors hover:bg-white/[0.06] hover:text-white"
+          >
+            Intel
+            <span className="block text-xs text-stone-500">Older Macs</span>
+          </a>
+        </div>
+      </details>
     </div>
   );
 }
