@@ -421,11 +421,13 @@ describe("email set stores the lists on the Gateway and routes the addresses at 
       [
         "✓ inbox sends as ceo@example.com",
         "✓ Mail to *@example.com, support@mail.example.com goes to inbox",
-        "The Gateway picks up the change within 30 seconds.",
         "",
         // ceo@example.com covers example.com.
         "To reply from mail.example.com, set it up for Email Sending, then:",
         "  pnpm everyapp email set --sender 'ceo@example.com' --sender '*@mail.example.com'",
+        "",
+        // How soon the Gateway serves it: with --verbose.
+        "More: --verbose",
         "",
       ].join("\n"),
     );
@@ -436,7 +438,8 @@ describe("email set stores the lists on the Gateway and routes the addresses at 
         "✓ inbox sends as *@example.com, support@mail.example.com",
         "✓ Mail to *@example.com, help@mail.example.com goes to inbox",
         "✓ Stopped routing support@mail.example.com",
-        "The Gateway picks up the change within 30 seconds.",
+        "",
+        "More: --verbose",
         "",
       ].join("\n"),
     );

@@ -21,7 +21,6 @@ const BY_HAND: Readonly<Record<string, number>> = {
   "commands/db/restore.ts": 1,
   "commands/delete/index.ts": 1,
   "commands/deploy/index.ts": 1,
-  "commands/deployToken/index.ts": 3,
   "commands/dev/link.ts": 2,
   "commands/dev/token.ts": 1,
   "commands/docs/index.ts": 3,
@@ -38,7 +37,6 @@ const BY_HAND: Readonly<Record<string, number>> = {
   "commands/signin/index.ts": 2,
   "commands/status/index.ts": 2,
   "commands/teardown/index.ts": 3,
-  "commands/workspace/links.ts": 1,
   "lib/gatewayApi/command.ts": 1,
 };
 

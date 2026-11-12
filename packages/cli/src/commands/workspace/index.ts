@@ -9,6 +9,7 @@
 import { formatAnswer, formatRows, listChange, runTool, type ToolCommandFlags, type ToolRun } from "@/lib/gatewayApi/command";
 import type { JsonObject } from "@/lib/gatewayApi";
 import { CLI } from "@/lib/output/command";
+import { commandLines } from "@/lib/output/result";
 import type { LinkedDevSetting, WorkspaceRole } from "./command";
 
 const W = (name: string) => `everyapp_workspace_${name}`;
@@ -54,6 +55,15 @@ export const invite = (flags: ToolCommandFlags & { role: "member" | "admin" }, e
       answer["emailed"] === true
         ? `Invited ${email} as ${flags.role}: the invitation was mailed`
         : `Invited ${email} as ${flags.role}, not mailed: ${CLI} workspace invite-link ${email} prints the link (under your Cloudflare login), or copy it from Admin → Users`,
+    // Not mailed: the one command that gets the link, on a line of its own.
+    short: (answer) =>
+      answer["emailed"] === true
+        ? null
+        : {
+            headline: `Invited ${email} as ${flags.role}, not mailed`,
+            blocks: [commandLines("Get the link", [`${CLI} workspace invite-link ${email}`])],
+            detail: ["The command runs under your Cloudflare login. The link is also in Admin → Users."],
+          },
   });
 
 export const uninvite = (flags: ToolCommandFlags, invitation: string) =>

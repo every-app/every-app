@@ -10,6 +10,7 @@
  * in the account; `remove` takes both off, and the token itself is deleted
  * in Cloudflare.
  */
+import chalk from "chalk";
 import { listWorkerSecrets } from "@/lib/cf/secrets";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
@@ -17,6 +18,7 @@ import { askDeployToken } from "@/lib/gateway/deployToken";
 import { thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal, confirmUnlessYes } from "@/lib/output/prompt";
+import { factLines, finish } from "@/lib/output/result";
 import { runCommand } from "@/lib/output/run";
 import { applyGatewaySettings } from "../secret";
 import type { GatewayCommandFlags } from "../flags";
@@ -85,9 +87,11 @@ async function addDeployToken(options: DeployTokenOptions): Promise<void> {
     });
   }
   await applyGatewaySettings(connection, changes, { flags, out });
-  out.emit({
-    type: "done",
-    message: `${host} can now install apps using ${kept ? "the existing" : "its own"} token with your authorization.`,
+  const said = `${host} can now install apps using ${kept ? "the existing" : "its own"} token with your authorization.`;
+  finish(out, {
+    headline: `${host} can now install apps`,
+    message: [said],
+    detail: [`It uses ${kept ? "the token it already held" : "its own token"}, with your authorization.`],
     data: { gateway: connection.gatewayUrl, tokenKept: kept },
   });
 }
@@ -97,9 +101,10 @@ async function removeDeployToken(options: DeployTokenOptions): Promise<void> {
   const { connection, held, host } = await connect(options);
   const names = Object.values(DeployTokenSetting).filter((name) => held.includes(name));
   if (!names.length) {
-    out.emit({
-      type: "done",
-      message: `${host} holds no deploy token. Nothing changed.`,
+    finish(out, {
+      headline: `${host} holds no deploy token`,
+      ticked: false,
+      message: [`${host} holds no deploy token. Nothing changed.`],
       data: { gateway: connection.gatewayUrl, removed: false },
     });
     return;
@@ -112,9 +117,11 @@ async function removeDeployToken(options: DeployTokenOptions): Promise<void> {
     unattended: "Removing the deploy token needs confirmation at a terminal, or --yes",
   });
   await applyGatewaySettings(connection, Object.fromEntries(names.map((name) => [name, null])), { flags, out });
-  out.emit({
-    type: "done",
-    message: `${host} can no longer install apps using its own token. Delete the token in Cloudflare too: ${ACCOUNT_TOKENS_URL}`,
+  finish(out, {
+    headline: `Removed ${host}'s deploy token`,
+    blocks: [factLines([{ label: "Delete it in Cloudflare too", value: chalk.cyan(ACCOUNT_TOKENS_URL) }])],
+    message: [`${host} can no longer install apps using its own token. Delete the token in Cloudflare too: ${ACCOUNT_TOKENS_URL}`],
+    detail: [`${host} can no longer install apps using its own token. The apps it installed keep running.`],
     data: { gateway: connection.gatewayUrl, removed: true },
   });
 }

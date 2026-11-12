@@ -8,6 +8,7 @@ import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
 import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal, confirmUnlessYes } from "@/lib/output/prompt";
+import { finish } from "@/lib/output/result";
 import { runCommand } from "@/lib/output/run";
 import { formatFacts, formatTable } from "@/lib/output/table";
 import { openGatewayApi, type GatewayApi, type GatewayApiFlags, type JsonObject } from ".";
@@ -27,6 +28,8 @@ export interface ToolRun {
   done?: (answer: JsonObject) => string;
   /** What a person sees under it; the answer drawn generically when left out, nothing when it returns "". */
   display?: (answer: JsonObject) => string;
+  /** The short form a person sees in place of `done`'s line (docs/cli-output.md); null keeps the line. */
+  short?: (answer: JsonObject) => { headline: string; blocks?: string[][]; detail?: string[] } | null;
   /** Ask first (the tool can't be undone): `--yes` skips it; unattended without it is CONFIRMATION_REQUIRED. */
   confirm?: string;
 }
@@ -62,6 +65,16 @@ export async function callAndReport(api: GatewayApi, out: EventSink, flags: Conf
   const answer = await api.call(run.tool, run.args ?? {});
   const line = run.done ? run.done(answer) : `${run.tool} answered.`;
   const display = run.display ? run.display(answer) : formatAnswer(answer);
+  const short = run.short?.(answer);
+  if (short) {
+    finish(out, {
+      ...short,
+      blocks: [...(short.blocks ?? []), ...(display ? [[display]] : [])],
+      message: [stripVTControlCharacters(line)],
+      data: { gateway: api.gateway, tool: run.tool, ...answer },
+    });
+    return answer;
+  }
   out.emit({
     type: "done",
     message: stripVTControlCharacters(line),

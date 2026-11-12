@@ -481,7 +481,8 @@ async function changeEmail(
         );
       }
     }
-    if (sendersChanged) notes.push("The Gateway picks up the change within 30 seconds.");
+    // How soon the Gateway serves it is the --verbose account's, not the result's.
+    const detail = sendersChanged ? ["The Gateway picks up the change within 30 seconds."] : [];
     // Replying from an address routed now needs a sender on its domain.
     const unsent =
       emailDeclarations(manifest).sends && !hosted && routed.length > 0 && (inboundChanged || reconciled)
@@ -499,8 +500,9 @@ async function changeEmail(
     const deployNext = deferred && next.inbound.length > 0;
     out.emit({
       type: "done",
-      message: [...said, ...notes].join(" "),
+      message: [...said, ...notes, ...detail].join(" "),
       display: [...lines, ...notes.map((note) => chalk.dim(note)), ...reply].join("\n"),
+      ...(detail.length > 0 ? { detail: detail.join("\n") } : {}),
       data: {
         app: { id, workerName, status: app.status },
         senders: { value: next.senders, changed: sendersChanged },
