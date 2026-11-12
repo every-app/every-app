@@ -32,6 +32,13 @@ export type Fetch = (request: Request) => Promise<Response>;
  */
 export const OAUTH_USER_AGENT = "every-app-gateway";
 
+/**
+ * How long a call to a provider's token endpoint may take. Shorter than the
+ * refresh lease (30 seconds, `claimRefresh`), so a refresh is over, one way
+ * or the other, before another call can take the lease for the same tokens.
+ */
+const TOKEN_CALL_TIMEOUT_MS = 15_000;
+
 /** The parsed token answer the Gateway keeps. */
 interface IssuedTokens {
   accessToken: string;
@@ -128,6 +135,7 @@ export async function tokenCall({
         headers,
         body: form.toString(),
         redirect: "manual",
+        signal: AbortSignal.timeout(TOKEN_CALL_TIMEOUT_MS),
       }),
     );
   } catch (error) {
@@ -325,7 +333,10 @@ export async function accessTokenFor({
       (tokens.expiresAt !== null && tokens.expiresAt - at <= REFRESH_SKEW_MS);
     if (!due) return use;
     if (!tokens.refreshToken) {
-      if (!refused && !lapsed) return use;
+      // Nothing to refresh with. One 401 isn't proof the token is dead (an
+      // app picks the path, and some answer 401 for their own reasons), so
+      // only the clock expires a connection here: the 401 stands as it is.
+      if (!lapsed) return use;
       return reconnect(
         await Connections.markExpired(
           connectionId,

@@ -99,10 +99,11 @@ interface CredentialDeps {
   resolveClient?: OAuthClientResolver;
   providers?: () => Promise<ProviderRegistry>;
   /**
-   * The server answered 401 for the token of this version (a ready
-   * credential's `oauth.version`): refresh it, though it isn't due.
+   * The server answered 401 for this connection's token of this version
+   * (a ready credential's `oauth`): refresh it, though it isn't due. Not
+   * applied to another connection, which a listing may pick by now.
    */
-  rejected?: number;
+  rejected?: { connectionId: string; version: number };
 }
 
 function settings(): CapabilitySettings & Record<string, unknown> {
@@ -274,7 +275,9 @@ async function oauthCredential(
     capability,
     client,
     organizationId: route.organizationId,
-    ...(deps.rejected === undefined ? {} : { rejected: deps.rejected }),
+    ...(deps.rejected?.connectionId === connection.id
+      ? { rejected: deps.rejected.version }
+      : {}),
   });
   if (!token.ok) {
     if (token.reason === "reconnect" && token.first) {

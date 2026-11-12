@@ -498,7 +498,7 @@ async function gate(
   route: RemoteMcpRoute,
   block: RemoteMcpBlock,
   caller: CredentialCaller,
-  rejected?: number,
+  rejected?: { connectionId: string; version: number },
 ): Promise<{ credential: Usable } | { problem: string } | { connect: string }> {
   const appName = route.name ?? route.appSlug;
   const urlProblem = await urlRefusal(block, route.appSlug);
@@ -540,10 +540,18 @@ async function refreshedAfter401(
     return null;
   const oauth = credential.kind === "ready" ? credential.oauth : undefined;
   if (!oauth) return null;
-  const again = await gate(route, block, caller, oauth.version);
+  const again = await gate(route, block, caller, {
+    connectionId: oauth.connectionId,
+    version: oauth.version,
+  });
   if (!("credential" in again)) return null;
   const next = again.credential;
-  return next.kind === "ready" && next.oauth?.version !== oauth.version
+  // Another token than the one refused: this connection's refreshed one,
+  // or (a listing) the connection that is the app's most recent by now.
+  return next.kind === "ready" &&
+    next.oauth &&
+    (next.oauth.connectionId !== oauth.connectionId ||
+      next.oauth.version !== oauth.version)
     ? next
     : null;
 }
@@ -708,15 +716,33 @@ async function callTool(
   let credential = gated.credential;
   let entry = entryFor(route, block, credential, whoseOf(credential));
   const rowEntry = rowListing(route, block);
+  /**
+   * `step` with the caller's credential and, when the server answers 401
+   * for an OAuth token that wasn't due, once more with it refreshed. Both
+   * the listing a call needs first and the call itself: a 401 is answered
+   * before anything runs.
+   */
+  const withFreshToken = async <T>(step: () => Promise<T>): Promise<T> => {
+    try {
+      return await step();
+    } catch (error) {
+      const refreshed = await refreshedAfter401(
+        error,
+        route,
+        block,
+        { id: user.id },
+        credential,
+      );
+      if (!refreshed) throw error;
+      credential = refreshed;
+      entry = entryFor(route, block, credential, whoseOf(credential));
+      return step();
+    }
+  };
   let listed: Listing;
   try {
-    listed = await listing(
-      route,
-      block,
-      rowEntry,
-      entry.client,
-      false,
-      request.signal,
+    listed = await withFreshToken(() =>
+      listing(route, block, rowEntry, entry.client, false, request.signal),
     );
     if (!listed.catalog.map.has(call.name)) {
       // A tool the snapshot knows and the cache doesn't: list once more,
@@ -728,13 +754,8 @@ async function callTool(
         now - rowEntry.forcedAt >= FORCED_RELIST_MIN_MS
       ) {
         rowEntry.forcedAt = now;
-        listed = await listing(
-          route,
-          block,
-          rowEntry,
-          entry.client,
-          true,
-          request.signal,
+        listed = await withFreshToken(() =>
+          listing(route, block, rowEntry, entry.client, true, request.signal),
         );
       }
     }
@@ -783,24 +804,7 @@ async function callTool(
   const run = () =>
     entry.client.callTool(upstreamName, call.arguments, request.signal);
   try {
-    let result: Awaited<ReturnType<typeof run>>;
-    try {
-      result = await run();
-    } catch (error) {
-      // A 401 is answered before the tool runs, so the call is sent once
-      // more with the refreshed token.
-      const refreshed = await refreshedAfter401(
-        error,
-        route,
-        block,
-        { id: user.id },
-        credential,
-      );
-      if (!refreshed) throw error;
-      credential = refreshed;
-      entry = entryFor(route, block, credential, whoseOf(credential));
-      result = await run();
-    }
+    const result = await withFreshToken(run);
     count(result.isError ? 400 : 200);
     const relayed: ToolCallResultV1 = {
       content: result.content as ToolCallResultV1["content"],

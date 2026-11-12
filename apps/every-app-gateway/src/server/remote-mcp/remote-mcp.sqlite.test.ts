@@ -1321,7 +1321,7 @@ describe("a remote MCP app whose credential is an OAuth provider", () => {
   });
 
   it("answers an upstream 401 with the reconnect link", async () => {
-    await connectTreg(ownerId, OWNER_TOKEN);
+    const connectionId = await connectTreg(ownerId, OWNER_TOKEN);
     const ownerPat = await pat(ownerId);
     await toolNames(ownerPat);
     accepted = new Set();
@@ -1331,6 +1331,40 @@ describe("a remote MCP app whose credential is an OAuth provider", () => {
       `Treg rejected the connection (401). Reconnect your Treg MCP server account to use this tool: ${CONNECT}`,
     );
     expect(JSON.stringify(call)).not.toContain(OWNER_TOKEN);
+    // With no refresh token there is nothing to try, and one 401 doesn't
+    // expire the connection: only the answer says to reconnect.
+    expect(refreshes).toHaveLength(0);
+    expect(
+      (await ProviderConnectionRepository.byId(connectionId))?.status,
+    ).toBe("active");
+  });
+
+  it("refreshes a token the server answers 401 for when the call has to list the tools first", async () => {
+    await connectTreg(ownerId, OWNER_TOKEN, {
+      refreshToken: "owner-refresh-1",
+    });
+    const ownerPat = await pat(ownerId);
+    await toolNames(ownerPat);
+    // A new isolate: nothing listed yet, so the call lists before it runs.
+    resetRemoteMcpForTests();
+    const NEXT = "owner-oauth-access-token-next";
+    accepted = new Set([`Bearer ${NEXT}`]);
+    tokenAnswer = () =>
+      Response.json({
+        access_token: NEXT,
+        refresh_token: "owner-refresh-2",
+        expires_in: 3600,
+      });
+    seen = [];
+    const call = await callTool(ownerPat, "treg_get_user", { id: "u1" });
+    expect(call.result?.isError).toBeFalsy();
+    expect(call.result?.structuredContent).toMatchObject({ ran: "getUser" });
+    expect(refreshes).toHaveLength(1);
+    expect(
+      seen
+        .filter((request) => request.body["method"] === "tools/call")
+        .map((request) => request.headers["authorization"]),
+    ).toEqual([`Bearer ${NEXT}`]);
   });
 
   it("refreshes a token the server answers 401 for though it isn't due, and sends the call once more", async () => {
