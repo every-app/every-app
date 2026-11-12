@@ -31,7 +31,7 @@ export function thisCommand(
   flags: readonly string[] = [],
   {
     terminal = false,
-    argv = process.argv.slice(2),
+    argv = runningArgv ?? process.argv.slice(2),
   }: { terminal?: boolean; argv?: readonly string[] } = {},
 ): string {
   const args = terminal ? argv.filter((arg) => arg !== "--json") : [...argv];
@@ -41,10 +41,29 @@ export function thisCommand(
   return [CLI, ...args.map(quote)].join(" ");
 }
 
+// The command that is running, when it isn't the one typed: an update
+// offered inside another command (lib/gateway/offerUpdate.ts).
+let runningArgv: readonly string[] | null = null;
+
+/**
+ * Run `body` as the command `argv` (`["update", "--gateway", url]`), so
+ * what it suggests running again (`thisCommand`) is that command and not
+ * the one the person typed.
+ */
+export async function asCommand<T>(argv: readonly string[], body: () => Promise<T>): Promise<T> {
+  const before = runningArgv;
+  runningArgv = argv;
+  try {
+    return await body();
+  } finally {
+    runningArgv = before;
+  }
+}
+
 /** This run's command without `flags` and their values (`--gateway x`, `--gateway=x`), if they have one. */
 export function thisCommandWithout(
   flags: string | readonly string[],
-  argv: readonly string[] = process.argv.slice(2),
+  argv: readonly string[] = runningArgv ?? process.argv.slice(2),
 ): string {
   const without = typeof flags === "string" ? [flags] : flags;
   const args: string[] = [];

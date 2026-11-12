@@ -226,7 +226,7 @@ No Gateway in any account this login sees (`data.accounts`). Log in to the right
 ### GATEWAY_NOT_INSTALLED
 The Gateway's database exists but its install never finished. Run `everyapp setup`; it resumes.
 ### GATEWAY_OUTDATED
-The Gateway's database lacks the newest Gateway migration this everyapp was built with, so commands that connect to it refuse until it catches up. Run `everyapp update`, then this again.
+The Gateway's database lacks the newest Gateway migration this everyapp was built with (`data.needs`), so commands that connect to it refuse until it catches up. Run `everyapp update`, then this again; `data.gatewayUrl` and `data.accountId` say which Gateway. A person at a terminal is asked "Update it now?" instead, and on Yes the update runs and the command starts again. Nobody is asked under `--json`, without a terminal, in CI or with `--yes`: a script never updates a Gateway it didn't name.
 ### GATEWAY_REFUSED
 The Gateway refused the admin command's credential (401/403), or `/mcp` redirected (Access in front, or not the Gateway's URL). Make a new personal access token, or `everyapp login --gateway <url>` again (`data.fix`).
 ### GATEWAY_RELEASE_LATEST

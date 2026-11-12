@@ -65,7 +65,8 @@ the SHA-256 its own `release.json` records before anything is deployed.
 it (`GATEWAY_DOWNGRADE`); `--downgrade` is the rollback, which puts the
 older code back and leaves the database's migrations where they are.
 Every other command refuses a Gateway whose database is older than the
-CLI's (`GATEWAY_OUTDATED`; `update` brings it up), and an app's deploy
+CLI's (`GATEWAY_OUTDATED`; `update` brings it up, and a person at a terminal is
+offered that update on the spot), and an app's deploy
 warns when its `@every-app/sdk` isn't the CLI's version
 (`SDK_VERSION_MISMATCH`; not for an SDK linked from a checkout).
 

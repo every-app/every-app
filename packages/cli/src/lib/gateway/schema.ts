@@ -35,11 +35,19 @@ export async function hasGatewaySchema(db: D1Database): Promise<boolean> {
 }
 
 /** GATEWAY_OUTDATED unless the Gateway's database has {@link GATEWAY_SCHEMA}. */
-export async function requireGatewaySchema(db: D1Database): Promise<void> {
+export async function requireGatewaySchema(
+  db: D1Database,
+  /** Which Gateway it is, for the update a person at a terminal is offered (./offerUpdate.ts). */
+  gateway?: { gatewayUrl: string; accountId: string },
+): Promise<void> {
   if (await hasGatewaySchema(db)) return;
   throw new EveryAppError(
     "GATEWAY_OUTDATED",
     `The Gateway is older than this everyapp\nIts database doesn't have migration ${GATEWAY_SCHEMA} yet, which this everyapp reads and writes.`,
-    { rerun: `${CLI} update`, rerunNote: "then run this again", data: { needs: GATEWAY_SCHEMA } },
+    {
+      rerun: `${CLI} update`,
+      rerunNote: "then run this again",
+      data: { needs: GATEWAY_SCHEMA, ...gateway },
+    },
   );
 }

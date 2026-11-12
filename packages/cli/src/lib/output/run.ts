@@ -1,4 +1,5 @@
 import { setExitCode } from "@/lib/exit-code";
+import { offerGatewayUpdate, type OfferUpdateSeams } from "@/lib/gateway/offerUpdate";
 import { createHumanSink, createNdjsonSink, type EventSink } from "./events";
 import { reportFailure } from "./report";
 import { isTerminal, setVerboseRun } from "./terminal";
@@ -31,11 +32,25 @@ export async function runReported(
   setExitCode(out.exitCode);
 }
 
-/** A command's run: its sink from --json and --verbose, its failure reported. */
+/**
+ * A command's run: its sink from --json and --verbose, its failure
+ * reported. One that stops because the Gateway is older than this everyapp
+ * offers a person at a terminal the update, and starts again after it
+ * (lib/gateway/offerUpdate.ts); nothing is offered under --json, without a
+ * terminal, or with --yes.
+ */
 export async function runCommand(
-  flags: { json?: boolean; verbose?: boolean },
+  flags: { json?: boolean; verbose?: boolean; yes?: boolean },
   body: (out: EventSink) => Promise<void>,
+  seams?: OfferUpdateSeams,
 ): Promise<void> {
   const out = eventSink(flags.json, flags.verbose);
-  await runReported(out, () => body(out));
+  await runReported(out, async () => {
+    try {
+      await body(out);
+    } catch (error) {
+      if (!(await offerGatewayUpdate(error, flags, out, seams))) throw error;
+      await body(out);
+    }
+  });
 }

@@ -10,7 +10,7 @@ First run `everyapp status --json` and work through `data.fixes` ([status](/docs
 - **Stopped halfway** (any reason): run `everyapp setup` again; it resumes.
 - **Owner link lost or expired**, or `NO_OWNER`: run `everyapp setup` again for a new link (the old one stops working).
 - **Several Cloudflare accounts**: `choose_account`; pick one, or pass `--account-id`.
-- **`GATEWAY_OUTDATED` from a command**: the Gateway's database is behind this everyapp; run `everyapp update`, then the command again.
+- **`GATEWAY_OUTDATED` from a command**: the Gateway's database is behind this everyapp; run `everyapp update`, then the command again. At a terminal the command offers to run the update for you; under `--json` or with `--yes` it never does.
 - **Admin commands (`workspace`, `events`, `ai show|default`, `call`) open a browser or fail with `GATEWAY_REFUSED`**: they run as you through the Gateway. Sign in with `everyapp login --gateway <url>` (choose read & write and all apps) or set `EVERYAPP_TOKEN`; `GATEWAY_TOOL_ERROR` is the Gateway's own refusal (`data.code`).
 - **Commands or flags these docs name don't exist**: an old `everyapp`. Run `npm install -g everyapp@latest`; check `everyapp --version`. `everyapp: command not found` means the npm global bin isn't on `PATH`.
 - **Node too old or Bun**: `UNSUPPORTED_RUNTIME`. Install Node 22 or 24.

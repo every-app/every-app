@@ -296,7 +296,12 @@ export async function connectToGateway({
   }
   const found = requireInstall(requireGateway(discovery, whoami, host));
   checkGatewayUrl(found, byUrl ? gateway : undefined);
-  if (checkSchema) await requireGatewaySchema(found.db);
+  if (checkSchema) {
+    await requireGatewaySchema(found.db, {
+      gatewayUrl: `https://${found.install.gatewayHost}`,
+      accountId: found.account.id,
+    });
+  }
   return {
     cf: found.cf,
     accountId: found.account.id,
