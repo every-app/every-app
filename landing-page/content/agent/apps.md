@@ -33,7 +33,7 @@ Companies, contacts and deals, with mail, meetings and website visits filed on t
 
 ## OpenScribe (`scribe`)
 
-AI meeting notes for Mac. In the app it is called Scribe, and its id is `scribe` (it was `talk`, which a Gateway that had it keeps serving). It needs an OpenAI key (`OPENAI_API_KEY`): it transcribes meetings and writes the notes. Google Calendar (`google-workspace`, `calendar.readonly`, connected per person) is optional, for meeting reminders. Meetings are recorded by Every App for Mac, which signs in with the app's URL (`https://talk.<app base domain>`) and calls its bearer route `/api/v1/**`; `GET /s/:token` serves a shared meeting page.
+AI meeting notes for Mac. In the app it is called Scribe, and its id is `scribe` (it was `talk`, which a Gateway that had it keeps serving). It needs an OpenAI key (`OPENAI_API_KEY`): it transcribes meetings and writes the notes. Google Calendar (`google-workspace`, `calendar.readonly`, connected per person) is optional, for meeting reminders. Meetings are recorded by Every App for Mac, which signs in with the Gateway's address or the app's URL (`https://scribe.<app base domain>`, or `https://talk.<app base domain>` on a Gateway that has it under the old id) and calls its bearer route `/api/v1/**`; `GET /s/:token` serves a shared meeting page.
 
 ## OpenAnalytics (`analytics`)
 
