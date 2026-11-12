@@ -36,7 +36,6 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
 ### Desktop app (`apps/desktop`)
 
 - [ ] **One sign-in per feature?** A native token opens one app, so a second feature (dictation, notes) on another backend means a second grant: a sign-in per feature, or a Gateway-level grant that covers the workspace's apps?
-- [ ] **OpenScribe's install command.** Onboarding shows `everyapp install https://github.com/every-app/private-open-scribe` (`apps/desktop/src/shared/setup.ts`), but that repository is private and `install` needs a published release. Make it public with a release, or give the real command.
 
 ### Simplify batch (2026-11-03; #945–#959)
 

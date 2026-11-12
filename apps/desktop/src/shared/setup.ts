@@ -5,8 +5,8 @@
 /** The person's setup guide, linked from onboarding. */
 export const GATEWAY_GUIDE_URL = "https://everyapp.com/docs/gateway";
 
-/** Scribe's backend repository (the OpenScribe project). Private for now: TODO.md has the open question. */
-export const OPENSCRIBE_REPOSITORY = "https://github.com/every-app/private-open-scribe";
+/** Scribe's backend repository (the OpenScribe project). */
+export const OPENSCRIBE_REPOSITORY = "https://github.com/every-app/open-scribe";
 
 export const SETUP_COMMANDS = {
   cli: "npm install -g everyapp",

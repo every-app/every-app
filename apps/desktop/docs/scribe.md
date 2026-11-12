@@ -1,6 +1,6 @@
 # Scribe: the meeting-notes feature and its backend
 
-Scribe is the desktop app's first feature: it reminds you when a meeting starts, records it (system audio plus the microphone), transcribes it live, and its backend turns the transcript into notes with a template you pick. This page is the part of Scribe's spec (from every-app/private-open-scribe's `docs/SPEC.md`, written when Scribe was called Talk) that the desktop app depends on. The backend's data model, web app, folders, templates and sharing are documented in its own repository.
+Scribe is the desktop app's first feature: it reminds you when a meeting starts, records it (system audio plus the microphone), transcribes it live, and its backend turns the transcript into notes with a template you pick. This page is the part of Scribe's spec (from every-app/open-scribe's `docs/SPEC.md`, written when Scribe was called Talk) that the desktop app depends on. The backend's data model, web app, folders, templates and sharing are documented in its own repository.
 
 ## Architecture
 
@@ -29,7 +29,7 @@ OpenAI (Realtime, chat) ──(key)─┤
       └─────────────────────────────────────────┘
 ```
 
-- **The Scribe backend** is an Every App app (app id `talk`; TanStack Start on a Worker, D1) in every-app/private-open-scribe's `web/`. It holds all data and every key-bearing call. It serves the browser and `/api/v1`, which the desktop app calls, plus (for now) the private update feed. The desktop names that app id in one place, `src/shared/features.ts`.
+- **The Scribe backend** is an Every App app (app id `talk`; TanStack Start on a Worker, D1) in every-app/open-scribe's `web/`. It holds all data and every key-bearing call. It serves the browser and `/api/v1`, which the desktop app calls, plus (for now) the private update feed. The desktop names that app id in one place, `src/shared/features.ts`.
 - **The desktop app** owns sign-in (tokens encrypted with safeStorage), the tray, calendar reminders, call prompts and updates. It never holds an API key.
 - **`everyapp-helper`** (`mac/`) is a headless Swift process inside the app (`Contents/MacOS/everyapp-helper`), driven over stdin/stdout (`desktop-plan.md`, "Helper protocol (v1)"). It captures the mic and system audio, streams them to OpenAI with a short-lived key the backend mints, posts transcript segments to the backend, and watches which apps use the mic to detect calls. TCC charges its capture to the app.
 - Audio is never uploaded to the backend and never stored. Only text leaves the Mac.

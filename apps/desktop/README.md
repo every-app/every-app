@@ -1,6 +1,6 @@
 # Every App for Mac
 
-The Every App desktop app: a native "everything app" for an Every App workspace. **Scribe** (meeting notes) is its first feature; voice dictation, personal notes and AI features come later as their own sections. Each feature's backend lives in its own repository and is deployed as an Every App app behind the Gateway; this app calls it with a bearer token. Scribe's backend is the app id `talk` (`https://talk.<app base>/api/v1`, in every-app/private-open-scribe).
+The Every App desktop app: a native "everything app" for an Every App workspace. **Scribe** (meeting notes) is its first feature; voice dictation, personal notes and AI features come later as their own sections. Each feature's backend lives in its own repository and is deployed as an Every App app behind the Gateway; this app calls it with a bearer token. Scribe's backend is the app id `talk` (`https://talk.<app base>/api/v1`, in every-app/open-scribe).
 
 It's an Electron shell (tray, window, sign-in, calendar prompts, updates) that runs the Swift `everyapp-helper` for audio and transcription. Electron 45, electron-vite, React 19, Tailwind 4, TanStack Query, electron-builder. It's part of the repository's pnpm workspace, with its screens in `ui/` (`@every-app/desktop-ui`) and the helper in `mac/`. Background: [docs/desktop-plan.md](docs/desktop-plan.md) (the original plan and the helper protocol) and [docs/scribe.md](docs/scribe.md) (what Scribe's backend serves the app).
 

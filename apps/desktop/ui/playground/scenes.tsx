@@ -304,7 +304,7 @@ function SettingsScene() {
 const SETUP_COMMANDS = {
   cli: "npm install -g everyapp",
   gateway: "everyapp setup",
-  scribe: "everyapp install https://github.com/every-app/private-open-scribe",
+  scribe: "everyapp install https://github.com/every-app/open-scribe",
 };
 
 function Onboarding(props: Partial<OnboardingScreenProps> & Pick<OnboardingScreenProps, "step">) {
