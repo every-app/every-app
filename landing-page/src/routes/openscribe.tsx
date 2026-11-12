@@ -22,7 +22,7 @@ import { buildPageSeo } from "@/lib/seo";
 
 const title = "OpenScribe: open-source AI meeting notes for Mac";
 const description =
-  "An open-source alternative to Wispr Flow and Granola. Don't give another company all your meeting notes and voice dictations: transcribe them and save them in your own Cloudflare account.";
+  "Open source alternative to Wispr Flow and Granola. Don't give another company all your meeting notes and voice dictations: transcribe them and save them in your own Cloudflare account.";
 
 // The commands the desktop app's onboarding shows
 // (apps/desktop/src/shared/setup.ts), with the public repository.
@@ -417,7 +417,7 @@ function OpenScribe() {
         <section className="px-6 pt-10 pb-14 md:pt-14">
           <div className="mx-auto w-full max-w-4xl">
             <h1 className="landing-reveal mb-6 max-w-3xl text-balance text-[clamp(2.25rem,5.5vw,3.75rem)] font-semibold leading-[1.08] tracking-[-0.015em] text-white">
-              The open-source alternative to Wispr Flow and Granola
+              Open source alternative to Wispr Flow and Granola
             </h1>
             <p
               className="landing-reveal mb-8 max-w-2xl text-[clamp(1.125rem,2vw,1.375rem)] leading-snug text-stone-300"
