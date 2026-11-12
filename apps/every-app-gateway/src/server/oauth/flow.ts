@@ -866,10 +866,13 @@ type ReconnectResult =
  * to, whose callback allows each of those apps for what it lists now.
  * Otherwise no provider is asked, and each app that lists more than the
  * person allowed it is allowed for what it lists now: selecting
- * Reconnect is the person's OK.
+ * Reconnect is the person's OK. With `fresh` (Reconnect from the row's
+ * menu, on a connection that may be healthy) the provider is asked
+ * either way; the callback replaces the person's one connection to it.
  */
 export async function startReconnect(
   input: ConnectionKey,
+  options: { fresh?: boolean } = {},
 ): Promise<ReconnectResult> {
   const registry = await gatewayProviders();
   const capability = registry.get(input.providerId);
@@ -889,7 +892,7 @@ export async function startReconnect(
   const short = apps.filter(
     (each) => missingScopes(flow, connection.scopes, each.declared).length > 0,
   );
-  if (connection.status === "expired" || short.length > 0) {
+  if (options.fresh || connection.status === "expired" || short.length > 0) {
     const first = short[0] ?? apps[0];
     if (!first) {
       throw new PublicError(

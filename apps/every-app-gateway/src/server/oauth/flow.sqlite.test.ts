@@ -86,7 +86,13 @@ import { fakeOAuthProvider } from "@/test/fake-oauth-provider";
 import { deployLiveApp } from "@/test/registry";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 import { resolveOAuthClient } from "./client";
-import { DEFAULT_RETURN, safeReturnTo, serveConnectRoute } from "./flow";
+import { ReconnectOutcome } from "@/schemas/app-access";
+import {
+  DEFAULT_RETURN,
+  safeReturnTo,
+  serveConnectRoute,
+  startReconnect,
+} from "./flow";
 import { gatewayHeldTokens } from "./heldTokens";
 import { accessTokenFor } from "./tokens";
 import {
@@ -789,6 +795,41 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     expect((await listConnections(org("owner", owner)))[0]).toMatchObject({
       status: "active",
     });
+  });
+
+  it("reconnects a healthy connection with a fresh grant when asked, replacing it in place", async () => {
+    await addGitHub();
+    await connect("github-oauth");
+    const key = {
+      organizationId: acme,
+      providerId: "github-oauth",
+      userId: owner,
+    };
+    const before = (await listConnections(org("owner", owner)))[0]!;
+    // Without `fresh`, nothing is missing, so no provider is asked.
+    await expect(startReconnect(key)).resolves.toMatchObject({
+      outcome: ReconnectOutcome.Allowed,
+    });
+    expect(github.state.counters.token).toBe(1);
+    const fresh = await startReconnect(key, { fresh: true });
+    expect(fresh.outcome).toBe(ReconnectOutcome.Provider);
+    const url = (fresh as { url: string }).url;
+    expect(new URL(url).origin + new URL(url).pathname).toBe(
+      GITHUB.auth.authorizeUrl,
+    );
+    const back = await serveConnectRoute(new Request(github.authorize(url)), {
+      fetchUpstream: github.fetch,
+      now: () => now,
+    });
+    expect(back?.status).toBe(302);
+    expect(back?.headers.get("location")).toBe(DEFAULT_RETURN);
+    // A new token, on the same one row, and crm still allowed.
+    expect(github.state.counters.token).toBe(2);
+    const after = await listConnections(org("owner", owner));
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({ id: before.id, status: "active" });
+    expect(await db.select().from(providerConnections)).toHaveLength(1);
+    expect(await accessRows()).toEqual([`${owner} crm`]);
   });
 
   it("asks for a reconnect when the connection lacks a scope the app declares, naming it", async () => {

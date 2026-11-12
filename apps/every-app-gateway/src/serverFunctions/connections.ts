@@ -9,7 +9,7 @@ import { startReconnect } from "@/server/oauth/flow";
 import * as oauth from "@/server/oauth/service";
 import {
   disconnectConnectionSchema,
-  providerActionSchema,
+  reconnectConnectionSchema,
   removeConnectionAppSchema,
 } from "@/schemas/oauth-provider";
 
@@ -55,17 +55,21 @@ export const listAllConnections = createServerFn()
  * Reconnect the caller's own connection to a provider, for every app they
  * allowed to use it: the provider's URL to send the browser to, or, when
  * the connection already holds what those apps list, the apps allowed for
- * it there and then.
+ * it there and then. With `fresh`, the provider is asked either way: a new
+ * grant that replaces the connection.
  */
 export const reconnectConnection = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationMemberMiddleware])
-  .validator((data: unknown) => providerActionSchema.parse(data))
+  .validator((data: unknown) => reconnectConnectionSchema.parse(data))
   .handler(async ({ data, context }) =>
-    startReconnect({
-      organizationId: context.org.orgId,
-      providerId: data.providerId,
-      userId: context.user.id,
-    }),
+    startReconnect(
+      {
+        organizationId: context.org.orgId,
+        providerId: data.providerId,
+        userId: context.user.id,
+      },
+      { fresh: data.fresh === true },
+    ),
   );
 
 /**

@@ -4,8 +4,11 @@
  * mocked: one row per connection with its provider, account, scopes and
  * the apps allowed to use it; one app's access taken away by the
  * connection's id and the app's row id; Disconnect by connection id from
- * the row's menu, saying every app stops; no Connect button, no
- * organization connect, no background; no token is ever on the page.
+ * the row's menu, saying every app stops; Reconnect on the row where an
+ * app needs it, and in every row's menu as a fresh grant; the ones that
+ * need reconnecting first; an app's MCP server named after the app; long
+ * scope lists shortened; no Connect button, no organization connect, no
+ * background; no token is ever on the page.
  */
 import { act, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -70,6 +73,11 @@ beforeEach(() => {
   mocks.listMyConnections.mockReset();
   mocks.disconnectConnection.mockReset();
   mocks.removeConnectionApp.mockReset();
+  mocks.reconnectConnection.mockReset();
+  mocks.reconnectConnection.mockResolvedValue({
+    outcome: "allowed",
+    provider: "GitHub",
+  });
   mocks.toast.success.mockReset();
   mocks.disconnectConnection.mockResolvedValue({ ok: true, revoked: true });
   mocks.removeConnectionApp.mockResolvedValue({ ok: true });
@@ -108,6 +116,21 @@ beforeEach(() => {
         lastUsedAt: null,
         expiresAt: null,
       },
+      {
+        id: "conn_3",
+        providerId: "posthog-mcp",
+        providerName: "posthog MCP server",
+        userId: "user_1",
+        userEmail: "ada@acme.com",
+        apps: [{ rowId: "app_ph", id: "posthog", name: "PostHog" }],
+        label: null,
+        scopes: ["a:read", "b:read", "c:read", "d:write"],
+        status: "expired",
+        needsReconnect: true,
+        createdAt: 1,
+        lastUsedAt: null,
+        expiresAt: null,
+      },
     ],
   });
   container = document.createElement("div");
@@ -134,8 +157,8 @@ function rowFor(provider: string): string[] {
   );
 }
 
-/** Open a row's actions menu and press one of its items. */
-async function pressRowAction(rowLabel: string, item: string) {
+/** Open a row's actions menu and return its items. */
+async function openRowMenu(rowLabel: string): Promise<HTMLElement[]> {
   const trigger = document.querySelector<HTMLElement>(
     `[aria-label="Actions for ${rowLabel}"]`,
   );
@@ -147,9 +170,14 @@ async function pressRowAction(rowLabel: string, item: string) {
     trigger.click();
   });
   await settle();
-  const menuItem = [
-    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-  ].find((element) => element.textContent?.trim() === item);
+  return [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+}
+
+/** Open a row's actions menu and press one of its items. */
+async function pressRowAction(rowLabel: string, item: string) {
+  const menuItem = (await openRowMenu(rowLabel)).find(
+    (element) => element.textContent?.trim() === item,
+  );
   if (!menuItem) throw new Error(`no ${item} item`);
   await act(async () => menuItem.click());
   await settle();
@@ -170,10 +198,14 @@ async function confirm(label: string) {
 describe("Connected accounts", () => {
   it("lists each connection once with its account, the apps allowed to use it and its scopes, and no way to connect here", async () => {
     await render();
-    expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
+    const titles = [...container.querySelectorAll("tbody tr")].map(
+      (row) => row.querySelector("td p")?.textContent,
+    );
+    // The one that needs reconnecting first, then by name.
+    expect(titles).toEqual(["PostHog", "GitHub", "Google Workspace"]);
     expect(rowFor("Google Workspace").slice(0, 3)).toEqual([
       "Google Workspaceada@acme.comUsed byOpenMailOpenSEO",
-      "gmail.modify, gmail.send, webmasters.readonly",
+      "gmail.modify, gmail.send +1 more",
       "Connected",
     ]);
     expect(rowFor("GitHub").slice(0, 3)).toEqual([
@@ -183,6 +215,49 @@ describe("Connected accounts", () => {
     ]);
     expect(container.querySelectorAll("a")).toHaveLength(0);
     expect(body()).not.toMatch(/Connect Google|background|organization/i);
+  });
+
+  it("names an app's MCP server after the app, and shows every scope on request", async () => {
+    await render();
+    expect(rowFor("PostHog").slice(0, 3)).toEqual([
+      "PostHogMCP serverUsed byPostHog",
+      "a:read, b:read +2 more",
+      "Needs reconnect",
+    ]);
+    expect(body()).not.toContain("posthog MCP server");
+    const more = container.querySelector<HTMLElement>(
+      'tbody [aria-label="Show all 4 scopes"]',
+    )!;
+    await act(async () => more.click());
+    expect(rowFor("PostHog")[1]).toBe("a:read, b:read, c:read, d:write");
+  });
+
+  it("reconnects from the row where an app needs it, without forcing the provider", async () => {
+    await render();
+    const button = [
+      ...container.querySelectorAll<HTMLElement>("tbody button"),
+    ].find((element) => element.textContent?.trim() === "Reconnect")!;
+    await act(async () => button.click());
+    await settle();
+    expect(mocks.reconnectConnection).toHaveBeenCalledOnce();
+    expect(mocks.reconnectConnection.mock.calls[0]![0]).toEqual({
+      data: { providerId: "posthog-mcp", fresh: false },
+    });
+  });
+
+  it("offers Reconnect in every row's menu, beside Disconnect, as a fresh grant from the provider", async () => {
+    await render();
+    const items = await openRowMenu("Google Workspace");
+    expect(items.map((item) => item.textContent?.trim())).toEqual([
+      "Reconnect",
+      "Disconnect",
+    ]);
+    await act(async () => items[0]!.click());
+    await settle();
+    expect(mocks.reconnectConnection).toHaveBeenCalledOnce();
+    expect(mocks.reconnectConnection.mock.calls[0]![0]).toEqual({
+      data: { providerId: "google-workspace", fresh: true },
+    });
   });
 
   it("takes one app's access away by the connection's id and the app's row id, then lists again", async () => {

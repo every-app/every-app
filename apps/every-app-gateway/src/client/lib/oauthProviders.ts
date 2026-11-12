@@ -1,4 +1,7 @@
-import { providerSettingPrefix } from "@every-app/sdk/internal";
+import {
+  isRemoteMcpProviderIdOf,
+  providerSettingPrefix,
+} from "@every-app/sdk/internal";
 
 /**
  * Pure helpers behind Manage workspace → Providers and Your connections →
@@ -38,6 +41,44 @@ export function clientSourceLabel(client: { source: "env" | "d1" | null }): {
 /** A connection's scopes as a line: the provider's own names, or "no scopes". */
 export function scopesText(scopes: readonly string[]): string {
   return scopes.length > 0 ? scopes.join(", ") : "no scopes";
+}
+
+/** What Your connections → Accounts needs of a connection to name and order it. */
+interface ListedConnection {
+  providerId: string;
+  providerName: string;
+  label: string | null;
+  apps: readonly { id: string; name: string }[];
+  needsReconnect: boolean;
+}
+
+/**
+ * How a connection reads in a list: the account's name, and the line under
+ * it. An app's own remote MCP server (`<app>-mcp`) is named after the app
+ * that uses it ("elevenlabs-mcp MCP server" reads as "ElevenLabs").
+ */
+export function connectionName(connection: ListedConnection): {
+  title: string;
+  subtitle: string | null;
+} {
+  const owner = connection.apps.find((app) =>
+    isRemoteMcpProviderIdOf(connection.providerId, app.id),
+  );
+  return owner
+    ? { title: owner.name, subtitle: connection.label ?? "MCP server" }
+    : { title: connection.providerName, subtitle: connection.label };
+}
+
+/** The list order: connections that need reconnecting first, then by name. */
+export function compareConnections(
+  a: ListedConnection,
+  b: ListedConnection,
+): number {
+  return (
+    Number(b.needsReconnect) - Number(a.needsReconnect) ||
+    connectionName(a).title.localeCompare(connectionName(b).title) ||
+    (a.label ?? "").localeCompare(b.label ?? "")
+  );
 }
 
 /** A space- or comma-separated field as a list, blanks dropped. */

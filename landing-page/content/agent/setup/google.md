@@ -279,7 +279,7 @@ before step 8.
 | Google "Error 400: admin_policy_enforced" | The Workspace admin restricts the scopes or the app | A Workspace admin (Service Settings privilege): Admin console → Security → Access and data control → API controls (admin.google.com/ac/owl) → Manage App Access → Configure new app → search the client id → Continue → Trusted → Continue → Finish |
 | Google "Error 403: org_internal" | *Internal* audience, account outside the organization | Use a Workspace account, or switch to *External* ([/docs/google-personal-accounts](https://everyapp.com/docs/google-personal-accounts)) |
 | "Google hasn't verified this app" | *External*, unverified, sensitive or restricted scopes | Continue, or verify |
-| Calls stop after 7 days, the app asks to reconnect | *External* in Testing: consent expired | Reconnect in the app; Publish app (step 7) stops it |
+| Calls stop after 7 days, the app asks to reconnect | *External* in Testing: consent expired | Reconnect in the app or in the Gateway's Your connections → Accounts; Publish app (step 7) stops it |
 | `403 accessNotConfigured` ("has not been used in project") from Google | The API behind a scope isn't enabled in that project | Step 3 in the project the error names; wait a minute |
 | Google "Error 401: deleted_client" | The client was deleted (30-day restore window) | Restore it under Deleted credentials, or make a new one |
 

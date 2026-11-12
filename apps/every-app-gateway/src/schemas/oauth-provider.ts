@@ -53,6 +53,16 @@ export const setOAuthClientSchema = z.object({
 
 export const providerActionSchema = z.object({ providerId });
 
+/**
+ * Reconnect the caller's own connection. `fresh` asks the provider again
+ * even when the connection is healthy (the row menu's Reconnect); without
+ * it the provider is asked only when an allowed app needs more.
+ */
+export const reconnectConnectionSchema = z.object({
+  providerId,
+  fresh: z.boolean().optional(),
+});
+
 /** Disconnect one connection, by its id: the caller's own, or anyone's for an owner or admin. */
 export const disconnectConnectionSchema = z.object({
   connectionId: z.string().min(1).max(128),
