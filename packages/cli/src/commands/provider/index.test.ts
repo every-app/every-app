@@ -41,6 +41,7 @@ import {
   removeRegistered,
   runMcpAlias,
   showProvider,
+  updateProvider,
 } from "./index";
 import { addOAuth, disconnectProvider, listPresets, listProviderConnections } from "./oauth";
 
@@ -1544,6 +1545,132 @@ describe("provider add, one step: the key or client asked for in the same run", 
       },
     });
     expect(steps("provider.setup")[0]).toMatchObject({ data: { id: "dataforseo", docs: "https://everyapp.com/docs/providers/dataforseo" } });
+  });
+
+  /** `provider update <id>` with the seams `run` gives `provider add`. */
+  const runUpdate = (
+    id: string,
+    options: {
+      interactive?: boolean;
+      ask?: (name: string, question: string) => Promise<string>;
+      env?: Record<string, string>;
+      stdin?: string;
+    } = {},
+  ) => (sink: EventSink) =>
+    updateProvider(
+      {
+        flags: options.env ? { "from-env": true } : {},
+        out: sink,
+        createCf,
+        readStdin: async () => options.stdin ?? null,
+        env: options.env ?? {},
+        interactive: options.interactive ?? false,
+        ...(options.ask ? { ask: options.ask } : {}),
+      },
+      id,
+    );
+
+  it("provider update <id> replaces a set key by the provider's id: asked for, from the environment or piped", async () => {
+    gatewayWorker().secrets["GITHUB_API_TOKEN"] = "wrong";
+    await registerApp("shop", { capabilities: { github: { access: "read" } } });
+    const { asked, ask } = asker({ GITHUB_API_TOKEN: "ghp-right" });
+    expect(await human(runUpdate("github", { interactive: true, ask }))).toBe(
+      [
+        "✓ Set GITHUB_API_TOKEN on the Gateway",
+        "✓ Set GitHub's key on example.com",
+        "",
+        "Live now, no deploy needed.",
+        "Used by shop.",
+        "",
+      ].join("\n"),
+    );
+    expect(asked).toEqual(["GITHUB_API_TOKEN (Enter keeps it)"]);
+    expect(gatewayWorker().secrets["GITHUB_API_TOKEN"]).toBe("ghp-right");
+
+    // Scripts: --from-env, or piped NAME=value lines.
+    events = [];
+    await runUpdate("github", { env: { GITHUB_API_TOKEN: "ghp-env" } })(out());
+    expect(done()).toMatchObject({
+      message: "Set GitHub's key on example.com",
+      data: { id: "github", settings: ["GITHUB_API_TOKEN"], set: ["GITHUB_API_TOKEN"], apps: ["shop"] },
+    });
+    expect(gatewayWorker().secrets["GITHUB_API_TOKEN"]).toBe("ghp-env");
+    await runUpdate("github", { stdin: "GITHUB_API_TOKEN=ghp-piped\n" })(out());
+    expect(gatewayWorker().secrets["GITHUB_API_TOKEN"]).toBe("ghp-piped");
+
+    // Nobody to ask and nothing given: nothing changes, and the command to run next is named.
+    events = [];
+    await runUpdate("github")(out());
+    expect(done()).toMatchObject({
+      message: "GitHub's key on example.com is as it was",
+      data: { set: [], next: [{ command: "pnpm everyapp provider update github --from-env" }] },
+    });
+    // Enter on nothing: the same, with nothing to run.
+    expect(await human(runUpdate("github", { interactive: true, ask: asker({}).ask }))).toBe(
+      "GitHub's key on example.com is as it was\n",
+    );
+    expect(gatewayWorker().secrets["GITHUB_API_TOKEN"]).toBe("ghp-piped");
+
+    await expect(runUpdate("nope")(out())).rejects.toMatchObject({ code: "PROVIDER_NOT_FOUND" });
+    await expect(runUpdate("email")(out())).rejects.toMatchObject({ code: "PROVIDER_NOT_FOUND" });
+  });
+
+  it("provider update asks for each of several settings, and Enter keeps the one that is set", async () => {
+    gatewayWorker().secrets["CLOUDFLARE_ACCOUNT_ID"] = "0123456789abcdef0123456789abcdef";
+    gatewayWorker().secrets["WORKERS_AI_API_TOKEN"] = "wrong";
+    const { asked, ask } = asker({ WORKERS_AI_API_TOKEN: "right" });
+    events = [];
+    await runUpdate("workers-ai", { interactive: true, ask })(out());
+    expect(asked.sort()).toEqual(["CLOUDFLARE_ACCOUNT_ID (Enter keeps it)", "WORKERS_AI_API_TOKEN (Enter keeps it)"]);
+    expect(done()!["data"]).toMatchObject({ set: ["WORKERS_AI_API_TOKEN"], apps: [] });
+    expect(gatewayWorker().secrets["WORKERS_AI_API_TOKEN"]).toBe("right");
+    expect(gatewayWorker().secrets["CLOUDFLARE_ACCOUNT_ID"]).toBe("0123456789abcdef0123456789abcdef");
+  });
+
+  it("provider add of a provider whose key is set offers to replace it at a terminal, and names provider update otherwise", async () => {
+    gatewayWorker().secrets["GITHUB_API_TOKEN"] = "wrong";
+    const { ask } = asker({ GITHUB_API_TOKEN: "ghp-right" });
+    const questions: string[] = [];
+    const add = (confirmed: boolean | null) => (sink: EventSink) =>
+      addAny(
+        {
+          flags: {},
+          out: sink,
+          createCf,
+          cwd: tempDir("everyapp-provider-replace-"),
+          readStdin: async () => null,
+          env: {},
+          interactive: confirmed !== null,
+          ask,
+          confirm: async (question) => {
+            questions.push(question);
+            return confirmed === true;
+          },
+        },
+        "github",
+      );
+    // Unattended: nothing asked, the command on a line of its own.
+    expect(await human(add(null))).toBe(
+      [
+        "✓ GitHub (github) is on example.com",
+        "",
+        "Docs  https://everyapp.com/docs/providers/github",
+        "Its key is set. Apps can list github.",
+        "Replace it:  pnpm everyapp provider update github",
+        "",
+      ].join("\n"),
+    );
+    expect(questions).toEqual([]);
+    // No: the same, nothing set.
+    expect(await human(add(false))).toContain("Its key is set. Apps can list github.\nReplace it:  pnpm everyapp provider update github\n");
+    expect(gatewayWorker().secrets["GITHUB_API_TOKEN"]).toBe("wrong");
+    // Yes: the new key asked for and set.
+    events = [];
+    await add(true)(out());
+    expect(questions).toEqual(["Replace its key?", "Replace its key?"]);
+    expect(done()!["data"]).toMatchObject({ keySet: true, replaced: ["GITHUB_API_TOKEN"] });
+    expect(gatewayWorker().secrets["GITHUB_API_TOKEN"]).toBe("ghp-right");
+    expect(await human(add(true))).toContain("\nReplaced GitHub's key. Live now, no deploy needed.\n");
   });
 
   it("--from-env sets every setting from the variables of their names; part of them is refused, nothing set", async () => {

@@ -258,6 +258,43 @@ const listCommand = buildCommand({
   },
 });
 
+const updateCommand = buildCommand({
+  loader: async () => {
+    const { update } = await import(".");
+    return update;
+  },
+  parameters: {
+    positional: { kind: "tuple", parameters: [idParameter] },
+    flags: {
+      "from-env": {
+        kind: "boolean",
+        brief: "Read the new key or client from the environment variables of its setting names (GITHUB_API_TOKEN); nothing is asked",
+        optional: true,
+      },
+      ...connectFlags,
+    },
+  },
+  docs: {
+    brief: "Replace a provider's key or OAuth client on the Gateway, by the provider's id",
+    fullDescription: [
+      "For a key that was wrong, or rotated at the provider. Asks for the new one at a hidden",
+      "prompt and sets it as secret set would. Live at once; no deploy. A provider with several",
+      "settings is asked for each: Enter keeps the one that is set. The old value can't be read",
+      "back, so it isn't checked.",
+      "",
+      "Scripts and agents give it with --from-env (the variables of the settings' names) or piped",
+      "NAME=value lines; never on the command line. Only the settings given are replaced.",
+      "",
+      "An OAuth provider's client is replaced the same way (its client id and secret). People's",
+      "connections stay; with a different client each person connects again.",
+      "",
+      "Examples:",
+      `  ${CLI} provider update github`,
+      `  GITHUB_API_TOKEN=ghp_... ${CLI} provider update github --from-env`,
+    ].join("\n"),
+  },
+});
+
 const showCommand = buildCommand({
   loader: async () => {
     const { show } = await import(".");
@@ -337,7 +374,7 @@ const mcpAlias = (verb: "on" | "off") =>
   });
 
 /**
- * `everyapp provider add|list|show|remove|presets|connections|disconnect`:
+ * `everyapp provider add|update|list|show|remove|presets|connections|disconnect`:
  * the provider registry, the API providers the Gateway brokers
  * (docs/design/2026-10-provider-registry.md), and the OAuth providers people
  * connect their accounts to (docs/design/2026-11-oauth-one-connection.md).
@@ -347,6 +384,7 @@ const mcpAlias = (verb: "on" | "off") =>
 export const providerRoutes = buildRouteMap({
   routes: {
     add: addCommand,
+    update: updateCommand,
     list: listCommand,
     show: showCommand,
     remove: removeCommand,

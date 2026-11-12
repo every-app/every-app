@@ -48,13 +48,14 @@ import { listApps } from "@/lib/gateway/registry";
 import { plainText, providerDocsUrl, providerKeyGuide, providerKeySteps } from "@/lib/providerDocs";
 import { CLI } from "@/lib/output/command";
 import { ticked, type EventSink } from "@/lib/output/events";
-import { canPromptInTerminal } from "@/lib/output/prompt";
+import { canPromptInTerminal, confirmAtTerminal, type Confirm } from "@/lib/output/prompt";
 import { factLines, finish } from "@/lib/output/result";
 import { runCommand } from "@/lib/output/run";
 import { formatSteps, type Step } from "@/lib/output/steps";
 import { formatFacts, formatTable, type Fact } from "@/lib/output/table";
 import { listed } from "@/lib/output/text";
 import { proseWidth, wrap } from "@/lib/output/wrap";
+import { askSettingValue } from "@/lib/secretValue";
 import type { GatewayCommandFlags } from "../flags";
 import { turnOff, turnOn } from "../mcp";
 import {
@@ -92,6 +93,8 @@ export interface ProviderOptions extends CredentialSeams {
   /** How a spec URL is fetched (tests). */
   fetch?: typeof fetch;
   now?: () => number;
+  /** The yes/no asked before a set key is replaced (tests). */
+  confirm?: Confirm;
 }
 
 export async function add(flags: GatewayCommandFlags & OAuthAddFlags, spec?: string): Promise<void> {
@@ -171,6 +174,10 @@ export async function connections(flags: GatewayCommandFlags & ConnectionsFlags)
 
 export async function disconnect(flags: GatewayCommandFlags & DisconnectFlags, id: string): Promise<void> {
   await runCommand(flags, (out) => disconnectProvider({ flags, out }, id));
+}
+
+export async function update(flags: GatewayCommandFlags & { "from-env"?: boolean }, id: string): Promise<void> {
+  await runCommand(flags, (out) => updateProvider({ flags, out }, id));
 }
 
 export async function list(flags: GatewayCommandFlags & { all?: boolean }): Promise<void> {
@@ -431,12 +438,22 @@ async function finishKey(
   const keySet = outcome === "set" || needed.length === 0;
   // An AI provider goes under the manifest's providers; any other under capabilities.
   const listIt = capability.mode === "ai" ? `list ${id} under providers` : `list ${id}`;
+  // The key is set already and nothing was given: a person is asked whether to replace it; nobody is told how.
+  let replaced: string[] = [];
+  if (outcome === "skipped" && needed.length === 0 && interactive) {
+    const confirm = options.confirm ?? confirmAtTerminal;
+    if (await confirm("Replace its key?", [`${name}'s key is set.`])) {
+      replaced = await replaceSettings(options, { settings, set: settings, whose: `${name}'s key`, interactive });
+    }
+  }
   const result =
     outcome === "set"
       ? [`Apps can now ${listIt}. Live now, no deploy needed.`]
-      : needed.length === 0
-        ? [`Its key is set. Apps can ${listIt}; to replace the key: ${CLI} secret set ${settings.join(" ")}`]
-        : [];
+      : replaced.length > 0
+        ? [`Replaced ${name}'s key. Live now, no deploy needed.`]
+        : needed.length === 0
+          ? [`Its key is set. Apps can ${listIt}.`, `${chalk.dim("Replace it:")}  ${CLI} provider update ${id}`]
+          : [];
   const extra = [
     capability.mode === "ai"
       ? `In an app's manifest: providers: [${JSON.stringify(id)}]`
@@ -453,8 +470,112 @@ async function finishKey(
       settings,
       ...(context.docs ? { docs: context.docs } : {}),
       keySet,
+      ...(replaced.length > 0 ? { replaced } : {}),
       ...(keySet ? {} : { next: [{ command: `${CLI} secret set ${needed.join(" ")}` }] }),
     },
+  });
+}
+
+/**
+ * Replace a provider's settings: the values given without a prompt (piped
+ * `NAME=value` lines, `--from-env`), or each setting asked for at the
+ * terminal, where Enter on one that is set keeps it. Only what was given or
+ * typed is set, through `secret set`'s own path; the names set come back,
+ * none when nothing was.
+ */
+async function replaceSettings(
+  options: ProviderOptions & { flags: GatewayCommandFlags & CredentialFlags },
+  context: { settings: readonly string[]; set: readonly string[]; whose: string; interactive: boolean },
+): Promise<string[]> {
+  const { settings, whose } = context;
+  let values = await givenValues(settings, whose, options.flags, options);
+  if (Object.keys(values).length === 0 && context.interactive) {
+    const ask = options.ask ?? ((name: string, question: string) => askSettingValue(name, { question, optional: true }));
+    values = {};
+    for (const name of settings) {
+      const value = (await ask(name, context.set.includes(name) ? `${name} (Enter keeps it)` : name)).trim();
+      if (value) values[name] = value;
+    }
+  }
+  const names = settings.filter((name) => name in values);
+  if (names.length === 0) return [];
+  await setProviderSettings({
+    flags: options.flags,
+    out: options.out,
+    ...(options.createCf ? { createCf: options.createCf } : {}),
+    whose,
+    standing: "the provider is as it was",
+    settings,
+    needed: [],
+    given: values,
+    interactive: false,
+  });
+  return names;
+}
+
+/**
+ * `provider update <id>`: replace the key (or OAuth client) of a provider
+ * the Gateway offers, by the provider's id and not its settings' names. The
+ * new value is asked for at a hidden prompt, piped or read with --from-env;
+ * the old one can't be read back or checked. Live at once.
+ */
+export async function updateProvider(
+  options: ProviderOptions & { flags: GatewayCommandFlags & CredentialFlags },
+  id: string,
+): Promise<void> {
+  const { out, flags } = options;
+  const gateway = await connect(options);
+  const [registry, apps, gatewayNames] = await Promise.all([
+    gatewayRegistry(gateway.db, gateway.install),
+    listApps(gateway.db),
+    listWorkerSecrets(gateway.cf, gateway.names.worker),
+  ]);
+  const capability = registry.get(id);
+  if (!capability || capability.mode === "service") {
+    throw new EveryAppError(
+      "PROVIDER_NOT_FOUND",
+      capability ? `${id} is a Gateway service, not a provider with a key` : `${id} isn't a provider this Gateway offers`,
+      { rerun: `${CLI} provider list`, rerunNote: "names the ones in use; --all names every one" },
+    );
+  }
+  const oauth = capability.mode === "oauth_client";
+  const name = shortName(capability.label);
+  const whose = `${name}'s ${oauth ? "client" : "key"}`;
+  const settings = [...capabilitySettings(capability)];
+  const gatewayHost = gateway.gatewayUrl.replace(/^https:\/\//, "");
+  const interactive = options.interactive ?? canPromptInTerminal(flags.json ?? false);
+  const using = appsUsing(apps, id, capability);
+  const set = await replaceSettings(options, {
+    settings,
+    set: settings.filter((setting) => gatewayNames.includes(setting)),
+    whose,
+    interactive,
+  });
+  if (set.length === 0) {
+    finish(out, {
+      headline: `${whose} on ${gatewayHost} is as it was`,
+      ticked: false,
+      blocks: interactive ? [] : [[`Nothing was given. Export ${listed(settings)}, or pipe ${settings.length === 1 ? "it" : "them"} as NAME=value lines.`]],
+      data: {
+        id,
+        settings,
+        set: [],
+        apps: using,
+        ...(interactive ? {} : { next: [{ command: `${CLI} provider update ${id} --from-env` }] }),
+      },
+    });
+    return;
+  }
+  finish(out, {
+    headline: `Set ${whose} on ${gatewayHost}`,
+    blocks: [
+      [
+        "Live now, no deploy needed.",
+        using.length > 0 ? `Used by ${listed(using)}.` : `No app lists ${id} yet.`,
+        ...(oauth ? ["If this is a different client, each person connects again."] : []),
+      ],
+    ],
+    data: { id, settings, set, apps: using },
   });
 }
 

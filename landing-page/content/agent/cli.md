@@ -533,6 +533,23 @@ everyapp provider add --oauth ./acme.json --from-env
 - `--client-id <id>`: An OAuth provider's client id (public); the secret comes from the prompt, piped NAME=value lines or --from-env
 - `--from-env`: Set the key or client from the environment variables of its setting names (OPENROUTER_API_KEY; GITHUB_OAUTH_CLIENT_ID, GITHUB_OAUTH_CLIENT_SECRET); nothing is asked
 
+### `everyapp provider update <id>`
+Replace a provider's key or OAuth client on the Gateway, by the provider's id.
+
+For a key that was wrong, or rotated at the provider. Asks for the new one at a hidden prompt and sets it as secret set would. Live at once; no deploy. A provider with several settings is asked for each: Enter keeps the one that is set. The old value can't be read back, so it isn't checked.
+
+Scripts and agents give it with --from-env (the variables of the settings' names) or piped NAME=value lines; never on the command line. Only the settings given are replaced.
+
+An OAuth provider's client is replaced the same way (its client id and secret). People's connections stay; with a different client each person connects again.
+
+```sh
+everyapp provider update github
+GITHUB_API_TOKEN=ghp_... everyapp provider update github --from-env
+```
+
+- `<id>`: The provider's id (provider list --all names them): stripe
+- `--from-env`: Read the new key or client from the environment variables of its setting names (GITHUB_API_TOKEN); nothing is asked
+
 ### `everyapp provider list`
 List the API providers the Gateway uses: each key's state and the apps listing it; --all adds the ones it could.
 
