@@ -44,6 +44,8 @@ type BuildSeoParams = {
   titleSuffix?: string;
   ogType?: "website" | "article";
   noindex?: boolean;
+  // A page with a card of its own, drawn by name in the card generator.
+  image?: { path: string; alt: string };
 };
 
 export function buildPageSeo({
@@ -53,17 +55,18 @@ export function buildPageSeo({
   titleSuffix,
   ogType = "website",
   noindex = false,
+  image,
 }: BuildSeoParams) {
   const fullTitle = titleSuffix ? `${title} | ${titleSuffix}` : title;
   const canonicalPath = toCanonicalPath(path);
   const canonicalUrl = toCanonicalUrl(canonicalPath);
-  const titleCard = hasTitleCard(canonicalPath);
+  const titleCard = !image && hasTitleCard(canonicalPath);
   // Scrapers ignore a relative image URL.
   const imageUrl = toCanonicalUrl(
-    titleCard ? `/og${canonicalPath}.png` : OG_IMAGE_PATH,
+    image?.path ?? (titleCard ? `/og${canonicalPath}.png` : OG_IMAGE_PATH),
   );
   // The card generator reads a title card's title from this alt text.
-  const imageAlt = titleCard ? title : OG_IMAGE_ALT;
+  const imageAlt = image?.alt ?? (titleCard ? title : OG_IMAGE_ALT);
 
   return {
     meta: [

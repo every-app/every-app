@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as DocsDotmdRouteImport } from './routes/docs[.]md'
 import { Route as LlmsFullDottxtRouteImport } from './routes/llms-full[.]txt'
 import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
+import { Route as OpenscribeRouteImport } from './routes/openscribe'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
 import { Route as BlogsIndexRouteImport } from './routes/blogs/index'
@@ -40,6 +41,11 @@ const LlmsFullDottxtRoute = LlmsFullDottxtRouteImport.update({
 const LlmsDottxtRoute = LlmsDottxtRouteImport.update({
   id: '/llms.txt',
   path: '/llms.txt',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OpenscribeRoute = OpenscribeRouteImport.update({
+  id: '/openscribe',
+  path: '/openscribe',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/docs.md': typeof DocsDotmdRoute
   '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
+  '/openscribe': typeof OpenscribeRoute
   '/privacy': typeof PrivacyRoute
   '/api/search': typeof ApiSearchRoute
   '/blogs/$': typeof BlogsSplatRoute
@@ -103,6 +110,7 @@ export interface FileRoutesByTo {
   '/docs.md': typeof DocsDotmdRoute
   '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
+  '/openscribe': typeof OpenscribeRoute
   '/privacy': typeof PrivacyRoute
   '/api/search': typeof ApiSearchRoute
   '/blogs/$': typeof BlogsSplatRoute
@@ -118,6 +126,7 @@ export interface FileRoutesById {
   '/docs.md': typeof DocsDotmdRoute
   '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
+  '/openscribe': typeof OpenscribeRoute
   '/privacy': typeof PrivacyRoute
   '/api/search': typeof ApiSearchRoute
   '/blogs/$': typeof BlogsSplatRoute
@@ -134,6 +143,7 @@ export interface FileRouteTypes {
     | '/docs.md'
     | '/llms-full.txt'
     | '/llms.txt'
+    | '/openscribe'
     | '/privacy'
     | '/api/search'
     | '/blogs/$'
@@ -148,6 +158,7 @@ export interface FileRouteTypes {
     | '/docs.md'
     | '/llms-full.txt'
     | '/llms.txt'
+    | '/openscribe'
     | '/privacy'
     | '/api/search'
     | '/blogs/$'
@@ -162,6 +173,7 @@ export interface FileRouteTypes {
     | '/docs.md'
     | '/llms-full.txt'
     | '/llms.txt'
+    | '/openscribe'
     | '/privacy'
     | '/api/search'
     | '/blogs/$'
@@ -177,6 +189,7 @@ export interface RootRouteChildren {
   DocsDotmdRoute: typeof DocsDotmdRoute
   LlmsFullDottxtRoute: typeof LlmsFullDottxtRoute
   LlmsDottxtRoute: typeof LlmsDottxtRoute
+  OpenscribeRoute: typeof OpenscribeRoute
   PrivacyRoute: typeof PrivacyRoute
   ApiSearchRoute: typeof ApiSearchRoute
   BlogsSplatRoute: typeof BlogsSplatRoute
@@ -215,6 +228,13 @@ declare module '@tanstack/react-router' {
       path: '/llms.txt'
       fullPath: '/llms.txt'
       preLoaderRoute: typeof LlmsDottxtRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/openscribe': {
+      id: '/openscribe'
+      path: '/openscribe'
+      fullPath: '/openscribe'
+      preLoaderRoute: typeof OpenscribeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -281,6 +301,7 @@ const rootRouteChildren: RootRouteChildren = {
   DocsDotmdRoute: DocsDotmdRoute,
   LlmsFullDottxtRoute: LlmsFullDottxtRoute,
   LlmsDottxtRoute: LlmsDottxtRoute,
+  OpenscribeRoute: OpenscribeRoute,
   PrivacyRoute: PrivacyRoute,
   ApiSearchRoute: ApiSearchRoute,
   BlogsSplatRoute: BlogsSplatRoute,

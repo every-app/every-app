@@ -25,6 +25,7 @@ const DOC_EXTENSIONS = new Set([".md", ".mdx"]);
 const STATIC_PATHS = new Set([
   "/",
   "/privacy",
+  "/openscribe",
   "/docs",
   "/docs/agent",
   "/blogs",
