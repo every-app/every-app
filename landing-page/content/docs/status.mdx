@@ -1,5 +1,5 @@
 ---
-title: Check your setup with everyapp status
+title: Check your setup
 description: One command shows your Gateway, your apps and what is left to do, with the command for each.
 ---
 
@@ -21,21 +21,21 @@ Access      off
 Release     0.3.0
 TLS         waiting for my-app.apps.yourcompany.com · usually a few minutes
 
-APP     STATUS                     URL                                  DEPLOYED BY          PUBLIC
-crm     ! needs setup              https://crm.apps.yourcompany.com     you@yourcompany.com  4 routes
-my-app  ○ waiting for certificate  https://my-app.apps.yourcompany.com  you@yourcompany.com  1 route
+APP      STATUS                     URL                                   DEPLOYED BY          PUBLIC
+openseo  ! needs setup              https://openseo.apps.yourcompany.com  you@yourcompany.com
+my-app   ○ waiting for certificate  https://my-app.apps.yourcompany.com   you@yourcompany.com
 
-APP  SETTING             WHERE    STATUS
-crm  OPENROUTER_API_KEY  Gateway  ! not set
-crm  CONTEXT_API_KEY     Gateway  ! not set
+APP      SETTING             WHERE    STATUS
+openseo  OPENROUTER_API_KEY  Gateway  ! not set
+openseo  DATAFORSEO_API_KEY  Gateway  ! not set
 
 ! No owner yet, so nobody can sign in
   Apps still deploy. Setup prints a one-time link that creates the owner account.
   Run: everyapp setup
-! crm needs setup
-  OpenRouter: The research agent's model and its web research.
+! openseo needs setup
+  OpenRouter: SAM, prompt suggestions and website research run on it.
   Get it at https://openrouter.ai/settings/keys
-  Run: everyapp configure crm
+  Run: everyapp configure openseo
 ```
 
 The settings table lists only what an app is waiting for. `everyapp status --all` lists every setting.

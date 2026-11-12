@@ -37,7 +37,7 @@ AI meeting notes for Mac. In the app it is called Scribe, and its id is still `t
 
 ## OpenAnalytics (`analytics`)
 
-Web analytics on your own Cloudflare account, with no cookies. It requires the app's own `MAIN_SECRET` (32+ random characters; changing it splits visitor counts). The Gateway's sender (`EMAIL_FROM`) is optional, for emailed reports. Public routes serve the tracking script (`GET /script.js`), the collector (`POST /collect`) and shared dashboards (`/share/**`). The snippet is `<script defer src="https://analytics.<app base domain>/script.js?siteId=<id>"></script>`.
+Web analytics on your own Cloudflare account, with no cookies. Nothing to set: the deploy generates the app's own `MAIN_SECRET` (changing it later splits visitor counts). The Gateway's sender (`EMAIL_FROM`) is optional, for emailed reports. Public routes serve the tracking script (`GET /script.js`), the collector (`POST /collect`) and shared dashboards (`/share/**`). The snippet is `<script defer src="https://analytics.<app base domain>/script.js?siteId=<id>"></script>`.
 
 ## OpenMail (`openmail`)
 
