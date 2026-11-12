@@ -79,6 +79,8 @@ export function MeetingPage({ id, tab }: { id: string; tab?: MeetingTab }) {
   const touched = [keys.meeting(id), keys.allMeetings] as const;
   const appUrl = state?.auth.appUrl?.replace(/\/$/, "") ?? "";
   const shareUrl = (linkId: string) => `${appUrl}/s/${linkId}`;
+  // The meeting's page in the web app, which signs the reader in and checks they may read it.
+  const teamUrl = appUrl ? `${appUrl}/meetings/${id}` : undefined;
 
   return (
     <MeetingScreen
@@ -144,6 +146,12 @@ export function MeetingPage({ id, tab }: { id: string; tab?: MeetingTab }) {
         )
       }
       shareUrl={shareUrl}
+      teamUrl={teamUrl}
+      onCopyTeamLink={async () => {
+        const copied = teamUrl ? await copyLink(teamUrl) : false;
+        if (!copied) notify("Couldn't copy the link.", "error");
+        return copied;
+      }}
     />
   );
 }

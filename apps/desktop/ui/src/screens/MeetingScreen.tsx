@@ -114,6 +114,13 @@ export interface MeetingScreenProps {
   onCopyShareLink?: (linkId: string) => void;
   /** The public URL for a share link id. */
   shareUrl?: (linkId: string) => string;
+  /**
+   * The meeting's page in the web app: the link for teammates. It opens only for a signed-in
+   * member, and only while the meeting is shared with the team, so it is offered only then.
+   */
+  teamUrl?: string;
+  /** Copies `teamUrl`; resolves false when the clipboard refused. */
+  onCopyTeamLink?: () => boolean | void | Promise<boolean | void>;
   /** Uncontrolled starting values, mostly for the playground. */
   defaultTab?: MeetingTab;
   /**
@@ -398,6 +405,8 @@ function SharePopover({
   onRevokeShareLink,
   onCopyShareLink,
   shareUrl,
+  teamUrl,
+  onCopyTeamLink,
   defaultShareOpen,
 }: MeetingScreenProps) {
   const link = meeting.shareLinks[0];
@@ -430,12 +439,32 @@ function SharePopover({
             }
           />
         </div>
+        {team && teamUrl && (
+          <div className="px-4 pb-3">
+            <div className="flex items-center gap-1.5">
+              <input
+                readOnly
+                aria-label="Team link"
+                data-slot="share-url"
+                value={teamUrl}
+                onFocus={(event) => event.currentTarget.select()}
+                className="h-7 min-w-0 flex-1 rounded-md border border-border bg-muted/60 px-2 text-[12px] text-foreground/80 outline-none"
+              />
+              <CopyTeamLink onCopy={onCopyTeamLink} />
+            </div>
+            <p className="mt-1.5 text-[12px] text-muted-foreground">
+              Only signed-in members of {orgName} can open this link. They see
+              the notes and the transcript.
+            </p>
+          </div>
+        )}
         <div className="border-t border-border px-4 py-3">
           <PopoverTitle className="text-[13px] font-medium">
             Public link
           </PopoverTitle>
           <p className="mt-0.5 text-[12px] text-muted-foreground">
-            Anyone with the link can read the notes, not the transcript.
+            Anyone with this link can read the notes and the transcript, without
+            signing in.
           </p>
           {link ? (
             <div className="mt-2.5 flex items-center gap-1.5">
@@ -478,6 +507,30 @@ function SharePopover({
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** "Copy link" for the team link; says "Copied" for a moment once the clipboard has it. */
+function CopyTeamLink({ onCopy }: { onCopy: MeetingScreenProps["onCopyTeamLink"] }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-7 shrink-0"
+      onClick={async () => {
+        const ok = await onCopy?.();
+        if (ok !== false) setCopied(true);
+      }}
+    >
+      {copied ? <Check /> : <Copy />}
+      <span aria-live="polite">{copied ? "Copied" : "Copy link"}</span>
+    </Button>
   );
 }
 

@@ -244,6 +244,8 @@ function MeetingScene({
         onRevokeShareLink={noop}
         onCopyShareLink={noop}
         shareUrl={(id) => `https://talk.every.app/s/${id}`}
+        teamUrl="https://talk.every.app/meetings/5f0c2a9e-7b31-4d6a-9e58-2c41d0b7a913"
+        onCopyTeamLink={() => true}
         {...extra}
       />
     </Frame>
@@ -885,6 +887,19 @@ export const scenes: Scene[] = [
             { id: "q8Zr2kTw4pXn", createdAt: mock.NOW.toISOString() },
           ],
         }}
+        extra={{ defaultShareOpen: true }}
+      />
+    ),
+  },
+  {
+    id: "meeting-share-private",
+    group: "Meeting",
+    label: "Share, private",
+    render: (ctx) => (
+      <MeetingScene
+        phase="after"
+        {...ctx}
+        meeting={{ ...mock.meeting, visibility: "private", shareLinks: [] }}
         extra={{ defaultShareOpen: true }}
       />
     ),

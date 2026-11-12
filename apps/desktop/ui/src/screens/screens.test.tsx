@@ -83,6 +83,61 @@ describe("MeetingScreen", () => {
     expect(screen.getByText("Hello there.")).toBeTruthy();
   });
 
+  it("share: a team link is offered only while the meeting is shared with the team", async () => {
+    const teamUrl = "https://talk.example.com/meetings/m-1";
+    const onCopyTeamLink = vi.fn(() => true);
+    const shared = { ...meeting, visibility: "team" as const };
+    const view = render(
+      <MeetingScreen
+        {...base}
+        phase="after"
+        defaultShareOpen
+        teamUrl={teamUrl}
+        onCopyTeamLink={onCopyTeamLink}
+      />,
+    );
+    // Private: the switch says so and there is no link to hand out.
+    expect(screen.getByText("Only you")).toBeTruthy();
+    expect(screen.queryByLabelText("Team link")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Copy link" })).toBeNull();
+
+    view.rerender(
+      <MeetingScreen
+        {...base}
+        meeting={shared}
+        phase="after"
+        defaultShareOpen
+        teamUrl={teamUrl}
+        onCopyTeamLink={onCopyTeamLink}
+      />,
+    );
+    expect(
+      (screen.getByLabelText("Team link") as HTMLInputElement).value,
+    ).toBe(teamUrl);
+    expect(
+      screen.getByText(/Only signed-in members of Every can open this link/),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+    expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy();
+    expect(onCopyTeamLink).toHaveBeenCalledTimes(1);
+  });
+
+  it("share: a refused clipboard doesn't say Copied", async () => {
+    render(
+      <MeetingScreen
+        {...base}
+        meeting={{ ...meeting, visibility: "team" }}
+        phase="after"
+        defaultShareOpen
+        teamUrl="https://talk.example.com/meetings/m-1"
+        onCopyTeamLink={async () => false}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+    await Promise.resolve();
+    expect(screen.queryByRole("button", { name: "Copied" })).toBeNull();
+  });
+
   it("during: Stop calls back and the transcript drawer opens", () => {
     const onStop = vi.fn();
     render(

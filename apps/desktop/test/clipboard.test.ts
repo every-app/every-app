@@ -8,6 +8,15 @@ describe("clipboard:writeText (Codex V2: Copy link failed in the sandboxed windo
     expect(validArgs("clipboard:writeText", ["http://talk.localhost:8787/s/abc"])).toBe(true);
   });
 
+  it("lets a meeting's team link through, on this Scribe's own address", () => {
+    const team = "https://talk.every.app/meetings/5f0c2a9e-7b31-4d6a-9e58-2c41d0b7a913";
+    expect(validArgs("clipboard:writeText", [team])).toBe(true);
+    expect(isCopyableUrl(team, "https://talk.every.app")).toBe(true);
+    const local = "http://talk.localhost:8787/meetings/5f0c2a9e-7b31-4d6a-9e58-2c41d0b7a913";
+    expect(isCopyableUrl(local, "http://talk.localhost:8787")).toBe(true);
+    expect(normalizedLink(team)).toBe(team);
+  });
+
   it("refuses anything that isn't one short plain link", () => {
     for (const args of [
       [],
