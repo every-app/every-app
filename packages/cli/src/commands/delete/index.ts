@@ -177,6 +177,7 @@ export async function removeApp({
     await updateAccessIfOn(
       {
         cf,
+        createCf,
         out,
         accountId: connection.accountId,
         gatewayUrl: connection.gatewayUrl,

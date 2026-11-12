@@ -503,7 +503,10 @@ describe("applyGateway", () => {
           confirm: async (question, context = []) => (asked.push(question, ...context), false),
         }),
       ).rejects.toMatchObject({ code: "CANCELLED" });
-      expect(asked.join("\n")).toContain("If it runs a newer release (an upgrade that stopped before recording itself), this puts an older one back.");
+      // The live version's own deploy message says it is 0.2.0, newer than this run's.
+      expect(asked[1]).toMatch(
+        /^The Gateway's live version changed: dev@example\.com deployed “everyapp \S+ gateway 0\.2\.0 \(upgrade\)” with cf, \S+ ago\.$/,
+      );
       expect(account.deploys).toHaveLength(deploys);
     } finally {
       await middle.cleanup();
@@ -651,11 +654,12 @@ describe("applyGateway", () => {
       await deployGateway({
         interactive: true,
         confirm: async (question, context = []) => (asked.push(question, ...context), true),
+        // Setup's name for a checkout's release that isn't exactly 0.2.0's.
+        releaseName: "commit 6236fee4",
       });
       expect(asked).toEqual([
-        "Replace it with 0.2.0?",
-        "The Gateway's live version wasn't deployed by everyapp (dashboard, API, or an interrupted deploy).",
-        expect.stringMatching(/^If it runs a newer release .* Cloudflare may ask to confirm again\.$/),
+        "Replace it with commit 6236fee4?",
+        expect.stringMatching(/^The Gateway's live version changed: someone deployed it, \d+d ago\.$/),
       ]);
       expect(migrated()).toBe(true);
     });

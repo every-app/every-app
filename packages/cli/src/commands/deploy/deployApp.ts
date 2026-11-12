@@ -792,7 +792,15 @@ async function deploySteps(
   // them or the hostnames they are served on.
   if (hostsChanged || publicSurfaceKey(plan.previousManifest) !== publicSurfaceKey(manifest)) {
     await updateAccessIfOn(
-      { cf, out, accountId, gatewayUrl, worker: names.worker, hosted: install.deploymentMode === "hosted" },
+      {
+        cf,
+        createCf: options.createCf,
+        out,
+        accountId,
+        gatewayUrl,
+        worker: names.worker,
+        hosted: install.deploymentMode === "hosted",
+      },
       { what: `${manifest.id}'s public routes`, data: { appId: manifest.id } },
     );
   }

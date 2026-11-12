@@ -117,6 +117,11 @@ export interface ApplyGatewayOptions {
   interactive: boolean;
   /** Asks that person before replacing a version everyapp didn't record (tests). */
   confirm?: Confirm;
+  /**
+   * The release as that question names it, when the caller knows more than
+   * its version: setup's `releaseName` ("commit 6236fee4" for a checkout).
+   */
+  releaseName?: string;
   cliVersion: string;
   /** Gateway settings sent with the upload (tests; `everyapp secret set` changes the live Worker instead). */
   stagedSecrets?: Record<string, string>;
@@ -417,13 +422,10 @@ export async function applyGateway(
           recordedVersionIds: [install?.liveVersionId],
           interactive: options.interactive,
           confirm: options.confirm,
-          change: {
-            question: `Replace it with ${release.manifest.version}?`,
-            // Even an upgrade: an upgrade to a newer release yet may have
-            // stopped before recording itself.
-            effect:
-              "If it runs a newer release (an upgrade that stopped before recording itself), this puts an older one back.",
-          },
+          // Who changed it says when it is an upgrade that stopped before
+          // recording itself ("deployed “everyapp 0.4.0 gateway 0.4.0
+          // (upgrade)”"), so a newer release isn't replaced unknowingly.
+          change: { question: `Replace it with ${options.releaseName ?? release.manifest.version}?` },
         });
       }
       await lease.check();

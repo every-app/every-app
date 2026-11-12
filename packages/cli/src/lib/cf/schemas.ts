@@ -77,6 +77,16 @@ export const KvNamespaceListOutput = z.array(KvNamespaceOutput);
 const Deployment = z.looseObject({
   id: z.string().nullish(),
   created_on: z.string().nullish(),
+  /** Who made it, and with what: `dash`, `api`, `wrangler`, `cf_cli`. */
+  author_email: z.string().nullish(),
+  source: z.string().nullish(),
+  annotations: z
+    .looseObject({
+      /** `deployment`, `upload`, `secret`, `rollback`. */
+      "workers/triggered_by": z.string().nullish(),
+      "workers/message": z.string().nullish(),
+    })
+    .nullish(),
   versions: z.array(
     z.looseObject({ version_id: z.string(), percentage: z.number() }),
   ),

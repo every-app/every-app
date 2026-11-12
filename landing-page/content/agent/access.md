@@ -20,7 +20,7 @@ One fixed recipe, safe to run again any time. It changes only what differs and l
 
 It needs a login with Access: Apps and Policies and Access: Organizations, Identity Providers, and Groups (edit) (`ACCESS_PERMISSION_MISSING`).
 
-While Access is on, `deploy` and `delete` run this recipe themselves when they changed an app's public routes, and `update` runs it every time. If that fails (a login that can't edit Zero Trust), the command still succeeds and warns `ACCESS_UPDATE_FAILED`: run `everyapp access on`. Run it again yourself after that warning, after a browser install that changed public routes, and after changing Access by hand. Never for an invitation.
+While Access is on, `deploy` and `delete` run this recipe themselves when they changed an app's public routes, and `update` runs it every time. If that fails (a login that can't edit Zero Trust), the command still succeeds and warns `ACCESS_UPDATE_FAILED`: run its `data.rerun`, `everyapp access on --gateway <url>`. Run it again yourself after that warning, after a browser install that changed public routes, and after changing Access by hand. Never for an invitation.
 
 `everyapp access off` removes the three settings, then the two applications (asks; `--yes`); the team and the policy stay, and an unattended `setup` won't turn it back on. `everyapp access show` reports the team, whether the policy asks the Gateway, the sign-in methods, the applications and which settings the Worker has, without changing anything. `everyapp status` shows Access on or off.
 

@@ -521,7 +521,15 @@ export async function installGateway({
   // own paths and every app's public routes stay let through.
   if (updateOnly) {
     await updateAccessIfOn(
-      { cf, out, accountId: account.id, gatewayUrl, worker: gatewayNamesHere.worker, hosted: mode === "hosted" },
+      {
+        cf,
+        createCf: deps.createCf,
+        out,
+        accountId: account.id,
+        gatewayUrl,
+        worker: gatewayNamesHere.worker,
+        hosted: mode === "hosted",
+      },
       { what: "the Gateway and its apps' public routes" },
     );
   }
@@ -616,7 +624,7 @@ function accessLeftOff(out: EventSink, reason: AccessOffReason): void {
  * running setup again picks up at Access, and --no-access is the way out.
  */
 async function runAccessOn(
-  { cf, accountId, gatewayUrl, flags, out, deps }: AccessFromSetup,
+  { accountId, gatewayUrl, flags, out, deps }: AccessFromSetup,
   { interactive }: { interactive: boolean },
 ): Promise<boolean> {
   const orLeaveItOff = `${CLI} setup --no-access leaves Access off (not recommended).`;
@@ -626,7 +634,8 @@ async function runAccessOn(
       out: stepInsteadOfDone(out, "setup.access"),
       interactive,
       team: flags.team,
-      createCf: () => cf,
+      // Per account: it finds the Gateway again in every account the login sees.
+      createCf: deps.createCf,
       askTeam: deps.askTeam,
     });
     return true;
@@ -900,6 +909,7 @@ async function deployOrRepairGateway({
       forceDns: flags["force-dns"],
       allowDowngrade: flags.downgrade,
       checkedDomains,
+      releaseName: name,
       sleep: deps.seams?.sleep,
       leaseWaitMs: deps.seams?.leaseWaitMs,
       certificates: deps.seams?.certificates,

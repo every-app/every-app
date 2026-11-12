@@ -36,7 +36,7 @@ The account has no Zero Trust team and nobody can be asked for a name. Ask the p
 ### ACCESS_TOO_MANY_PUBLIC_ROUTES
 More public paths on one host than Access takes; the rest stay behind Access.
 ### ACCESS_UPDATE_FAILED
-Warning: a `deploy`, `delete` or `update` couldn't bring Cloudflare Access up to date (often a login that can't edit Zero Trust). The command itself succeeded; `data.cause` is the error's code. Run `everyapp access on`.
+Warning: a `deploy`, `delete` or `update` couldn't bring Cloudflare Access up to date (often a login that can't edit Zero Trust). The command itself succeeded; `data.cause` is the error's code. Run `data.rerun`: `everyapp access on --gateway <url>`.
 ### ACCOUNT_NOT_ACCESSIBLE
 `--account-id` (or `CLOUDFLARE_ACCOUNT_ID`) isn't an account this login can use. Pass one the message lists, or `everyapp login` as someone else.
 ### ACCOUNT_REQUIRED

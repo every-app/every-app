@@ -490,6 +490,8 @@ export class FakeCloudflare {
   private counter = 0;
   /** When each Worker's live version went out (`workers deployments list`'s created_on). */
   readonly deployedAt = new Map<string, string>();
+  /** Each version a deploy made, with its `--message`. */
+  private readonly versionMessages = new Map<string, string>();
 
   /** A clock that only moves forward, one second per tick, from mid-October 2026. */
   clock(): string {
@@ -646,13 +648,24 @@ export class FakeCloudflare {
         if (!worker) {
           return cfError("This Worker does not exist on your account. [code: 10007]");
         }
+        // Who made the live version, as cf says: cf itself for a deploy or a
+        // secret change here, nothing known for one a test put there.
+        const versionId = worker.versions.at(-1)!;
+        const secretChange = versionId.includes("-api-");
+        const deployed = this.versionMessages.get(versionId);
+        const madeByCf = secretChange || deployed !== undefined;
         return {
           stdout: JSON.stringify({
             deployments: [
               {
                 id: "deployment",
                 created_on: this.deployedAt.get(flag(call.args, "--worker")!) ?? "2026-10-12T00:00:00Z",
-                versions: [{ version_id: worker.versions.at(-1), percentage: 100 }],
+                ...(madeByCf ? { author_email: "dev@example.com", source: "cf_cli" } : {}),
+                annotations: {
+                  "workers/triggered_by": secretChange ? "secret" : "deployment",
+                  ...(deployed ? { "workers/message": deployed } : {}),
+                },
+                versions: [{ version_id: versionId, percentage: 100 }],
               },
             ],
           }),
@@ -2086,6 +2099,7 @@ export class FakeCloudflare {
       return cfError(`Queue "${name}" does not exist. To create it, run: wrangler queues create ${name}`);
     }
     const versionId = `${workerName}-version-${(this.counter += 1)}`;
+    this.versionMessages.set(versionId, flag(call.args, "--message") ?? "");
     this.workers.set(workerName, {
       versions: [...(existing?.versions ?? []), versionId],
       config,

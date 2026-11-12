@@ -31,9 +31,10 @@ import { gatewayNameOf } from "@every-app/perimeter/manifest";
 import { CLI, thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { confirmAtTerminal, confirmOrCancel, type Confirm } from "@/lib/output/prompt";
+import { roughly } from "@/lib/output/time";
 import { CfError, isCfError, isNetworkDrop } from "./errors";
 import type { CfRunner } from "./runner";
-import { getWorkerDeployment } from "./workers";
+import { DeploymentTrigger, getWorkerDeployment, type WorkerDeployment } from "./workers";
 
 const DEPLOY_TIMEOUT_MS = 900_000;
 /** The waits before each new try of an upload the network dropped. */
@@ -279,10 +280,37 @@ export async function assertReplaceable({
   }
   await confirmOrCancel(confirm, change.question, {
     context: [
-      `${withCapitalThe(shownAs)}'s live version wasn't deployed by everyapp (dashboard, API, or an interrupted deploy).`,
-      [change.effect, "Cloudflare may ask to confirm again."].filter(Boolean).join(" "),
+      `${withCapitalThe(shownAs)}'s live version changed: ${whoChanged(serving)}.`,
+      ...(change.effect ? [change.effect] : []),
     ],
   });
+}
+
+/** What made a version, as Cloudflare names it (`source`), ending a sentence. */
+const MADE_WITH: Record<string, string> = {
+  dash: "in the dashboard",
+  api: "through the API",
+  wrangler: "with Wrangler",
+  cf_cli: "with cf",
+  terraform: "with Terraform",
+};
+
+/**
+ * Who made the live version, how and when, as far as Cloudflare says:
+ * "ben@example.com changed a secret with cf, 6h ago".
+ */
+export function whoChanged(serving: WorkerDeployment, now = Date.now()): string {
+  const did =
+    serving.triggeredBy === DeploymentTrigger.Secret
+      ? "changed a secret"
+      : serving.triggeredBy === DeploymentTrigger.Rollback
+        ? "rolled it back"
+        : serving.message
+          ? `deployed “${serving.message}”`
+          : "deployed it";
+  const how = serving.source ? MADE_WITH[serving.source] : undefined;
+  const when = serving.deployedAt === null ? null : `${roughly(now - serving.deployedAt)} ago`;
+  return [`${serving.author ?? "someone"} ${did}${how ? ` ${how}` : ""}`, when].filter(Boolean).join(", ");
 }
 
 /** Where an account subscribes to Workers Paid. */

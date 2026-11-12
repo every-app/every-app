@@ -28,11 +28,25 @@ export async function workerCustomDomains(
   );
 }
 
-interface WorkerDeployment {
+/** Why Cloudflare made a version, where everyapp tells them apart (`workers/triggered_by`). */
+export enum DeploymentTrigger {
+  Secret = "secret",
+  Rollback = "rollback",
+}
+
+export interface WorkerDeployment {
   /** The version serving the largest share of traffic. */
   versionId: string | null;
   /** When that deployment went out (ms), when cf says. */
   deployedAt: number | null;
+  /** Who made it, as Cloudflare says. */
+  author: string | null;
+  /** What made it: `dash`, `api`, `wrangler`, `cf_cli`. */
+  source: string | null;
+  /** Why: `deployment`, `upload`, `secret`, `rollback`. */
+  triggeredBy: string | null;
+  /** The deploy's message (everyapp's: "everyapp 0.3.0 gateway 0.3.0 (upgrade)"). */
+  message: string | null;
 }
 
 /**
@@ -74,6 +88,10 @@ export async function getWorkerDeployment(
   return {
     versionId: version?.version_id ?? null,
     deployedAt: newest?.created_on ? Date.parse(newest.created_on) : null,
+    author: newest?.author_email ?? null,
+    source: newest?.source ?? null,
+    triggeredBy: newest?.annotations?.["workers/triggered_by"] ?? null,
+    message: newest?.annotations?.["workers/message"] ?? null,
   };
 }
 

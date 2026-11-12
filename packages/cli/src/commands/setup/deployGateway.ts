@@ -143,6 +143,7 @@ export async function deployGatewayRelease({
   | "forceDns"
   | "allowDowngrade"
   | "confirm"
+  | "releaseName"
   | "sleep"
   | "leaseWaitMs"
   | "deploymentMode"

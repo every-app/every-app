@@ -379,12 +379,26 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
 export async function updateAccessIfOn(
   {
     cf,
+    createCf,
     out,
     accountId,
     gatewayUrl,
     worker,
     hosted,
-  }: { cf: CfRunner; out: EventSink; accountId: string; gatewayUrl: string; worker: string; hosted: boolean },
+  }: {
+    cf: CfRunner;
+    /**
+     * cf per account, as the command made them: `access on` finds the
+     * Gateway again in every account the login sees, and `cf` answers for
+     * one account only.
+     */
+    createCf?: (accountId?: string) => CfRunner;
+    out: EventSink;
+    accountId: string;
+    gatewayUrl: string;
+    worker: string;
+    hosted: boolean;
+  },
   { what, data }: { what: string; data?: Record<string, unknown> },
 ): Promise<void> {
   if (hosted) return;
@@ -412,7 +426,7 @@ export async function updateAccessIfOn(
       flags: { json: true, "account-id": accountId, gateway: gatewayUrl },
       out: inner,
       interactive: false,
-      createCf: () => cf,
+      createCf,
     });
   } catch (error) {
     out.emit({ type: "step", step, status: "skip" });
@@ -421,7 +435,11 @@ export async function updateAccessIfOn(
       code: "ACCESS_UPDATE_FAILED",
       step,
       message: `Cloudflare Access wasn't updated for ${what}\n${errorMessage(error).split("\n")[0]}`,
-      data: { ...data, cause: error instanceof EveryAppError ? error.code : null, rerun: `${CLI} access on` },
+      data: {
+        ...data,
+        cause: error instanceof EveryAppError ? error.code : null,
+        rerun: `${CLI} access on --gateway ${gatewayUrl}`,
+      },
     });
     return;
   }

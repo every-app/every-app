@@ -190,12 +190,17 @@ function appDir(manifest: EveryAppCliManifest): string {
   return dir;
 }
 
-async function deploy(dir: string, manifest: EveryAppCliManifest): Promise<string> {
+async function deploy(
+  dir: string,
+  manifest: EveryAppCliManifest,
+  options: Partial<Parameters<typeof deployApp>[0]> = {},
+): Promise<string> {
   await deployApp({
     cwd: dir,
     manifest,
     out: out(),
     createCf: () => account.cf,
+    ...options,
     installDeps: async () => undefined,
     reconcile: {
       ...seams,
@@ -521,6 +526,34 @@ describe("access on and the apps' public routes", { timeout: 30_000 }, () => {
     await remove("crm");
     expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`]);
     expect(accessSteps()).toContainEqual(expect.objectContaining({ status: "ok", data: { appId: "crm", changed: true } }));
+  });
+
+  it("finds the Gateway again among several, when the login sees another account too", async () => {
+    await seedPeople();
+    await on({ team: "acme" });
+    // A second Gateway in this account, and a second account with none.
+    account.createDatabase("every-app-gateway-demo");
+    const other = new FakeCloudflare();
+    const OTHER_ID = "fedcba9876543210fedcba9876543210";
+    account.cf.override(["auth", "whoami"], {
+      stdout: JSON.stringify({
+        authenticated: true,
+        email: "dev@example.com",
+        accounts: [
+          { id: ACCOUNT_ID, name: "Acme" },
+          { id: OTHER_ID, name: "Other" },
+        ],
+      }),
+    });
+    events = [];
+
+    await deploy(appDir(CRM), CRM, {
+      gateway: `https://${HOST}`,
+      createCf: (accountId) => (accountId === OTHER_ID ? other.cf : account.cf),
+    });
+
+    expect(accessWarnings()).toEqual([]);
+    expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`, `crm.${HOST}`]);
   });
 
   it("does nothing about Access on a deploy while Access is off", async () => {
