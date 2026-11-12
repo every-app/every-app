@@ -6,3 +6,5 @@ pnpm-lock.yaml
 routeTree.gen.ts
 drizzle/
 .cloudflare/
+# Copied from the shadcn package, kept as it came
+src/client/styles/shadcn.css

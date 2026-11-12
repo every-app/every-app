@@ -1,9 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import {
-  GatewayRefusalError,
-  gatewayUrl,
-  listMembers,
-} from "@every-app/sdk/server";
+import { GatewayRefusalError, listMembers } from "@every-app/sdk/server";
 import type { EveryAppManifest } from "@every-app/sdk";
 import { ensureUserMiddleware } from "@every-app/sdk/tanstack-start";
 import { env } from "cloudflare:workers";
@@ -41,8 +37,6 @@ export const getHome = createServerFn()
         tools: tools.names,
       },
       members: await whoCanOpen(),
-      // The way back: the Gateway, or `everyapp dev`'s launcher.
-      launcher: gatewayUrl(env),
     };
   });
 

@@ -80,6 +80,14 @@ repository beside it.
   tools), `src/db/index.ts`, `src/env.d.ts`, `vite.config.ts`,
   `drizzle.config.ts`, `vitest.config.ts`, `src/routes/__root.tsx`,
   `src/router.tsx`.
+- The look, keep and build with: `src/client/components/ui/` (shadcn's
+  `base-nova` components on Base UI, copied in as files, the ones the open
+  apps use), `src/client/components/AppShell.tsx` (the frame every page sits
+  in) and `PageHeader.tsx`, `src/client/styles/app.css` (the colour tokens,
+  light and dark), `src/client/lib/theme.ts` (the light, dark or system
+  pick). Add a component with `pnpm dlx shadcn@4.21.4 add <name>`
+  (`components.json` keeps the style). No hand-written `.card` or `.button`
+  classes, no raw colours, no font of the app's own.
 - The example, which the app outgrows: `src/routes/index.tsx` (the page),
   `src/serverFunctions/` (what it calls), `src/server/todos.ts` and
   `src/server/todos.test.ts` (the queries and a test that two people's rows

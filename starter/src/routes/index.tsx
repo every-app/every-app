@@ -1,6 +1,13 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { Trash2 } from "lucide-react";
 import { Fragment, useState, type ReactNode } from "react";
-import { type ThemePreference, useThemePreference } from "@/lib/theme";
+import { AppShell } from "@/client/components/AppShell";
+import { CopyButton } from "@/client/components/CopyButton";
+import { PageHeader } from "@/client/components/PageHeader";
+import { Alert, AlertDescription } from "@/client/components/ui/alert";
+import { Button } from "@/client/components/ui/button";
+import { Checkbox } from "@/client/components/ui/checkbox";
+import { Input } from "@/client/components/ui/input";
 import { getHome } from "@/serverFunctions/home";
 import {
   createTodo,
@@ -23,7 +30,7 @@ export const Route = createFileRoute("/")({
 
 function Home() {
   const { home, todos } = Route.useLoaderData();
-  const { user, name, allowed, members, launcher } = home;
+  const { user, name, allowed, members } = home;
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -40,63 +47,56 @@ function Home() {
   }
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
-      <header className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold">{name}</h1>
-        <div className="flex items-baseline gap-4">
-          <ThemePicker gatewayUrl={launcher} />
-          <a
-            href={launcher}
-            className="text-sm text-blue-700 underline dark:text-blue-400"
-          >
-            All apps
-          </a>
-        </div>
-      </header>
+    <AppShell>
+      <PageHeader
+        title={name}
+        description={
+          <>
+            A todo list, for now.
+            {typeof members === "number" && <> {whoCanOpen(members)}</>}
+          </>
+        }
+      />
 
-      <section className={card}>
-        <h2 className={heading}>This app</h2>
-        <p>
-          A todo list, for now. To make it something else, open its folder in a
-          coding agent (Claude Code, Codex or Cursor) and say what it should
-          become:
-        </p>
-        <blockquote className="border-l-2 border-neutral-300 pl-3 text-neutral-700 dark:border-neutral-700 dark:text-neutral-300">
-          Turn this into a shared todo list for my household, with separate
-          lists for groceries and chores.
-        </blockquote>
+      <Section
+        title="Make it something else"
+        description="Open this app's folder in a coding agent (Claude Code, Codex or Cursor) and say what it should become:"
+      >
+        <div
+          className={`${panel} flex items-start justify-between gap-3 px-5 py-4`}
+        >
+          <p className="min-w-0">{PROMPT}</p>
+          <CopyButton value={PROMPT} successMessage="Copied the prompt." />
+        </div>
         <p className={note}>
           The agent already knows EveryApp. The folder carries the{" "}
           <code>{BUILD_SKILL}</code> skill: how to build one, with patterns from
           real apps.
         </p>
-        {typeof members === "number" && (
-          <p className={note}>{whoCanOpen(members)}</p>
-        )}
-      </section>
+      </Section>
 
-      <section className={card}>
-        <h2 className={heading}>You</h2>
-        <p className="font-medium">
-          {user.email}
-          <span className="text-neutral-500">
-            {" "}
-            · {user.orgRole} of {user.orgId}
-          </span>
-        </p>
-        <p className={note}>
-          You signed in at the Gateway. It tells this app who you are, signed so
-          the app can trust it. The app has no login of its own.
-        </p>
-      </section>
+      <Section
+        title="You"
+        description="You signed in at the Gateway. It tells this app who you are, signed so the app can trust it. The app has no login of its own."
+      >
+        <div className={`${panel} px-5 py-4`}>
+          <p className="font-medium">{user.email}</p>
+          <p className={note}>
+            {user.orgRole} of {user.orgId}
+          </p>
+        </div>
+      </Section>
 
-      <section className={card}>
-        <h2 className={heading}>What this app was allowed</h2>
-        <p className={note}>
-          Listed in <code>everyapp.config.ts</code>. The app gets only what that
-          file lists; the Gateway refuses the rest.
-        </p>
-        <dl className="flex flex-col gap-3 text-sm sm:grid sm:grid-cols-[max-content_minmax(0,1fr)] sm:gap-x-4 sm:gap-y-2">
+      <Section
+        title="What this app was allowed"
+        description={
+          <>
+            Listed in <code>everyapp.config.ts</code>. The app gets only what
+            that file lists; the Gateway refuses the rest.
+          </>
+        }
+      >
+        <dl className={`${panel} divide-y divide-border text-sm`}>
           <Allowed term="resources" items={allowed.resources}>
             Storage of its own; the todos live in the database.
           </Allowed>
@@ -129,10 +129,9 @@ function Home() {
             tools; the assistant asks before one that deletes.
           </Allowed>
         </dl>
-      </section>
+      </Section>
 
-      <section className={card}>
-        <h2 className={heading}>Todos</h2>
+      <Section title="Todos">
         <form
           className="flex gap-2"
           onSubmit={(event) => {
@@ -143,88 +142,91 @@ function Home() {
             void change(() => createTodo({ data: { title: next } }));
           }}
         >
-          <input
+          <Input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             placeholder="New todo"
             aria-label="New todo"
-            className="flex-1 rounded-lg border border-neutral-300 bg-transparent px-3 py-2 dark:border-neutral-700"
+            className="bg-card"
           />
-          <button
-            type="submit"
-            className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white"
-          >
-            Add
-          </button>
+          <Button type="submit">Add</Button>
         </form>
         {error && (
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
-        <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
-          {todos.map((todo) => (
-            <li key={todo.id} className="flex items-center gap-3 py-2">
-              <input
-                type="checkbox"
-                checked={todo.completed}
-                aria-label={`Done: ${todo.title}`}
-                onChange={(event) =>
-                  change(() =>
-                    updateTodo({
-                      data: { id: todo.id, completed: event.target.checked },
-                    }),
-                  )
-                }
-                className="size-4 accent-blue-600"
-              />
-              <span
-                className={
-                  todo.completed
-                    ? "flex-1 text-neutral-500 line-through"
-                    : "flex-1"
-                }
-              >
-                {todo.title}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  change(() => deleteTodo({ data: { id: todo.id } }))
-                }
-                className="text-sm text-neutral-500 hover:text-red-600"
-              >
-                Delete
-              </button>
-            </li>
-          ))}
-        </ul>
-        {todos.length === 0 && (
+        {todos.length === 0 ? (
           <p className={note}>
             Nothing yet. Add one above, or ask your AI client to.
           </p>
+        ) : (
+          <ul className={`${panel} divide-y divide-border`}>
+            {todos.map((todo) => (
+              <li
+                key={todo.id}
+                className="flex items-center gap-3 py-2 pr-2 pl-5"
+              >
+                <Checkbox
+                  checked={todo.completed}
+                  aria-label={`Done: ${todo.title}`}
+                  onCheckedChange={(completed) =>
+                    change(() =>
+                      updateTodo({ data: { id: todo.id, completed } }),
+                    )
+                  }
+                />
+                <span
+                  className={
+                    todo.completed
+                      ? "min-w-0 flex-1 text-muted-foreground line-through"
+                      : "min-w-0 flex-1"
+                  }
+                >
+                  {todo.title}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Delete: ${todo.title}`}
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() =>
+                    change(() => deleteTodo({ data: { id: todo.id } }))
+                  }
+                >
+                  <Trash2 />
+                </Button>
+              </li>
+            ))}
+          </ul>
         )}
-      </section>
-    </main>
+      </Section>
+    </AppShell>
   );
 }
 
-/** Light, dark or system; the pick carries to the launcher and every app. */
-function ThemePicker({ gatewayUrl }: { gatewayUrl: string }) {
-  const [pick, setPick] = useThemePreference(gatewayUrl);
+/** A titled part of the page: what it is, then its content. */
+function Section({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <select
-      value={pick}
-      onChange={(event) => setPick(event.target.value as ThemePreference)}
-      aria-label="Theme"
-      className="rounded-md border border-neutral-300 bg-transparent px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-950"
-    >
-      <option value="system">System</option>
-      <option value="light">Light</option>
-      <option value="dark">Dark</option>
-    </select>
+    <section className="space-y-3">
+      <div className="space-y-1">
+        <h2 className="text-base font-semibold tracking-tight">{title}</h2>
+        {description ? <p className={note}>{description}</p> : null}
+      </div>
+      {children}
+    </section>
   );
 }
 
-/** One line of the Allowed card: a manifest field, what it lists, and what that means. */
+/** One row of the Allowed panel: a manifest field, what it lists, and what that means. */
 function Allowed({
   term,
   items,
@@ -237,18 +239,20 @@ function Allowed({
   children: ReactNode;
 }) {
   return (
-    // One block on a phone; on wider screens the dt and dd join the grid.
-    <div className="sm:contents">
-      <dt className="font-mono text-neutral-500">{term}</dt>
-      <dd className="min-w-0">
+    // One block on a phone; on wider screens the term sits beside the rest.
+    <div className="flex flex-col gap-1 px-5 py-4 sm:flex-row sm:gap-6">
+      <dt className="shrink-0 font-mono text-muted-foreground sm:w-28">
+        {term}
+      </dt>
+      <dd className="min-w-0 space-y-0.5">
         <p>
           {items.length === 0 ? (
-            <span className="text-neutral-500">none</span>
+            <span className="text-muted-foreground">none</span>
           ) : (
             items.map((item) => (
               <Fragment key={item}>
                 {link ? (
-                  <a href={item} className="underline">
+                  <a href={item} className="underline underline-offset-3">
                     {item}
                   </a>
                 ) : (
@@ -258,7 +262,7 @@ function Allowed({
             ))
           )}
         </p>
-        <p className="text-neutral-500">{children}</p>
+        <p className="text-muted-foreground">{children}</p>
       </dd>
     </div>
   );
@@ -278,8 +282,11 @@ function whoCanOpen(members: number): string {
 // CLI ships.
 const BUILD_SKILL = "build-every-app";
 
-const card =
-  "flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800";
-const heading =
-  "text-xs font-semibold uppercase tracking-wide text-neutral-500";
-const note = "text-sm text-neutral-500";
+// What the page suggests saying to a coding agent.
+const PROMPT =
+  "Turn this into a shared todo list for my household, with separate lists for groceries and chores.";
+
+// A white panel on the page's grey, as OpenCRM's lists and settings have.
+const panel =
+  "overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-xs";
+const note = "text-sm text-muted-foreground";

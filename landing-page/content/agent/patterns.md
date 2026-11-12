@@ -14,7 +14,7 @@ A look-up table: find the job, open the file, copy it. `starter/` is the templat
 | Identity on a public route | `open-analytics/src/lib/edge/collector/collect.ts`; `open-crm/src/server/features/tracking/trackingRoutes.ts` | `getEveryAppUser()` is `null` for anyone not signed in; never assume a member |
 | Organization-wide rows | `open-crm/src/middleware/ensure-user/everyApp.ts`; `open-mail/workers/everyapp/identity.ts` | Key shared rows on the organization from the token, never on a row the app wrote |
 | Roles and admin-only actions | `open-crm/src/server/auth/org-gate.ts` | `isAdmin(user)` from `@every-app/sdk/server`; no role table of the app's own |
-| The way back to the Gateway | `starter/src/serverFunctions/home.ts`; `open-crm/src/client/components/Sidebar.tsx` | `gatewayUrl(env)`; a sidebar's first row is a muted "‹ EveryApp" link |
+| The way back to the Gateway | `starter/src/serverFunctions/gateway.ts`, `starter/src/client/components/AppShell.tsx`; `open-crm/src/client/components/Sidebar.tsx` | `gatewayUrl(env)`; a sidebar's first row is a muted "‹ EveryApp" link |
 
 ## Public routes
 
@@ -93,7 +93,8 @@ A look-up table: find the job, open the file, copy it. `starter/` is the templat
 | Pattern | Copy from | Note |
 | --- | --- | --- |
 | No cookies | `packages/sdk/src/server/everyApp.ts` | The Gateway strips them; keep preferences in `localStorage` |
-| Light, dark or system | `starter/src/lib/theme.ts` | Read the shared `everyapp-theme` cookie first |
+| Light, dark or system | `starter/src/client/lib/theme.ts`, `starter/src/client/lib/themeCookie.ts` | Read the shared `everyapp-theme` cookie first |
+| A page that looks like an EveryApp app | `starter/src/routes/index.tsx`, `starter/src/client/components/AppShell.tsx`, `starter/src/client/components/ui/button.tsx` | `AppShell`, `PageHeader`, the components in `src/client/components/ui/` and the colour tokens of `src/client/styles/app.css`; `pnpm dlx shadcn@4.21.4 add <name>` for one that isn't there |
 | Security headers | `open-crm/src/server.ts` | `frame-ancestors 'self'` and a nonce per response |
 | Tests over queries | `starter/src/server/todos.test.ts` | In-memory SQLite with the app's migrations; two people's rows stay apart |
 | Two organizations kept apart | `open-crm/src/server/testing/testDb.ts`, `open-crm/src/server/features/mailbox/repositories/isolation.test.ts` | Seed two, assert neither sees the other |

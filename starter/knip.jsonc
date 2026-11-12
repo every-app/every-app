@@ -5,6 +5,10 @@
     "src/entry.worker.ts",
     "src/router.tsx",
     "src/routes/**/*.{ts,tsx}",
+    // shadcn components are copied in whole; pages use only some of them.
+    "src/client/components/ui/**",
+    // Its BackButton is for the first page one level down.
+    "src/client/components/PageHeader.tsx",
   ],
   "project": ["**/*.{ts,tsx}", "!src/routeTree.gen.ts"],
   "ignoreDependencies": [
@@ -14,7 +18,9 @@
     "cloudflare",
     // The SDK's required peer dependency.
     "jose",
-    // Loaded by @tailwindcss/vite from src/styles/app.css.
+    // Loaded by @tailwindcss/vite from src/client/styles/app.css.
     "tailwindcss",
+    // Imported by app.css.
+    "tw-animate-css",
   ],
 }
