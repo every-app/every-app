@@ -269,10 +269,16 @@ function AccountRow({ account, onSignOut }: SettingsScreenProps) {
 /** Each permission's name and one line about it, in Settings and in onboarding alike. */
 export const permissionInfo: Record<
   PermissionKind,
-  { icon: ComponentType<{ className?: string }>; title: string; detail?: string }
+  {
+    icon: ComponentType<{ className?: string }>;
+    title: string;
+    detail?: string;
+    /** macOS can't report it: until a recording proves it, Settings only opens its pane. */
+    unreadable?: boolean;
+  }
 > = {
   mic: { icon: Mic, title: "Microphone" },
-  systemAudio: { icon: Volume2, title: "System audio", detail: "Record meeting participants' audio." },
+  systemAudio: { icon: Volume2, title: "System audio", detail: "Record meeting participants' audio.", unreadable: true },
   notifications: { icon: Bell, title: "Notifications", detail: "Get notified before meetings." },
 };
 
@@ -281,12 +287,15 @@ export function PermissionControl({
   onGrant,
   onOpenSystemSettings,
   stuck = false,
+  unreadable = false,
 }: {
   status: PermissionStatus;
   onGrant?: () => void;
   onOpenSystemSettings?: () => void;
   /** Asking didn't turn it on: offer System Settings instead of asking again. */
   stuck?: boolean;
+  /** macOS can't report it, so don't claim it's off: just open its pane. */
+  unreadable?: boolean;
 }) {
   if (status === "granted") {
     return (
@@ -294,6 +303,13 @@ export function PermissionControl({
         <span className="size-1.5 rounded-full bg-success" />
         Allowed
       </span>
+    );
+  }
+  if (unreadable && status !== "denied" && onOpenSystemSettings) {
+    return (
+      <Button size="sm" variant="outline" onClick={onOpenSystemSettings}>
+        View in Settings
+      </Button>
     );
   }
   if (stuck && onOpenSystemSettings) {
@@ -370,6 +386,7 @@ function Permissions({
                 onGrant={() => onGrant?.(kind)}
                 onOpenSystemSettings={() => onOpenSystemSettings?.(kind)}
                 stuck={!!permissionHints?.[kind]}
+                unreadable={info.unreadable}
               />
             }
           />

@@ -526,6 +526,7 @@ describe("issuance", () => {
         slug: "todo",
         name: "Todo",
         hostname: "todo-acme.gateway.example.com",
+        icon: null,
       },
     });
     expect(context.client).toMatchObject({

@@ -286,7 +286,7 @@ function SettingsScene() {
   return (
     <SettingsScreen
       account={ready(mock.account)}
-      permissions={ready(mock.permissionsMixed)}
+      permissions={ready({ ...mock.permissionsMixed, systemAudio: "unknown" })}
       calendar={ready({ state: "connected", email: "ben@every.to" })}
       launchAtLogin={launch}
       detectCalls={detect}

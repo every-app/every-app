@@ -70,7 +70,7 @@ The window and the helper call only `/api/v1` (no server functions). The contrac
 
 ## Meeting reminders and links
 
-1. Every 5 minutes, and on wake, the app asks `/api/v1/calendar/upcoming`. Not connected → it shows "Connect Google Calendar", which opens `connectUrl` in the browser.
+1. Every 5 minutes, and on wake, the app asks `/api/v1/calendar/upcoming`. Not connected → it shows "Connect Google Calendar", which opens `connectUrl` in the browser. That link ends on Scribe's `/mac/calendar-connected`, which opens `everyapp://scribe`; the window reads the calendar again whenever it comes back to the front.
 2. The lead time (default one minute) before each event that has other attendees or a call link, it notifies: **Join & take notes** (when there's a link) and **Take notes**.
 3. A meeting that started without notes gets one nudge in its first minutes. A meeting Scribe is already taking notes for gets neither.
 4. `everyapp://scribe/record` (from the Scribe web app) takes notes now; `everyapp://scribe/record?event=<id>&title=…&start=…[&join=1]` takes notes for that event. Any web page can open such a link, so the app starts at once only for an event in its own calendar list, and asks first otherwise. (The web app still opens `talk://record`; it has to move to the new link.)

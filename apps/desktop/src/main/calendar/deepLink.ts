@@ -1,5 +1,7 @@
 // `everyapp://scribe/record[?event=<calendarEventId>&title=<t>&start=<ISO 8601>&join=1]`
-// (`everyapp-dev://` in dev builds), opened by the Scribe web app's Record buttons. The first
+// (`everyapp-dev://` in dev builds), opened by the Scribe web app's Record buttons, and
+// `everyapp://scribe`, which only brings the window up (the page Scribe shows after connecting
+// Google Calendar). The first
 // segment is the feature (src/shared/features.ts), so later features get their own links. Any web
 // page can open one, so nothing in it is trusted: Scribe starts at once only for an event in its
 // own upcoming list.
@@ -16,9 +18,10 @@ export interface DeepLink {
   join: boolean;
 }
 
-/** undefined for anything but an `everyapp://scribe/record` URL. `schemes` are the ones this build
- * owns (a dev build owns `everyapp-dev`, so it never takes links meant for the installed app). */
-export function parseDeepLink(raw: string, schemes: readonly string[] = ["everyapp"]): DeepLink | undefined {
+/** The URL and its command (`scribe/record`, lowercase), or undefined when it isn't one of
+ * `schemes`, the ones this build owns (a dev build owns `everyapp-dev`, so it never takes links
+ * meant for the installed app). */
+function command(raw: string, schemes: readonly string[]): { url: URL; command: string } | undefined {
   let url: URL;
   try {
     url = new URL(raw);
@@ -28,8 +31,19 @@ export function parseDeepLink(raw: string, schemes: readonly string[] = ["everya
   if (!schemes.includes(url.protocol.toLowerCase().replace(/:$/, ""))) return undefined;
   // `everyapp://scribe/record` puts the feature in the host; `everyapp:scribe/record` has it all in
   // the path.
-  const command = `${url.host}/${url.pathname}`.replace(/\/+/g, "/").replace(/^\/|\/$/g, "").toLowerCase();
-  if (command !== `${SCRIBE.id}/record`) return undefined;
+  return { url, command: `${url.host}/${url.pathname}`.replace(/\/+/g, "/").replace(/^\/|\/$/g, "").toLowerCase() };
+}
+
+/** `everyapp://scribe`: show the window, nothing else. */
+export function isOpenLink(raw: string, schemes: readonly string[] = ["everyapp"]): boolean {
+  return command(raw, schemes)?.command === SCRIBE.id;
+}
+
+/** undefined for anything but an `everyapp://scribe/record` URL. */
+export function parseDeepLink(raw: string, schemes: readonly string[] = ["everyapp"]): DeepLink | undefined {
+  const link = command(raw, schemes);
+  if (link?.command !== `${SCRIBE.id}/record`) return undefined;
+  const { url } = link;
   const value = (name: string) => {
     const v = url.searchParams.get(name)?.trim();
     return v ? v : undefined;

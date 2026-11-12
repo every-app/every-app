@@ -23,6 +23,7 @@ import {
   users,
 } from "@/db/schema";
 import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
+import { manifestIcon } from "./app-manifest-icon";
 import { accessToAppInItsOrganization } from "./effective-access";
 
 type McpConnectionAccess = "read" | "write";
@@ -323,6 +324,7 @@ async function findActiveAppsBySlug(slug: string) {
       appSlug: apps.appSlug,
       name: apps.name,
       hostname: apps.hostname,
+      icon: manifestIcon(),
       scope: apps.scope,
     })
     .from(apps)
@@ -383,6 +385,7 @@ async function findActiveAppByHostname(hostname: string) {
     appSlug: apps.appSlug,
     name: apps.name,
     hostname: apps.hostname,
+    icon: manifestIcon(),
     scope: apps.scope,
   };
   const live = and(eq(apps.status, "active"), eq(apps.tier, "service_binding"));

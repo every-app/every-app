@@ -10,7 +10,7 @@ import { AuthService } from "./auth/service";
 import { SecretStore } from "./auth/store";
 import { errorMessage } from "./auth/oauth";
 import { CalendarService } from "./calendar/service";
-import { parseDeepLink, resolveDeepLink } from "./calendar/deepLink";
+import { isOpenLink, parseDeepLink, resolveDeepLink } from "./calendar/deepLink";
 import { names, pinStorage, restoreDisplayName, urlSchemes } from "./identity";
 import { PromptLedger } from "./calendar/ledger";
 import { devSignIn, helperPath, isDevFlavor, keychainDisabled } from "./config";
@@ -447,6 +447,13 @@ async function main(): Promise<void> {
     broadcast();
   });
   powerMonitor.on("resume", () => online.resumed());
+  // Back in the window from System Settings or the browser (connecting Google Calendar): read
+  // again what may have changed out there.
+  app.on("browser-window-focus", (_event, focused) => {
+    if (focused.webContents !== window.webContents) return;
+    if (helper.state.status === "ready") void helper.refreshPermissions().catch((e) => log(`permissions.status failed: ${errorMessage(e)}`));
+    if (!calendar.state.connected) void calendar.refresh();
+  });
   setInterval(() => online.setOsOnline(net.isOnline()), 15_000).unref();
   calendar.on("change", broadcast);
   helper.on("event", (event) => {
@@ -546,6 +553,7 @@ async function main(): Promise<void> {
   // event in our own upcoming list, otherwise ask.
   let handlingUrl = false;
   handleUrl = (raw) => {
+    if (isOpenLink(raw, urlSchemes)) return window.show();
     const request = parseDeepLink(raw, urlSchemes);
     if (!request) return log(`ignored a URL with scheme ${raw.split(":")[0]}`);
     if (auth.state.status !== "signedIn") return window.show();

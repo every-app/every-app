@@ -21,6 +21,7 @@ const OPENZEN = {
   slug: "openzen",
   name: "OpenZen",
   hostname: "openzen.example.com",
+  icon: null,
 };
 
 const CONTEXT: NativeConsentContext = {

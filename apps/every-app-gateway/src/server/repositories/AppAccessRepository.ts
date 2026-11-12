@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { userAppAccess, apps, users, members, groups } from "@/db/schema";
 import { eq, and, asc, inArray, ne, sql } from "drizzle-orm";
 import { DELETED_APP_STATUS } from "@every-app/perimeter/registry";
-import { manifestIcon } from "./AppRepository";
+import { manifestIcon } from "./app-manifest-icon";
 import { accessToApp, effectiveAccess } from "./effective-access";
 
 /**
@@ -32,7 +32,7 @@ async function findAllByUserId(userId: string, organizationId: string) {
         tier: apps.tier,
         scope: apps.scope,
         status: apps.status,
-        icon: manifestIcon,
+        icon: manifestIcon(),
         everyone: apps.everyone,
         createdAt: apps.createdAt,
         updatedAt: apps.updatedAt,

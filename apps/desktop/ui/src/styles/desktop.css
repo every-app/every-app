@@ -152,11 +152,14 @@ html[data-vibrancy] {
   animation: record-pulse 1.6s ease-in-out infinite;
 }
 
+/* Reduce motion: every animation ends at once, on its last frame. Once, not infinitely: a
+   0.01 ms pulse that repeats lands on a random point of its cycle every frame, which flickers. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }

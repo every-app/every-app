@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { focusManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { TooltipProvider } from "@every-app/desktop-ui/components/tooltip";
 import { Notice } from "./notice";
@@ -14,6 +14,18 @@ applyStoredTheme();
 connectBridge((request) => {
   const target = navigateTarget(request);
   if (target) void router.navigate(target);
+});
+
+// A window behind another app stays "visible", so refetch when it gets focus back too: after
+// connecting Google Calendar in the browser, Settings and Home show it at once.
+focusManager.setEventListener((handleFocus) => {
+  const listener = () => handleFocus();
+  window.addEventListener("visibilitychange", listener);
+  window.addEventListener("focus", listener);
+  return () => {
+    window.removeEventListener("visibilitychange", listener);
+    window.removeEventListener("focus", listener);
+  };
 });
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true } } });

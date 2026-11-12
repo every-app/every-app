@@ -366,8 +366,10 @@ describe("SettingsScreen", () => {
       screen.getByRole("button", { name: "Open System Settings" }),
     );
     expect(onOpen).toHaveBeenCalledWith("notifications");
-    // The other unknown one still offers Grant; there's no echo cancellation switch any more.
-    expect(screen.getAllByRole("button", { name: "Grant" })).toHaveLength(1);
+    // macOS can't report system audio: no Grant, just its pane. No echo cancellation switch any more.
+    fireEvent.click(screen.getByRole("button", { name: "View in Settings" }));
+    expect(onOpen).toHaveBeenCalledWith("systemAudio");
+    expect(screen.queryByRole("button", { name: "Grant" })).toBeNull();
     expect(screen.queryByLabelText("Echo cancellation")).toBeNull();
   });
 

@@ -70,6 +70,8 @@ export type ConsentApp = {
   slug: string;
   name: string;
   hostname: string;
+  /** The launcher icon's path on `hostname` (the manifest's `icon`), or null. */
+  icon: string | null;
 };
 
 /**
@@ -401,6 +403,7 @@ export async function nativeGrantFor(
     slug: row.appSlug,
     name: row.name,
     hostname: row.hostname,
+    icon: row.icon,
   };
   const organizations = (await consentChoices(userId)).flatMap((org) => {
     const chosen = org.apps.find((candidate) => candidate.rowId === app.rowId);
@@ -462,6 +465,7 @@ export async function devGrantFor(
       slug: row.appSlug,
       name: row.name,
       hostname: row.hostname ?? "",
+      icon: row.icon,
     });
     organizations.push({ ...org, apps: [chosen] });
   }

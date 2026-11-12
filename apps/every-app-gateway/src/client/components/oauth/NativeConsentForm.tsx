@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { ShieldAlert } from "lucide-react";
 import { CONSENT_FIELDS } from "@/schemas/consent-decision";
 import type { ConsentContext } from "@/server/mcp-auth/consent";
+import { AppIcon } from "@/client/components/AppIcon";
 import { BrandMark } from "@/client/components/BrandLink";
 import { Alert, AlertDescription } from "@/client/components/ui/alert";
 import {
@@ -110,9 +111,9 @@ export function NativeConsentForm({
         <ConsentHeader
           from={<InitialsTile name={client.name} />}
           to={
-            <InitialsTile
-              name={app.name}
-              className="border border-border bg-card text-foreground"
+            <AppIcon
+              app={{ ...app, status: "active" }}
+              className="border border-border bg-card"
             />
           }
           title={

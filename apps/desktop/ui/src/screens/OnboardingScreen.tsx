@@ -1,6 +1,6 @@
 import { cn } from "cn";
 import { AlertCircle, ArrowUpRight, Check, ChevronDown, Copy, RefreshCw } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "../components/ui/button";
 import type { PermissionKind, Permissions, PermissionStatus } from "../types";
 import { TITLE_BAR_HEIGHT, TitleBar } from "./AppFrame";
@@ -91,7 +91,7 @@ export function OnboardingScreen(props: OnboardingScreenProps) {
       <div className="flex min-w-0 flex-1 flex-col">
         <TitleBar />
         <div
-          className="flex min-h-0 flex-1 justify-center overflow-y-auto px-10 pb-12 min-[1100px]:px-14"
+          className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto px-10 pb-12 motion-safe:scroll-smooth min-[1100px]:px-14"
           style={{ paddingTop: `max(16px, calc(${TOP} - ${TITLE_BAR_HEIGHT + EYEBROW}px))` }}
         >
           <div className="w-full max-w-[400px]">
@@ -218,6 +218,13 @@ function Connect({
   const [showToken, setShowToken] = useState(defaultShowToken ?? false);
   const [showSetup, setShowSetup] = useState(defaultShowSetup ?? false);
   const [token, setToken] = useState("");
+  const setup = useRef<HTMLElement>(null);
+  const openedSetup = useRef(false);
+  // Opening "No Gateway yet?" grows the page past the window: bring the whole section into view.
+  useEffect(() => {
+    if (!showSetup || !openedSetup.current) return;
+    setup.current?.scrollIntoView?.({ block: "nearest" });
+  }, [showSetup]);
   // The field shows "https://" itself; a pasted https:// is dropped. Plain http (local
   // development) is kept as typed and the prefix hides.
   const plainHttp = address.startsWith("http://");
@@ -269,11 +276,14 @@ function Connect({
       </form>
 
       {setupCommands && (
-        <section className="mt-7">
+        <section ref={setup} className="mt-7 scroll-mb-12">
           <button
             type="button"
             aria-expanded={showSetup}
-            onClick={() => setShowSetup(!showSetup)}
+            onClick={() => {
+              openedSetup.current = !showSetup;
+              setShowSetup(!showSetup);
+            }}
             className="inline-flex items-center gap-1 text-left text-[12.5px] text-muted-foreground hover:text-foreground"
           >
             <span>
