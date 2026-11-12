@@ -257,6 +257,7 @@ describe("help", () => {
   });
 
   it("names the tool with its version", () => {
-    expect(versionLine()).toMatch(/^everyapp \d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?\n$/);
+    // The tests run from a checkout, which says its commit too.
+    expect(versionLine()).toMatch(/^everyapp \d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?( \(checkout [0-9a-f]{8,}\))?\n$/);
   });
 });

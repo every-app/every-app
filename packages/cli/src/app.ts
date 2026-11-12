@@ -9,7 +9,7 @@ import {
   type CommandContext,
   type RouteMap,
 } from "@stricli/core";
-import { cliName as name, cliVersion as version } from "@/lib/version";
+import { cliVersion as version, versionLine as versionText } from "@/lib/version";
 import {
   argumentProblem,
   ArgumentErrorCode,
@@ -312,9 +312,9 @@ function defaultCommandHelp(
   ].join("\n");
 }
 
-/** `everyapp --version`. */
+/** `everyapp --version`: the version, and the commit when it runs from a checkout. */
 export function versionLine(): string {
-  return `${name} ${version}\n`;
+  return `${versionText()}\n`;
 }
 
 /**

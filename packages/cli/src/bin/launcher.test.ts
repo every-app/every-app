@@ -19,6 +19,15 @@ const fs = require("node:fs");
 const path = require("node:path");
 fs.appendFileSync(process.env.LAUNCHER_TEST_LOG, \`\${path.basename(process.cwd())}: \${process.argv.slice(2).join(" ")}\\n\`);
 Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 400);
+if (process.argv[2] === "install") {
+  // An install: says what pnpm says, and fails when the test asks.
+  process.stdout.write("Lockfile is up to date, resolution step is skipped\\n");
+  if (process.env.LAUNCHER_TEST_INSTALL_FAILS) {
+    process.stderr.write("ERR_PNPM_OUTDATED_LOCKFILE\\n");
+    process.exit(1);
+  }
+  process.exit(0);
+}
 fs.rmSync("dist", { recursive: true, force: true });
 fs.mkdirSync("dist", { recursive: true });
 fs.writeFileSync(path.join("dist", "index.js"), 'process.stdout.write("ran\\\\n");\\n');
@@ -89,6 +98,9 @@ function checkout({ pnpm = FAKE_PNPM }: { pnpm?: string } = {}): Checkout {
       PATH: [binDir, path.dirname(process.execPath), process.env["PATH"]].join(path.delimiter),
       LAUNCHER_TEST_LOG: log,
       NO_COLOR: "1",
+      // The install is off in CI; these tests say when it is.
+      CI: undefined,
+      EVERYAPP_AUTO_INSTALL: undefined,
     },
   };
 }
@@ -117,6 +129,21 @@ const rebuilds = ({ log }: Checkout) =>
     .readFileSync(log, "utf8")
     .split("\n")
     .filter((line) => line.includes("tsup"));
+
+const installs = ({ log }: Checkout) =>
+  fs
+    .readFileSync(log, "utf8")
+    .split("\n")
+    .filter((line) => line.includes("install"));
+
+/** A pnpm-lock.yaml in the checkout's root, written now: newer than any install. */
+function changeLockfile({ root }: Checkout, content = "lockfileVersion: '9.0'\n"): void {
+  fs.writeFileSync(path.join(root, "pnpm-lock.yaml"), content);
+}
+
+const stampFile = ({ root }: Checkout) => path.join(root, "node_modules", ".cache", "everyapp", "installed-lockfile");
+
+const INSTALLED = "Installed this checkout's dependencies (pnpm-lock.yaml changed)";
 
 /** A lock another everyapp left: its directory and the pid it wrote, `agoMs` old. */
 function leaveLock({ lockDir }: Checkout, pid: number, agoMs = 0): void {
@@ -206,6 +233,145 @@ describe("the launcher's rebuild", { timeout: 30_000 }, () => {
   });
 });
 
+describe("the launcher's install", { timeout: 30_000 }, () => {
+  it("installs once after the lockfile changed, and nothing on the next run", async () => {
+    const tree = checkout();
+    changeLockfile(tree);
+
+    const first = await run(tree);
+    const second = await run(tree);
+
+    expect([first.code, second.code]).toEqual([0, 0]);
+    expect([first.stdout, second.stdout]).toEqual(["ran\n", "ran\n"]);
+    expect(installs(tree)).toEqual([`${path.basename(tree.root)}: install --frozen-lockfile`]);
+    // One dim line on stderr, before the rebuild's; pnpm's own output isn't shown.
+    expect(first.stderr.split("\n")[0]).toBe(INSTALLED);
+    expect(first.stderr).not.toContain("resolution step");
+    expect(second.stderr).toBe("");
+    expect(fs.existsSync(tree.lockDir)).toBe(false);
+  });
+
+  it("installs again only when the lockfile's content changes", async () => {
+    const tree = checkout();
+    changeLockfile(tree);
+    await run(tree);
+
+    // Written again with the same content (a branch switch and back): nothing to install.
+    changeLockfile(tree);
+    expect((await run(tree)).stderr).toBe("");
+    changeLockfile(tree, "lockfileVersion: '9.0'\n# a new dependency\n");
+    expect((await run(tree)).stderr).toBe(`${INSTALLED}\n`);
+
+    expect(installs(tree)).toHaveLength(2);
+  });
+
+  it("happens once when two everyapps start together", async () => {
+    const tree = checkout();
+    changeLockfile(tree);
+
+    const [first, second] = await Promise.all([run(tree), run(tree)]);
+
+    expect([first.code, second.code]).toEqual([0, 0]);
+    expect(installs(tree)).toHaveLength(1);
+    expect(rebuilds(tree)).toHaveLength(1);
+  });
+
+  it("keeps stdout clean under --json", async () => {
+    const tree = checkout();
+    changeLockfile(tree);
+
+    const result = await run(tree, { args: ["status", "--json"] });
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toBe("ran\n");
+    expect(result.stderr).toContain(INSTALLED);
+  });
+
+  it("takes an install made by hand as the install, and records it", async () => {
+    const tree = checkout();
+    changeLockfile(tree);
+    fs.mkdirSync(path.join(tree.root, "node_modules"), { recursive: true });
+    fs.writeFileSync(path.join(tree.root, "node_modules", ".modules.yaml"), "layoutVersion: 5\n");
+
+    const result = await run(tree);
+
+    expect(result.code).toBe(0);
+    expect(installs(tree)).toEqual([]);
+    expect(result.stderr).not.toContain(INSTALLED);
+    expect(fs.readFileSync(stampFile(tree), "utf8")).toMatch(/^[0-9a-f]{64}\n$/);
+  });
+
+  it("says what to run when the install fails, and tries again next time", async () => {
+    const tree = checkout();
+    changeLockfile(tree);
+    tree.env["LAUNCHER_TEST_INSTALL_FAILS"] = "1";
+
+    const result = await run(tree);
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe(
+      [
+        "Lockfile is up to date, resolution step is skipped",
+        "ERR_PNPM_OUTDATED_LOCKFILE",
+        "✗ This checkout's dependencies are out of date, and installing them didn't work",
+        `  pnpm-lock.yaml changed since the last install; \`pnpm install --frozen-lockfile\` in ${tree.root} exited 1.`,
+        `  Run: pnpm -C ${tree.root} install`,
+        "",
+      ].join("\n"),
+    );
+    expect(rebuilds(tree)).toEqual([]);
+    expect(fs.existsSync(stampFile(tree))).toBe(false);
+    expect(fs.existsSync(tree.lockDir)).toBe(false);
+
+    const json = await run(tree, { args: ["status", "--json"] });
+    expect(json.code).toBe(1);
+    const lines = json.stdout.trimEnd().split("\n");
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]!)).toMatchObject({
+      v: 1,
+      type: "error",
+      code: "CHECKOUT_DEPENDENCIES_OUTDATED",
+      retryable: false,
+      data: { rerun: `pnpm -C ${tree.root} install` },
+    });
+    expect(installs(tree)).toHaveLength(2);
+  });
+
+  it.each([
+    ["EVERYAPP_AUTO_INSTALL", "0"],
+    ["CI", "true"],
+  ])("is off with %s=%s", async (name, value) => {
+    const tree = checkout();
+    changeLockfile(tree);
+    tree.env[name] = value;
+
+    const result = await run(tree);
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toBe("ran\n");
+    expect(installs(tree)).toEqual([]);
+    expect(result.stderr).not.toContain(INSTALLED);
+  });
+
+  it("names the install, not a build, when the built CLI can't load a package", async () => {
+    const tree = checkout();
+    tree.env["EVERYAPP_AUTO_INSTALL"] = "0";
+    fs.mkdirSync(path.join(tree.cliDir, "dist"), { recursive: true });
+    fs.writeFileSync(path.join(tree.cliDir, "dist", "index.js"), 'import "a-package-nobody-installed";\n');
+
+    const result = await run(tree);
+
+    expect(result.code).toBe(1);
+    expect(rebuilds(tree)).toEqual([]);
+    const lines = result.stderr.split("\n");
+    expect(lines[0]).toBe("✗ This checkout's dependencies are out of date");
+    expect(lines[1]).toContain("a-package-nobody-installed");
+    expect(lines[2]).toBe(`  Run: pnpm -C ${tree.root} install`);
+    expect(result.stderr).not.toContain("not built");
+  });
+});
+
 describe("the launcher on an old Node", { timeout: 30_000 }, () => {
   /** Node 18, as far as the launcher can tell. */
   const oldNode = (tree: Checkout): string[] => {
@@ -258,7 +424,7 @@ describe("the launcher on an old Node", { timeout: 30_000 }, () => {
     // Static imports resolve before any statement runs: a name Node 18's
     // modules lack (node:util's styleText) is a SyntaxError there.
     const imports = [...source.matchAll(/^import .* from "([^"]+)";$/gm)].map((match) => match[1]);
-    expect(imports).toEqual(["node:child_process", "node:fs", "node:path", "node:url"]);
+    expect(imports).toEqual(["node:child_process", "node:crypto", "node:fs", "node:path", "node:url"]);
     expect(source).not.toContain("styleText");
     // The version check comes before the first directory walk.
     expect(source.indexOf("olderThan(process.versions.node")).toBeLessThan(source.indexOf("readdirSync"));

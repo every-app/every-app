@@ -11,9 +11,11 @@
  * `everyapp`: `<package>/package.json` from the built `dist/` (a flat
  * directory of chunks) and `packages/cli/package.json` from the source.
  */
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { findCheckoutRoot } from "./checkout";
 
 interface CliPackage {
   name: string;
@@ -39,9 +41,33 @@ export function readCliPackage(moduleUrl: string = import.meta.url): CliPackage 
 const cliPackage = readCliPackage();
 
 /** `everyapp`. */
-export const cliName = cliPackage.name;
+const cliName = cliPackage.name;
 /** This everyapp's version, as its package.json says now. */
 export const cliVersion = cliPackage.version;
+
+/**
+ * The commit of the checkout this everyapp runs from (8 characters), so
+ * `--version` tells a checkout's everyapp from the published one of the
+ * same version; null from an installed package, or when git can't say.
+ */
+export function checkoutCommit(root: string | null = findCheckoutRoot()): string | null {
+  if (!root) return null;
+  try {
+    const commit = execFileSync("git", ["rev-parse", "--short=8", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return /^[0-9a-f]{8,}$/.test(commit) ? commit : null;
+  } catch {
+    return null;
+  }
+}
+
+/** `everyapp 0.3.0`, or from a checkout `everyapp 0.3.0 (checkout 6afd18bb)`. */
+export function versionLine(commit: string | null = checkoutCommit()): string {
+  return `${cliName} ${cliVersion}${commit ? ` (checkout ${commit})` : ""}`;
+}
 
 /**
  * Semver order, prerelease included: 0.3.0-rc.9 < 0.3.0-rc.10 < 0.3.0.

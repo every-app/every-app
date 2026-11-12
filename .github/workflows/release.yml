@@ -103,7 +103,8 @@ jobs:
           pnpm -C packages/sdk build
           pnpm -C packages/cli build
           said="$(node packages/cli/bin/everyapp.js --version)"
-          if [ "$said" != "everyapp $VERSION" ]; then
+          # From a checkout it adds its commit: "everyapp 0.3.1 (checkout 6afd18bb)".
+          if [ "${said%% (checkout *}" != "everyapp $VERSION" ]; then
             echo "::error::the built CLI says \"$said\", not \"everyapp $VERSION\""
             exit 1
           fi

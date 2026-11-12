@@ -78,3 +78,12 @@ The CLI reads its version from its own package.json at run time
 (`packages/cli/src/lib/version.ts`). Never import `version` from
 package.json in the CLI: tsup inlines it at build time, which is how
 0.3.0-rc.6 shipped saying 0.3.0.
+
+From a checkout, `everyapp --version` adds the commit (`everyapp 0.3.0
+(checkout 6afd18bb)`), and the launcher (`packages/cli/bin/everyapp.js`)
+keeps the checkout runnable after a `git pull`: it installs the
+dependencies when `pnpm-lock.yaml` changed since the last install (`pnpm
+install --frozen-lockfile`, recorded by the lockfile's hash under
+`node_modules/.cache/everyapp/`), then rebuilds the CLI when its sources
+changed. `EVERYAPP_AUTO_INSTALL=0` or `CI` turns the install off. A
+published everyapp has no source beside it and does neither.

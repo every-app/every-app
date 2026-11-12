@@ -3,11 +3,29 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { cliVersion, compareVersions, readCliPackage } from "./version";
+import { checkoutCommit, cliVersion, compareVersions, readCliPackage, versionLine } from "./version";
 
 const dirs: string[] = [];
 afterEach(() => {
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+
+describe("the version line", () => {
+  it("is the name and version from an installed package", () => {
+    expect(checkoutCommit(null)).toBeNull();
+    expect(versionLine(null)).toBe(`everyapp ${cliVersion}`);
+  });
+
+  it("names the commit from a checkout", () => {
+    expect(versionLine("6afd18bb")).toBe(`everyapp ${cliVersion} (checkout 6afd18bb)`);
+    expect(checkoutCommit()).toMatch(/^[0-9a-f]{8,}$/);
+  });
+
+  it("says no commit for a directory git can't read", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-nogit-"));
+    dirs.push(dir);
+    expect(checkoutCommit(dir)).toBeNull();
+  });
 });
 
 describe("the CLI's version", () => {

@@ -187,7 +187,8 @@ function publish({ dryRun }) {
       cwd: ROOT,
       encoding: "utf8",
     }).trim();
-    if (said !== `everyapp ${version}`) fail(`the built CLI says "${said}", not "everyapp ${version}"`);
+    // From a checkout it adds its commit: "everyapp 0.3.1 (checkout 6afd18bb)".
+    if (said.replace(/ \(checkout [0-9a-f]+\)$/, "") !== `everyapp ${version}`) fail(`the built CLI says "${said}", not "everyapp ${version}"`);
     console.log(`\nThe built CLI says: ${said}`);
     for (const { dir, name } of pending) checkPackedFiles(dir, name);
   }
