@@ -2036,7 +2036,7 @@ describe("delete", () => {
         type: "warning",
         code: "RESOURCES_KEPT",
         message:
-          "Kept the D1 database every-acme-chef\nIt has chef's name, but no deploy recorded creating it, so it may belong to something else.",
+          "Kept the D1 database every-acme-chef\nNo deploy of chef made it, so it may belong to something else.",
         data: {
           kept: ['D1 database "every-acme-chef"'],
           fix: "if it is chef's, delete it in the Cloudflare dashboard (Storage & Databases → D1)",

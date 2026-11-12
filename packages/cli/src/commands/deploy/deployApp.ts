@@ -849,7 +849,7 @@ async function renameIfAsked({
       `${manifest.id} lists ${from.appSlug} under previousIds, so this deploy renames ${from.appSlug} on ${gatewayUrl.replace(/^https:\/\//, "")}:`,
       ...lines.map((line) => `  ${line}`),
     ],
-    unattended: `This deploy renames ${from.appSlug} to ${manifest.id} on ${gatewayUrl.replace(/^https:\/\//, "")}, which takes a yes\nIts hostname becomes ${plan.app.hostname}; ${from.hostname} keeps working. Nothing was renamed or deployed.`,
+    unattended: `This deploy renames ${from.appSlug} to ${manifest.id} on ${gatewayUrl.replace(/^https:\/\//, "")}, which needs confirmation at a terminal, or --yes\nIts hostname becomes ${plan.app.hostname}; ${from.hostname} keeps working. Nothing was renamed or deployed.`,
     cancelled: "Nothing was renamed or deployed.",
     data,
   });

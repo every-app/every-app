@@ -382,7 +382,7 @@ async function queryProduction({
       interactive,
       confirm,
       question: `Change data in ${manifest.id}'s production database?`,
-      unattended: `This SQL can change ${manifest.id}'s production database\nA person at a terminal confirms it first, or --yes does.`,
+      unattended: `Changing ${manifest.id}'s production database needs confirmation at a terminal, or --yes`,
     });
   }
   return failingQuery("production", () => queryD1Results(cf, databaseId, [{ sql }]));

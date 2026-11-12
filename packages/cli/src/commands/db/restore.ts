@@ -121,7 +121,7 @@ export async function restoreDatabase({
     interactive,
     confirm,
     question: `Put ${whose} back to before ${undoes(point)}?`,
-    unattended: `Restoring ${whose} needs a person at a terminal to confirm, or --yes\nIt undoes ${undoes(point)}; anything written to it since is lost too.`,
+    unattended: `Restoring ${whose} needs confirmation at a terminal, or --yes\nIt undoes ${undoes(point)}; anything written to it since is lost too.`,
     context: ["Anything written to the database since then is lost too."],
     data,
   });

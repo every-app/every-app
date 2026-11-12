@@ -70,7 +70,7 @@ export async function release(
               { command: `${CLI} install ${result.shown}`, note: "installs it on your Gateway" },
               {
                 command: `${CLI} install <repository url>`,
-                note: "installs it on any Gateway, once the tarball is attached to a GitHub release of the app's repository",
+                note: "on any Gateway, once the tarball is on a GitHub release of the app",
               },
             ],
       },

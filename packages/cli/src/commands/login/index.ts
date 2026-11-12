@@ -5,6 +5,7 @@ import { gatewayOrigin } from "@/lib/linkedDev";
 import { canPromptInTerminal } from "@/lib/output/prompt";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import type { EventSink } from "@/lib/output/events";
+import { factLines, finish } from "@/lib/output/result";
 import { runCommand } from "@/lib/output/run";
 
 const STEP = "cloudflare.login";
@@ -31,11 +32,15 @@ export async function login(flags: LoginCommandFlags,
       const gateway = gatewayOrigin(flags.gateway);
       if (flags["sign-out"]) {
         const signedOut = await signOutOfGateway(gateway);
-        out.emit({
-          type: "done",
-          message: signedOut
-            ? `Signed out of ${gateway}${signedOut.revoked ? "" : " (forgotten here; revoke it under Your connections there)"}.`
-            : `Not signed in to ${gateway}.`,
+        const said = signedOut
+          ? `Signed out of ${gateway}${signedOut.revoked ? "" : " (forgotten here; revoke it under Your connections there)"}.`
+          : `Not signed in to ${gateway}.`;
+        finish(out, {
+          headline: signedOut ? `Signed out of ${gateway}` : `Not signed in to ${gateway}`,
+          ticked: signedOut !== null,
+          // Forgotten on this computer only: the Gateway still honors it until it is revoked there.
+          blocks: [signedOut && !signedOut.revoked ? factLines([{ label: "Revoke it there too", value: "Your connections" }]) : []],
+          message: [said],
           data: { gateway, signedIn: false, revoked: signedOut?.revoked ?? false },
         });
         return;

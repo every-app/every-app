@@ -471,8 +471,8 @@ async function purgeApp(
       message: [
         `Kept ${listed(kept.map((resource) => resource.shown))}`,
         one
-          ? `It has ${appId}'s name, but no deploy recorded creating it, so it may belong to something else.`
-          : `They have ${appId}'s names, but no deploy recorded creating them, so they may belong to something else.`,
+          ? `No deploy of ${appId} made it, so it may belong to something else.`
+          : `No deploy of ${appId} made them, so they may belong to something else.`,
       ].join("\n"),
       data: {
         kept: kept.map((resource) => resource.described),

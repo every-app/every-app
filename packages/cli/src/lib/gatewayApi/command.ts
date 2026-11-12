@@ -59,7 +59,7 @@ export async function callAndReport(api: GatewayApi, out: EventSink, flags: Conf
       yes: flags.yes,
       interactive: canPromptInTerminal(flags.json ?? false),
       question: run.confirm,
-      unattended: `${run.confirm} Nobody is at a terminal to say yes: pass --yes.`,
+      unattended: `${run.confirm} That needs confirmation at a terminal, or --yes`,
     });
   }
   const answer = await api.call(run.tool, run.args ?? {});

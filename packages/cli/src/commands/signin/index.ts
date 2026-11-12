@@ -305,7 +305,7 @@ export async function addProvider(options: SigninOptions<AddFlags>, id: string):
     ].join(" ");
     throw new EveryAppError(
       "SIGNIN_VALUE_REQUIRED",
-      `${titleOf(provider)} needs ${listed(unanswered.map((setting) => setting.name))}, and there's no terminal to ask at\nGive ${listed(unanswered.map((setting) => FLAG_OF[setting.role]))} (the secret from an environment variable, never the command line), or run this at a terminal.`,
+      `Can't ask for ${titleOf(provider)}'s ${listed(unanswered.map((setting) => setting.name))} without a terminal\nPass ${listed(unanswered.map((setting) => FLAG_OF[setting.role]))}. The secret comes from an environment variable, never the command line.`,
       {
         rerun,
         data: {

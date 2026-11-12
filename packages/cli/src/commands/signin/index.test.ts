@@ -180,7 +180,7 @@ describe("signin add", () => {
 
     await expect(add("github", { "client-id": "Iv1.abc" })).rejects.toMatchObject({
       code: "SIGNIN_VALUE_REQUIRED",
-      message: expect.stringContaining("Sign in with GitHub needs GITHUB_SIGNIN_CLIENT_SECRET"),
+      message: expect.stringContaining("Can't ask for Sign in with GitHub's GITHUB_SIGNIN_CLIENT_SECRET without a terminal"),
       rerun: "pnpm everyapp signin add github --client-id Iv1.abc --client-secret-from-env <VAR> --json",
       data: {
         provider: "github",

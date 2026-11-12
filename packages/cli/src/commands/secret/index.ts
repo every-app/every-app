@@ -428,7 +428,7 @@ export async function unsetSecrets(
       },
       "from",
     )}?`,
-    unattended: "Removing secrets needs confirmation, and there's no terminal to ask in",
+    unattended: "Removing secrets needs confirmation at a terminal, or --yes",
     context: route.undeclared.map((name) =>
       route.app?.source === ManifestSource.Registry
         ? `${name} isn't listed in ${route.app.manifest.id}'s deployed manifest.`

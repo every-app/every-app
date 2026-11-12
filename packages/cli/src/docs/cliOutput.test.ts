@@ -27,7 +27,7 @@ const BY_HAND: Readonly<Record<string, number>> = {
   "commands/email/index.ts": 2,
   "commands/events/index.ts": 1,
   "commands/install/index.ts": 2,
-  "commands/login/index.ts": 3,
+  "commands/login/index.ts": 2,
   "commands/mcp/index.ts": 2,
   "commands/provider/index.ts": 3,
   "commands/provider/oauth.ts": 3,

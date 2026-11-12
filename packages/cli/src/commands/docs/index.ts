@@ -5,6 +5,7 @@
  * landing-page/content/agent, or the package's docs/agent, which
  * scripts/bundle-docs.mjs copies in at build. With no page, the list.
  */
+import chalk from "chalk";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,7 +14,7 @@ import { findCheckoutRoot } from "@/lib/checkout";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
 import { runCommand } from "@/lib/output/run";
-import { formatTable } from "@/lib/output/table";
+import { formatFacts, formatTable } from "@/lib/output/table";
 import { cliVersion } from "@/lib/version";
 
 interface DocsFlags {
@@ -150,8 +151,11 @@ export async function docs(
         type: "done",
         message: `${pages.length} agent docs pages`,
         display: [
-          `The agent docs: ${AGENT_DOCS_URL} (every page with a line each: https://everyapp.com/llms.txt).`,
-          `Print one with ${CLI} docs <page>.`,
+          ...formatFacts([
+            { label: "Agent docs", value: chalk.cyan(AGENT_DOCS_URL) },
+            { label: "All pages", value: chalk.cyan("https://everyapp.com/llms.txt") },
+            { label: "Print one", value: `${CLI} docs <page>` },
+          ]),
           "",
           ...formatTable(["PAGE", "TITLE"], pages.map((entry) => [entry.page || "index", entry.title])),
         ].join("\n"),
