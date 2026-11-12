@@ -14,29 +14,34 @@ const openSeoRepo = "every-app/open-seo";
 const openSeoStars = "25k";
 
 /**
- * The four apps, one line each, word for word the lines in the README and the
+ * The apps, one line each, word for word the lines in the README and the
  * docs home (the orchestrating thread keeps them identical). Each links to
  * its page under /docs/apps.
  */
 const apps: Array<{ name: string; line: string; href: string }> = [
   {
     name: "OpenSEO",
-    line: "SEO research you pay for by use, not by the month.",
+    line: "Keyword research, rank tracking and site audits.",
     href: "/docs/apps/openseo",
   },
   {
     name: "OpenCRM",
-    line: "A CRM that fills itself in.",
+    line: "A simple CRM.",
     href: "/docs/apps/crm",
   },
   {
+    name: "OpenScribe",
+    line: "AI meeting notes for Mac.",
+    href: "/openscribe",
+  },
+  {
     name: "OpenAnalytics",
-    line: "Web analytics on your own Cloudflare account. No cookies.",
+    line: "Web analytics without cookies.",
     href: "/docs/apps/analytics",
   },
   {
     name: "OpenMail",
-    line: "An inbox where an AI agent drafts your replies and you hit send.",
+    line: "An email inbox with an AI assistant.",
     href: "/docs/apps/openmail",
   },
 ];

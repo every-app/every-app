@@ -18,17 +18,22 @@ A Gateway key serves every app that lists it: one `OPENROUTER_API_KEY` or `EMAIL
 |---|---|---|---|---|
 | `openseo` | OpenSEO | https://github.com/every-app/open-seo | yes | every member |
 | `crm` | OpenCRM | https://github.com/every-app/open-crm | yes | every member |
+| `talk` | OpenScribe | https://github.com/every-app/open-scribe | yes | every member |
 | `analytics` | OpenAnalytics | https://github.com/every-app/open-analytics | no | every member |
 | `openmail` | OpenMail | https://github.com/every-app/open-mail | yes | every member |
 | `repolens` | RepoLens | not public yet | no | owners and admins |
 
 ## OpenSEO (`openseo`)
 
-SEO research you pay for by use, not by the month. It needs an AI key (OpenRouter) and `DATAFORSEO_API_KEY` (the value is `login:password` from the DataForSEO dashboard). Context.dev (JavaScript-heavy pages) and Google (Search Console and GA4, connected per person) are optional. No public routes. Its tools are served on the Gateway's `/mcp` as `openseo_<tool>`.
+Keyword research, rank tracking and site audits. It needs an AI key (OpenRouter) and `DATAFORSEO_API_KEY` (the value is `login:password` from the DataForSEO dashboard). Context.dev (JavaScript-heavy pages) and Google (Search Console and GA4, connected per person) are optional. No public routes. Its tools are served on the Gateway's `/mcp` as `openseo_<tool>`.
 
 ## OpenCRM (`crm`)
 
 Companies, contacts and deals, with mail, meetings and website visits filed on them. Nothing is required to open it. Optional: Google Workspace and Microsoft 365 clients so members can connect their mail and calendar (read only), with the app's own `TOKEN_ENCRYPTION_KEY` (32+ random characters) set before anyone connects. Public routes `GET /t/*` and `POST /t/e` serve website tracking on the organization's own site.
+
+## OpenScribe (`talk`)
+
+AI meeting notes for Mac. In the app it is called Scribe, and its id is still `talk`. It needs an OpenAI key (`OPENAI_API_KEY`): it transcribes meetings and writes the notes. Google Calendar (`google-workspace`, `calendar.readonly`, connected per person) is optional, for meeting reminders. Meetings are recorded by Every App for Mac, which signs in with the app's URL (`https://talk.<app base domain>`) and calls its bearer route `/api/v1/**`; `GET /s/:token` serves a shared meeting page.
 
 ## OpenAnalytics (`analytics`)
 
@@ -36,7 +41,7 @@ Web analytics on your own Cloudflare account, with no cookies. It requires the a
 
 ## OpenMail (`openmail`)
 
-An inbox where an AI agent drafts your replies and you hit send. It needs the workspace's default AI model and the Gateway's sender. After installing:
+An email inbox with an AI assistant. It needs the workspace's default AI model and the Gateway's sender. After installing:
 
 ```sh
 everyapp configure openmail

@@ -40,10 +40,11 @@ We're the team behind [OpenSEO](https://github.com/every-app/open-seo), the open
 
 ## Apps
 
-- [OpenSEO](https://github.com/every-app/open-seo): SEO research you pay for by use, not by the month.
-- [OpenCRM](https://github.com/every-app/open-crm): A CRM that fills itself in.
-- [OpenAnalytics](https://github.com/every-app/open-analytics): Web analytics on your own Cloudflare account. No cookies.
-- [OpenMail](https://github.com/every-app/open-mail): An inbox where an AI agent drafts your replies and you hit send.
+- [OpenSEO](https://github.com/every-app/open-seo): Keyword research, rank tracking and site audits.
+- [OpenCRM](https://github.com/every-app/open-crm): A simple CRM.
+- [OpenScribe](https://github.com/every-app/open-scribe): AI meeting notes for Mac.
+- [OpenAnalytics](https://github.com/every-app/open-analytics): Web analytics without cookies.
+- [OpenMail](https://github.com/every-app/open-mail): An email inbox with an AI assistant.
 
 Run one as it is, or fork it as the starting point for your own. Many more are coming.
 
