@@ -74,8 +74,8 @@ Each other app then asks the member to allow it, on the Gateway's own page
 apps allowed, and disconnects them). Google, Microsoft 365 and Slack below are
 the same: their files set the client and the scopes to allow on it.
 
-Which integrations a person needs: the apps they deploy decide. Three
-EveryApp apps (OpenCRM, OpenSEO, OpenScribe) are
+Which integrations a person needs: the apps they deploy decide. Four
+EveryApp apps (OpenCRM, OpenSEO, OpenScribe, OpenAnalytics) are
 installed from their GitHub releases by [gateway.md](/docs/agent/setup/gateway)'s last
 step, each unless the person skips it; the keys they then ask for are the
 files below. From any

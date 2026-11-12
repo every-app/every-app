@@ -61,15 +61,17 @@ If setup stops, run `everyapp setup` again. It picks up where it left off.
 everyapp install https://github.com/every-app/open-crm
 everyapp install https://github.com/every-app/open-seo
 everyapp install https://github.com/every-app/open-scribe
+everyapp install https://github.com/every-app/open-analytics
 ```
 
-Turn on R2 in your Cloudflare dashboard first (R2 Object Storage, then Get started). All three apps store files there.
+Turn on R2 in your Cloudflare dashboard first (R2 Object Storage, then Get started). The first three apps store files there.
 
 Each install asks for the keys the app needs:
 
 - [OpenCRM](/docs/apps/crm) needs none.
 - [OpenSEO](/docs/apps/openseo) needs an OpenRouter key and a DataForSEO key.
 - [OpenScribe](/docs/apps/openscribe) needs an OpenAI key.
+- [OpenAnalytics](/docs/apps/analytics) needs none.
 
 If you skip a key, the app shows **Needs setup** until you add it.
 
