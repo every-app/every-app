@@ -1,12 +1,10 @@
 // @vitest-environment happy-dom
 /**
  * Your connections → Agents rendered for real with the server functions
- * mocked: AI apps in the first table, native apps under "Apps on your
- * devices" with the one app each opens, and signing one out revokes that
- * connection by id (the server function scopes it to the signed-in user).
- * The section is absent until there is a native app. The steps to connect
- * an agent take the table's place until there is one, and open in a dialog
- * after that.
+ * mocked: AI apps only (native apps are on Accounts), revoking one by id
+ * (the server function scopes it to the signed-in user). The steps to
+ * connect an agent take the table's place until there is one, and open in
+ * a dialog after that.
  */
 import { act, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -39,7 +37,7 @@ vi.mock("@/client/components/ConnectAgent", () => ({
 }));
 vi.mock("sonner", () => ({ toast: mocks.toast }));
 
-import { Route } from "./index";
+import { Route } from "./agents";
 
 const Page = (Route as unknown as { options: { component: ComponentType } })
   .options.component;
@@ -162,41 +160,24 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-describe("Apps on your devices", () => {
-  it("lists native apps apart from AI apps, with the app each opens", async () => {
+describe("Agents", () => {
+  it("lists AI apps and leaves native apps to Accounts", async () => {
     await render();
-    const devices = section("Apps on your devices");
-    expect(devices).not.toBeNull();
-    const devicesText = devices!.textContent ?? "";
-    expect(devicesText).toContain("OpenZen for Mac");
-    expect(devicesText).toContain("openzen.example.com");
-    expect(devicesText).toContain("Unverified");
-    expect(devicesText).not.toContain("Claude");
-
-    // The AI apps table, outside the section, keeps Claude only.
-    const outside = [...container.querySelectorAll("table")].filter(
-      (table) => !devices!.contains(table),
-    );
-    const outsideText = outside.map((table) => table.textContent).join(" ");
-    expect(outsideText).toContain("Claude");
-    expect(outsideText).not.toContain("OpenZen for Mac");
-  });
-
-  it("is absent until a native app has signed in", async () => {
-    mocks.listMyMcpConnections.mockResolvedValue({ connections: [CLAUDE] });
-    await render();
+    const text = section("Agents")!.textContent ?? "";
+    expect(text).toContain("Claude");
+    expect(text).not.toContain("OpenZen for Mac");
     expect(section("Apps on your devices")).toBeNull();
   });
 
-  it("signs a native app out by revoking its connection", async () => {
+  it("revokes an agent by its connection id", async () => {
     await render();
-    await pressRowAction("OpenZen for Mac", "Sign out");
-    expect(document.body.textContent).toContain("Sign OpenZen for Mac out?");
-    await act(async () => dialogButton("Sign out").click());
+    await pressRowAction("Claude", "Revoke connection");
+    expect(document.body.textContent).toContain("Revoke Claude?");
+    await act(async () => dialogButton("Revoke connection").click());
     await settle();
     expect(mocks.revokeMyMcpConnection).toHaveBeenCalledTimes(1);
     expect(mocks.revokeMyMcpConnection.mock.calls[0]![0]).toEqual({
-      data: { connectionId: "mcpc_openzen" },
+      data: { connectionId: "mcpc_claude" },
     });
     expect(mocks.toast.success).toHaveBeenCalled();
   });

@@ -299,7 +299,7 @@ claude mcp add --transport http everyapp https://<gateway>/mcp --header "Authori
 On an app host `/mcp` is the app's own private route, and an MCP-only token
 gets 403 `token_scope` everywhere there.
 
-Disconnecting: **Your connections** in the sidebar (`/connections`) lists
+Disconnecting: **Your connections** → **Agents** in the sidebar (`/connections/agents`) lists
 each OAuth connection; revoking one
 makes the client's next request fail `invalid_token`. Removing or
 deactivating a person ends all of theirs; tokens are revoked on Admin, Tokens.

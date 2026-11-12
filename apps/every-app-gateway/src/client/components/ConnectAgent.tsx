@@ -194,7 +194,7 @@ export function ConnectAgentDialog({
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground sm:mr-auto sm:self-center">
             {connectionsLink ? (
               <Link
-                to="/connections"
+                to="/connections/agents"
                 onClick={onClose}
                 className="underline underline-offset-4 hover:text-foreground"
               >

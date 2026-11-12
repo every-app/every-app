@@ -37,6 +37,7 @@ import { Route as AppAdminUsageRouteImport } from './routes/_app/admin/usage'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
 import { Route as AppConnectionsIndexRouteImport } from './routes/_app/connections/index'
 import { Route as AppConnectionsAccountsRouteImport } from './routes/_app/connections/accounts'
+import { Route as AppConnectionsAgentsRouteImport } from './routes/_app/connections/agents'
 import { Route as AppSettingsAccountsRouteImport } from './routes/_app/settings/accounts'
 import { Route as AppSettingsConnectionsRouteImport } from './routes/_app/settings/connections'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -186,6 +187,11 @@ const AppConnectionsAccountsRoute = AppConnectionsAccountsRouteImport.update({
   path: '/accounts',
   getParentRoute: () => AppConnectionsRoute,
 } as any)
+const AppConnectionsAgentsRoute = AppConnectionsAgentsRouteImport.update({
+  id: '/agents',
+  path: '/agents',
+  getParentRoute: () => AppConnectionsRoute,
+} as any)
 const AppSettingsAccountsRoute = AppSettingsAccountsRouteImport.update({
   id: '/settings/accounts',
   path: '/settings/accounts',
@@ -259,6 +265,7 @@ export interface FileRoutesByFullPath {
   '/admin/usage': typeof AppAdminUsageRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/connections/accounts': typeof AppConnectionsAccountsRoute
+  '/connections/agents': typeof AppConnectionsAgentsRoute
   '/settings/accounts': typeof AppSettingsAccountsRoute
   '/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -295,6 +302,7 @@ export interface FileRoutesByTo {
   '/admin/usage': typeof AppAdminUsageRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/connections/accounts': typeof AppConnectionsAccountsRoute
+  '/connections/agents': typeof AppConnectionsAgentsRoute
   '/settings/accounts': typeof AppSettingsAccountsRoute
   '/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -335,6 +343,7 @@ export interface FileRoutesById {
   '/_app/admin/usage': typeof AppAdminUsageRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/connections/accounts': typeof AppConnectionsAccountsRoute
+  '/_app/connections/agents': typeof AppConnectionsAgentsRoute
   '/_app/settings/accounts': typeof AppSettingsAccountsRoute
   '/_app/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -375,6 +384,7 @@ export interface FileRouteTypes {
     | '/admin/usage'
     | '/admin/users'
     | '/connections/accounts'
+    | '/connections/agents'
     | '/settings/accounts'
     | '/settings/connections'
     | '/api/auth/$'
@@ -411,6 +421,7 @@ export interface FileRouteTypes {
     | '/admin/usage'
     | '/admin/users'
     | '/connections/accounts'
+    | '/connections/agents'
     | '/settings/accounts'
     | '/settings/connections'
     | '/api/auth/$'
@@ -450,6 +461,7 @@ export interface FileRouteTypes {
     | '/_app/admin/usage'
     | '/_app/admin/users'
     | '/_app/connections/accounts'
+    | '/_app/connections/agents'
     | '/_app/settings/accounts'
     | '/_app/settings/connections'
     | '/api/auth/$'
@@ -682,6 +694,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppConnectionsAccountsRouteImport
       parentRoute: typeof AppConnectionsRoute
     }
+    '/_app/connections/agents': {
+      id: '/_app/connections/agents'
+      path: '/agents'
+      fullPath: '/connections/agents'
+      preLoaderRoute: typeof AppConnectionsAgentsRouteImport
+      parentRoute: typeof AppConnectionsRoute
+    }
     '/_app/settings/accounts': {
       id: '/_app/settings/accounts'
       path: '/settings/accounts'
@@ -780,11 +799,13 @@ const AppAdminRouteWithChildren = AppAdminRoute._addFileChildren(
 
 interface AppConnectionsRouteChildren {
   AppConnectionsAccountsRoute: typeof AppConnectionsAccountsRoute
+  AppConnectionsAgentsRoute: typeof AppConnectionsAgentsRoute
   AppConnectionsIndexRoute: typeof AppConnectionsIndexRoute
 }
 
 const AppConnectionsRouteChildren: AppConnectionsRouteChildren = {
   AppConnectionsAccountsRoute: AppConnectionsAccountsRoute,
+  AppConnectionsAgentsRoute: AppConnectionsAgentsRoute,
   AppConnectionsIndexRoute: AppConnectionsIndexRoute,
 }
 

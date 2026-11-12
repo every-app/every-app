@@ -138,7 +138,7 @@ describe("ConnectAgentDialog", () => {
     const dialog = document.querySelector('[role="dialog"]');
     expect(dialog?.textContent).toContain(CONNECT_AGENT_COPY.title);
     const connections = dialog?.querySelector<HTMLAnchorElement>(
-      'a[href="/connections"]',
+      'a[href="/connections/agents"]',
     );
     expect(
       dialog?.querySelector('a[href="https://everyapp.com/docs/connect-ai"]'),

@@ -10,9 +10,13 @@ import {
   type AppAccess,
 } from "@/client/components/ConnectionRemoval";
 import { ConnectionStatusBadge } from "@/client/components/ConnectionStatusBadge";
+import { DeviceApps } from "@/client/components/DeviceApps";
 import { ErrorState } from "@/client/components/ErrorState";
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
-import { SettingsSection } from "@/client/components/SettingsLayout";
+import {
+  SettingsSection,
+  SettingsTab,
+} from "@/client/components/SettingsLayout";
 import {
   CardSlot,
   DataTable,
@@ -58,7 +62,8 @@ import {
  * server is named after the app, and a long scope list shows two and the
  * rest on request. Every row's menu has Reconnect too: on a healthy
  * connection it asks the provider again (`fresh`), and the new grant
- * replaces the person's one connection to it.
+ * replaces the person's one connection to it. Under them, the apps signed
+ * in on their devices.
  */
 export const Route = createFileRoute("/_app/connections/accounts")({
   component: AccountsTab,
@@ -292,28 +297,32 @@ function AccountsTab() {
 
   return (
     <>
-      <SettingsSection
-        title="Connected accounts"
-        hint="Accounts you've connected, such as Gmail, and the apps you allow to use them."
-      >
-        <DataTable
-          table={table}
-          isLoading={accountsQuery.isLoading}
-          error={
-            accountsQuery.isError ? (
-              <ErrorState
-                message="Couldn't load your connected accounts."
-                onRetry={() => void accountsQuery.refetch()}
-                isRetrying={accountsQuery.isFetching}
-              />
-            ) : undefined
-          }
-          empty={{
-            title: "No connected accounts yet",
-            description: "Connect one from inside an app.",
-          }}
-        />
-      </SettingsSection>
+      <SettingsTab>
+        <SettingsSection
+          title="Connected accounts"
+          hint="Accounts you've connected, such as Gmail, and the apps you allow to use them."
+        >
+          <DataTable
+            table={table}
+            isLoading={accountsQuery.isLoading}
+            error={
+              accountsQuery.isError ? (
+                <ErrorState
+                  message="Couldn't load your connected accounts."
+                  onRetry={() => void accountsQuery.refetch()}
+                  isRetrying={accountsQuery.isFetching}
+                />
+              ) : undefined
+            }
+            empty={{
+              title: "No connected accounts yet",
+              description: "Connect one from inside an app.",
+            }}
+          />
+        </SettingsSection>
+
+        <DeviceApps />
+      </SettingsTab>
 
       {removal.dialogs}
     </>

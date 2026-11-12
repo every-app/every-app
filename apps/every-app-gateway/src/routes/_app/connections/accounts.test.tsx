@@ -8,7 +8,9 @@
  * app needs it, and in every row's menu as a fresh grant; the ones that
  * need reconnecting first; an app's MCP server named after the app; long
  * scope lists shortened; no Connect button, no organization connect, no
- * background; no token is ever on the page.
+ * background; no token is ever on the page. Under them, native apps in
+ * "Apps on your devices" with the one app each opens, signed out by
+ * revoking that connection by id; the section is absent until there is one.
  */
 import { act, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -20,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   disconnectConnection: vi.fn(),
   removeConnectionApp: vi.fn(),
   reconnectConnection: vi.fn(),
+  listMyMcpConnections: vi.fn(),
+  revokeMyMcpConnection: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
@@ -33,6 +37,10 @@ vi.mock("@/serverFunctions/connections", () => ({
   disconnectConnection: mocks.disconnectConnection,
   removeConnectionApp: mocks.removeConnectionApp,
   reconnectConnection: mocks.reconnectConnection,
+}));
+vi.mock("@/serverFunctions/mcpConnections", () => ({
+  listMyMcpConnections: mocks.listMyMcpConnections,
+  revokeMyMcpConnection: mocks.revokeMyMcpConnection,
 }));
 vi.mock("sonner", () => ({ toast: mocks.toast }));
 
@@ -79,6 +87,10 @@ beforeEach(() => {
     provider: "GitHub",
   });
   mocks.toast.success.mockReset();
+  mocks.listMyMcpConnections.mockReset();
+  mocks.listMyMcpConnections.mockResolvedValue({ connections: [] });
+  mocks.revokeMyMcpConnection.mockReset();
+  mocks.revokeMyMcpConnection.mockResolvedValue({ ok: true });
   mocks.disconnectConnection.mockResolvedValue({ ok: true, revoked: true });
   mocks.removeConnectionApp.mockResolvedValue({ ok: true });
   mocks.listMyConnections.mockResolvedValue({
@@ -297,5 +309,74 @@ describe("Connected accounts", () => {
     await render();
     expect(body()).toContain("No connected accounts yet");
     expect(body()).toContain("Connect one from inside an app.");
+  });
+});
+
+const OPENZEN = {
+  id: "mcpc_openzen",
+  kind: "native",
+  app: { name: "OpenZen", hostname: "openzen.example.com" },
+  organizationName: "Acme",
+  clientName: "OpenZen for Mac",
+  clientDomain: null,
+  redirectHost: "127.0.0.1",
+  apps: ["OpenZen"],
+  access: "write",
+  createdAt: "2026-10-25T10:00:00.000Z",
+  lastUsedAt: "2026-10-26T10:00:00.000Z",
+};
+
+const CLAUDE = {
+  ...OPENZEN,
+  id: "mcpc_claude",
+  kind: "mcp",
+  app: null,
+  clientName: "Claude",
+  clientDomain: "claude.ai",
+  redirectHost: "claude.ai",
+  apps: "all",
+};
+
+/** The section under a heading. */
+function section(title: string): HTMLElement | null {
+  return (
+    [...document.querySelectorAll<HTMLElement>("section")].find(
+      (element) => element.querySelector("h2")?.textContent === title,
+    ) ?? null
+  );
+}
+
+describe("Apps on your devices", () => {
+  it("lists native apps under the accounts, with the app each opens, and no AI apps", async () => {
+    mocks.listMyMcpConnections.mockResolvedValue({
+      connections: [CLAUDE, OPENZEN],
+    });
+    await render();
+    const devices = section("Apps on your devices");
+    expect(devices).not.toBeNull();
+    const text = devices!.textContent ?? "";
+    expect(text).toContain("OpenZen for Mac");
+    expect(text).toContain("openzen.example.com");
+    expect(text).toContain("Unverified");
+    expect(body()).not.toContain("Claude");
+  });
+
+  it("is absent until a native app has signed in", async () => {
+    mocks.listMyMcpConnections.mockResolvedValue({ connections: [CLAUDE] });
+    await render();
+    expect(section("Apps on your devices")).toBeNull();
+  });
+
+  it("signs a native app out by revoking its connection", async () => {
+    mocks.listMyMcpConnections.mockResolvedValue({ connections: [OPENZEN] });
+    await render();
+    await pressRowAction("OpenZen for Mac", "Sign out");
+    expect(body()).toContain("Sign OpenZen for Mac out?");
+    await confirm("Sign out");
+    expect(mocks.revokeMyMcpConnection).toHaveBeenCalledTimes(1);
+    expect(mocks.revokeMyMcpConnection.mock.calls[0]![0]).toEqual({
+      data: { connectionId: "mcpc_openzen" },
+    });
+    expect(mocks.toast.success).toHaveBeenCalledWith("Signed out");
   });
 });

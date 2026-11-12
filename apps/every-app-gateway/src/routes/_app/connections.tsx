@@ -13,32 +13,32 @@ import { useConnectedAccounts } from "@/client/hooks/useConnectedAccounts";
 
 /**
  * Your connections: everything the signed-in person has connected, a tab
- * each with its own URL. Agents: the AI apps on the Gateway's /mcp and the native
- * apps signed in on a device, with the steps to connect another. Accounts:
- * the accounts they connected inside an app, with a count on its tab of
- * the ones that need Reconnect.
+ * each with its own URL. Accounts, where it opens: the accounts they
+ * connected inside an app, with a count on its tab of the ones that need
+ * Reconnect, and the apps signed in on their devices. Agents: the AI apps
+ * on the Gateway's /mcp, with the steps to connect another.
  */
 export const Route = createFileRoute("/_app/connections")({
   component: ConnectionsLayout,
 });
 
 enum ConnectionsTab {
-  Agents = "agents",
   Accounts = "accounts",
+  Agents = "agents",
 }
 
 const TABS = [
-  {
-    value: ConnectionsTab.Agents,
-    label: "Agents",
-    to: "/connections",
-    icon: Bot,
-  },
   {
     value: ConnectionsTab.Accounts,
     label: "Accounts",
     to: "/connections/accounts",
     icon: CircleUserRound,
+  },
+  {
+    value: ConnectionsTab.Agents,
+    label: "Agents",
+    to: "/connections/agents",
+    icon: Bot,
   },
 ] as const;
 
@@ -53,7 +53,7 @@ function ConnectionsLayout() {
   ).length;
 
   const activeTab =
-    TABS.find((tab) => tab.to === pathname)?.value ?? ConnectionsTab.Agents;
+    TABS.find((tab) => tab.to === pathname)?.value ?? ConnectionsTab.Accounts;
 
   return (
     <Page>

@@ -132,8 +132,8 @@ export function CreateUserTokenModal({
               <DialogTitle>New token</DialogTitle>
               <DialogDescription>
                 For Claude Code, Cursor and API clients. claude.ai and ChatGPT
-                connect through <Link to="/connections">Your connections</Link>{" "}
-                instead.
+                connect through{" "}
+                <Link to="/connections/agents">Your connections</Link> instead.
               </DialogDescription>
             </DialogHeader>
             <form.AppField name="name">
