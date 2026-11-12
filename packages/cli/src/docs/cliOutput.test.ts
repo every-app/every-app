@@ -16,7 +16,6 @@ const BY_HAND: Readonly<Record<string, number>> = {
   "commands/access/index.ts": 4,
   "commands/ai/index.ts": 1,
   "commands/call/index.ts": 1,
-  "commands/configure/index.ts": 1,
   "commands/create/index.ts": 1,
   "commands/db/index.ts": 2,
   "commands/db/restore.ts": 1,

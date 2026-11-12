@@ -26,7 +26,8 @@ for a command's result, `events.ts` for how it is drawn).
    command keeps logs, bug reports and tests the same wherever it runs.
 7. **Errors: what went wrong, then the one command that fixes it** (`fix` in
    words only when no command does). A refusal says "Nothing changed" at most
-   once.
+   once. An error's text may change, and it is the same text in
+   `--json`: its code, `rerun` and `data` are the contract a script reads.
 8. **Same words everywhere:** Added / Removed / Turned on / Turned off / Set;
    "the Gateway" (capital G) or its host; secrets are named, never shown.
 

@@ -83,6 +83,7 @@ import {
   confirmAtTerminal,
   tellPerson,
 } from "@/lib/output/prompt";
+import { commandLines, factLines, finish as finishResult } from "@/lib/output/result";
 import { runCommand } from "@/lib/output/run";
 import { listed } from "@/lib/output/text";
 import { checkedPlainValue, plainContext, plainValueProblem } from "@/lib/secretValue";
@@ -678,7 +679,7 @@ function valueRequired(target: Target, state: State, plan: Plan): EveryAppError 
     .filter((name, index, all) => !state.held.has(name) && all.indexOf(name) === index);
   return new EveryAppError(
     "SECRET_VALUE_REQUIRED",
-    `Can't ask for ${target.appId}'s settings without a terminal\n${target.appId} needs ${listed(names)}. Run this at a terminal, pipe NAME=value lines in (one per line), or export them under those names and add --from-env (which also takes the variable of any unset optional setting).`,
+    `Can't ask for ${target.appId}'s settings without a terminal\n${target.appId} needs ${listed(names)}.\nExport them under those names and add --from-env, or pipe NAME=value lines in.`,
     {
       ...rerunOf(target, "with the variables exported", " --from-env"),
       data: { names, features: featuresData(state.report.features, target.urls, target.registry) },
@@ -707,7 +708,9 @@ function finish(
   const changed = set.length > 0 ? `Set ${listed(set)}. ` : "";
   const next: Array<{ command: string; note: string }> = [];
   let message: string;
-  let display: string;
+  // What a person reads (docs/cli-output.md): what is so now, then only what is left to do.
+  let short: { headline: string; ticked?: boolean; blocks?: string[][] };
+  const detail: string[] = [];
   if (!setup.ready) {
     out.emit({
       type: "warning",
@@ -722,7 +725,7 @@ function finish(
         : { command: `${CLI} configure`, note: "in the app's directory: at a terminal, with NAME=value lines on stdin, or with --from-env" },
     );
     message = `${changed}${appId} still needs ${listed(missing)}`;
-    display = chalk.yellow(`${appId} still needs ${listed(missing)}.`);
+    short = { headline: chalk.yellow(`${appId} still needs ${listed(missing)}`), ticked: false };
   } else if (!target.deployed) {
     if (waiting.length > 0) {
       next.push({ command: `${CLI} deploy`, note: `then ${CLI} configure ${appId} for ${listed(waiting)}` });
@@ -730,16 +733,20 @@ function finish(
       next.push({ command: `${CLI} deploy`, note: "in the app's directory" });
     }
     message = `${changed}${appId}'s Gateway settings are set${waiting.length > 0 ? `; its own ${listed(waiting)} come after its first deploy` : ""}`;
-    display = `${appId}'s Gateway settings are set.${waiting.length > 0 ? ` Its own ${listed(waiting)} come after its first deploy.` : ""}`;
+    short = {
+      headline: `${appId}'s Gateway settings are set`,
+      blocks: [factLines(waiting.length > 0 ? [{ label: "After its first deploy", value: listed(waiting) }] : [])],
+    };
   } else {
     message = `${changed}${appId} is ready`;
-    display = chalk.green(`${appId} is ready.`);
+    short = { headline: `${appId} is ready` };
     // Nothing asked or set: how a set value is changed, on purpose.
     if (set.length === 0 && after.report.settings.some((setting) => setting.names.length > 0)) {
-      display = `${chalk.green(`${appId} is ready. Everything it needs is set.`)}\n${chalk.dim(`To change a value: ${CLI} secret set <NAME> --app ${appId} (a Gateway setting changes for every app).`)}`;
+      short.blocks = [commandLines("Change a value", [`${CLI} secret set <NAME> --app ${appId}`])];
+      detail.push("Everything it needs is set.", "A Gateway setting changes for every app.");
     }
   }
-  if (set.length > 0) display = `${display}\n${chalk.dim("Live now. No deploy needed.")}`;
+  if (set.length > 0) short.blocks = [...(short.blocks ?? []), [chalk.dim("Live now. No deploy needed.")]];
   // An optional feature half set up never blocks, but doesn't work either.
   for (const feature of after.report.features) {
     if (feature.required || feature.state !== "incomplete") continue;
@@ -753,10 +760,10 @@ function finish(
     });
   }
   const features: FeatureData[] = featuresData(after.report.features, target.urls, target.registry);
-  out.emit({
-    type: "done",
-    message,
-    display,
+  finishResult(out, {
+    ...short,
+    message: [message],
+    detail,
     data: {
       app: { id: appId, deployed: target.deployed !== null, setup },
       features,

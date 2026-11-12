@@ -372,7 +372,7 @@ describe("configure at a terminal", () => {
     expect(done()!["data"]).not.toHaveProperty("changed");
     expect(done()!["data"]).not.toHaveProperty("next");
     expect(stripVTControlCharacters(shown ?? "")).toBe(
-      `crm is ready. Everything it needs is set.\nTo change a value: ${CLI} secret set <NAME> --app crm (a Gateway setting changes for every app).`,
+      `✓ crm is ready\n\nChange a value:  ${CLI} secret set <NAME> --app crm`,
     );
     // Nothing was written: no secrets bulk call.
     expect(account.cf.calls.slice(versions).map((call) => call.args.slice(0, 3).join(" "))).not.toContain("workers secrets bulk");
@@ -536,7 +536,7 @@ describe("configure from a script", () => {
     await expect(configureFrom({ appId: "crm" })).rejects.toMatchObject({
       code: "SECRET_VALUE_REQUIRED",
       message:
-        "Can't ask for crm's settings without a terminal\ncrm needs OPENROUTER_API_KEY, DATAFORSEO_API_KEY and TOKEN_ENCRYPTION_KEY. Run this at a terminal, pipe NAME=value lines in (one per line), or export them under those names and add --from-env (which also takes the variable of any unset optional setting).",
+        "Can't ask for crm's settings without a terminal\ncrm needs OPENROUTER_API_KEY, DATAFORSEO_API_KEY and TOKEN_ENCRYPTION_KEY.\nExport them under those names and add --from-env, or pipe NAME=value lines in.",
       rerun: "pnpm everyapp configure crm --from-env",
       rerunNote: "with the variables exported",
       data: { names: ["OPENROUTER_API_KEY", "DATAFORSEO_API_KEY", "TOKEN_ENCRYPTION_KEY"] },
