@@ -1976,9 +1976,14 @@ describe("delete", () => {
 
     expect(shown).toMatch(/^✓ Removed todo from the Gateway/m);
     expect(shown).not.toContain("Updating the Gateway");
-    expect(shown).toMatch(
-      /Its Worker and data are kept, and any cron triggers, Workflows and mail routes keep running\.\nTo delete those too: pnpm everyapp delete todo --purge\n$/,
-    );
+    expect(shown.endsWith(
+      [
+        "Kept           its Worker and data",
+        "Still running  its cron triggers, Workflows and mail routes",
+        "Delete them too:  pnpm everyapp delete todo --purge",
+        "",
+      ].join("\n"),
+    )).toBe(true);
   });
 
   it("says an app deleted already was, without redeploying the Gateway", async () => {
@@ -1989,7 +1994,7 @@ describe("delete", () => {
 
     expect(gatewayVersions()).toBe(versions);
     expect(shown).toBe(
-      "todo was already removed from the Gateway\nIts Worker and data are kept. To delete them: pnpm everyapp delete todo --purge\n",
+      "todo was already removed from the Gateway\nKept  its Worker and data\nDelete them too:  pnpm everyapp delete todo --purge\n",
     );
   });
 

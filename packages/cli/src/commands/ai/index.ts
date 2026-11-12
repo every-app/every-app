@@ -18,6 +18,7 @@ import type { JsonObject } from "@/lib/gatewayApi";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal } from "@/lib/output/prompt";
+import { commandLines, factLines, finish } from "@/lib/output/result";
 import { runCommand } from "@/lib/output/run";
 import { applyGatewaySettings } from "../secret";
 import type { GatewayCommandFlags } from "../flags";
@@ -117,12 +118,15 @@ export async function turnGatewayOn(options: AiOptions, id = DEFAULT_AI_GATEWAY_
     data: { id: made.id, url: made.url, created: made.created },
   });
   await applyGatewaySettings(gateway, { AI_GATEWAY_ID: made.id }, { flags: options.flags, out });
-  out.emit({
-    type: "done",
-    message: [
-      `Every model call to a provider AI Gateway fronts goes through ${made.url} from the Gateway's next request, the provider's own key still on it.`,
-      `Logs: Cloudflare dashboard → AI → AI Gateway → ${made.id}. For an authenticated gateway: ${CLI} secret set AI_GATEWAY_API_KEY.`,
-    ].join("\n"),
+  const account = [
+    `Every model call to a provider AI Gateway fronts goes through ${made.url} from the Gateway's next request, the provider's own key still on it.`,
+    `Logs: Cloudflare dashboard → AI → AI Gateway → ${made.id}. For an authenticated gateway: ${CLI} secret set AI_GATEWAY_API_KEY.`,
+  ];
+  finish(out, {
+    headline: `Model calls now go through AI Gateway ${made.id}`,
+    blocks: [factLines([{ label: "Logs", value: `Cloudflare dashboard → AI → AI Gateway → ${made.id}` }])],
+    message: account,
+    detail: account,
     data: { id: made.id, url: made.url, created: made.created },
   });
 }
@@ -136,9 +140,15 @@ export async function turnGatewayOff(options: AiOptions): Promise<void> {
     return;
   }
   await applyGatewaySettings(gateway, { AI_GATEWAY_ID: null }, { flags: options.flags, out });
-  out.emit({
-    type: "done",
-    message: `Model calls go direct from the Gateway's next request. The AI Gateway and its logs stay in the account${names.includes("AI_GATEWAY_API_KEY") ? `; AI_GATEWAY_API_KEY stays until ${CLI} secret unset AI_GATEWAY_API_KEY` : ""}.`,
+  const keyStays = names.includes("AI_GATEWAY_API_KEY");
+  const account = [
+    `Model calls go direct from the Gateway's next request. The AI Gateway and its logs stay in the account${keyStays ? `; AI_GATEWAY_API_KEY stays until ${CLI} secret unset AI_GATEWAY_API_KEY` : ""}.`,
+  ];
+  finish(out, {
+    headline: "Model calls now go direct to each provider",
+    blocks: [keyStays ? commandLines("Clean up", [`${CLI} secret unset AI_GATEWAY_API_KEY`]) : []],
+    message: account,
+    detail: account,
     data: { on: false, changed: true },
   });
 }

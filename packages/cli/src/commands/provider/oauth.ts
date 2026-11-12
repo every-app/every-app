@@ -47,6 +47,7 @@ import { installOrganization } from "@/lib/gateway/registry";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal } from "@/lib/output/prompt";
+import { factLines, finish } from "@/lib/output/result";
 import { formatSteps } from "@/lib/output/steps";
 import { formatTable } from "@/lib/output/table";
 import { listed, plural } from "@/lib/output/text";
@@ -598,10 +599,10 @@ export async function disconnectProvider(
       `${app} can no longer use ${kept.length === 1 ? `${personOf(kept[0]!)}'s connection` : `${kept.length} connections`} to ${capability.label} (${id}).`,
       `The Gateway keeps the tokens for the other apps; ${app} gets "not connected" until the person allows it again.`,
     ];
-    out.emit({
-      type: "done",
-      message: stripVTControlCharacters(lines.join("\n")),
-      display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line))].join("\n"),
+    finish(out, {
+      headline: lines[0]!.replace(/\.$/, ""),
+      message: lines,
+      detail: lines.slice(1),
       data: {
         id,
         name: capability.label,
@@ -636,10 +637,13 @@ export async function disconnectProvider(
     "The Gateway no longer holds the tokens; every app that used the connection gets \"not connected\" until the person connects again.",
     `The grant stays at ${capability.label} until it is revoked there: ${capability.console} (Disconnect in Connected accounts revokes it from the Gateway).`,
   ];
-  out.emit({
-    type: "done",
-    message: stripVTControlCharacters(lines.join("\n")),
-    display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line))].join("\n"),
+  finish(out, {
+    headline: lines[0]!.replace(/\.$/, ""),
+    blocks: [
+      factLines([{ label: "Revoke", value: `${chalk.cyan(capability.console)} ${chalk.dim(`· the grant stays at ${capability.label} until then`)}` }]),
+    ],
+    message: lines,
+    detail: lines.slice(1),
     data: {
       id,
       name: capability.label,

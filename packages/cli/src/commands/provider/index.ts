@@ -49,6 +49,7 @@ import { plainText, providerDocsUrl, providerKeyGuide, providerKeySteps } from "
 import { CLI } from "@/lib/output/command";
 import { ticked, type EventSink } from "@/lib/output/events";
 import { canPromptInTerminal } from "@/lib/output/prompt";
+import { factLines, finish } from "@/lib/output/result";
 import { runCommand } from "@/lib/output/run";
 import { formatSteps, type Step } from "@/lib/output/steps";
 import { formatFacts, formatTable, type Fact } from "@/lib/output/table";
@@ -1021,10 +1022,18 @@ export async function removeRegistered(
         ]
       : []),
   ];
-  out.emit({
-    type: "done",
-    message: stripVTControlCharacters(lines.join("\n")),
-    display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line))].join("\n"),
+  finish(out, {
+    headline: `Removed ${removed.name} (${id}) from ${gatewayHost}`,
+    blocks: [
+      factLines([
+        ...(removed.apps.length > 0
+          ? [{ label: "Used by", value: `${removed.apps.join(", ")} ${chalk.dim(`· ${removed.apps.length === 1 ? "its" : "their"} calls to it now fail`)}` }]
+          : []),
+        ...(stays.length > 0 ? [{ label: "Left behind", value: stays.join(", ") }] : []),
+      ]),
+    ],
+    message: lines,
+    detail: lines.slice(1),
     data: {
       id,
       name: removed.name,

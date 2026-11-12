@@ -41,6 +41,7 @@ import type { D1Database } from "@/lib/cf/d1";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { askSecret, askText, canPromptInTerminal, confirmUnlessYes, tellPerson, type Confirm } from "@/lib/output/prompt";
+import { factLines, finish as finishResult } from "@/lib/output/result";
 import { runCommand } from "@/lib/output/run";
 import { formatFacts, formatTable } from "@/lib/output/table";
 import { listed } from "@/lib/output/text";
@@ -156,14 +157,18 @@ function statusCell(status: Status): string {
   return status === "on" ? chalk.green("on") : status === "needs setup" ? chalk.yellow("needs setup") : chalk.dim("off");
 }
 
-/** A done event: the message plain, the first line bright and the rest dim for a person. */
-function finish(out: EventSink, lines: readonly string[], data: Record<string, unknown>): void {
-  out.emit({
-    type: "done",
-    message: stripVTControlCharacters(lines.join("\n")),
-    display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line))].join("\n"),
-    data,
-  });
+/**
+ * A done event (docs/cli-output.md). A person sees `short`; `lines` is the
+ * whole account: the message under --json, and all but its first line dim
+ * with --verbose.
+ */
+function finish(
+  out: EventSink,
+  lines: readonly string[],
+  data: Record<string, unknown>,
+  short: { headline: string; blocks?: ReadonlyArray<readonly string[]> },
+): void {
+  finishResult(out, { ...short, message: lines, detail: lines.slice(1), data });
 }
 
 /** The flag that gives a setting of `role` (the secret's names the variable holding it). */
@@ -370,6 +375,14 @@ export async function addProvider(options: SigninOptions<AddFlags>, id: string):
     signInUrl,
     notes: provider.notes,
     setup: provider.setup,
+  }, {
+    headline: written.length > 0 ? `${titleOf(provider)} is on` : `${titleOf(provider)} was already on: nothing changed`,
+    blocks: [
+      factLines([
+        { label: "Sign in", value: chalk.cyan(signInUrl) },
+        { label: "Redirect URL", value: `${callbackUrl} ${chalk.dim(`· registered with the ${provider.appNoun}`)}` },
+      ]),
+    ],
   });
 }
 
@@ -515,7 +528,9 @@ export async function removeProvider(options: SigninOptions<RemoveFlags>, id: st
   const held = new Set(await listGatewaySecretNames(gateway.cf, gateway.names));
   const toRemove = provider.settings.filter((setting) => held.has(setting.name)).map((setting) => setting.name);
   if (toRemove.length === 0) {
-    finish(out, [`${titleOf(provider)} isn't set up; nothing changed.`], { id: provider.id, removed: [] });
+    finish(out, [`${titleOf(provider)} isn't set up; nothing changed.`], { id: provider.id, removed: [] }, {
+      headline: `${titleOf(provider)} isn't set up: nothing changed`,
+    });
     return;
   }
   await confirmUnlessYes({
@@ -546,5 +561,9 @@ export async function removeProvider(options: SigninOptions<RemoveFlags>, id: st
       `Delete the ${provider.appNoun} at ${provider.console} too: a client the Gateway no longer holds is still a client.`,
     ],
     { id: provider.id, removed: toRemove },
+    {
+      headline: `${titleOf(provider)} is off`,
+      blocks: [factLines([{ label: `Delete the ${provider.appNoun} too`, value: chalk.cyan(provider.console) }])],
+    },
   );
 }

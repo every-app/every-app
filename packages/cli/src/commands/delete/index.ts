@@ -1,5 +1,4 @@
 import path from "node:path";
-import chalk from "chalk";
 import { queueNameFor, vectorizeNameFor } from "@every-app/perimeter/manifest";
 import { gatewayFor, type ReconcileSeams } from "@/commands/appGateway";
 import { removeEmailRoutes } from "@/lib/app/emailRoutes";
@@ -43,6 +42,7 @@ import { loadEveryAppManifestFile } from "@/lib/manifest";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { askText, canPromptInTerminal, confirmUnlessYes } from "@/lib/output/prompt";
+import { commandLines, factLines } from "@/lib/output/result";
 import { runCommand } from "@/lib/output/run";
 import { listed, plural } from "@/lib/output/text";
 import { cliVersion } from "@/lib/version";
@@ -233,13 +233,14 @@ export function deletionSummary(
   const display = purged
     ? ""
     : alreadyDeleted
-      ? chalk.dim(`Its Worker and data are kept. To delete them: ${purge}`)
+      ? [...factLines([{ label: "Kept", value: "its Worker and data" }]), ...commandLines("Delete them too", [purge])].join("\n")
       : [
-          "Its Worker and data are kept, and any cron triggers, Workflows and mail routes keep running.",
-          `To delete those too: ${purge}`,
-        ]
-          .map((line) => chalk.dim(line))
-          .join("\n");
+          ...factLines([
+            { label: "Kept", value: "its Worker and data" },
+            { label: "Still running", value: "its cron triggers, Workflows and mail routes" },
+          ]),
+          ...commandLines("Delete them too", [purge]),
+        ].join("\n");
   return {
     message,
     display,
