@@ -56,7 +56,7 @@ import type {
   Template,
 } from "../types";
 import { Notepad } from "./Notepad";
-import { ErrorState, ownerLabel } from "./parts";
+import { ErrorState, SCREEN_GUTTER, ownerLabel } from "./parts";
 import { Elapsed, RecordDot, RecorderBar } from "./recording";
 import { Transcript } from "./Transcript";
 
@@ -167,8 +167,13 @@ export function MeetingScreen(props: MeetingScreenProps) {
   const drawer = phase === "during" && transcriptOpen;
   return (
     <div className="relative flex min-h-0 flex-1">
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-[720px] flex-col gap-5 px-10 pb-32 pt-4">
+      <div className="@container min-h-0 min-w-0 flex-1 overflow-y-auto">
+        <div
+          className={cn(
+            "mx-auto flex max-w-[720px] flex-col gap-5 pb-32 pt-4",
+            SCREEN_GUTTER,
+          )}
+        >
           <Header {...props} />
           {phase === "after" ? (
             <AfterBody {...props} />

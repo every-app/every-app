@@ -6,7 +6,17 @@ import { Skeleton } from "../components/ui/skeleton";
 import { dayLabel, groupByDay, timeOfDay } from "../lib/dates";
 import type { MeetingRow } from "../types";
 
-/** The scrolling content column of a screen. */
+/**
+ * The side gutter of a screen's content column: narrower when the pane is narrow (the window at
+ * its minimum width, or beside the transcript), so the column keeps its room. It reads the width
+ * of the nearest `@container`, which is the pane that scrolls.
+ */
+export const SCREEN_GUTTER = "px-6 @[640px]:px-10";
+
+/**
+ * The scrolling content column of a screen: centred, 720px at most, the same on every screen so
+ * a page's left edge doesn't move as you go from one to the next.
+ */
 export function ScreenBody({
   children,
   className,
@@ -17,10 +27,11 @@ export function ScreenBody({
   width?: "default" | "wide" | "full";
 }) {
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className="@container min-h-0 flex-1 overflow-y-auto">
       <div
         className={cn(
-          "mx-auto flex flex-col gap-8 px-10 pb-16 pt-2",
+          "mx-auto flex flex-col gap-8 pb-16 pt-2",
+          SCREEN_GUTTER,
           width === "default" && "max-w-[720px]",
           width === "wide" && "max-w-[960px]",
           className,

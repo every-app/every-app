@@ -95,7 +95,8 @@ export function SelfTest({
       {rows && (
         <ul
           aria-label="Microphone and Mac audio"
-          className="flex flex-col gap-1.5 pl-12"
+          // One grid for both rows, so the names, meters and results line up whatever each says.
+          className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-3 gap-y-1.5 pl-12"
         >
           {rows.map((row) => (
             <Row
@@ -128,10 +129,10 @@ function Row({
     <li
       data-side={row.side}
       data-tone={row.tone}
-      className="flex h-6 items-center gap-2 text-[12px]"
+      className="col-span-3 grid min-h-6 grid-cols-subgrid items-center text-[12px]"
     >
-      <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+      <span className="flex min-w-0 items-center gap-2">
+        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="shrink-0 font-medium">{row.label}</span>
         {row.device && (
           <span className="truncate text-muted-foreground" title={row.device}>
@@ -139,10 +140,14 @@ function Row({
           </span>
         )}
       </span>
-      {level !== undefined && <Meter label={row.label} level={level} />}
+      {level !== undefined ? (
+        <Meter label={row.label} level={level} />
+      ) : (
+        <span aria-hidden />
+      )}
       <span
         className={cn(
-          "flex w-[172px] shrink-0 items-center gap-1.5",
+          "flex min-w-0 items-center gap-1.5",
           row.tone === "waiting" ? "text-muted-foreground" : "text-foreground",
         )}
       >

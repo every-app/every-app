@@ -33,7 +33,7 @@ export function HomeScreen(props: HomeScreenProps) {
   return (
     <ScreenBody className="gap-10">
       <section>
-        <SectionLabel className="px-1">Coming up</SectionLabel>
+        <SectionLabel>Coming up</SectionLabel>
         <ComingUpCard {...props} />
       </section>
       <section>

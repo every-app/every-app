@@ -31,7 +31,7 @@ import type {
 } from "../types";
 import { Avatar } from "./AppFrame";
 import { SelfTest, type SelfTestProps } from "./SelfTest";
-import { ROW_LEAD, ScreenBody, ScreenTitle } from "./parts";
+import { ROW_LEAD, ScreenBody, ScreenTitle, SectionLabel } from "./parts";
 
 export type CalendarConnection =
   | { state: "connected"; email: string | null }
@@ -109,7 +109,7 @@ export interface SettingsScreenProps {
 
 export function SettingsScreen(props: SettingsScreenProps) {
   return (
-    <ScreenBody className="max-w-[640px]">
+    <ScreenBody>
       <ScreenTitle>Settings</ScreenTitle>
       <Section title="Account">
         <AccountRow {...props} />
@@ -249,14 +249,12 @@ function Section({
 }) {
   return (
     <section>
-      <h2 className="mb-2 px-1 text-[12px] font-medium text-muted-foreground">
-        {title}
-      </h2>
+      <SectionLabel>{title}</SectionLabel>
       <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
         {children}
       </div>
       {hint && (
-        <p className="mt-2 px-1 text-[12px] text-muted-foreground">{hint}</p>
+        <p className="mt-2 text-[12px] text-muted-foreground">{hint}</p>
       )}
     </section>
   );
@@ -493,7 +491,7 @@ export const permissionInfo: Record<
     unreadable?: boolean;
   }
 > = {
-  mic: { icon: Mic, title: "Microphone" },
+  mic: { icon: Mic, title: "Microphone", detail: "Record your side of the conversation." },
   systemAudio: { icon: Volume2, title: "System audio", detail: "Record meeting participants' audio.", unreadable: true },
   notifications: { icon: Bell, title: "Notifications", detail: "Get notified before meetings." },
 };
