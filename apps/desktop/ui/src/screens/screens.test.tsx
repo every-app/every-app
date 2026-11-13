@@ -440,6 +440,47 @@ describe("AppFrame while recording", () => {
     expect(onOpen).toHaveBeenCalledTimes(2);
   });
 
+  it("says above the bar when the person's own transcription server is in trouble", () => {
+    const { rerender } = render(
+      <AppFrame
+        sidebar={sidebar}
+        recorder={recorder({
+          status: "Your transcription server isn't answering. Audio is kept for up to 5 minutes.",
+        })}
+      >
+        <p>Home</p>
+      </AppFrame>,
+    );
+    expect(
+      screen.getByText("Your transcription server isn't answering. Audio is kept for up to 5 minutes."),
+    ).toBeTruthy();
+    rerender(
+      <AppFrame
+        sidebar={sidebar}
+        recorder={recorder({ warning: "60 s of audio couldn't be transcribed." })}
+      >
+        <p>Home</p>
+      </AppFrame>,
+    );
+    expect(screen.getByText("60 s of audio couldn't be transcribed.")).toBeTruthy();
+    // On the meeting's own page the page says it, not the frame.
+    rerender(
+      <AppFrame
+        sidebar={sidebar}
+        recorder={recorder({ here: true, status: "Your transcription server isn't answering." })}
+      >
+        <p>Meeting</p>
+      </AppFrame>,
+    );
+    expect(screen.queryByText("Your transcription server isn't answering.")).toBeNull();
+    rerender(
+      <AppFrame sidebar={sidebar} recorder={recorder()}>
+        <p>Home</p>
+      </AppFrame>,
+    );
+    expect(screen.queryAllByRole("status")).toHaveLength(0);
+  });
+
   it("the sidebar has nothing about the recording, and New note is away", () => {
     render(
       <AppFrame sidebar={sidebar} recorder={recorder()}>
@@ -613,5 +654,112 @@ describe("SettingsScreen record shortcut", () => {
     expect(
       screen.queryByRole("switch", { name: "Record shortcut" }),
     ).toBeNull();
+  });
+});
+
+describe("SettingsScreen transcription", () => {
+  const settings = {
+    account: { status: "loading" },
+    permissions: { status: "loading" },
+    calendar: { status: "loading" },
+    launchAtLogin: false,
+    detectCalls: true,
+    theme: "system",
+  } as const;
+  const server = {
+    enabled: true,
+    baseUrl: "http://localhost:50060/v1",
+    model: "large-v3",
+    keySaved: false,
+    test: { kind: "idle" },
+  } as const;
+
+  it("is off by default, and says where audio and text go", () => {
+    (window as unknown as { PointerEvent?: unknown }).PointerEvent ??= window.MouseEvent;
+    const onEnabledChange = vi.fn();
+    const { rerender } = render(
+      <SettingsScreen
+        {...settings}
+        transcription={{ ...server, enabled: false, baseUrl: "", model: "", onEnabledChange }}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "With your own server, meeting audio goes only to it, never to OpenAI or to Scribe. The transcript text still goes to Scribe, and Scribe's AI model writes the notes from it. The transcript arrives every 20 to 30 seconds instead of word by word.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Server address")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Use my own transcription server" }),
+    );
+    expect(onEnabledChange).toHaveBeenCalledWith(true);
+    // On, but nothing filled in: Test is off and the person is told a recording won't start.
+    rerender(
+      <SettingsScreen
+        {...settings}
+        transcription={{ ...server, baseUrl: "", model: "" }}
+      />,
+    );
+    expect(
+      screen.getByText(/Until then a recording\s+won't start\./),
+    ).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "Test" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    rerender(<SettingsScreen {...settings} />);
+    expect(screen.queryByText("Transcription")).toBeNull();
+  });
+
+  it("saves a field when it's left, never shows the key, and reports the test", () => {
+    const onBaseUrlChange = vi.fn();
+    const onModelChange = vi.fn();
+    const onKeyChange = vi.fn();
+    const onTest = vi.fn();
+    const props = { ...server, onBaseUrlChange, onModelChange, onKeyChange, onTest };
+    const { rerender } = render(
+      <SettingsScreen {...settings} transcription={props} />,
+    );
+    const address = screen.getByLabelText("Server address") as HTMLInputElement;
+    expect(address.value).toBe("http://localhost:50060/v1");
+    fireEvent.change(address, { target: { value: " localhost:8000/v1 " } });
+    expect(onBaseUrlChange).not.toHaveBeenCalled();
+    fireEvent.blur(address);
+    expect(onBaseUrlChange).toHaveBeenCalledWith("localhost:8000/v1");
+    fireEvent.blur(screen.getByLabelText("Model")); // unchanged: nothing to save
+    expect(onModelChange).not.toHaveBeenCalled();
+
+    const key = screen.getByLabelText("API key") as HTMLInputElement;
+    expect(key.type).toBe("password");
+    fireEvent.change(key, { target: { value: "sk-local" } });
+    fireEvent.blur(key);
+    expect(onKeyChange).toHaveBeenCalledWith("sk-local");
+    expect(key.value).toBe("");
+    expect(screen.queryByRole("button", { name: "Remove API key" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Test" }));
+    expect(onTest).toHaveBeenCalledTimes(1);
+    rerender(
+      <SettingsScreen
+        {...settings}
+        transcription={{ ...props, keySaved: true, test: { kind: "ok", ms: 420 } }}
+      />,
+    );
+    expect(screen.getByText("Your server answered in 0.4 s.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Remove API key" }));
+    expect(onKeyChange).toHaveBeenLastCalledWith("");
+    rerender(
+      <SettingsScreen
+        {...settings}
+        transcription={{
+          ...props,
+          baseUrlError: "Use an https address, or http for a server on this Mac or your local network.",
+          test: { kind: "error", message: "Your transcription server at localhost:50060 isn't answering." },
+        }}
+      />,
+    );
+    expect(screen.getByRole("alert").textContent).toMatch(/Use an https address/);
+    expect(
+      screen.getByText("Your transcription server at localhost:50060 isn't answering."),
+    ).toBeTruthy();
   });
 });

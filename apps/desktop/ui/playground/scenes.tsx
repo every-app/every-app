@@ -24,6 +24,7 @@ import {
   type OnboardingScreenProps,
   type SidebarProps,
   type TemplatesScreenProps,
+  type TranscriptionTest,
 } from "../src/screens";
 import type {
   Levels,
@@ -33,6 +34,8 @@ import type {
   SelfTestReport,
   SelfTestSide,
 } from "../src/types";
+// The app's own notice (the line at the bottom of the window), so a refused start is drawn with it.
+import { Notice, notify } from "../../src/renderer/src/notice";
 import * as mock from "./mocks";
 
 export interface SceneContext {
@@ -135,7 +138,7 @@ function Frame({
   children: ReactNode;
   titleBar?: ReactNode;
   /** This Mac is recording; `here` when the scene is the recording meeting's own page. */
-  recording?: (Pick<LiveState, "recording" | "levels" | "elapsedMs"> & { here?: boolean; stopping?: boolean }) | null;
+  recording?: (Pick<LiveState, "recording" | "levels" | "elapsedMs"> & { here?: boolean; stopping?: boolean; status?: string; warning?: string }) | null;
   folders?: Loadable<typeof mock.folders>;
   banner?: ReactNode;
   update?: SidebarProps["update"];
@@ -164,6 +167,8 @@ function Frame({
               elapsedMs: recording.elapsedMs,
               stopping: recording.stopping,
               here: recording.here ?? false,
+              status: recording.status,
+              warning: recording.warning,
               onOpen: noop,
               onTranscript: noop,
               onStop: noop,
@@ -194,16 +199,27 @@ function MeetingScene({
   meeting = mock.meeting,
   animate,
   extra,
+  mode,
   elsewhere,
 }: {
   phase: MeetingPhase;
   meeting?: MeetingDetail;
   animate: boolean;
   extra?: Partial<MeetingScreenProps>;
+  /** "custom": the person's own transcription server. */
+  mode?: LiveState["recording"]["mode"];
   /** This Mac is recording another meeting meanwhile. */
   elsewhere?: boolean;
 }) {
-  const live = useLive(animate);
+  const base = useLive(animate);
+  // Their own server sends finished text only: no turn still being typed out.
+  const live: LiveState = mode
+    ? {
+        ...base,
+        recording: { ...base.recording, mode },
+        partial: mode === "custom" ? { me: "", them: "" } : base.partial,
+      }
+    : base;
   const [jottings, setJottings] = useState(
     phase === "before"
       ? "Agenda\n- recap the pilot\n- pricing for 40 seats\n- security review: who owns it?"
@@ -302,12 +318,51 @@ function TemplatesScene({
   );
 }
 
-function SettingsScene() {
+function SettingsScene({
+  ownServer = false,
+  filled = ownServer,
+  savedKey = false,
+  serverTest = { kind: "idle" },
+}: {
+  ownServer?: boolean;
+  /** The address and model are saved. */
+  filled?: boolean;
+  savedKey?: boolean;
+  serverTest?: TranscriptionTest;
+}) {
   const [theme, setTheme] = useState<ThemePreference>("system");
   const [launch, setLaunch] = useState(true);
   const [detect, setDetect] = useState(true);
+  const [own, setOwn] = useState(ownServer);
+  const [baseUrl, setBaseUrl] = useState(filled ? "http://localhost:50060/v1" : "");
+  const [model, setModel] = useState(filled ? "large-v3" : "");
+  const [keySaved, setKeySaved] = useState(savedKey);
+  const [test, setTest] = useState<TranscriptionTest>(serverTest);
+  const [baseUrlError, setBaseUrlError] = useState<string>();
   return (
     <SettingsScreen
+      transcription={{
+        enabled: own,
+        baseUrl,
+        model,
+        keySaved,
+        test,
+        baseUrlError,
+        onEnabledChange: setOwn,
+        // The app's rule, roughly: plain http only to this Mac or the local network.
+        onBaseUrlChange: (text) => {
+          const refused = /^http:\/\/(?!localhost|127\.|10\.|192\.168\.|[^/]*\.local)/.test(text);
+          setBaseUrlError(
+            refused
+              ? "Use an https address, or http for a server on this Mac or your local network."
+              : undefined,
+          );
+          if (!refused) setBaseUrl(text);
+        },
+        onModelChange: setModel,
+        onKeyChange: (key) => setKeySaved(!!key),
+        onTest: () => setTest({ kind: "ok", ms: 640 }),
+      }}
       account={ready(mock.account)}
       permissions={ready({ ...mock.permissionsMixed, systemAudio: "unknown" })}
       calendar={ready({ state: "connected", email: "ben@every.to" })}
@@ -526,15 +581,25 @@ function Recording({
   animate,
   current,
   stopping,
+  ownServer,
+  status,
+  warning,
   children,
 }: SceneContext & {
   current: NavTarget | null;
   stopping?: boolean;
+  /** The recording is on the person's own transcription server. */
+  ownServer?: boolean;
+  status?: string;
+  warning?: string;
   children: ReactNode;
 }) {
-  const live = useLive(animate);
+  const base = useLive(animate);
+  const live = ownServer
+    ? { ...base, recording: { ...base.recording, mode: "custom" as const } }
+    : base;
   return (
-    <Frame current={current} recording={{ ...live, stopping }}>
+    <Frame current={current} recording={{ ...live, stopping, status, warning }}>
       {children}
     </Frame>
   );
@@ -698,6 +763,17 @@ function WelcomeThumbnail() {
         </div>
       ))}
     </div>
+  );
+}
+
+/** Home just after New note was refused: the app says why in its notice. */
+function StartRefused({ text }: { text: string }) {
+  useEffect(() => notify(text, "error"), [text]);
+  return (
+    <>
+      <Frame current={{ to: "home" }}>{home()}</Frame>
+      <Notice />
+    </>
   );
 }
 
@@ -894,6 +970,61 @@ export const scenes: Scene[] = [
         extra={{
           warning: "Connection is slow, some audio may be skipped.",
           warningDetail: "Their side: 3 chunks waiting to upload",
+        }}
+      />
+    ),
+  },
+  {
+    id: "meeting-own-server",
+    group: "Meeting",
+    label: "During, on your own transcription server",
+    render: (ctx) => (
+      <MeetingScene
+        phase="during"
+        mode="custom"
+        {...ctx}
+        extra={{ defaultTranscriptOpen: true }}
+      />
+    ),
+  },
+  {
+    id: "meeting-own-server-down",
+    group: "Meeting",
+    label: "During, your server isn't answering",
+    render: (ctx) => (
+      <MeetingScene
+        phase="during"
+        mode="custom"
+        {...ctx}
+        extra={{ transcription: "own_server_down" }}
+      />
+    ),
+  },
+  {
+    id: "meeting-own-server-down-transcript",
+    group: "Meeting",
+    label: "During, your server isn't answering + transcript",
+    render: (ctx) => (
+      <MeetingScene
+        phase="during"
+        mode="custom"
+        {...ctx}
+        extra={{ transcription: "own_server_down", defaultTranscriptOpen: true }}
+      />
+    ),
+  },
+  {
+    id: "meeting-own-server-dropped",
+    group: "Meeting",
+    label: "During, your server was down for over 5 minutes",
+    render: (ctx) => (
+      <MeetingScene
+        phase="during"
+        mode="custom"
+        {...ctx}
+        extra={{
+          warning:
+            "Your transcription server didn't answer for over 5 minutes, so the oldest audio from the wait was dropped.",
         }}
       />
     ),
@@ -1209,6 +1340,109 @@ export const scenes: Scene[] = [
     ),
   },
   {
+    id: "settings-own-server-empty",
+    group: "Settings",
+    label: "Own transcription server: on, not filled in",
+    render: () => (
+      <Frame current={{ to: "settings" }}>
+        <SettingsScene ownServer filled={false} />
+      </Frame>
+    ),
+  },
+  {
+    id: "settings-own-server-filled",
+    group: "Settings",
+    label: "Own transcription server: filled in",
+    render: () => (
+      <Frame current={{ to: "settings" }}>
+        <SettingsScene ownServer />
+      </Frame>
+    ),
+  },
+  {
+    id: "settings-own-server-key",
+    group: "Settings",
+    label: "Own transcription server: API key saved",
+    render: () => (
+      <Frame current={{ to: "settings" }}>
+        <SettingsScene ownServer savedKey serverTest={{ kind: "ok", ms: 640 }} />
+      </Frame>
+    ),
+  },
+  {
+    id: "home-recording-own-server-down",
+    group: "Home",
+    label: "Recording, your server isn't answering (bar on Home)",
+    render: (ctx) => (
+      <Recording
+        {...ctx}
+        current={{ to: "home" }}
+        ownServer
+        status="Your transcription server isn't answering. Audio is kept for up to 5 minutes."
+      >
+        {home()}
+      </Recording>
+    ),
+  },
+  {
+    id: "home-recording-own-server-dropped",
+    group: "Home",
+    label: "Recording, your server was down for over 5 minutes (bar on Home)",
+    render: (ctx) => (
+      <Recording
+        {...ctx}
+        current={{ to: "home" }}
+        ownServer
+        warning="Your transcription server didn't answer for over 5 minutes, so the oldest audio from the wait was dropped."
+      >
+        {home()}
+      </Recording>
+    ),
+  },
+  {
+    id: "home-own-server-refused",
+    group: "Home",
+    label: "A recording refused: your server isn't answering",
+    render: () => (
+      <StartRefused text="Your transcription server at localhost:50060 isn't answering. Start it, or turn off your own server in Settings → Transcription." />
+    ),
+  },
+  {
+    id: "home-own-server-incomplete",
+    group: "Home",
+    label: "A recording refused: your server isn't set up",
+    render: () => (
+      <StartRefused text="Your own transcription server is on, but isn't set up. Add your transcription server's address in Settings → Transcription." />
+    ),
+  },
+  {
+    id: "settings-own-server",
+    group: "Settings",
+    label: "Own transcription server: tested",
+    render: () => (
+      <Frame current={{ to: "settings" }}>
+        <SettingsScene ownServer serverTest={{ kind: "ok", ms: 640 }} />
+      </Frame>
+    ),
+  },
+  {
+    id: "settings-own-server-down",
+    group: "Settings",
+    label: "Own transcription server: not answering",
+    render: () => (
+      <Frame current={{ to: "settings" }}>
+        <SettingsScene
+          ownServer
+          serverTest={{
+            kind: "error",
+            message:
+              "Your transcription server at localhost:50060 isn't answering.",
+          }}
+        />
+      </Frame>
+    ),
+  },
+  {
     id: "settings-recording",
     group: "Settings",
     label: "Recording (bar on Settings)",
@@ -1420,6 +1654,19 @@ export const scenes: Scene[] = [
         segments={[]}
         pending={[]}
         notice="Starting…"
+      />
+    ),
+  },
+  {
+    id: "recorder-own-server-down",
+    group: "Floating recorder",
+    label: "Hovered: your transcription server isn't answering",
+    render: (ctx) => (
+      <RecorderScene
+        expanded
+        animate={ctx.animate}
+        pending={[]}
+        notice="Your transcription server isn't answering. Your audio is kept."
       />
     ),
   },

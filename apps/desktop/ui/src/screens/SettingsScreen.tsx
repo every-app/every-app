@@ -1,5 +1,6 @@
 import { cn } from "cn";
 import {
+  AudioLines,
   Bell,
   CalendarDays,
   Keyboard,
@@ -14,8 +15,10 @@ import {
   TimerOff,
   Volume2,
 } from "lucide-react";
+import { useEffect, useId, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
 import { Skeleton } from "../components/ui/skeleton";
 import { Switch } from "../components/ui/switch";
 import type { ThemePreference } from "../lib/theme";
@@ -34,6 +37,36 @@ export type CalendarConnection =
   | { state: "connected"; email: string | null }
   | { state: "disconnected"; reconnect: boolean }
   | { state: "unavailable" };
+
+/** Settings → Transcription → Test: the last answer from the person's own server. */
+export type TranscriptionTest =
+  | { kind: "idle" }
+  | { kind: "testing" }
+  | { kind: "ok"; ms: number }
+  | { kind: "error"; message: string };
+
+/** The person's own OpenAI-compatible transcription server. */
+export interface TranscriptionSettingsProps {
+  enabled: boolean;
+  /** The saved address and model ("" when not set). */
+  baseUrl: string;
+  model: string;
+  /** An API key is saved (it is never shown). */
+  keySaved: boolean;
+  /** Why the address just typed wasn't saved. */
+  baseUrlError?: string;
+  test: TranscriptionTest;
+  onEnabledChange?: (on: boolean) => void;
+  /** Called when a field is left or Enter is pressed, with the trimmed text. */
+  onBaseUrlChange?: (text: string) => void;
+  onModelChange?: (text: string) => void;
+  /** "" removes the saved key. */
+  onKeyChange?: (key: string) => void;
+  onTest?: () => void;
+}
+
+export const TRANSCRIPTION_HINT =
+  "With your own server, meeting audio goes only to it, never to OpenAI or to Scribe. The transcript text still goes to Scribe, and Scribe's AI model writes the notes from it. The transcript arrives every 20 to 30 seconds instead of word by word.";
 
 export interface SettingsScreenProps {
   account: Loadable<Account>;
@@ -66,6 +99,8 @@ export interface SettingsScreenProps {
   onAutoStopChange?: (on: boolean) => void;
   /** "Check microphone & Mac audio", under the permissions. */
   selfTest?: SelfTestProps;
+  /** The person's own transcription server; the section shows when given. */
+  transcription?: TranscriptionSettingsProps;
   onConnectCalendar?: () => void;
   onLaunchAtLoginChange?: (on: boolean) => void;
   onDetectCallsChange?: (on: boolean) => void;
@@ -89,6 +124,11 @@ export function SettingsScreen(props: SettingsScreenProps) {
       <Section title="Calendar">
         <CalendarRow {...props} />
       </Section>
+      {props.transcription && (
+        <Section title="Transcription" hint={TRANSCRIPTION_HINT}>
+          <TranscriptionServer {...props.transcription} />
+        </Section>
+      )}
       <Section title="General">
         <Row
           icon={Power}
@@ -246,6 +286,163 @@ function Row({
       </div>
       {control && <div className="shrink-0">{control}</div>}
     </div>
+  );
+}
+
+/** A text field that saves when it's left or Enter is pressed, and follows the saved value. */
+function SavedField({
+  label,
+  value,
+  placeholder,
+  type = "text",
+  error,
+  clearOnSave = false,
+  onSave,
+}: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  type?: "text" | "password";
+  error?: string;
+  /** For a secret: once saved, the field empties instead of showing it. */
+  clearOnSave?: boolean;
+  onSave?: (text: string) => void;
+}) {
+  const id = useId();
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const save = () => {
+    const text = draft.trim();
+    if (text !== value) onSave?.(text);
+    if (clearOnSave) setDraft("");
+  };
+  return (
+    <div className="flex items-start gap-3 px-4 py-2">
+      <span className={ROW_LEAD} />
+      <label
+        htmlFor={id}
+        className="w-28 shrink-0 pt-1.5 text-[13px] text-foreground/80"
+      >
+        {label}
+      </label>
+      <div className="min-w-0 flex-1">
+        <Input
+          id={id}
+          type={type}
+          value={draft}
+          placeholder={placeholder}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          aria-invalid={error ? true : undefined}
+          className="h-8 text-[13px] md:text-[13px]"
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={save}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+          }}
+        />
+        {error && (
+          <p role="alert" className="mt-1 text-[12px] text-destructive">
+            {error}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TranscriptionServer(props: TranscriptionSettingsProps) {
+  const { test } = props;
+  const incomplete = !props.baseUrl || !props.model;
+  return (
+    <>
+      <Row
+        icon={AudioLines}
+        title="Use my own transcription server"
+        detail="Send meeting audio to an OpenAI-compatible server you run, such as a Whisper server on this Mac, instead of to OpenAI."
+        control={
+          <Switch
+            aria-label="Use my own transcription server"
+            checked={props.enabled}
+            onCheckedChange={(on) => props.onEnabledChange?.(on)}
+          />
+        }
+      />
+      {props.enabled && (
+        <div className="py-1.5">
+          <SavedField
+            label="Server address"
+            value={props.baseUrl}
+            placeholder="http://localhost:50060/v1"
+            error={props.baseUrlError}
+            onSave={props.onBaseUrlChange}
+          />
+          <SavedField
+            label="Model"
+            value={props.model}
+            placeholder="The model name your server expects"
+            onSave={props.onModelChange}
+          />
+          <SavedField
+            label="API key"
+            type="password"
+            value=""
+            clearOnSave
+            placeholder={
+              props.keySaved
+                ? "Saved. Type a new key to replace it"
+                : "Optional. Most local servers need none"
+            }
+            onSave={(key) => key && props.onKeyChange?.(key)}
+          />
+          <div className="flex min-h-10 items-center gap-3 px-4 py-1.5">
+            <span className={ROW_LEAD} />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={incomplete || test.kind === "testing"}
+              onClick={props.onTest}
+            >
+              {test.kind === "testing" ? "Testing…" : "Test"}
+            </Button>
+            {props.keySaved && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => props.onKeyChange?.("")}
+              >
+                Remove API key
+              </Button>
+            )}
+            <p
+              role="status"
+              className={cn(
+                "min-w-0 flex-1 text-[12px]",
+                test.kind === "error"
+                  ? "text-destructive"
+                  : "text-muted-foreground",
+              )}
+            >
+              {test.kind === "ok" && (
+                <>
+                  <span className="mr-1.5 inline-block size-1.5 rounded-full bg-success align-middle" />
+                  Your server answered in {(test.ms / 1000).toFixed(1)} s.
+                </>
+              )}
+              {test.kind === "error" && test.message}
+              {test.kind === "idle" && incomplete && (
+                <span className="text-warning-foreground dark:text-warning">
+                  Add the server address and model. Until then a recording
+                  won't start.
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

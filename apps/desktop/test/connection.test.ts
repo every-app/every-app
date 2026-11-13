@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { connectionOf, gateOf, signInAgainOf, transcriptionNoteOf, type Snapshot } from "../src/renderer/src/connection";
+import { connectionOf, gateOf, ownServerBarNotes, signInAgainOf, transcriptionNoteOf, type Snapshot } from "../src/renderer/src/connection";
 
 const base = {
   version: "0.1.0",
@@ -60,5 +60,20 @@ describe("connection", () => {
     expect(transcriptionNoteOf(with_({ recording: { transcription: "reconnecting" } }))).toBe("reconnecting");
     expect(transcriptionNoteOf(with_({ recording: { transcription: "catching_up" } }))).toBe("catching_up");
     expect(transcriptionNoteOf(with_({ recording: { transcription: "live" } }))).toBeNull();
+    expect(transcriptionNoteOf(with_({ recording: { transcription: "reconnecting", mode: "custom" } }))).toBe("own_server_down");
+  });
+
+  it("the recording bar on other pages says when the person's own server is in trouble, and only then", () => {
+    expect(ownServerBarNotes(base)).toEqual({ status: null, warning: null });
+    // Scribe's own transcription reconnecting: the bar stays as it was.
+    expect(ownServerBarNotes(with_({ recording: { state: "recording", transcription: "reconnecting", mode: "realtime", warning: "slow" } }))).toEqual({ status: null, warning: null });
+    expect(ownServerBarNotes(with_({ recording: { state: "recording", transcription: "reconnecting", mode: "custom" } }))).toEqual({
+      status: "Your transcription server isn't answering. Audio is kept for up to 5 minutes.",
+      warning: null,
+    });
+    expect(ownServerBarNotes(with_({ recording: { state: "recording", transcription: "live", mode: "custom", warning: "60 s of audio couldn't be transcribed." } }))).toEqual({
+      status: null,
+      warning: "60 s of audio couldn't be transcribed.",
+    });
   });
 });

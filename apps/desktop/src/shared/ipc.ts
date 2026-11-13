@@ -8,6 +8,9 @@ export type { SelfTestReport, SelfTestSide } from "./protocol";
 import type { CalendarEvent, Me, MeetingDetail, MeetingPatch, MeetingSummary } from "./api";
 import type { Segment } from "./contract";
 import type { Speaker } from "./protocol";
+import type { TranscriptionTestResult } from "./transcriptionServer";
+
+export type { TranscriptionTestResult } from "./transcriptionServer";
 
 export type TrayState = "idle" | "recording" | "attention";
 
@@ -28,6 +31,15 @@ export interface Settings {
   /** The floating recorder: a small pill in the screen's bottom-right corner while recording,
    * which shows the live transcript on hover. On by default. */
   floatingRecorder: boolean;
+  /** Send meeting audio to the person's own OpenAI-compatible transcription server instead of
+   * OpenAI. Off by default. While it's on, audio goes nowhere else: a recording that can't use
+   * the server doesn't start. Its optional API key is not here: it's kept encrypted with the
+   * sign-in (auth/store.ts) and never sent to the window. */
+  ownTranscription: boolean;
+  /** That server's address, e.g. `http://localhost:50060/v1` (src/shared/transcriptionServer.ts). */
+  transcriptionBaseUrl: string;
+  /** The model name the server expects, e.g. `whisper-1` or `large-v3`. */
+  transcriptionModel: string;
   /** Ask "Still recording?" when a recording looks forgotten (the other side went quiet, the call
    * app let go of the microphone, the calendar meeting is over), and stop if nobody answers. On
    * by default. */
@@ -43,6 +55,9 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   recordShortcut: false,
   floatingRecorder: true,
+  ownTranscription: false,
+  transcriptionBaseUrl: "",
+  transcriptionModel: "",
   autoStop: true,
 };
 
@@ -122,7 +137,8 @@ export interface RecordingSnapshot {
   calendarEventId?: string;
   title?: string;
   startedAt?: string;
-  mode?: "realtime" | "fallback";
+  /** "custom": the person's own transcription server (Settings → Transcription). */
+  mode?: "realtime" | "fallback" | "custom";
   mic?: ChannelHealth;
   system?: ChannelHealth;
   /** "reconnecting": transcription can't be reached (the audio is kept, up to 5 minutes);
@@ -161,6 +177,8 @@ export interface AppSnapshot {
   /** The optional global shortcut (⌃⌥⌘R): "conflict" when another app holds it. */
   recordShortcut: "off" | "on" | "conflict";
   settings: Settings;
+  /** Whether an API key is saved for the person's own transcription server (never the key). */
+  transcriptionKey: { saved: boolean };
   connection: Connection;
   permissions: PermissionsSnapshot;
   loginItem: LoginItemSnapshot;
@@ -188,7 +206,7 @@ export interface PillView {
   /** Where the panel and the pill sit, in the window's own coordinates. The window covers both
    * all the time; only the pill takes the mouse until the panel opens. */
   layout: { panel: Rect; pill: Rect; panelSide: "left" | "right" };
-  recording: Pick<RecordingSnapshot, "state" | "title" | "startedAt" | "stoppingSince" | "transcription">;
+  recording: Pick<RecordingSnapshot, "state" | "title" | "startedAt" | "stoppingSince" | "transcription" | "mode">;
   /** The newest turns (bounded) while expanded; empty while collapsed. In memory only. */
   transcript: { segments: Segment[]; pending: { speaker: Speaker; text: string }[] };
 }
@@ -239,6 +257,12 @@ export interface InvokeMap {
   "selftest:run": [[], SelfTestReport];
   /** Ends the running check, if any (selftest:run then answers). */
   "selftest:stop": [[], void];
+  /** Saves the API key for the person's own transcription server, encrypted like the sign-in;
+   * an empty string forgets it. The key never comes back to the window. */
+  "transcription:setKey": [[key: string], void];
+  /** Settings → Transcription → Test: the helper sends one second of silence to the saved
+   * address with the saved model and key. Rejects with the reason when it doesn't answer. */
+  "transcription:test": [[], TranscriptionTestResult];
   /** Restart into a downloaded update; during a recording it's deferred until Stop. */
   "update:install": [[], { deferred: boolean }];
   /** The floating recorder's window: its current view. */
@@ -313,6 +337,8 @@ export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   "pill:dragStart",
   "pill:dragEnd",
   "selftest:stop",
+  "transcription:setKey",
+  "transcription:test",
 ] as const;
 
 export const EVENT_CHANNELS: readonly EventChannel[] = ["state", "helper", "navigate", "update", "pill"] as const;

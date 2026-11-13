@@ -34,7 +34,8 @@ export function buildDiagnostics(d: DiagnosticsInput): string {
     `Recording: ${s.recording.state}${s.recording.mode ? `, ${s.recording.mode}` : ""}${s.recording.mic ? `, mic ${s.recording.mic}` : ""}${s.recording.system ? `, system ${s.recording.system}` : ""}${s.recording.transcription ? `, transcription ${s.recording.transcription}` : ""}`,
     `Pending uploads: ${d.pendingUploads}`,
     `Permissions: mic ${s.permissions.mic}, system audio ${s.permissions.systemAudio}, notifications ${s.permissions.notifications}`,
-    `Settings: ${JSON.stringify(s.settings)}`,
+    // The person's own transcription server: whether one is set, not where it is.
+    `Settings: ${JSON.stringify({ ...s.settings, transcriptionBaseUrl: s.settings.transcriptionBaseUrl ? "(set)" : "" })}`,
     `Login item: ${s.loginItem.status}; calendar connected ${s.calendar.connected}, ${s.calendar.events.length} upcoming; updater ${s.updater.enabled ? `${s.updater.state}${s.updater.version ? ` ${s.updater.version}` : ""}${s.updater.deferred ? " (deferred)" : ""}` : "off"}; record shortcut ${s.recordShortcut}`,
     "",
     `Last ${d.logTail.length} log lines:`,

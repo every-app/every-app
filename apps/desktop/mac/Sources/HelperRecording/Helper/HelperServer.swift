@@ -22,6 +22,9 @@ public struct HelperEnvironment: Sendable {
   public var now: @Sendable () -> Date = { Date() }
   /// Between the self-test's 100 ms measurements (tests feed audio here instead of waiting).
   public var selfTestTick: @Sendable () async -> Void = { try? await Task.sleep(for: .milliseconds(100)) }
+  /// How long `record.start` waits for the person's own transcription server to answer a check
+  /// before it starts anyway (a model still loading); a refusal or nothing listening fails at once.
+  public var ownServerStartCheck: Duration = .seconds(8)
 
   public init(
     version: String, macos: String, micStatus: @escaping @Sendable () -> CapturePermission.Status,
@@ -169,6 +172,8 @@ public final class HelperServer {
       return try await runSelfTest(p)
     case "selftest.stop":
       return await stopSelfTest()
+    case "transcribe.test":
+      return try await testTranscriptionServer(p)
     case "detect.set":
       guard let enabled = p["enabled"]?.bool else { throw HelperError.badParams("enabled must be true or false") }
       setDetection(enabled)
@@ -194,6 +199,8 @@ public final class HelperServer {
     guard let token = p["accessToken"]?.string, !token.isEmpty else { throw HelperError.badParams("accessToken is required") }
     let language = p["language"]?.string ?? env.defaultLanguage
     let options = RecordingOptions()
+    // Their own server, when the app sends one: the only place this recording's audio goes.
+    let ownServer = try Self.transcriptionServer(p["transcription"]).map { TranscriptionServerClient(server: $0, transport: env.transport) }
 
     starting = true
     startCancelled = false
@@ -208,14 +215,18 @@ public final class HelperServer {
       throw HelperError("mic_denied", "Every App needs the microphone. Allow it in System Settings → Privacy & Security → Microphone.")
     }
     if startCancelled { throw Self.cancelledError }
+    if let ownServer {
+      try await checkOwnServer(ownServer, language: language)
+      if startCancelled { throw Self.cancelledError }
+    }
     let auth = HelperAuth(appURL: apiBase, token: token, timeout: env.tokenTimeout) { [weak self] in
       Task { @MainActor in self?.emit("token.needed") }
     }
     let pipeline = RecordingPipeline(
       meetingID: meetingID, api: APIClient(auth: auth, transport: env.transport), language: language,
-      options: options, dependencies: env.pipeline
+      options: options, ownServer: ownServer, dependencies: env.pipeline
     ) { [weak self] event in self?.recordingEvent(event) }
-    mode = .realtime
+    mode = ownServer == nil ? .realtime : .custom
     health = (.ok, .ok)
     transcriptionDown = []
     catchingUp = false
@@ -236,6 +247,57 @@ public final class HelperServer {
   }
 
   static let cancelledError = HelperError("cancelled", "record.stop arrived before the recording started")
+
+  // MARK: The person's own transcription server
+
+  /// `{ baseUrl, model, apiKey? }` from `record.start`'s `transcription` or `transcribe.test`.
+  /// Nil when there's none (null or absent): the recording then uses Scribe's transcription.
+  static func transcriptionServer(_ value: JSONValue?) throws -> TranscriptionServer? {
+    guard let value, value != .null else { return nil }
+    guard case .object = value else { throw HelperError.badParams("transcription must be an object") }
+    guard let text = value["baseUrl"]?.string, let baseURL = TranscriptionServer.typedBaseURL(text) else {
+      throw HelperError.badParams("transcription.baseUrl must be an https URL (http only for this Mac or the local network)")
+    }
+    guard let model = value["model"]?.string?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty else {
+      throw HelperError.badParams("transcription.model is required")
+    }
+    return TranscriptionServer(baseURL: baseURL, model: model, apiKey: value["apiKey"]?.string)
+  }
+
+  /// Before a recording starts: a server that refuses the request, or isn't there, fails the
+  /// start with its reason (the recording never falls back to anything else). One that is only
+  /// slow (a model still loading) doesn't: the channel keeps the audio and retries.
+  private func checkOwnServer(_ client: TranscriptionServerClient, language: String?) async throws {
+    do {
+      _ = try await ChunkChannel.withTimeout(env.ownServerStartCheck) { try await client.check(language: language) }
+    } catch let error as TranscriptionServerError {
+      if case .status(let status, _) = error, !error.isPermanent {
+        log("own transcription server answered \(status) at start; recording anyway")
+        return
+      }
+      throw HelperError(
+        "transcription_server", "\(error.localizedDescription) Start it, or turn off your own server in Settings → Transcription.")
+    } catch is ChunkChannel.UploadTimedOut {
+      log("own transcription server slow to answer at start; recording anyway")
+    }
+  }
+
+  /// `transcribe.test { baseUrl, model, apiKey? }`: sends one second of silence to the server
+  /// as a recording would, and answers how long it took and what came back.
+  private func testTranscriptionServer(_ p: JSONValue) async throws -> JSONValue {
+    guard let server = try Self.transcriptionServer(p) else { throw HelperError.badParams("baseUrl and model are required") }
+    let client = TranscriptionServerClient(server: server, transport: env.transport)
+    let began = ContinuousClock.now
+    do {
+      let text = try await client.check()
+      let elapsed = ContinuousClock.now - began
+      let ms = Int(elapsed.components.seconds * 1000 + elapsed.components.attoseconds / 1_000_000_000_000_000)
+      log("transcription server test passed in \(ms) ms")
+      return ["ms": .int(ms), "text": .string(text), "endpoint": .string(server.endpoint.absoluteString)]
+    } catch let error as TranscriptionServerError {
+      throw HelperError("transcription_server", error.localizedDescription)
+    }
+  }
 
   /// `selftest.run { seconds? }` (1–60, default 60): capture both sides locally until
   /// `selftest.stop` or `seconds` pass, streaming `levels` (10 Hz) and `selftest.progress` (the
@@ -323,6 +385,7 @@ public final class HelperServer {
     case APIError.accessLogin: HelperError("access_login", error.localizedDescription)
     case APIError.server(let status, let code, _): HelperError(code ?? "http_\(status)", error.localizedDescription)
     case is CaptureError: HelperError("capture_failed", error.localizedDescription)
+    case is TranscriptionServerError: HelperError("transcription_server", error.localizedDescription)
     default: HelperError("start_failed", error.localizedDescription)
     }
   }

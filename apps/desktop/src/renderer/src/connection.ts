@@ -49,9 +49,26 @@ export function signInAgainOf(state: Snapshot | undefined): SignInAgain | null {
  * What the live view says about transcription: "reconnecting" (can't reach it; the helper keeps
  * the audio), then "catching_up" (that audio is transcribed and lands in place), then nothing.
  */
-export function transcriptionNoteOf(state: Snapshot | undefined): "reconnecting" | "catching_up" | null {
+export function transcriptionNoteOf(state: Snapshot | undefined): "reconnecting" | "catching_up" | "own_server_down" | null {
   const t = state?.recording.transcription;
+  // With the person's own server there is nothing to reconnect to: say whose server it is.
+  if (t === "reconnecting" && state?.recording.mode === "custom") return "own_server_down";
   return t === "reconnecting" || t === "catching_up" ? t : null;
+}
+
+/** With the person's own server, what its trouble is called on the meeting page: the same words
+ * go above the recording bar on every other page (`AppFrame`'s recorder). */
+export const OWN_SERVER_DOWN = "Your transcription server isn't answering. Audio is kept for up to 5 minutes.";
+
+/**
+ * What the recording bar says above itself away from the meeting's page. Only for a recording
+ * on the person's own transcription server: that its server isn't answering, and the helper's
+ * words when audio was dropped or left untranscribed.
+ */
+export function ownServerBarNotes(state: Snapshot | undefined): { status: string | null; warning: string | null } {
+  const rec = state?.recording;
+  if (!rec || rec.mode !== "custom" || rec.state === "idle") return { status: null, warning: null };
+  return { status: rec.transcription === "reconnecting" ? OWN_SERVER_DOWN : null, warning: rec.warning ?? null };
 }
 
 /** Offline or signed out, now online: time to refetch what failed (lists, calendar, unsaved notes). */

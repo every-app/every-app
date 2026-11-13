@@ -72,7 +72,7 @@ export class RecorderPillWindow {
     return {
       expanded: this.hover.isExpanded,
       layout: { panel: layout.panel, pill: layout.pill, panelSide: layout.panelSide },
-      recording: { state: r.state, title: r.title, startedAt: r.startedAt, stoppingSince: r.stoppingSince, transcription: r.transcription },
+      recording: { state: r.state, title: r.title, startedAt: r.startedAt, stoppingSince: r.stoppingSince, transcription: r.transcription, mode: r.mode },
       transcript: this.hover.isExpanded ? this.options.transcript.view() : { segments: [], pending: [] },
     };
   }

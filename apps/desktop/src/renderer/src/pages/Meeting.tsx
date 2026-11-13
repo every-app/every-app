@@ -104,7 +104,8 @@ export function MeetingPage({ id, tab }: { id: string; tab?: MeetingTab }) {
       onJottingsChange={setJottings}
       live={live}
       defaultTranscriptOpen={recordingHere && openTranscript}
-      warning={recordingHere && rec.warning ? SLOW_CONNECTION : null}
+      // With the person's own server the helper's words are the warning (their server, not the connection).
+      warning={recordingHere && rec.warning ? (rec.mode === "custom" ? rec.warning : SLOW_CONNECTION) : null}
       warningDetail={recordingHere ? rec.warning : null}
       transcription={recordingHere ? transcriptionNoteOf(state) : null}
       stopping={stopping}

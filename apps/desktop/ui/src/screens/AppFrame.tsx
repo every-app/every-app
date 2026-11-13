@@ -1,5 +1,6 @@
 import { cn } from "cn";
 import {
+  AlertTriangle,
   ArrowUpCircle,
   Folder as FolderIcon,
   House,
@@ -32,6 +33,13 @@ export interface FrameRecorder
   onOpen: () => void;
   /** Go to the recording meeting with its live transcript open. */
   onTranscript: () => void;
+  /**
+   * A quiet line above the bar, as the meeting's own page shows it: the person's own
+   * transcription server isn't answering (their audio is kept meanwhile).
+   */
+  status?: string | null;
+  /** Something that went wrong and stays said: audio their server never transcribed. */
+  warning?: string | null;
 }
 
 export interface SidebarProps {
@@ -356,7 +364,25 @@ export function AppFrame({
         {banner}
         {children}
         {recorder && !recorder.here && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-5 flex justify-center px-4">
+          <div className="pointer-events-none absolute inset-x-0 bottom-5 flex flex-col items-center gap-2 px-4">
+            {recorder.status && (
+              <p
+                role="status"
+                className="animate-in fade-in-0 pointer-events-auto flex items-center gap-1.5 rounded-full bg-background/85 px-3 py-1 text-[12px] text-muted-foreground backdrop-blur"
+              >
+                <span className="record-pulse size-1.5 rounded-full bg-foreground/40" />
+                {recorder.status}
+              </p>
+            )}
+            {recorder.warning && (
+              <p
+                role="status"
+                className="animate-in fade-in-0 pointer-events-auto flex items-center gap-1.5 rounded-full bg-background/85 px-3 py-1 text-[12px] text-muted-foreground backdrop-blur"
+              >
+                <AlertTriangle className="size-3.5 shrink-0 text-warning" />
+                {recorder.warning}
+              </p>
+            )}
             <RecorderBar
               recording={recorder.recording}
               levels={recorder.levels}

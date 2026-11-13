@@ -1,6 +1,8 @@
 // Helper protocol v1 (docs/desktop-plan.md, "Helper protocol (v1)"). Newline-delimited JSON on
 // the helper's stdin/stdout; logs on stderr. Change this only together with Lane H and the plan.
 
+import type { TranscriptionServerParams, TranscriptionTestResult } from "./transcriptionServer";
+
 export const HELPER_PROTOCOL = 1;
 
 export type PermissionStatus = "granted" | "denied" | "undetermined" | "unknown";
@@ -56,8 +58,11 @@ export interface HelperCommands {
     params: { kind: "mic" | "systemAudio" };
     result: { mic: PermissionStatus; systemAudio: PermissionStatus };
   };
+  /** `transcription`: the person's own server. With it the helper sends audio only there (mode
+   * "custom"): it asks Scribe for no key and never uses the chunk fallback. It checks the server
+   * first; one that refuses or isn't there fails the start with error `transcription_server`. */
   "record.start": {
-    params: { meetingId: string; apiBase: string; accessToken: string; language?: string };
+    params: { meetingId: string; apiBase: string; accessToken: string; language?: string; transcription?: TranscriptionServerParams };
     result: { startedAt: string };
   };
   /** `cancelled`: the stop came while record.start was still starting; nothing was captured and
@@ -73,6 +78,9 @@ export interface HelperCommands {
   "selftest.run": { params: SelfTestRequest; result: SelfTestReport };
   /** Ends a running self-test (its selftest.run then answers). `stopped: false` if none ran. */
   "selftest.stop": { params: undefined; result: { stopped: boolean } };
+  /** Settings → Transcription → Test: one second of silence to the person's server, sent as a
+   * recording would send it. Error `transcription_server` says why it didn't answer. */
+  "transcribe.test": { params: TranscriptionServerParams; result: TranscriptionTestResult };
 }
 
 export type HelperCommand = keyof HelperCommands;
@@ -97,7 +105,8 @@ export interface HelperEvents {
   state: {
     recording: boolean;
     meetingId?: string;
-    mode: "realtime" | "fallback";
+    /** "custom": the person's own transcription server. */
+    mode: "realtime" | "fallback" | "custom";
     mic: ChannelHealth;
     system: ChannelHealth;
     /** "reconnecting": a speaker's Realtime channel is down (its audio is kept, up to 5 minutes).

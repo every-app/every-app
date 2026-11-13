@@ -17,7 +17,8 @@ public protocol CaptureInfo {
 }
 
 public enum RecordingMode: String, Sendable, Equatable {
-  case realtime, fallback
+  /// `custom`: the person's own transcription server (`TranscriptionServer`); audio goes only there.
+  case realtime, fallback, custom
 }
 
 /// How one source sounds: `silent` means no signal at all for a while (a denied tap, a muted
@@ -85,6 +86,11 @@ public final class RecordingPipeline {
     public var makeReplay: (@Sendable (
       _ speaker: Speaker, _ language: String?, _ offsetMs: Int, _ seqFor: @escaping @Sendable (Int) -> Int,
       _ upload: @escaping @Sendable (Data, Int, Int, Int) async throws -> Segment?, _ callbacks: ChannelCallbacks
+    ) -> any SpeakerChannel)?
+    /// A speaker's channel to the person's own server (`OwnServerChannel` unless a test says otherwise).
+    public var makeOwnServer: (@Sendable (
+      _ speaker: Speaker, _ language: String?, _ transcribe: @escaping @Sendable (Data, String?) async throws -> String,
+      _ callbacks: ChannelCallbacks
     ) -> any SpeakerChannel)?
     public var flushInterval: TimeInterval = SegmentBatcher.interval
     /// After the channels finish, how long to let the last segments land.
@@ -154,6 +160,10 @@ public final class RecordingPipeline {
   public private(set) var health: (mic: SourceHealth, system: SourceHealth) = (.ok, .ok)
 
   private let api: APIClient
+  /// The person's own transcription server, when they set one: then nothing else gets audio.
+  private let ownServer: TranscriptionServerClient?
+  /// Audio their server never transcribed (down too long, or it refused it): said on stop.
+  private var ownServerLoss: String?
   private let deps: Dependencies
   private let onEvent: @MainActor (RecordingEvent) -> Void
   private var mic: (any AudioSource)?
@@ -189,16 +199,19 @@ public final class RecordingPipeline {
 
   public init(
     meetingID: String, api: APIClient, language: String?, options: RecordingOptions = RecordingOptions(),
+    ownServer: TranscriptionServerClient? = nil,
     dependencies: Dependencies = .live, onEvent: @escaping @MainActor (RecordingEvent) -> Void
   ) {
     self.meetingID = meetingID
     self.api = api
+    self.ownServer = ownServer
     self.language = language
     self.options = options
     self.deps = dependencies
     self.onEvent = onEvent
     self.startedAt = dependencies.now()
     if options.dedupeEcho { echo = EchoFilter(holdMs: dependencies.echoHoldMs) }
+    if ownServer != nil { mode = .custom }
   }
 
   /// `me` segments waiting for the echo check.
@@ -277,6 +290,7 @@ public final class RecordingPipeline {
     } else if problem == nil, replayFailures > 0 {
       problem = "Some audio from a reconnect couldn't be transcribed (\(replayFailures) stretch\(replayFailures == 1 ? "" : "es"))."
     }
+    if problem == nil, let ownServerLoss { problem = ownServerLoss }
     let unsaved = (refused + batcher.pending).sorted { $0.seq < $1.seq }
     if problem == nil, !refused.isEmpty { problem = "Scribe refused \(refused.count) transcript segment(s)." }
     var finished = false
@@ -340,7 +354,7 @@ public final class RecordingPipeline {
   /// Transcribes audio kept during a Realtime outage through the chunk fallback, while live
   /// audio goes on to Realtime. Its segments get replay seqs, so they slot in by time.
   private func replay(speaker: Speaker, pcm: Data, startMs: Int) {
-    guard running || isStopping else { return }
+    guard running || isStopping, ownServer == nil else { return }
     let api = self.api, meetingID = self.meetingID, language = self.language
     let callbacks = ChannelCallbacks(
       segment: { _, _, _, _ in },
@@ -438,6 +452,10 @@ public final class RecordingPipeline {
     let language = self.language
     let callbacks = callbacks()
     for speaker in [Speaker.me, .them] {
+      if let ownServer {
+        channels[speaker] = ownServerChannel(ownServer, speaker, callbacks)
+        continue
+      }
       channels[speaker] = deps.makeRealtime(
         speaker, language,
         { try await api.transcriptionToken(meetingID: meetingID, source: speaker == .me ? "mic" : "system", language: language) },
@@ -446,8 +464,8 @@ public final class RecordingPipeline {
     // Both keys first: if the Worker can't mint them, decide before touching audio.
     do {
       try await startChannels()
-      onEvent(.mode(.realtime))
-    } catch let error as APIError where error.isRealtimeUnavailable {
+      onEvent(.mode(mode))
+    } catch let error as APIError where error.isRealtimeUnavailable && ownServer == nil {
       // No live keys: send 30 s chunks to the Worker instead (SPEC "Fallback").
       for channel in channels.values { await channel.cancel() }
       for speaker in [Speaker.me, .them] {
@@ -494,6 +512,23 @@ public final class RecordingPipeline {
       // The meeting still records your side.
       setCaptureProblem(.them, "Not hearing the other side: \(error.localizedDescription)")
     }
+  }
+
+  /// A speaker's channel to the person's own server. Its audio goes nowhere else: no Realtime
+  /// key is fetched, and nothing is replayed through the Worker's fallback.
+  private func ownServerChannel(_ client: TranscriptionServerClient, _ speaker: Speaker, _ callbacks: ChannelCallbacks) -> any SpeakerChannel {
+    var callbacks = callbacks
+    callbacks.backlog = { [weak self] speaker, message in
+      Task { @MainActor in
+        self?.ownServerLoss = message
+        self?.onEvent(.fallbackBacklog(speaker, message))
+      }
+    }
+    let transcribe: @Sendable (Data, String?) async throws -> String = { wav, language in
+      try await client.transcribe(wav: wav, language: language)
+    }
+    if let make = deps.makeOwnServer { return make(speaker, language, transcribe, callbacks) }
+    return OwnServerChannel(speaker: speaker, language: language, transcribe: transcribe, callbacks: callbacks)
   }
 
   private func startChannels() async throws {

@@ -32,7 +32,7 @@ OpenAI (Realtime, chat) ──(key)─┤
 - **The Scribe backend** is an Every App app (app id `scribe`, which was `talk`; TanStack Start on a Worker, D1) in every-app/open-scribe's `web/`. It holds all data and every key-bearing call. It serves the browser and `/api/v1`, which the desktop app calls, plus (for now) the private update feed. The desktop names the app id it calls in one place, `src/shared/features.ts`, and that is still `talk`.
 - **The desktop app** owns sign-in (tokens encrypted with safeStorage), the tray, calendar reminders, call prompts and updates. It never holds an API key.
 - **`everyapp-helper`** (`mac/`) is a headless Swift process inside the app (`Contents/MacOS/everyapp-helper`), driven over stdin/stdout (`desktop-plan.md`, "Helper protocol (v1)"). It captures the mic and system audio, streams them to OpenAI with a short-lived key the backend mints, posts transcript segments to the backend, and watches which apps use the mic to detect calls. TCC charges its capture to the app.
-- Audio is never uploaded to the backend and never stored. Only text leaves the Mac.
+- Audio is never stored. It goes to OpenAI for transcription (or, in the fallback, through the backend to OpenAI), unless the person points the app at their own server ("Your own transcription server" below): then it goes only there.
 
 ## Signing in: Sign in with Every App
 
@@ -117,6 +117,28 @@ The rules are `StillRecordingWatch` in `src/main/stillRecording.ts` (pure, the t
 5. Finish: the backend writes the notes from the jottings, the transcript and the template.
 
 **Fallback:** when the token route answers `ai_route_not_allowed`, the helper sends 30-second WAV chunks to `/audio-chunk` instead. Near-live, no key on the Mac.
+
+## Your own transcription server
+
+Settings → Transcription → **Use my own transcription server** sends meeting audio to an OpenAI-compatible server the person runs (a Whisper server on the Mac, on the local network, or anywhere over https) instead of to OpenAI. Off by default.
+
+| Field | Holds |
+| --- | --- |
+| Server address | the base URL, usually ending in `/v1`, e.g. `http://localhost:50060/v1`. https to anywhere; plain http only to this Mac or the local network (localhost, `*.local`, private and Tailscale IPv4 ranges) |
+| Model | the model name the server expects, sent as `model` |
+| API key | optional; sent as `Authorization: Bearer` only when set. Kept encrypted with the sign-in (`signin.bin`, safeStorage, its key in the Keychain), never in `settings.json`, and never sent back to the window |
+| Test | the helper posts one second of silence to the server, exactly as a recording would, and says how long the answer took or why there was none |
+
+What happens in a recording:
+
+1. The helper checks the server first. If it refuses the request (a bad key, a wrong address or model) or nothing is listening, the recording doesn't start and says why. A server that is only slow (a model still loading) is let through.
+2. No Realtime key is asked for. Each side's audio is cut as the fallback cuts it (up to 30 s, at a turn's end once 20 s have gathered, silence dropped) and each chunk is posted as a 16 kHz WAV to `<address>/audio/transcriptions` with `file`, `model`, `response_format=json` and `language`. Redirects aren't followed.
+3. The text that comes back is posted to `/segments` like any live turn (through the echo check), and `/finish` writes the notes. So the transcript arrives every 20 to 30 seconds, and there's no word-by-word preview.
+4. If the server stops answering mid-meeting, the audio waits in memory (about 5 minutes of speech per side) and the same chunk is retried until it answers; the meeting page, and the recording bar on every other page, say "Your transcription server isn't answering. Audio is kept for up to 5 minutes." (the floating recorder says it too) Past that, the oldest waiting audio is dropped, with a warning. On stop, audio the server still won't take after two more tries is given up, and the stop says how much.
+
+**The audio never goes anywhere else.** With the setting on there is no fallback to OpenAI or to the backend's `/audio-chunk`: not when the server is down, and not when the setting is incomplete (the recording then refuses to start). **The transcript text still goes to Scribe's backend, and the backend's AI model (OpenAI, through the Gateway) writes the notes from it.** Settings says so under the switch.
+
+Servers known to serve this endpoint: WhisperKit's local server (`argmax-cli serve`, `/v1/audio/transcriptions`) and speaches (`/v1/audio/transcriptions`). whisper.cpp's `whisper-server` serves `/inference` unless started with `--inference-path`. Ollama and LM Studio don't transcribe.
 
 ## Permissions (macOS)
 

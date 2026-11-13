@@ -16,7 +16,7 @@ import { Button } from "@every-app/desktop-ui/components/button";
 import { clearDrafts, useCancelledStart, useFollowRecording, useStartRecording, useStopRecording } from "../actions";
 import { api, cleanError, keys } from "../api";
 import { grantPermission, newNoteBlockedReason, uiPermissions } from "../settings-logic";
-import { cameBackOnline, connectionOf, gateOf, signInAgainOf, type Gate, type Snapshot } from "../connection";
+import { cameBackOnline, connectionOf, gateOf, ownServerBarNotes, signInAgainOf, type Gate, type Snapshot } from "../connection";
 import { retryUnsavedJottings } from "../jottings";
 import { installUpdate, rememberDeferred, updatePillOf } from "../update";
 import { useLevels } from "../live";
@@ -345,6 +345,7 @@ function Layout({ state }: { state: AppSnapshot }) {
                 elapsedMs,
                 stopping: rec.stopping === true || rec.state === "stopping",
                 here: onRecordingPage(pathname, recordingId),
+                ...ownServerBarNotes(state),
                 onOpen: () => void navigate({ to: "/meetings/$id", params: { id: recordingId } }),
                 onTranscript: () => {
                   wantTranscript(recordingId);

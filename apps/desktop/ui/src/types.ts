@@ -147,7 +147,8 @@ export interface LiveRecording {
   meetingId: string;
   title: string;
   startedAt: string;
-  mode: "realtime" | "fallback";
+  /** "custom": the person's own transcription server. */
+  mode: "realtime" | "fallback" | "custom";
   mic: ChannelHealth;
   system: ChannelHealth;
 }

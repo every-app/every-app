@@ -55,16 +55,17 @@ Newline-delimited JSON on stdin/stdout, with logs on stderr. Requests carry an `
 | `hello` | `{ protocol: 1 }` | `{ protocol: 1, version, macos }` |
 | `permissions.status` | none | `{ mic, systemAudio }`, each `granted`, `denied` or `undetermined` (systemAudio may be `unknown`) |
 | `permissions.request` | `{ kind: "mic" \| "systemAudio" }` | the new status |
-| `record.start` | `{ meetingId, apiBase, accessToken, language? }` (no voice processing on the mic; an old app's `echoCancellation` is ignored) | `{ startedAt }` |
+| `record.start` | `{ meetingId, apiBase, accessToken, language?, transcription?: { baseUrl, model, apiKey? } }` (no voice processing on the mic; an old app's `echoCancellation` is ignored). With `transcription` (the person's own server, `scribe.md`), audio goes only to `<baseUrl>/audio/transcriptions`: no key is asked of Scribe and there is no fallback. The server is checked first; error `transcription_server` when it refuses or isn't there | `{ startedAt }` |
 | `record.stop` | none | `{ segments, finished?, unsaved? }`: posts the last segments and calls `/finish`. Offline, `unsaved` hands back what never posted (`[{ seq, speaker, text, startedMs, endedMs }]`) and `finished` is `false`: the app posts them, then `/finish` |
 | `token.update` | `{ accessToken }` | `{}` |
 | `detect.set` | `{ enabled }` | `{}` |
 | `selftest.run` | `{ seconds?: 1–60 (60) }` | `{ seconds, passed, mic, system }`, each `{ status: "ok" \| "silent" \| "denied" \| "error", peak, sampleRate?, device?, clipping, clippedSamples, dropouts, message? }`. `seconds`: whole seconds heard. `device`: the mic's input device; for `system`, the default output device (where the Mac's sound plays). Captures both sides locally (no network, nothing saved) until `selftest.stop` or `seconds`, streaming `levels` at 10 Hz and `selftest.progress` meanwhile; `busy` while recording, and `record.start` is `busy` during it |
 | `selftest.stop` | none | `{ stopped }`: ends a running self-test, whose `selftest.run` then answers with the report so far (`stopped: false` when none ran) |
+| `transcribe.test` | `{ baseUrl, model, apiKey? }` | `{ ms, text, endpoint }`: one second of silence posted to the person's own transcription server as a recording would post it; error `transcription_server` with the reason when it doesn't answer with a transcript |
 
 | Event `event` | Fields |
 | --- | --- |
-| `state` | `{ recording, meetingId?, mode: "realtime" \| "fallback", mic: "ok" \| "silent" \| "error", system: …, transcription?: "live" \| "reconnecting" \| "catching_up" }` (`catching_up`: audio kept during an outage is being transcribed) |
+| `state` | `{ recording, meetingId?, mode: "realtime" \| "fallback" \| "custom" (the person's own server), mic: "ok" \| "silent" \| "error", system: …, transcription?: "live" \| "reconnecting" \| "catching_up" }` (`catching_up`: audio kept during an outage is being transcribed) |
 | `levels` | `{ mic, system }`, 0–1, at most 10 Hz |
 | `selftest.progress` | the `selftest.run` report so far: once both captures have started (`seconds: 0`, so the devices show at once), then after each second |
 | `transcript.delta` | `{ speaker, text, itemId }` |

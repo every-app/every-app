@@ -34,6 +34,12 @@
 //   FAKE_HELPER_START_ERROR=code  record.start fails with that error code
 //   FAKE_HELPER_START_DELAY_MS=n  record.start takes n ms; a record.stop meanwhile cancels it (stop
 //                                 answers { segments: 0, cancelled: true }, start errors `cancelled`)
+//
+// The person's own transcription server (record.start's `transcription`, transcribe.test): like
+// the real helper, it really posts one second of silence to `<baseUrl>/audio/transcriptions`
+// (multipart `file`, `model`, `response_format`; a bearer only with an apiKey), so Settings → Test
+// works without the Swift build. A recording with `transcription` checks the server first, says
+// mode "custom", and (having no audio) sends it nothing more.
 // Non-protocol extra, for tests only: {"id", "cmd": "debug.emit", "params": {event...}} echoes an event.
 
 import { existsSync } from "node:fs";
@@ -103,12 +109,60 @@ function flush() {
   return flushing;
 }
 
+/** One second of silence (PCM16 24 kHz mono) as a WAV. */
+function silentWav() {
+  const pcm = 48_000;
+  const wav = Buffer.alloc(44 + pcm);
+  wav.write("RIFF", 0);
+  wav.writeUInt32LE(36 + pcm, 4);
+  wav.write("WAVEfmt ", 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(24_000, 24);
+  wav.writeUInt32LE(48_000, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(pcm, 40);
+  return wav;
+}
+
+/** The real helper's check: a transcription request to the person's server. */
+async function checkTranscriptionServer(p) {
+  if (!p?.baseUrl || !p?.model) throw { code: "bad_params", message: "baseUrl and model are required" };
+  const base = String(p.baseUrl).replace(/\/+$/, "");
+  const endpoint = base.endsWith("/audio/transcriptions") ? base : `${base}/audio/transcriptions`;
+  const host = new URL(endpoint).host;
+  const form = new FormData();
+  form.set("model", p.model);
+  form.set("response_format", "json");
+  form.set("file", new Blob([silentWav()], { type: "audio/wav" }), "audio.wav");
+  const began = Date.now();
+  let res;
+  try {
+    res = await fetch(endpoint, { method: "POST", body: form, redirect: "manual", headers: p.apiKey ? { authorization: `Bearer ${p.apiKey}` } : {} });
+  } catch {
+    throw { code: "transcription_server", message: `Your transcription server at ${host} isn't answering.` };
+  }
+  const body = await res.json().catch(() => undefined);
+  if (!res.ok) {
+    const said = body?.error?.message ?? (typeof body?.error === "string" ? body.error : undefined) ?? body?.detail ?? body?.message;
+    throw { code: "transcription_server", status: res.status, message: `Your transcription server answered HTTP ${res.status}${said ? `: ${said}` : "."}` };
+  }
+  if (typeof body?.text !== "string") {
+    throw { code: "transcription_server", message: "That server answered, but not with a transcript. Is it an OpenAI-compatible transcription server?" };
+  }
+  return { ms: Date.now() - began, text: body.text.trim(), endpoint };
+}
+
 function startRecording(params) {
   const startedAt = new Date().toISOString();
-  rec = { ...params, token: params.accessToken, startedAt, t0: Date.now(), seq: 0, pending: [], timers: [], n: 0, saved: 0, open: new Map() };
+  const mode = params.transcription ? "custom" : "realtime";
+  rec = { ...params, token: params.accessToken, startedAt, t0: Date.now(), seq: 0, pending: [], timers: [], n: 0, saved: 0, open: new Map(), mode };
   const quietAfter = num("FAKE_HELPER_QUIET_AFTER_MS", 0);
   const quiet = () => quietAfter > 0 && !!rec && Date.now() - rec.t0 >= quietAfter;
-  const state = () => ({ recording: !!rec, meetingId: rec?.meetingId, mode: "realtime", mic: "ok", system: "ok" });
+  const state = () => ({ recording: !!rec, meetingId: rec?.meetingId, mode, mic: "ok", system: "ok" });
   event("state", state());
   rec.timers.push(
     setInterval(() => event("levels", { mic: Math.random() * 0.6, system: quiet() ? 0 : Math.random() * 0.4 }), 100),
@@ -193,14 +247,15 @@ async function stopRecording() {
   if (env.FAKE_HELPER_STOP_UNSAVED === "1") {
     const unsaved = rec.pending.splice(0);
     const total = rec.seq;
+    const { mode } = rec;
     rec = undefined;
-    event("state", { recording: false, mode: "realtime", mic: "ok", system: "ok" });
+    event("state", { recording: false, mode, mic: "ok", system: "ok" });
     return { segments: total - unsaved.length, finished: false, unsaved };
   }
   const drained = await flush();
   const r = rec;
   rec = undefined;
-  event("state", { recording: false, mode: "realtime", mic: "ok", system: "ok" });
+  event("state", { recording: false, mode: r.mode, mic: "ok", system: "ok" });
   if (!drained) {
     // Still unreachable: hand them back (main keeps and replays them, then calls /finish).
     return { segments: r.saved, finished: false, unsaved: r.pending.splice(0) };
@@ -282,8 +337,16 @@ const handlers = {
       starting = undefined;
       if (cancelled) throw { code: "cancelled", message: "Stopped before the recording started." };
     }
+    // Their own server must answer (a busy one, 5xx, is let through), or the recording doesn't start.
+    if (p.transcription) {
+      await checkTranscriptionServer(p.transcription).catch((e) => {
+        if (e.status >= 500) return;
+        throw e.code === "transcription_server" ? { ...e, message: `${e.message} Start it, or turn off your own server in Settings → Transcription.` } : e;
+      });
+    }
     return startRecording(p);
   },
+  "transcribe.test": (p) => checkTranscriptionServer(p),
   "record.stop": () => {
     if (starting) {
       starting.cancel();

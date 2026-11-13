@@ -18,6 +18,9 @@ interface Contents {
   version: 1;
   credentials?: Credentials;
   clients: Record<string, { clientId: string; lastUsed: number; name?: string }>;
+  /** The API key for the person's own transcription server (Settings → Transcription). Not part
+   * of the sign-in: signing out keeps it. */
+  transcriptionKey?: string;
 }
 
 export type LoadProblem = "unreadable" | undefined;
@@ -43,7 +46,10 @@ export class SecretStore implements ClientIdCache {
     try {
       const plain = this.cipher.decrypt(readFileSync(this.path));
       const parsed = JSON.parse(plain) as Contents;
-      if (parsed && parsed.version === 1) this.contents = { version: 1, clients: parsed.clients ?? {}, credentials: parsed.credentials };
+      if (parsed && parsed.version === 1) {
+        this.contents = { version: 1, clients: parsed.clients ?? {}, credentials: parsed.credentials };
+        if (typeof parsed.transcriptionKey === "string" && parsed.transcriptionKey) this.contents.transcriptionKey = parsed.transcriptionKey;
+      }
     } catch {
       this.loadProblem = "unreadable";
       this.contents = { version: 1, clients: {} };
@@ -56,6 +62,17 @@ export class SecretStore implements ClientIdCache {
 
   setCredentials(credentials: Credentials | undefined): void {
     this.contents.credentials = credentials;
+    this.write();
+  }
+
+  get transcriptionKey(): string | undefined {
+    return this.contents.transcriptionKey;
+  }
+
+  /** Empty or undefined forgets it. */
+  setTranscriptionKey(key: string | undefined): void {
+    if (key) this.contents.transcriptionKey = key;
+    else delete this.contents.transcriptionKey;
     this.write();
   }
 
@@ -77,7 +94,7 @@ export class SecretStore implements ClientIdCache {
   private write(): void {
     if (this.memoryOnly) return;
     if (!this.cipher.isAvailable()) throw new Error("The Keychain isn't available, so Every App can't keep a sign-in.");
-    const empty = !this.contents.credentials && Object.keys(this.contents.clients).length === 0;
+    const empty = !this.contents.credentials && !this.contents.transcriptionKey && Object.keys(this.contents.clients).length === 0;
     if (empty) {
       rmSync(this.path, { force: true });
       return;

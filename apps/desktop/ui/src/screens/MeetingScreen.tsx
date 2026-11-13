@@ -60,12 +60,18 @@ import { ErrorState, ownerLabel } from "./parts";
 import { Elapsed, RecordDot, RecorderBar } from "./recording";
 import { Transcript } from "./Transcript";
 
-export type TranscriptionNote = "reconnecting" | "catching_up";
+/** "own_server_down": the person's own transcription server isn't answering. */
+export type TranscriptionNote =
+  | "reconnecting"
+  | "catching_up"
+  | "own_server_down";
 
 /** What the live view says about transcription. */
 export const transcriptionText: Record<TranscriptionNote, string> = {
   reconnecting: "Reconnecting to transcription…",
   catching_up: "Catching up on the transcript…",
+  own_server_down:
+    "Your transcription server isn't answering. Audio is kept for up to 5 minutes.",
 };
 
 /** While a Stop finishes saving (after an outage it can take minutes). */
@@ -924,6 +930,14 @@ function TranscriptDrawer({
               title="Live transcription dropped; Scribe is transcribing in chunks."
             >
               Delayed
+            </span>
+          )}
+          {live.recording.mode === "custom" && (
+            <span
+              className="text-[11px] text-muted-foreground"
+              title="Your own server is transcribing this meeting, 20 to 30 seconds at a time. The audio goes nowhere else."
+            >
+              Your server
             </span>
           )}
           <Button

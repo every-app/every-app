@@ -1,5 +1,5 @@
 // A quiet message at the bottom of the window ("Couldn't save the notes."), gone after a few
-// seconds. Any code can call notify().
+// seconds (longer for a long message). Any code can call notify().
 
 import { useEffect, useSyncExternalStore } from "react";
 
@@ -14,6 +14,11 @@ function emit() {
 export function notify(text: string, tone: "info" | "error" = "info"): void {
   current = { id: ++next, text, tone };
   emit();
+}
+
+/** How long a notice stays: 4 s, longer for a long one (about 70 ms a character, 12 s at most). */
+export function noticeMs(text: string): number {
+  return Math.min(12_000, Math.max(4_000, text.length * 70));
 }
 
 export function Notice() {
@@ -31,7 +36,7 @@ export function Notice() {
         current = null;
         emit();
       }
-    }, 4000);
+    }, noticeMs(notice.text));
     return () => clearTimeout(timer);
   }, [notice]);
   if (!notice) return null;

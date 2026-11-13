@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { PermissionKind } from "@shared/ipc";
-import { SettingsScreen, useThemePreference, type SelfTestState, type ThemePreference } from "@every-app/desktop-ui";
+import { SettingsScreen, useThemePreference, type SelfTestState, type ThemePreference, type TranscriptionTest } from "@every-app/desktop-ui";
+import { BASE_URL_HINT, parseTranscriptionBaseUrl } from "@shared/transcriptionServer";
 import { api, cleanError, keys } from "../api";
 import { useDeviceSettings } from "../device-settings";
 import { accountFrom, calendarConnectionFrom, loadable } from "../map";
@@ -23,6 +24,8 @@ export function SettingsPage() {
   const { settings, set } = useDeviceSettings();
   const [hints, setHints] = useState<Partial<Record<PermissionKind, string>>>({});
   const [test, setTest] = useState<SelfTestState>({ kind: "idle" });
+  const [serverTest, setServerTest] = useState<TranscriptionTest>({ kind: "idle" });
+  const [baseUrlError, setBaseUrlError] = useState<string>();
   const levels = useLevels(); // the helper's levels, live while the check runs
   const progress = useSelfTestProgress();
   // The audio check runs until Stop, or until the person leaves Settings or hides the window.
@@ -96,6 +99,40 @@ export function SettingsPage() {
         onOpenSettings: (pane) =>
           void bridge["permissions:openSettings"](pane).catch((e: unknown) => notify(cleanError(e), "error")),
       }}
+      transcription={
+        settings && state
+          ? {
+              enabled: settings.ownTranscription,
+              baseUrl: settings.transcriptionBaseUrl,
+              model: settings.transcriptionModel,
+              keySaved: state.transcriptionKey?.saved ?? false,
+              baseUrlError,
+              test: serverTest,
+              onEnabledChange: (ownTranscription) => change({ ownTranscription }),
+              onBaseUrlChange: (text) => {
+                const parsed = text ? parseTranscriptionBaseUrl(text) : "";
+                setBaseUrlError(parsed === null ? BASE_URL_HINT : undefined);
+                setServerTest({ kind: "idle" });
+                if (parsed !== null) change({ transcriptionBaseUrl: parsed });
+              },
+              onModelChange: (transcriptionModel) => {
+                setServerTest({ kind: "idle" });
+                change({ transcriptionModel });
+              },
+              onKeyChange: (key) => {
+                setServerTest({ kind: "idle" });
+                void bridge["transcription:setKey"](key).catch((e: unknown) => notify(`Couldn't save that. ${cleanError(e)}`, "error"));
+              },
+              onTest: () => {
+                setServerTest({ kind: "testing" });
+                void bridge["transcription:test"]().then(
+                  (result) => setServerTest({ kind: "ok", ms: result.ms }),
+                  (e: unknown) => setServerTest({ kind: "error", message: cleanError(e) }),
+                );
+              },
+            }
+          : undefined
+      }
       onConnectCalendar={() => void bridge["calendar:connect"]()}
       onLaunchAtLoginChange={(launchAtLogin) => change({ launchAtLogin })}
       onDetectCallsChange={(callDetection) => change({ callDetection })}

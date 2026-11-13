@@ -5,6 +5,7 @@ import { EventEmitter } from "node:events";
 import type { Attendee, CalendarEvent } from "@shared/api";
 import type { RecordingSnapshot } from "@shared/ipc";
 import type { HelperEvent, TranscriptSegment } from "@shared/protocol";
+import type { TranscriptionServerParams } from "@shared/transcriptionServer";
 import type { AuthService } from "./auth/service";
 import { errorMessage } from "./auth/oauth";
 import { HelperRequestError, type HelperSupervisor } from "./helper/supervisor";
@@ -33,6 +34,10 @@ export class RecordingController extends EventEmitter<RecordingEvents> {
   saveFailuresExpected: () => boolean = () => false;
   /** Why a recording can't start right now (a microphone test is running), or undefined. */
   startBlocked: () => string | undefined = () => undefined;
+  /** The person's own transcription server, when they turned one on (transcription.ts). It throws
+   * when the setting is on but incomplete: the recording then doesn't start, since its audio
+   * must not go anywhere else. */
+  transcription: () => TranscriptionServerParams | undefined = () => undefined;
 
   constructor(
     private readonly auth: AuthService,
@@ -78,6 +83,7 @@ export class RecordingController extends EventEmitter<RecordingEvents> {
     if (blocked) throw new Error(blocked);
     const api = this.auth.api;
     if (!api) throw new Error("Sign in to Scribe first.");
+    const transcription = this.transcription();
     this.set({ state: "starting", title: options.title, calendarEventId: options.calendarEventId, error: undefined }, true);
     let meetingId: string | undefined;
     try {
@@ -91,7 +97,12 @@ export class RecordingController extends EventEmitter<RecordingEvents> {
       this.set({ meetingId });
       const accessToken = await this.auth.accessToken();
       if (!accessToken) throw new Error("You're signed out. Sign in again.");
-      const { startedAt } = await this.helper.request("record.start", { meetingId, apiBase: api.appUrl, accessToken });
+      const { startedAt } = await this.helper.request("record.start", {
+        meetingId,
+        apiBase: api.appUrl,
+        accessToken,
+        ...(transcription ? { transcription } : {}),
+      });
       this.set({ state: "recording", startedAt });
       this.log(`recording ${meetingId}`);
     } catch (error) {
@@ -165,7 +176,8 @@ export class RecordingController extends EventEmitter<RecordingEvents> {
       case "error":
         // save_failed: segments didn't reach the Worker (the helper retries); say so.
         if (event.fatal || (event.code === "save_failed" && !this.saveFailuresExpected())) this.set({ error: event.message });
-        // fallback_backlog: the chunked fallback fell behind and dropped some audio; keep going.
+        // fallback_backlog: the chunked fallback fell behind and dropped some audio (or the
+        // person's own server left some untranscribed); keep going.
         else if (event.code === "fallback_backlog") this.set({ warning: event.message });
         break;
     }

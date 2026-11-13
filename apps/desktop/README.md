@@ -129,6 +129,8 @@ CI doesn't run it, and nothing else in CI opens the real app, so run it by hand.
 
 The sign-in (`{ kind: "oauth", grant }` or `{ kind: "token", appUrl, token }`) and the cached OAuth client ids are one JSON document. It's encrypted with Electron's **`safeStorage`** and written to `~/Library/Application Support/com.everyapp.desktop/signin.bin` (0600, atomically). On macOS, safeStorage keeps its key in the login Keychain as "com.everyapp.desktop Safe Storage" (fixed: see "Identity"), so the secret is still protected by the Keychain, and the file is unreadable without it.
 
+The API key for a person's own transcription server (Settings → Transcription, `docs/scribe.md`) is in the same document, so it is encrypted the same way; signing out keeps it. The server's address and model are ordinary settings (`settings.json`). A dev build with the Keychain off (below) keeps the key until quit.
+
 Why safeStorage rather than a keychain module (keytar and friends):
 
 - It has no native module: nothing to rebuild per Electron version or architecture, which keeps the universal build simple. keytar is archived and unmaintained.

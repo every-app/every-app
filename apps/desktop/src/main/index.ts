@@ -37,6 +37,7 @@ import { isSignInEndpoint, typedAppUrl } from "./auth/url";
 import { guardNavigation, type AppOrigin } from "./navigation";
 import { helperIdentity, PermissionProbe } from "./permissions";
 import { SettingsStore } from "./settings";
+import { recordingTranscription, testTranscriptionServer } from "./transcription";
 import { freshProfileDir, removeFreshProfile } from "./devProfile";
 import { SelfTestController } from "./selftest";
 import { applyLoginItem, applyTheme, loginItemStatus, requestNotificationPermission, settingsPaneUrl } from "./system";
@@ -146,6 +147,7 @@ async function main(): Promise<void> {
   });
   const recording = new RecordingController(auth, helper, log);
   recording.saveFailuresExpected = () => online.state !== "online";
+  recording.transcription = () => recordingTranscription(settings.value, store.transcriptionKey);
   /** Sends what earlier recordings couldn't save, when the app is reachable and signed in. */
   const replayPending = async () => {
     const api = auth.api;
@@ -369,6 +371,7 @@ async function main(): Promise<void> {
       recordShortcut: shortcut.status,
       selfTest: selfTest.state,
       settings: settings.value,
+      transcriptionKey: { saved: !!store.transcriptionKey },
       connection: online.state,
       permissions: probe.snapshot(helper.state.permissions),
       loginItem,
@@ -597,6 +600,21 @@ async function main(): Promise<void> {
     "pill:dragEnd": () => pill.dragEnd(),
     "selftest:run": () => selfTest.run(),
     "selftest:stop": () => selfTest.stop(),
+    "transcription:setKey": (key) => {
+      store.setTranscriptionKey(key.trim() || undefined);
+      log(key.trim() ? "transcription server: API key saved" : "transcription server: API key removed");
+      broadcast();
+    },
+    "transcription:test": async () => {
+      try {
+        const result = await testTranscriptionServer(helper, settings.value, store.transcriptionKey);
+        log(`transcription server: test passed in ${result.ms} ms`);
+        return result;
+      } catch (error) {
+        log(`transcription server: test failed: ${errorMessage(error)}`);
+        throw error;
+      }
+    },
     "clipboard:writeText": (text) => {
       if (!isCopyableUrl(text, auth.api?.appUrl)) throw new Error("Refused: only https links or this Scribe's own links can be copied.");
       clipboard.writeText(normalizedLink(text));

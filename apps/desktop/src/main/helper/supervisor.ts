@@ -53,6 +53,8 @@ const SLOW: Partial<Record<HelperCommand, number>> = {
   "record.stop": 20 * 60_000,
   // Up to 60 s of capture, plus a first-time mic or system-audio prompt waiting on the person.
   "selftest.run": 6 * 60_000,
+  // One request to the person's own server; a cold model can take a while.
+  "transcribe.test": 75_000,
 };
 
 export interface SupervisorEvents {

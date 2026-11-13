@@ -367,6 +367,8 @@ describe("floating recorder: notice", () => {
     expect(pillNotice({ state: "stopping" })).toMatch(/Finishing/);
     expect(pillNotice({ state: "recording", transcription: "reconnecting" })).toMatch(/Reconnecting/);
     expect(pillNotice({ state: "recording", transcription: "catching_up" })).toMatch(/Catching up/);
+    // Their own server: there's nothing of ours to reconnect to.
+    expect(pillNotice({ state: "recording", transcription: "reconnecting", mode: "custom" })).toBe("Your transcription server isn't answering. Your audio is kept.");
   });
 });
 

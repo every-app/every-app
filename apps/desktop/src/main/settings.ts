@@ -6,6 +6,7 @@ import { EventEmitter } from "node:events";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { DEFAULT_SETTINGS, MAX_REMINDER_LEAD_MINUTES, type Settings, type SettingsPatch, type ThemePreference } from "@shared/ipc";
+import { MAX_MODEL, parseTranscriptionBaseUrl } from "@shared/transcriptionServer";
 
 const THEMES: readonly ThemePreference[] = ["system", "light", "dark"];
 
@@ -16,6 +17,10 @@ const checks: { [K in keyof Settings]: (v: unknown) => v is Settings[K] } = {
   theme: (v): v is ThemePreference => THEMES.includes(v as ThemePreference),
   recordShortcut: (v): v is boolean => typeof v === "boolean",
   floatingRecorder: (v): v is boolean => typeof v === "boolean",
+  ownTranscription: (v): v is boolean => typeof v === "boolean",
+  // Empty (not set yet), or an address the helper will accept, stored as parsed.
+  transcriptionBaseUrl: (v): v is string => typeof v === "string" && (v === "" || parseTranscriptionBaseUrl(v) === v),
+  transcriptionModel: (v): v is string => typeof v === "string" && v.length <= MAX_MODEL && v === v.trim(),
   autoStop: (v): v is boolean => typeof v === "boolean",
 };
 

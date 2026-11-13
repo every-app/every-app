@@ -5,7 +5,9 @@ import type { PillView } from "@shared/ipc";
 export function pillNotice(recording: PillView["recording"]): string | undefined {
   if (recording.state === "stopping") return "Finishing the transcript…";
   if (recording.state === "starting") return "Starting…";
-  if (recording.transcription === "reconnecting") return "Reconnecting to transcription. Your audio is kept.";
+  if (recording.transcription === "reconnecting") {
+    return recording.mode === "custom" ? "Your transcription server isn't answering. Your audio is kept." : "Reconnecting to transcription. Your audio is kept.";
+  }
   if (recording.transcription === "catching_up") return "Catching up on the transcript…";
   return undefined;
 }

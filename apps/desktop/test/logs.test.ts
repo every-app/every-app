@@ -76,7 +76,8 @@ describe("diagnostics", () => {
       updater: { enabled: false, state: "idle" },
       recordShortcut: "off",
       selfTest: { running: false },
-      settings: DEFAULT_SETTINGS,
+      settings: { ...DEFAULT_SETTINGS, ownTranscription: true, transcriptionBaseUrl: "http://studio.local:9000/v1", transcriptionModel: "large-v3" },
+      transcriptionKey: { saved: true },
       connection: "signin-needed",
       permissions: { mic: "granted", systemAudio: "verified", notifications: "unknown" },
       loginItem: { status: "unsupported" },
@@ -94,6 +95,7 @@ describe("diagnostics", () => {
     expect(text).toContain("app talk.example.com, expired");
     expect(text).toContain("transcription reconnecting");
     expect(text).toContain('"recordShortcut":false');
-    for (const privateBit of ["ben@example.com", "layoffs", "secret plans", "epat_leaked12345"]) expect(text).not.toContain(privateBit);
+    expect(text).toContain('"ownTranscription":true,"transcriptionBaseUrl":"(set)"'); // on, but not where
+    for (const privateBit of ["ben@example.com", "layoffs", "secret plans", "epat_leaked12345", "studio.local"]) expect(text).not.toContain(privateBit);
   });
 });

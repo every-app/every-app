@@ -6,6 +6,7 @@ import { isAllowedApiCall, isValidApiCallOptions } from "./api/routes";
 import { looksLikeLink } from "./clipboard";
 import { parseSettingsPatch } from "./settings";
 import { isSetupCommandId } from "@shared/setup";
+import { MAX_API_KEY } from "@shared/transcriptionServer";
 
 const isPermissionKind = (v: unknown): v is PermissionKind => v === "mic" || v === "systemAudio" || v === "notifications";
 
@@ -56,6 +57,8 @@ export const validators: { [C in InvokeChannel]: (args: unknown[]) => boolean } 
   "pill:dragEnd": (a) => a.length === 0,
   "selftest:run": (a) => a.length === 0,
   "selftest:stop": (a) => a.length === 0,
+  "transcription:setKey": (a) => a.length === 1 && isString(a[0], MAX_API_KEY),
+  "transcription:test": (a) => a.length === 0,
 };
 
 /** True when `args` are acceptable for `channel` (also exported for tests). */
