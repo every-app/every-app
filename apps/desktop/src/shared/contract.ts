@@ -68,6 +68,20 @@ export interface Jottings {
   updatedAt: string;
 }
 
+/**
+ * What to print for each side of the transcript, for the person asking:
+ * names from the meeting's calendar guests, worked out by Scribe on every
+ * read and already cleaned (one line, at most 80 characters).
+ */
+export interface SpeakerLabels {
+  /** `me` lines: "Me" for the recorder's own view; for anyone else their name, or "Note-taker". */
+  me: string;
+  /** `them` lines: the one other guest's name; "Others" with several; "Them" with none. */
+  them: string;
+  /** With several other guests: "With Dana Lee, Sam Okafor and 2 more". Else null. */
+  guests: string | null;
+}
+
 export interface MeetingDetail extends MeetingRow {
   attendees: Attendee[];
   /** The folders it is in that the caller can see. */
@@ -79,6 +93,8 @@ export interface MeetingDetail extends MeetingRow {
    */
   template: { id: string; name: string; chosen: boolean };
   segments: Segment[];
+  /** Absent from a Scribe older than speaker names: the app says Me and Them. */
+  speakers?: SpeakerLabels;
   notes: Notes | null;
   /** The owner's alone: null for anyone else, or before they type. */
   jottings: Jottings | null;

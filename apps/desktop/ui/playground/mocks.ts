@@ -361,6 +361,13 @@ export const meeting: MeetingDetail = {
   shareLinks: [],
 };
 
+/** Several guests on the far side: nobody is guessed, the guests are named once. */
+export const severalGuests = {
+  me: "Me",
+  them: "Others",
+  guests: "With Maya Chen, Devon Park, Ines Duarte and 2 more",
+};
+
 export const liveSegments: Segment[] = segments.slice(0, 4);
 
 export const livePartial = {

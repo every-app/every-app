@@ -65,12 +65,27 @@ export interface Jottings {
   updatedAt: string;
 }
 
+/**
+ * What to print for each side of the transcript: names from the meeting's
+ * calendar guests, worked out and cleaned by Scribe for whoever is reading.
+ */
+export interface SpeakerLabels {
+  /** `me` lines: "Me" for the recorder's own view; for anyone else their name, or "Note-taker". */
+  me: string;
+  /** `them` lines: the one other guest's name; "Others" with several; "Them" with none. */
+  them: string;
+  /** With several other guests: "With Dana Lee, Sam Okafor and 2 more". Else null. */
+  guests: string | null;
+}
+
 /** GET /api/v1/meetings/:id → { meeting }. */
 export interface MeetingDetail extends MeetingRow {
   attendees: Attendee[];
   folders: { id: string; name: string; space: Space }[];
   template: { id: string; name: string; chosen: boolean };
   segments: Segment[];
+  /** Absent from a Scribe older than speaker names: the transcript says Me and Them. */
+  speakers?: SpeakerLabels;
   notes: Notes | null;
   /** Null for anyone but the owner, or before the owner types anything. */
   jottings: Jottings | null;

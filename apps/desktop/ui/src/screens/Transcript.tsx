@@ -1,6 +1,6 @@
 import { cn } from "cn";
 import { useEffect, useRef } from "react";
-import type { PartialTranscript, Segment } from "../types";
+import type { PartialTranscript, Segment, SpeakerLabels } from "../types";
 import { clock } from "./parts";
 
 type Who = "me" | "them";
@@ -38,18 +38,27 @@ function bubbles(segments: Segment[], partial?: PartialTranscript): Bubble[] {
   return out;
 }
 
+/** A label from the server, or the fallback when it sent none (an older Scribe). */
+function label(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
 /**
  * Me/them bubbles: your mic on the right, the call on the left. Text still
  * being spoken (`partial`) streams in at the end, dimmer, with a caret.
+ * `speakers` names the two sides (Scribe works the names out from the
+ * meeting's calendar guests); without it they are "Me" and "Them".
  */
 export function Transcript({
   segments,
+  speakers,
   partial,
   follow = false,
   className,
   emptyText = "Nothing transcribed yet.",
 }: {
   segments: Segment[];
+  speakers?: SpeakerLabels;
   partial?: PartialTranscript;
   /** Keep scrolled to the newest text while it arrives. */
   follow?: boolean;
@@ -57,6 +66,11 @@ export function Transcript({
   emptyText?: string;
 }) {
   const list = bubbles(segments, partial);
+  const names = {
+    me: label(speakers?.me, "Me"),
+    them: label(speakers?.them, "Them"),
+  };
+  const guests = label(speakers?.guests, "");
   const endRef = useRef<HTMLDivElement>(null);
   const last = list.at(-1);
   useEffect(() => {
@@ -76,6 +90,11 @@ export function Transcript({
       aria-live={follow ? "polite" : undefined}
       className={cn("flex flex-col gap-1.5", className)}
     >
+      {guests && (
+        <p className="mb-1 px-1 text-[11px] break-words text-muted-foreground">
+          {guests}
+        </p>
+      )}
       {list.map((bubble, i) => {
         const first = list[i - 1]?.who !== bubble.who;
         return (
@@ -89,7 +108,7 @@ export function Transcript({
           >
             {first && (
               <span className="mb-1 px-1 text-[11px] text-muted-foreground">
-                {bubble.who === "me" ? "Me" : "Them"}
+                {names[bubble.who]}
                 {bubble.at !== null && (
                   <span className="ml-1.5 tabular-nums opacity-70">
                     {clock(bubble.at)}

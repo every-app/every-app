@@ -1166,6 +1166,48 @@ export const scenes: Scene[] = [
     ),
   },
   {
+    id: "meeting-after-transcript-one-guest",
+    group: "Meeting",
+    label: "After: transcript, one guest named",
+    render: (ctx) => (
+      <MeetingScene
+        phase="after"
+        {...ctx}
+        meeting={{
+          ...mock.meeting,
+          speakers: { me: "Me", them: "Maya Chen", guests: null },
+        }}
+        extra={{ defaultTab: "transcript" }}
+      />
+    ),
+  },
+  {
+    id: "meeting-after-transcript-guests",
+    group: "Meeting",
+    label: "After: transcript, several guests",
+    render: (ctx) => (
+      <MeetingScene
+        phase="after"
+        {...ctx}
+        meeting={{ ...mock.meeting, speakers: mock.severalGuests }}
+        extra={{ defaultTab: "transcript" }}
+      />
+    ),
+  },
+  {
+    id: "meeting-during-transcript-guests",
+    group: "Meeting",
+    label: "During + transcript, several guests",
+    render: (ctx) => (
+      <MeetingScene
+        phase="during"
+        {...ctx}
+        meeting={{ ...mock.meeting, speakers: mock.severalGuests }}
+        extra={{ defaultTranscriptOpen: true }}
+      />
+    ),
+  },
+  {
     id: "meeting-after-edit",
     group: "Meeting",
     label: "After: editing notes",

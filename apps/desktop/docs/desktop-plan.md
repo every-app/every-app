@@ -124,4 +124,4 @@ At most 4 child threads run at once. Each has its own worktree and branch, opens
 
 ## Later
 
-Windows (a WASAPI helper with the same protocol), on-device transcription as an option, speaker names from attendees, search, email sharing.
+Windows (a WASAPI helper with the same protocol), on-device transcription as an option, telling several speakers on one side apart (the transcript already shows the calendar's names, which Scribe sends as `speakers`), search, email sharing.

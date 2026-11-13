@@ -59,6 +59,47 @@ describe("Transcript", () => {
   });
 });
 
+describe("Transcript speaker names", () => {
+  const segments = [
+    { seq: 1, startedMs: 0, endedMs: 1, speaker: "me" as const, text: "Hi." },
+    { seq: 2, startedMs: 1, endedMs: 2, speaker: "them" as const, text: "Hello." },
+  ];
+
+  it("says Me and Them when Scribe sends no names", () => {
+    render(<Transcript segments={segments} />);
+    expect(screen.getByText("Me")).toBeTruthy();
+    expect(screen.getByText("Them")).toBeTruthy();
+  });
+
+  it("prints the names Scribe sends, and the guests once above", () => {
+    render(
+      <Transcript
+        segments={segments}
+        speakers={{
+          me: "Jordan Avery",
+          them: "Others",
+          guests: "With Maya Chen and Devon Park",
+        }}
+      />,
+    );
+    expect(screen.getByText("Jordan Avery")).toBeTruthy();
+    expect(screen.getByText("Others")).toBeTruthy();
+    expect(screen.getByText("With Maya Chen and Devon Park")).toBeTruthy();
+    expect(screen.queryByText("Me")).toBeNull();
+  });
+
+  it("falls back per side when a label is blank or not text", () => {
+    render(
+      <Transcript
+        segments={segments}
+        speakers={{ me: " ", them: 7 as unknown as string, guests: null }}
+      />,
+    );
+    expect(screen.getByText("Me")).toBeTruthy();
+    expect(screen.getByText("Them")).toBeTruthy();
+  });
+});
+
 describe("MeetingScreen", () => {
   const base = {
     meeting,

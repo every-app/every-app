@@ -699,7 +699,9 @@ function AfterBody(props: MeetingScreenProps) {
             placeholder="You didn't jot anything down during this meeting."
           />
         )}
-        {tab === "transcript" && <Transcript segments={meeting.segments} />}
+        {tab === "transcript" && (
+          <Transcript segments={meeting.segments} speakers={meeting.speakers} />
+        )}
       </div>
     </div>
   );
@@ -958,6 +960,7 @@ function TranscriptDrawer({
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-24 pt-1">
         <Transcript
           segments={meeting.segments}
+          speakers={meeting.speakers}
           partial={live.partial}
           follow
           emptyText="Listening… what's said shows up here."
