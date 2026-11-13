@@ -208,17 +208,16 @@ export function ManageAppAccessModal({
   }, [selectedUserIds, originalUserIds, keptOtherwise]);
 
   // Who opens the app once saved: the grant list, and everyone who opens it
-  // another way; of those, how many another way alone.
-  const outcome = useMemo(() => {
-    const withAccess = users.filter(
-      (u: UserAccessState) =>
-        selectedUserIds.has(u.id) || keptOtherwise.has(u.id),
-    );
-    return {
-      withAccess: withAccess.length,
-      otherwise: withAccess.filter((u) => !selectedUserIds.has(u.id)).length,
-    };
-  }, [users, selectedUserIds, keptOtherwise]);
+  // another way.
+  const outcome = useMemo(
+    () => ({
+      withAccess: users.filter(
+        (u: UserAccessState) =>
+          selectedUserIds.has(u.id) || keptOtherwise.has(u.id),
+      ).length,
+    }),
+    [users, selectedUserIds, keptOtherwise],
+  );
 
   // Bulk actions show when they would change something.
   const canGrantAll = useMemo(
@@ -251,8 +250,8 @@ export function ManageAppAccessModal({
           {/* The dialog's description, so it is read on open. */}
           <DialogDescription>
             {everyone
-              ? "Available to everyone: every member opens it, people who join later too. The people checked here keep it if that is turned off."
-              : "Owners and admins open every app. Check the members who should open this one, or grant it to a group."}
+              ? "Everyone can open this app. People checked here keep it if that's turned off."
+              : "Owners and admins can always open it."}
           </DialogDescription>
         </DialogHeader>
 
@@ -454,7 +453,7 @@ export function ManageAppAccessModal({
                 ) : null}
                 {changes.keptAnotherWay.length > 0 ? (
                   <span className="text-muted-foreground">
-                    {changes.keptAnotherWay.length} kept another way
+                    {changes.keptAnotherWay.length} keeping access
                   </span>
                 ) : null}
               </div>
@@ -463,9 +462,6 @@ export function ManageAppAccessModal({
               <span>
                 {outcome.withAccess} of {users.length} user
                 {users.length !== 1 ? "s" : ""} will have access
-                {outcome.otherwise
-                  ? ` (${outcome.otherwise} without a grant)`
-                  : null}
               </span>
               {searchQuery && filteredUsers.length !== users.length ? (
                 <span className="text-xs tabular-nums">

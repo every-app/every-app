@@ -108,8 +108,8 @@ export function McpAppEditDialog({
           <>
             <DialogHeader>
               <DialogTitle>{COPY.title(app.name)}</DialogTitle>
-              <DialogDescription>
-                {COPY.description(app.appId)}
+              <DialogDescription className="font-mono">
+                {app.appId}
               </DialogDescription>
             </DialogHeader>
             {isError ? (
@@ -287,7 +287,9 @@ function McpAppEditForm({
     >
       <DialogHeader>
         <DialogTitle>{COPY.title(details.name)}</DialogTitle>
-        <DialogDescription>{COPY.description(details.appId)}</DialogDescription>
+        <DialogDescription className="font-mono">
+          {details.appId}
+        </DialogDescription>
       </DialogHeader>
 
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
@@ -304,9 +306,7 @@ function McpAppEditForm({
         <dt className="font-medium">{COPY.credentialLabel}</dt>
         <dd className="flex min-w-0 flex-col gap-2" data-testid="credential">
           {credential?.providerName ? (
-            <span>
-              {COPY.providerLine(credential.providerName, credential.own)}
-            </span>
+            <span>{COPY.providerLine(credential.providerName)}</span>
           ) : null}
           <span className="text-muted-foreground">
             {credential ? credentialLine(credential) : null}

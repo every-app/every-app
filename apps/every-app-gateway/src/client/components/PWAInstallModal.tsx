@@ -85,9 +85,6 @@ function AlreadyInstalled({ onClose }: { onClose: () => void }) {
       </span>
       <DialogHeader className="items-center">
         <DialogTitle>Already installed</DialogTitle>
-        <DialogDescription>
-          You're already using EveryApp as an installed app.
-        </DialogDescription>
       </DialogHeader>
       <Button onClick={onClose}>
         <Home data-icon="inline-start" />
@@ -124,9 +121,6 @@ function IOSInstructions({ onClose }: { onClose: () => void }) {
     <>
       <DialogHeader>
         <DialogTitle>How to install (iOS)</DialogTitle>
-        <DialogDescription>
-          Add to your home screen for an app-like experience
-        </DialogDescription>
       </DialogHeader>
       <ol className="space-y-4">
         <InstallStep
@@ -177,9 +171,6 @@ function AndroidInstructions({ onClose }: { onClose: () => void }) {
     <>
       <DialogHeader>
         <DialogTitle>How to install (Android)</DialogTitle>
-        <DialogDescription>
-          Add to your home screen for an app-like experience
-        </DialogDescription>
       </DialogHeader>
       <ol className="space-y-4">
         <InstallStep
@@ -202,7 +193,6 @@ function AndroidInstructions({ onClose }: { onClose: () => void }) {
         />
         <InstallStep
           number={3}
-          hint="In the confirmation dialog"
           title={
             <>
               Tap <span className="font-semibold">Install</span>

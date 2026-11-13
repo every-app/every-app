@@ -191,8 +191,17 @@ describe("Manage workspace → Sign-in", () => {
       settings.find((text) => text.includes("GITHUB_SIGNIN_CLIENT_SECRET")),
     ).toContain("Not set");
     expect(open.textContent).toContain("pnpm everyapp signin add github");
-    expect(open.textContent).toContain("with this gateway's Cloudflare login");
-    expect(open.textContent).toContain("setup/signin-github");
+    // Not on yet: the three steps, in order.
+    expect(
+      [...open.querySelectorAll("ol > li")].map((step) =>
+        step.textContent?.replace(/(https|pnpm).*$/, "").trim(),
+      ),
+    ).toEqual([
+      "Create the OAuth App at github.com",
+      "Give it this redirect URL",
+      "Run this in a terminal",
+    ]);
+    expect(open.textContent).toContain("Guide for your agent");
     expect(
       open.querySelector(
         'a[href="https://everyapp.com/docs/agent/setup/signin-github"]',
@@ -213,11 +222,11 @@ describe("Manage workspace → Sign-in", () => {
     );
     expect(body()).toContain("Cloudflare Access (Company SSO)");
     expect(body()).toContain(
-      "passwords stay on until an owner has connected one of the ways below",
+      "Turns off once an owner connects a provider below",
     );
     await press(rowOf("Apple").querySelector("button")!);
     expect(dialog()!.textContent).toContain(
-      "ask the gateway's operator to run this",
+      "Ask the gateway's operator to run this",
     );
     expect(dialog()!.textContent).toContain("Not set");
   });
@@ -238,8 +247,10 @@ describe("Manage workspace → Sign-in", () => {
     await press(rowOf("Google").querySelector("button")!);
     expect(dialog()!.textContent).toContain("Sign in with Google");
     expect(dialog()!.textContent).toContain(
-      "To change a setting (a new client secret)",
+      "To change a setting, run this again",
     );
+    // Already on: what is set, not the steps to set it up.
+    expect(dialog()!.querySelector("ol")).toBeNull();
   });
 
   it("without Access in front, has no banner and lists every provider as before", async () => {
@@ -252,7 +263,7 @@ describe("Manage workspace → Sign-in", () => {
       ),
     ).toBe(false);
     expect(body()).toContain(
-      "Set EMAIL_PASSWORD_SIGN_IN=false from a terminal to turn passwords off",
+      "To turn it off, run pnpm everyapp secret set EMAIL_PASSWORD_SIGN_IN and answer false.",
     );
   });
 
@@ -263,7 +274,7 @@ describe("Manage workspace → Sign-in", () => {
       "Cloudflare Access signs people in to this workspace.",
     );
     expect(banner.textContent).toContain(
-      "You don't need anything here while Access is on",
+      "Nothing to set up here while Access is on.",
     );
     const access = [...container.querySelectorAll("li")].find((row) =>
       row.textContent?.startsWith("Cloudflare Access"),
@@ -275,7 +286,7 @@ describe("Manage workspace → Sign-in", () => {
     )!;
     expect(password.textContent).toContain("On");
     expect(password.textContent).toContain(
-      "Only for whoever Access already let in",
+      "Works only for people Access lets in.",
     );
     // On (Google) and Needs setup (GitHub) stay out; the four that are off fold.
     expect(rowOf("Google").textContent).toContain("On");
@@ -303,16 +314,14 @@ describe("Manage workspace → Sign-in", () => {
     await render(
       listed({ outerRing: true, password: { on: false, offPending: false } }),
     );
-    expect(body()).toContain(
-      "EMAIL_PASSWORD_SIGN_IN=false: Access signs everyone in.",
-    );
+    expect(body()).toContain("Access signs everyone in.");
     act(() => root.unmount());
     root = createRoot(container);
     await render(
       listed({ outerRing: true, password: { on: true, offPending: true } }),
     );
     expect(body()).toContain(
-      "passwords stay on until an owner has opened the workspace through Access once",
+      "Turns off once an owner opens the workspace through Access.",
     );
   });
 

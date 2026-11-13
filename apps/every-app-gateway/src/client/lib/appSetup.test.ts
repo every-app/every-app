@@ -128,8 +128,6 @@ describe("setupDialogModel", () => {
         feature.gateway.map((row) => [row.label, row.done]),
       ]),
     ).toEqual([["Rendering", "off", [["Context.dev", false]]]]);
-    // Every setting here is the Gateway's, read live: nothing to re-read.
-    expect(model.statusHint).toBe(false);
   });
 
   it("counts what is still unset, and says what one of the app's plain settings takes", () => {
@@ -157,7 +155,7 @@ describe("setupDialogModel", () => {
     ]);
   });
 
-  it("names an app's own secret once, and says status re-reads the Worker", () => {
+  it("names an app's own secret once", () => {
     const admin = setupDialogModel(setupOf(RESEARCH, ["OPENROUTER_API_KEY"]), {
       name: "Research Desk",
       canRun: true,
@@ -175,15 +173,8 @@ describe("setupDialogModel", () => {
     expect(
       admin.optional.map((feature) => feature.values.map((row) => row.label)),
     ).toEqual([["WEBHOOK_SECRET"]]);
-    expect(admin.statusHint).toBe(true);
-    // A member can't run status: no hint.
-    const member = setupDialogModel(setupOf(RESEARCH, ["OPENROUTER_API_KEY"]), {
-      name: "Research Desk",
-      canRun: false,
-    });
-    expect(member.statusHint).toBe(false);
-    // Only a Gateway setting keeps it closed: the optional app secret under
-    // the fold doesn't make the footer talk about the Worker.
+    // Only a Gateway setting keeps it closed: the optional app secret stays
+    // under the fold.
     const gatewayOnly = setupDialogModel(setupOf(RESEARCH, ["MAIN_SECRET"]), {
       name: "Research Desk",
       canRun: true,
@@ -195,7 +186,6 @@ describe("setupDialogModel", () => {
     expect(gatewayOnly.optional.map((feature) => feature.name)).toEqual([
       "Webhooks",
     ]);
-    expect(gatewayOnly.statusHint).toBe(false);
   });
 
   it("tells a member to ask an admin, with nothing to get and no optional settings", () => {
@@ -357,7 +347,6 @@ describe("setupDialogModel", () => {
     // Nothing for this reader to set, the optional settings included.
     expect(model.always.every((row) => row.docs === null)).toBe(true);
     expect(model.optional).toEqual([]);
-    expect(model.statusHint).toBe(false);
   });
 });
 

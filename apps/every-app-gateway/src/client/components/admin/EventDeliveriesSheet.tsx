@@ -118,10 +118,9 @@ export function EventDeliveriesSheet({
     onSuccess: async (result) => {
       const state = result.delivery ? deliveryState(result.delivery) : null;
       if (state === "delivered") toast.success("Redelivered");
-      else if (state === "dead")
-        toast.error("Redelivered, and it failed for good");
+      else if (state === "dead") toast.error("Redelivery failed");
       else {
-        toast.warning("Redelivery failed; it is retried on the usual schedule");
+        toast.warning("Redelivery failed. It will retry.");
       }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: EVENT_DELIVERIES_QUERY_KEY }),
@@ -153,8 +152,7 @@ export function EventDeliveriesSheet({
             {subscription ? `Deliveries to ${subscription.name}` : "Deliveries"}
           </SheetTitle>
           <SheetDescription>
-            The last 30 days, newest first. A failed delivery is retried for
-            about 35 hours, then it is dead; Redeliver starts it over.
+            Last 30 days. Failed deliveries retry for about 35 hours.
           </SheetDescription>
         </SheetHeader>
         <div className="px-4 pb-3">
@@ -191,7 +189,7 @@ export function EventDeliveriesSheet({
               description={
                 filter === "dead"
                   ? "A delivery that fails every attempt shows here, ready to send again."
-                  : "Each event a subscription takes is one delivery here."
+                  : undefined
               }
             />
           ) : (

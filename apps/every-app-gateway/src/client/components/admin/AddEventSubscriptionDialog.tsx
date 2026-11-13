@@ -359,11 +359,6 @@ function SubscriptionForm({
             <DialogTitle>
               {editing ? `Edit ${subscription.name}` : "Add subscription"}
             </DialogTitle>
-            <DialogDescription>
-              {editing
-                ? "Change its name and the events it takes."
-                : "Send what happens in this workspace to a URL as a signed JSON POST, or by email to the owners and admins."}
-            </DialogDescription>
           </DialogHeader>
 
           {editing ? (
@@ -448,13 +443,6 @@ function SubscriptionForm({
                           ? "Email owners and admins"
                           : (hostOf(url) ?? "Slack #ops")
                     }
-                    description={
-                      editing
-                        ? undefined
-                        : kind === "email"
-                          ? "What the list calls it."
-                          : "What the list calls it; the URL's host when blank."
-                    }
                   />
                 )}
               </form.AppField>
@@ -468,7 +456,6 @@ function SubscriptionForm({
               {(field) => (
                 <ChoiceCards
                   legend="Events"
-                  description="Something that happens in the workspace: someone joins, an app is installed, a cap is reached, an agent's tool call is blocked."
                   value={field.state.value ? "all" : "choose"}
                   onChange={(value) => field.handleChange(value === "all")}
                   choices={SCOPE_CHOICES}
@@ -499,7 +486,7 @@ function SubscriptionForm({
                           autoComplete="off"
                           spellCheck={false}
                           placeholder="app.crm.*"
-                          description="An app's own events, or any type or prefix: app.crm.* takes every event crm sends. Separate several with commas."
+                          description="Comma-separated. app.crm.* matches every event from crm."
                         />
                       )}
                     </form.AppField>

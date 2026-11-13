@@ -29,7 +29,7 @@ export function TokenRevealDialog({
   onClose,
 }: {
   title: string;
-  description: string;
+  description?: string;
   token: string;
   /** What the value is called above its box. */
   tokenLabel?: string;
@@ -51,7 +51,9 @@ export function TokenRevealDialog({
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          {description ? (
+            <DialogDescription>{description}</DialogDescription>
+          ) : null}
         </DialogHeader>
         <Alert variant="warning">
           <TriangleAlert aria-hidden />

@@ -271,23 +271,35 @@ function TerminalDialog({
             <DialogDescription>{step.description}</DialogDescription>
           ) : null}
         </DialogHeader>
-        <CodeBlock code={step.code} successMessage="Command copied" />
+        {step.docsFor ? (
+          <ol className="flex list-decimal flex-col gap-3 pl-5 text-sm font-medium">
+            <li>
+              Get a {step.docsFor.name} key (
+              <a
+                className="underline underline-offset-4 hover:text-primary"
+                href={providerDocsUrl(step.docsFor.id)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                where to find it
+              </a>
+              )
+            </li>
+            <li>
+              Run this in a terminal
+              <div className="mt-2 -ml-5 font-normal">
+                <CodeBlock code={step.code} successMessage="Command copied" />
+              </div>
+            </li>
+          </ol>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <p className="text-sm font-medium">Run this in a terminal</p>
+            <CodeBlock code={step.code} successMessage="Command copied" />
+          </div>
+        )}
         {step.docsFor ? (
           <ProviderHosts hosts={step.docsFor.hosts} what="this key" />
-        ) : null}
-        {step.docsFor ? (
-          <p className="text-xs text-muted-foreground">
-            Where to get the key:{" "}
-            <a
-              className="underline underline-offset-4 hover:text-foreground"
-              href={providerDocsUrl(step.docsFor.id)}
-              target="_blank"
-              rel="noreferrer"
-            >
-              the {step.docsFor.name} page
-            </a>
-            .
-          </p>
         ) : null}
         <DialogFooter showCloseButton />
       </DialogContent>
@@ -307,7 +319,10 @@ function removeKeyStep(provider: Provider): TerminalStep {
   const apps = provider.apps.map((app) => app.name);
   return {
     title: `Remove the ${provider.name} key`,
-    description: `Keys are removed from the terminal.${apps.length > 0 ? ` ${apps.join(", ")} can't call ${provider.name} until a key is set again.` : ""}`,
+    description:
+      apps.length > 0
+        ? `${apps.join(", ")} can't call ${provider.name} until a key is set again.`
+        : undefined,
     code: `${CLI} secret unset ${provider.settings.join(" ")}`,
   };
 }
@@ -315,8 +330,7 @@ function removeKeyStep(provider: Provider): TerminalStep {
 function removeTerminalClientStep(entry: OAuthProvider): TerminalStep {
   return {
     title: `Remove the ${entry.name} client`,
-    description:
-      "This client was set from the terminal, so it is removed there. New connections stop until a client is set again.",
+    description: "New connections stop until a client is set again.",
     code: `${CLI} secret unset ${entry.settings.join(" ")}`,
   };
 }
@@ -324,7 +338,6 @@ function removeTerminalClientStep(entry: OAuthProvider): TerminalStep {
 function removeTerminalProviderStep(provider: Provider): TerminalStep {
   return {
     title: `Remove ${provider.name}`,
-    description: `${provider.name} was registered from the terminal, so it is removed there, then its key.`,
     code: `${CLI} provider remove ${provider.id}\n${CLI} secret unset ${provider.settings.join(" ")}`,
   };
 }
@@ -366,7 +379,7 @@ function ProviderMenu({
           {entry.client.source === "d1" ? (
             <DropdownMenuItem onClick={() => onForgetClient(entry)}>
               <Unplug />
-              Forget pasted client
+              Remove client
             </DropdownMenuItem>
           ) : null}
           {entry.client.source === "env" ? (
@@ -686,7 +699,7 @@ function connectionColumns({
 
 /** What removing a registered provider takes with it. */
 function removalText(provider: Provider): string {
-  if (!provider.oauth) return "No app uses it, so nothing stops working.";
+  if (!provider.oauth) return "No app uses it.";
   const { connections } = provider.oauth;
   if (connections === 0) return "Its OAuth client is deleted.";
   return `Its OAuth client is deleted, and ${connections} connected ${connections === 1 ? "account is" : "accounts are"} disconnected.`;
@@ -760,10 +773,10 @@ function ProvidersPage() {
     mutationFn: removeOAuthClient,
     onSuccess: async () => {
       await refresh();
-      toast.success("Pasted client forgotten");
+      toast.success("Client removed");
     },
     onError: (error) =>
-      toast.error(getRuleErrorMessage(error, "Failed to forget the client")),
+      toast.error(getRuleErrorMessage(error, "Failed to remove the client")),
   });
   const removeMutation = useMutation({
     mutationFn: removeProvider,
@@ -875,7 +888,7 @@ function ProvidersPage() {
 
       <SettingsSection
         title="Organization connections"
-        hint="Personal accounts, like Gmail, that people have connected, and the apps they allow to use them."
+        hint="Accounts people have connected, like Gmail."
       >
         <DataTable
           table={connectionsTable}
@@ -892,7 +905,7 @@ function ProvidersPage() {
           search={connectionSearch.search}
           empty={{
             title: "No connections yet",
-            description: "People connect an account once, from inside an app.",
+            description: "People connect accounts from inside an app.",
           }}
         />
       </SettingsSection>
@@ -932,8 +945,8 @@ function ProvidersPage() {
 
       {forgetting ? (
         <ConfirmDialog
-          title={`Forget the pasted ${forgetting.name} client?`}
-          confirmLabel="Forget client"
+          title={`Remove the ${forgetting.name} client?`}
+          confirmLabel="Remove client"
           destructive
           pending={forgetMutation.isPending}
           onClose={() => setForgetting(null)}
@@ -944,8 +957,8 @@ function ProvidersPage() {
             )
           }
         >
-          New connections stop until a client is set again; existing tokens keep
-          working until they expire.
+          New connections stop until a client is set again. Existing ones work
+          until they expire.
         </ConfirmDialog>
       ) : null}
 

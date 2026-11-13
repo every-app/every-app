@@ -16,7 +16,6 @@ import { Button } from "@/client/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -71,9 +70,6 @@ export function AddAppDialog({
           <>
             <DialogHeader>
               <DialogTitle>{FIRST_SCREEN.addApp.dialogTitle}</DialogTitle>
-              <DialogDescription>
-                {FIRST_SCREEN.addApp.dialogDescription}
-              </DialogDescription>
             </DialogHeader>
             <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
               {FEATURED_APPS.map((app, index) => (

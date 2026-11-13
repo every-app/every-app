@@ -41,11 +41,10 @@ export function DeleteAppModal({
     >
       {mcp ? (
         <>
-          {copy.body(people)}{" "}
-          {isRemoteMcpApp(app) ? (
-            copy.againRemote
-          ) : (
+          {copy.body(app.accessCount)}
+          {isRemoteMcpApp(app) ? null : (
             <>
+              {" "}
               <span className="font-mono text-xs">
                 {copy.againBuiltinCommand(app.appId)}
               </span>{" "}

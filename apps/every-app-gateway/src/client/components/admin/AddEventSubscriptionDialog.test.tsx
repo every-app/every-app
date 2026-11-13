@@ -254,7 +254,7 @@ describe("adding a webhook", () => {
     await type("URL", "https://hooks.example.com/everyapp");
     await submit();
     expect(dialog()!.querySelector('[role="alert"]')?.textContent).toContain(
-      "as many event subscriptions as it may",
+      "the limit of event subscriptions",
     );
   });
 });

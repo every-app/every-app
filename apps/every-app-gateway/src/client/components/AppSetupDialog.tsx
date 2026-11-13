@@ -26,7 +26,6 @@ import {
 import {
   PLATFORM_NOTE,
   PROVIDERS_PATH,
-  STATUS_COMMAND,
   SetupAction,
   setupDialogModel,
   type InlinePart,
@@ -56,9 +55,8 @@ const STATE_BADGE: Record<
 /**
  * What an app needs set before it opens, grouped as `everyapp configure`
  * walks it: what is always needed, then each feature with its steps and
- * values. Whoever can run the command gets three steps: get the keys, run
- * `everyapp configure <app>`, come back, then the optional features,
- * folded while off; a member is told to ask an admin. Each setting ticks
+ * values. Whoever can run the command gets two steps: get the keys and run
+ * `everyapp configure <app>`, then the optional features, folded while off; a member is told to ask an admin. Each setting ticks
  * off as it lands (the dialog renders from the live list,
  * useSetupDialog), and the dialog closes by itself once the app no longer
  * needs setup. Closes from the footer alone, like every other dialog.
@@ -89,7 +87,7 @@ export function AppSetupDialog({
         <div className="flex flex-col gap-2">
           {grouped ? (
             <p className="text-xs font-medium text-muted-foreground">
-              Always needed
+              Required
             </p>
           ) : null}
           <ul className="divide-y divide-border rounded-lg border border-border">
@@ -130,7 +128,6 @@ export function AppSetupDialog({
                   successMessage="Command copied"
                 />
               </Step>
-              <Step n={3} title={`Come back here: ${name} opens on its own`} />
             </ol>
           ) : (
             <>
@@ -163,15 +160,7 @@ export function AppSetupDialog({
             </div>
           ) : null}
         </div>
-        <DialogFooter showCloseButton>
-          {model.statusHint ? (
-            <p className="text-xs text-muted-foreground sm:mr-auto sm:self-center">
-              Already set it another way?{" "}
-              <span className="font-mono">{STATUS_COMMAND}</span> re-reads the
-              Worker.
-            </p>
-          ) : null}
-        </DialogFooter>
+        <DialogFooter showCloseButton />
       </DialogContent>
     </Dialog>
   );
@@ -203,9 +192,6 @@ function FeatureHeading({ feature }: { feature: SetupDialogFeature }) {
   return (
     <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
       <span className="text-sm font-medium wrap-anywhere">{feature.name}</span>
-      <Badge variant="secondary" size="sm">
-        {feature.required ? "Required" : "Optional"}
-      </Badge>
       <Badge variant={state.variant} size="sm">
         {state.label}
       </Badge>
@@ -398,9 +384,11 @@ function GatewayRow({ row, runs }: { row: SetupDialogRow; runs: boolean }) {
       <SetMark done={row.done} />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="text-sm font-medium wrap-anywhere">{row.label}</span>
-        <span className="text-xs text-muted-foreground">
-          {row.done ? "Set on the Gateway" : "Not set on the Gateway"}
-        </span>
+        {row.done ? null : (
+          <span className="text-xs text-muted-foreground">
+            Not set on the Gateway
+          </span>
+        )}
       </div>
       {row.done ? (
         <SetLabel />

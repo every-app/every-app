@@ -23,18 +23,18 @@ const RISK_DEFAULT_ITEMS: readonly {
 }[] = [
   {
     value: "annotations",
-    label: "Annotations (recommended)",
-    help: "The server's hints decide: a tool marked read-only is read, and anything else is write.",
+    label: "Follow the server (recommended)",
+    help: "Tools the server marks read-only are read. The rest are write.",
   },
   {
     value: "write",
-    label: "Everything write",
-    help: "Every tool is write, whatever the server says: only members with read and write access get them.",
+    label: "Treat every tool as write",
+    help: "Only members with read and write access get its tools.",
   },
   {
     value: "read",
-    label: "Everything read",
-    help: "Every tool is read, whatever the server says: for a server you know only reads, like a docs or search server.",
+    label: "Treat every tool as read",
+    help: "For servers that only read, like docs or search.",
   },
 ];
 
@@ -53,17 +53,11 @@ export const MCP_APP_COPY = {
   },
   addForm: {
     title: "Add an MCP server",
-    description:
-      "Its tools reach your AI clients through this Gateway's MCP address, with the Gateway holding its credential.",
+    description: "Your agents can use its tools.",
     urlLabel: "URL",
     urlPlaceholder: "https://example.com/mcp",
-    urlHelp:
-      "The server's MCP address. The Gateway sends its requests and its credential here and nowhere else.",
-    nameLabel: "Name",
-    nameHelp: (id: string) =>
-      id
-        ? `Its tools reach AI clients as ${id}_<tool>. Lowercase letters, digits and hyphens.`
-        : "Lowercase letters, digits and hyphens. Left empty, it comes from the URL.",
+    nameLabel: "Name (optional)",
+    nameHelp: "Lowercase letters, digits and hyphens.",
     credentialLabel: "Credential",
     credentialItems: [
       { value: "none", label: "None" },
@@ -75,19 +69,13 @@ export const MCP_APP_COPY = {
       { value: "provider", label: "Use a provider" },
     ] as readonly { value: AddCredentialChoice; label: string }[],
     credentialHelp: {
-      none: "A public server: nothing to set.",
-      bearer: "Sent as Authorization: Bearer <token>.",
-      header: "Sent in a header you name, like X-Api-Key.",
-      query: "Sent as a query parameter on the server's URL.",
-      basic: "Set as user:password, sent as Authorization: Basic.",
-      oauth:
-        "Each member signs in to the server with their own account. The Gateway registers itself with the server and holds the tokens.",
-      provider:
-        "A provider already on this Gateway, whose key or sign-in the server takes.",
-    } satisfies Record<AddCredentialChoice, string>,
+      basic: "Set as user:password.",
+      oauth: "Each member signs in with their own account.",
+    } satisfies Partial<Record<AddCredentialChoice, string>> as Partial<
+      Record<AddCredentialChoice, string>
+    >,
     /** Where a static credential's value is set: never on this page. */
-    tokenSettingHelp: (setting: string) =>
-      `The value is the Gateway setting ${setting}. The operator sets it with the command shown next; it never goes through this page.`,
+    tokenSettingHelp: "You'll set its value with a command in the next step.",
     headerLabel: "Header name",
     headerPlaceholder: "X-Api-Key",
     prefixLabel: "Prefix (optional)",
@@ -98,19 +86,19 @@ export const MCP_APP_COPY = {
     providersLoading: "Loading providers…",
     providersNone:
       "No API-key or OAuth provider is on this Gateway yet. Add one under Manage workspace → Providers.",
-    clientIntro:
-      "This server can't register the Gateway as a client. Register one in its console with this redirect URI, then paste its client id and secret:",
+    /** Numbered, for a server that can't register the Gateway as a client itself. */
+    clientRegisterStep:
+      "In the server's console, create an OAuth client with this redirect URI",
+    clientPasteStep: "Paste its client ID and secret",
     clientIdLabel: "Client ID",
     clientSecretLabel: "Client secret (optional)",
-    clientSecretHelp:
-      "Sealed on the Gateway. Leave it empty for a public client.",
     riskLabel: "Risk default",
     riskItems: RISK_DEFAULT_ITEMS,
     submit: "Add server",
     errors: {
-      url: "Give the server's URL.",
-      urlParse: "The URL doesn't parse.",
-      noName: "No name could be read from the URL's host; give it one.",
+      url: "Enter the URL.",
+      urlParse: "Enter the full URL, https:// included.",
+      noName: "Enter a name.",
       header: "Name the header, like X-Api-Key.",
       param: "Name the query parameter, like api_key.",
       provider: "Choose a provider.",
@@ -122,54 +110,42 @@ export const MCP_APP_COPY = {
     credentialTitle: (name: string) => `Set ${name}'s credential`,
     credentialIntro:
       "Run this in a terminal, in the folder where you set up EveryApp:",
-    operatorNote:
-      "Only the Gateway's operator can set it; the app shows Needs setup until then.",
-    credentialSet: (secret: string) =>
-      `Added. Its credential, ${secret}, is set already; the Gateway lists its tools on first use.`,
+    credentialSet: "Its credential is already set.",
     title: (name: string) => `Added ${name}`,
-    tools: (count: number, id: string) =>
-      count === 1
-        ? `Added. 1 tool is on this Gateway's /mcp as ${id}_<tool>.`
-        : `Added. ${count} tools are on this Gateway's /mcp as ${id}_<tool>.`,
-    firstUse: "Added. The Gateway lists its tools on first use.",
-    empty: "Added. The server lists no tools right now.",
+    tools: (count: number) =>
+      count === 1 ? "1 tool added." : `${count} tools added.`,
+    empty: "The server has no tools right now.",
     connectTitle: (name: string) => `Connect ${name}`,
-    connectIntro:
-      "Added. Sign in to the server with your account: the Gateway lists its tools once someone has connected.",
+    connectIntro: "Connect your account to load its tools.",
     connect: "Connect your account",
   },
   edit: {
     title: (name: string) => `Edit ${name}`,
-    description: (id: string) =>
-      `An MCP app. Agents call its tools as ${id}_<tool>.`,
     serverLabel: "Server",
     credentialLabel: "Credential",
     credential: {
-      none: "None: a public server.",
-      not_set: (name: string) =>
-        `${name} is not set. Only the Gateway's operator can set it:`,
+      none: "None",
+      not_set: (name: string) => `${name} isn't set. Run:`,
       bound_elsewhere: (name: string) =>
-        `${name} was set for another server or auth, so nothing is sent to this one. The Gateway's operator sets it again:`,
+        `${name} was set for a different server. Set it again:`,
       ready: (name: string) => `${name} is set for this server.`,
       no_client:
         "The Gateway holds no OAuth client for this server. Add the server again, or add a client under Manage workspace → Providers.",
-      not_connected:
-        "Nobody has connected an account yet: its tools are listed once someone connects.",
+      not_connected: "No accounts connected yet.",
       connected: (count: number) =>
         count === 1 ? "1 account connected." : `${count} accounts connected.`,
       missing:
         "Its provider isn't on this Gateway any more. Remove the app and add it again.",
     },
-    providerLine: (name: string, own: boolean) =>
-      own ? `${name}, this app's own provider.` : `Provider: ${name}.`,
+    providerLine: (name: string) => `Provider: ${name}`,
     connect: "Connect your account",
     reconnect: "Reconnect",
     connectedAs: (label: string | null) =>
       label ? `You're connected as ${label}.` : "You're connected.",
     connectionExpired: "Your connection expired.",
     statusLabel: "Status",
-    on: "On: its tools are served.",
-    off: "Off: its tools aren't served. Access and tokens are kept.",
+    on: "On",
+    off: "Off",
     turnOn: "Turn on",
     turnOff: "Turn off",
     toolsLabel: "Tools",
@@ -180,7 +156,7 @@ export const MCP_APP_COPY = {
     refreshAdded: (names: string[]) => `Added: ${names.join(", ")}.`,
     refreshRemoved: (names: string[]) => `Removed: ${names.join(", ")}.`,
     refreshNoChange: "No change.",
-    noTools: "No tools listed yet. Refresh tools lists them now.",
+    noTools: "No tools yet.",
     noToolsNeedsCredential:
       "Its tools are listed once its credential is set or an account is connected.",
     riskLabel: "Risk default",
@@ -194,7 +170,7 @@ export const MCP_APP_COPY = {
     /** The per-tool risk select; the first clears the override. */
     toolRiskNone: (appDefault: RemoteMcpRiskDefault) =>
       appDefault === "annotations"
-        ? "Annotations"
+        ? "Follow the server"
         : `App default (${appDefault})`,
     toolRiskItems: [
       { value: "read", label: "Read" },
@@ -235,11 +211,10 @@ export const MCP_APP_COPY = {
   remove: {
     title: (name: string) => `Remove ${name}?`,
     confirm: "Remove",
-    body: (people: string | null) =>
-      `Its tools leave this Gateway's MCP address${people ? `, ${people} lose access to it` : ""}, and its tokens, its tools snapshot and its place in AI connections go. Its credential stays set on the Gateway.`,
-    againRemote: "To use it again, add it again under MCP apps.",
+    body: (users: number) =>
+      `Agents can no longer use its tools${users > 0 ? `, and ${users} ${users === 1 ? "user loses" : "users lose"} access` : ""}.`,
     againBuiltinCommand: (id: string) => `pnpm everyapp mcp on ${id}`,
-    againBuiltin: "turns it on again, for owners and admins first.",
+    againBuiltin: "turns it on again.",
   },
   /** The "Use it from your agent" dialog: the Connect your agent steps, then this. */
   useDialog: {
@@ -248,8 +223,6 @@ export const MCP_APP_COPY = {
     genericExample: (name: string) =>
       `List what ${name} offers, then use one of its tools.`,
     connect: (provider: string) => `Connect your ${provider} account`,
-    connectIntro:
-      "Its tools act as you on the server: connect your account first.",
     connectedAs: (label: string | null) =>
       label ? `Connected as ${label}.` : "Connected.",
     expired: "The connection expired.",

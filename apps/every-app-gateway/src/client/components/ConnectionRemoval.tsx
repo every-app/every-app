@@ -101,7 +101,7 @@ export function useConnectionRemoval<C extends Removable>({
           }
         >
           {removingApp.app.name} stops using {account} until{" "}
-          {person ? "they" : "you"} allow it again there.
+          {person ? "they" : "you"} allow it again.
         </ConfirmDialog>
       ) : null}
     </>

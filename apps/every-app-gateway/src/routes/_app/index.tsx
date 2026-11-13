@@ -189,9 +189,7 @@ function App() {
             ) : null
           }
         />
-        {isError ? (
-          <ErrorState title="Failed to load apps" message="Please try again." />
-        ) : null}
+        {isError ? <ErrorState message="Couldn't load apps." /> : null}
 
         {apps.length > 0 || (isLoading && !isError) ? (
           <>
@@ -291,7 +289,6 @@ function App() {
                 <EmptyState
                   kind="filtered"
                   title="No apps found"
-                  description="Try another app name or description."
                   action={
                     <Button variant="outline" onClick={() => setSearch("")}>
                       Clear search

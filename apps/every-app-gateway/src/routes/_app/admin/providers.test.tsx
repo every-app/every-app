@@ -455,7 +455,7 @@ describe("a provider's menu", () => {
     await openRowMenu("GitHub");
     expect(menuItems()).toEqual([
       "Replace client",
-      "Forget pasted client",
+      "Remove client",
       "Remove provider",
     ]);
     const remove = [...document.querySelectorAll('[role="menuitem"]')].find(

@@ -333,10 +333,7 @@ function AccountsTab() {
   return (
     <>
       <SettingsTab>
-        <SettingsSection
-          title="Connected accounts"
-          hint="Accounts you've connected, such as Gmail, and what your apps can do with them."
-        >
+        <SettingsSection title="Connected accounts">
           <DataTable
             table={table}
             isLoading={accountsQuery.isLoading}

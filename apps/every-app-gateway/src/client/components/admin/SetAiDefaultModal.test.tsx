@@ -2,7 +2,7 @@
 /**
  * The AI default dialog rendered for real: the candidates with their key
  * state and model, the current choice preselected, an optional model,
- * and "Use the shipped order" once a choice is stored.
+ * and "Use automatic" once a choice is stored.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -159,11 +159,9 @@ it("preselects what serves now and saves it with the provider's own model", asyn
   expect(text()).toContain("OpenRouter · key set · anthropic/claude-haiku-5.5");
   expect(modelInput().value).toBe("");
   expect(modelInput().placeholder).toBe("anthropic/claude-haiku-5.5");
-  expect(text()).toContain(
-    "Leave empty for the provider's model (shown). A model id may contain slashes.",
-  );
+  expect(text()).toContain("Leave empty for the provider's default.");
   // Nothing stored: the order already decides.
-  expect(button("Use the shipped order")).toBeUndefined();
+  expect(button("Use automatic")).toBeUndefined();
   await save();
   expect(sent()).toEqual([{ provider: "openrouter" }]);
   expect(onSaved).toHaveBeenCalledOnce();
@@ -196,7 +194,7 @@ it("starts on the stored choice, refuses a model over 200 characters, and clears
   await save();
   expect(sent()).toEqual([]);
   expect(text()).toContain("A model id is at most 200 characters.");
-  await press(button("Use the shipped order")!);
+  await press(button("Use automatic")!);
   expect(sent()).toEqual([{ provider: null }]);
   expect(onSaved).toHaveBeenCalledOnce();
 });

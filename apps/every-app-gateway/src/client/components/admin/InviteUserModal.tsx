@@ -93,7 +93,7 @@ export function InviteUserModal({
         {unsent ? (
           <LinkRevealContent
             title="Invite link"
-            description={`Send this link to ${unsent.email}. They sign up or sign in with that email to join.`}
+            description={`Send this link to ${unsent.email}.`}
             url={unsent.inviteUrl}
             expiresAt={unsent.expiresAt}
             restriction={`Only ${unsent.email} can use it.`}

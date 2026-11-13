@@ -45,7 +45,6 @@ function render(state: {
     root.render(
       <ChecklistDialog
         title="Members of Sales"
-        description="Everyone checked can open the apps granted to this group."
         noun="user"
         items={out ? [] : (state.items ?? ITEMS)}
         initialSelectedIds={out ? [] : (state.selected ?? ["a"])}

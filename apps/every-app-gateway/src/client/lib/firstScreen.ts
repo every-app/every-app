@@ -9,21 +9,15 @@
 export const FIRST_SCREEN = {
   gallery: {
     heading: "Add your first app",
-    intro: "Choose one to see its install command, or build your own.",
   },
   buildCard: {
     title: "Build your own",
     line: "Copy a prompt. Your coding agent asks what you need, then builds it.",
   },
   appDialog: {
-    description: (name: string) =>
-      `${name} is open source and runs behind your Gateway, in your Cloudflare account.`,
-    commandHeading: "Run this in a terminal",
-    commandNote:
-      "Run it in the folder where you set up EveryApp. When it finishes, refresh this page. Run it again later to update.",
+    commandStep: "In your every-app folder, run this in a terminal",
+    refreshStep: "Refresh this page",
     needsHeading: "What it needs",
-    needsNote:
-      "If a key is missing after the install, the app shows Needs setup here, with the command that sets it.",
     memberLine: "Ask an owner or admin to install it.",
     repoLinkLabel: "View on GitHub",
   },
@@ -37,10 +31,8 @@ export const FIRST_SCREEN = {
   addApp: {
     button: "Add app",
     dialogTitle: "Add an app",
-    dialogDescription:
-      "Choose one to see its install command, or build your own.",
   },
-  phoneNotice: "This part takes a computer. Open this page there.",
+  phoneNotice: "Open this page on a computer.",
   empty: {
     memberTitle: "No apps yet",
     memberDescription:

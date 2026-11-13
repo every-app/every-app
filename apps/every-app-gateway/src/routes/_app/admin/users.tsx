@@ -69,7 +69,7 @@ function UsersPage() {
     onSuccess: (result) => {
       setRevealedLink({
         title: "Invite link",
-        description: `Send this link to ${result.email}. They sign up or sign in with that email to join.`,
+        description: `Send this link to ${result.email}.`,
         url: result.inviteUrl,
         expiresAt: result.expiresAt,
         restriction: `Only ${result.email} can use it.`,
@@ -86,7 +86,7 @@ function UsersPage() {
     onSuccess: (result) => {
       setRevealedLink({
         title: "Password reset link",
-        description: `Send this link to ${result.email}. It lets them choose a new password.`,
+        description: `Send this link to ${result.email}.`,
         url: result.url,
         expiresAt: result.expiresAt,
         restriction:

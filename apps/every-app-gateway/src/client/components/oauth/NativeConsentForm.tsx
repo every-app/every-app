@@ -149,20 +149,17 @@ export function NativeConsentForm({
         {organizations.length > 0 && dev ? (
           <div className="space-y-2 text-sm">
             <p>
-              <code>everyapp dev</code> on this computer wants to use{" "}
-              <strong>{app.name}</strong>'s AI, email, providers and members
-              through this Gateway as you
+              It can use <strong>{app.name}</strong>'s AI, email, providers and
+              members as you
               {organization ? (
                 <>
                   , in <strong>{organization.name}</strong>
                 </>
               ) : null}
-              , while you develop it.
+              .
             </p>
             <p className="text-muted-foreground">
               Calls bill {organization?.name ?? "the workspace"}'s providers.
-              The app's data stays on your computer. Revoke it any time under
-              Your connections.
             </p>
           </div>
         ) : null}

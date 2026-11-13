@@ -58,14 +58,14 @@ const text = () => container.textContent ?? "";
 it("shows the order's pick, configured and direct", () => {
   const onChange = render(report({}));
   expect(text()).toContain("OpenRouter · anthropic/claude-haiku-5.5");
-  expect(text()).toContain("First in the order with its key set.");
+  expect(text()).toContain("Automatic");
   expect(text()).not.toContain("Not configured");
   expect(text()).not.toContain("Through Cloudflare AI Gateway");
   act(() => container.querySelector("button")!.click());
   expect(onChange).toHaveBeenCalledOnce();
 });
 
-it("says a stored choice is chosen here, its missing key, AI Gateway and a problem", () => {
+it("shows a stored choice with its missing key, AI Gateway and a problem", () => {
   render(
     report({
       provider: "groq",
@@ -78,17 +78,15 @@ it("says a stored choice is chosen here, its missing key, AI Gateway and a probl
       problem: "Something to fix.",
     }),
   );
-  expect(text()).toContain("Chosen here.");
+  expect(text()).not.toContain("Automatic");
   expect(text()).toContain("Not configured · GROQ_API_KEY");
   expect(text()).toContain("Through Cloudflare AI Gateway");
   expect(text()).toContain("Something to fix.");
 });
 
-it("says what to set when nothing is, and waits while loading", () => {
+it("says when no key is set, and waits while loading", () => {
   render(report({ source: "none", configured: false }));
-  expect(text()).toContain(
-    "Nothing is set yet: apps that need a chat model show Needs setup until one key is set; the first in the order is OpenRouter (OPENROUTER_API_KEY).",
-  );
+  expect(text()).toContain("No AI key set yet.");
   render(undefined);
   expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
   expect(container.querySelector("button")!.disabled).toBe(true);

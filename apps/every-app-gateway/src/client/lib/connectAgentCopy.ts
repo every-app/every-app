@@ -60,7 +60,7 @@ export const CONNECT_AGENT_COPY = {
       label: "Codex",
       steps: [
         {
-          text: "Add EveryApp",
+          text: "Run this in a terminal",
           code: (address) => `codex mcp add everyapp --url ${address}`,
         },
         { text: SIGN_IN, code: () => "codex mcp login everyapp" },
@@ -93,11 +93,9 @@ export const CONNECT_AGENT_COPY = {
   ] satisfies readonly ConnectClient[],
   /** Under the Other tab, for tools that can't sign in, by the reader's role. */
   token: {
-    manager:
-      "Tools that can't sign in take a personal access token as an Authorization: Bearer header:",
+    manager: "Can't sign in? Use a token:",
     managerLink: "Manage workspace → Tokens",
-    member:
-      "Tools that can't sign in need a personal access token: ask an owner or admin for one.",
+    member: "Can't sign in? Ask an owner or admin for a token.",
   },
   connectionsLink: "See or revoke connections",
   docsLink: "Docs",

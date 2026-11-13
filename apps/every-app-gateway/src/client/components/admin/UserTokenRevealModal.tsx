@@ -11,7 +11,6 @@ export function UserTokenRevealModal({
   return (
     <TokenRevealDialog
       title="New personal access token"
-      description="Send it as a bearer token from MCP and HTTP API clients."
       token={token}
       usageLabel="Authorization header"
       usage={`Authorization: Bearer ${token}`}

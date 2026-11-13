@@ -55,10 +55,7 @@ export function DeviceApps() {
 
   return (
     <>
-      <SettingsSection
-        title="Apps on your devices"
-        hint="Desktop and phone apps you've signed in to, and local projects linked with everyapp dev."
-      >
+      <SettingsSection title="Apps on your devices">
         <DataTable
           table={table}
           search={search.search}
@@ -80,8 +77,7 @@ export function DeviceApps() {
             )
           }
         >
-          It loses access on its next request, and you sign in on the device
-          again to use it.
+          You'll sign in again on that device to use it.
         </ConfirmDialog>
       ) : null}
     </>

@@ -127,15 +127,12 @@ it("gives an admin the steps: the unmet setting and its link, the command, and t
   expect(text).toContain("Keyword data.");
   expect(text).toContain("Run this in a terminal");
   expect(text).toContain("pnpm everyapp configure openseo");
-  expect(text).toContain("Come back here: OpenSEO opens on its own");
   expect(text).not.toContain("Ask an admin to run:");
   // The optional feature, folded while off, with "Set up" to open it.
   expect(text).toContain("Optional");
   expect(text).toContain("Rendering");
   expect(text).toContain("Set up");
   expect(text).not.toContain("Audits of JS sites.");
-  // Gateway settings are read live: nothing for `status` to re-read.
-  expect(text).not.toContain("pnpm everyapp status");
   const link = document.body.querySelector<HTMLAnchorElement>(
     'a[href="https://app.dataforseo.com/api-access"]',
   );
@@ -170,15 +167,13 @@ it("tells a member to ask an admin", () => {
   expect(text).toContain("pnpm everyapp configure openseo");
   expect(text).not.toContain("Run this in a terminal");
   expect(text).not.toContain("Rendering");
-  expect(text).not.toContain("pnpm everyapp status");
   expect(document.body.querySelector("a")).toBeNull();
 });
 
-it("names an app's own secret once and says status re-reads the Worker", () => {
+it("names an app's own secret once", () => {
   const text = render(true, SETUP_OWN_SECRET);
   expect(text.split("MAIN_SECRET").length - 1).toBe(1); // the row; the command names the app
   expect(text).toContain("pnpm everyapp configure research");
-  expect(text).toContain("pnpm everyapp status");
 });
 
 it("shows a required feature open: steps with links and URLs filled, values, and the Gateway setting with Providers", () => {
@@ -225,9 +220,8 @@ it("shows a required feature open: steps with links and URLs filled, values, and
       },
     ],
   });
-  expect(text).toContain("Always needed");
-  expect(text).toContain("GitHub");
   expect(text).toContain("Required");
+  expect(text).toContain("GitHub");
   expect(text).toContain("Links issues to deals.");
   expect(text).toContain("Not set on the Gateway");
   const step = document.body.querySelector<HTMLAnchorElement>(

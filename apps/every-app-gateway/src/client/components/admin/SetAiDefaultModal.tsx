@@ -78,7 +78,7 @@ export function SetAiDefaultModal({
       });
       toast.success(
         choice === null
-          ? `The shipped order decides: ${next.resolution.label}`
+          ? `AI default: ${next.resolution.label} (automatic)`
           : `AI default: ${next.resolution.label} · ${next.resolution.model}`,
       );
       onSaved();
@@ -136,7 +136,7 @@ export function SetAiDefaultModal({
                       placeholder={
                         candidates.find((c) => c.id === provider)?.model ?? ""
                       }
-                      description="Leave empty for the provider's model (shown). A model id may contain slashes."
+                      description="Leave empty for the provider's default."
                       autoComplete="off"
                       spellCheck={false}
                     />
@@ -163,7 +163,7 @@ export function SetAiDefaultModal({
                         pending={isClearing}
                         onClick={() => void clear()}
                       >
-                        Use the shipped order
+                        Use automatic
                       </Button>
                     ) : null}
                     <Button

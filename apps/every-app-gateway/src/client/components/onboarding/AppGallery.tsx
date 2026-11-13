@@ -26,17 +26,12 @@ interface AppGalleryProps {
 export function AppGallery({ onPickApp, onBuild }: AppGalleryProps) {
   return (
     <section aria-labelledby="app-gallery-heading" className="space-y-4">
-      <div className="space-y-0.5">
-        <h2
-          id="app-gallery-heading"
-          className="text-sm font-medium text-muted-foreground"
-        >
-          {FIRST_SCREEN.gallery.heading}
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          {FIRST_SCREEN.gallery.intro}
-        </p>
-      </div>
+      <h2
+        id="app-gallery-heading"
+        className="text-sm font-medium text-muted-foreground"
+      >
+        {FIRST_SCREEN.gallery.heading}
+      </h2>
       <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {FEATURED_APPS.map((app) => (
           <GalleryCard

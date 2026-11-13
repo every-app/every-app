@@ -467,11 +467,7 @@ export function UsageByAppTable({
       isLoading={isLoading}
       error={error}
       search={search.search}
-      empty={{
-        title: "No apps",
-        description:
-          "Apps this organization can call are listed here, with what they spent in the month.",
-      }}
+      empty={{ title: "No apps" }}
     />
   );
 }
@@ -494,10 +490,7 @@ export function UsageByMemberTable({
       isLoading={isLoading}
       error={error}
       search={search.search}
-      empty={{
-        title: "No member usage this month",
-        description: "Nobody made a provider call or an agent tool call.",
-      }}
+      empty={{ title: "No member usage this month" }}
     />
   );
 }
@@ -520,10 +513,7 @@ export function UsageByTargetTable({
       isLoading={isLoading}
       error={error}
       search={search.search}
-      empty={{
-        title: "No provider calls this month",
-        description: "No AI provider or capability was called.",
-      }}
+      empty={{ title: "No provider calls this month" }}
     />
   );
 }
@@ -546,10 +536,7 @@ export function UsageByModelTable({
       isLoading={isLoading}
       error={error}
       search={search.search}
-      empty={{
-        title: "No model calls this month",
-        description: "No AI provider was called.",
-      }}
+      empty={{ title: "No model calls this month" }}
     />
   );
 }

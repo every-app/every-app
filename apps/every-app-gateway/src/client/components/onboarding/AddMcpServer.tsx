@@ -4,7 +4,6 @@ import {
   remoteMcpIdFromUrl,
   remoteMcpIdProblem,
   remoteMcpRedirectUri,
-  remoteMcpTokenSetting,
   type RemoteMcpRiskDefault,
 } from "@every-app/sdk/internal";
 import { ChoiceSelect } from "@/client/components/ChoiceSelect";
@@ -321,9 +320,12 @@ function AddMcpServerView({ onAdded }: { onAdded: () => void }) {
 
   const riskHelp = COPY.riskItems.find((item) => item.value === state.risk);
   const credentialHelp =
-    isStatic(state.kind) && id
-      ? `${COPY.credentialHelp[state.kind]} ${COPY.tokenSettingHelp(remoteMcpTokenSetting(id))}`
-      : COPY.credentialHelp[state.kind];
+    [
+      COPY.credentialHelp[state.kind],
+      isStatic(state.kind) ? COPY.tokenSettingHelp : null,
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined;
   const redirectUri =
     askClient && id && typeof window !== "undefined"
       ? remoteMcpRedirectUri(window.location.origin, id)
@@ -341,12 +343,7 @@ function AddMcpServerView({ onAdded }: { onAdded: () => void }) {
         <DialogTitle>{COPY.title}</DialogTitle>
         <DialogDescription>{COPY.description}</DialogDescription>
       </DialogHeader>
-      <FormField
-        id={ids.url}
-        label={COPY.urlLabel}
-        help={COPY.urlHelp}
-        error={shown.url}
-      >
+      <FormField id={ids.url} label={COPY.urlLabel} error={shown.url}>
         {(describedBy) => (
           <Input
             id={ids.url}
@@ -365,7 +362,7 @@ function AddMcpServerView({ onAdded }: { onAdded: () => void }) {
       <FormField
         id={ids.name}
         label={COPY.nameLabel}
-        help={COPY.nameHelp(id)}
+        help={COPY.nameHelp}
         error={shown.name}
       >
         {(describedBy) => (
@@ -480,15 +477,20 @@ function AddMcpServerView({ onAdded }: { onAdded: () => void }) {
       ) : null}
       {state.kind === "oauth" && askClient ? (
         <>
-          <div className="flex flex-col gap-2 text-sm">
-            <p>{COPY.clientIntro}</p>
-            {redirectUri ? (
-              <CodeBlock
-                code={redirectUri}
-                successMessage="Redirect URI copied"
-              />
-            ) : null}
-          </div>
+          <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm">
+            <li>
+              {COPY.clientRegisterStep}
+              {redirectUri ? (
+                <div className="mt-2 -ml-5">
+                  <CodeBlock
+                    code={redirectUri}
+                    successMessage="Redirect URI copied"
+                  />
+                </div>
+              ) : null}
+            </li>
+            <li>{COPY.clientPasteStep}</li>
+          </ol>
           <FormField
             id={ids.clientId}
             label={COPY.clientIdLabel}
@@ -507,11 +509,7 @@ function AddMcpServerView({ onAdded }: { onAdded: () => void }) {
               />
             )}
           </FormField>
-          <FormField
-            id={ids.clientSecret}
-            label={COPY.clientSecretLabel}
-            help={COPY.clientSecretHelp}
-          >
+          <FormField id={ids.clientSecret} label={COPY.clientSecretLabel}>
             {(describedBy) => (
               <Input
                 id={ids.clientSecret}
@@ -596,13 +594,7 @@ function AddedMcpServer({ added }: { added: AddedRemoteMcpApp }) {
           <DialogTitle>{copy.credentialTitle(added.name)}</DialogTitle>
           <DialogDescription>{copy.credentialIntro}</DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-2">
-          <CodeBlock
-            code={added.setupCommand}
-            successMessage="Command copied"
-          />
-          <p className="text-xs text-muted-foreground">{copy.operatorNote}</p>
-        </div>
+        <CodeBlock code={added.setupCommand} successMessage="Command copied" />
         <DialogFooter showCloseButton />
       </>
     );
@@ -623,17 +615,17 @@ function AddedMcpServer({ added }: { added: AddedRemoteMcpApp }) {
     );
   }
   const line = added.secret
-    ? copy.credentialSet(added.secret)
+    ? copy.credentialSet
     : added.toolCount && added.toolCount > 0
-      ? copy.tools(added.toolCount, added.appId)
+      ? copy.tools(added.toolCount)
       : added.toolsStatus === "empty"
         ? copy.empty
-        : copy.firstUse;
+        : null;
   return (
     <>
       <DialogHeader>
         <DialogTitle>{copy.title(added.name)}</DialogTitle>
-        <DialogDescription>{line}</DialogDescription>
+        {line ? <DialogDescription>{line}</DialogDescription> : null}
       </DialogHeader>
       <DialogFooter showCloseButton />
     </>

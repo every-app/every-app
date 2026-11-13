@@ -203,14 +203,13 @@ describe("the subscriptions table", () => {
     expect(actions.onToggle).toHaveBeenCalledWith(slack, false);
   });
 
-  it("explains events to an empty workspace, with the docs and the CLI line", () => {
+  it("explains events to an empty workspace, with the docs", () => {
     render([], <button type="button">Add subscription</button>);
     const text = container.textContent ?? "";
     expect(text).toContain("No event subscriptions yet");
     expect(text).toContain("Slack");
     expect(text).toContain("Zapier or n8n");
     expect(text).toContain("Your own agent");
-    expect(text).toContain("pnpm everyapp events add <url>");
     expect(
       container.querySelector('a[href="https://everyapp.com/docs/events"]'),
     ).not.toBeNull();

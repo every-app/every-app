@@ -3,8 +3,8 @@
  * Manage workspace → Events rendered for real (React in a DOM) with the
  * server functions mocked: a create that generated a signing secret shows
  * it once, in its own dialog, and after Done it is nowhere on the page;
- * Remove on the built-in Cap alerts row says it is turned off, not
- * removed, and on a person's subscription that events stop at once; the
+ * Remove on the built-in Cap alerts row asks to turn it off, and on a
+ * person's subscription says that events stop going to it; the
  * switch and Send test call their server functions.
  */
 import { act, type ComponentType } from "react";
@@ -235,7 +235,7 @@ describe("adding a webhook", () => {
 });
 
 describe("removing a subscription", () => {
-  it("says a built-in row is turned off, not removed", async () => {
+  it("asks to turn a built-in row off, not remove it", async () => {
     listed = [CAP_ALERTS];
     mocks.deleteEventSubscription.mockResolvedValue({
       removed: false,
@@ -244,7 +244,8 @@ describe("removing a subscription", () => {
     await render();
     await openRowMenu("Cap alerts");
     await chooseMenuItem("Remove");
-    expect(body()).toContain("turned off, not removed");
+    expect(body()).toContain("Turn off “Cap alerts”?");
+    expect(body()).toContain("No events go to it until you turn it on again.");
     await press(button("Turn off"));
     expect(mocks.deleteEventSubscription).toHaveBeenCalledWith({
       data: { id: CAP_ALERTS.id },
@@ -254,7 +255,7 @@ describe("removing a subscription", () => {
     );
   });
 
-  it("says events stop going to a person's subscription at once", async () => {
+  it("says events stop going to a person's subscription", async () => {
     listed = [subscription({ name: "Slack #ops" })];
     mocks.deleteEventSubscription.mockResolvedValue({
       removed: true,
@@ -263,7 +264,7 @@ describe("removing a subscription", () => {
     await render();
     await openRowMenu("Slack #ops");
     await chooseMenuItem("Remove");
-    expect(body()).toContain("Events stop going to it at once.");
+    expect(body()).toContain("Events stop going to it.");
     await press(button("Remove subscription"));
     expect(mocks.toast.success).toHaveBeenCalledWith("Subscription removed");
   });

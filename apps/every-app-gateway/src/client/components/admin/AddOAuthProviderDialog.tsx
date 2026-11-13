@@ -326,15 +326,11 @@ function ClientForm({
           <DialogTitle>
             {custom ? "Add a custom OAuth provider" : `Add ${preset.name}`}
           </DialogTitle>
-          <DialogDescription>
-            {custom ? (
-              "Describe the provider, register the redirect URI on its OAuth app, then paste the client."
-            ) : preset.hint ? (
+          {!custom && preset.hint ? (
+            <DialogDescription>
               <HintText text={preset.hint} />
-            ) : (
-              "Make an OAuth app at the provider, register the redirect URI, then paste its client ID and secret."
-            )}
-          </DialogDescription>
+            </DialogDescription>
+          ) : null}
         </DialogHeader>
 
         <div className="flex max-h-[55vh] min-w-0 flex-col gap-4 overflow-y-auto px-0.5">

@@ -43,7 +43,9 @@ function render(canRun: boolean) {
 it("gives an owner or admin the install command and what to have ready", () => {
   render(true);
   const text = document.body.textContent ?? "";
-  expect(text).toContain("OpenSEO is open source");
+  expect(text).toContain(openseo.line);
+  expect(text).toContain("In your every-app folder, run this in a terminal");
+  expect(text).toContain("Refresh this page");
   expect(text).toContain(`pnpm everyapp install ${openseo.repo}`);
   for (const need of openseo.needs) expect(text).toContain(need);
   expect(

@@ -8,7 +8,6 @@ import { Button } from "@/client/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -64,10 +63,6 @@ export function RenameWorkspaceDialog({
           <form.Form className="flex flex-col gap-4">
             <DialogHeader>
               <DialogTitle>Rename workspace</DialogTitle>
-              <DialogDescription>
-                The name every member sees in the organization switcher and in
-                invitations.
-              </DialogDescription>
             </DialogHeader>
             <form.AppField name="name">
               {(field) => (

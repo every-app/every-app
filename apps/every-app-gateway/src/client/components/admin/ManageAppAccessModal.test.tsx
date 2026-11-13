@@ -171,7 +171,7 @@ describe("Revoke all", () => {
     expect(row("Admin").textContent).toContain("Admin");
 
     await press(button("Revoke all"));
-    expect(footer()).toBe("1 of 3 users will have access (1 without a grant)");
+    expect(footer()).toBe("1 of 3 users will have access");
     expect(row("Alice").textContent).toContain("Revoking");
     expect(row("Admin").textContent).toContain("Direct grant removed");
     expect(await save()).toEqual([]);
@@ -182,12 +182,12 @@ describe("Revoke all", () => {
       user("carol", { viaGroups: ["Sales"] }),
       user("alice", { hasAccess: true }),
     ]);
-    expect(footer()).toBe("2 of 2 users will have access (1 without a grant)");
+    expect(footer()).toBe("2 of 2 users will have access");
     expect(checkboxState("Carol")).toEqual({ checked: true, disabled: true });
 
     await press(button("Revoke all"));
     // Carol stays in through Sales, once, and is not granted directly.
-    expect(footer()).toBe("1 of 2 users will have access (1 without a grant)");
+    expect(footer()).toBe("1 of 2 users will have access");
     expect(await save()).toEqual([]);
   });
 });
@@ -196,7 +196,7 @@ describe("a user who opens the app another way", () => {
   it("shows an admin with no grant as checked and not editable", async () => {
     await render([user("admin", { admin: true }), user("bob")]);
     expect(checkboxState("Admin")).toEqual({ checked: true, disabled: true });
-    expect(footer()).toBe("1 of 2 users will have access (1 without a grant)");
+    expect(footer()).toBe("1 of 2 users will have access");
   });
 
   it("keeps access when the direct grant is unchecked, and says so", async () => {
@@ -217,16 +217,16 @@ describe("a user who opens the app another way", () => {
     expect(owner.querySelector("label")?.className).not.toContain(
       "bg-destructive",
     );
-    expect(document.body.textContent).toContain("1 kept another way");
+    expect(document.body.textContent).toContain("1 keeping access");
     expect(document.body.textContent).not.toContain("losing access");
-    expect(footer()).toBe("2 of 3 users will have access (1 without a grant)");
+    expect(footer()).toBe("2 of 3 users will have access");
     expect(await save()).toEqual(["alice"]);
   });
 });
 
 describe("an app available to everyone", () => {
   const LINE =
-    "Available to everyone: every member opens it, people who join later too. The people checked here keep it if that is turned off.";
+    "Everyone can open this app. People checked here keep it if that's turned off.";
 
   it("says so, and everyone keeps it whatever the grants", async () => {
     await render([user("alice", { hasAccess: true }), user("bob")], {
@@ -239,7 +239,7 @@ describe("an app available to everyone", () => {
       dialog.getAttribute("aria-describedby") ?? "",
     );
     expect(description?.textContent).toBe(LINE);
-    expect(footer()).toBe("2 of 2 users will have access (1 without a grant)");
+    expect(footer()).toBe("2 of 2 users will have access");
     // Bob opens it through the flag, and his box is his grant: editable.
     expect(checkboxState("Bob")).toEqual({ checked: false, disabled: false });
     expect(row("Bob").textContent).toContain("Has access");
@@ -250,15 +250,15 @@ describe("an app available to everyone", () => {
     expect(row("Alice").textContent).toContain("Direct grant removed");
     await press(checkboxInput("Bob"));
     expect(checkboxState("Bob")).toEqual({ checked: true, disabled: false });
-    expect(footer()).toBe("2 of 2 users will have access (1 without a grant)");
+    expect(footer()).toBe("2 of 2 users will have access");
     expect(await save()).toEqual(["bob"]);
   });
 
   it("says who opens it when the flag is off", async () => {
     await render([user("alice", { hasAccess: true })]);
-    expect(document.body.textContent).not.toContain("Available to everyone");
+    expect(document.body.textContent).not.toContain("Everyone can open");
     expect(document.body.textContent).toContain(
-      "Owners and admins open every app.",
+      "Owners and admins can always open it.",
     );
   });
 });

@@ -175,9 +175,7 @@ function ResetPassword() {
         <AuthCard title="Password updated" footer={footer}>
           <Alert variant="success">
             <CircleCheck />
-            <AlertDescription>
-              Your password is updated. Taking you to sign in…
-            </AlertDescription>
+            <AlertDescription>Taking you to sign in…</AlertDescription>
           </Alert>
         </AuthCard>
       </AuthPageShell>
@@ -218,7 +216,6 @@ function ResetPassword() {
                 <field.TextField
                   label="New password"
                   type="password"
-                  placeholder="Enter new password"
                   autoComplete="new-password"
                   className={authInputClassName}
                   disabled={isRunning}
@@ -231,7 +228,6 @@ function ResetPassword() {
                 <field.TextField
                   label="Confirm password"
                   type="password"
-                  placeholder="Confirm new password"
                   autoComplete="new-password"
                   className={authInputClassName}
                   disabled={isRunning}

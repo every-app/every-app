@@ -15,9 +15,6 @@ import {
   type FeatureState,
 } from "@every-app/sdk/internal";
 
-/** How an operator re-reads the app Worker's secrets after setting one another way. */
-export const STATUS_COMMAND = "pnpm everyapp status";
-
 export const PLATFORM_NOTE = "EveryApp is still setting this up.";
 
 /** Where an owner or admin adds a Gateway setting a feature needs: Manage workspace → Providers. */
@@ -108,12 +105,6 @@ interface SetupDialogModel {
    * features) is one more, "More settings".
    */
   optional: SetupDialogFeature[];
-  /**
-   * Whether to say that `everyapp status` re-reads the app Worker's
-   * secrets: only when a setting that keeps the app closed is the app's
-   * own (the Gateway's are read live) and the reader runs the command.
-   */
-  statusHint: boolean;
 }
 
 const MARKDOWN =
@@ -278,6 +269,5 @@ export function setupDialogModel(
           ...more,
         ]
       : [],
-    statusHint: runs && setup.unmet.some((setting) => setting.holder === "app"),
   };
 }

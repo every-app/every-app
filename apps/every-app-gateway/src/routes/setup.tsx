@@ -69,10 +69,7 @@ function Setup() {
   if (ownerData?.hasOwner) {
     return (
       <AuthPageShell>
-        <AuthCard
-          title="Gateway already set up"
-          description="This gateway already has an owner."
-        >
+        <AuthCard title="Gateway already set up">
           <Button
             nativeButton={false}
             className={authSubmitClassName}
@@ -90,8 +87,7 @@ function Setup() {
       <AuthPageShell>
         <AuthCard title="Setup link required" size="md">
           <p className="text-sm text-muted-foreground">
-            Open the setup link that was printed when this gateway was deployed,
-            or create a new one with the Cloudflare login that deployed it:
+            Open the setup link from when you deployed, or get a new one:
           </p>
           <CodeBlock
             code="pnpm everyapp setup"
@@ -182,17 +178,13 @@ function ClaimForm({ token }: { token: string }) {
 
   return (
     <AuthPageShell>
-      <AuthCard
-        title="Set up your gateway"
-        description="Create the owner account for this gateway."
-      >
+      <AuthCard title="Set up your gateway">
         <form.AppForm>
           <form.Form className="space-y-4">
             <form.AppField name="name">
               {(field) => (
                 <field.TextField
                   label="Name"
-                  placeholder="Your name"
                   autoComplete="name"
                   className={authInputClassName}
                   maxLength={120}
@@ -219,7 +211,6 @@ function ClaimForm({ token }: { token: string }) {
                 <field.TextField
                   label="Password"
                   type="password"
-                  placeholder="Create a password"
                   autoComplete="new-password"
                   className={authInputClassName}
                   maxLength={128}
@@ -233,7 +224,6 @@ function ClaimForm({ token }: { token: string }) {
                 <field.TextField
                   label="Confirm password"
                   type="password"
-                  placeholder="Confirm your password"
                   autoComplete="new-password"
                   className={authInputClassName}
                   maxLength={128}

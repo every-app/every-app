@@ -102,7 +102,7 @@ export function SetDefaultCapModal({
             <form.AppField name="costUsd">
               {(field) => (
                 <field.TextField
-                  label="Dollars per month, for every app without its own cap"
+                  label="Dollars per month"
                   description={COST_CAP_HELP}
                   type="number"
                   inputMode="decimal"

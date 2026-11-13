@@ -241,7 +241,7 @@ describe("with a workspace default", () => {
 });
 
 describe("from Raise on a paused app", () => {
-  it("starts on a custom cap prefilled with the default that paused it, and says where the default changes", () => {
+  it("starts on a custom cap prefilled with the default that paused it", () => {
     render(
       app({
         costMicros: 20_000_000,
@@ -254,13 +254,10 @@ describe("from Raise on a paused app", () => {
     expect(text()).toContain("Raise the monthly cap for Notes");
     expect(radios()[2]).toEqual({ label: "Custom cap", checked: true });
     expect(capInput()?.value).toBe("20");
-    expect(text()).toContain(
-      "The default itself is changed in the Default monthly cap row.",
-    );
     expect(text()).toContain("$20.00 so far this month.");
   });
 
-  it("prefills the app's own cap without the default line", () => {
+  it("prefills the app's own cap", () => {
     render(
       app({
         costMicros: 50_000_000,
@@ -273,7 +270,6 @@ describe("from Raise on a paused app", () => {
     );
     expect(text()).toContain("Raise the monthly cap for Notes");
     expect(capInput()?.value).toBe("50");
-    expect(text()).not.toContain("Default monthly cap row");
   });
 });
 
@@ -310,11 +306,9 @@ describe("without a workspace default", () => {
 describe("the description", () => {
   it("says what a cap does, who is emailed, and links the docs", () => {
     render(app());
+    expect(text()).toContain("its AI and provider calls stop");
     expect(text()).toContain(
-      "Once reached, the Gateway refuses the app's calls",
-    );
-    expect(text()).toContain(
-      "Owners and admins are emailed at 80% and at the cap once the Gateway can send mail; change that under Manage workspace → Events.",
+      "Owners and admins get an email at 80% and at the cap, if email is set up.",
     );
     expect(
       document.body.querySelector('a[href="https://everyapp.com/docs/usage"]')

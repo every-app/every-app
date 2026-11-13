@@ -189,7 +189,7 @@ function AgentsTab() {
             )
           }
         >
-          It loses access on its next request.
+          It loses access to your apps.
         </ConfirmDialog>
       ) : null}
     </>

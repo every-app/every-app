@@ -31,7 +31,6 @@ import {
 } from "@/client/components/ui/dropdown-menu";
 import { Switch } from "@/client/components/ui/switch";
 import {
-  EVENTS_CLI_LINE,
   EVENTS_DOCS_URL,
   isEverything,
   subscriptionTarget,
@@ -328,10 +327,6 @@ function EventsEmptyActions({ addAction }: { addAction?: ReactNode }) {
           <ArrowUpRight data-icon="inline-end" />
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Or from a terminal:{" "}
-        <code className="font-mono text-foreground/80">{EVENTS_CLI_LINE}</code>
-      </p>
     </div>
   );
 }

@@ -24,9 +24,6 @@ import type {
 /** The person's page on events: what they are, the Slack and Zapier recipes, verifying. */
 export const EVENTS_DOCS_URL = "https://everyapp.com/docs/events";
 
-/** The same thing from a terminal, as the empty state offers it. */
-export const EVENTS_CLI_LINE = "pnpm everyapp events add <url>";
-
 /** The pattern that takes every event but a test ping. */
 export const EVERYTHING = "*";
 
@@ -85,7 +82,7 @@ export const DELIVERY_STATE_LABELS: Record<DeliveryState, string> = {
 const ERROR_LABELS: Record<string, string> = {
   timeout: "No answer within 10 seconds",
   connection: "Couldn't connect",
-  redirect: "Answered with a redirect, which is never followed",
+  redirect: "Answered with a redirect",
   subscription_gone: "The subscription was removed or turned off",
   event_gone: "The event is past its 30 days",
   email_not_configured:

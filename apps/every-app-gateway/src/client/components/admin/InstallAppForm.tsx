@@ -237,9 +237,7 @@ export function InstallAppForm({
                   releaseOnly ? "Release URL" : "Repository or release URL"
                 }
                 placeholder={
-                  releaseOnly
-                    ? "Paste your oss.new release URL"
-                    : "Repository or release URL"
+                  releaseOnly ? "Paste your oss.new release URL" : undefined
                 }
                 autoComplete="off"
                 required
@@ -290,16 +288,16 @@ export function InstallAppForm({
                 ))}
               {review.data.aiRoutes.length > 0 && (
                 <p className="text-sm">
-                  Uses OpenAI paths beyond inference, on this Gateway&apos;s
-                  OpenAI key: {review.data.aiRoutes.join(", ")}.
+                  Also uses these OpenAI endpoints with your key:{" "}
+                  {review.data.aiRoutes.join(", ")}.
                 </p>
               )}
               {!locked && review.data.providers.length > 0 && (
                 <Field>
                   {review.data.providers.map((provider) => (
                     <p key={provider.id} className="text-sm">
-                      {provider.name}: keys go to {provider.hosts.join(", ")}.
-                      Settings: {provider.settings.join(", ")}.
+                      Adds {provider.name}. Its key goes only to{" "}
+                      {provider.hosts.join(", ")}.
                     </p>
                   ))}
                   <label className="flex items-start gap-2 text-sm">
@@ -312,7 +310,7 @@ export function InstallAppForm({
                         }))
                       }
                     />
-                    Register these providers on this Gateway.
+                    Add these providers
                   </label>
                 </Field>
               )}
@@ -323,7 +321,7 @@ export function InstallAppForm({
               <JobStatus job={job} />
             ) : install.isPending ? (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Spinner /> Downloading the release and deploying it…
+                <Spinner /> Installing…
               </p>
             ) : checking || review.isPending ? (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -349,21 +347,17 @@ export function InstallAppForm({
                     allow no shell syntax) goes in the command. */}
                 {isAppInstallUrl(sourceUrl) ? (
                   <>
-                    <p>
-                      This Gateway doesn't have a deployment token configured.
-                      You can install from a terminal instead:
-                    </p>
+                    <p>To install, run this in a terminal:</p>
                     <CodeBlock
                       code={`everyapp install ${sourceUrl}`}
                       successMessage="Command copied"
                     />
-                    <p>Or add a token to install from this page:</p>
+                    <p>
+                      To install from this page instead, add a deploy token:
+                    </p>
                   </>
                 ) : (
-                  <p>
-                    This Gateway doesn't have a deployment token configured. It
-                    can be added with:
-                  </p>
+                  <p>To install from this page, add a deploy token:</p>
                 )}
                 <CodeBlock
                   code="everyapp deploy-token add"
@@ -409,7 +403,7 @@ export function InstallAppForm({
                 disabled={!authorizedChanges[job.error?.code ?? ""]}
                 onClick={() => install.reset()}
               >
-                Continue with this update
+                Continue
               </Button>
             </>
           )}
@@ -533,10 +527,7 @@ function Refusal({ error }: { error: Error }) {
       <Alert variant="destructive">
         <CircleAlert />
         <AlertDescription className="flex min-w-0 flex-col gap-2">
-          <span>
-            This repository publishes no EveryApp release. Clone it and deploy
-            from its checkout with the EveryApp CLI:
-          </span>
+          <span>This repository has no release. Clone it, then run:</span>
           <CodeBlock code="pnpm everyapp deploy" />
         </AlertDescription>
       </Alert>

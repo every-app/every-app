@@ -74,22 +74,15 @@ export function EditAppModal({ app, onClose }: EditAppModalProps) {
           <form.Form className="flex flex-col gap-4">
             <DialogHeader>
               <DialogTitle>Edit app</DialogTitle>
-              <DialogDescription>
-                Editing <span className="font-mono">{app.appId}</span>
+              <DialogDescription className="font-mono">
+                {app.appId}
               </DialogDescription>
             </DialogHeader>
             <form.AppField name="name">
-              {(field) => (
-                <field.TextField label="App name" placeholder="My App" />
-              )}
+              {(field) => <field.TextField label="App name" />}
             </form.AppField>
             <form.AppField name="description">
-              {(field) => (
-                <field.TextareaField
-                  label="Description"
-                  placeholder="Describe what your app does..."
-                />
-              )}
+              {(field) => <field.TextareaField label="Description" />}
             </form.AppField>
             {app.hostname ? (
               <p className="text-sm text-muted-foreground">
@@ -154,7 +147,7 @@ export function EditAppModal({ app, onClose }: EditAppModalProps) {
                   {(field) => (
                     <field.SwitchField
                       label="Available to everyone"
-                      description="Every member opens it, and everyone who joins later. Off: owners, admins and the people and groups granted it in Manage access."
+                      description="Off: only owners, admins and people you grant it to."
                     />
                   )}
                 </form.AppField>

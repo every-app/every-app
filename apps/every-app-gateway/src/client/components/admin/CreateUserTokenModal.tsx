@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { revalidateLogic } from "@tanstack/react-form";
-import { Link } from "@tanstack/react-router";
 import { CircleAlert } from "lucide-react";
 import { z } from "zod";
 import { useAppForm } from "@/client/components/form/useAppForm";
@@ -131,9 +130,7 @@ export function CreateUserTokenModal({
             <DialogHeader>
               <DialogTitle>New token</DialogTitle>
               <DialogDescription>
-                For Claude Code, Cursor and API clients. claude.ai and ChatGPT
-                connect through{" "}
-                <Link to="/connections/agents">Your connections</Link> instead.
+                For scripts and tools that can't sign in.
               </DialogDescription>
             </DialogHeader>
             <form.AppField name="name">
@@ -158,9 +155,7 @@ export function CreateUserTokenModal({
                   <Alert variant="destructive">
                     <CircleAlert aria-hidden />
                     <AlertDescription>
-                      Full access acts as you on every app route and every MCP
-                      tool, deleting included, until it expires or is revoked.
-                      Limit it to one app where you can.
+                      Full access can do anything you can, deleting included.
                     </AlertDescription>
                   </Alert>
                 ) : null

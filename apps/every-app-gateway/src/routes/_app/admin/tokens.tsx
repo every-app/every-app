@@ -141,7 +141,7 @@ function TokensPage() {
             })
           }
         >
-          Anything using it loses access on its next request.
+          Anything using it stops working.
         </ConfirmDialog>
       ) : null}
     </SettingsTab>

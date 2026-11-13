@@ -41,9 +41,8 @@ export function CpuTimeoutWarning({
           <XCircle />
           <AlertTitle>Still timing out after {maxRetries} tries</AlertTitle>
           <AlertDescription>
-            Wait a few minutes and try again. Upgrading the Cloudflare plan
-            ($5/month, under Compute &amp; AI → Workers Plans) and redeploying
-            the gateway stops this for good.
+            Wait a few minutes and try again. The gateway&apos;s owner can stop
+            this by upgrading the Cloudflare plan ($5/month) and redeploying.
           </AlertDescription>
         </Alert>
       ) : (
@@ -54,11 +53,6 @@ export function CpuTimeoutWarning({
               ? `Retrying in ${secondsUntilRetry}s (${attemptCount} of ${maxRetries})`
               : `Retrying (${attemptCount} of ${maxRetries})`}
           </AlertTitle>
-          <AlertDescription>
-            Hashing a password can take more CPU time than the Cloudflare free
-            plan allows. Upgrading the plan and redeploying the gateway fixes
-            it.
-          </AlertDescription>
         </Alert>
       )}
 

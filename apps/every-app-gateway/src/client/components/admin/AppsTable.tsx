@@ -86,9 +86,7 @@ function McpAppNameCell({ app }: { app: AppWithAccessCount }) {
   return (
     <>
       <NameLine app={app} />
-      <p className="truncate text-xs text-muted-foreground">
-        {app.appId} · agents call {app.appId}_&lt;tool&gt;
-      </p>
+      <p className="truncate text-xs text-muted-foreground">{app.appId}</p>
     </>
   );
 }

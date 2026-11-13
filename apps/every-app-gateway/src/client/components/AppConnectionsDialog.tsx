@@ -24,7 +24,7 @@ const COPY: Record<
   },
   [ConnectionAction.Allow]: {
     title: (label, name) => `Allow ${name} to use your ${label} account`,
-    note: (label) => `Uses the ${label} account you connected.`,
+    note: () => null,
     button: () => "Allow",
   },
   [ConnectionAction.Reconnect]: {

@@ -188,7 +188,6 @@ function GroupMembersDialog({
   return (
     <ChecklistDialog
       title={`Members of ${group.name}`}
-      description="Everyone checked can open the apps granted to this group."
       noun="user"
       items={users.map((user) => ({
         id: user.id,
@@ -253,7 +252,6 @@ function GroupAppsDialog({
   return (
     <ChecklistDialog
       title={`Apps for ${group.name}`}
-      description="Every member of the group can open the apps checked here."
       noun="app"
       items={apps.map((app) => ({
         id: app.id,

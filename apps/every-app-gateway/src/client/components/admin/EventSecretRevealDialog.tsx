@@ -19,7 +19,7 @@ export function EventSecretRevealDialog({
   return (
     <TokenRevealDialog
       title={`Signing secret for ${name}`}
-      description="Every delivery is signed with it, so the receiver can tell it came from this Gateway. Store it where the receiver reads its settings."
+      description="Use it to check a delivery came from this Gateway."
       token={secret}
       tokenLabel="Signing secret"
       warning="Copy it now; it isn't shown again."

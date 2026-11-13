@@ -110,9 +110,7 @@ function sent() {
 it("sets a default from an empty field, with no Remove default yet", async () => {
   render(null);
   expect(text()).toContain("Default monthly cap");
-  expect(text()).toContain(
-    "Dollars per month, for every app without its own cap",
-  );
+  expect(text()).toContain("Dollars per month");
   expect(text()).toContain(
     "Counted only where the provider reports a price: OpenRouter, DataForSEO. Other calls, such as OpenAI or Workers AI, aren't capped.",
   );
@@ -144,9 +142,9 @@ it("starts on the default it has and removes it with null", async () => {
 
 it("shares the cap description, says who is emailed, and links the docs", () => {
   render(null);
-  expect(text()).toContain("Dollars of provider-reported cost per UTC month");
+  expect(text()).toContain("When an app reaches its cap");
   expect(text()).toContain(
-    "Owners and admins are emailed at 80% and at the cap once the Gateway can send mail; change that under Manage workspace → Events.",
+    "Owners and admins get an email at 80% and at the cap, if email is set up.",
   );
   expect(
     document.body.querySelector('a[href="https://everyapp.com/docs/usage"]')

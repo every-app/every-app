@@ -16,20 +16,20 @@ type ErrorWithCode = {
 };
 
 const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
-  INTERNAL_ERROR: "Something went wrong. Please try again.",
-  INVALID_INPUT: "Invalid request. Please check your input and try again.",
-  RATE_LIMITED: "Too many attempts. Please try again later.",
-  AUTH_UNAUTHORIZED: "Your session has expired. Please sign in again.",
-  OWNER_ALREADY_EXISTS: "An owner already exists. Please sign in.",
-  ACCOUNT_CREATION_FAILED: "Failed to create account. Please try again.",
+  INTERNAL_ERROR: "Something went wrong. Try again.",
+  INVALID_INPUT: "Check your input and try again.",
+  RATE_LIMITED: "Too many attempts. Try again later.",
+  AUTH_UNAUTHORIZED: "Your session has expired. Sign in again.",
+  OWNER_ALREADY_EXISTS: "An owner already exists. Sign in.",
+  ACCOUNT_CREATION_FAILED: "Couldn't create your account. Try again.",
   USER_NOT_FOUND: "User not found.",
   USER_ALREADY_EXISTS: "A user with this email already exists.",
   CANNOT_DELETE_SELF: "You cannot delete your own account.",
   CANNOT_DELETE_OWNER: "Owner accounts cannot be deleted.",
   INVITATION_TOKEN_INVALID:
-    "Invalid invitation link. Please request a new invitation.",
+    "This invitation link isn't valid. Ask for a new one.",
   INVITATION_TOKEN_EXPIRED:
-    "Invitation link has expired. Please request a new invitation.",
+    "This invitation link has expired. Ask for a new one.",
   INVITATION_EMAIL_MISMATCH:
     "This invitation is for a different email address. Sign in with the invited email to accept it.",
   INVITATION_REQUIRES_PENDING_USER:
@@ -45,10 +45,8 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
     "This gateway can't send email. Copy a password-reset link instead.",
   EMAIL_DELIVERY_FAILED:
     "The email could not be sent. Copy a password-reset link instead.",
-  RESET_TOKEN_INVALID:
-    "Invalid reset link. Please request a new password reset.",
-  RESET_TOKEN_EXPIRED:
-    "Reset link has expired. Please request a new password reset.",
+  RESET_TOKEN_INVALID: "This reset link isn't valid. Ask for a new one.",
+  RESET_TOKEN_EXPIRED: "This reset link has expired. Ask for a new one.",
   PASSWORD_RESET_REQUIRES_ACTIVE_USER:
     "Password reset is only available for active users.",
   APP_NOT_FOUND: "App not found.",
@@ -58,28 +56,26 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
   CONNECTION_NOT_FOUND: "That connection doesn't exist or was already revoked.",
   CANNOT_MANAGE_SELF:
     "You cannot change your own role or deactivate your own account.",
-  CANNOT_MANAGE_OWNER:
-    "An owner's password can't be reset from here: a reset link would hand their account to whoever holds it.",
+  CANNOT_MANAGE_OWNER: "An owner's password can't be reset from here.",
   OWNER_REQUIRED: "Only an owner can change an admin or an owner.",
   LAST_OWNER:
     "The last owner can't be changed or removed; make someone else an owner first.",
   USER_IN_OTHER_ORGANIZATION:
     "This user also belongs to another organization, so their account can't be deactivated or reset from here.",
   PASSWORD_SIGN_IN_DISABLED:
-    "Password sign-in is turned off on this gateway, so a password reset wouldn't work. People sign in with Cloudflare Access.",
+    "Password sign-in is off, so there is nothing to reset.",
   ACCOUNT_ACTIONS_UNAVAILABLE:
-    "Accounts belong to the people who own them on this gateway, so they can't be deactivated or reset from an organization. Remove the member instead.",
+    "Accounts can't be deactivated or reset here. Remove the member instead.",
   EMAIL_NOT_VERIFIED: "Verify your email address before inviting anyone.",
   SHARED_APP_ACCESS:
     "Every member of every organization can open a shared app, so its access can't be changed.",
-  DEPLOY_KEYS_UNAVAILABLE:
-    "This gateway doesn't take third-party deploys, so it makes no deploy keys.",
+  DEPLOY_KEYS_UNAVAILABLE: "Deploy keys aren't available on this gateway.",
   GROUP_NOT_FOUND: "That group doesn't exist or was deleted.",
   GROUP_NAME_TAKEN: "A group with this name already exists.",
   EVENT_TARGET_REFUSED:
     "That URL can't be a webhook target: use https and a public hostname, not this gateway or one of its apps.",
   EVENT_SUBSCRIPTIONS_LIMIT:
-    "This workspace has as many event subscriptions as it may. Remove one first.",
+    "You've reached the limit of event subscriptions. Remove one first.",
   EVENT_SUBSCRIPTION_NOT_FOUND:
     "That subscription doesn't exist or was removed.",
   EVENT_DELIVERY_NOT_FOUND: "That delivery doesn't exist any more.",
@@ -189,14 +185,13 @@ const BETTER_AUTH_ERROR_MESSAGES: Record<string, string> = {
   INVALID_EMAIL_OR_PASSWORD: "Invalid email or password.",
   USER_ALREADY_EXISTS: "A user with this email already exists.",
   USER_NOT_FOUND: "User not found.",
-  TOO_MANY_REQUESTS: "Too many attempts. Please try again later.",
-  INVALID_TOKEN: "Invalid link. Please request a new one.",
-  TOKEN_EXPIRED: "This link has expired. Please request a new one.",
+  TOO_MANY_REQUESTS: "Too many attempts. Try again later.",
+  INVALID_TOKEN: "This link isn't valid. Ask for a new one.",
+  TOKEN_EXPIRED: "This link has expired. Ask for a new one.",
   EMAIL_NOT_VERIFIED: "Verify your email address to sign in.",
   EMAIL_NOT_CONFIGURED:
     "Sign-up is unavailable right now: this gateway can't send email yet.",
-  ACCOUNT_CREATION_FAILED:
-    "Your account couldn't be created. Please try again.",
+  ACCOUNT_CREATION_FAILED: "Your account couldn't be created. Try again.",
 };
 
 function readCode(value: unknown): string | null {

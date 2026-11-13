@@ -146,16 +146,14 @@ describe("the Add an MCP server form", () => {
     expect(text()).not.toContain(COPY.headerLabel);
     await type(COPY.urlLabel, "https://mcp.deepwiki.com/mcp");
     expect(field(COPY.nameLabel).getAttribute("placeholder")).toBe("deepwiki");
-    expect(text()).toContain(COPY.nameHelp("deepwiki"));
+    expect(text()).toContain(COPY.nameHelp);
     expect(text()).toContain(COPY.riskItems[0]!.help);
   });
 
-  it("names the Gateway setting a static credential's value goes in, from the app's id", async () => {
-    await type(COPY.urlLabel, "https://treg.to/mcp/");
+  it("says a static credential's value is set in the next step", async () => {
+    expect(text()).not.toContain(COPY.tokenSettingHelp);
     await choose(COPY.credentialLabel, "Bearer token");
-    expect(text()).toContain(COPY.tokenSettingHelp("TREG_MCP_TOKEN"));
-    await type(COPY.nameLabel, "my-docs");
-    expect(text()).toContain(COPY.tokenSettingHelp("MY_DOCS_MCP_TOKEN"));
+    expect(text()).toContain(COPY.tokenSettingHelp);
   });
 
   it("refuses an empty URL and a name the rule refuses before sending anything", async () => {
@@ -188,7 +186,7 @@ describe("the Add an MCP server form", () => {
     await type(COPY.nameLabel, "docs");
     await choose(COPY.credentialLabel, "Header");
     await type(COPY.headerLabel, "X-Api-Key");
-    await choose(COPY.riskLabel, "Everything read");
+    await choose(COPY.riskLabel, "Treat every tool as read");
     await press(button(COPY.submit));
     expect(mocks.addRemoteMcpApp).toHaveBeenCalledWith({
       data: {
@@ -231,26 +229,24 @@ describe("the Add an MCP server form", () => {
     expect(
       dialog().querySelector('[aria-label="Copy to clipboard"]'),
     ).not.toBeNull();
-    expect(text()).toContain(MCP_APP_COPY.added.operatorNote);
   });
 
-  it("says how many tools are on /mcp once a server with no credential is added, or that the Gateway lists them on first use", async () => {
+  it("says how many tools were added once a server with no credential is added", async () => {
     mocks.addRemoteMcpApp.mockResolvedValueOnce(added());
     await type(COPY.urlLabel, "https://treg.to/mcp/");
     await press(button(COPY.submit));
     expect(text()).toContain(MCP_APP_COPY.added.title("treg"));
-    expect(text()).toContain(
-      "Added. 12 tools are on this Gateway's /mcp as treg_<tool>.",
-    );
+    expect(text()).toContain("12 tools added.");
   });
 
-  it("says the Gateway lists the tools on first use when the listing didn't finish", async () => {
+  it("says only that it was added when the listing didn't finish", async () => {
     mocks.addRemoteMcpApp.mockResolvedValueOnce(
       added({ toolCount: null, toolsStatus: null }),
     );
     await type(COPY.urlLabel, "https://treg.to/mcp/");
     await press(button(COPY.submit));
-    expect(text()).toContain(MCP_APP_COPY.added.firstUse);
+    expect(text()).toContain(MCP_APP_COPY.added.title("treg"));
+    expect(text()).not.toContain("tools added");
   });
 
   it("shows the rule's refusal under the form, as a sentence", async () => {
@@ -334,7 +330,8 @@ describe("the Add an MCP server form", () => {
         risk: "annotations",
       },
     });
-    expect(text()).toContain(COPY.clientIntro);
+    expect(text()).toContain(COPY.clientRegisterStep);
+    expect(text()).toContain(COPY.clientPasteStep);
     expect(text()).toContain(
       `${window.location.origin}/connect/treg-mcp/callback`,
     );

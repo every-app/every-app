@@ -38,19 +38,23 @@ export function FeaturedAppContent({ app, canRun }: FeaturedAppContentProps) {
         <FeaturedAppIcon app={app} className="size-10 rounded-lg md:mb-0" />
         <div className="flex min-w-0 flex-col gap-1">
           <DialogTitle>{app.name}</DialogTitle>
-          <DialogDescription>{copy.description(app.name)}</DialogDescription>
+          <DialogDescription>{app.line}</DialogDescription>
         </div>
       </DialogHeader>
       {canRun ? <PhoneNotice /> : null}
       {canRun ? (
-        <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium">{copy.commandHeading}</p>
-          <CodeBlock
-            code={featuredInstallCommand(app)}
-            successMessage="Command copied"
-          />
-          <p className="text-xs text-muted-foreground">{copy.commandNote}</p>
-        </div>
+        <ol className="flex list-decimal flex-col gap-3 pl-5 text-sm font-medium">
+          <li>
+            <p>{copy.commandStep}</p>
+            <div className="mt-2 -ml-5 font-normal">
+              <CodeBlock
+                code={featuredInstallCommand(app)}
+                successMessage="Command copied"
+              />
+            </div>
+          </li>
+          <li>{copy.refreshStep}</li>
+        </ol>
       ) : (
         <p className="text-sm text-muted-foreground">{copy.memberLine}</p>
       )}
@@ -62,7 +66,6 @@ export function FeaturedAppContent({ app, canRun }: FeaturedAppContentProps) {
               <li key={need}>{need}</li>
             ))}
           </ul>
-          <p className="text-xs text-muted-foreground">{copy.needsNote}</p>
         </div>
       )}
     </>

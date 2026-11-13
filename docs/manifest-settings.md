@@ -192,19 +192,16 @@ and nothing to configure, so its command stays
 `setup.ready` is false shows a "Needs setup" badge (a warning, placed
 after the active check, so an active, bound app that isn't ready shows it)
 and does not open. The card and the Admin → Apps badge open a dialog. An
-owner or admin gets three steps: "Get N keys" (each setting the app can't
+owner or admin gets two steps: "Get N keys" (each setting the app can't
 open without, with its `why`, its names and a "Get key" link to its
 docs; one already set is ticked off, and the list re-reads every 15
-seconds, so rows tick off as the command sets them), "Run this in a
+seconds, so rows tick off as the command sets them) and "Run this in a
 terminal" (the one command, `pnpm everyapp configure <app>`, or a provider
-app's `secret set`, with a copy button), and "Come back here: <app> opens
-on its own". Under them, the optional settings fold to one line ("Add
+app's `secret set`, with a copy button). Under them, the optional settings fold to one line ("Add
 later · 7 optional: Google, Microsoft 365, Slack, +4 more"). A non-admin
 sees the same settings, without links, and "Ask an admin to run:". A
 shared app seen from another organization carries no command
-(`setup.command` is null; the platform operator fixes it). When an app's
-own secret keeps it closed, the footer adds "Already set it another way?
-`pnpm everyapp status` re-reads the Worker." `?setup=<appId>` on the
+(`setup.command` is null; the platform operator fixes it). `?setup=<appId>` on the
 launcher opens the dialog, which is where a closed app sends a browser.
 
 ### What a closed app answers

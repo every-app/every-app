@@ -17,29 +17,31 @@ export function RedirectUriSection({
   providerName: string;
 }) {
   return (
-    <section className="flex flex-col gap-2">
-      <p className="text-sm">
-        Register this redirect URI on the OAuth app
+    <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm">
+      <li>
+        Create an OAuth app at{" "}
         {consoleUrl ? (
-          <>
-            {" at "}
-            <a
-              href={consoleUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 underline underline-offset-3 hover:text-foreground"
-            >
-              {providerName}
-              <ExternalLink className="size-3.5" aria-hidden />
-            </a>
-          </>
+          <a
+            href={consoleUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 underline underline-offset-3 hover:text-foreground"
+          >
+            {providerName}
+            <ExternalLink className="size-3.5" aria-hidden />
+          </a>
         ) : (
-          ` at ${providerName}`
+          providerName
         )}
-        , then paste its client ID and secret.
-      </p>
-      <CodeBlock code={redirectUri} successMessage="Redirect URI copied" />
-    </section>
+      </li>
+      <li>
+        Add this redirect URI
+        <div className="mt-2 -ml-5">
+          <CodeBlock code={redirectUri} successMessage="Redirect URI copied" />
+        </div>
+      </li>
+      <li>Paste its client ID and secret</li>
+    </ol>
   );
 }
 

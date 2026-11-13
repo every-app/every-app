@@ -121,9 +121,7 @@ function EventsPage() {
     },
     onSuccess: (_, { subscription, enabled }) => {
       toast.success(
-        enabled
-          ? `${subscription.name} is on`
-          : `${subscription.name} is off: no events are queued for it`,
+        enabled ? `${subscription.name} is on` : `${subscription.name} is off`,
       );
     },
     onError: (error) => {
@@ -266,7 +264,11 @@ function EventsPage() {
 
       {removing ? (
         <ConfirmDialog
-          title={`Remove “${removing.name}”?`}
+          title={
+            removing.builtin
+              ? `Turn off “${removing.name}”?`
+              : `Remove “${removing.name}”?`
+          }
           confirmLabel={removing.builtin ? "Turn off" : "Remove subscription"}
           destructive={!removing.builtin}
           pending={remove.isPending}
@@ -274,8 +276,8 @@ function EventsPage() {
           onConfirm={() => remove.mutate(removing)}
         >
           {removing.builtin
-            ? "It is built in, so it is turned off, not removed: no events go to it until it is turned on again."
-            : "Events stop going to it at once."}
+            ? "No events go to it until you turn it on again."
+            : "Events stop going to it."}
         </ConfirmDialog>
       ) : null}
 

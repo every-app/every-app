@@ -91,10 +91,6 @@ function VerifyEmail() {
     return (
       <AuthPageShell>
         <AuthCard title="Email verified">
-          <Alert variant="success">
-            <CircleCheck />
-            <AlertDescription>Your email address is verified.</AlertDescription>
-          </Alert>
           <Button
             className={authSubmitClassName}
             onClick={continueToDestination}

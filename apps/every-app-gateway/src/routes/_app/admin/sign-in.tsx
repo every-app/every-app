@@ -124,7 +124,7 @@ function SignInPage() {
             {folded.length > 0 ? (
               <SettingsRow
                 name="Sign-in providers"
-                detail={`${folded.map((provider) => provider.label).join(", ")}: off, for running without Access.`}
+                detail={`${folded.map((provider) => provider.label).join(", ")}: off`}
                 action={
                   <Button
                     variant="outline"

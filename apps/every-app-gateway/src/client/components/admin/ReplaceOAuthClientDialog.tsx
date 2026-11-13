@@ -89,19 +89,19 @@ export function ReplaceOAuthClientDialog({
                   ? `Replace the ${provider.name} client`
                   : `Set the ${provider.name} client`}
               </DialogTitle>
-              <DialogDescription>
-                {replacing
-                  ? "Every connection keeps working until its token expires; people then connect again with the new client."
-                  : "Paste the client ID and secret of the OAuth app you made at the provider."}
-              </DialogDescription>
+              {replacing ? (
+                <DialogDescription>
+                  Existing connections work until they expire. Then people
+                  reconnect.
+                </DialogDescription>
+              ) : null}
             </DialogHeader>
 
             {provider.clientSource === "env" ? (
               <Alert variant="warning">
                 <CircleAlert />
                 <AlertDescription>
-                  The live client is a Worker secret set from the terminal,
-                  which wins over one pasted here. Replace it with{" "}
+                  This client was set from a terminal. Change it there with{" "}
                   <span className="font-mono">pnpm everyapp secret set</span>,
                   or unset it first.
                 </AlertDescription>

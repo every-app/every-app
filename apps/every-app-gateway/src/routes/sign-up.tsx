@@ -307,7 +307,6 @@ function CreateAccountForm({
                 <field.TextField
                   label="Password"
                   type="password"
-                  placeholder="Create a password"
                   className={authInputClassName}
                   autoComplete="new-password"
                   required
@@ -321,7 +320,6 @@ function CreateAccountForm({
                 <field.TextField
                   label="Confirm password"
                   type="password"
-                  placeholder="Confirm your password"
                   className={authInputClassName}
                   autoComplete="new-password"
                   required
@@ -391,9 +389,7 @@ function SetupPending({
         footer={<SignInInstead redirect={redirect} return_to={return_to} />}
       >
         <p className="text-sm text-muted-foreground">
-          This gateway hasn&apos;t been claimed yet. Open the setup link that
-          was printed when it was deployed, or create a new one on the machine
-          that deployed it:
+          Open the setup link from when you deployed, or get a new one:
         </p>
         <CodeBlock code="pnpm everyapp setup" successMessage="Command copied" />
       </AuthCard>

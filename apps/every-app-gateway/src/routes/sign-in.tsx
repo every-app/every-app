@@ -444,7 +444,6 @@ function SignIn() {
                         <field.TextField
                           label="Password"
                           type="password"
-                          placeholder="Enter your password"
                           className={authInputClassName}
                           autoComplete="current-password"
                           required

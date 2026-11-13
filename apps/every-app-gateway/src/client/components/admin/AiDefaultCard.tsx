@@ -6,15 +6,15 @@ import type { AiDefaultReport } from "./SetAiDefaultModal";
 
 type Resolution = AiDefaultReport["resolution"];
 
-/** One plain sentence for where the default came from. */
-function aiDefaultSourceSentence(resolution: Resolution): string {
+/** Where the default came from, when nobody chose it here. */
+function aiDefaultSource(resolution: Resolution): string | null {
   switch (resolution.source) {
     case "setting":
-      return "Chosen here.";
+      return null;
     case "order":
-      return "First in the order with its key set.";
+      return "Automatic";
     case "none":
-      return `Nothing is set yet: apps that need a chat model show Needs setup until one key is set; the first in the order is ${resolution.label} (${resolution.settings.join(", ")}).`;
+      return "No AI key set yet.";
   }
 }
 
@@ -56,7 +56,9 @@ export function AiDefaultCard({
       detail={
         resolution ? (
           <>
-            <p>{aiDefaultSourceSentence(resolution)}</p>
+            {aiDefaultSource(resolution) ? (
+              <p>{aiDefaultSource(resolution)}</p>
+            ) : null}
             {resolution.problem ? (
               <p className="text-destructive">{resolution.problem}</p>
             ) : null}

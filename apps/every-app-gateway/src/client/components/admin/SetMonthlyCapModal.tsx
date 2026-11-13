@@ -225,11 +225,6 @@ export function SetMonthlyCapModal({
                 ) : null
               }
             </form.Subscribe>
-            {raising && app.costCapSource === "default" ? (
-              <p className="text-xs text-muted-foreground">
-                The default itself is changed in the Default monthly cap row.
-              </p>
-            ) : null}
             {error ? (
               <Alert variant="destructive">
                 <CircleAlert aria-hidden />

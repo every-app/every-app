@@ -60,12 +60,11 @@ export const PAUSED_CARD_SENTENCE =
  * happening, that the launcher polls, and that opening the app (the card
  * is a link) finishes the deploy once the Gateway can reach the Worker.
  */
-export const DEPLOYING_CARD_SENTENCE =
-  "Deploying. This page checks every few seconds; opening the app finishes it as soon as the Gateway can reach it.";
+export const DEPLOYING_CARD_SENTENCE = "Deploying. Open it to finish.";
 
 /** What a card says once a deploy has been binding for ten minutes. */
 export const STALLED_CARD_SENTENCE =
-  "Still deploying after 10 minutes. Open the app to finish it; if it won't open, run everyapp status in the app's folder, then deploy again.";
+  "Open the app to finish deploying. If it won't open, run everyapp status in its folder, then deploy again.";
 
 /**
  * The app is a normal link; pinning is a separate, keyboard-accessible

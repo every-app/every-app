@@ -82,7 +82,7 @@ function ConnectionLine({ status }: { status: McpAppConnectionStatus }) {
   const expired = status.connection?.status === "expired";
   return (
     <div className="flex flex-col gap-2 text-sm" data-testid="mcp-connection">
-      <p>{expired ? copy.expired : copy.connectIntro}</p>
+      {expired ? <p>{copy.expired}</p> : null}
       <Button
         className="self-start"
         nativeButton={false}

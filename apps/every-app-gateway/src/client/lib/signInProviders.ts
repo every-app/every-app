@@ -36,7 +36,8 @@ interface SignInSetupSettingRow {
 
 interface SignInSetupDialogModel {
   title: string;
-  intro: string;
+  /** Already on: the dialog shows what is set, not the steps to set it up. */
+  on: boolean;
   /** Why it is off, for a provider that needs setup. */
   problem: string | null;
   /** The provider's console, when it is a link. */
@@ -46,7 +47,7 @@ interface SignInSetupDialogModel {
   appNoun: string;
   callbackUrl: string;
   settings: SignInSetupSettingRow[];
-  /** "Run it in a terminal…" for the operator, "Ask … to run:" otherwise. */
+  /** "Run this in a terminal" for the operator, "Ask … to run this" otherwise. */
   commandHeading: string;
   command: string;
   notes: string[];
@@ -54,12 +55,9 @@ interface SignInSetupDialogModel {
   guide: string;
 }
 
-const RUN_IT =
-  "Then run this in a terminal with this gateway's Cloudflare login; it asks for each setting, the secret hidden:";
-const ASK =
-  "Then ask the gateway's operator to run this (it needs the gateway's Cloudflare login):";
-const ON_COMMAND =
-  "To change a setting (a new client secret), run it again in a terminal with this gateway's Cloudflare login:";
+const RUN_IT = "Run this in a terminal";
+const ASK = "Ask the gateway's operator to run this";
+const ON_COMMAND = "To change a setting, run this again";
 
 function consoleLink(console: string): { href: string; label: string } | null {
   if (!/^https:\/\//.test(console)) return null;
@@ -86,9 +84,7 @@ export function signInSetupDialogModel(
     title: on
       ? `Sign in with ${provider.label}`
       : `Set up sign-in with ${provider.label}`,
-    intro: on
-      ? `On: the sign-in page shows "Continue with ${provider.label}". The ${provider.appNoun} at the provider must keep this redirect URL.`
-      : `Make a ${provider.appNoun} at the provider with the redirect URL below, then set its settings. The sign-in page shows "Continue with ${provider.label}" once every required one is set.`,
+    on,
     problem:
       provider.status === "incomplete" ? (provider.problem ?? null) : null,
     console: link,
@@ -114,13 +110,14 @@ export function signInSetupDialogModel(
  */
 export const OUTER_RING_BANNER = {
   title: "Cloudflare Access signs people in to this workspace.",
-  description:
-    "Members Access lets through are signed in as the email Access knows them by, with no second login. You don't need anything here while Access is on: the sign-in providers are for running without it.",
+  description: "Nothing to set up here while Access is on.",
 } as const;
 
 /** The outer ring's row: on, and how it is set. */
-export const OUTER_RING_DETAIL =
-  "In front of this workspace and its apps. Set with";
+export const OUTER_RING_DETAIL = "Set with";
+
+const TURN_OFF =
+  "To turn it off, run pnpm everyapp secret set EMAIL_PASSWORD_SIGN_IN and answer false.";
 
 /**
  * The password row's words: on, off, or off once an owner connects a
@@ -136,26 +133,26 @@ export function passwordSignInView(
     if (!password.on) {
       return {
         label: "Off",
-        note: "EMAIL_PASSWORD_SIGN_IN=false: Access signs everyone in. Unset it from a terminal to bring passwords back.",
+        note: "Access signs everyone in.",
       };
     }
     return {
       label: "On",
       note: password.offPending
-        ? "Only for whoever Access already let in. EMAIL_PASSWORD_SIGN_IN=false is set, but passwords stay on until an owner has opened the workspace through Access once, so nobody is locked out."
-        : "Only for whoever Access already let in, so it's no way around Access. Set EMAIL_PASSWORD_SIGN_IN=false from a terminal to turn it off.",
+        ? "Turns off once an owner opens the workspace through Access."
+        : `Works only for people Access lets in. ${TURN_OFF}`,
     };
   }
   if (!password.on) {
     return {
       label: "Off",
-      note: "EMAIL_PASSWORD_SIGN_IN=false: people sign in with the providers below. Unset it from a terminal to bring passwords back.",
+      note: "People sign in with the providers below.",
     };
   }
   return {
     label: "On",
     note: password.offPending
-      ? "EMAIL_PASSWORD_SIGN_IN=false is set, but passwords stay on until an owner has connected one of the ways below (account menu → Connect), so nobody is locked out."
-      : "Set EMAIL_PASSWORD_SIGN_IN=false from a terminal to turn passwords off; it takes effect once an owner has connected one of the ways below.",
+      ? "Turns off once an owner connects a provider below (account menu → Connect)."
+      : `${TURN_OFF} It takes effect once an owner has connected a provider below.`,
   };
 }

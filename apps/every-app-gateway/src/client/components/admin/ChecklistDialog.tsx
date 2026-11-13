@@ -9,7 +9,6 @@ import { Checkbox } from "@/client/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -32,7 +31,6 @@ type ChecklistItem = {
 
 interface ChecklistDialogProps {
   title: string;
-  description: string;
   /** What one row is, for the search box and the summary: "user" or "app". */
   noun: string;
   items: ChecklistItem[];
@@ -55,7 +53,6 @@ interface ChecklistDialogProps {
  */
 export function ChecklistDialog({
   title,
-  description,
   noun,
   items,
   initialSelectedIds,
@@ -135,7 +132,6 @@ export function ChecklistDialog({
       <DialogContent showCloseButton={false} className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
         {showSearch || items.length > 0 ? (

@@ -239,7 +239,7 @@ describe("the MCP app edit dialog", () => {
     expect(text()).toContain("https://treg.to/mcp/");
     expect(text()).toContain("bearer token");
     expect(text()).toContain(COPY.credential.ready("TREG_MCP_TOKEN"));
-    expect(text()).toContain(COPY.providerLine("Treg MCP server", true));
+    expect(text()).toContain(COPY.providerLine("Treg MCP server"));
     expect(text()).toContain(COPY.on);
     expect(button(COPY.turnOff)).toBeTruthy();
 
@@ -291,14 +291,14 @@ describe("the MCP app edit dialog", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("reads every tool by the app's default once it is Everything write", async () => {
+  it("reads every tool by the app's default once every tool is treated as write", async () => {
     await render();
     const riskField = [...dialog().querySelectorAll("label")].find(
       (label) => label.textContent === COPY.riskLabel,
     )!;
     await press(document.getElementById(riskField.getAttribute("for")!)!);
     const item = [...document.querySelectorAll('[role="option"]')].find(
-      (element) => element.textContent?.trim() === "Everything write",
+      (element) => element.textContent?.trim() === "Treat every tool as write",
     ) as HTMLElement;
     await press(item);
     expect(
