@@ -22,6 +22,7 @@ import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAdminRouteImport } from './routes/_app/admin'
 import { Route as AppConnectionsRouteImport } from './routes/_app/connections'
+import { Route as AppDirectoryRouteImport } from './routes/_app/directory'
 import { Route as AppOrganizationsRouteImport } from './routes/_app/organizations'
 import { Route as OauthAppAccessRouteImport } from './routes/oauth/app-access'
 import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
@@ -110,6 +111,11 @@ const AppAdminRoute = AppAdminRouteImport.update({
 const AppConnectionsRoute = AppConnectionsRouteImport.update({
   id: '/connections',
   path: '/connections',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDirectoryRoute = AppDirectoryRouteImport.update({
+  id: '/directory',
+  path: '/directory',
   getParentRoute: () => AppRoute,
 } as any)
 const AppOrganizationsRoute = AppOrganizationsRouteImport.update({
@@ -252,6 +258,7 @@ export interface FileRoutesByFullPath {
   '/verify-email': typeof VerifyEmailRoute
   '/admin': typeof AppAdminRouteWithChildren
   '/connections': typeof AppConnectionsRouteWithChildren
+  '/directory': typeof AppDirectoryRoute
   '/organizations': typeof AppOrganizationsRoute
   '/oauth/app-access': typeof OauthAppAccessRoute
   '/oauth/consent': typeof OauthConsentRoute
@@ -288,6 +295,7 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/directory': typeof AppDirectoryRoute
   '/organizations': typeof AppOrganizationsRoute
   '/oauth/app-access': typeof OauthAppAccessRoute
   '/oauth/consent': typeof OauthConsentRoute
@@ -329,6 +337,7 @@ export interface FileRoutesById {
   '/verify-email': typeof VerifyEmailRoute
   '/_app/admin': typeof AppAdminRouteWithChildren
   '/_app/connections': typeof AppConnectionsRouteWithChildren
+  '/_app/directory': typeof AppDirectoryRoute
   '/_app/organizations': typeof AppOrganizationsRoute
   '/oauth/app-access': typeof OauthAppAccessRoute
   '/oauth/consent': typeof OauthConsentRoute
@@ -371,6 +380,7 @@ export interface FileRouteTypes {
     | '/verify-email'
     | '/admin'
     | '/connections'
+    | '/directory'
     | '/organizations'
     | '/oauth/app-access'
     | '/oauth/consent'
@@ -407,6 +417,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/verify-email'
+    | '/directory'
     | '/organizations'
     | '/oauth/app-access'
     | '/oauth/consent'
@@ -447,6 +458,7 @@ export interface FileRouteTypes {
     | '/verify-email'
     | '/_app/admin'
     | '/_app/connections'
+    | '/_app/directory'
     | '/_app/organizations'
     | '/oauth/app-access'
     | '/oauth/consent'
@@ -587,6 +599,13 @@ declare module '@tanstack/react-router' {
       path: '/connections'
       fullPath: '/connections'
       preLoaderRoute: typeof AppConnectionsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/directory': {
+      id: '/_app/directory'
+      path: '/directory'
+      fullPath: '/directory'
+      preLoaderRoute: typeof AppDirectoryRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/organizations': {
@@ -816,6 +835,7 @@ const AppConnectionsRouteWithChildren = AppConnectionsRoute._addFileChildren(
 interface AppRouteChildren {
   AppAdminRoute: typeof AppAdminRouteWithChildren
   AppConnectionsRoute: typeof AppConnectionsRouteWithChildren
+  AppDirectoryRoute: typeof AppDirectoryRoute
   AppOrganizationsRoute: typeof AppOrganizationsRoute
   AppIndexRoute: typeof AppIndexRoute
   AppSettingsAccountsRoute: typeof AppSettingsAccountsRoute
@@ -825,6 +845,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppAdminRoute: AppAdminRouteWithChildren,
   AppConnectionsRoute: AppConnectionsRouteWithChildren,
+  AppDirectoryRoute: AppDirectoryRoute,
   AppOrganizationsRoute: AppOrganizationsRoute,
   AppIndexRoute: AppIndexRoute,
   AppSettingsAccountsRoute: AppSettingsAccountsRoute,

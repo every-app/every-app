@@ -2,7 +2,14 @@ import { Link } from "@tanstack/react-router";
 import type { LinkOptions } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import type { ComponentType } from "react";
-import { ArrowUpRight, Cable, LayoutGrid, Settings, User } from "lucide-react";
+import {
+  ArrowUpRight,
+  Cable,
+  Compass,
+  LayoutGrid,
+  Settings,
+  User,
+} from "lucide-react";
 import { authClient } from "@/client/auth-client";
 import { signOutAndForget } from "@/client/sign-out";
 import { useSession } from "@/client/hooks/useSession";
@@ -140,6 +147,11 @@ export function Sidebar() {
                     to: "/",
                     activeOptions: { exact: true },
                   }}
+                />
+                <SidebarNavLink
+                  icon={Compass}
+                  label="App directory"
+                  linkProps={{ to: "/directory" }}
                 />
               </SidebarMenu>
             </SidebarGroupContent>
