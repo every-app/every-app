@@ -79,7 +79,9 @@ import {
   declaredScopes,
   memberAppByRow,
   scopesListedFor,
+  unaskedScopes,
   type ConnectApp,
+  type ScopedConnection,
 } from "./appAccess";
 import { AllowRefusal, allowCheck } from "./appAccessConsent";
 import { resolveOAuthClient, type ResolvedOAuthClient } from "./client";
@@ -734,6 +736,7 @@ async function serveCallback(
       label: identity.label,
       externalId: identity.externalId,
       scopes: granted,
+      askedScopes: canonicalScopes(flow, state.scopes),
       accessToken: exchanged.tokens.accessToken,
       refreshToken: exchanged.tokens.refreshToken,
       expiresAt: exchanged.tokens.expiresAt,
@@ -766,7 +769,15 @@ async function serveCallback(
   // where the new token holds it.
   const reallowed =
     state.purpose === OAuthStatePurpose.Reconnect && sameAccount
-      ? await reallowApps({ key, flow, holds: granted, now })
+      ? await reallowApps({
+          key,
+          flow,
+          connection: {
+            scopes: granted,
+            askedScopes: canonicalScopes(flow, state.scopes),
+          },
+          now,
+        })
       : [];
   logEvent("oauth.connected", {
     ...log,
@@ -824,19 +835,22 @@ async function allowedApps(key: ConnectionKey): Promise<AllowedApp[]> {
 
 /**
  * Allow each app the person allowed for what it lists now, where it lists
- * more than they allowed it and the connection (`holds`) has it. The apps
- * allowed.
+ * more than they allowed it and the provider has been asked for all of it
+ * on the connection (a scope the person declined there doesn't hold an
+ * app back). The apps allowed.
  */
 async function reallowApps(input: {
   key: ConnectionKey;
   flow: OAuthClientCapability["flow"];
-  holds: readonly string[];
+  connection: ScopedConnection;
   now: number;
 }): Promise<ConnectApp[]> {
   const { key, flow } = input;
   const out: ConnectApp[] = [];
   for (const each of await allowedApps(key)) {
-    if (missingScopes(flow, input.holds, each.declared).length > 0) continue;
+    if (unaskedScopes(flow, input.connection, each.declared).length > 0) {
+      continue;
+    }
     if (missingScopes(flow, each.allowed, each.declared).length === 0) continue;
     await ProviderAppAccessRepository.allow({
       ...key,
@@ -860,10 +874,11 @@ type ReconnectResult =
 /**
  * Reconnect on Your connections → Accounts, for the person's own
  * connection to `providerId` and every app they allowed to use it. When
- * the connection expired, or lacks a scope one of those apps lists, the
- * provider is asked again, in the name of the app that needs it, for
- * every scope the organization's apps list: the URL to send the browser
- * to, whose callback allows each of those apps for what it lists now.
+ * the connection expired, or the provider was never asked for a scope one
+ * of those apps lists, the provider is asked again, in the name of the
+ * app that needs it, for every scope the organization's apps list: the
+ * URL to send the browser to, whose callback allows each of those apps
+ * for what it lists now.
  * Otherwise no provider is asked, and each app that lists more than the
  * person allowed it is allowed for what it lists now: selecting
  * Reconnect is the person's OK. With `fresh` (Reconnect from the row's
@@ -890,7 +905,7 @@ export async function startReconnect(
   const now = Date.now();
   const apps = await allowedApps(input);
   const short = apps.filter(
-    (each) => missingScopes(flow, connection.scopes, each.declared).length > 0,
+    (each) => unaskedScopes(flow, connection, each.declared).length > 0,
   );
   if (options.fresh || connection.status === "expired" || short.length > 0) {
     const first = short[0] ?? apps[0];
@@ -930,7 +945,7 @@ export async function startReconnect(
   const allowed = await reallowApps({
     key: input,
     flow,
-    holds: connection.scopes,
+    connection,
     now,
   });
   logEvent("oauth.apps_reallowed", {

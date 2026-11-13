@@ -976,16 +976,19 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     expect(await accessRows()).toEqual([`${owner} crm`]);
   });
 
-  it("asks for a reconnect when the connection lacks a scope the app declares, naming it", async () => {
+  it("asks for a reconnect when the provider was never asked for a scope the app declares, naming it", async () => {
     await addGitHub();
     await connect("github-oauth", "?app=ci");
     const [row] = await db
       .select({ id: providerConnections.id })
       .from(providerConnections);
-    // The person un-ticked `workflow` on the consent screen.
+    // ci started listing `workflow` after the person connected.
     await db
       .update(providerConnections)
-      .set({ scopes: JSON.stringify(["repo"]) })
+      .set({
+        scopes: JSON.stringify(["repo"]),
+        askedScopes: JSON.stringify(["repo"]),
+      })
       .where(eq(providerConnections.id, row!.id));
     const refused = await appCall(
       "ci",
@@ -1009,6 +1012,80 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
         missingScopes: ["workflow"],
       },
     });
+    expect(await listConnections(org("owner", owner))).toMatchObject([
+      {
+        needsReconnect: true,
+        permissions: { listed: 2, granted: 1, notGranted: ["workflow"] },
+      },
+    ]);
+    // A connection from before the Gateway kept what it asked reads the same.
+    await db
+      .update(providerConnections)
+      .set({ askedScopes: null })
+      .where(eq(providerConnections.id, row!.id));
+    expect(await listConnections(org("owner", owner))).toMatchObject([
+      { needsReconnect: true },
+    ]);
+  });
+
+  it("keeps a connection the person granted in part connected: no reconnect, the call goes, and the listing says how much was granted", async () => {
+    await addGitHub();
+    await connect("github-oauth", "?app=ci");
+    const [row] = await db
+      .select({
+        id: providerConnections.id,
+        askedScopes: providerConnections.askedScopes,
+      })
+      .from(providerConnections);
+    // The connect kept what it asked the provider for.
+    expect(JSON.parse(row!.askedScopes!)).toEqual(["repo", "workflow"]);
+    // The person un-ticked `workflow` on the consent screen.
+    await db
+      .update(providerConnections)
+      .set({ scopes: JSON.stringify(["repo"]) })
+      .where(eq(providerConnections.id, row!.id));
+    const called = await appCall(
+      "ci",
+      "/api/integrations/github-oauth/api.github.com/user",
+    );
+    expect(called.status).not.toBe(409);
+    const status = await appCall("ci", "/api/integrations/github-oauth");
+    const body = (await status.json()) as {
+      ready: boolean;
+      connection: Record<string, unknown>;
+    };
+    expect(body).toMatchObject({
+      ready: true,
+      connection: {
+        scopes: ["repo"],
+        ready: true,
+        missingScopes: ["workflow"],
+      },
+    });
+    expect(body.connection).not.toHaveProperty("reconnect");
+    expect(await listConnections(org("owner", owner))).toMatchObject([
+      {
+        status: "active",
+        needsReconnect: false,
+        permissions: { listed: 2, granted: 1, notGranted: ["workflow"] },
+      },
+    ]);
+    // The app's connect link has nothing to do: straight back.
+    const link = await serveConnectRoute(
+      new Request(`${GATEWAY}/connect/github-oauth?app=ci`),
+      { fetchUpstream: github.fetch, now: () => now },
+    );
+    expect(link?.status).toBe(302);
+    expect(link?.headers.get("location")).not.toContain("github.com");
+    // Reconnect from the menu still asks the provider for everything again.
+    const fresh = await startReconnect(
+      { organizationId: acme, providerId: "github-oauth", userId: owner },
+      { fresh: true },
+    );
+    expect(fresh.outcome).toBe(ReconnectOutcome.Provider);
+    expect(
+      new URL((fresh as { url: string }).url).searchParams.get("scope"),
+    ).toContain("workflow");
   });
 
   it("lists each connection once, with the apps its person allowed to use it", async () => {

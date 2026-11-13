@@ -452,11 +452,15 @@ export type OAuthClientIntegrationStatus = IntegrationStatus & {
   /**
    * The connection the call would use (the person's, or the member's
    * `for: { background: true, userId }` names), or null when there is
-   * none or they haven't allowed this app to use it. `ready` false with
-   * `missingScopes` when it lacks a scope the app now lists, or the app
-   * lists one the person hasn't allowed it, and `reconnect` when the
-   * person has to go through `connectPath` again (missing scopes, or it
-   * expired).
+   * none or they haven't allowed this app to use it. `missingScopes` lists
+   * the scopes the app lists that it lacks, or that the person hasn't
+   * allowed the app. `reconnect` (and `ready` false) says a trip through
+   * `connectPath` changes that: it expired, the app lists a scope the
+   * provider was never asked for, or one the person hasn't allowed it.
+   * `missingScopes` with `ready` true means the person (or the provider)
+   * granted less than the app lists: calls go through, and the provider
+   * refuses the ones that need a missing scope. Offer what works; don't
+   * prompt to reconnect.
    */
   connection: {
     /** The account's name at the provider (an email address, a login). */

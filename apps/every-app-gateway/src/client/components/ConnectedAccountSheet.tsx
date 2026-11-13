@@ -22,6 +22,7 @@ interface Account {
   apps: { rowId: string; id: string; name: string }[];
   scopes: string[];
   needsReconnect: boolean;
+  permissions: { listed: number; granted: number; notGranted: string[] } | null;
   createdAt: number;
   lastUsedAt: number | null;
 }
@@ -30,8 +31,9 @@ interface Account {
  * Everything about one connected account, behind its row: when it was
  * connected and last used, each app allowed to use it with the button that
  * takes that app's access away, and every permission it holds in the
- * provider's own names (the row says them in a few words). Reconnect and
- * Disconnect are at the bottom. Render it only while it is open.
+ * provider's own names (the row says them in a few words), then the ones
+ * its apps list that weren't granted, said plainly: granting part is the
+ * person's choice. Reconnect and Disconnect are at the bottom. Render it only while it is open.
  */
 export function ConnectedAccountSheet<TAccount extends Account>({
   account,
@@ -58,6 +60,7 @@ export function ConnectedAccountSheet<TAccount extends Account>({
     account.scopes.length > 0 && !/^\d+ permissions?$/.test(words)
       ? words
       : null;
+  const notGranted = account.permissions?.notGranted ?? [];
   return (
     <Sheet
       open
@@ -166,6 +169,35 @@ export function ConnectedAccountSheet<TAccount extends Account>({
               </p>
             )}
           </section>
+
+          {notGranted.length > 0 ? (
+            <section className="space-y-2">
+              <h3 className="text-sm font-medium">
+                Not granted
+                <span className="ml-1.5 font-normal text-muted-foreground">
+                  {notGranted.length}
+                </span>
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Your apps also list these, and {name.title} didn't grant them
+                when you connected. Everything else works. Reconnect asks for
+                them again.
+              </p>
+              <ul
+                aria-label="Permissions not granted"
+                className="divide-y divide-border rounded-lg border border-border text-muted-foreground"
+              >
+                {notGranted.map((scope) => (
+                  <li
+                    key={scope}
+                    className="px-3 py-1.5 font-mono text-xs wrap-anywhere"
+                  >
+                    {scope}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
         </div>
 
         <SheetFooter className="flex-row justify-end border-t border-border">

@@ -16,7 +16,9 @@ import {
   capabilitySettings,
   checkProviderRow,
   describeSpecProblems,
+  canonicalScopes,
   isPresetRow,
+  missingScopes,
   OAUTH_PRESETS,
   oauthPreset,
   parseProviderSpec,
@@ -149,10 +151,19 @@ export interface ConnectionSummary {
   status: "active" | "expired";
   /**
    * An app the person allowed needs them to select Reconnect: the
-   * connection expired, lacks a scope the app lists now, or the app lists
-   * more than the person allowed it.
+   * connection expired, the provider was never asked for a scope the app
+   * lists now, or the app lists more than the person allowed it. A scope
+   * the person declined at the provider is not that (`notGranted`).
    */
   needsReconnect: boolean;
+  /**
+   * How much of what the person's apps list the connection holds; null
+   * when no app they allowed lists a scope. `notGranted` are the scopes
+   * listed that the token doesn't hold, as the apps wrote them: the
+   * person declined them at the provider, or the provider didn't grant
+   * them. Their choice, not a fault; Reconnect asks for them again.
+   */
+  permissions: { listed: number; granted: number; notGranted: string[] } | null;
   createdAt: number;
   lastUsedAt: number | null;
   expiresAt: number | null;
@@ -913,6 +924,30 @@ async function needsReconnect(
   return false;
 }
 
+/** How much of what the person's allowed apps list the connection holds. */
+function permissionsOf(
+  capability: Capability | undefined,
+  row: ProviderConnection,
+  allowed: readonly AccessApp[],
+): ConnectionSummary["permissions"] {
+  if (capability?.mode !== "oauth_client") return null;
+  const flow = capability.flow;
+  const listed = new Map<string, string>();
+  for (const each of allowed) {
+    for (const scope of declaredScopes(each.manifest, row.providerId) ?? []) {
+      const key = canonicalScopes(flow, [scope])[0];
+      if (key !== undefined && !listed.has(key)) listed.set(key, scope);
+    }
+  }
+  if (listed.size === 0) return null;
+  const notGranted = missingScopes(flow, row.scopes, [...listed.values()]);
+  return {
+    listed: listed.size,
+    granted: listed.size - notGranted.length,
+    notGranted,
+  };
+}
+
 async function summarize(
   org: OrgContext,
   rows: readonly ProviderConnection[],
@@ -951,6 +986,7 @@ async function summarize(
       scopes: [...row.scopes],
       status: row.status,
       needsReconnect: await needsReconnect(capability, row, allowed),
+      permissions: permissionsOf(capability, row, allowed),
       createdAt: row.createdAt,
       lastUsedAt: row.lastUsedAt,
       expiresAt: row.expiresAt,

@@ -1156,6 +1156,25 @@ ORDER BY x.provider_id, x.user_id, a.app_slug`,
     expect(table).toMatch(/PROVIDER\s+PERSON\s+APPS\s+ACCOUNT\s+SCOPES/);
     expect(table).toMatch(/GitHub \(github-oauth\)\s+dev@example\.com\s+notes, shop\s+ben\s+repo/);
     expect(table).toMatch(/GitHub \(github-oauth\)\s+ada@example\.com\s+-\s+ada\s+repo/);
+    // Everything its apps list was granted (they list nothing here): no count.
+    expect(table).not.toContain("permissions granted");
+    for (const each of listed) expect(each).not.toHaveProperty("permissions");
+    // shop lists a scope the person didn't grant: still active, and it says how much was granted.
+    await db().run([
+      {
+        sql: "UPDATE apps SET manifest = ? WHERE app_slug = 'shop'",
+        params: [JSON.stringify({ capabilities: { "github-oauth": { scopes: ["repo", "workflow"] } } })],
+      },
+    ]);
+    expect(
+      await human((sink) => listProviderConnections({ flags: { provider: "github-oauth", app: "shop" }, out: sink, createCf })),
+    ).toMatch(/ben\s+repo\s+active, 1 of 2 permissions granted/);
+    events = [];
+    await connections({ provider: "github-oauth", app: "shop" });
+    expect((done()!["data"]["connections"] as Array<Record<string, any>>)[0]).toMatchObject({
+      status: "active",
+      permissions: { listed: 2, granted: 1, notGranted: ["workflow"] },
+    });
     expect(await human((sink) => listProviderConnections({ flags: { app: "nothing" }, out: sink, createCf }))).toBe(
       "No connections that nothing may use. Each person connects once, from inside an app that lists the provider.\n",
     );

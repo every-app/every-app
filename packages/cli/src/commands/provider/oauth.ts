@@ -17,6 +17,8 @@
  */
 import { stripVTControlCharacters } from "node:util";
 import {
+  canonicalScopes,
+  missingScopes,
   CAPABILITIES,
   capabilitySettings,
   isPresetRow,
@@ -455,8 +457,40 @@ function personOf(connection: ProviderConnection): string {
   return connection.userEmail ?? connection.userId;
 }
 
+/** How much of what a connection's apps list it holds: fewer than all is the person's choice at the provider. */
+interface GrantedPermissions {
+  listed: number;
+  granted: number;
+  notGranted: string[];
+}
+
+/** {@link GrantedPermissions} of a connection, or null when its apps list no scope (or the provider isn't an OAuth one here). */
+function permissionsOf(connection: ProviderConnection, capability: Capability | undefined): GrantedPermissions | null {
+  if (capability?.mode !== "oauth_client" || connection.listedScopes.length === 0) return null;
+  const listed = new Map<string, string>();
+  for (const scope of connection.listedScopes) {
+    const key = canonicalScopes(capability.flow, [scope])[0];
+    if (key !== undefined && !listed.has(key)) listed.set(key, scope);
+  }
+  if (listed.size === 0) return null;
+  const notGranted = missingScopes(capability.flow, connection.scopes, [...listed.values()]);
+  return { listed: listed.size, granted: listed.size - notGranted.length, notGranted };
+}
+
+/** A connection's state in a few words: "active", and how much was granted when that is part of what its apps list. */
+function statusText(connection: ProviderConnection, permissions: GrantedPermissions | null): string {
+  if (connection.status !== "active") return chalk.yellow(connection.status);
+  return permissions && permissions.granted < permissions.listed
+    ? `${chalk.green("active")}, ${permissions.granted} of ${permissions.listed} permissions granted`
+    : chalk.green("active");
+}
+
 /** A connection as `--json` reports it, with the provider's name. */
-function reported(connection: ProviderConnection, name: string): Record<string, unknown> {
+function reported(
+  connection: ProviderConnection,
+  name: string,
+  permissions: GrantedPermissions | null = null,
+): Record<string, unknown> {
   return {
     id: connection.id,
     provider: connection.providerId,
@@ -467,6 +501,7 @@ function reported(connection: ProviderConnection, name: string): Record<string, 
     label: connection.label,
     scopes: connection.scopes,
     status: connection.status,
+    ...(permissions ? { permissions } : {}),
     createdAt: new Date(connection.createdAt).toISOString(),
     lastUsedAt: connection.lastUsedAt === null ? null : new Date(connection.lastUsedAt).toISOString(),
     expiresAt: connection.expiresAt === null ? null : new Date(connection.expiresAt).toISOString(),
@@ -497,6 +532,9 @@ export async function listProviderConnections(
     ...(flags.app ? { appSlug: flags.app } : {}),
   });
   const nameOf = (id: string) => registry.get(id)?.label ?? id;
+  const granted = new Map(
+    connections.map((connection) => [connection.id, permissionsOf(connection, registry.get(connection.providerId))]),
+  );
   const table = formatTable(
     ["PROVIDER", "PERSON", "APPS", "ACCOUNT", "SCOPES", "STATUS", "LAST USED", "CONNECTED"],
     connections.map((connection) => [
@@ -505,7 +543,7 @@ export async function listProviderConnections(
       connection.apps.map((app) => app.id).join(", ") || chalk.dim("-"),
       connection.label ?? chalk.dim("-"),
       connection.scopes.join(", ") || chalk.dim("-"),
-      connection.status === "active" ? chalk.green("active") : chalk.yellow(connection.status),
+      statusText(connection, granted.get(connection.id) ?? null),
       when(connection.lastUsedAt),
       when(connection.createdAt),
     ]),
@@ -524,7 +562,9 @@ export async function listProviderConnections(
           ]),
     ].join("\n"),
     data: {
-      connections: connections.map((connection) => reported(connection, nameOf(connection.providerId))),
+      connections: connections.map((connection) =>
+        reported(connection, nameOf(connection.providerId), granted.get(connection.id) ?? null),
+      ),
       ...(found ? { organizationId: found.organization.id } : {}),
     },
   });

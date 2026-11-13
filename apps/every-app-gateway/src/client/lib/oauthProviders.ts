@@ -99,9 +99,10 @@ export function namesText(names: readonly string[]): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-/** Scopes that only say who the person is, which every sign-in asks for. */
+/** Scopes that only say who the person is or keep them signed in, which every sign-in asks for. */
 const IDENTITY_SCOPES = new Set([
   "openid",
+  "offline_access",
   "email",
   "profile",
   "userinfo.email",
@@ -170,6 +171,40 @@ export function accessSummary(connection: {
   if (kinds.includes(null)) return permissionCount(scopes.length);
   if (!kinds.includes("write")) return "Read only";
   return kinds.includes("read") ? "Read and write" : "Write only";
+}
+
+/**
+ * How much of what the person's apps list a connection holds, when it is
+ * less than all of it: "10 of 18 granted". Null when everything listed was
+ * granted, or no app lists anything. Granting part is the person's choice
+ * (or all the provider gives), so this reads as a fact, not a fault.
+ */
+export function partialGrant(connection: {
+  permissions?: { listed: number; granted: number } | null;
+}): string | null {
+  const permissions = connection.permissions;
+  if (!permissions || permissions.granted >= permissions.listed) return null;
+  return `${permissions.granted} of ${permissions.listed} granted`;
+}
+
+/**
+ * A connection's Access cell: what it lets apps do in a few words, and how
+ * much was granted when that is part of what its apps list ("Read only",
+ * then "10 of 18 granted"). Where the words are only a count, the share
+ * granted is the count worth saying: "10 of 18 permissions".
+ */
+export function accessWords(connection: {
+  providerId: string;
+  scopes: readonly string[];
+  permissions?: { listed: number; granted: number } | null;
+}): { words: string; partial: string | null } {
+  const words = accessSummary(connection);
+  const partial = partialGrant(connection);
+  if (partial && /^\d+ permissions?$/.test(words)) {
+    const { granted, listed } = connection.permissions!;
+    return { words: `${granted} of ${listed} permissions`, partial: null };
+  }
+  return { words, partial };
 }
 
 /** The list order: connections that need reconnecting first, then by name. */

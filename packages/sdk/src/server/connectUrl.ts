@@ -5,11 +5,11 @@
  * `<gateway>/connect/<id>?app=<this app>&return=<back here>`. A
  * connection belongs to one person, and each app they allow uses it. The
  * Gateway checks the session and that the person may open the app. With
- * no connection, or one that lacks a scope the app's
- * `everyapp.config.ts` lists, it asks the provider for every scope the
+ * no connection, or one made before the app's `everyapp.config.ts`
+ * listed a scope, it asks the provider for every scope the
  * organization's apps list (plus the ones that name the account),
  * finishes on its own callback and allows this app. With a connection
- * that holds what the app lists, it shows its own Allow page and asks no
+ * that was asked for what the app lists, it shows its own Allow page and asks no
  * provider. Either way it sends the browser back to `returnTo`, which
  * must be a path on the Gateway or an https URL on one of its app hosts
  * (in local dev also localhost).

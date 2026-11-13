@@ -127,6 +127,7 @@ beforeEach(() => {
         scopes: ["repo"],
         status: "expired",
         needsReconnect: false,
+        permissions: { listed: 2, granted: 1, notGranted: ["workflow"] },
         createdAt: 1,
         lastUsedAt: null,
         expiresAt: null,
@@ -226,7 +227,8 @@ describe("Connected accounts", () => {
     // A scope that doesn't say what it is isn't guessed at.
     expect(rowFor("GitHub").slice(0, 2)).toEqual([
       "GitHubExpiredada · No app uses it yet",
-      "1 permission",
+      // Granted in part: said beside the access, with no badge for it.
+      "1 of 2 permissions",
     ]);
     // Nothing says "Connected": a row says how it stands only when it needs something.
     expect(body()).not.toMatch(/\bConnected\b(?! accounts)/);

@@ -601,7 +601,7 @@ everyapp provider presets
 ### `everyapp provider connections`
 List the accounts people connected to OAuth providers on the Gateway, and the apps that use each.
 
-A connection is one person's, to one provider: who connected what, the apps they allowed to use it, the scopes granted, the status and when it was last used. Never a token.
+A connection is one person's, to one provider: who connected what, the apps they allowed to use it, the scopes granted, the status and when it was last used. Never a token. A person may grant fewer scopes than their apps list: that connection is still active, and its status says how many were granted ("active, 10 of 18 permissions granted"; `permissions` with --json).
 
 ```sh
 everyapp provider connections

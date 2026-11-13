@@ -57,6 +57,17 @@ function listed(connection: ConnectionSummary): JsonObject {
     scopes: [...connection.scopes],
     status: connection.status,
     needsReconnect: connection.needsReconnect,
+    // How much of what the person's apps list the connection holds. Fewer
+    // than all is their choice at the provider, not a fault.
+    ...(connection.permissions
+      ? {
+          permissions: {
+            listed: connection.permissions.listed,
+            granted: connection.permissions.granted,
+            notGranted: [...connection.permissions.notGranted],
+          },
+        }
+      : {}),
     createdAt: new Date(connection.createdAt).toISOString(),
     lastUsedAt:
       connection.lastUsedAt === null
@@ -118,7 +129,7 @@ export const PROVIDER_CONNECTION_HANDLERS: Record<string, Handler> = {
       next:
         connections.length === 0
           ? "No connections. A person connects a provider once, from inside an app that lists it; everyapp_provider_list says which providers have a client."
-          : "A connection with needsReconnect is reconnected by its person, under Your connections → Accounts or from inside an app that uses it; everyapp_provider_disconnect removes one, or with `app` takes one app's access away.",
+          : "A connection with needsReconnect stopped working, or an app lists a scope the provider was never asked for: its person reconnects it, under Your connections → Accounts or from inside an app that uses it. `permissions` says how many of the scopes its apps list were granted; fewer than all is the person's choice at the provider and works as it is, so don't report it as a problem. everyapp_provider_disconnect removes one, or with `app` takes one app's access away.",
     };
   },
 

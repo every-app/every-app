@@ -15,7 +15,12 @@ import {
   OAuthStateRepository,
 } from "@/server/repositories/OAuthStateRepository";
 import { ProviderConnectionRepository } from "@/server/repositories/ProviderConnectionRepository";
-import { declaredScopes, declaredWhy, memberAppByRow } from "./appAccess";
+import {
+  declaredScopes,
+  declaredWhy,
+  memberAppByRow,
+  unaskedScopes,
+} from "./appAccess";
 
 /** Why an Allow page, or its form, can't go ahead. */
 export enum AllowRefusal {
@@ -58,7 +63,7 @@ export async function allowCheck(
   });
   if (
     connection?.status !== "active" ||
-    missingScopes(capability.flow, connection.scopes, declared).length > 0
+    unaskedScopes(capability.flow, connection, declared).length > 0
   ) {
     return { refused: AllowRefusal.Connection, capability, app } as const;
   }
@@ -92,7 +97,7 @@ export type AppAccessContext =
       account: string | null;
       /** What the app says it does with the account, when its manifest says. */
       why: string | null;
-      /** The scopes the app lists, as it wrote them. */
+      /** The scopes the app lists that the connection holds, as the app wrote them: one the person declined at the provider is left out. */
       scopes: string[];
     };
 
@@ -143,6 +148,9 @@ export async function buildAppAccessContext(
     },
     account: connection.label,
     why: declaredWhy(app.manifest, state.providerId),
-    scopes: [...declared],
+    scopes: declared.filter(
+      (scope) =>
+        missingScopes(capability.flow, connection.scopes, [scope]).length === 0,
+    ),
   };
 }

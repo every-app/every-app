@@ -34,6 +34,11 @@ export interface ProviderConnection {
   externalId: string | null;
   /** The scopes the token holds, canonical. */
   scopes: string[];
+  /**
+   * The scopes the provider was asked for at the last connect, canonical;
+   * null when that isn't known (connected before it was kept).
+   */
+  askedScopes: string[] | null;
   expiresAt: number | null;
   status: ConnectionStatus;
   createdAt: number;
@@ -62,6 +67,7 @@ const listed = {
   label: providerConnections.label,
   externalId: providerConnections.externalId,
   scopes: providerConnections.scopes,
+  askedScopes: providerConnections.askedScopes,
   expiresAt: providerConnections.expiresAt,
   status: providerConnections.status,
   createdAt: providerConnections.createdAt,
@@ -77,6 +83,7 @@ type ListedRow = {
   label: string | null;
   externalId: string | null;
   scopes: string;
+  askedScopes: string | null;
   expiresAt: Date | null;
   status: string;
   createdAt: Date;
@@ -93,6 +100,8 @@ function shape(row: ListedRow): ProviderConnection {
     label: row.label,
     externalId: row.externalId,
     scopes: storedStrings(row.scopes),
+    askedScopes:
+      row.askedScopes === null ? null : storedStrings(row.askedScopes),
     expiresAt: row.expiresAt?.getTime() ?? null,
     status: row.status === "expired" ? "expired" : "active",
     createdAt: row.createdAt.getTime(),
@@ -206,6 +215,8 @@ async function upsert(
     externalId: string | null;
     /** The scopes the token holds, canonical. */
     scopes: readonly string[];
+    /** The scopes the provider was asked for, canonical; left out when not known. */
+    askedScopes?: readonly string[];
     accessToken: string;
     refreshToken: string | null;
     expiresAt: number | null;
@@ -222,6 +233,9 @@ async function upsert(
     label: input.label,
     externalId: input.externalId,
     scopes: JSON.stringify([...input.scopes]),
+    askedScopes: input.askedScopes
+      ? JSON.stringify([...input.askedScopes])
+      : null,
     accessTokenEnc,
     refreshTokenEnc,
     expiresAt: input.expiresAt === null ? null : new Date(input.expiresAt),

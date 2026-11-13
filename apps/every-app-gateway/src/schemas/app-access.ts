@@ -39,9 +39,9 @@ export enum ReconnectOutcome {
 export enum ConnectionAction {
   /** No connection to the provider yet: the provider is asked. */
   Connect = "connect",
-  /** The connection holds what the app lists, but this app isn't allowed: the Allow page. */
+  /** The connection works and was asked for what the app lists, but this app isn't allowed: the Allow page. */
   Allow = "allow",
-  /** The connection expired, or lacks a scope the app lists: the provider is asked again. */
+  /** The connection expired, or the provider was never asked for a scope the app lists: the provider is asked again. */
   Reconnect = "reconnect",
 }
 

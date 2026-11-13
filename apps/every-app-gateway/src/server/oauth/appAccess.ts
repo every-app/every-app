@@ -225,24 +225,53 @@ export async function memberAppByRow(input: {
   return app?.rowId === input.appRowId ? app : null;
 }
 
+/** A connection as the scope rules read it: what its token holds, and what the provider was last asked for. */
+export interface ScopedConnection {
+  scopes: readonly string[];
+  /** Null when the last connect was before the Gateway kept it. */
+  askedScopes?: readonly string[] | null;
+}
+
+/**
+ * The scopes an app lists (`declared`) that the provider was never asked
+ * for on this connection: neither held nor asked at the last connect. A
+ * Reconnect gets these, where the provider grants them. A scope that was
+ * asked and isn't held was declined, or the provider didn't grant it: the
+ * person's choice, and nothing to prompt for.
+ */
+export function unaskedScopes(
+  flow: OAuthClientCapability["flow"],
+  connection: ScopedConnection,
+  declared: readonly string[],
+): string[] {
+  return missingScopes(
+    flow,
+    [...connection.scopes, ...(connection.askedScopes ?? [])],
+    declared,
+  );
+}
+
 /**
  * What a person does before an app may use their connection, for what the
  * app lists (`declared`) now; null when nothing. The one rule behind the
- * connect link, the setup dialog's buttons and Needs reconnect.
+ * connect link, the setup dialog's buttons and Needs reconnect: Reconnect
+ * is for a connection that stopped working (expired) or was never asked
+ * for a scope the app lists now, not for one the person granted in part.
  */
 export function connectionAction(
   flow: OAuthClientCapability["flow"],
-  connection: {
-    status: "active" | "expired";
-    scopes: readonly string[];
-  } | null,
+  connection:
+    | ({
+        status: "active" | "expired";
+      } & ScopedConnection)
+    | null,
   access: { scopes: readonly string[] } | null,
   declared: readonly string[],
 ): ConnectionAction | null {
   if (!connection) return ConnectionAction.Connect;
   if (
     connection.status === "expired" ||
-    missingScopes(flow, connection.scopes, declared).length > 0
+    unaskedScopes(flow, connection, declared).length > 0
   ) {
     return ConnectionAction.Reconnect;
   }

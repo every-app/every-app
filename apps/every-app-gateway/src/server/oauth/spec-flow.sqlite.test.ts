@@ -961,16 +961,19 @@ describe("an OAuth provider driven by its spec (SQLite)", () => {
       expect(await accessRows()).toEqual(["ben mail"]);
     });
 
-    it("refuses when the connection no longer holds what the app lists", async () => {
+    it("refuses when the connection was never asked for what the app lists, or expired", async () => {
       await connect("mail");
       const state = await allowState(
         "notes",
         "https://notes.apps.example.com/",
       );
-      // Reconnected meanwhile, with `contacts.read` un-ticked at the provider.
+      // Replaced meanwhile by a connection the provider was never asked
+      // `contacts.read` for. (One the person un-ticked it on is theirs to
+      // allow: flow.sqlite.test.ts.)
+      const less = JSON.stringify(["mail.read", "mail.send", "profile"]);
       await db
         .update(providerConnections)
-        .set({ scopes: JSON.stringify(["mail.read", "mail.send", "profile"]) })
+        .set({ scopes: less, askedScopes: less })
         .where(eq(providerConnections.userId, owner));
       const answered = await decide(state, "approve");
       expect(answered?.status).toBe(409);

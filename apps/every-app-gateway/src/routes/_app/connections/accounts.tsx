@@ -43,7 +43,7 @@ import {
   useConnectedAccounts,
 } from "@/client/hooks/useConnectedAccounts";
 import {
-  accessSummary,
+  accessWords,
   appsToName,
   compareConnections,
   connectionName,
@@ -67,8 +67,10 @@ import {
  * what it lets apps do in a few words, and when it was last used. The
  * apps allowed to use it are named only when that says something (not
  * "Context, used by Context"), and a row says how it stands only when it
- * needs something: the ones to reconnect come first, with Reconnect on
- * the row. The rest is behind the row (`ConnectedAccountSheet`): every
+ * needs something: the ones to reconnect (expired, or an app lists a
+ * permission the provider was never asked for) come first, with Reconnect
+ * on the row. A connection that holds part of what its apps list works,
+ * and says so in its Access ("Read only · 10 of 18 granted"), no badge. The rest is behind the row (`ConnectedAccountSheet`): every
  * permission in the provider's own names, when it was connected, and each
  * app with the button that takes its access away. The row's menu has
  * those too, with Reconnect (on a healthy connection it asks the provider
@@ -139,12 +141,22 @@ function accountColumns({
       header: "Access",
       enableSorting: false,
       meta: { cellClassName: "max-w-[260px] truncate" },
-      cell: ({ row: { original: account } }) =>
-        account.scopes.length > 0 ? (
-          accessSummary(account)
+      cell: ({ row: { original: account } }) => {
+        if (account.scopes.length === 0) {
+          return <span className="text-muted-foreground">None</span>;
+        }
+        // Granting part of what the apps list is the person's choice: said
+        // quietly beside the access, with the list behind the row.
+        const { words, partial } = accessWords(account);
+        return partial ? (
+          <>
+            {words}
+            <span className="text-muted-foreground"> · {partial}</span>
+          </>
         ) : (
-          <span className="text-muted-foreground">None</span>
-        ),
+          words
+        );
+      },
     },
     {
       id: "lastUsedAt",

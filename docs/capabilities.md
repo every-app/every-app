@@ -468,11 +468,12 @@ validator refuses `access`, `background`, `optionalScopes` and
 A person connects once, from inside an app: `connectUrl({ env, provider,
 returnTo })` sends them to `https://<gateway>/connect/<id>?app=<app>`, where
 the Gateway checks they may open the app and that its manifest lists the
-provider. With no connection, or one that lacks a scope the app lists, it
-asks the provider for every scope the organization's apps list and the
+provider. With no connection, an expired one, or one made before the app
+listed a scope (the provider was never asked for it), it asks the provider for every scope the organization's apps list and the
 identity scopes (PKCE, a one-use state, never `include_granted_scopes`).
 The connection belongs to that person, and the callback allows the app the
-connect started in. With a connection that holds what the app lists, the
+connect started in. With a connection that was asked for what the app
+lists (a scope the person declined there doesn't send them back), the
 same link opens the Gateway's Allow page (`/oauth/app-access`), where the
 person allows the app with no trip to the provider. An app the person
 hasn't allowed can't use the connection. Allowing is a yes or no, not a

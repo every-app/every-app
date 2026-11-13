@@ -20,7 +20,8 @@ Connecting from inside an app allows that app in the same step, so the first app
 - An app they never allow never uses the connection.
 - An app that requires a provider (one no optional feature of the app lists, as the settings model reads it: OpenSEO's Google and OpenCRM's Google and Microsoft 365 are optional) doesn't open for them until they have connected it and allowed the app. Opening it lands on the launcher's setup dialog, the same one that waits for an admin's settings, with one button per provider: **Connect**, **Allow** or **Reconnect**, each through the app's connect link and back to the app. The app's own Connect button keeps working.
 - Connected accounts lists each connection once, with the apps allowed to use it. Disconnect stops every app at once. One app's access can be removed on its own.
-- When an app they allowed needs more (the connection expired, lacks a scope the app lists now, or the app lists more than they allowed it), Connected accounts says **Needs reconnect** and shows **Reconnect**. One Reconnect covers every app they allowed: through the provider when the connection lacks something, otherwise on the spot.
+- When an app they allowed needs more that a Reconnect gets it (the connection expired, the app lists a scope the provider was never asked for, or the app lists more than they allowed it), Connected accounts says **Needs reconnect** and shows **Reconnect**. One Reconnect covers every app they allowed: through the provider when the connection lacks something, otherwise on the spot.
+- A connection that works reads as connected, whatever share of the listed scopes it holds. When the person granted fewer than their apps list (they unticked some, or the provider gives less), the row's Access says so quietly ("Read only · 10 of 18 granted") and the row's details list what wasn't granted. No badge, no Reconnect button, no count on the tab: it is their choice. Reconnect stays in the row's menu and the details, and asks for everything again.
 
 ## What we give up
 
@@ -30,12 +31,12 @@ Connecting from inside an app allows that app in the same step, so the first app
 
 Two edges:
 
-- A person can untick a scope on the provider's screen where the provider lets them. The connection keeps what was granted. An app that needs the missing scope shows Reconnect, and so does Connected accounts; either sends them through the provider again.
+- A person can untick a scope on the provider's screen where the provider lets them, and a provider may grant less than was asked (an MCP server that gives read access only). The connection keeps what was granted, and the Gateway remembers what it asked for (`provider_connections.asked_scopes`), so a scope that was asked and isn't held is known to be declined. Declined is not broken: nothing prompts for it, the apps stay connected, and calls go through; the provider refuses the ones that need the missing scope. A scope an app starts listing after the person connected was never asked for, and that does prompt: Reconnect gets it. A connection made before the Gateway kept what it asked (migration 0036) is read as asked for nothing beyond what it holds, so it prompts until its next connect.
 - A provider that doesn't name the account (its spec has no identity URL) can't show that an account changed, so its apps stay allowed across a reconnect. Where the provider does name accounts and the name can't be read this time, the other apps ask again.
 
 ## How it is stored
 
-- `provider_connections`: one row per (organization, provider, person). The tokens, sealed, and the scopes the token holds. No app.
+- `provider_connections`: one row per (organization, provider, person). The tokens, sealed, the scopes the token holds, and the scopes the provider was asked for at the last connect (`asked_scopes`, null on a row from before migration 0036). No app.
 - `provider_app_access` (new): one row per (organization, provider, person, app), with the scopes the app listed when the person allowed it. An app that lists more than it did then asks again.
 - `oauth_states.purpose`: `authorize` for a state the provider's callback spends, `allow` for one the Allow page's form spends. Neither route takes the other's.
 
@@ -45,9 +46,9 @@ Two edges:
 
 | The person's connection | What happens |
 | --- | --- |
-| Holds what the app lists, and they allowed the app for all of it | Back to `return`. Nothing to do. |
-| Holds what the app lists, and they haven't allowed the app (or it lists more now) | The Allow page, `/oauth/app-access?state=…`. |
-| Missing, expired, or lacks a scope the app lists | The provider, asked for every scope the organization's apps list. The callback stores the connection and allows the app the connect started in. |
+| Was asked for what the app lists (it holds each scope, or the person declined it), and they allowed the app for all of it | Back to `return`. Nothing to do. |
+| Was asked for what the app lists, and they haven't allowed the app (or it lists more now) | The Allow page, `/oauth/app-access?state=…`, which names the scopes the app lists that the connection holds. |
+| Missing, expired, or never asked for a scope the app lists | The provider, asked for every scope the organization's apps list. The callback stores the connection and allows the app the connect started in. |
 
 The Allow page posts `state` and `decision` to `POST /connect/<provider>/allow`. That handler spends the state and checks again what the page showed: the app still lists the provider, the person still opens it, the connection still holds what the app lists, and the app lists no more than it did when the page was made. The control plane's CSRF guard covers the POST like any other cookie request.
 
@@ -55,18 +56,18 @@ A successful connect spends the person's open Allow pages for that provider. A p
 
 ### Reconnect
 
-Connected accounts marks a connection **Needs reconnect** when an app the person allowed lists a scope the connection lacks or the person didn't allow it, or the connection expired. Reconnect is a server function (`reconnectConnection`, a POST under the control plane's CSRF guard) for the person's own connection only:
+Connected accounts marks a connection **Needs reconnect** when the connection expired, or an app the person allowed lists a scope the provider was never asked for or the person didn't allow it. A scope the person declined at the provider doesn't mark it. Reconnect is a server function (`reconnectConnection`, a POST under the control plane's CSRF guard) for the person's own connection only:
 
 | The connection | What happens |
 | --- | --- |
-| Expired, or lacks a scope one of their allowed apps lists | The provider, asked for every scope the organization's apps list, with a `reconnect` state in the name of the app that needs it. The callback stores the connection, allows that app, and, when it is the same account, allows every app they had allowed for what it lists now, where the token holds it. Back to Connected accounts. |
-| Holds what every one of their allowed apps lists | No provider. Each app that lists more than they allowed it is allowed for what it lists now. Selecting Reconnect is their OK: an allowed app can already use every scope the connection holds (`docs/security.md`, known gap 11), so a page per app would limit nothing. |
+| Expired, or never asked for a scope one of their allowed apps lists, or Reconnect came from the row's menu or details on a healthy connection (`fresh`) | The provider, asked for every scope the organization's apps list, with a `reconnect` state in the name of the app that needs it. The callback stores the connection, allows that app, and, when it is the same account, allows every app they had allowed for what it lists now, where the token holds it. Back to Connected accounts. |
+| Was asked for what every one of their allowed apps lists | No provider. Each app that lists more than they allowed it is allowed for what it lists now. Selecting Reconnect is their OK: an allowed app can already use every scope the connection holds (`docs/security.md`, known gap 11), so a page per app would limit nothing. |
 
 Reconnect never allows an app the person hadn't allowed. Another account at the provider takes the other apps' access, as any connect does. A connection that was never named (its account lookup failed: GitHub's did until the Gateway sent a `User-Agent`, so every GitHub connection made before then is unnamed) takes the name read on its next connect, and its apps stay allowed.
 
 ### Opening an app
 
-The perimeter asks twice before an app's private page opens. `needsSetup`, before sign-in, is the organization's: the settings the manifest requires, an OAuth provider's client among them. `needsConnection`, after sign-in, is the person's (server/oauth/connection-needs.ts): each OAuth provider the app requires (not one an optional feature lists), connected, holding the scopes the app lists, and allowed for this app, the same rule a call is held to. A page navigation that fails either goes to `/?setup=<app>`; the launcher's list carries the person's needs (`connections`), and the dialog shows the settings first, since an account can't be connected before the client is set, then one button per provider. Other requests pass the connection gate: the app's calls are refused with `integration_not_connected` anyway.
+The perimeter asks twice before an app's private page opens. `needsSetup`, before sign-in, is the organization's: the settings the manifest requires, an OAuth provider's client among them. `needsConnection`, after sign-in, is the person's (server/oauth/connection-needs.ts): each OAuth provider the app requires (not one an optional feature lists), connected, asked for the scopes the app lists, and allowed for this app, the same rule a call is held to. A page navigation that fails either goes to `/?setup=<app>`; the launcher's list carries the person's needs (`connections`), and the dialog shows the settings first, since an account can't be connected before the client is set, then one button per provider. Other requests pass the connection gate: the app's calls are refused with `integration_not_connected` anyway.
 
 ### Whether a provider is set up
 

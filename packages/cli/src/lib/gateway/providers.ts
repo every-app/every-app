@@ -546,6 +546,8 @@ export interface ProviderConnection {
   label: string | null;
   /** The scopes the provider granted, canonical (Google's without its prefix). */
   scopes: string[];
+  /** The scopes the allowed apps list for the provider, as they wrote them, each once. */
+  listedScopes: string[];
   status: string;
   createdAt: number;
   lastUsedAt: number | null;
@@ -598,9 +600,26 @@ function safeStringArray(value: unknown): string[] {
   }
 }
 
+/** An allowed app as the query reads it: with the scopes its manifest lists for the provider. */
+type ConnectionAppRow = ConnectionApp & { scopes?: unknown };
+
+function connectionAppRows(value: unknown): ConnectionAppRow[] {
+  return JSON.parse(String(value)) as ConnectionAppRow[];
+}
+
 /** A connection's `apps` column (a JSON array of `{ id, rowId, name }`), by name. */
 function connectionApps(value: unknown): ConnectionApp[] {
-  return (JSON.parse(String(value)) as ConnectionApp[]).sort((a, b) => a.name.localeCompare(b.name));
+  return connectionAppRows(value)
+    .map(({ id, rowId, name }) => ({ id, rowId, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The scopes a connection's allowed apps list for its provider, each once. */
+function listedScopes(value: unknown): string[] {
+  const scopes = connectionAppRows(value).flatMap((app) =>
+    Array.isArray(app.scopes) ? app.scopes.filter((scope): scope is string => typeof scope === "string") : [],
+  );
+  return [...new Set(scopes)];
 }
 
 /** The connections `filter` names, newest first, each with the apps allowed to use it. */
@@ -610,7 +629,9 @@ export async function listConnections(db: D1Database, filter: ConnectionFilter =
     {
       sql: `SELECT c.id, c.organization_id, c.provider_id, c.user_id, u.email AS user_email, u.name AS user_name,
   c.label, c.scopes, c.status, c.created_at, c.last_used_at, c.expires_at,
-  (SELECT json_group_array(json_object('id', a.app_slug, 'rowId', a.id, 'name', a.name))
+  (SELECT json_group_array(json_object('id', a.app_slug, 'rowId', a.id, 'name', a.name,
+      'scopes', CASE WHEN json_valid(a.manifest)
+        THEN json(json_extract(a.manifest, '$.capabilities."' || c.provider_id || '".scopes')) END))
     FROM ${CONNECTION_APPS}) AS apps
 FROM provider_connections c LEFT JOIN users u ON u.id = c.user_id
 ${where.sql}
@@ -628,6 +649,7 @@ ORDER BY c.created_at DESC, c.id`,
     apps: connectionApps(row["apps"]),
     label: text(row["label"]),
     scopes: safeStringArray(row["scopes"]),
+    listedScopes: listedScopes(row["apps"]),
     status: String(row["status"] ?? "active"),
     createdAt: Number(row["created_at"]),
     lastUsedAt: row["last_used_at"] == null ? null : Number(row["last_used_at"]),

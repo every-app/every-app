@@ -634,9 +634,9 @@ interface ConnectionStatus {
   /** The scopes the token holds, canonical. */
   scopes: string[];
   ready: boolean;
-  /** Declared scopes the connection lacks. */
+  /** Declared scopes the connection lacks, or the person hasn't allowed this app. */
   missingScopes?: string[];
-  /** The person has to connect again (expired, or scopes missing). */
+  /** The person has to go through the connect link again (expired, a scope the provider was never asked for, or one not allowed this app); not set for a scope they declined. */
   reconnect?: true;
 }
 
@@ -701,11 +701,22 @@ async function oauthStatus({
             })
           : null;
       if (found && allowed) {
-        const missing = [
-          ...missingScopes(capability.flow, found.scopes, declared),
+        const lacking = missingScopes(capability.flow, found.scopes, declared);
+        // What a trip through the connect link would change: the provider
+        // was never asked for it, or the person hasn't allowed this app
+        // it. A scope they declined at the provider is neither.
+        const fixable = [
+          ...missingScopes(
+            capability.flow,
+            [...found.scopes, ...(found.askedScopes ?? [])],
+            declared,
+          ),
           ...missingScopes(capability.flow, allowed, declared),
-        ].filter((scope, index, all) => all.indexOf(scope) === index);
-        const reconnect = found.status === "expired" || missing.length > 0;
+        ];
+        const missing = [...lacking, ...fixable].filter(
+          (scope, index, all) => all.indexOf(scope) === index,
+        );
+        const reconnect = found.status === "expired" || fixable.length > 0;
         connection = {
           label: found.label,
           scopes: [...found.scopes],

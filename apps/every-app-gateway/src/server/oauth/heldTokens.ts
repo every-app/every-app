@@ -32,6 +32,8 @@ interface HeldConnection {
   label: string | null;
   /** The scopes the token holds, canonical. */
   scopes: string[];
+  /** The scopes the provider was asked for at the last connect, canonical; null or absent when not known. */
+  askedScopes?: string[] | null;
   status: "active" | "expired";
   expiresAt: number | null;
 }
@@ -129,6 +131,7 @@ export function gatewayHeldTokens(options: {
         userId: row.userId,
         label: row.label,
         scopes: row.scopes,
+        askedScopes: row.askedScopes,
         status: row.status,
         expiresAt: row.expiresAt,
       };

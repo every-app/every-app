@@ -279,13 +279,20 @@ export async function handleHeldTokenCall({
       { reconnect: true },
     );
   }
-  // 5. It holds every scope the app declares, and the person allowed the
-  // app for each: an app that lists more than it did then asks again.
+  // 5. The provider has been asked for every scope the app declares, and
+  // the person allowed the app for each: an app that lists more than it
+  // did then asks again. A scope the person declined at the provider
+  // (asked, not held) refuses nothing here: the call goes, and the
+  // provider refuses the ones that need it.
   const declared = entryScopes(entry);
-  const missing = missingScopes(capability.flow, connection.scopes, declared);
+  const missing = missingScopes(
+    capability.flow,
+    [...connection.scopes, ...(connection.askedScopes ?? [])],
+    declared,
+  );
   if (missing.length > 0) {
     return notConnected(
-      `This ${capability.label} connection lacks ${missing.join(", ")}, which this app needs; connect it again at ${connectPath}.`,
+      `This ${capability.label} connection was made before this app listed ${missing.join(", ")}; connect it again at ${connectPath}.`,
       { reconnect: true, missingScopes: missing },
     );
   }

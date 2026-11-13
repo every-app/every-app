@@ -65,6 +65,11 @@ export const providerConnections = sqliteTable(
     externalId: text("external_id"),
     // The provider scopes the token holds, canonical (oauthScopes.ts), JSON array.
     scopes: text("scopes").notNull(),
+    // The scopes the provider was asked for at the last connect, canonical,
+    // JSON array: one of them the token doesn't hold was declined (or not
+    // granted) and is not asked for again unprompted. Null on a row
+    // connected before migration 0036, where nothing is known.
+    askedScopes: text("asked_scopes"),
     accessTokenEnc: text("access_token_enc").notNull(),
     refreshTokenEnc: text("refresh_token_enc"),
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }),

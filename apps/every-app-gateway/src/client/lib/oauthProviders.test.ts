@@ -1,13 +1,41 @@
 import { describe, expect, it } from "vitest";
 import {
   accessSummary,
+  accessWords,
   appsToName,
   compareConnections,
   connectionName,
   namesText,
+  partialGrant,
   scopesText,
   splitList,
 } from "./oauthProviders";
+
+describe("a connection granted in part", () => {
+  it("says how much of what its apps list was granted, and nothing when that is all of it", () => {
+    expect(partialGrant({ permissions: { listed: 18, granted: 10 } })).toBe(
+      "10 of 18 granted",
+    );
+    expect(partialGrant({ permissions: { listed: 2, granted: 2 } })).toBeNull();
+    expect(partialGrant({ permissions: null })).toBeNull();
+    // Beside the words where they say something, in place of a bare count.
+    const autumn = { listed: 18, granted: 10 };
+    expect(
+      accessWords({
+        providerId: "autumn-mcp",
+        scopes: ["openid", "offline_access", "a:read", "b:read"],
+        permissions: autumn,
+      }),
+    ).toEqual({ words: "Read only", partial: "10 of 18 granted" });
+    expect(
+      accessWords({
+        providerId: "x",
+        scopes: ["repo"],
+        permissions: { listed: 2, granted: 1 },
+      }),
+    ).toEqual({ words: "1 of 2 permissions", partial: null });
+  });
+});
 
 describe("the words", () => {
   it("name a connection's scopes, or say it holds none", () => {

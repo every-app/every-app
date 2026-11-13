@@ -579,14 +579,19 @@ can use every scope the connection holds, not only the ones it lists.
 to the provider's API hosts alone (a token endpoint or any other host is
 refused, `invalid_integration_route`); it puts the person's token on the
 call. Without a connection, before the person allowed this app, or when
-the connection lacks a scope the app now lists, the gateway answers 409
-`integration_not_connected` with `connectPath` (and `missingScopes`): send
-the person to `connectUrl()`.
+the app now lists a scope the provider was never asked for, the gateway
+answers 409 `integration_not_connected` with `connectPath` (and
+`missingScopes`): send the person to `connectUrl()`. A scope the person
+declined at the provider refuses nothing here: the call goes, and the
+provider refuses the ones that need it.
 
 `integrationStatus` for an OAuth provider adds `scopes` (as the manifest
 lists them), `connectPath` (`/connect/<id>?app=<app>`, or null) and
 `connection` (`{ label, scopes, ready, missingScopes?, reconnect? }`, or
 null) for the person. `connection` is null until they allowed this app.
+`missingScopes` with `ready: true` and no `reconnect` means the person
+granted less than the app lists: offer what works, and don't prompt them
+to reconnect.
 
 An app a person allowed may use their connection at any time, including
 from a cron or a Durable Object alarm. `for: { background: true, userId }`
