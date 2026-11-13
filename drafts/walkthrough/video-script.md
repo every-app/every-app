@@ -52,8 +52,8 @@ How to record (from the skill):
   - One MCP address for every app
   - Paste this into Claude Code
   - Pick the apps, read only or read & write
-  - An agent can't delete anything
-- **Draft line:** "Every app is behind one MCP address. Copy this command into Claude Code and sign in. You pick the apps and read only or read and write, and an agent can't delete anything."
+  - Tools that delete are marked, so it can ask first
+- **Draft line:** "Every app is behind one MCP address. Copy this command into Claude Code and sign in. You pick the apps and read only or read and write, and tools that delete are marked, so Claude Code can ask you first."
 
 ## 4. Claude Code finds prospects and who to pitch (34 s)
 

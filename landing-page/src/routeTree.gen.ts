@@ -14,6 +14,7 @@ import { Route as DocsDotmdRouteImport } from './routes/docs[.]md'
 import { Route as LlmsFullDottxtRouteImport } from './routes/llms-full[.]txt'
 import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as OpenscribeRouteImport } from './routes/openscribe'
+import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
 import { Route as BlogsIndexRouteImport } from './routes/blogs/index'
@@ -46,6 +47,11 @@ const LlmsDottxtRoute = LlmsDottxtRouteImport.update({
 const OpenscribeRoute = OpenscribeRouteImport.update({
   id: '/openscribe',
   path: '/openscribe',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PricingRoute = PricingRouteImport.update({
+  id: '/pricing',
+  path: '/pricing',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -96,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/openscribe': typeof OpenscribeRoute
+  '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/api/search': typeof ApiSearchRoute
   '/blogs/$': typeof BlogsSplatRoute
@@ -111,6 +118,7 @@ export interface FileRoutesByTo {
   '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/openscribe': typeof OpenscribeRoute
+  '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/api/search': typeof ApiSearchRoute
   '/blogs/$': typeof BlogsSplatRoute
@@ -127,6 +135,7 @@ export interface FileRoutesById {
   '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/openscribe': typeof OpenscribeRoute
+  '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/api/search': typeof ApiSearchRoute
   '/blogs/$': typeof BlogsSplatRoute
@@ -144,6 +153,7 @@ export interface FileRouteTypes {
     | '/llms-full.txt'
     | '/llms.txt'
     | '/openscribe'
+    | '/pricing'
     | '/privacy'
     | '/api/search'
     | '/blogs/$'
@@ -159,6 +169,7 @@ export interface FileRouteTypes {
     | '/llms-full.txt'
     | '/llms.txt'
     | '/openscribe'
+    | '/pricing'
     | '/privacy'
     | '/api/search'
     | '/blogs/$'
@@ -174,6 +185,7 @@ export interface FileRouteTypes {
     | '/llms-full.txt'
     | '/llms.txt'
     | '/openscribe'
+    | '/pricing'
     | '/privacy'
     | '/api/search'
     | '/blogs/$'
@@ -190,6 +202,7 @@ export interface RootRouteChildren {
   LlmsFullDottxtRoute: typeof LlmsFullDottxtRoute
   LlmsDottxtRoute: typeof LlmsDottxtRoute
   OpenscribeRoute: typeof OpenscribeRoute
+  PricingRoute: typeof PricingRoute
   PrivacyRoute: typeof PrivacyRoute
   ApiSearchRoute: typeof ApiSearchRoute
   BlogsSplatRoute: typeof BlogsSplatRoute
@@ -235,6 +248,13 @@ declare module '@tanstack/react-router' {
       path: '/openscribe'
       fullPath: '/openscribe'
       preLoaderRoute: typeof OpenscribeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pricing': {
+      id: '/pricing'
+      path: '/pricing'
+      fullPath: '/pricing'
+      preLoaderRoute: typeof PricingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -302,6 +322,7 @@ const rootRouteChildren: RootRouteChildren = {
   LlmsFullDottxtRoute: LlmsFullDottxtRoute,
   LlmsDottxtRoute: LlmsDottxtRoute,
   OpenscribeRoute: OpenscribeRoute,
+  PricingRoute: PricingRoute,
   PrivacyRoute: PrivacyRoute,
   ApiSearchRoute: ApiSearchRoute,
   BlogsSplatRoute: BlogsSplatRoute,

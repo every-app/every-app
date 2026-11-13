@@ -37,7 +37,7 @@ Run the command it shows, with your Gateway's address:
 claude mcp add --transport http everyapp https://apps.yourcompany.com/mcp
 ```
 
-Type `/mcp` in Claude Code, choose **everyapp** and **Authenticate**. A sign-in page lets you pick the apps and read only or read & write. An agent can't delete anything.
+Type `/mcp` in Claude Code, choose **everyapp** and **Authenticate**. A sign-in page lets you pick the apps and read only or read & write. Tools that delete are marked, so Claude Code can ask you first.
 
 ## 3. Find prospects in OpenSEO
 
