@@ -187,7 +187,7 @@ export interface PillView {
   expanded: boolean;
   /** Where the panel and the pill sit, in the window's own coordinates. The window covers both
    * all the time; only the pill takes the mouse until the panel opens. */
-  layout: { panel: Rect; pill: Rect };
+  layout: { panel: Rect; pill: Rect; panelSide: "left" | "right" };
   recording: Pick<RecordingSnapshot, "state" | "title" | "startedAt" | "stoppingSince" | "transcription">;
   /** The newest turns (bounded) while expanded; empty while collapsed. In memory only. */
   transcript: { segments: Segment[]; pending: { speaker: Speaker; text: string }[] };
@@ -245,6 +245,10 @@ export interface InvokeMap {
   "pill:get": [[], PillView];
   /** A click on the floating recorder: the main window, on the recording's meeting. */
   "pill:openMeeting": [[], void];
+  /** The pointer went down on the pill at `at` (the window's coordinates) and moved: the window
+   * follows the cursor until "pill:dragEnd", then settles on the nearer side edge of the screen. */
+  "pill:dragStart": [[at: { x: number; y: number }], void];
+  "pill:dragEnd": [[], void];
 }
 
 export type ApiMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -306,6 +310,8 @@ export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   "selftest:run",
   "pill:get",
   "pill:openMeeting",
+  "pill:dragStart",
+  "pill:dragEnd",
   "selftest:stop",
 ] as const;
 

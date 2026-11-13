@@ -13,6 +13,8 @@ export interface MenuActions {
   settings(): void;
   start(): void;
   stop(): void;
+  /** The floating recorder goes back to the bottom-right corner, on every display. */
+  resetRecorderPosition(): void;
   showLogs(): void;
   /** Dev builds only (absent in a release): clears the onboarding-seen flag. */
   resetOnboarding?: () => void;
@@ -71,7 +73,10 @@ export class AppMenu {
         ],
       },
       { role: "editMenu" },
-      { label: "Recording", submenu: recording },
+      {
+        label: "Recording",
+        submenu: [...recording, { type: "separator" }, { label: "Move Recorder Back to the Corner", click: () => this.actions.resetRecorderPosition() }],
+      },
       ...(app.isPackaged ? [] : [{ role: "viewMenu" } as MenuItemConstructorOptions]),
       {
         role: "windowMenu",

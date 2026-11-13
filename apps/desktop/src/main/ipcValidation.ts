@@ -49,6 +49,11 @@ export const validators: { [C in InvokeChannel]: (args: unknown[]) => boolean } 
   "update:install": (a) => a.length === 0,
   "pill:get": (a) => a.length === 0,
   "pill:openMeeting": (a) => a.length === 0,
+  "pill:dragStart": (a) => {
+    const at = a[0] as { x?: unknown; y?: unknown } | null;
+    return a.length === 1 && !!at && typeof at === "object" && Number.isFinite(at.x) && Number.isFinite(at.y);
+  },
+  "pill:dragEnd": (a) => a.length === 0,
   "selftest:run": (a) => a.length === 0,
   "selftest:stop": (a) => a.length === 0,
 };

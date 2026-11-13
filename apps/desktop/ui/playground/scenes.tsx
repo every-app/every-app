@@ -1,5 +1,5 @@
 import { ArrowLeft } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "../src/components/ui/button";
 import type { ThemePreference } from "../src/lib/theme";
 import {
@@ -524,6 +524,12 @@ const PILL_LAYOUT = {
   pill: { x: 4 + 292 + 5, y: 4 + 342 - 32 - 60, width: 34, height: 60 },
 };
 const PILL_WINDOW = { width: 4 + 292 + 5 + 34 + 4, height: 4 + 342 + 4 };
+/** Dragged to the screen's left edge, halfway up: the panel opens to the pill's right. */
+const PILL_LAYOUT_LEFT = {
+  panel: { x: 4 + 34 + 5, y: 4, width: 292, height: 342 },
+  pill: { x: 4, y: 4 + 342 - 32 - 60, width: 34, height: 60 },
+  panelSide: "right" as const,
+};
 
 function RecorderScene({
   expanded,
@@ -532,9 +538,12 @@ function RecorderScene({
   pending,
   stopping,
   notice,
+  edge = "right",
 }: {
   expanded: boolean;
   animate: boolean;
+  /** The screen edge the pill is at: right until someone drags it to the left one. */
+  edge?: "left" | "right";
   segments?: typeof mock.liveSegments;
   pending?: LiveLine[];
   stopping?: boolean;
@@ -542,29 +551,85 @@ function RecorderScene({
 }) {
   const levels = useLevels(animate);
   const them = useStreamingText(mock.livePartial.them, animate);
+  // Main moves the real window (desktop/src/main/pillWindow.ts); here the scene stands in for
+  // it, so the gesture can be tried: follow the pointer, then settle on the nearer side edge.
+  const scene = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<{ edge: "left" | "right"; top?: number }>({
+    edge,
+    top: edge === "left" ? 120 : undefined,
+  });
+  const [held, setHeld] = useState<{ x: number; y: number }>();
+  const [opened, setOpened] = useState(0);
+  const follow = useRef<(e: PointerEvent) => void>(undefined);
+  const layout = place.edge === "left" ? PILL_LAYOUT_LEFT : PILL_LAYOUT;
+  const dragStart = (at: { x: number; y: number }) => {
+    // `at` is in the page here; in the app the page is the recorder's window.
+    const w = scene.current
+      ?.querySelector("[data-recorder-window]")
+      ?.getBoundingClientRect();
+    const grab = { x: at.x - (w?.left ?? 0), y: at.y - (w?.top ?? 0) };
+    follow.current = (e) => {
+      const box = scene.current?.getBoundingClientRect();
+      if (box)
+        setHeld({
+          x: e.clientX - box.left - grab.x,
+          y: e.clientY - box.top - grab.y,
+        });
+    };
+    window.addEventListener("pointermove", follow.current);
+  };
+  const dragEnd = () => {
+    if (follow.current) window.removeEventListener("pointermove", follow.current);
+    follow.current = undefined;
+    const box = scene.current?.getBoundingClientRect();
+    if (held && box) {
+      const centre = held.x + layout.pill.x + layout.pill.width / 2;
+      setPlace({
+        edge: centre < box.width / 2 ? "left" : "right",
+        top: Math.min(Math.max(held.y, 4), box.height - PILL_WINDOW.height - 4),
+      });
+    }
+    setHeld(undefined);
+  };
   return (
     // Something dark under it, like a full-screen call.
     <div
+      ref={scene}
       data-theme="openseo-dark"
       className="relative h-full min-h-[600px] w-full overflow-hidden bg-[#14171c]"
     >
       <div className="absolute inset-x-0 top-0 p-6 font-mono text-[13px] text-neutral-500">
-        A full-screen call or any app sits under the recorder.
+        A full-screen call or any app sits under the recorder. Drag the pill
+        to move it; a click opens the meeting
+        {opened > 0 && ` (clicked ${opened}×)`}.
       </div>
       <div
         className="absolute"
-        style={{ right: 8 - 4, bottom: 8 - 4, ...PILL_WINDOW }}
+        data-recorder-window
+        style={{
+          ...PILL_WINDOW,
+          ...(held
+            ? { left: held.x, top: held.y }
+            : {
+                [place.edge]: 8 - 4,
+                ...(place.top === undefined
+                  ? { bottom: 8 - 4 }
+                  : { top: place.top }),
+              }),
+        }}
       >
         <FloatingRecorder
-          layout={PILL_LAYOUT}
-          expanded={expanded}
+          layout={layout}
+          expanded={expanded && !held}
           level={stopping ? 0 : Math.max(levels.mic, levels.system)}
           stopping={stopping}
           segments={segments}
           pending={pending ?? [{ speaker: "them", text: them }]}
           notice={notice}
           animate={animate}
-          onOpen={noop}
+          onOpen={() => setOpened((n) => n + 1)}
+          onDragStart={dragStart}
+          onDragEnd={dragEnd}
         />
       </div>
     </div>
@@ -1293,6 +1358,14 @@ export const scenes: Scene[] = [
         pending={[]}
         notice="Starting…"
       />
+    ),
+  },
+  {
+    id: "recorder-left",
+    group: "Floating recorder",
+    label: "Dragged to the left edge: the transcript opens on the right",
+    render: (ctx) => (
+      <RecorderScene expanded edge="left" animate={ctx.animate} />
     ),
   },
   {

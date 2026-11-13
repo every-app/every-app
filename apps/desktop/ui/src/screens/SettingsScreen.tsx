@@ -126,7 +126,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
           <Row
             icon={PictureInPicture2}
             title="Show the floating recorder while recording"
-            detail="A small recorder in the corner of the screen, over your meeting. Hover over it to read the live transcript; click it to open the meeting."
+            detail="A small recorder in the corner of the screen, over your meeting. Hover over it to read the live transcript, click it to open the meeting, and drag it to move it."
             control={
               <Switch
                 aria-label="Show the floating recorder while recording"

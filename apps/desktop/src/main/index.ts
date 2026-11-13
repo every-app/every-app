@@ -30,7 +30,7 @@ import type { UpdateController } from "./updates";
 import { RecordShortcut } from "./shortcut";
 import { MainWindow } from "./window";
 import { LiveTranscriptBuffer } from "./liveTranscript";
-import { shouldShowPill } from "./pill";
+import { PillPlacesStore, shouldShowPill } from "./pill";
 import { RecorderPillWindow } from "./pillWindow";
 import { AppMenu } from "./menu";
 import { isSignInEndpoint, typedAppUrl } from "./auth/url";
@@ -164,6 +164,7 @@ async function main(): Promise<void> {
     devUrl: origin.devUrl,
     recording: () => recording.state,
     transcript: liveTranscript,
+    places: new PillPlacesStore(join(app.getPath("userData"), "recorder-position.json"), log),
     log,
   });
   const syncPill = () => {
@@ -287,6 +288,7 @@ async function main(): Promise<void> {
 
   const menu = new AppMenu({
     open: () => window.show(),
+    resetRecorderPosition: () => pill.resetPosition(),
     settings: () => window.showAndSend("navigate", { to: "settings" }),
     start: () => void startRecording({}).catch((e) => notifyError("Scribe couldn't start", e)),
     stop: () => void recording.stop().catch((e) => notifyError("Scribe couldn't stop", e)),
@@ -582,6 +584,8 @@ async function main(): Promise<void> {
       if (meetingId) window.showAndSend("navigate", { to: "meeting", meetingId });
       else window.show();
     },
+    "pill:dragStart": (at) => pill.dragStart(at),
+    "pill:dragEnd": () => pill.dragEnd(),
     "selftest:run": () => selfTest.run(),
     "selftest:stop": () => selfTest.stop(),
     "clipboard:writeText": (text) => {

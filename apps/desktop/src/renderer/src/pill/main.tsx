@@ -1,6 +1,7 @@
 // The floating recorder's page (pill.html, src/main/pillWindow.ts). Main decides where things
 // sit and whether the panel is open; this draws it, moves the meter with the helper's `levels`,
-// and asks main to open the meeting on a click.
+// asks main to open the meeting on a click, and tells main when a drag of the pill starts and
+// ends (main moves the window).
 
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -59,6 +60,8 @@ function Pill() {
       pending={view.transcript.pending}
       notice={pillNotice(view.recording)}
       onOpen={() => void bridge["pill:openMeeting"]()}
+      onDragStart={(at) => void bridge["pill:dragStart"](at)}
+      onDragEnd={() => void bridge["pill:dragEnd"]()}
     />
   );
 }

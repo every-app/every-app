@@ -1,9 +1,31 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { HelperSupervisor } from "../src/main/helper/supervisor";
 import type { HelperEvent } from "@shared/protocol";
 import { LiveTranscriptBuffer, TRANSCRIPT_LIMITS } from "../src/main/liveTranscript";
-import { GAP, HoverTracker, INSET, LIFT, MARGIN, PANEL, PILL, pillLayout, shouldShowPill, takesMouse, zoneAt } from "../src/main/pill";
+import {
+  clampPill,
+  GAP,
+  HoverTracker,
+  INSET,
+  LIFT,
+  MARGIN,
+  PANEL,
+  PILL,
+  pillLayout,
+  pillPlaceFor,
+  PillPlacesStore,
+  readPillPlaces,
+  shouldShowPill,
+  snapPill,
+  takesMouse,
+  withPillPlace,
+  zoneAt,
+  type PillLayout,
+} from "../src/main/pill";
+import { isDrag } from "../ui/src/lib/drag";
 import { validArgs } from "../src/main/ipcValidation";
 import { parseSettingsPatch, readSettings } from "../src/main/settings";
 import { pillNotice } from "../src/renderer/src/pill/view";
@@ -40,6 +62,16 @@ describe("floating recorder: when it shows", () => {
     expect(validArgs("pill:get", [])).toBe(true);
     expect(validArgs("pill:openMeeting", [])).toBe(true);
     expect(validArgs("pill:openMeeting", ["m1"])).toBe(false);
+  });
+
+  it("takes a point to start a drag and nothing to end it", () => {
+    expect(validArgs("pill:dragStart", [{ x: 310, y: 260 }])).toBe(true);
+    expect(validArgs("pill:dragStart", [])).toBe(false);
+    expect(validArgs("pill:dragStart", [null])).toBe(false);
+    expect(validArgs("pill:dragStart", [{ x: "310", y: 260 }])).toBe(false);
+    expect(validArgs("pill:dragStart", [{ x: Number.NaN, y: 0 }])).toBe(false);
+    expect(validArgs("pill:dragEnd", [])).toBe(true);
+    expect(validArgs("pill:dragEnd", [1])).toBe(false);
   });
 });
 
@@ -78,6 +110,137 @@ describe("floating recorder: where it sits", () => {
     // Above the pill, and outside the window: nothing.
     expect(zoneAt(screenPoint(l.pill.x + 5, l.pill.y - 20), l)).toBeNull();
     expect(zoneAt({ x: l.window.x - 50, y: l.window.y }, l)).toBeNull();
+  });
+});
+
+describe("floating recorder: where it was dragged to", () => {
+  const workArea = { x: 0, y: 25, width: 1512, height: 920 };
+  const onScreen = (l: PillLayout) => ({
+    pill: { ...l.pill, x: l.window.x + l.pill.x, y: l.window.y + l.pill.y },
+    panel: { ...l.panel, x: l.window.x + l.panel.x, y: l.window.y + l.panel.y },
+  });
+  const within = (r: { x: number; y: number; width: number; height: number }, area: typeof workArea) =>
+    r.x >= area.x && r.y >= area.y && r.x + r.width <= area.x + area.width && r.y + r.height <= area.y + area.height;
+
+  it("a small move is still a click", () => {
+    expect(isDrag({ x: 100, y: 100 }, { x: 102, y: 101 })).toBe(false);
+    expect(isDrag({ x: 100, y: 100 }, { x: 100, y: 104 })).toBe(true);
+    expect(isDrag({ x: 100, y: 100 }, { x: 97, y: 97 })).toBe(true);
+  });
+
+  it("keeps the pill inside the work area while it's dragged", () => {
+    expect(clampPill({ x: 700, y: 400 }, workArea)).toEqual({ x: 700, y: 400 });
+    expect(clampPill({ x: -500, y: -500 }, workArea)).toEqual({ x: MARGIN, y: workArea.y + MARGIN });
+    expect(clampPill({ x: 9000, y: 9000 }, workArea)).toEqual({
+      x: workArea.width - MARGIN - PILL.width,
+      y: workArea.y + workArea.height - MARGIN - PILL.height,
+    });
+  });
+
+  it("settles on the nearer side edge, at the height it was dropped", () => {
+    expect(snapPill({ x: 300, y: 400 }, workArea).edge).toBe("left");
+    expect(snapPill({ x: 1000, y: 400 }, workArea).edge).toBe("right");
+    expect(snapPill({ x: 300, y: workArea.y + MARGIN }, workArea).y).toBe(0);
+    expect(snapPill({ x: 300, y: 5000 }, workArea).y).toBe(1);
+    for (const drop of [{ x: 300, y: 400 }, { x: 1200, y: 77 }, { x: 40, y: 860 }]) {
+      const l = onScreen(pillLayout(workArea, snapPill(drop, workArea)));
+      expect(l.pill.y).toBe(drop.y);
+      expect(l.pill.x).toBe(drop.x < 756 ? MARGIN : workArea.width - MARGIN - PILL.width);
+    }
+  });
+
+  it("opens the panel on the side with room, and keeps it on screen at any height", () => {
+    for (const edge of ["left", "right"] as const) {
+      for (const y of [0, 0.25, 0.5, 0.9, 1]) {
+        const layout = pillLayout(workArea, { edge, y });
+        const l = onScreen(layout);
+        expect(layout.panelSide).toBe(edge === "left" ? "right" : "left");
+        expect(within(l.pill, workArea)).toBe(true);
+        expect(within(l.panel, workArea)).toBe(true);
+        expect(l.panel).toMatchObject({ width: PANEL.width, height: PANEL.height });
+        // Beside the pill, GAP apart, on its inner side.
+        if (edge === "left") expect(l.panel.x).toBe(l.pill.x + PILL.width + GAP);
+        else expect(l.panel.x + l.panel.width + GAP).toBe(l.pill.x);
+        // The window covers both, with INSET around.
+        expect(layout.window.x).toBe(Math.min(l.pill.x, l.panel.x) - INSET);
+        expect(layout.window.y).toBe(Math.min(l.pill.y, l.panel.y) - INSET);
+        expect(layout.window.x + layout.window.width).toBe(Math.max(l.pill.x + PILL.width, l.panel.x + PANEL.width) + INSET);
+        expect(layout.window.y + layout.window.height).toBe(Math.max(l.pill.y + PILL.height, l.panel.y + PANEL.height) + INSET);
+      }
+    }
+    // Mid-screen the panel's bottom is LIFT below the pill's; at the top it hangs down instead.
+    const mid = onScreen(pillLayout(workArea, { edge: "left", y: 0.5 }));
+    expect(mid.panel.y + mid.panel.height).toBe(mid.pill.y + PILL.height + LIFT);
+    const top = onScreen(pillLayout(workArea, { edge: "left", y: 0 }));
+    expect(top.panel.y).toBe(top.pill.y);
+    const bottom = onScreen(pillLayout(workArea, { edge: "right", y: 1 }));
+    expect(bottom.panel.y + bottom.panel.height).toBe(workArea.y + workArea.height - MARGIN);
+  });
+
+  it("counts the gap as the panel on whichever side the panel is", () => {
+    const l = pillLayout(workArea, { edge: "left", y: 0.5 });
+    const screenPoint = (x: number, y: number) => ({ x: l.window.x + x, y: l.window.y + y });
+    expect(zoneAt(screenPoint(l.pill.x + 5, l.pill.y + 5), l)).toBe("pill");
+    expect(zoneAt(screenPoint(l.pill.x + PILL.width + 2, l.pill.y + 5), l)).toBe("panel");
+    expect(zoneAt(screenPoint(l.panel.x + l.panel.width + 2, l.panel.y + 5), l)).toBeNull();
+  });
+
+  it("stays on screen when the display gets smaller", () => {
+    const position = snapPill({ x: 20, y: 900 }, workArea);
+    const small = { x: 0, y: 25, width: 1024, height: 500 };
+    expect(within(onScreen(pillLayout(small, position)).pill, small)).toBe(true);
+    // A stored fraction outside 0–1 can't put it off screen either.
+    expect(within(onScreen(pillLayout(small, { edge: "left", y: 7 })).pill, small)).toBe(true);
+  });
+
+  it("remembers a spot per display, and opens on the display it was last dragged on", () => {
+    let places = withPillPlace({ displays: {} }, "1", { edge: "left", y: 0.5 });
+    places = withPillPlace(places, "2", { edge: "right", y: 0.1 });
+    expect(places).toEqual({ last: "2", displays: { "1": { edge: "left", y: 0.5 }, "2": { edge: "right", y: 0.1 } } });
+    expect(pillPlaceFor(places, ["1", "2"], "1")).toEqual({ display: "2", position: { edge: "right", y: 0.1 } });
+    // That display is unplugged: the one under the cursor, at its own remembered spot.
+    expect(pillPlaceFor(places, ["1"], "1")).toEqual({ display: "1", position: { edge: "left", y: 0.5 } });
+    // A display it was never dragged on: the corner.
+    expect(pillPlaceFor(places, ["3"], "3")).toEqual({ display: "3", position: undefined });
+    expect(pillPlaceFor({ displays: {} }, ["1", "2"], "1")).toEqual({ display: "1", position: undefined });
+    // Bounded: the oldest display goes.
+    for (let i = 10; i < 40; i++) places = withPillPlace(places, String(i), { edge: "left", y: 0 });
+    expect(Object.keys(places.displays)).toHaveLength(16);
+    expect(places.displays["1"]).toBeUndefined();
+    expect(places.last).toBe("39");
+  });
+
+  it("reads the stored file leniently", () => {
+    expect(readPillPlaces(undefined)).toEqual({ displays: {} });
+    expect(readPillPlaces("nope")).toEqual({ displays: {} });
+    expect(
+      readPillPlaces({
+        last: "1",
+        displays: { "1": { edge: "left", y: 0.4, extra: 1 }, "2": { edge: "up", y: 0.4 }, "3": { edge: "right", y: 2 }, "4": { edge: "right", y: "0" }, __proto__x: { edge: "left", y: 0 }, "5": null },
+      }),
+    ).toEqual({ last: "1", displays: { "1": { edge: "left", y: 0.4 } } });
+    // `last` only counts with a spot for it.
+    expect(readPillPlaces({ last: "9", displays: { "1": { edge: "left", y: 0 } } })).toEqual({ displays: { "1": { edge: "left", y: 0 } } });
+  });
+
+  it("keeps the spot across restarts, and goes back to the corner when the file is gone or broken", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pill-places-"));
+    try {
+      const path = join(dir, "nested", "recorder-position.json");
+      const store = new PillPlacesStore(path);
+      expect(store.value).toEqual({ displays: {} });
+      store.set(withPillPlace(store.value, "1", { edge: "left", y: 0.25 }));
+      expect(new PillPlacesStore(path).value).toEqual({ last: "1", displays: { "1": { edge: "left", y: 0.25 } } });
+      writeFileSync(path, "{not json");
+      const lines: string[] = [];
+      expect(new PillPlacesStore(path, (l) => lines.push(l)).value).toEqual({ displays: {} });
+      expect(lines).toHaveLength(1);
+      // Reset: nothing remembered.
+      store.set({ displays: {} });
+      expect(new PillPlacesStore(path).value).toEqual({ displays: {} });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -1,11 +1,13 @@
 import { cn } from "cn";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { isDrag } from "../lib/drag";
 import { barHeights, smoothLevel } from "../lib/levels";
 import type { Segment } from "../types";
 
 /*
- * The floating recorder, in the bottom-right corner of the screen while recording: a small
- * capsule with Every App's mark and a meter, and on hover a panel with the live transcript. Always
+ * The floating recorder, in the bottom-right corner of the screen while recording (or wherever
+ * it was dragged to along the screen's side edges): a small capsule with Every App's mark and a
+ * meter, and on hover a panel with the live transcript. Always
  * dark, like the meeting apps it floats over. Sizes follow Granola's pill (Ben's reference
  * screenshots), in points; the bars are the foreground colour, like the rest of the pill.
  */
@@ -53,12 +55,19 @@ export function LiveBars({
   );
 }
 
-/** The capsule: Every App's mark over the meter. Clicking it opens the meeting in Every App. */
+/**
+ * The capsule: Every App's mark over the meter. Clicking it opens the meeting in Every App;
+ * pressing and moving drags it instead (`onDragStart` with where on the page the pointer went
+ * down, `onDragEnd` when the button comes up), and that release isn't a click. The owner moves
+ * the pill: this only reports the gesture, measured on the screen since the pill moves under it.
+ */
 export function RecorderPill({
   level,
   stopping = false,
   animate = true,
   onClick,
+  onDragStart,
+  onDragEnd,
   className,
 }: {
   level: number;
@@ -66,19 +75,63 @@ export function RecorderPill({
   stopping?: boolean;
   animate?: boolean;
   onClick?: () => void;
+  onDragStart?: (at: { x: number; y: number }) => void;
+  onDragEnd?: () => void;
   className?: string;
 }) {
+  const press = useRef<{
+    screen: { x: number; y: number };
+    client: { x: number; y: number };
+    dragging: boolean;
+  }>(undefined);
+  /** The release that ended a drag would otherwise open the meeting. */
+  const swallowClick = useRef(false);
+  const end = () => {
+    const p = press.current;
+    press.current = undefined;
+    if (!p?.dragging) return;
+    swallowClick.current = true;
+    // A click, if one follows, is dispatched right after pointerup; later ones are real.
+    setTimeout(() => (swallowClick.current = false), 0);
+    onDragEnd?.();
+  };
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={() => {
+        if (swallowClick.current) swallowClick.current = false;
+        else onClick?.();
+      }}
+      onPointerDown={(e) => {
+        if (e.button !== 0 || !onDragStart) return;
+        press.current = {
+          screen: { x: e.screenX, y: e.screenY },
+          client: { x: e.clientX, y: e.clientY },
+          dragging: false,
+        };
+        // Keep getting the pointer's moves and its release wherever it goes.
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        const p = press.current;
+        if (!p) return;
+        // The button came up somewhere this page never heard about.
+        if (e.buttons === 0) return end();
+        if (p.dragging || !isDrag(p.screen, { x: e.screenX, y: e.screenY })) return;
+        p.dragging = true;
+        onDragStart?.(p.client);
+      }}
+      onPointerUp={end}
+      onPointerCancel={end}
+      onLostPointerCapture={end}
+      draggable={false}
       aria-label={
         stopping
           ? "Scribe is finishing the transcript. Open the meeting"
           : "Scribe is recording. Open the meeting"
       }
       className={cn(
-        "flex h-[60px] w-[34px] flex-col items-center justify-between rounded-full border border-white/20 bg-neutral-800 pt-[9px] pb-[10px] outline-none",
+        "flex h-[60px] w-[34px] touch-none flex-col items-center justify-between rounded-full border border-white/20 bg-neutral-800 pt-[9px] pb-[10px] outline-none select-none",
         "transition-colors hover:border-white/30 hover:bg-[oklch(30%_0_0)] focus-visible:border-white/40",
         className,
       )}
@@ -205,7 +258,9 @@ export interface FloatingRecorderRect {
 
 /**
  * The whole floating window: the panel (shown while `expanded`) and the pill, each where main
- * put it (`layout`, in the window's coordinates). The rest of the window is see-through.
+ * put it (`layout`, in the window's coordinates; `panelSide` is the side of the pill the panel
+ * is on, left unless the pill was dragged to the screen's left edge). The rest of the window is
+ * see-through.
  */
 export function FloatingRecorder({
   layout,
@@ -217,8 +272,14 @@ export function FloatingRecorder({
   notice,
   animate = true,
   onOpen,
+  onDragStart,
+  onDragEnd,
 }: {
-  layout: { panel: FloatingRecorderRect; pill: FloatingRecorderRect };
+  layout: {
+    panel: FloatingRecorderRect;
+    pill: FloatingRecorderRect;
+    panelSide?: "left" | "right";
+  };
   expanded: boolean;
   level: number;
   stopping?: boolean;
@@ -227,6 +288,8 @@ export function FloatingRecorder({
   notice?: string;
   animate?: boolean;
   onOpen?: () => void;
+  onDragStart?: (at: { x: number; y: number }) => void;
+  onDragEnd?: () => void;
 }) {
   const at = (r: FloatingRecorderRect) => ({
     left: r.x,
@@ -239,7 +302,11 @@ export function FloatingRecorder({
       <div
         aria-hidden={!expanded}
         className={cn(
-          "absolute origin-bottom-right",
+          "absolute",
+          // It grows out of the pill's side.
+          layout.panelSide === "right"
+            ? "origin-bottom-left"
+            : "origin-bottom-right",
           // Opens with a short fade; closes at once (its lines are gone by then).
           expanded
             ? "scale-100 opacity-100 transition-[opacity,scale] duration-150 ease-out"
@@ -262,6 +329,8 @@ export function FloatingRecorder({
           stopping={stopping}
           animate={animate}
           onClick={onOpen}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
           className="size-full"
         />
       </div>
