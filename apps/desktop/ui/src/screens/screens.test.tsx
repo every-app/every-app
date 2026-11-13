@@ -1,7 +1,7 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MeetingDetail } from "../types";
-import { AppFrame, type FrameRecorder, type SidebarProps } from "./AppFrame";
+import { AppFrame, Sidebar, SidebarSection, type FrameRecorder, type SidebarProps } from "./AppFrame";
 import { MeetingScreen } from "./MeetingScreen";
 import { SettingsScreen } from "./SettingsScreen";
 import { Transcript } from "./Transcript";
@@ -523,6 +523,85 @@ describe("AppFrame while recording", () => {
     );
     expect(screen.queryByRole("group", { name: "Recording" })).toBeNull();
     expect(screen.getByRole("button", { name: /New note/ })).toBeTruthy();
+  });
+});
+
+describe("Sidebar", () => {
+  const base: SidebarProps = {
+    current: { to: "home" },
+    onNavigate: () => {},
+    folders: { status: "ready", data: [] },
+    orgName: "Every",
+    account: { name: "Ben Senescu", email: "ben@every.to", orgName: "Every" },
+    onNewFolder: () => {},
+    onNewNote: () => {},
+  };
+  const side = () => screen.getByRole("complementary", { name: "Sidebar" });
+
+  it("no folders: nothing says so, and New folder is the one line there", () => {
+    render(<Sidebar {...base} />);
+    expect(side().textContent).not.toMatch(/No (team )?folders yet/);
+    expect(screen.queryByRole("group", { name: "My notes" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Every" })).toBeNull();
+    expect(screen.getByRole("button", { name: "New folder" })).toBeTruthy();
+  });
+
+  it("only the spaces that have folders are drawn", () => {
+    render(
+      <Sidebar
+        {...base}
+        folders={{
+          status: "ready",
+          data: [
+            {
+              id: "f-1",
+              name: "Customer calls",
+              space: "private",
+              defaultTemplateId: null,
+            },
+          ],
+        }}
+      />,
+    );
+    const mine = screen.getByRole("group", { name: "My notes" });
+    expect(
+      within(mine).getByRole("button", { name: "Customer calls" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Every" })).toBeNull();
+  });
+
+  it("New folder asks who it is for", async () => {
+    const onNewFolder = vi.fn();
+    render(<Sidebar {...base} onNewFolder={onNewFolder} />);
+    fireEvent.click(screen.getByRole("button", { name: "New folder" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: /Team folder/ }),
+    );
+    expect(onNewFolder).toHaveBeenCalledWith("team");
+  });
+
+  it("the account and Settings are one row, which opens Settings", () => {
+    const onNavigate = vi.fn();
+    render(<Sidebar {...base} onNavigate={onNavigate} />);
+    const row = screen.getByRole("button", { name: "Settings" });
+    expect(row.textContent).toContain("Ben Senescu");
+    expect(within(side()).getAllByText("Ben Senescu")).toHaveLength(1);
+    fireEvent.click(row);
+    expect(onNavigate).toHaveBeenCalledWith({ to: "settings" });
+  });
+
+  it("Scribe alone has no heading; with a second feature each section has one", () => {
+    const { rerender } = render(<Sidebar {...base} />);
+    expect(screen.queryByRole("heading", { name: "Scribe" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Scribe" })).toBeTruthy();
+    rerender(
+      <Sidebar
+        {...base}
+        moreSections={<SidebarSection label="Dictation">{null}</SidebarSection>}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Scribe" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Dictation" })).toBeTruthy();
   });
 });
 

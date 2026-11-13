@@ -363,7 +363,7 @@ function FolderChip({
       <DropdownMenuContent align="start" className="min-w-56">
         {groups.length === 0 && (
           <p className="px-2 py-1.5 text-[13px] text-muted-foreground">
-            No folders yet. Make one with + in the sidebar.
+            No folders yet. Make one with New folder in the sidebar.
           </p>
         )}
         {groups.map((group, i) => (

@@ -53,7 +53,7 @@ There is no migration from Talk for Mac (`com.everyapp.talk`): nobody outside th
 [`src/shared/features.ts`](src/shared/features.ts) lists the features and the backend app id each one calls; nothing else names a backend app id (the Gateway is getting app renames). Today it's Scribe, on `scribe` (formerly `talk`: `formerAppIds`, tried in turn when locating the app, since a Gateway may serve either host or both). A new feature adds:
 
 - an entry there (id, label, backend app id);
-- a sibling `SidebarSection` in the window's sidebar (`ui/src/screens/AppFrame.tsx`; Scribe's pages sit under "Scribe", Settings and the account stay app-wide);
+- a sibling `SidebarSection` in the window's sidebar, passed as the sidebar's `moreSections` (`ui/src/screens/AppFrame.tsx`; with a second section every section is headed by its feature's name, with Scribe alone none is; search, Settings and the account stay app-wide);
 - its routes in `src/renderer/src/router.tsx`, and its own `everyapp://<feature>/…` links (`src/main/calendar/deepLink.ts` takes `everyapp://scribe/record`).
 
 Sign-in is still one grant, for Scribe's backend: a native token opens one app ([native sign-in](../../landing-page/content/agent/native.md)). A second feature needs a grant of its own; see TODO.md.

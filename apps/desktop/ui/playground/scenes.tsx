@@ -1,4 +1,4 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, BookA, Mic } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "../src/components/ui/button";
 import type { ThemePreference } from "../src/lib/theme";
@@ -16,6 +16,8 @@ import {
   SearchScreen,
   SettingsScreen,
   SharedScreen,
+  SidebarItem,
+  SidebarSection,
   TemplatesScreen,
   WelcomeSplash,
   type LiveState,
@@ -133,7 +135,11 @@ function Frame({
   folders = ready(mock.folders),
   banner,
   update,
+  moreSections,
+  account = mock.account,
 }: {
+  moreSections?: ReactNode;
+  account?: typeof mock.account | null;
   current: NavTarget | null;
   children: ReactNode;
   titleBar?: ReactNode;
@@ -148,11 +154,12 @@ function Frame({
     onNavigate: noop,
     folders,
     orgName: mock.account.orgName,
-    account: mock.account,
+    account,
     onNewFolder: noop,
     onNewNote: noop,
     onSearch: noop,
     update,
+    moreSections,
   };
   return (
     <AppFrame
@@ -814,6 +821,58 @@ export const scenes: Scene[] = [
           comingUp: ready({ state: "disconnected", reconnect: false }),
           recent: ready([]),
         })}
+      </Frame>
+    ),
+  },
+  {
+    id: "sidebar-empty",
+    group: "Sidebar",
+    label: "No folders yet",
+    render: () => (
+      <Frame current={{ to: "home" }} folders={ready([])}>
+        {home()}
+      </Frame>
+    ),
+  },
+  {
+    id: "sidebar-loading",
+    group: "Sidebar",
+    label: "Folders loading, account not known yet",
+    render: () => (
+      <Frame current={{ to: "home" }} folders={loading} account={null}>
+        {home()}
+      </Frame>
+    ),
+  },
+  {
+    id: "sidebar-two-apps",
+    group: "Sidebar",
+    label: "With a second app (headings appear)",
+    render: () => (
+      <Frame
+        current={{ to: "home" }}
+        moreSections={
+          <SidebarSection label="Dictation">
+            <ul className="flex flex-col gap-px">
+              <SidebarItem
+                icon={Mic}
+                label="History"
+                target={{ to: "search" }}
+                current={null}
+                onNavigate={noop}
+              />
+              <SidebarItem
+                icon={BookA}
+                label="Dictionary"
+                target={{ to: "search" }}
+                current={null}
+                onNavigate={noop}
+              />
+            </ul>
+          </SidebarSection>
+        }
+      >
+        {home()}
       </Frame>
     ),
   },
