@@ -1,10 +1,13 @@
 import type { ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { BadgeCheck } from "lucide-react";
+import { BadgeCheck, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
-import { domainCoversRedirect } from "@/client/components/oauth/clientSite";
+import {
+  domainCoversRedirect,
+  isLoopbackHost,
+} from "@/client/components/oauth/clientSite";
 import {
   DATE_CELL,
   DateCell,
@@ -66,51 +69,92 @@ export function mcpConnectionSearchText(connection: McpConnection) {
   ];
 }
 
-/** The client's name, and its verified domain or where it sends access. */
-function ClientCell({ connection }: { connection: McpConnection }) {
+/**
+ * Whether the connections are in more than one organization. Most people
+ * are in one, and a column that says its name on every row says nothing.
+ */
+export function spansOrganizations(
+  connections: readonly McpConnection[],
+): boolean {
+  return (
+    new Set(connections.map((connection) => connection.organizationName)).size >
+    1
+  );
+}
+
+/**
+ * Who vouches for the client's name, and where it sends access: the
+ * domain that publishes its details when that covers where access goes; a
+ * warning when it doesn't, or when nobody vouches for it and access goes
+ * to another site. A client that registered itself and sends access back
+ * to the computer it runs on (a CLI, a desktop app) is simply on the
+ * person's computer: it can't send access anywhere else, and they approved
+ * it there. `local` false leaves that line out, for a list that is only
+ * such apps.
+ */
+function ClientOrigin({
+  connection,
+  local,
+}: {
+  connection: McpConnection;
+  local: boolean;
+}) {
+  const { clientDomain: domain, redirectHost: host } = connection;
+  if (domain && domainCoversRedirect(domain, host)) {
+    return (
+      <>
+        <BadgeCheck className="size-3 shrink-0 text-success" />
+        <span className="truncate">{domain}</span>
+      </>
+    );
+  }
+  if (!domain && isLoopbackHost(host)) {
+    return local ? <span className="truncate">On your computer</span> : null;
+  }
   return (
     <>
-      <p className="truncate font-medium">{connection.clientName}</p>
-      <p className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-        {connection.clientDomain &&
-        domainCoversRedirect(
-          connection.clientDomain,
-          connection.redirectHost,
-        ) ? (
-          <>
-            <BadgeCheck className="size-3 shrink-0 text-success" />
-            <span className="truncate">{connection.clientDomain}</span>
-          </>
-        ) : (
-          <span className="truncate">
-            {connection.clientDomain ?? "Unverified"} · sends to{" "}
-            {connection.redirectHost}
-          </span>
-        )}
-      </p>
+      <TriangleAlert className="size-3 shrink-0 text-warning-foreground dark:text-warning" />
+      <span className="truncate">
+        {domain
+          ? `Published on ${domain}, sends access to ${host}`
+          : `Unverified · sends access to ${host}`}
+      </span>
     </>
   );
 }
 
-export function clientColumn(label: string): ColumnDef<McpConnection> {
+/** The client's name, and under it who vouches for it (`ClientOrigin`). */
+function ClientCell({
+  connection,
+  local,
+}: {
+  connection: McpConnection;
+  local: boolean;
+}) {
+  const origin = ClientOrigin({ connection, local });
+  return (
+    <>
+      <p className="truncate font-medium">{connection.clientName}</p>
+      {origin ? (
+        <p className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+          {origin}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+export function clientColumn(
+  label: string,
+  { local = true }: { local?: boolean } = {},
+): ColumnDef<McpConnection> {
   return {
     id: "client",
     accessorFn: (connection) => connection.clientName,
     header: ({ column }) => <SortableHeader column={column} label={label} />,
-    meta: { label, cellClassName: "max-w-[280px]" },
+    meta: { label, cellClassName: "max-w-[360px]" },
     cell: ({ row: { original: connection } }) => (
-      <ClientCell connection={connection} />
-    ),
-  };
-}
-
-export function createdAtColumn(label: string): ColumnDef<McpConnection> {
-  return {
-    accessorKey: "createdAt",
-    header: ({ column }) => <SortableHeader column={column} label={label} />,
-    meta: { label, cellClassName: DATE_CELL },
-    cell: ({ row: { original: connection } }) => (
-      <DateCell value={connection.createdAt} />
+      <ClientCell connection={connection} local={local} />
     ),
   };
 }

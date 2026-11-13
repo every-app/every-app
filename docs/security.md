@@ -221,7 +221,8 @@ From `docs/hosted-vision.md`, section 3:
     organization, and the Gateway can't narrow a token: an app allowed for
     Search Console could also call Gmail. Allowing an app is a yes or no.
     The Allow page shows only the scopes the app lists; Your connections →
-    Accounts lists every scope the connection holds. Reconnect there allows
+    Accounts says what the connection holds in a few words on its row,
+    and lists every scope in the row's details. Reconnect there allows
     each app the person already allowed for what it lists now, with no
     page per app, since that page couldn't limit the app either. An app
     the person hasn't allowed can't use the connection at all. On self-host only the

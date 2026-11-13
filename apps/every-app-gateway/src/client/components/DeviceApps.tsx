@@ -4,13 +4,13 @@ import { LogOut } from "lucide-react";
 import { ConfirmDialog } from "@/client/components/ConfirmDialog";
 import {
   clientColumn,
-  createdAtColumn,
   isNative,
   lastUsedColumn,
   mcpConnectionSearchText,
   type McpConnection,
   organizationColumn,
   revokeColumn,
+  spansOrganizations,
   useMcpConnections,
   useRevokeMcpConnection,
 } from "@/client/components/McpConnections";
@@ -33,13 +33,15 @@ export function DeviceApps() {
     () => (connectionsQuery.data?.connections ?? []).filter(isNative),
     [connectionsQuery.data],
   );
+  const withOrganization = spansOrganizations(devices);
   const columns = useMemo(
     () =>
       deviceColumns({
+        withOrganization,
         onRevoke: setSigningOut,
         isRevoking: revokeMutation.isPending,
       }),
-    [revokeMutation.isPending],
+    [withOrganization, revokeMutation.isPending],
   );
   const search = useTableSearch(devices, mcpConnectionSearchText, "apps");
   const table = useDataTable({
@@ -86,35 +88,43 @@ export function DeviceApps() {
   );
 }
 
-/** A native app's row: the app on the device, and the one app it opens. */
-function deviceColumns(actions: {
+/**
+ * A native app's row: the app on the device, the one app it opens, and
+ * when it was last used. Every one of them runs on the person's own
+ * device, so the row doesn't say so; the organization is a column only
+ * for someone signed in to several.
+ */
+function deviceColumns({
+  withOrganization,
+  ...actions
+}: {
+  withOrganization: boolean;
   onRevoke: (connection: McpConnection) => void;
   isRevoking: boolean;
 }): ColumnDef<McpConnection>[] {
   return [
-    clientColumn("App"),
+    clientColumn("App", { local: false }),
     {
       id: "opens",
       header: "Opens",
       enableSorting: false,
-      meta: { cellClassName: "max-w-[240px]" },
+      meta: { cellClassName: "max-w-[360px] truncate" },
       cell: ({ row: { original: connection } }) =>
         connection.app ? (
           <>
-            <p className="truncate">{connection.app.name}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {connection.kind === "dev"
-                ? "Linked dev: its providers and services, as you"
-                : connection.app.hostname}
-            </p>
+            {connection.app.name}
+            {connection.kind === "dev" ? (
+              <span className="text-muted-foreground">
+                {" · "}for local development
+              </span>
+            ) : null}
           </>
         ) : (
           // The app is gone; the row is revoked with it.
           <span className="text-muted-foreground">Removed app</span>
         ),
     },
-    organizationColumn,
-    createdAtColumn("Signed in"),
+    ...(withOrganization ? [organizationColumn] : []),
     lastUsedColumn,
     revokeColumn({ icon: <LogOut />, label: "Sign out", ...actions }),
   ];

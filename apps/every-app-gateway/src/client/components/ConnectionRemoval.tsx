@@ -29,9 +29,12 @@ export interface AppAccess<C extends Removable> {
  */
 export function useConnectionRemoval<C extends Removable>({
   person,
+  name = (connection) => connection.providerName,
   onChanged,
 }: {
   person: ((connection: C) => string) | null;
+  /** How the dialogs name a connection, when the list names it by more than its provider. */
+  name?: (connection: C) => string;
   onChanged: () => Promise<unknown>;
 }) {
   const [disconnecting, setDisconnecting] = useState<C | null>(null);
@@ -55,9 +58,7 @@ export function useConnectionRemoval<C extends Removable>({
       toast.error(getRuleErrorMessage(error, "Failed to remove access")),
   });
   const whose = (connection: C) =>
-    person
-      ? `${person(connection)}'s ${connection.providerName}`
-      : connection.providerName;
+    person ? `${person(connection)}'s ${name(connection)}` : name(connection);
   const account = person ? "this person's account" : "this account";
 
   const dialogs = (

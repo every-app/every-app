@@ -536,7 +536,7 @@ deletes every connection to it. A member losing an app, or the app being
 deleted, removes only that app's access. A person disconnects in
 Your connections → Accounts, which lists each connection once with the apps
 allowed to use it. Disconnect stops every app at once, and one app's access
-can be removed on its own. An owner or admin does the same for anyone's
+can be removed on its own, from the connection's menu or its details. An owner or admin does the same for anyone's
 connection in Manage workspace → Providers.
 
 <!-- oauth-clients:begin (generated from packages/sdk/src/internal/oauthPresets.ts by capabilitiesDoc.test.ts) -->

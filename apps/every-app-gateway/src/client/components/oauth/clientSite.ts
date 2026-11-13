@@ -1,5 +1,5 @@
 /** RFC 8252 §7.3 loopback: `localhost`, 127.0.0.0/8 and `::1`. */
-function isLoopbackHost(host: string): boolean {
+export function isLoopbackHost(host: string): boolean {
   const lower = host.toLowerCase();
   if (lower === "localhost" || lower === "::1" || lower === "[::1]") {
     return true;

@@ -2,6 +2,7 @@ import {
   isRemoteMcpProviderIdOf,
   providerSettingPrefix,
 } from "@every-app/sdk/internal";
+import { productKey, productName } from "./productNames";
 
 /**
  * Pure helpers behind Manage workspace → Providers and Your connections →
@@ -37,21 +38,138 @@ interface ListedConnection {
   needsReconnect: boolean;
 }
 
+/** The app whose own remote MCP server (`<app>-mcp`) this connection is to, if one is allowed to use it. */
+function ownApp<C extends ListedConnection>(
+  connection: C,
+): C["apps"][number] | undefined {
+  return connection.apps.find((app) =>
+    isRemoteMcpProviderIdOf(connection.providerId, app.id),
+  );
+}
+
 /**
- * How a connection reads in a list: the account's name, and the line under
- * it. An app's own remote MCP server (`<app>-mcp`) is named after the app
- * that uses it ("elevenlabs-mcp MCP server" reads as "ElevenLabs").
+ * How a connection reads in a list: the account's name, the line under it
+ * (how the provider names the account, when it does), and the id its brand
+ * mark is listed under. An app's own remote MCP server (`<app>-mcp`) is
+ * named after the app that uses it ("elevenlabs-mcp MCP server" reads as
+ * "ElevenLabs"), and an app nobody named (its name is still its id) by the
+ * product's own spelling when the id is a known product's ("stripe" reads
+ * as "Stripe").
  */
 export function connectionName(connection: ListedConnection): {
   title: string;
   subtitle: string | null;
+  mark: string;
+  /** An app's own MCP server, for where there is room to say so. */
+  mcp: boolean;
 } {
-  const owner = connection.apps.find((app) =>
-    isRemoteMcpProviderIdOf(connection.providerId, app.id),
+  const owner = ownApp(connection);
+  if (!owner) {
+    return {
+      title: connection.providerName,
+      subtitle: connection.label,
+      mark: connection.providerId,
+      mcp: false,
+    };
+  }
+  const unnamed = owner.name.toLowerCase() === owner.id.toLowerCase();
+  return {
+    title: (unnamed ? productName(owner.id) : null) ?? owner.name,
+    subtitle: connection.label,
+    mark: productKey(owner.id),
+    mcp: true,
+  };
+}
+
+/**
+ * The apps worth naming under a connection: everyone allowed to use it,
+ * except when that is only the app whose own MCP server it is ("Context,
+ * used by Context" says nothing).
+ */
+export function appsToName<C extends ListedConnection>(
+  connection: C,
+): C["apps"] {
+  const owner = ownApp(connection);
+  return connection.apps.length === 1 && owner ? [] : connection.apps;
+}
+
+/** "OpenMail", "OpenMail and Scribe", "OpenMail, Scribe and CRM". */
+export function namesText(names: readonly string[]): string {
+  if (names.length <= 2) return names.join(" and ");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/** Scopes that only say who the person is, which every sign-in asks for. */
+const IDENTITY_SCOPES = new Set([
+  "openid",
+  "email",
+  "profile",
+  "userinfo.email",
+  "userinfo.profile",
+]);
+
+/** Google's products, by the first word of a scope ("gmail.modify"). */
+const GOOGLE_PRODUCTS: ReadonlyMap<string, string> = new Map([
+  ["gmail", "Gmail"],
+  ["calendar", "Calendar"],
+  ["drive", "Drive"],
+  ["documents", "Docs"],
+  ["spreadsheets", "Sheets"],
+  ["presentations", "Slides"],
+  ["contacts", "Contacts"],
+  ["tasks", "Tasks"],
+  ["forms", "Forms"],
+  ["chat", "Chat"],
+  ["meetings", "Meet"],
+  ["webmasters", "Search Console"],
+  ["analytics", "Analytics"],
+]);
+
+function permissionCount(count: number): string {
+  return count === 1 ? "1 permission" : `${count} permissions`;
+}
+
+/** Whether a scope is plainly a read ("api.read", "read_user", "calendar.readonly") or a write, or neither. */
+function readOrWrite(scope: string): "read" | "write" | null {
+  const words = scope.toLowerCase().split(/[^a-z]+/);
+  const read = words.some((word) => word === "read" || word === "readonly");
+  const write = words.includes("write");
+  if (read === write) return null;
+  return read ? "read" : "write";
+}
+
+/**
+ * What a connection's scopes let its apps do, in a few plain words, where
+ * the scopes say so themselves: Google's by product ("Calendar and
+ * Gmail"), and a list made only of reads and writes as "Read only" or
+ * "Read and write". Anything else is a count ("9 permissions"): a scope
+ * name this can't read isn't guessed at, and the full list is a click
+ * away. Scopes that only identify the person are left out, and a
+ * connection with nothing else holds a "Basic profile".
+ */
+export function accessSummary(connection: {
+  providerId: string;
+  scopes: readonly string[];
+}): string {
+  const scopes = connection.scopes.filter(
+    (scope) => !IDENTITY_SCOPES.has(scope.toLowerCase()),
   );
-  return owner
-    ? { title: owner.name, subtitle: connection.label ?? "MCP server" }
-    : { title: connection.providerName, subtitle: connection.label };
+  if (scopes.length === 0) {
+    return connection.scopes.length > 0 ? "Basic profile" : "None";
+  }
+  if (connection.providerId === "google-workspace") {
+    const products = scopes.map((scope) =>
+      GOOGLE_PRODUCTS.get(scope.toLowerCase().split(".")[0]!),
+    );
+    if (products.every((product) => product !== undefined)) {
+      return namesText([...new Set(products)].sort());
+    }
+    return permissionCount(scopes.length);
+  }
+  const kinds = scopes.map(readOrWrite);
+  if (kinds.includes(null)) return permissionCount(scopes.length);
+  if (!kinds.includes("write")) return "Read only";
+  return kinds.includes("read") ? "Read and write" : "Write only";
 }
 
 /** The list order: connections that need reconnecting first, then by name. */

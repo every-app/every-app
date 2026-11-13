@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  accessSummary,
+  appsToName,
   compareConnections,
   connectionName,
+  namesText,
   scopesText,
   splitList,
 } from "./oauthProviders";
@@ -43,14 +46,78 @@ describe("a connected account", () => {
     expect(connectionName(github)).toEqual({
       title: "GitHub",
       subtitle: "ada",
+      mark: "github-oauth",
+      mcp: false,
     });
     expect(connectionName(mcp)).toEqual({
       title: "ElevenLabs",
-      subtitle: "MCP server",
+      subtitle: null,
+      mark: "elevenlabs",
+      mcp: true,
     });
     // No app of its own allowed: the provider's name stays.
     expect(connectionName({ ...mcp, apps: [] }).title).toBe(
       "elevenlabs-mcp MCP server",
+    );
+  });
+
+  it("gives an app nobody named the product's own spelling, when its id is a known product's", () => {
+    const unnamed = (id: string) =>
+      connectionName({
+        ...mcp,
+        providerId: `${id}-mcp`,
+        apps: [{ id, name: id }],
+      }).title;
+    expect(unnamed("elevenlabs-mcp")).toBe("ElevenLabs");
+    expect(unnamed("stripe")).toBe("Stripe");
+    expect(unnamed("pscale")).toBe("PlanetScale");
+    // Not a known product: its own name stays.
+    expect(unnamed("treg")).toBe("treg");
+    // A name the person gave wins.
+    expect(
+      connectionName({
+        ...mcp,
+        providerId: "stripe-mcp",
+        apps: [{ id: "stripe", name: "Billing" }],
+      }).title,
+    ).toBe("Billing");
+  });
+
+  it("names the apps that use it only when that says something", () => {
+    expect(appsToName(mcp)).toEqual([]);
+    expect(appsToName(github)).toEqual(github.apps);
+    const shared = {
+      ...mcp,
+      apps: [...mcp.apps, { id: "crm", name: "CRM" }],
+    };
+    expect(appsToName(shared)).toEqual(shared.apps);
+    expect(namesText(["OpenMail"])).toBe("OpenMail");
+    expect(namesText(["OpenMail", "Scribe"])).toBe("OpenMail and Scribe");
+    expect(namesText(["A", "B", "C"])).toBe("A, B and C");
+  });
+
+  it("says what its scopes allow in plain words only where they say so themselves", () => {
+    const summary = (scopes: string[], providerId = "acme") =>
+      accessSummary({ providerId, scopes });
+    expect(summary(["api.read", "api.write"])).toBe("Read and write");
+    expect(summary(["a:read", "read_b", "c.readonly"])).toBe("Read only");
+    expect(summary(["a:write"])).toBe("Write only");
+    // One scope it can't read, and the whole list is a count.
+    expect(summary(["convai_read", "convai_write", "text_to_speech"])).toBe(
+      "3 permissions",
+    );
+    expect(summary(["mcp"])).toBe("1 permission");
+    expect(summary([])).toBe("None");
+    expect(summary(["openid", "email", "profile"])).toBe("Basic profile");
+    // Google's by product, the scopes that only identify the person left out.
+    expect(
+      summary(
+        ["gmail.modify", "calendar.readonly", "gmail.send", "userinfo.email"],
+        "google-workspace",
+      ),
+    ).toBe("Calendar and Gmail");
+    expect(summary(["gmail.send", "cloud-platform"], "google-workspace")).toBe(
+      "2 permissions",
     );
   });
 

@@ -169,6 +169,60 @@ describe("Agents", () => {
     expect(section("Apps on your devices")).toBeNull();
   });
 
+  it("says what each agent can reach in one line, and warns only where access leaves the person's computer unvouched", async () => {
+    mocks.listMyMcpConnections.mockResolvedValue({
+      connections: [
+        { ...CLAUDE, access: "write" },
+        {
+          ...CLAUDE,
+          access: "write",
+          id: "mcpc_cli",
+          clientName: "everyapp on ada-mbp.lan",
+          clientDomain: null,
+          redirectHost: "127.0.0.1",
+        },
+        {
+          ...CLAUDE,
+          id: "mcpc_remote",
+          clientName: "Notebook",
+          clientDomain: null,
+          redirectHost: "notebook.example.net",
+          apps: ["CRM", "OpenMail"],
+          access: "read",
+        },
+      ],
+    });
+    await render();
+    const rows = [...container.querySelectorAll("tbody tr")].map((row) =>
+      [...row.querySelectorAll("td")]
+        .slice(0, 2)
+        .map((cell) => cell.textContent?.trim()),
+    );
+    expect(rows).toEqual([
+      ["Claudeclaude.ai", "All apps · Read and write"],
+      ["everyapp on ada-mbp.lanOn your computer", "All apps · Read and write"],
+      [
+        "NotebookUnverified · sends access to notebook.example.net",
+        "CRM and OpenMail · Read only",
+      ],
+    ]);
+    // One organization isn't a column.
+    expect(section("Agents")!.textContent).not.toMatch(/Organization|Acme/);
+  });
+
+  it("names the organization once agents are in more than one", async () => {
+    mocks.listMyMcpConnections.mockResolvedValue({
+      connections: [
+        CLAUDE,
+        { ...CLAUDE, id: "mcpc_other", organizationName: "Globex" },
+      ],
+    });
+    await render();
+    const text = section("Agents")!.textContent ?? "";
+    expect(text).toContain("Organization");
+    expect(text).toContain("Globex");
+  });
+
   it("revokes an agent by its connection id", async () => {
     await render();
     await pressRowAction("Claude", "Revoke connection");

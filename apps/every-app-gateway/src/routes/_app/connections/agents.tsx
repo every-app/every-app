@@ -11,22 +11,22 @@ import {
 import { ErrorState } from "@/client/components/ErrorState";
 import {
   clientColumn,
-  createdAtColumn,
   isNative,
   lastUsedColumn,
   mcpConnectionSearchText,
   type McpConnection,
   organizationColumn,
   revokeColumn,
+  spansOrganizations,
   useMcpConnections,
   useRevokeMcpConnection,
 } from "@/client/components/McpConnections";
 import { SettingsSection } from "@/client/components/SettingsLayout";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
 import { useTableSearch } from "@/client/components/table/useTableSearch";
-import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import { authClient } from "@/client/auth-client";
+import { namesText } from "@/client/lib/oauthProviders";
 
 /**
  * Your connections → Agents: the AI apps (Claude, ChatGPT, Cursor…) the
@@ -44,34 +44,43 @@ const AGENTS = {
   hint: "Claude, ChatGPT and other AI apps that use your apps through this Gateway.",
 };
 
-function agentColumns(actions: {
+/** "All apps", or the apps by name. */
+function appsText(apps: McpConnection["apps"]): string {
+  if (apps === "all") return "All apps";
+  return apps.length > 0 ? namesText(apps) : "No apps";
+}
+
+/**
+ * An agent's row: who it is, what it can reach in one line (which apps,
+ * and whether it can change things), and when it last did. The
+ * organization is a column only for someone with agents in several.
+ */
+function agentColumns({
+  withOrganization,
+  ...actions
+}: {
+  withOrganization: boolean;
   onRevoke: (connection: McpConnection) => void;
   isRevoking: boolean;
 }): ColumnDef<McpConnection>[] {
   return [
     clientColumn("Agent"),
-    organizationColumn,
+    ...(withOrganization ? [organizationColumn] : []),
     {
-      id: "apps",
-      header: "Apps",
-      enableSorting: false,
-      meta: { cellClassName: "max-w-[240px]" },
-      cell: ({ row: { original: connection } }) =>
-        connection.apps === "all"
-          ? "All apps"
-          : connection.apps.join(", ") || "None",
-    },
-    {
-      accessorKey: "access",
+      id: "access",
       header: "Access",
       enableSorting: false,
+      meta: { cellClassName: "max-w-[360px] truncate" },
       cell: ({ row: { original: connection } }) => (
-        <Badge variant="secondary">
-          {connection.access === "write" ? "Read & write" : "Read only"}
-        </Badge>
+        <>
+          {appsText(connection.apps)}
+          <span className="text-muted-foreground">
+            {" · "}
+            {connection.access === "write" ? "Read and write" : "Read only"}
+          </span>
+        </>
       ),
     },
-    createdAtColumn("Connected"),
     lastUsedColumn,
     revokeColumn({ icon: <Unplug />, label: "Revoke connection", ...actions }),
   ];
@@ -93,13 +102,15 @@ function AgentsTab() {
       ),
     [connectionsQuery.data],
   );
+  const withOrganization = spansOrganizations(agents);
   const columns = useMemo(
     () =>
       agentColumns({
+        withOrganization,
         onRevoke: setRevoking,
         isRevoking: revokeMutation.isPending,
       }),
-    [revokeMutation.isPending],
+    [withOrganization, revokeMutation.isPending],
   );
   const search = useTableSearch(agents, mcpConnectionSearchText, "agents");
   const table = useDataTable({

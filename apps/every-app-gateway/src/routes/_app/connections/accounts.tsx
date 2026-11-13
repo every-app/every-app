@@ -1,17 +1,18 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { RotateCw, Unplug } from "lucide-react";
+import { PanelRight, RotateCw, Unplug, UserMinus } from "lucide-react";
+import { cn } from "cn";
 import { toast } from "sonner";
-import { ConnectionApps } from "@/client/components/ConnectionApps";
+import { ConnectedAccountSheet } from "@/client/components/ConnectedAccountSheet";
 import {
   useConnectionRemoval,
   type AppAccess,
 } from "@/client/components/ConnectionRemoval";
-import { ConnectionStatusBadge } from "@/client/components/ConnectionStatusBadge";
 import { DeviceApps } from "@/client/components/DeviceApps";
 import { ErrorState } from "@/client/components/ErrorState";
+import { ProviderTile } from "@/client/components/ProviderIcon";
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
 import {
   SettingsSection,
@@ -21,6 +22,7 @@ import {
   CardSlot,
   DataTable,
   useDataTable,
+  useInDataTableCard,
 } from "@/client/components/table/DataTable";
 import {
   DATE_CELL,
@@ -29,6 +31,7 @@ import {
 } from "@/client/components/table/DateCell";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
 import { useTableSearch } from "@/client/components/table/useTableSearch";
+import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import {
   DropdownMenuItem,
@@ -40,9 +43,11 @@ import {
   useConnectedAccounts,
 } from "@/client/hooks/useConnectedAccounts";
 import {
+  accessSummary,
+  appsToName,
   compareConnections,
   connectionName,
-  scopesText,
+  namesText,
 } from "@/client/lib/oauthProviders";
 import { ReconnectOutcome } from "@/schemas/app-access";
 import {
@@ -52,19 +57,24 @@ import {
 
 /**
  * Your connections → Accounts
- * (docs/design/2026-11-oauth-one-connection.md): the OAuth accounts this person connected through the Gateway, one row per
- * provider, with the scopes the connection holds and the apps they allowed
- * to use it. One app's access can be taken away, and Disconnect stops every
- * app at once. People connect from inside an app.
+ * (docs/design/2026-11-oauth-one-connection.md): the OAuth accounts this
+ * person connected through the Gateway, one row per provider. People
+ * connect from inside an app.
  *
  * What a person comes here for is to see what their apps can reach, fix a
- * connection that stopped working, or take access away, so the ones that
- * need reconnecting come first with Reconnect on the row, an app's own MCP
- * server is named after the app, and a long scope list shows two and the
- * rest on request. Every row's menu has Reconnect too: on a healthy
- * connection it asks the provider again (`fresh`), and the new grant
- * replaces the person's one connection to it. Under them, the apps signed
- * in on their devices.
+ * connection that stopped working, or take access away, so a row is one
+ * line of what answers that: the account by the name people know it by,
+ * what it lets apps do in a few words, and when it was last used. The
+ * apps allowed to use it are named only when that says something (not
+ * "Context, used by Context"), and a row says how it stands only when it
+ * needs something: the ones to reconnect come first, with Reconnect on
+ * the row. The rest is behind the row (`ConnectedAccountSheet`): every
+ * permission in the provider's own names, when it was connected, and each
+ * app with the button that takes its access away. The row's menu has
+ * those too, with Reconnect (on a healthy connection it asks the provider
+ * again, `fresh`, and the new grant replaces the person's one connection
+ * to it) and Disconnect, which stops every app at once. Under the
+ * accounts, the apps signed in on their devices.
  */
 export const Route = createFileRoute("/_app/connections/accounts")({
   component: AccountsTab,
@@ -84,12 +94,26 @@ function accountSearchText(account: Account) {
   ];
 }
 
+/** Keeps a click on a row's own controls from also opening the row. */
+function RowControls({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="flex items-center justify-end gap-2"
+      onClick={(event) => event.stopPropagation()}
+    >
+      {children}
+    </div>
+  );
+}
+
 function accountColumns({
+  onDetails,
   onDisconnect,
   onRemoveApp,
   onReconnect,
   isReconnecting,
 }: {
+  onDetails: (account: Account) => void;
   onDisconnect: (account: Account) => void;
   onRemoveApp: (access: AppAccess<Account>) => void;
   onReconnect: (account: Account, options: { fresh: boolean }) => void;
@@ -105,53 +129,22 @@ function accountColumns({
       header: ({ column }) => (
         <SortableHeader column={column} label="Account" />
       ),
-      meta: { label: "Account", cellClassName: "max-w-[320px]" },
+      meta: { label: "Account", cellClassName: "max-w-[420px]" },
       cell: ({ row: { original: account } }) => (
-        <>
-          <AccountName account={account} />
-          {account.apps.length > 0 ? (
-            // The label keeps its place when the apps wrap onto more lines.
-            <div className="mt-1 flex items-baseline gap-1.5 text-xs text-muted-foreground">
-              <span className="shrink-0">Used by</span>
-              <ConnectionApps
-                apps={account.apps}
-                onRemove={(app) => onRemoveApp({ connection: account, app })}
-              />
-            </div>
-          ) : (
-            <p className="mt-1 text-xs text-muted-foreground">
-              No app can use it yet.
-            </p>
-          )}
-        </>
+        <AccountName account={account} />
       ),
     },
     {
       id: "access",
       header: "Access",
       enableSorting: false,
-      meta: { cellClassName: "max-w-[320px] whitespace-normal" },
-      cell: ({ row: { original: account } }) => (
-        <Scopes scopes={account.scopes} />
-      ),
-    },
-    {
-      accessorKey: "status",
-      header: ({ column }) => <SortableHeader column={column} label="Status" />,
-      meta: { label: "Status", card: CardSlot.BareDetail },
-      cell: ({ row: { original: account } }) => (
-        <ConnectionStatusBadge connection={account} />
-      ),
-    },
-    {
-      accessorKey: "createdAt",
-      header: ({ column }) => (
-        <SortableHeader column={column} label="Connected" />
-      ),
-      meta: { label: "Connected", cellClassName: DATE_CELL },
-      cell: ({ row: { original: account } }) => (
-        <DateCell value={account.createdAt} />
-      ),
+      meta: { cellClassName: "max-w-[260px] truncate" },
+      cell: ({ row: { original: account } }) =>
+        account.scopes.length > 0 ? (
+          accessSummary(account)
+        ) : (
+          <span className="text-muted-foreground">None</span>
+        ),
     },
     {
       id: "lastUsedAt",
@@ -178,13 +171,15 @@ function accountColumns({
       },
       cell: ({ row: { original: account } }) =>
         account.needsReconnect ? (
-          <Button
-            size="sm"
-            disabled={isReconnecting}
-            onClick={() => onReconnect(account, { fresh: false })}
-          >
-            Reconnect
-          </Button>
+          <RowControls>
+            <Button
+              size="sm"
+              disabled={isReconnecting}
+              onClick={() => onReconnect(account, { fresh: false })}
+            >
+              Reconnect
+            </Button>
+          </RowControls>
         ) : null,
     },
     {
@@ -193,70 +188,89 @@ function accountColumns({
       enableSorting: false,
       meta: { headerClassName: "w-10" },
       cell: ({ row: { original: account } }) => (
-        <RowActionsMenu label={`Actions for ${connectionName(account).title}`}>
-          <DropdownMenuItem
-            disabled={isReconnecting}
-            onClick={() => onReconnect(account, { fresh: true })}
+        <RowControls>
+          <RowActionsMenu
+            label={`Actions for ${connectionName(account).title}`}
           >
-            <RotateCw />
-            Reconnect
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            variant="destructive"
-            onClick={() => onDisconnect(account)}
-          >
-            <Unplug />
-            Disconnect
-          </DropdownMenuItem>
-        </RowActionsMenu>
+            <DropdownMenuItem onClick={() => onDetails(account)}>
+              <PanelRight />
+              View details
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={isReconnecting}
+              onClick={() => onReconnect(account, { fresh: true })}
+            >
+              <RotateCw />
+              Reconnect
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {appsToName(account).map((app) => (
+              <DropdownMenuItem
+                key={app.rowId}
+                onClick={() => onRemoveApp({ connection: account, app })}
+              >
+                <UserMinus />
+                Remove {app.name}'s access
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => onDisconnect(account)}
+            >
+              <Unplug />
+              Disconnect
+            </DropdownMenuItem>
+          </RowActionsMenu>
+        </RowControls>
       ),
     },
   ];
 }
 
-function AccountName({ account }: { account: Account }) {
-  const name = connectionName(account);
-  return (
-    <>
-      <p className="truncate font-medium">{name.title}</p>
-      {name.subtitle ? (
-        <p className="truncate text-xs text-muted-foreground">
-          {name.subtitle}
-        </p>
-      ) : null}
-    </>
-  );
-}
-
-/** Scopes shown before "+N more". */
-const SCOPES_SHOWN = 2;
-
 /**
- * What the connection lets its apps do: the provider's own scope names,
- * the first two and the rest on request, so a long list (an MCP server's
- * seven lines) doesn't swamp the row.
+ * The account's mark and name, with how it stands when it needs
+ * something, and one quiet line under it for what isn't obvious: which
+ * account it is at the provider, and the apps that use it.
  */
-function Scopes({ scopes }: { scopes: readonly string[] }) {
-  const [open, setOpen] = useState(false);
-  const hidden = scopes.length - SCOPES_SHOWN;
-  if (open || hidden <= 0) {
-    return <span className="font-mono text-xs">{scopesText(scopes)}</span>;
-  }
+function AccountName({ account }: { account: Account }) {
+  // A card has the row's width to itself: the line wraps, and Reconnect
+  // beside the name already says how the account stands.
+  const inCard = useInDataTableCard();
+  const name = connectionName(account);
+  const apps = appsToName(account);
+  const usedBy =
+    account.apps.length === 0
+      ? "No app uses it yet"
+      : apps.length > 0
+        ? `Used by ${namesText(apps.map((app) => app.name))}`
+        : null;
+  const detail = [name.subtitle, usedBy].filter(Boolean).join(" · ");
   return (
-    <span className="text-xs">
-      <span className="font-mono">
-        {scopesText(scopes.slice(0, SCOPES_SHOWN))}
-      </span>{" "}
-      <button
-        type="button"
-        className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-        aria-label={`Show all ${scopes.length} scopes`}
-        onClick={() => setOpen(true)}
-      >
-        +{hidden} more
-      </button>
-    </span>
+    <div className="flex min-w-0 items-center gap-3">
+      <ProviderTile id={name.mark} name={name.title} />
+      <div className="min-w-0">
+        <p className="flex min-w-0 items-center gap-2">
+          <span className="truncate font-medium">{name.title}</span>
+          {account.needsReconnect ? (
+            inCard ? null : (
+              <Badge variant="warning">Needs reconnect</Badge>
+            )
+          ) : account.status === "expired" ? (
+            <Badge variant="secondary">Expired</Badge>
+          ) : null}
+        </p>
+        {detail ? (
+          <p
+            className={cn(
+              "text-xs text-muted-foreground",
+              inCard ? "wrap-anywhere" : "truncate",
+            )}
+          >
+            {detail}
+          </p>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -267,8 +281,12 @@ function AccountsTab() {
     queryClient.invalidateQueries({ queryKey: CONNECTED_ACCOUNTS_KEY });
   const removal = useConnectionRemoval<Account>({
     person: null,
+    name: (account) => connectionName(account).title,
     onChanged: refresh,
   });
+  // The account whose details are open, by id: the sheet follows a refresh,
+  // and closes when its account is disconnected.
+  const [detailsId, setDetailsId] = useState<string | null>(null);
   const reconnectMutation = useMutation({
     mutationFn: reconnectConnection,
     onSuccess: async (result) => {
@@ -284,21 +302,26 @@ function AccountsTab() {
   });
   const { mutate: reconnect, isPending: isReconnecting } = reconnectMutation;
 
+  const onReconnect = (account: Account, { fresh }: { fresh: boolean }) =>
+    reconnect({ data: { providerId: account.providerId, fresh } });
   const columns = useMemo(
     () =>
       accountColumns({
+        onDetails: (account) => setDetailsId(account.id),
         onDisconnect: removal.askDisconnect,
         onRemoveApp: removal.askRemoveApp,
         onReconnect: (account, { fresh }) =>
           reconnect({ data: { providerId: account.providerId, fresh } }),
         isReconnecting,
       }),
+    // `removal`'s askers are state setters, the same on every render.
     [reconnect, isReconnecting],
   );
   const accounts = useMemo(
     () => [...(accountsQuery.data?.connections ?? [])].sort(compareConnections),
     [accountsQuery.data],
   );
+  const details = accounts.find((account) => account.id === detailsId);
   const search = useTableSearch(accounts, accountSearchText, "accounts");
   const table = useDataTable({
     data: search.rows,
@@ -312,7 +335,7 @@ function AccountsTab() {
       <SettingsTab>
         <SettingsSection
           title="Connected accounts"
-          hint="Accounts you've connected, such as Gmail, and the apps you allow to use them."
+          hint="Accounts you've connected, such as Gmail, and what your apps can do with them."
         >
           <DataTable
             table={table}
@@ -327,6 +350,8 @@ function AccountsTab() {
               ) : undefined
             }
             search={search.search}
+            onRowClick={(row) => setDetailsId(row.original.id)}
+            activeRowId={details?.id}
             empty={{
               title: "No connected accounts yet",
               description: "Connect one from inside an app.",
@@ -336,6 +361,17 @@ function AccountsTab() {
 
         <DeviceApps />
       </SettingsTab>
+
+      {details ? (
+        <ConnectedAccountSheet
+          account={details}
+          isReconnecting={isReconnecting}
+          onReconnect={onReconnect}
+          onRemoveApp={removal.askRemoveApp}
+          onDisconnect={removal.askDisconnect}
+          onClose={() => setDetailsId(null)}
+        />
+      ) : null}
 
       {removal.dialogs}
     </>

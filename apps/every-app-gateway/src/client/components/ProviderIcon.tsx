@@ -27,6 +27,7 @@ import {
   SiOpenrouter,
   SiPaddle,
   SiPerplexity,
+  SiPlanetscale,
   SiPosthog,
   SiReplicate,
   SiShopify,
@@ -92,6 +93,8 @@ const MARKS: ReadonlyMap<string, IconType> = new Map([
   ["turso", SiTurso],
   ["turso-db", SiTurso],
   ["neon", SiNeon],
+  // Not in the catalog: a product people add as an MCP app.
+  ["planetscale", SiPlanetscale],
   ["mapbox", SiMapbox],
   ["brave-search", SiBrave],
 ]);
@@ -106,6 +109,26 @@ export function ProviderMark({
 }) {
   const Mark = MARKS.get(id);
   return Mark ? <Mark aria-hidden className={className} /> : null;
+}
+
+/**
+ * A row's small tile in a table: the brand mark listed under `id`, else
+ * the first letter of `name`.
+ */
+export function ProviderTile({ id, name }: { id: string; name: string }) {
+  const Mark = MARKS.get(id);
+  return (
+    <span
+      aria-hidden
+      className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-background text-xs font-medium text-muted-foreground"
+    >
+      {Mark ? (
+        <Mark className="size-3.5 text-foreground" />
+      ) : (
+        (Array.from(name.trim())[0]?.toUpperCase() ?? "?")
+      )}
+    </span>
+  );
 }
 
 /**

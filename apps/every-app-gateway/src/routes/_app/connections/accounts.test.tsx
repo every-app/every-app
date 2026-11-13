@@ -1,16 +1,19 @@
 // @vitest-environment happy-dom
 /**
  * Your connections → Accounts rendered for real with the server functions
- * mocked: one row per connection with its provider, account, scopes and
- * the apps allowed to use it; one app's access taken away by the
+ * mocked: one row per connection with its provider and account, what it
+ * lets apps do in a few words, and the apps allowed to use it where that
+ * says something; a status only on a row that needs something; one app's
+ * access taken away from the row's menu or its details, by the
  * connection's id and the app's row id; Disconnect by connection id from
  * the row's menu, saying every app stops; Reconnect on the row where an
  * app needs it, and in every row's menu as a fresh grant; the ones that
- * need reconnecting first; an app's MCP server named after the app; long
- * scope lists shortened; no Connect button, no organization connect, no
- * background; no token is ever on the page. Under them, native apps in
- * "Apps on your devices" with the one app each opens, signed out by
- * revoking that connection by id; the section is absent until there is one.
+ * need reconnecting first; an app's MCP server named after the app; every
+ * scope in the details behind the row; no Connect button, no organization
+ * connect, no background; no token is ever on the page. Under them,
+ * native apps in "Apps on your devices" with the one app each opens,
+ * signed out by revoking that connection by id; the section is absent
+ * until there is one.
  */
 import { act, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -197,9 +200,9 @@ async function pressRowAction(rowLabel: string, item: string) {
 
 /** Press the open confirmation's button. */
 async function confirm(label: string) {
-  const dialog = document.body.querySelector(
-    '[role="alertdialog"], [role="dialog"]',
-  )!;
+  // The confirmation, which can sit over an account's open details.
+  const dialog = (document.body.querySelector('[role="alertdialog"]') ??
+    document.body.querySelector('[role="dialog"]'))!;
   const button = [...dialog.querySelectorAll("button")].find(
     (element) => element.textContent?.trim() === label,
   )!;
@@ -208,40 +211,63 @@ async function confirm(label: string) {
 }
 
 describe("Connected accounts", () => {
-  it("lists each connection once with its account, the apps allowed to use it and its scopes, and no way to connect here", async () => {
+  it("lists each connection once on one line: its account, the apps that use it, and what it lets them do in plain words", async () => {
     await render();
     const titles = [...container.querySelectorAll("tbody tr")].map(
-      (row) => row.querySelector("td p")?.textContent,
+      (row) => row.querySelector("td p span")?.textContent,
     );
     // The one that needs reconnecting first, then by name.
     expect(titles).toEqual(["PostHog", "GitHub", "Google Workspace"]);
     expect(rowFor("Google Workspace").slice(0, 3)).toEqual([
-      "Google Workspaceada@acme.comUsed byOpenMailOpenSEO",
-      "gmail.modify, gmail.send +1 more",
-      "Connected",
+      "Google Workspaceada@acme.com · Used by OpenMail and OpenSEO",
+      "Gmail and Search Console",
+      "Never",
     ]);
-    expect(rowFor("GitHub").slice(0, 3)).toEqual([
-      "GitHubadaNo app can use it yet.",
-      "repo",
-      "Expired",
+    // A scope that doesn't say what it is isn't guessed at.
+    expect(rowFor("GitHub").slice(0, 2)).toEqual([
+      "GitHubExpiredada · No app uses it yet",
+      "1 permission",
     ]);
+    // Nothing says "Connected": a row says how it stands only when it needs something.
+    expect(body()).not.toMatch(/\bConnected\b(?! accounts)/);
+    expect(container.querySelector("tbody .font-mono")).toBeNull();
     expect(container.querySelectorAll("a")).toHaveLength(0);
     expect(body()).not.toMatch(/Connect Google|background|organization/i);
   });
 
-  it("names an app's MCP server after the app, and shows every scope on request", async () => {
+  it("names an app's MCP server after the app, without repeating the app as its user", async () => {
     await render();
-    expect(rowFor("PostHog").slice(0, 3)).toEqual([
-      "PostHogMCP serverUsed byPostHog",
-      "a:read, b:read +2 more",
-      "Needs reconnect",
+    expect(rowFor("PostHog").slice(0, 2)).toEqual([
+      "PostHogNeeds reconnect",
+      "Read and write",
     ]);
     expect(body()).not.toContain("posthog MCP server");
-    const more = container.querySelector<HTMLElement>(
-      'tbody [aria-label="Show all 4 scopes"]',
+    expect(body()).not.toContain("Used by PostHog");
+  });
+
+  it("opens an account's details from its row: every scope, and each app with the button that takes its access away", async () => {
+    await render();
+    const row = [...container.querySelectorAll<HTMLElement>("tbody tr")].find(
+      (element) => element.textContent?.includes("Google Workspace"),
     )!;
-    await act(async () => more.click());
-    expect(rowFor("PostHog")[1]).toBe("a:read, b:read, c:read, d:write");
+    await act(async () => row.click());
+    await settle();
+    const sheet = document.body.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(
+      [...sheet.querySelectorAll('[aria-label="Permissions"] li')].map(
+        (item) => item.textContent,
+      ),
+    ).toEqual(["gmail.modify", "gmail.send", "webmasters.readonly"]);
+    const remove = sheet.querySelector<HTMLElement>(
+      `[aria-label="Remove OpenMail's access"]`,
+    )!;
+    await act(async () => remove.click());
+    await settle();
+    expect(body()).toContain("Remove OpenMail's access to Google Workspace?");
+    await confirm("Remove access");
+    expect(mocks.removeConnectionApp.mock.calls[0]![0]).toEqual({
+      data: { connectionId: "conn_1", appRowId: "app_mail" },
+    });
   });
 
   it("reconnects from the row where an app needs it, without forcing the provider", async () => {
@@ -261,10 +287,13 @@ describe("Connected accounts", () => {
     await render();
     const items = await openRowMenu("Google Workspace");
     expect(items.map((item) => item.textContent?.trim())).toEqual([
+      "View details",
       "Reconnect",
+      "Remove OpenMail's access",
+      "Remove OpenSEO's access",
       "Disconnect",
     ]);
-    await act(async () => items[0]!.click());
+    await act(async () => items[1]!.click());
     await settle();
     expect(mocks.reconnectConnection).toHaveBeenCalledOnce();
     expect(mocks.reconnectConnection.mock.calls[0]![0]).toEqual({
@@ -272,13 +301,11 @@ describe("Connected accounts", () => {
     });
   });
 
-  it("takes one app's access away by the connection's id and the app's row id, then lists again", async () => {
+  it("takes one app's access away from the row's menu, by the connection's id and the app's row id, then lists again", async () => {
     await render();
-    const remove = container.querySelector<HTMLElement>(
-      `tbody [aria-label="Remove OpenSEO's access"]`,
-    )!;
-    await act(async () => remove.click());
-    await settle();
+    // No bare × on the row: the menu names the app, and the dialog the account.
+    expect(container.querySelector('tbody [aria-label^="Remove"]')).toBeNull();
+    await pressRowAction("Google Workspace", "Remove OpenSEO's access");
     expect(body()).toContain("Remove OpenSEO's access to Google Workspace?");
     expect(mocks.removeConnectionApp).not.toHaveBeenCalled();
     await confirm("Remove access");
@@ -356,8 +383,10 @@ describe("Apps on your devices", () => {
     expect(devices).not.toBeNull();
     const text = devices!.textContent ?? "";
     expect(text).toContain("OpenZen for Mac");
-    expect(text).toContain("openzen.example.com");
-    expect(text).toContain("Unverified");
+    expect(text).toContain("OpenZen");
+    // An app on the person's own device isn't a warning, and one
+    // organization isn't a column.
+    expect(text).not.toMatch(/Unverified|127\.0\.0\.1|Organization/);
     expect(body()).not.toContain("Claude");
   });
 
