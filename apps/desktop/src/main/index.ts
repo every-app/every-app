@@ -191,6 +191,8 @@ async function main(): Promise<void> {
     selfTest.state.running ? "Every App is checking your microphone and Mac audio. Stop the check in Settings, then start recording." : undefined;
 
   let updates: UpdateController | undefined;
+  /** Why the updater didn't start, in a build that has a feed. */
+  let updatesFailed: string | undefined;
   /** Restart into a downloaded update. The window hides instead of closing, so mark the quit
    * first, or the updater would wait for it forever; during a recording the controller defers. */
   const installUpdate = (): { deferred: boolean } => {
@@ -304,6 +306,16 @@ async function main(): Promise<void> {
     start: () => void startRecording({}).catch((e) => notifyError("Scribe couldn't start", e)),
     stop: () => void recording.stop().catch((e) => notifyError("Scribe couldn't stop", e)),
     checkForUpdates: () => {
+      if (!updates && updatesFailed) {
+        void dialog.showMessageBox({
+          type: "warning",
+          message: "The updater didn't start",
+          detail: `${app.getName()} ${app.getVersion()} can't check for updates: ${updatesFailed}`,
+          buttons: ["OK"],
+        });
+        log(`updates: Check for Updates… but the updater didn't start: ${updatesFailed}`);
+        return;
+      }
       if (!updates) {
         // No feed in this build (EVERYAPP_DESKTOP_UPDATE_URL wasn't set when it was built).
         void dialog.showMessageBox({
@@ -710,14 +722,20 @@ async function main(): Promise<void> {
   window.show();
   broadcast();
   shortcut.set(settings.value.recordShortcut);
-  updates = await createUpdater({
-    appUrl: () => auth.api?.appUrl,
-    accessToken: () => auth.accessToken(),
-    freshAccessToken: () => auth.freshAccessToken(),
-    canCheck: () => auth.state.status === "signedIn" && online.state === "online",
-    isRecording: () => recording.isActive,
-    log,
-  });
+  // A failed start must not stop the rest of launch: the app runs without updates and says why.
+  try {
+    updates = await createUpdater({
+      appUrl: () => auth.api?.appUrl,
+      accessToken: () => auth.accessToken(),
+      freshAccessToken: () => auth.freshAccessToken(),
+      canCheck: () => auth.state.status === "signedIn" && online.state === "online",
+      isRecording: () => recording.isActive,
+      log,
+    });
+  } catch (e) {
+    updatesFailed = e instanceof Error ? e.message : String(e);
+    log(`updates: the updater didn't start: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
+  }
   if (updates) {
     updates.on("change", broadcast);
     updates.on("ready", ({ version }) => window.send("update", { state: "ready", version }));

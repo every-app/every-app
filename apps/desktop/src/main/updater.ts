@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import { isDevFlavor, updateConfigPath } from "./config";
 import { feedUrlFrom } from "./updateAuth";
+import { electronUpdater } from "./updaterModule";
 import { fakeUpdater, UpdateController, type UpdateControllerOptions, type Updater } from "./updates";
 
 export type UpdaterContext = Omit<UpdateControllerOptions, "updater" | "feedUrl">;
@@ -23,7 +24,7 @@ export async function createUpdater(context: UpdaterContext): Promise<UpdateCont
   } catch {
     feedUrl = undefined;
   }
-  const { autoUpdater } = await import("electron-updater");
+  const { autoUpdater } = await electronUpdater();
   const log = context.log ?? (() => {});
   autoUpdater.logger = { info: (m: unknown) => log(`updater: ${String(m)}`), warn: (m: unknown) => log(`updater warn: ${String(m)}`), error: (m: unknown) => log(`updater error: ${String(m)}`), debug: () => {} };
   return new UpdateController({ ...context, feedUrl, updater: autoUpdater as unknown as Updater });
