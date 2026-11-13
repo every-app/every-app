@@ -28,6 +28,10 @@ export interface Settings {
   /** The floating recorder: a small pill in the screen's bottom-right corner while recording,
    * which shows the live transcript on hover. On by default. */
   floatingRecorder: boolean;
+  /** Ask "Still recording?" when a recording looks forgotten (the other side went quiet, the call
+   * app let go of the microphone, the calendar meeting is over), and stop if nobody answers. On
+   * by default. */
+  autoStop: boolean;
 }
 
 export type SettingsPatch = Partial<Settings>;
@@ -39,6 +43,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   recordShortcut: false,
   floatingRecorder: true,
+  autoStop: true,
 };
 
 export const MAX_REMINDER_LEAD_MINUTES = 30;

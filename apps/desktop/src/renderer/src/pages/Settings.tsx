@@ -65,6 +65,8 @@ export function SettingsPage() {
       onRecordShortcutChange={(recordShortcut) => change({ recordShortcut })}
       floatingRecorder={settings?.floatingRecorder}
       onFloatingRecorderChange={(floatingRecorder) => change({ floatingRecorder })}
+      autoStop={settings?.autoStop}
+      onAutoStopChange={(autoStop) => change({ autoStop })}
       theme={themePreference}
       version={state?.version}
       launchAtLoginHint={loginItemHint(state?.loginItem?.status, settings?.launchAtLogin ?? false)}

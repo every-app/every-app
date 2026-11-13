@@ -26,7 +26,10 @@ export interface PromptHandlers {
   notificationResult?(shown: boolean): void;
 }
 
-const formatTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+/** The id of the "Still recording?" notification (src/main/stillRecording.ts). */
+export const STILL_RECORDING_PROMPT = "recording.still";
+
+export const formatTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 export class CalendarService extends EventEmitter<{ change: [CalendarSnapshot] }> {
   private snapshot: CalendarSnapshot = { connected: true, events: [] };
@@ -182,13 +185,23 @@ export class CalendarService extends EventEmitter<{ change: [CalendarSnapshot] }
   }
 
   callEnded(bundleId: string): void {
-    const id = `call.${bundleId}`;
+    this.dismiss(`call.${bundleId}`);
+  }
+
+  /** A question from elsewhere in main ("Still recording?"), asked the way the meeting prompts
+   * are. `onFailed`: macOS refused to show it (notifications are off for Every App). */
+  prompt(id: string, o: { title: string; body: string; actions: string[]; onAction: (index: number) => void; onFailed?: () => void }): void {
+    if (!Notification.isSupported()) return o.onFailed?.();
+    this.show(id, o);
+  }
+
+  dismiss(id: string): void {
     this.shown.get(id)?.close();
     this.shown.delete(id);
   }
 
   /** Clicking the notification itself does the first action. */
-  private show(id: string, o: { title: string; body: string; actions: string[]; onAction: (index: number) => void }): void {
+  private show(id: string, o: { title: string; body: string; actions: string[]; onAction: (index: number) => void; onFailed?: () => void }): void {
     if (!Notification.isSupported()) return;
     this.shown.get(id)?.close();
     const n = new Notification({
@@ -199,7 +212,10 @@ export class CalendarService extends EventEmitter<{ change: [CalendarSnapshot] }
     });
     n.on("click", () => o.onAction(0));
     n.on("show", () => this.handlers.notificationResult?.(true));
-    n.on("failed", () => this.handlers.notificationResult?.(false));
+    n.on("failed", () => {
+      this.handlers.notificationResult?.(false);
+      o.onFailed?.();
+    });
     n.on("action", (details) => o.onAction(details.actionIndex));
     n.on("close", () => {
       if (this.shown.get(id) === n) this.shown.delete(id);
@@ -209,7 +225,8 @@ export class CalendarService extends EventEmitter<{ change: [CalendarSnapshot] }
   }
 
   /** After a restart: re-attach handlers to our prompts still in Notification Center, so clicking
-   * one still takes notes. "Record this call?" prompts from the last run are stale and removed.
+   * one still takes notes. "Record this call?" and "Still recording?" prompts from the last run
+   * are stale and removed.
    * (macOS only; an unsigned dev run has no history.) */
   async restoreDelivered(): Promise<void> {
     if (process.platform !== "darwin" || typeof Notification.getHistory !== "function") return;
@@ -223,7 +240,7 @@ export class CalendarService extends EventEmitter<{ change: [CalendarSnapshot] }
     for (const n of history) {
       const id = n.id;
       if (!id || this.shown.has(id)) continue;
-      if (id.startsWith("call.")) {
+      if (id.startsWith("call.") || id === STILL_RECORDING_PROMPT) {
         n.close();
         continue;
       }

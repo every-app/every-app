@@ -75,6 +75,30 @@ The window and the helper call only `/api/v1` (no server functions). The contrac
 3. A meeting that started without notes gets one nudge in its first minutes. A meeting Scribe is already taking notes for gets neither.
 4. `everyapp://scribe/record` (from the Scribe web app) takes notes now; `everyapp://scribe/record?event=<id>&title=…&start=…[&join=1]` takes notes for that event. Any web page can open such a link, so the app starts at once only for an event in its own calendar list, and asks first otherwise. (The web app still opens `talk://record`; it has to move to the new link.)
 
+## A recording left running
+
+A recording goes on until someone stops it, so a forgotten one would record whatever comes after the meeting. Scribe asks **Still recording?** when a recording looks forgotten, and stops it when nobody answers. Setting: "Stop a recording I forgot" (`autoStop`), on by default.
+
+It asks when:
+
+| Sign | Asks after |
+| --- | --- |
+| The other side (system audio) was heard earlier and has gone quiet | 5 minutes of quiet |
+| The call app (Zoom, Meet in a browser, …) let go of the microphone, and the other side is quiet | 2 minutes of quiet |
+| The calendar meeting's end time passed 5 minutes ago, and the other side is quiet | 2 minutes of quiet |
+| Nobody on either side has said anything (no transcript line) | 10 minutes |
+
+- The question is a notification with **Keep recording** and **Stop now**; clicking the notification itself keeps recording. With notifications off for Every App it is a dialog instead.
+- No answer in 3 minutes: the recording stops the way Stop does (the transcript is saved and the notes are written), with a notification saying so. Nothing is discarded.
+- **Keep recording** means no question for 30 minutes, then 60, then 120 at most.
+- The question goes away by itself when the meeting plainly goes on: the other side makes sound again, a call app takes the microphone, or the calendar meeting is extended.
+- While a call app Every App knows holds the microphone, it never asks: you presenting to a muted room, or a break in a workshop, is still a call. This needs "Ask to record calls" on; without it (or in an app Every App doesn't know) only the quiet and calendar rules apply.
+- "Sound from the other side" is 3 seconds with sound out of 10, so a message ding doesn't count as a meeting. Music or a video playing after the meeting does count, so such a recording is caught only by the 10-minute rule once the room is silent.
+- A meeting in the room with no call has no other side: only the calendar end and the 10-minute rule apply to it.
+- While transcription is reconnecting, "nobody has spoken" can't be told and isn't counted. If the system audio tap failed, the quiet rules are off.
+
+The rules are `StillRecordingWatch` in `src/main/stillRecording.ts` (pure, the time is passed in; `test/stillRecording.test.ts`). To try it without waiting, a dev build takes `EVERYAPP_DESKTOP_STILL_RECORDING_SPEEDUP=10` (every wait ten times shorter), and the fake helper takes `FAKE_HELPER_QUIET_AFTER_MS=20000` (the other side goes quiet 20 seconds in).
+
 ## Live transcription
 
 1. On start, the app asks the backend for a transcription token; the backend mints an ephemeral OpenAI Realtime key through the Gateway (`gpt-live-transcribe`, PCM 24 kHz, two hours).

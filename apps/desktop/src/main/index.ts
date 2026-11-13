@@ -9,7 +9,7 @@ import type { CalendarEvent } from "@shared/api";
 import { AuthService } from "./auth/service";
 import { SecretStore } from "./auth/store";
 import { errorMessage } from "./auth/oauth";
-import { CalendarService } from "./calendar/service";
+import { CalendarService, formatTime, STILL_RECORDING_PROMPT } from "./calendar/service";
 import { isOpenLink, parseDeepLink, resolveDeepLink } from "./calendar/deepLink";
 import { names, pinStorage, restoreDisplayName, urlSchemes } from "./identity";
 import { PromptLedger } from "./calendar/ledger";
@@ -23,6 +23,7 @@ import { Connectivity } from "./connectivity";
 import { PendingUploads } from "./pending";
 import { buildDiagnostics } from "./diagnostics";
 import { RecordingController } from "./recording";
+import { scaled, STILL_RECORDING, StillRecordingGuard } from "./stillRecording";
 import { TrayController, trayStateFor } from "./tray";
 import { createUpdater } from "./updater";
 import type { UpdateController } from "./updates";
@@ -196,6 +197,7 @@ async function main(): Promise<void> {
     const options = event
       ? RecordingController.titleFor(event)
       : { title: req.title?.trim() || RecordingController.nowTitle(), calendarEventId: req.calendarEventId };
+    if (!recording.isActive) stillRecording.setCalendarEnd(event?.end ? Date.parse(event.end) : undefined);
     await recording.start(options);
     if (options.calendarEventId) calendar.clear(options.calendarEventId);
   };
@@ -214,6 +216,41 @@ async function main(): Promise<void> {
     log,
     new PromptLedger(join(app.getPath("userData"), "prompts.json")).load(),
   );
+
+  /** "Still recording?": asks when a recording looks forgotten, and stops it if nobody answers. */
+  let stillDialog: AbortController | undefined;
+  const stillRecording = new StillRecordingGuard({
+    enabled: () => settings.value.autoStop,
+    now: () => Date.now(),
+    ask: (prompt, answer) =>
+      calendar.prompt(STILL_RECORDING_PROMPT, {
+        ...prompt,
+        onAction: answer,
+        // Notifications are off for Every App: ask in a dialog, so the question is never unseen.
+        onFailed: () => {
+          stillDialog?.abort();
+          const asking = (stillDialog = new AbortController());
+          void dialog
+            .showMessageBox({ type: "question", message: prompt.title, detail: prompt.body, buttons: [...prompt.actions], defaultId: 0, cancelId: 0, signal: asking.signal })
+            .then((r) => {
+              if (!asking.signal.aborted) answer(r.response);
+            })
+            .catch(() => {});
+        },
+      }),
+    dismiss: () => {
+      calendar.dismiss(STILL_RECORDING_PROMPT);
+      stillDialog?.abort();
+      stillDialog = undefined;
+    },
+    notify: (title, body) => calendar.notify(title, body),
+    stop: () => void recording.stop().catch((e) => notifyError("Scribe couldn't stop", e)),
+    time: (ms) => formatTime(new Date(ms).toISOString()),
+    log,
+    // Dev builds only: EVERYAPP_DESKTOP_STILL_RECORDING_SPEEDUP=10 makes every wait ten times shorter.
+    config: isDevFlavor() ? scaled(STILL_RECORDING, Number(process.env.EVERYAPP_DESKTOP_STILL_RECORDING_SPEEDUP)) : STILL_RECORDING,
+  });
+  setInterval(() => stillRecording.tick(), 5_000).unref();
 
   const tray = new TrayController({
     open: () => window.show(),
@@ -414,7 +451,11 @@ async function main(): Promise<void> {
   settings.on("change", (value, changed) => {
     log(`settings changed: ${Object.keys(changed).join(", ")}`);
     if (changed.theme !== undefined) applyTheme(value.theme);
-    if (changed.callDetection !== undefined) syncDetection();
+    if (changed.callDetection !== undefined) {
+      syncDetection();
+      if (!value.callDetection) stillRecording.callsUnknown();
+    }
+    if (changed.autoStop !== undefined) stillRecording.enabledChanged(recording.state);
     if (changed.reminderLeadMinutes !== undefined) calendar.replan();
     if (changed.launchAtLogin !== undefined) loginItem = applyLoginItem(value.launchAtLogin, log);
     if (changed.recordShortcut !== undefined) shortcut.set(value.recordShortcut);
@@ -427,6 +468,7 @@ async function main(): Promise<void> {
     const active = r.state !== "idle";
     if (wasRecording && !active) updates?.recordingStopped();
     wasRecording = active;
+    stillRecording.recordingChanged(r);
     syncPill();
     broadcast();
   });
@@ -455,8 +497,15 @@ async function main(): Promise<void> {
     if (!calendar.state.connected) void calendar.refresh();
   });
   setInterval(() => online.setOsOnline(net.isOnline()), 15_000).unref();
-  calendar.on("change", broadcast);
+  calendar.on("change", (c) => {
+    // The meeting being recorded was moved or extended: its end time follows.
+    const recorded = recording.isActive ? c.events.find((e) => e.id === recording.state.calendarEventId) : undefined;
+    if (recorded?.end) stillRecording.setCalendarEnd(Date.parse(recorded.end));
+    broadcast();
+  });
+  helper.on("exit", () => stillRecording.callsUnknown());
   helper.on("event", (event) => {
+    stillRecording.helperEvent(event);
     probe.observe(event);
     window.send("helper", event);
     liveTranscript.observe(event);

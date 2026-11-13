@@ -11,6 +11,7 @@ import {
   PictureInPicture2,
   Power,
   Sun,
+  TimerOff,
   Volume2,
 } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
@@ -59,6 +60,10 @@ export interface SettingsScreenProps {
    * shows when given. */
   floatingRecorder?: boolean;
   onFloatingRecorderChange?: (on: boolean) => void;
+  /** "Still recording?" for a recording that looks forgotten (on by default); the switch shows
+   * when given. */
+  autoStop?: boolean;
+  onAutoStopChange?: (on: boolean) => void;
   /** "Check microphone & Mac audio", under the permissions. */
   selfTest?: SelfTestProps;
   onConnectCalendar?: () => void;
@@ -127,6 +132,20 @@ export function SettingsScreen(props: SettingsScreenProps) {
                 aria-label="Show the floating recorder while recording"
                 checked={props.floatingRecorder}
                 onCheckedChange={(on) => props.onFloatingRecorderChange?.(on)}
+              />
+            }
+          />
+        )}
+        {props.autoStop !== undefined && (
+          <Row
+            icon={TimerOff}
+            title="Stop a recording I forgot"
+            detail="When the other side goes quiet or the meeting is over, Scribe asks “Still recording?” and stops if nobody answers. The transcript and notes are kept."
+            control={
+              <Switch
+                aria-label="Stop a recording I forgot"
+                checked={props.autoStop}
+                onCheckedChange={(on) => props.onAutoStopChange?.(on)}
               />
             }
           />

@@ -29,6 +29,8 @@
 //   FAKE_HELPER_SELFTEST_SYSTEM=ok|denied  selftest.run's system side (default ok). A fake second
 //                                 lasts 100 ms (fast for tests): the check runs until
 //                                 selftest.stop or its `seconds` (default 60) × 100 ms
+//   FAKE_HELPER_QUIET_AFTER_MS=n  n ms into a recording the other side goes quiet: no system audio
+//                                 and only "me" lines (a meeting that ended; "Still recording?")
 //   FAKE_HELPER_START_ERROR=code  record.start fails with that error code
 //   FAKE_HELPER_START_DELAY_MS=n  record.start takes n ms; a record.stop meanwhile cancels it (stop
 //                                 answers { segments: 0, cancelled: true }, start errors `cancelled`)
@@ -104,10 +106,12 @@ function flush() {
 function startRecording(params) {
   const startedAt = new Date().toISOString();
   rec = { ...params, token: params.accessToken, startedAt, t0: Date.now(), seq: 0, pending: [], timers: [], n: 0, saved: 0, open: new Map() };
+  const quietAfter = num("FAKE_HELPER_QUIET_AFTER_MS", 0);
+  const quiet = () => quietAfter > 0 && !!rec && Date.now() - rec.t0 >= quietAfter;
   const state = () => ({ recording: !!rec, meetingId: rec?.meetingId, mode: "realtime", mic: "ok", system: "ok" });
   event("state", state());
   rec.timers.push(
-    setInterval(() => event("levels", { mic: Math.random() * 0.6, system: Math.random() * 0.4 }), 100),
+    setInterval(() => event("levels", { mic: Math.random() * 0.6, system: quiet() ? 0 : Math.random() * 0.4 }), 100),
   );
   // A line every LINE_MS, or every 20 ms while the burst file exists.
   const nextLine = () => {
@@ -121,6 +125,7 @@ function startRecording(params) {
   };
   const line = (fast) => {
       if (!rec) return;
+      if (quiet() && rec.n % 2 === 1) rec.n++;
       const speaker = rec.n % 2 === 0 ? "me" : "them";
       const text = LINES[speaker][Math.floor(rec.n / 2) % LINES[speaker].length];
       const itemId = `item_${rec.n}`;
