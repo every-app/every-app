@@ -246,6 +246,7 @@ function MeetingScene({
         shareUrl={(id) => `https://talk.every.app/s/${id}`}
         teamUrl="https://talk.every.app/meetings/5f0c2a9e-7b31-4d6a-9e58-2c41d0b7a913"
         onCopyTeamLink={() => true}
+        onDelete={async () => {}}
         {...extra}
       />
     </Frame>

@@ -58,6 +58,7 @@ export const api = {
   meetings: (query: ListMeetingsQuery = {}) => call<ListMeetingsResponse>("GET", "meetings", { query: listQuery(query) }),
   meeting: (id: string) => call<GetMeetingResponse>("GET", `meetings/${enc(id)}`),
   patchMeeting: (id: string, body: PatchMeetingInput) => call<PatchMeetingResponse>("PATCH", `meetings/${enc(id)}`, { body }),
+  deleteMeeting: (id: string) => call<OkResponse>("DELETE", `meetings/${enc(id)}`),
   saveJottings: (id: string, markdown: string, updatedAt: string) =>
     call<SaveJottingsResponse>("PUT", `meetings/${enc(id)}/jottings`, { body: { markdown, updatedAt } }),
   finishMeeting: (id: string) => call<FinishMeetingResponse>("POST", `meetings/${enc(id)}/finish`),

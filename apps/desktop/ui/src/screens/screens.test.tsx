@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MeetingDetail } from "../types";
 import { MeetingScreen } from "./MeetingScreen";
@@ -67,6 +67,52 @@ describe("MeetingScreen", () => {
     templates: [],
     orgName: "Every",
   };
+
+  it("after: the owner deletes the meeting from the More actions menu, after confirming", async () => {
+    let fail: ((error: Error) => void) | undefined;
+    const onDelete = vi
+      .fn<() => Promise<void>>()
+      .mockImplementationOnce(
+        () => new Promise<void>((_, reject) => (fail = reject)),
+      )
+      .mockResolvedValue(undefined);
+    render(<MeetingScreen {...base} phase="after" onDelete={onDelete} />);
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Delete meeting" }),
+    );
+    // Nothing is deleted until the dialog's own button.
+    expect(await screen.findByText("Delete “Pricing call”?")).toBeTruthy();
+    expect(onDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(onDelete).toHaveBeenCalledTimes(1);
+    // It failed: the dialog stays, says why, and Delete tries again.
+    await act(async () => fail!(new Error("Couldn't delete it. Offline.")));
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Couldn't delete it. Offline.",
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    });
+    expect(onDelete).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("offers no delete on someone else's meeting, or while this Mac records it", () => {
+    const { rerender } = render(
+      <MeetingScreen
+        {...base}
+        phase="after"
+        meeting={{ ...meeting, mine: false }}
+        onDelete={async () => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "More actions" })).toBeNull();
+    rerender(
+      <MeetingScreen {...base} phase="during" onDelete={async () => {}} />,
+    );
+    expect(screen.queryByRole("button", { name: "More actions" })).toBeNull();
+  });
 
   it("after: switches between notes, jottings and transcript", () => {
     render(<MeetingScreen {...base} phase="after" />);

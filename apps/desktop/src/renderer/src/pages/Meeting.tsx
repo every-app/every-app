@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import type { MeetingDetail } from "@shared/contract";
@@ -22,6 +22,7 @@ export function MeetingPage({ id, tab }: { id: string; tab?: MeetingTab }) {
   const state = useAppState();
   const navigate = useNavigate();
   const run = useRun();
+  const client = useQueryClient();
   const stop = useStopRecording();
   const query = useQuery({
     queryKey: keys.meeting(id),
@@ -144,6 +145,24 @@ export function MeetingPage({ id, tab }: { id: string; tab?: MeetingTab }) {
         void copyLink(shareUrl(linkId)).then((copied) =>
           copied ? notify("Link copied.") : notify("Couldn't copy the link.", "error"),
         )
+      }
+      onDelete={
+        // Not while this Mac is recording it: stop first.
+        meeting.mine && !recordingHere
+          ? async () => {
+              try {
+                await api.deleteMeeting(id);
+              } catch (error) {
+                throw new Error(`Couldn't delete it. ${cleanError(error)}`.trim());
+              }
+              // Home first, so this page isn't still asking for a meeting that's gone.
+              await navigate({ to: "/", replace: true });
+              client.removeQueries({ queryKey: keys.meeting(id) });
+              void client.invalidateQueries({ queryKey: keys.allMeetings });
+              void client.invalidateQueries({ queryKey: keys.folders });
+              notify("Meeting deleted.");
+            }
+          : undefined
       }
       shareUrl={shareUrl}
       teamUrl={teamUrl}

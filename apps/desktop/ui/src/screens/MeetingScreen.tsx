@@ -8,6 +8,7 @@ import {
   LayoutTemplate,
   Link2,
   MessageSquareText,
+  MoreHorizontal,
   Pencil,
   Square,
   Users,
@@ -15,12 +16,23 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Markdown } from "../components/Markdown";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../components/ui/alert-dialog";
 import { Button } from "../components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -121,6 +133,12 @@ export interface MeetingScreenProps {
   teamUrl?: string;
   /** Copies `teamUrl`; resolves false when the clipboard refused. */
   onCopyTeamLink?: () => boolean | void | Promise<boolean | void>;
+  /**
+   * Deletes the meeting for good, after the owner confirms. Offered for the owner's meetings
+   * unless this window is recording it (stop first). The caller leaves the page when it resolves;
+   * when it rejects, the error's message is shown in the dialog, which stays open.
+   */
+  onDelete?: () => Promise<void>;
   /** Uncontrolled starting values, mostly for the playground. */
   defaultTab?: MeetingTab;
   /**
@@ -195,7 +213,12 @@ function Header(props: MeetingScreenProps) {
         {phase === "after" && (
           <div className="flex shrink-0 items-center gap-2 pt-1.5">
             {meeting.mine ? (
-              <SharePopover {...props} />
+              <>
+                <SharePopover {...props} />
+                {props.onDelete && (
+                  <MeetingMenu meeting={meeting} onDelete={props.onDelete} />
+                )}
+              </>
             ) : (
               <span className="text-[12px] text-muted-foreground">
                 Shared by {ownerLabel(meeting)}
@@ -507,6 +530,88 @@ function SharePopover({
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** The "…" menu beside Share: delete, behind a confirmation. Same words as Scribe's web app. */
+function MeetingMenu({
+  meeting,
+  onDelete,
+}: {
+  meeting: MeetingDetail;
+  onDelete: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button variant="ghost" size="icon-sm" aria-label="More actions" />
+          }
+        >
+          <MoreHorizontal />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-40">
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={() => {
+              setError(null);
+              setOpen(true);
+            }}
+          >
+            Delete meeting
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <AlertDialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!deleting) setOpen(next);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{meeting.title}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The notes, transcript and public links go too. This can't be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              pending={deleting}
+              onClick={async () => {
+                setDeleting(true);
+                setError(null);
+                try {
+                  await onDelete();
+                } catch (cause) {
+                  setError(
+                    cause instanceof Error && cause.message
+                      ? cause.message
+                      : "Couldn't delete it.",
+                  );
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
