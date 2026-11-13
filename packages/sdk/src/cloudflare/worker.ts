@@ -725,16 +725,8 @@ type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
-/** `M` without `readonly`, as cf's JSON bindings take their value. */
-type JsonValueOf<M> = M extends readonly (infer E)[]
-  ? JsonValueOf<E>[]
-  : M extends object
-    ? { -readonly [K in keyof M]: JsonValueOf<M[K]> }
-    : M;
-
-type SharedEnv<M> = {
+type SharedEnv = {
   EVERYAPP_APP_ID: TextBinding;
-  EVERYAPP_MANIFEST: JsonBinding<JsonValueOf<M>>;
   CF_VERSION_METADATA: VersionMetadataBinding;
   GATEWAY_URL: TextBinding | SecretBinding;
 };
@@ -758,7 +750,7 @@ export type EveryAppDevEnv<M, TEntrypoint = string> = ResourceEnv<
   M,
   TEntrypoint
 > &
-  SharedEnv<M> &
+  SharedEnv &
   DatabaseEnv<M> &
   DevEmailEnv<M> & {
     EVERYAPP_DEV: TextBinding;
@@ -779,7 +771,7 @@ export type EveryAppDeployEnv<M, TEntrypoint = string> = ResourceEnv<
   M,
   TEntrypoint
 > &
-  SharedEnv<M> &
+  SharedEnv &
   DatabaseEnv<M> &
   HyperdriveEnv<M> & {
     EVERYAPP_AUDIENCE: TextBinding;
@@ -1091,12 +1083,8 @@ export function everyAppWorker<
 
   const env: Record<string, EveryAppBinding> = {
     EVERYAPP_APP_ID: { type: "text", value: manifest.id },
-    // The manifest itself, for a page that shows what the app asked for:
-    // the Worker can't import everyapp.config.ts (see ./index.ts).
-    EVERYAPP_MANIFEST: {
-      type: "json",
-      value: manifest as unknown as JsonValue,
-    },
+    // Never the manifest: the Gateway's registry is its one home, and a
+    // variable holds 5 KB at most (docs/design/2026-11-worker-manifest.md).
     CF_VERSION_METADATA: { type: "version-metadata" },
   };
   if (deploy) {

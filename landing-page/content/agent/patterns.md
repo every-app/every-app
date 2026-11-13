@@ -105,6 +105,6 @@ A look-up table: find the job, open the file, copy it. `starter/` is the templat
 | Pattern | Copy from | Note |
 | --- | --- | --- |
 | `.dev.vars` | `open-crm/.dev.vars.example` | Name each variable and where it comes from, no values |
-| The manifest and env in the Worker | `starter/src/env.d.ts`, `starter/src/serverFunctions/home.ts` | `env.EVERYAPP_MANIFEST`; `cf workers types` writes `Env` |
+| Env in the Worker | `starter/src/env.d.ts`, `starter/src/serverFunctions/home.ts` | `cf workers types` writes `Env`; the Worker holds no copy of the manifest, only its id (`env.EVERYAPP_APP_ID`) |
 | Call the app as someone else | [dev](/docs/agent/dev) | `pnpm everyapp dev token --role member` |
 | Release and install | `starter/.github/workflows/release.yml`, `docs/runbooks/app-releases.md` | `pnpm everyapp release`; anyone installs with `pnpm everyapp install <repository url>` |

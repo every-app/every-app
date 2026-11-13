@@ -19,6 +19,7 @@ import {
 import type { InstallationDatabase } from "./error";
 import { recordOwnedResource } from "./ownership";
 import type { BuiltWorkerConfig } from "./policy";
+import { largeManifest } from "../manifest/workerManifest.fixture";
 
 const KEY =
   "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA\n-----END PUBLIC KEY-----";
@@ -237,6 +238,73 @@ describe("installApp", () => {
     expect(
       uploads.find((upload) => upload.worker === HELPER)!.values["SECRETS_KEY"],
     ).toBe(values["SECRETS_KEY"]);
+  });
+
+  /** `output` as an SDK that still declared the manifest built it. */
+  const withManifestBinding = (
+    output: Map<string, BuiltWorkerConfig>,
+    manifest: unknown,
+  ) => {
+    output.get("default")!.env!["EVERYAPP_MANIFEST"] = {
+      type: "json",
+      value: manifest,
+    };
+    return output;
+  };
+
+  it("installs a manifest well over 5 kB: a build made today holds no copy of it", async () => {
+    const manifest = { ...largeManifest(), resources: { d1: ["DB"] } };
+    let written: BuiltWorkerConfig | undefined;
+    const { input, ports } = setup(
+      { manifest: manifest as unknown as Manifest },
+      () => buildOutput(manifest),
+    );
+    ports.writeBuildOutput = async (workers) => {
+      written = workers[0]!.config;
+    };
+    await installApp(input, ports);
+    expect(JSON.stringify(manifest).length).toBeGreaterThan(7000);
+    expect(steps).toContain(`upload ${WORKER}`);
+    expect(written!.env).not.toHaveProperty("EVERYAPP_MANIFEST");
+  });
+
+  it("installs an older build of a manifest well over 5 kB: its Worker gets it without its setup text", async () => {
+    const manifest = { ...largeManifest(), resources: { d1: ["DB"] } };
+    let written: BuiltWorkerConfig | undefined;
+    const { input, ports } = setup(
+      { manifest: manifest as unknown as Manifest },
+      () => withManifestBinding(buildOutput(manifest), manifest),
+    );
+    ports.writeBuildOutput = async (workers) => {
+      written = workers[0]!.config;
+    };
+    await installApp(input, ports);
+    expect(steps).toContain(`upload ${WORKER}`);
+    const held = (
+      written!.env!["EVERYAPP_MANIFEST"] as { value: typeof manifest }
+    ).value;
+    expect(JSON.stringify(held).length).toBeLessThanOrEqual(5000);
+    expect(held.settings.map((setting) => setting.name)).toEqual(
+      manifest.settings.map((setting) => setting.name),
+    );
+  });
+
+  it("refuses an older build whose manifest no Worker can hold before it claims or creates anything", async () => {
+    const manifest = {
+      id: "todo",
+      public: Array.from({ length: 300 }, (_, index) => ({
+        path: `/a/rather/long/public/path/${index}`,
+      })),
+    };
+    const { input, ports } = setup(
+      { manifest: manifest as unknown as Manifest },
+      () => withManifestBinding(buildOutput(), manifest),
+    );
+    await expect(installApp(input, ports)).rejects.toMatchObject({
+      code: "INVALID_MANIFEST",
+      message: expect.stringContaining("holds 5,000 at most"),
+    });
+    expect(steps).toEqual([]);
   });
 
   it("refuses a Worker the policy refuses before it migrates or uploads anything", async () => {

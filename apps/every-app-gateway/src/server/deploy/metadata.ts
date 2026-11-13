@@ -11,7 +11,8 @@
  *   allowed, rewritten         the app's id, audience (its Worker name),
  *                              identity keys and issuer, organization and
  *                              gateway URL as plain text; the manifest
- *                              (EVERYAPP_MANIFEST) as JSON; the gateway's
+ *                              (EVERYAPP_MANIFEST) as JSON, for a build
+ *                              that still declares it; the gateway's
  *                              AppGateway service binding with the
  *                              registry's props; the D1 databases the
  *                              deployer created for it; its own Durable
@@ -32,6 +33,9 @@
  */
 import {
   GATEWAY_WORKER_NAME,
+  WORKER_MANIFEST_BINDING,
+  workerManifest,
+  workerManifestProblem,
   type Manifest,
 } from "@every-app/perimeter/manifest";
 import { CATALOG, type CapabilityLookup } from "@every-app/sdk/internal";
@@ -77,8 +81,8 @@ const PLATFORM_TEXT = [
   "EVERYAPP_IDENTITY_PUBLIC_KEYS",
   "EVERYAPP_IDENTITY_ISSUER",
 ] as const;
-/** The manifest as JSON, which everyAppWorker() declares and the deployer writes from the registry's. */
-const MANIFEST_BINDING = "EVERYAPP_MANIFEST";
+/** The manifest as JSON, which an older everyAppWorker() declares and the deployer then writes from the registry's. */
+const MANIFEST_BINDING = WORKER_MANIFEST_BINDING;
 /** Declared as secrets by the build; plain text on a third-party Worker. */
 const PLATFORM_SECRETS = ["GATEWAY_URL", "EVERY_APP_ORG_ID"] as const;
 const GATEWAY_BINDING = "EVERY_APP_GATEWAY";
@@ -279,6 +283,8 @@ export function bundleProblems(
     if (name === MANIFEST_BINDING) {
       if (type !== "json")
         refuse(`is a ${type} binding; the platform sets it as JSON`);
+      else if (workerManifestProblem(manifest))
+        refuse(`can't hold the manifest: ${workerManifestProblem(manifest)}`);
       continue;
     }
     if ((PLATFORM_SECRETS as readonly string[]).includes(name)) {
@@ -455,8 +461,6 @@ function userWorkerBindings(
     text("EVERYAPP_IDENTITY_ISSUER", target.gatewayUrl),
     text("GATEWAY_URL", target.gatewayUrl),
     text("EVERY_APP_ORG_ID", target.organizationId),
-    // The manifest the deploy validated, never the bundle's copy.
-    { type: "json", name: MANIFEST_BINDING, json: manifest },
     {
       type: "service",
       name: GATEWAY_BINDING,
@@ -469,6 +473,17 @@ function userWorkerBindings(
       },
     },
   ];
+  // Only for a build that declares it (an older SDK's; today's Worker holds
+  // no manifest): the manifest the deploy validated, never the bundle's
+  // copy, without its setup text when it is larger than one Cloudflare
+  // variable (bundleProblems refused one that doesn't fit so).
+  if (built.env?.[MANIFEST_BINDING]) {
+    bindings.push({
+      type: "json",
+      name: MANIFEST_BINDING,
+      json: workerManifest(manifest) ?? manifest,
+    });
+  }
   for (const binding of manifest.resources?.d1 ?? []) {
     const database = target.d1[binding];
     if (!database) throw new Error(`No D1 database for ${binding}`);

@@ -4,18 +4,14 @@
  * none of it: `cf workers types` writes the same names into `Env` from the
  * Worker's definition.
  */
-import type { EveryAppManifest } from "../manifest.js";
 
-/** The `env` keys Every App sets on an app's Worker, deployed and under `everyapp dev`. */
-export interface EveryAppEnv<M extends EveryAppManifest = EveryAppManifest> {
+/**
+ * The `env` keys Every App sets on an app's Worker, deployed and under
+ * `everyapp dev`. Never the manifest: the Gateway holds it.
+ */
+export interface EveryAppEnv {
   /** The manifest's `id`. */
   EVERYAPP_APP_ID: string;
-  /**
-   * The manifest (`everyapp.config.ts`) as JSON: what the app asked for,
-   * for a page that shows it. `EveryAppEnv<typeof manifest>` types it as
-   * the app's own.
-   */
-  EVERYAPP_MANIFEST: M;
   /** The Gateway's URL; links back to it go through `gatewayUrl(env)`. */
   GATEWAY_URL: string;
   /** The identity tokens' issuer: the Gateway's URL, or the dev issuer. */

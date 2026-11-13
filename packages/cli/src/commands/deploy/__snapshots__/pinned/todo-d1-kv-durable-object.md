@@ -82,27 +82,6 @@
       "type": "text",
       "value": "todo"
     },
-    "EVERYAPP_MANIFEST": {
-      "type": "json",
-      "value": {
-        "id": "todo",
-        "name": "Todos",
-        "resources": {
-          "d1": [
-            "DB"
-          ],
-          "kv": [
-            "KV"
-          ],
-          "durableObjects": [
-            {
-              "name": "USER_SYNC",
-              "className": "UserSyncDO"
-            }
-          ]
-        }
-      }
-    },
     "CF_VERSION_METADATA": {
       "type": "version-metadata"
     },
@@ -324,27 +303,6 @@
     "EVERYAPP_APP_ID": {
       "type": "text",
       "value": "todo"
-    },
-    "EVERYAPP_MANIFEST": {
-      "type": "json",
-      "value": {
-        "id": "todo",
-        "name": "Todos",
-        "resources": {
-          "d1": [
-            "DB"
-          ],
-          "kv": [
-            "KV"
-          ],
-          "durableObjects": [
-            {
-              "name": "USER_SYNC",
-              "className": "UserSyncDO"
-            }
-          ]
-        }
-      }
     },
     "CF_VERSION_METADATA": {
       "type": "version-metadata"

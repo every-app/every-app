@@ -17,8 +17,9 @@
  * perimeter's schema (`@every-app/perimeter/manifest`) is held to this type
  * by a test there.
  *
- * The Worker reads the manifest back as `env.EVERYAPP_MANIFEST`, which
- * `everyAppWorker()` sets and `cf workers types` types from the file.
+ * The Worker never holds the manifest: the Gateway's registry does. What
+ * the Worker gets from it are its bindings (`env.DB`), which
+ * `everyAppWorker()` declares and `cf workers types` types from the file.
  */
 
 /**
@@ -301,8 +302,7 @@ export interface EveryAppManifest {
 
 /**
  * Type `everyapp.config.ts` without widening it: the literal binding names
- * stay, so `everyAppWorker()` types `env.DB` and `env.EVERYAPP_MANIFEST`
- * from them. Returns the manifest as given.
+ * stay, so `everyAppWorker()` types `env.DB` from them. Returns the manifest as given.
  */
 export function defineEveryApp<const M extends EveryAppManifest>(
   manifest: M,

@@ -29,7 +29,12 @@
  * Workflows, crons and queue consumers). Registering the app before and
  * recording the deploy after stay with each caller.
  */
-import { ManifestSchema, type Manifest } from "@every-app/perimeter/manifest";
+import {
+  ManifestSchema,
+  WORKER_MANIFEST_BINDING,
+  workerManifestProblem,
+  type Manifest,
+} from "@every-app/perimeter/manifest";
 import type { AppResources } from "@every-app/perimeter/registry";
 import {
   helperWorkerName,
@@ -234,6 +239,23 @@ export async function installApp<C>(
 ): Promise<AppInstallResult> {
   const { manifest, workerName, accountId } = input;
   const { cf, db, out, CLI } = ports;
+  // A release is built already, so what the upload would refuse for its
+  // size is known before anything is claimed or created: a build that
+  // still carries the manifest (an older SDK's), too large for one
+  // Cloudflare variable. A build from source is checked once it exists.
+  if (!ports.build) {
+    for (const config of (await ports.readBuildOutput()).values()) {
+      const held = config.env?.[WORKER_MANIFEST_BINDING];
+      const tooLarge =
+        held?.type === "json" ? workerManifestProblem(held["value"]) : null;
+      if (tooLarge) {
+        throw new InstallationError(
+          "INVALID_MANIFEST",
+          `everyapp.config is too large for this build: ${tooLarge}`,
+        );
+      }
+    }
+  }
   const deletedDurableObjects = checkDurableObjects(
     { previousManifest: input.previousManifest },
     manifest,

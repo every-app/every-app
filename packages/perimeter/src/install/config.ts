@@ -21,6 +21,9 @@
  *     Worker name wherever it appears (the Worker's own name, its audience,
  *     Durable Object and helper service bindings, Workflow names, buckets
  *     named after it);
+ *   - a build that still declares the manifest (`EVERYAPP_MANIFEST`, an
+ *     older SDK's) keeps it, without its setup text when it is larger than
+ *     one Cloudflare variable holds;
  *   - a shared app's Workers trade EVERY_APP_ORG_ID for EVERYAPP_SHARED;
  *   - the app's Worker gets a tombstone for each Durable Object class the
  *     deploy deletes.
@@ -30,6 +33,9 @@
  */
 import {
   GATEWAY_WORKER_NAME,
+  WORKER_MANIFEST_BINDING,
+  workerManifest,
+  workerManifestProblem,
   type Resources,
 } from "@every-app/perimeter/manifest";
 import {
@@ -106,6 +112,7 @@ export function installWorkerConfig<T extends Record<string, unknown>>(
     installResource(name, binding, target);
     installGatewayBinding(binding, target);
   }
+  installManifestBinding(env);
   for (const trigger of installed.triggers ?? []) {
     if (trigger["type"] === "queue") installQueueTrigger(trigger, target);
   }
@@ -152,6 +159,25 @@ export function installWorkerConfig<T extends Record<string, unknown>>(
   }
   assertWorkflowNames(result);
   return result as T;
+}
+
+/**
+ * A build made with an SDK that declares `env.EVERYAPP_MANIFEST` keeps it,
+ * as one Cloudflare variable, 5 KB at most: a manifest larger than that
+ * goes without its setup text (@every-app/perimeter/manifest
+ * workerManifest.ts). Today's SDK declares none, and gets none.
+ */
+function installManifestBinding(env: Record<string, Binding>): void {
+  const binding = env[WORKER_MANIFEST_BINDING];
+  if (binding?.type !== "json") return;
+  const problem = workerManifestProblem(binding["value"]);
+  if (problem) {
+    throw new EveryAppError(
+      "INVALID_MANIFEST",
+      `everyapp.config is too large for this build: ${problem}`,
+    );
+  }
+  binding["value"] = workerManifest(binding["value"]) ?? binding["value"];
 }
 
 /**

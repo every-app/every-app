@@ -21,7 +21,7 @@ export const Route = createFileRoute("/")({
     const [home, todos] = await Promise.all([getHome(), getTodos()]);
     return { home, todos };
   },
-  // The manifest's name, which the server read from env.EVERYAPP_MANIFEST.
+  // The app's name, which the server made from its id (env.EVERYAPP_APP_ID).
   head: ({ loaderData }) => ({
     meta: loaderData ? [{ title: loaderData.home.name }] : [],
   }),
@@ -30,7 +30,7 @@ export const Route = createFileRoute("/")({
 
 function Home() {
   const { home, todos } = Route.useLoaderData();
-  const { user, name, allowed, members } = home;
+  const { user, name, tools, members } = home;
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -91,23 +91,15 @@ function Home() {
         title="What this app was allowed"
         description={
           <>
-            Listed in <code>everyapp.config.ts</code>. The app gets only what
-            that file lists; the Gateway refuses the rest.
+            Listed in <code>everyapp.config.ts</code>, which the Gateway keeps:
+            its resources, public routes, providers, capabilities and secrets.
+            The app gets only what that file lists; the Gateway refuses the
+            rest.
           </>
         }
       >
         <dl className={`${panel} divide-y divide-border text-sm`}>
-          <Allowed term="resources" items={allowed.resources}>
-            Storage of its own; the todos live in the database.
-          </Allowed>
-          <Allowed term="public" items={allowed.public} link>
-            Reachable without signing in, for a provider's webhook or an OAuth
-            callback. Every route not listed needs a signed-in member.
-          </Allowed>
-          <Allowed term="providers" items={allowed.providers}>
-            AI models the Gateway calls for the app, with a key you add once.
-          </Allowed>
-          <Allowed term="capabilities" items={allowed.capabilities}>
+          <Allowed term="capabilities" items={["members (read)"]}>
             What the Gateway does for the app with keys it holds;{" "}
             {typeof members === "number" ? (
               <>
@@ -120,10 +112,7 @@ function Home() {
               </>
             )}
           </Allowed>
-          <Allowed term="secrets" items={allowed.secrets}>
-            Keys only this app uses.
-          </Allowed>
-          <Allowed term="tools" items={allowed.tools}>
+          <Allowed term="tools" items={tools}>
             What an AI assistant may do here, through your Gateway (
             <code>src/tools.ts</code>). Read-only connections get the read
             tools; the assistant asks before one that deletes.
@@ -230,12 +219,10 @@ function Section({
 function Allowed({
   term,
   items,
-  link,
   children,
 }: {
   term: string;
   items: readonly string[];
-  link?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -251,13 +238,7 @@ function Allowed({
           ) : (
             items.map((item) => (
               <Fragment key={item}>
-                {link ? (
-                  <a href={item} className="underline underline-offset-3">
-                    {item}
-                  </a>
-                ) : (
-                  <code>{item}</code>
-                )}{" "}
+                <code>{item}</code>{" "}
               </Fragment>
             ))
           )}

@@ -24,6 +24,8 @@ The complete references are the agent docs at https://everyapp.com/llms.txt (`id
   }));
   ```
 
+  The Worker gets the bindings the manifest lists and its id (`env.EVERYAPP_APP_ID`), never the manifest itself: the Gateway keeps that. A value the code needs at run time (a model id, the app's name) is written in the code. `env.EVERYAPP_MANIFEST`, which SDK 0.3.3 and earlier declared, is gone.
+
   Production builds are tenant-neutral: the same Build Output whoever builds the app, with placeholders (`sentinelDeployTarget()`, `BUILD_SENTINEL` in `@every-app/sdk/cloudflare/sentinel`) wherever an install's Worker name, organization, gateway URL, identity keys and resource names or ids go. `everyapp deploy` builds with `EVERYAPP_BUILD=1` and then installs the output (rewrites every placeholder, refusing one that survives); without that variable a production build throws, so deploy with `everyapp deploy` rather than `cf deploy`. A deploy that deletes Durable Object classes adds their tombstones.
 
   `localD1Path(root, id)` is the sqlite file `cf dev` keeps the local D1 database `id` in (`env.DB.id` of a development `everyAppWorker()`, or `localD1Id(workerName, binding)`), for drizzle-kit studio.

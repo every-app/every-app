@@ -60,11 +60,13 @@ What every app Worker gets:
 | `EVERYAPP_IDENTITY_PUBLIC_KEYS`, `EVERYAPP_IDENTITY_ISSUER` | The Gateway's public keys and URL. Under `everyapp dev`, the well-known dev key and `https://gateway.dev.localhost`. |
 | `EVERY_APP_GATEWAY` | A service binding to the Gateway, for AI, capabilities, email, members and events. Absent in dev, where the SDK calls providers directly with local keys. |
 | `GATEWAY_URL`, `EVERY_APP_ORG_ID` | The Gateway's URL; the organization the Worker serves. |
-| `EVERYAPP_MANIFEST`, `DATABASE_PROVIDER` | The manifest; `database.provider` when declared. |
+| `DATABASE_PROVIDER` | `database.provider` when declared. |
 | `EVERYAPP_DEV` | `"1"` in development only: trusts dev identities. |
 | `EVERYAPP_SHARED` | `"1"` on a shared app. |
 | `EVERYAPP_BUILD` | `1` while `everyapp deploy` builds (not at runtime). |
 | `EVERYAPP_EMAIL_SENDERS` | The app's allowed sender patterns (`everyapp email set --sender`). |
+
+The Worker never holds the manifest: the Gateway keeps `everyapp.config.ts`, and the Worker gets the bindings it lists. A value the code needs at run time (a model id, the app's name) is written in the code. `env.EVERYAPP_MANIFEST` is gone from `@every-app/sdk` after 0.3.3; a Worker built with an older SDK still gets it, without `why`, `how`, `docs` and `steps` when the manifest is over 5 KB.
 
 Then the manifest's resources, and the app's own secrets and settings.
 

@@ -1,7 +1,7 @@
 import { defineEveryApp } from "@every-app/sdk";
 
-// defineEveryApp types the manifest; the Worker reads it back as
-// env.EVERYAPP_MANIFEST (src/serverFunctions/home.ts).
+// defineEveryApp types the manifest. The Gateway keeps it; the Worker gets
+// the bindings it lists (env.DB), never the file.
 export default defineEveryApp({
   id: "simple-todo-template",
   name: "Simple Todo",

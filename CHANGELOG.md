@@ -22,6 +22,8 @@ What you do: `pnpm everyapp update` brings the Gateway to migration `0034` (`oau
 
 ## Unreleased: breaking
 
+**The Worker no longer holds the manifest.** `everyAppWorker()` stops declaring `env.EVERYAPP_MANIFEST`, and `EveryAppEnv` loses the key and its type parameter. The Gateway's registry is the manifest's one home, so an app's manifest can be any size: a manifest over 5 KB used to fail at the upload (`[10054] Text binding 'EVERYAPP_MANIFEST' is too large`). What you do when you move an app to this SDK: write what the code read from `env.EVERYAPP_MANIFEST` in the code (a model id, the app's name; `env.EVERYAPP_APP_ID` is still there), then `cf workers types` and deploy. A release built with an older SDK still installs and still gets the binding, without `why`, `how`, `docs` and `steps` when its manifest is over 5 KB. Design: `docs/design/2026-11-worker-manifest.md`.
+
 An app's setup is grouped into **features** (`features` in `everyapp.config.ts`): each a name, a why, numbered steps with URLs, and the secrets, settings, capabilities and providers it needs. `everyapp configure <app>` walks them; `everyapp status` shows each app's features in one line.
 
 - `optional`, `anyOf` and a secret's `setup` guide are gone. Everything at the top level is required. Move what the app works without into an optional feature (all or nothing; `required: true` for one it can't open without). A capability or provider an optional feature lists stays declared under `capabilities` or `providers`.

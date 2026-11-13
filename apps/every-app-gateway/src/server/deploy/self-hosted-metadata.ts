@@ -3,7 +3,12 @@ import type {
   BuiltWorkerConfig,
   InstallTarget,
 } from "@every-app/perimeter/install";
-import { bundleModuleType, type Manifest } from "@every-app/perimeter/manifest";
+import {
+  bundleModuleType,
+  WORKER_MANIFEST_BINDING,
+  workerManifest,
+  type Manifest,
+} from "@every-app/perimeter/manifest";
 import type { DeployBundle } from "./bundle";
 import type { WorkerBinding, WorkerMetadata, WorkerModule } from "./cf-rest";
 import { DeployError } from "./errors";
@@ -42,7 +47,11 @@ export function selfHostedMetadata(
           type: "json",
           name,
           json: JSON.stringify(
-            name === "EVERYAPP_MANIFEST" ? manifest : binding.value,
+            // A build that still declares it (an older SDK's) gets the
+            // registry's manifest, 5 KB at most.
+            name === WORKER_MANIFEST_BINDING
+              ? (workerManifest(manifest) ?? manifest)
+              : binding.value,
           ),
         });
         break;

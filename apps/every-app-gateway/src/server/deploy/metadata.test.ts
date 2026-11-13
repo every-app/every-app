@@ -128,7 +128,18 @@ describe("bundleProblems", () => {
     expect(bundleProblems(WORKER, MANIFEST, LIMITS, false)).toEqual([]);
   });
 
-  it("takes the manifest's JSON binding, and writes it from the deploy's manifest, never the bundle's", () => {
+  it("writes no manifest binding for a build that declares none", () => {
+    const { bindings } = buildUserWorkerMetadata({
+      worker: WORKER,
+      manifest: MANIFEST,
+      target: TARGET,
+    });
+    expect(bindings!.map((binding) => binding.name)).not.toContain(
+      "EVERYAPP_MANIFEST",
+    );
+  });
+
+  it("takes an older build's JSON manifest binding, and writes it from the deploy's manifest, never the bundle's", () => {
     const worker = {
       ...WORKER,
       env: {
@@ -162,6 +173,65 @@ describe("bundleProblems", () => {
         false,
       ),
     ).toEqual([expect.stringMatching(/^EVERYAPP_MANIFEST .*as JSON/)]);
+  });
+
+  it("writes an older build's manifest, well over 5 kB, without its setup text, for a hosted and a self-hosted install", () => {
+    const manifest = {
+      ...MANIFEST,
+      features: Object.fromEntries(
+        Array.from({ length: 40 }, (_, index) => [
+          `feature-${index}`,
+          {
+            name: `Feature ${index}`,
+            why: `What feature ${index} gives the app, in a sentence long enough to count towards Cloudflare's limit.`,
+            steps: ["Make a key in the provider's dashboard.", "Paste it."],
+          },
+        ]),
+      ),
+    };
+    const bytes = (value: unknown) =>
+      new TextEncoder().encode(JSON.stringify(value)).length;
+    expect(bytes(manifest)).toBeGreaterThan(7000);
+    const worker = {
+      ...WORKER,
+      env: {
+        ...WORKER.env,
+        EVERYAPP_MANIFEST: { type: "json", value: manifest },
+      },
+    };
+    const held = Object.fromEntries(
+      Object.entries(manifest.features).map(([id, { name }]) => [id, { name }]),
+    );
+
+    const hosted = buildUserWorkerMetadata({
+      worker,
+      manifest,
+      target: TARGET,
+    }).bindings!.find((binding) => binding.name === "EVERYAPP_MANIFEST");
+    expect(hosted).toEqual({
+      type: "json",
+      name: "EVERYAPP_MANIFEST",
+      json: { ...MANIFEST, features: held },
+    });
+    expect(bytes((hosted as { json: unknown }).json)).toBeLessThanOrEqual(5000);
+
+    const selfHosted = selfHostedMetadata(
+      worker as unknown as BuiltWorkerConfig,
+      {
+        workerName: TARGET.workerName,
+        organizationId: TARGET.organizationId,
+        accountId: "a".repeat(32),
+        gatewayUrl: TARGET.gatewayUrl,
+        identityPublicKeys: [TARGET.identityPublicKey],
+        resources: { d1: {}, kv: {}, r2: {} },
+      },
+      manifest,
+      {},
+    ).bindings!.find((binding) => binding.name === "EVERYAPP_MANIFEST");
+    expect(JSON.parse((selfHosted as { json: string }).json)).toEqual({
+      ...MANIFEST,
+      features: held,
+    });
   });
 
   it("refuses an assets binding when the upload has no assets", () => {

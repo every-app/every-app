@@ -6,6 +6,7 @@ import {
 } from "@every-app/sdk/cloudflare";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installWorkerConfig, type InstallTarget } from "./config";
+import { largeManifest } from "../manifest/workerManifest.fixture";
 
 const PUBLIC_KEYS = [
   "-----BEGIN PUBLIC KEY-----\nMIIBcurrent\n-----END PUBLIC KEY-----\n",
@@ -363,6 +364,45 @@ describe("installWorkerConfig and AI Gateways", () => {
       expect.objectContaining({
         code: "INSTALL_INPUTS_MISSING",
         message: expect.stringContaining("AI Gateway AI_GATEWAY"),
+      }),
+    );
+  });
+
+  it("leaves a build without the manifest binding without one", () => {
+    const { app } = notes();
+    expect(app["env"]).not.toHaveProperty("EVERYAPP_MANIFEST");
+    expect(installWorkerConfig(app, NOTES_TARGET)["env"]).not.toHaveProperty(
+      "EVERYAPP_MANIFEST",
+    );
+  });
+
+  it("writes an older build's manifest, well over 5 kB, without its setup text, so the upload takes it", () => {
+    const { app } = notes();
+    const manifest = largeManifest();
+    app["env"].EVERYAPP_MANIFEST = { type: "json", value: manifest };
+    const held = installWorkerConfig(app, NOTES_TARGET)["env"].EVERYAPP_MANIFEST
+      .value;
+    expect(JSON.stringify(manifest).length).toBeGreaterThan(7000);
+    expect(JSON.stringify(held).length).toBeLessThanOrEqual(5000);
+    expect(held.settings).toHaveLength(manifest.settings.length);
+    expect(held.settings[0]).not.toHaveProperty("why");
+  });
+
+  it("refuses an older build whose manifest fits no Cloudflare variable", () => {
+    const { app } = notes();
+    app["env"].EVERYAPP_MANIFEST = {
+      type: "json",
+      value: {
+        id: "notes",
+        public: Array.from({ length: 300 }, (_, index) => ({
+          path: `/a/rather/long/public/path/${index}`,
+        })),
+      },
+    };
+    expect(() => installWorkerConfig(app, NOTES_TARGET)).toThrow(
+      expect.objectContaining({
+        code: "INVALID_MANIFEST",
+        message: expect.stringContaining("holds 5,000 at most"),
       }),
     );
   });
