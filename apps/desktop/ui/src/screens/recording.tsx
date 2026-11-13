@@ -1,7 +1,8 @@
 import { cn } from "cn";
-import { Mic, Volume2 } from "lucide-react";
+import { MessageSquareText, Mic, Square, Volume2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { ChannelHealth } from "../types";
+import { Button } from "../components/ui/button";
+import type { ChannelHealth, Levels, LiveRecording } from "../types";
 import { clock } from "./parts";
 
 const BARS = [0.55, 0.85, 1, 0.75, 0.45];
@@ -126,4 +127,124 @@ export function useElapsed(startedAt: string | null, now?: Date): number {
 
 export function Elapsed({ ms, className }: { ms: number; className?: string }) {
   return <span className={cn("tabular-nums", className)}>{clock(ms)}</span>;
+}
+
+export interface RecorderBarProps {
+  recording: LiveRecording;
+  levels: Levels;
+  elapsedMs: number;
+  /** Stop was pressed and the recording is finishing. */
+  stopping?: boolean;
+  onStop?: () => void;
+  /** The live transcript is open (only the meeting's own page can show it). */
+  transcriptOpen?: boolean;
+  onTranscript?: () => void;
+  /**
+   * Away from the recording meeting's page: the bar names the meeting, and a click anywhere on it
+   * but its buttons goes back there.
+   */
+  onOpen?: () => void;
+}
+
+/**
+ * The recorder: one bar at the bottom of the window for as long as this Mac records. The timer,
+ * both levels, the live transcript and Stop.
+ */
+export function RecorderBar({
+  recording,
+  levels,
+  elapsedMs,
+  stopping = false,
+  onStop,
+  transcriptOpen = false,
+  onTranscript,
+  onOpen,
+}: RecorderBarProps) {
+  const summary = (
+    <>
+      <RecordDot />
+      {onOpen && (
+        <span className="max-w-[220px] truncate">{recording.title}</span>
+      )}
+      <Elapsed
+        ms={elapsedMs}
+        className={onOpen ? "font-normal text-muted-foreground" : undefined}
+      />
+    </>
+  );
+  return (
+    // The click on the bar itself is a shortcut for the mouse; the button inside is the same
+    // action for the keyboard and screen readers (its click bubbles up to here).
+    <div
+      role="group"
+      aria-label="Recording"
+      onClick={onOpen}
+      className={cn(
+        "pointer-events-auto flex items-center gap-1 rounded-full border border-border bg-popover/90 p-1 shadow-[0_6px_24px_-8px_rgb(0_0_0/0.18),0_1px_2px_rgb(0_0_0/0.06)] backdrop-blur-xl",
+        onOpen && "cursor-pointer",
+      )}
+    >
+      {onOpen ? (
+        <button
+          type="button"
+          title={`Go to ${recording.title}`}
+          className="flex h-8 min-w-0 cursor-pointer items-center gap-2 rounded-full pl-3 pr-1 text-[12px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          {summary}
+        </button>
+      ) : (
+        <span className="flex items-center gap-2 pl-3 pr-1 text-[12px] font-medium">
+          {summary}
+        </span>
+      )}
+      <ChannelMeters
+        mic={levels.mic}
+        system={levels.system}
+        micHealth={recording.mic}
+        systemHealth={recording.system}
+        className="px-2"
+      />
+      <span className="mx-1 h-4 w-px bg-border" />
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-pressed={transcriptOpen}
+        className={cn(
+          "h-8 rounded-full px-3",
+          transcriptOpen && "bg-foreground/[0.06]",
+        )}
+        onClick={(event) => {
+          event.stopPropagation();
+          onTranscript?.();
+        }}
+      >
+        <MessageSquareText />
+        Transcript
+      </Button>
+      {stopping ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          className="h-8 rounded-full bg-foreground/[0.06] px-3"
+          pending
+          onClick={(event) => event.stopPropagation()}
+        >
+          Finishing…
+        </Button>
+      ) : (
+        <Button
+          variant="secondary"
+          size="sm"
+          className="h-8 rounded-full bg-foreground/[0.06] px-3"
+          onClick={(event) => {
+            event.stopPropagation();
+            onStop?.();
+          }}
+        >
+          <Square className="size-3 fill-current" />
+          Stop
+        </Button>
+      )}
+    </div>
+  );
 }

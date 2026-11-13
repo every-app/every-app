@@ -6,10 +6,35 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Rect, RecordingSnapshot } from "@shared/ipc";
 
-/** Shown from Start until the stop has finished (`stopping` included), if the setting is on. */
-export function shouldShowPill(state: RecordingSnapshot["state"], enabled: boolean): boolean {
-  return enabled && (state === "starting" || state === "recording" || state === "stopping");
+/** What main knows about its own window (window.ts), for `mainWindowInFront`. */
+export interface MainWindowFacts {
+  /** The window exists and isn't hidden (closing it hides it). */
+  visible: boolean;
+  minimized: boolean;
+  /** It's the key window: Every App is the active app and this is the window being typed in. */
+  focused: boolean;
 }
+
+/**
+ * The main window is in front: on screen and the one in use. Its recorder bar is then the
+ * indicator. Not when another app is frontmost, the window is minimised, hidden or closed, or
+ * you're on another Space (something else has the focus there).
+ */
+export function mainWindowInFront(w: MainWindowFacts | undefined): boolean {
+  return !!w && w.visible && !w.minimized && w.focused;
+}
+
+/**
+ * Shown from Start until the stop has finished (`stopping` included), if the setting is on and
+ * the main window isn't in front: one indicator at a time.
+ */
+export function shouldShowPill(state: RecordingSnapshot["state"], enabled: boolean, mainInFront: boolean): boolean {
+  return enabled && !mainInFront && (state === "starting" || state === "recording" || state === "stopping");
+}
+
+/** How long the main window must have been out of front before the pill comes back, so a moment
+ * without focus (a sheet, a menu, ⌘-Tab and straight back) doesn't blink it. Hiding is immediate. */
+export const PILL_RETURN_MS = 250;
 
 /** Sizes in points, read off Granola's Retina screenshots (Ben's reference): a 34×60 capsule, and
  * a 292×342 panel beside it whose bottom sits `LIFT` lower than the pill's. */

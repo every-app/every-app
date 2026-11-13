@@ -12,6 +12,7 @@ import {
   INSET,
   LIFT,
   MARGIN,
+  mainWindowInFront,
   PANEL,
   PILL,
   pillLayout,
@@ -43,11 +44,28 @@ const delta = (itemId: string, text: string, speaker: "me" | "them" = "them"): H
 
 describe("floating recorder: when it shows", () => {
   it("shows from start until the stop has finished, only with the setting on", () => {
-    expect(shouldShowPill("idle", true)).toBe(false);
-    expect(shouldShowPill("starting", true)).toBe(true);
-    expect(shouldShowPill("recording", true)).toBe(true);
-    expect(shouldShowPill("stopping", true)).toBe(true);
-    for (const s of ["idle", "starting", "recording", "stopping"] as const) expect(shouldShowPill(s, false)).toBe(false);
+    expect(shouldShowPill("idle", true, false)).toBe(false);
+    expect(shouldShowPill("starting", true, false)).toBe(true);
+    expect(shouldShowPill("recording", true, false)).toBe(true);
+    expect(shouldShowPill("stopping", true, false)).toBe(true);
+    for (const s of ["idle", "starting", "recording", "stopping"] as const) expect(shouldShowPill(s, false, false)).toBe(false);
+  });
+
+  it("hides while the main window is in front: its recorder bar is the indicator", () => {
+    for (const s of ["starting", "recording", "stopping"] as const) expect(shouldShowPill(s, true, true)).toBe(false);
+    expect(shouldShowPill("recording", true, false)).toBe(true);
+  });
+
+  it("the main window is in front only when it's on screen and the one in use", () => {
+    const front = { visible: true, minimized: false, focused: true };
+    expect(mainWindowInFront(front)).toBe(true);
+    // Another app is frontmost, or you're on another Space: something else has the focus.
+    expect(mainWindowInFront({ ...front, focused: false })).toBe(false);
+    expect(mainWindowInFront({ ...front, minimized: true })).toBe(false);
+    // Closed (it hides) or hidden with ⌘H.
+    expect(mainWindowInFront({ ...front, visible: false })).toBe(false);
+    // No window yet, or it was destroyed.
+    expect(mainWindowInFront(undefined)).toBe(false);
   });
 
   it("is on by default, and the setting can be turned off", () => {

@@ -30,7 +30,7 @@ import type { UpdateController } from "./updates";
 import { RecordShortcut } from "./shortcut";
 import { MainWindow } from "./window";
 import { LiveTranscriptBuffer } from "./liveTranscript";
-import { PillPlacesStore, shouldShowPill } from "./pill";
+import { mainWindowInFront, PILL_RETURN_MS, PillPlacesStore, shouldShowPill } from "./pill";
 import { RecorderPillWindow } from "./pillWindow";
 import { AppMenu } from "./menu";
 import { isSignInEndpoint, typedAppUrl } from "./auth/url";
@@ -172,8 +172,17 @@ async function main(): Promise<void> {
     // Each recording starts clean; nothing is kept once it ends.
     if (r.state === "idle") liveTranscript.reset();
     else if (r.meetingId && r.meetingId !== liveTranscript.value.meetingId) liveTranscript.reset(r.meetingId);
-    pill.setVisible(shouldShowPill(r.state, settings.value.floatingRecorder));
+    pill.setVisible(shouldShowPill(r.state, settings.value.floatingRecorder, mainWindowInFront(window.facts)));
     pill.push();
+  };
+  // The pill hides the moment the main window comes to the front (its recorder bar takes over),
+  // and comes back a beat after the window leaves it.
+  let pillReturn: NodeJS.Timeout | undefined;
+  window.onFrontChange = () => {
+    if (pillReturn) clearTimeout(pillReturn);
+    pillReturn = undefined;
+    if (mainWindowInFront(window.facts)) syncPill();
+    else pillReturn = setTimeout(syncPill, PILL_RETURN_MS).unref();
   };
   const selfTest = new SelfTestController(helper, () => recording.isActive, log);
   recording.startBlocked = () =>

@@ -5,8 +5,9 @@ import { barHeights, smoothLevel } from "../lib/levels";
 import type { Segment } from "../types";
 
 /*
- * The floating recorder, in the bottom-right corner of the screen while recording (or wherever
- * it was dragged to along the screen's side edges): a small capsule with Every App's mark and a
+ * The floating recorder, in the bottom-right corner of the screen (or wherever it was dragged to
+ * along the screen's side edges) while recording and the main window isn't in front (there, the
+ * recorder bar is the indicator: recording.tsx): a small capsule with Every App's mark and a
  * meter, and on hover a panel with the live transcript. Always
  * dark, like the meeting apps it floats over. Sizes follow Granola's pill (Ben's reference
  * screenshots), in points; the bars are the foreground colour, like the rest of the pill.

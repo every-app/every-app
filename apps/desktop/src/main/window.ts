@@ -37,11 +37,20 @@ function loadBounds(): Bounds {
 export class MainWindow {
   private window: BrowserWindow | undefined;
   quitting = false;
+  /** The window came to the front or left it (focus, hide, minimise, close): see `facts`. */
+  onFrontChange: (() => void) | undefined;
 
   constructor(private readonly preloadPath: string) {}
 
   get webContents(): Electron.WebContents | undefined {
     return this.window?.webContents;
+  }
+
+  /** For pill.ts's `mainWindowInFront`; undefined when there is no window. */
+  get facts(): { visible: boolean; minimized: boolean; focused: boolean } | undefined {
+    const w = this.window;
+    if (!w || w.isDestroyed()) return undefined;
+    return { visible: w.isVisible(), minimized: w.isMinimized(), focused: w.isFocused() };
   }
 
   show(): void {
@@ -96,7 +105,11 @@ export class MainWindow {
     });
     w.on("closed", () => {
       this.window = undefined;
+      this.onFrontChange?.();
     });
+    for (const event of ["focus", "blur", "show", "hide", "minimize", "restore"] as const) {
+      w.on(event as "focus", () => this.onFrontChange?.());
+    }
     // Navigation and window.open are guarded for every webContents in index.ts (navigation.ts).
     if (process.env.ELECTRON_RENDERER_URL && !app.isPackaged) {
       void w.loadURL(process.env.ELECTRON_RENDERER_URL);

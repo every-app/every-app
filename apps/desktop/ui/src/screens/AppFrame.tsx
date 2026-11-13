@@ -8,31 +8,30 @@ import {
   Plus,
   Search,
   Settings,
-  Square,
   Users,
 } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
-import type {
-  Account,
-  Folder,
-  Levels,
-  LiveRecording,
-  Loadable,
-  NavTarget,
-  Space,
-} from "../types";
-import { ChannelMeters, Elapsed, RecordDot } from "./recording";
+import type { Account, Folder, Loadable, NavTarget, Space } from "../types";
+import { RecorderBar, type RecorderBarProps } from "./recording";
 
 /** Width the macOS traffic lights take in a hiddenInset title bar. */
 const TRAFFIC_LIGHTS = 78;
 export const TITLE_BAR_HEIGHT = 52;
 
-export interface RecordingSummary {
-  live: LiveRecording;
-  levels: Levels;
-  elapsedMs: number;
+/** The recording this Mac is making, for the bar at the bottom of the window. */
+export interface FrameRecorder
+  extends Pick<
+    RecorderBarProps,
+    "recording" | "levels" | "elapsedMs" | "stopping" | "onStop"
+  > {
+  /** The page on screen is the recording meeting's own: it draws the bar (and the transcript). */
+  here: boolean;
+  /** Go to the recording meeting. */
+  onOpen: () => void;
+  /** Go to the recording meeting with its live transcript open. */
+  onTranscript: () => void;
 }
 
 export interface SidebarProps {
@@ -50,9 +49,6 @@ export interface SidebarProps {
   newNoteDisabledReason?: string;
   /** The search field at the top: opens search (⌘K). */
   onSearch?: () => void;
-  recording?: RecordingSummary | null;
-  onOpenRecording?: () => void;
-  onStopRecording?: () => void;
   /** The heading over the meeting-notes pages (the feature's name; default "Scribe"). */
   featureLabel?: string;
 }
@@ -173,51 +169,6 @@ function FolderGroup({
   );
 }
 
-/** A quiet pill for the call in progress: open it, or stop it. */
-export function RecordingPill({
-  recording,
-  onOpen,
-  onStop,
-}: {
-  recording: RecordingSummary;
-  onOpen?: () => void;
-  onStop?: () => void;
-}) {
-  return (
-    <div className="no-drag flex items-center gap-1 rounded-lg border border-sidebar-border bg-background/70 p-1 pl-2.5 shadow-xs">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex min-w-0 flex-1 flex-col items-start py-0.5 text-left focus-visible:outline-none"
-      >
-        <span className="flex w-full items-center gap-1.5 text-[12px] font-medium">
-          <RecordDot className="size-1.5" />
-          <span className="truncate">{recording.live.title}</span>
-        </span>
-        <span className="flex items-center gap-2 pl-3 text-[11px] text-muted-foreground">
-          <Elapsed ms={recording.elapsedMs} />
-          <ChannelMeters
-            mic={recording.levels.mic}
-            system={recording.levels.system}
-            micHealth={recording.live.mic}
-            systemHealth={recording.live.system}
-            className="scale-90 gap-2 [&_svg]:size-3"
-          />
-        </span>
-      </button>
-      <button
-        type="button"
-        title="Stop recording"
-        onClick={onStop}
-        className="flex size-7 shrink-0 items-center justify-center rounded-md text-foreground/70 transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
-      >
-        <Square className="size-3 fill-current" />
-        <span className="sr-only">Stop recording</span>
-      </button>
-    </div>
-  );
-}
-
 /** A feature's part of the sidebar: a quiet heading over its pages. */
 export function SidebarSection({
   label,
@@ -261,15 +212,6 @@ export function Sidebar(props: SidebarProps) {
               ⌘K
             </kbd>
           </button>
-        </div>
-      )}
-      {props.recording && (
-        <div className="px-2.5 pb-2">
-          <RecordingPill
-            recording={props.recording}
-            onOpen={props.onOpenRecording}
-            onStop={props.onStopRecording}
-          />
         </div>
       )}
       <nav
@@ -373,16 +315,19 @@ export function Avatar({
 /**
  * The window: a translucent sidebar on the left, and a content pane with a
  * draggable title bar strip on top. `titleBar` renders inside that strip,
- * right of any traffic lights.
+ * right of any traffic lights. While this Mac records, the recorder bar sits at the bottom of the
+ * pane on every page; the recording meeting's own page draws it itself (`recorder.here`).
  */
 export function AppFrame({
   sidebar,
   titleBar,
   banner,
+  recorder,
   children,
   className,
 }: {
   sidebar: SidebarProps;
+  recorder?: FrameRecorder | null;
   titleBar?: ReactNode;
   /** A strip under the title bar (offline, sign in again); the page stays below it. */
   banner?: ReactNode;
@@ -397,11 +342,11 @@ export function AppFrame({
       )}
     >
       <Sidebar {...sidebar} />
-      <main className="flex min-w-0 flex-1 flex-col bg-background">
+      <main className="relative flex min-w-0 flex-1 flex-col bg-background">
         <TitleBar>
           {titleBar}
-          {/* Top right of every page; while recording, the sidebar's recording pill takes its place. */}
-          {!sidebar.recording && (
+          {/* Top right of every page, except while recording (one recording at a time). */}
+          {!recorder && (
             <NewNoteButton
               onClick={sidebar.onNewNote}
               disabledReason={sidebar.newNoteDisabledReason}
@@ -410,6 +355,19 @@ export function AppFrame({
         </TitleBar>
         {banner}
         {children}
+        {recorder && !recorder.here && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-5 flex justify-center px-4">
+            <RecorderBar
+              recording={recorder.recording}
+              levels={recorder.levels}
+              elapsedMs={recorder.elapsedMs}
+              stopping={recorder.stopping}
+              onStop={recorder.onStop}
+              onTranscript={recorder.onTranscript}
+              onOpen={recorder.onOpen}
+            />
+          </div>
+        )}
       </main>
     </div>
   );

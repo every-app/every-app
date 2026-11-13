@@ -75,6 +75,15 @@ The window and the helper call only `/api/v1` (no server functions). The contrac
 3. A meeting that started without notes gets one nudge in its first minutes. A meeting Scribe is already taking notes for gets neither.
 4. `everyapp://scribe/record` (from the Scribe web app) takes notes now; `everyapp://scribe/record?event=<id>&title=…&start=…[&join=1]` takes notes for that event. Any web page can open such a link, so the app starts at once only for an event in its own calendar list, and asks first otherwise. (The web app still opens `talk://record`; it has to move to the new link.)
 
+## While it records
+
+One indicator at a time, plus the menu bar icon (which shows recording state as always):
+
+- **The recorder bar**, at the bottom of the main window on every page (Home, another meeting, Templates, Settings): the timer, the microphone and call-audio levels, **Transcript** and **Stop**. On the recording meeting's own page, Transcript opens the live transcript beside the notes. On any other page the bar also names the meeting; clicking it anywhere but its buttons goes back to that meeting, and Transcript goes there with the transcript open. Nothing about the recording is in the sidebar.
+- **The floating recorder** (the pill in the corner of the screen; Settings, "Show the floating recorder while recording") shows only while the main window is not in front: another app is frontmost, or the window is minimised, hidden, closed or on another Space. Bring the window to the front and the pill hides at once; leave it and the pill is back a quarter of a second later (so a sheet or a quick ⌘-Tab doesn't blink it). The pill never takes focus itself, so using it doesn't count as leaving the window.
+
+The rule is `mainWindowInFront` and `shouldShowPill` in `src/main/pill.ts` (pure; `test/pill.test.ts`): recording (`starting`, `recording` or `stopping`), the setting on, and the main window not both on screen and focused. The bar is `RecorderBar` in `ui/src/screens/recording.tsx`, drawn by the meeting's page for its own recording and by `AppFrame` everywhere else.
+
 ## A recording left running
 
 A recording goes on until someone stops it, so a forgotten one would record whatever comes after the meeting. Scribe asks **Still recording?** when a recording looks forgotten, and stops it when nobody answers. Setting: "Stop a recording I forgot" (`autoStop`), on by default.

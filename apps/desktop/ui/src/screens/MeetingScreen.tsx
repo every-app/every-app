@@ -7,10 +7,8 @@ import {
   Folder as FolderIcon,
   LayoutTemplate,
   Link2,
-  MessageSquareText,
   MoreHorizontal,
   Pencil,
-  Square,
   Users,
   X,
 } from "lucide-react";
@@ -59,7 +57,7 @@ import type {
 } from "../types";
 import { Notepad } from "./Notepad";
 import { ErrorState, ownerLabel } from "./parts";
-import { ChannelMeters, Elapsed, RecordDot } from "./recording";
+import { Elapsed, RecordDot, RecorderBar } from "./recording";
 import { Transcript } from "./Transcript";
 
 export type TranscriptionNote = "reconnecting" | "catching_up";
@@ -804,6 +802,16 @@ function NotesPanel({
   );
 }
 
+/** The bar before the recording's first snapshot arrives: no title, both channels fine. */
+const NOT_LIVE: LiveRecording = {
+  meetingId: "",
+  title: "",
+  startedAt: "",
+  mode: "realtime",
+  mic: "ok",
+  system: "ok",
+};
+
 function ControlBar({
   phase,
   live,
@@ -862,79 +870,33 @@ function ControlBar({
           {warning}
         </p>
       )}
-      <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-border bg-popover/90 p-1 shadow-[0_6px_24px_-8px_rgb(0_0_0/0.18),0_1px_2px_rgb(0_0_0/0.06)] backdrop-blur-xl">
-        {phase === "before" ? (
-          <Bar>
-            <span className="px-3 text-[12px] text-muted-foreground">
-              Not recording
-            </span>
-            <Button
-              size="sm"
-              className="h-8 rounded-full px-3.5"
-              onClick={onStart}
-            >
-              <span className="size-2 rounded-full bg-record" />
-              Start recording
-            </Button>
-          </Bar>
-        ) : (
-          <Bar>
-            <span className="flex items-center gap-2 pl-3 pr-1 text-[12px] font-medium">
-              <RecordDot />
-              <Elapsed ms={live?.elapsedMs ?? 0} />
-            </span>
-            {live && (
-              <ChannelMeters
-                mic={live.levels.mic}
-                system={live.levels.system}
-                micHealth={live.recording.mic}
-                systemHealth={live.recording.system}
-                className="px-2"
-              />
-            )}
-            <span className="mx-1 h-4 w-px bg-border" />
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-pressed={transcriptOpen}
-              className={cn(
-                "h-8 rounded-full px-3",
-                transcriptOpen && "bg-foreground/[0.06]",
-              )}
-              onClick={onToggleTranscript}
-            >
-              <MessageSquareText />
-              Transcript
-            </Button>
-            {stopping ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-8 rounded-full bg-foreground/[0.06] px-3"
-                pending
-              >
-                Finishing…
-              </Button>
-            ) : (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-8 rounded-full bg-foreground/[0.06] px-3"
-                onClick={onStop}
-              >
-                <Square className="size-3 fill-current" />
-                Stop
-              </Button>
-            )}
-          </Bar>
-        )}
-      </div>
+      {phase === "before" ? (
+        <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-border bg-popover/90 p-1 shadow-[0_6px_24px_-8px_rgb(0_0_0/0.18),0_1px_2px_rgb(0_0_0/0.06)] backdrop-blur-xl">
+          <span className="px-3 text-[12px] text-muted-foreground">
+            Not recording
+          </span>
+          <Button
+            size="sm"
+            className="h-8 rounded-full px-3.5"
+            onClick={onStart}
+          >
+            <span className="size-2 rounded-full bg-record" />
+            Start recording
+          </Button>
+        </div>
+      ) : (
+        <RecorderBar
+          recording={live?.recording ?? NOT_LIVE}
+          levels={live?.levels ?? { mic: 0, system: 0 }}
+          elapsedMs={live?.elapsedMs ?? 0}
+          stopping={stopping}
+          onStop={onStop}
+          transcriptOpen={transcriptOpen}
+          onTranscript={onToggleTranscript}
+        />
+      )}
     </div>
   );
-}
-
-function Bar({ children }: { children: ReactNode }) {
-  return <div className="flex items-center gap-1">{children}</div>;
 }
 
 function TranscriptDrawer({

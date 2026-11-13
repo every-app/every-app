@@ -11,6 +11,7 @@ import { backendAppIds, SCRIBE } from "@shared/features";
 import { GATEWAY_GUIDE_URL, SETUP_COMMANDS } from "@shared/setup";
 import { AppFrame, OfflineBanner, OnboardingScreen, SignInAgainBanner, SPLASH_TIMING, TitleBar, WelcomeSplash } from "@every-app/desktop-ui";
 import { useRecordingElapsed } from "../useRecordingElapsed";
+import { onRecordingPage, wantTranscript } from "../recording";
 import { Button } from "@every-app/desktop-ui/components/button";
 import { clearDrafts, useCancelledStart, useFollowRecording, useStartRecording, useStopRecording } from "../actions";
 import { api, cleanError, keys } from "../api";
@@ -329,6 +330,30 @@ function Layout({ state }: { state: AppSnapshot }) {
     <>
       <AppFrame
         banner={<ConnectionStrip state={state} />}
+        recorder={
+          recordingId
+            ? {
+                recording: {
+                  meetingId: recordingId,
+                  title: rec.title ?? "Meeting",
+                  startedAt: rec.startedAt ?? new Date().toISOString(),
+                  mode: rec.mode ?? "realtime",
+                  mic: rec.mic ?? "ok",
+                  system: rec.system ?? "ok",
+                },
+                levels,
+                elapsedMs,
+                stopping: rec.stopping === true || rec.state === "stopping",
+                here: onRecordingPage(pathname, recordingId),
+                onOpen: () => void navigate({ to: "/meetings/$id", params: { id: recordingId } }),
+                onTranscript: () => {
+                  wantTranscript(recordingId);
+                  void navigate({ to: "/meetings/$id", params: { id: recordingId } });
+                },
+                onStop: () => void stop(),
+              }
+            : null
+        }
         sidebar={{
           current: navFrom(pathname),
           onNavigate,
@@ -355,22 +380,6 @@ function Layout({ state }: { state: AppSnapshot }) {
                 },
               }
             : null,
-          recording: recordingId
-            ? {
-                live: {
-                  meetingId: recordingId,
-                  title: rec.title ?? "Meeting",
-                  startedAt: rec.startedAt ?? new Date().toISOString(),
-                  mode: rec.mode ?? "realtime",
-                  mic: rec.mic ?? "ok",
-                  system: rec.system ?? "ok",
-                },
-                levels,
-                elapsedMs,
-              }
-            : null,
-          onOpenRecording: () => recordingId && void navigate({ to: "/meetings/$id", params: { id: recordingId } }),
-          onStopRecording: () => void stop(),
         }}
         titleBar={
           deep && (

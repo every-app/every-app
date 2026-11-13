@@ -36,11 +36,28 @@ export function liveMeetingToOpen(
 
 /**
  * How long the recording ran: from `startedAt`, held at `stoppingSince` once Stop is pressed, so
- * the sidebar pill and the meeting page show the same time while a Stop finishes.
+ * the recorder bar shows the same time on every page while a Stop finishes.
  */
 export function recordingElapsedMs(rec: RecordingSnapshot | undefined, nowMs: number): number {
   if (!rec || rec.state === "idle" || !rec.startedAt) return 0;
   const start = Date.parse(rec.startedAt);
   const end = rec.stoppingSince ? Date.parse(rec.stoppingSince) : nowMs;
   return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : 0;
+}
+
+/** "/meetings/<id>" for the recording meeting: its own page draws the recorder bar and the transcript. */
+export function onRecordingPage(pathname: string, meetingId: string | undefined): boolean {
+  return !!meetingId && pathname === `/meetings/${meetingId}`;
+}
+
+// The recorder bar's Transcript button on another page: go to the recording meeting and open its
+// live transcript there. The meeting page reads this as it mounts and clears it.
+let transcriptWanted: string | null = null;
+
+export function wantTranscript(meetingId: string | null): void {
+  transcriptWanted = meetingId;
+}
+
+export function transcriptWantedFor(meetingId: string): boolean {
+  return transcriptWanted === meetingId;
 }

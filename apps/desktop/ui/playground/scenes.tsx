@@ -22,7 +22,6 @@ import {
   type MeetingPhase,
   type MeetingScreenProps,
   type OnboardingScreenProps,
-  type RecordingSummary,
   type SidebarProps,
   type TemplatesScreenProps,
 } from "../src/screens";
@@ -135,7 +134,8 @@ function Frame({
   current: NavTarget | null;
   children: ReactNode;
   titleBar?: ReactNode;
-  recording?: RecordingSummary | null;
+  /** This Mac is recording; `here` when the scene is the recording meeting's own page. */
+  recording?: (Pick<LiveState, "recording" | "levels" | "elapsedMs"> & { here?: boolean; stopping?: boolean }) | null;
   folders?: Loadable<typeof mock.folders>;
   banner?: ReactNode;
   update?: SidebarProps["update"];
@@ -150,12 +150,27 @@ function Frame({
     onNewNote: noop,
     onSearch: noop,
     update,
-    recording,
-    onOpenRecording: noop,
-    onStopRecording: noop,
   };
   return (
-    <AppFrame sidebar={sidebar} titleBar={titleBar} banner={banner}>
+    <AppFrame
+      sidebar={sidebar}
+      titleBar={titleBar}
+      banner={banner}
+      recorder={
+        recording
+          ? {
+              recording: recording.recording,
+              levels: recording.levels,
+              elapsedMs: recording.elapsedMs,
+              stopping: recording.stopping,
+              here: recording.here ?? false,
+              onOpen: noop,
+              onTranscript: noop,
+              onStop: noop,
+            }
+          : null
+      }
+    >
       {children}
     </AppFrame>
   );
@@ -179,11 +194,14 @@ function MeetingScene({
   meeting = mock.meeting,
   animate,
   extra,
+  elsewhere,
 }: {
   phase: MeetingPhase;
   meeting?: MeetingDetail;
   animate: boolean;
   extra?: Partial<MeetingScreenProps>;
+  /** This Mac is recording another meeting meanwhile. */
+  elsewhere?: boolean;
 }) {
   const live = useLive(animate);
   const [jottings, setJottings] = useState(
@@ -212,9 +230,7 @@ function MeetingScene({
           },
         };
   const recording =
-    phase === "during"
-      ? { live: live.recording, levels: live.levels, elapsedMs: live.elapsedMs }
-      : null;
+    phase === "during" ? { ...live, here: true } : elsewhere ? live : null;
   return (
     <Frame
       current={null}
@@ -255,14 +271,20 @@ function MeetingScene({
 
 /* Templates --------------------------------------------------------------- */
 
-function TemplatesScene(
-  props: Partial<TemplatesScreenProps> & { initial?: string | "new" | null },
-) {
+function TemplatesScene({
+  recording,
+  ...props
+}: Partial<TemplatesScreenProps> & {
+  initial?: string | "new" | null;
+  /** This Mac is recording a meeting meanwhile. */
+  recording?: SceneContext;
+}) {
   const [selectedId, setSelectedId] = useState<string | "new" | null>(
     props.initial === undefined ? "t-1" : props.initial,
   );
+  const live = useLive(recording?.animate ?? false);
   return (
-    <Frame current={{ to: "templates" }}>
+    <Frame current={{ to: "templates" }} recording={recording ? live : null}>
       <TemplatesScreen
         templates={ready(mock.templates)}
         selectedId={selectedId}
@@ -499,18 +521,21 @@ const folderScreen = (
   />
 );
 
-function HomeRecording({ animate }: SceneContext) {
+/** Any page but the recording meeting's own, while this Mac records: the recorder bar stays. */
+function Recording({
+  animate,
+  current,
+  stopping,
+  children,
+}: SceneContext & {
+  current: NavTarget | null;
+  stopping?: boolean;
+  children: ReactNode;
+}) {
   const live = useLive(animate);
   return (
-    <Frame
-      current={{ to: "home" }}
-      recording={{
-        live: live.recording,
-        levels: live.levels,
-        elapsedMs: live.elapsedMs,
-      }}
-    >
-      {home()}
+    <Frame current={current} recording={{ ...live, stopping }}>
+      {children}
     </Frame>
   );
 }
@@ -686,8 +711,22 @@ export const scenes: Scene[] = [
   {
     id: "home-recording",
     group: "Home",
-    label: "Recording pill",
-    render: (ctx) => <HomeRecording {...ctx} />,
+    label: "Recording (bar on Home)",
+    render: (ctx) => (
+      <Recording {...ctx} current={{ to: "home" }}>
+        {home()}
+      </Recording>
+    ),
+  },
+  {
+    id: "home-recording-stopping",
+    group: "Home",
+    label: "Recording, finishing (bar on Home)",
+    render: (ctx) => (
+      <Recording {...ctx} current={{ to: "home" }} stopping>
+        {home()}
+      </Recording>
+    ),
   },
   {
     id: "home-empty",
@@ -911,6 +950,12 @@ export const scenes: Scene[] = [
     render: (ctx) => <MeetingScene phase="after" {...ctx} />,
   },
   {
+    id: "meeting-after-recording-another",
+    group: "Meeting",
+    label: "After, while recording another meeting",
+    render: (ctx) => <MeetingScene phase="after" elsewhere {...ctx} />,
+  },
+  {
     id: "meeting-after-jottings",
     group: "Meeting",
     label: "After: jottings",
@@ -1111,6 +1156,14 @@ export const scenes: Scene[] = [
     render: () => <TemplatesScene />,
   },
   {
+    id: "templates-recording",
+    group: "Templates",
+    label: "Recording (bar on Templates)",
+    render: (ctx) => (
+      <TemplatesScene recording={ctx} />
+    ),
+  },
+  {
     id: "templates-builtin",
     group: "Templates",
     label: "Built-in",
@@ -1153,6 +1206,16 @@ export const scenes: Scene[] = [
       <Frame current={{ to: "settings" }}>
         <SettingsScene />
       </Frame>
+    ),
+  },
+  {
+    id: "settings-recording",
+    group: "Settings",
+    label: "Recording (bar on Settings)",
+    render: (ctx) => (
+      <Recording {...ctx} current={{ to: "settings" }}>
+        <SettingsScene />
+      </Recording>
     ),
   },
   {

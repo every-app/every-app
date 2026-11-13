@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { MeetingDetail } from "@shared/contract";
 import { EmptyState, ErrorState, MeetingScreen, ScreenBody, useElapsed, type LiveState, type MeetingTab } from "@every-app/desktop-ui";
 import { Skeleton } from "@every-app/desktop-ui/components/skeleton";
@@ -9,7 +9,7 @@ import { api, cleanError, keys } from "../api";
 import { useJottings } from "../jottings";
 import { useRecordingElapsed } from "../useRecordingElapsed";
 import { meetingForView, recordingHereOf } from "../meeting-view";
-import { SLOW_CONNECTION } from "../recording";
+import { SLOW_CONNECTION, transcriptWantedFor, wantTranscript } from "../recording";
 import { transcriptionNoteOf } from "../connection";
 import { mergeSegments, partialOf, useLevels, useLiveTranscript } from "../live";
 import { accountFrom } from "../map";
@@ -47,6 +47,13 @@ export function MeetingPage({ id, tab }: { id: string; tab?: MeetingTab }) {
   const stoppingMs = useElapsed(stopping ? (rec.stoppingSince ?? null) : null);
 
   const [finishing, setFinishing] = useState(false);
+  // The recorder bar's Transcript button on another page led here: the screen opens with the live
+  // transcript (it reads this once, as it mounts), and the request is spent.
+  const openTranscript = transcriptWantedFor(id);
+  const shownYet = !!meeting;
+  useEffect(() => {
+    if (shownYet) wantTranscript(null);
+  }, [id, shownYet]);
   if (!meeting && query.isPending) return <Loading />;
   if (!meeting) {
     return (
@@ -96,6 +103,7 @@ export function MeetingPage({ id, tab }: { id: string; tab?: MeetingTab }) {
       jottings={jottings}
       onJottingsChange={setJottings}
       live={live}
+      defaultTranscriptOpen={recordingHere && openTranscript}
       warning={recordingHere && rec.warning ? SLOW_CONNECTION : null}
       warningDetail={recordingHere ? rec.warning : null}
       transcription={recordingHere ? transcriptionNoteOf(state) : null}

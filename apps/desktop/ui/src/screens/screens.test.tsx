@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MeetingDetail } from "../types";
+import { AppFrame, type FrameRecorder, type SidebarProps } from "./AppFrame";
 import { MeetingScreen } from "./MeetingScreen";
 import { SettingsScreen } from "./SettingsScreen";
 import { Transcript } from "./Transcript";
@@ -378,6 +379,109 @@ describe("MeetingScreen", () => {
     );
     expect(screen.getByText("Recording in progress")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Finish/ })).toBeNull();
+  });
+});
+
+describe("AppFrame while recording", () => {
+  const sidebar: SidebarProps = {
+    current: { to: "home" },
+    onNavigate: () => {},
+    folders: { status: "ready", data: [] },
+    orgName: "Every",
+    onNewNote: () => {},
+  };
+  const recorder = (patch: Partial<FrameRecorder> = {}): FrameRecorder => ({
+    recording: {
+      meetingId: "m-1",
+      title: "Pricing call",
+      startedAt: "",
+      mode: "realtime",
+      mic: "ok",
+      system: "ok",
+    },
+    levels: { mic: 0.4, system: 0.2 },
+    elapsedMs: 61_000,
+    here: false,
+    onOpen: () => {},
+    onTranscript: () => {},
+    onStop: () => {},
+    ...patch,
+  });
+
+  it("another page: the bar names the meeting, with the timer, both levels, Transcript and Stop", () => {
+    const onOpen = vi.fn();
+    const onTranscript = vi.fn();
+    const onStop = vi.fn();
+    render(
+      <AppFrame
+        sidebar={sidebar}
+        recorder={recorder({ onOpen, onTranscript, onStop })}
+      >
+        <p>Home</p>
+      </AppFrame>,
+    );
+    const bar = screen.getByRole("group", { name: "Recording" });
+    expect(bar.textContent).toContain("Pricing call");
+    expect(bar.textContent).toContain("1:01");
+    expect(bar.textContent).toContain("Mic level 40%");
+    expect(bar.textContent).toContain("Call audio level 20%");
+
+    // Its buttons do their own thing and don't also open the meeting.
+    fireEvent.click(screen.getByRole("button", { name: /Transcript/ }));
+    expect(onTranscript).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: /Stop/ }));
+    expect(onStop).toHaveBeenCalledOnce();
+    expect(onOpen).not.toHaveBeenCalled();
+
+    // Anywhere else on the bar goes back to the recording meeting: once per click.
+    fireEvent.click(bar);
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: /Pricing call/ }));
+    expect(onOpen).toHaveBeenCalledTimes(2);
+  });
+
+  it("the sidebar has nothing about the recording, and New note is away", () => {
+    render(
+      <AppFrame sidebar={sidebar} recorder={recorder()}>
+        <p>Home</p>
+      </AppFrame>,
+    );
+    const side = screen.getByRole("complementary", { name: "Sidebar" });
+    expect(side.textContent).not.toContain("Pricing call");
+    expect(side.textContent).not.toContain("1:01");
+    expect(side.querySelector(".record-pulse")).toBeNull();
+    expect(screen.queryByRole("button", { name: /New note/ })).toBeNull();
+    expect(screen.getAllByRole("group", { name: "Recording" })).toHaveLength(1);
+  });
+
+  it("the recording meeting's own page draws the bar: the frame adds none", () => {
+    render(
+      <AppFrame sidebar={sidebar} recorder={recorder({ here: true })}>
+        <p>The meeting</p>
+      </AppFrame>,
+    );
+    expect(screen.queryByRole("group", { name: "Recording" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /New note/ })).toBeNull();
+  });
+
+  it("finishing: no Stop to press twice", () => {
+    render(
+      <AppFrame sidebar={sidebar} recorder={recorder({ stopping: true })}>
+        <p>Home</p>
+      </AppFrame>,
+    );
+    expect(screen.getByRole("button", { name: /Finishing/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Stop/ })).toBeNull();
+  });
+
+  it("not recording: no bar, and New note is there", () => {
+    render(
+      <AppFrame sidebar={sidebar}>
+        <p>Home</p>
+      </AppFrame>,
+    );
+    expect(screen.queryByRole("group", { name: "Recording" })).toBeNull();
+    expect(screen.getByRole("button", { name: /New note/ })).toBeTruthy();
   });
 });
 
