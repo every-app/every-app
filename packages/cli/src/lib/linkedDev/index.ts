@@ -4,7 +4,6 @@
  * and forget it. The token never reaches the app's Worker: the gateway-lite
  * holds it and forwards the SDK's calls (commands/dev/linked.ts).
  */
-import os from "node:os";
 import { errorMessage, EveryAppError } from "@/lib/errors";
 import type { EventSink } from "@/lib/output/events";
 import { openInBrowser } from "@/lib/gateway/setup-link";
@@ -61,7 +60,6 @@ interface LinkOptions {
   json?: boolean;
   /** Sign in again even with a stored token. */
   fresh?: boolean;
-  clientName?: string;
 }
 
 /**
@@ -136,7 +134,7 @@ export async function linkGateway(options: LinkOptions): Promise<LinkedSession> 
     const meta = await serverMetadata();
     const clientId =
       store.list().find((candidate) => candidate.gateway === gateway)?.clientId ??
-      (await registerClient(meta, options.clientName ?? `${CLI} dev on ${os.hostname()}`, fetchImpl));
+      (await registerClient(meta, fetchImpl));
     out.emit({
       type: "step",
       step: STEP,

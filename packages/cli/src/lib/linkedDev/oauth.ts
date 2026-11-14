@@ -124,10 +124,12 @@ export async function discover(
   };
 }
 
+/** What the Gateway's consent page and Your connections call the CLI. */
+const CLIENT_NAME = "EveryApp CLI";
+
 /** Register the CLI as a public client, once per Gateway (the id lasts 60 days unused, renewed by use). */
 export async function registerClient(
   metadata: ServerMetadata,
-  clientName: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
   if (!metadata.registration_endpoint) {
@@ -141,7 +143,7 @@ export async function registerClient(
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
     body: JSON.stringify({
-      client_name: clientName,
+      client_name: CLIENT_NAME,
       redirect_uris: [REGISTERED_REDIRECT],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],

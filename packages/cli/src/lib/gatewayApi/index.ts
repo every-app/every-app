@@ -195,7 +195,7 @@ export async function signInToGateway(
   const metadata = await discover(gateway, fetchImpl);
   const clientId =
     store.list().find((entry) => entry.gateway === gateway)?.clientId ??
-    (await registerClient(metadata, `${CLI} on ${os.hostname()}`, fetchImpl));
+    (await registerClient(metadata, fetchImpl));
   options.out.emit({
     type: "step",
     step: SIGNIN_STEP,

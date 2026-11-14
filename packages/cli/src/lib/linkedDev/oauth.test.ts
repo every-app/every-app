@@ -82,17 +82,17 @@ describe("linked dev's OAuth client", () => {
     const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       expect(body).toMatchObject({
-        client_name: "everyapp dev on box",
+        client_name: "EveryApp CLI",
         redirect_uris: ["http://127.0.0.1/callback"],
         token_endpoint_auth_method: "none",
       });
       return json({ client_id: "cid" }, 201);
     });
     await expect(
-      registerClient(metadata, "everyapp dev on box", fetchImpl as unknown as typeof fetch),
+      registerClient(metadata, fetchImpl as unknown as typeof fetch),
     ).resolves.toBe("cid");
     const { registration_endpoint: _off, ...noRegistration } = metadata;
-    await expect(registerClient(noRegistration, "x")).rejects.toMatchObject({
+    await expect(registerClient(noRegistration)).rejects.toMatchObject({
       code: "OAUTH_REGISTRATION_OFF",
     });
   });
