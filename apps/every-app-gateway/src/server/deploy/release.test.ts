@@ -3,7 +3,12 @@ import { BUILD_SENTINEL } from "@every-app/sdk/cloudflare/sentinel";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseDeployUpload } from "./bundle";
 import { DeployError } from "./errors";
-import { bundleFromRelease, fetchAppRelease, parseRepoUrl } from "./release";
+import {
+  bundleFromRelease,
+  fetchAppRelease,
+  fetchReleaseUrl,
+  parseRepoUrl,
+} from "./release";
 import { readTar, TarError } from "./tar";
 
 const MANIFEST = { id: "todo", name: "Todos", resources: { d1: ["DB"] } };
@@ -272,6 +277,41 @@ describe("fetchAppRelease", () => {
 
     stubGitHub(new TextEncoder().encode("not gzip"));
     expect((await refusal(fetchAppRelease(repo))).code).toBe("RELEASE_INVALID");
+  });
+});
+
+describe("fetchReleaseUrl", () => {
+  const key = "e".repeat(64);
+  const url = `https://oss.new/apps/${key}`;
+
+  /** oss.new's answer, through a fetch that refuses what Workers refuse. */
+  function stubOssNew(answer: Response) {
+    vi.stubGlobal("fetch", async (_: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.redirect === "error")
+        throw new TypeError(
+          'Invalid redirect value, must be one of "follow" or "manual"',
+        );
+      return answer;
+    });
+  }
+
+  it("downloads an oss.new release", async () => {
+    stubOssNew(new Response(packRelease(files()) as Uint8Array<ArrayBuffer>));
+    const release = await fetchReleaseUrl(url);
+    expect(release.appId).toBe("todo");
+    expect(release.source.repoUrl).toBe(url);
+  });
+
+  it("refuses a redirect", async () => {
+    stubOssNew(
+      new Response(null, {
+        status: 302,
+        headers: { location: "https://example.com/release.tar.gz" },
+      }),
+    );
+    const error = await refusal(fetchReleaseUrl(url));
+    expect(error.code).toBe("RELEASE_FETCH_FAILED");
+    expect(error.message).toBe("oss.new answered 302.");
   });
 });
 

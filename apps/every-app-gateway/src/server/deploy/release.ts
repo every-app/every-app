@@ -441,8 +441,9 @@ export async function fetchReleaseUrl(
   const url = raw.trim();
   let response: Response;
   try {
+    // Workers refuse `redirect: "error"`; a redirect fails the status check below.
     response = await fetch(url, {
-      redirect: "error",
+      redirect: "manual",
       signal: AbortSignal.timeout(15_000),
     });
   } catch {
