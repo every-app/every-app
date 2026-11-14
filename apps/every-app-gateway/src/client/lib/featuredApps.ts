@@ -19,13 +19,12 @@ export interface FeaturedApp {
   /** The repository `everyapp install` takes (its latest release). */
   repo: string;
   /**
-   * What to have ready, as a person reads it: R2 on the account when the
-   * app binds a bucket (the install stops without it), then the manifest's
-   * required providers, capabilities and secrets, leaving out a secret the
-   * deploy generates. Empty when the app opens with nothing set. After the
+   * What to have ready, as a person reads it: the manifest's required
+   * providers, capabilities and secrets, leaving out a secret the deploy
+   * generates. R2 isn't listed: setup and update stop on an account
+   * without it. Empty when the app opens with nothing set. After the
    * install, the app's setup dialog names each key and the one command that
-   * sets it. Checked against each app's everyapp.config.ts and
-   * cloudflare.config.ts on 2026-11-12.
+   * sets it. Checked against each app's everyapp.config.ts on 2026-11-12.
    */
   needs: readonly string[];
 }
@@ -36,18 +35,14 @@ export const FEATURED_APPS: readonly FeaturedApp[] = [
     name: "OpenSEO",
     line: "Keyword research, rank tracking and site audits.",
     repo: `${FEATURED_APPS_OWNER}/open-seo`,
-    needs: [
-      "R2 turned on in your Cloudflare account",
-      "An OpenRouter key",
-      "A DataForSEO key",
-    ],
+    needs: ["An OpenRouter key", "A DataForSEO key"],
   },
   {
     id: "crm",
     name: "OpenCRM",
     line: "A simple CRM.",
     repo: `${FEATURED_APPS_OWNER}/open-crm`,
-    needs: ["R2 turned on in your Cloudflare account"],
+    needs: [],
   },
   {
     id: "analytics",
@@ -62,7 +57,6 @@ export const FEATURED_APPS: readonly FeaturedApp[] = [
     line: "An email inbox with an AI assistant.",
     repo: `${FEATURED_APPS_OWNER}/open-mail`,
     needs: [
-      "R2 turned on in your Cloudflare account",
       "A key for an AI model, such as OpenRouter",
       "A mail domain on Cloudflare",
     ],
