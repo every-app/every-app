@@ -406,6 +406,59 @@ describe("gateway host (control plane)", () => {
     ]);
   });
 
+  it("serves an app's icon itself, to the session that may open the app, with the control plane's headers", async () => {
+    mocks.authenticate.mockResolvedValueOnce(null);
+    const anonymous = await server.fetch(
+      gatewayRequest("/app-icon/todo.example.com"),
+    );
+    expect(anonymous.status).toBe(401);
+    expect(anonymous.headers.get("cache-control")).toBe("no-store");
+
+    mocks.authenticate.mockResolvedValueOnce({
+      sub: "user-1",
+      email: "ada@example.com",
+      orgId: "org-1",
+      orgRole: "member",
+      orgName: "Acme",
+    });
+    mocks.findByHostname.mockResolvedValueOnce(TODO);
+    const asked: Request[] = [];
+    mocks.env["APP__every-todo"] = {
+      fetch: async (request: Request) => {
+        asked.push(request);
+        return new URL(request.url).pathname === "/favicon.ico"
+          ? new Response(new Uint8Array([0, 0, 1, 0]), {
+              headers: {
+                "content-type": "image/x-icon",
+                "set-cookie": "session=evil; Domain=example.com",
+              },
+            })
+          : new Response(null, { status: 404 });
+      },
+    };
+    const response = await server.fetch(
+      gatewayRequest("/app-icon/todo.example.com", {
+        headers: { cookie: "session=abc" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("image/x-icon");
+    expect(response.headers.get("content-security-policy")).toBe(
+      "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox",
+    );
+    expect(response.headers.get("cache-control")).toBe("private, max-age=3600");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(response.headers.getSetCookie()).toEqual([]);
+    // The app's Worker over its binding, with nothing of the visitor's.
+    expect(asked.map((request) => request.url)).toEqual([
+      "https://todo.example.com/favicon.ico",
+    ]);
+    expect(asked[0]!.headers.get("cookie")).toBeNull();
+    expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+  });
+
   it("refuses a session cookie tossed in by a sibling subdomain, before anything runs", async () => {
     // evil.example.com set `__Secure-better-auth.session_token=<its own>;
     // Domain=example.com; Path=/api`: the browser sends both copies here.

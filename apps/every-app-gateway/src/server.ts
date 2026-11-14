@@ -3,7 +3,8 @@
  *
  * Every request to this worker is dispatched on Host:
  *  - the gateway's own host (from GATEWAY_URL) → `/health` for uptime
- *    monitors (server/health.ts: public, reads no session), its MCP
+ *    monitors (server/health.ts: public, reads no session), the apps'
+ *    icons for its own pages (`/app-icon/*`, server/app-icon.ts), its MCP
  *    connector (`/mcp`) and OAuth authorization server (`/oauth/*`,
  *    discovery), then the
  *    control-plane app (launcher, auth, admin) served by TanStack Start, with
@@ -72,6 +73,7 @@ import {
   activateDeployingApps,
   followAppVersion,
 } from "./server/app-activation";
+import { APP_ICON_PREFIX, serveAppIcon } from "./server/app-icon";
 import { refuseUnconnectedApp } from "./server/app-needs-connection";
 import { refuseUnreadyApp } from "./server/app-needs-setup";
 import { DrizzleAppRegistry } from "./perimeter/drizzleAppRegistry";
@@ -218,8 +220,9 @@ function refuseBypassedPath(): Response {
 
 /**
  * The gateway host: `/health` for uptime monitors (before anything else,
- * and before the bypass refusal below, which would otherwise 404 it), its
- * MCP and OAuth routes, the deploy API (only past the launch gate: without
+ * and before the bypass refusal below, which would otherwise 404 it), the
+ * apps' icons for its own pages (server/app-icon.ts), its MCP and OAuth
+ * routes, the deploy API (only past the launch gate: without
  * it, its paths are the control plane's like any other), the third-party
  * host handoff (only with a third-party domain: without one, its paths are
  * the control plane's too), else the control plane.
@@ -227,6 +230,16 @@ function refuseBypassedPath(): Response {
 async function serveGatewayHost(request: Request): Promise<Response> {
   const { pathname } = new URL(request.url);
   if (pathname === HEALTH_PATH) return serveHealth(request, env.DB);
+  if (pathname.startsWith(APP_ICON_PREFIX)) {
+    // An app's icon for the Gateway's own pages (server/app-icon.ts): read
+    // from the app's Worker over its binding, for whoever may open the app.
+    const registry = new DrizzleAppRegistry(env.DB);
+    return serveAppIcon(request, {
+      env: env as unknown as Record<string, unknown>,
+      authenticator: createProdAuthenticator(platformPolicy(env)),
+      resolveApp: (hostname) => resolveAppByHostname(registry, hostname),
+    });
+  }
   if (
     pathname.startsWith("/api/v1/") &&
     platformPolicy(env).thirdPartyDeploys

@@ -127,10 +127,10 @@ describe("what the Allow page says", () => {
     expect(text()).toContain("ada@acme.com");
   });
 
-  it("shows the app's icon from the app's own host", () => {
+  it("shows the app's icon from the Gateway's own address", () => {
     render();
     expect(container.querySelector("header img")?.getAttribute("src")).toBe(
-      "//openseo.acme.example.com/everyapp-icon.svg",
+      "/app-icon/openseo.acme.example.com",
     );
   });
 

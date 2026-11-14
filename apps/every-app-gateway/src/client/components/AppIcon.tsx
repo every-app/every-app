@@ -5,8 +5,13 @@ import type { UserAccessApp } from "@/types/app";
 /**
  * The launcher icon the app's manifest names, else the app's favicon, else
  * the first letter of its name: an image that fails to load gives way to
- * the next. The app draws its icon's whole tile; this only rounds its
- * corners.
+ * the next. The Gateway's own address comes first (`/app-icon/<hostname>`,
+ * server/app-icon.ts: the manifest's icon, else the favicon, read from the
+ * app's Worker), since the app's host is behind Cloudflare Access and
+ * answers only a browser that opened the app lately. The app's host stays
+ * as the next try, for an icon the Gateway doesn't serve (one the app's
+ * code answers, not a static file; a third-party app's). The app draws its
+ * icon's whole tile; this only rounds its corners.
  */
 export function AppIcon({
   app,
@@ -20,10 +25,12 @@ export function AppIcon({
   );
   const src =
     app.hostname && app.status === "active"
-      ? [app.icon, "/favicon.ico"]
-          .filter((path): path is string => path !== null)
-          .map((path) => `//${app.hostname}${path}`)
-          .find((candidate) => !failedSrcs.has(candidate))
+      ? [
+          `/app-icon/${app.hostname}`,
+          ...[app.icon, "/favicon.ico"]
+            .filter((path): path is string => path !== null)
+            .map((path) => `//${app.hostname}${path}`),
+        ].find((candidate) => !failedSrcs.has(candidate))
       : undefined;
 
   return (
