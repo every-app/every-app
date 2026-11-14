@@ -25,6 +25,12 @@ organization's apps: an allowed app can use every one of them.
 The client may be pasted in Manage workspace → Providers instead of set
 below; a setting set here wins.
 
+With no client at all, an organization that turned Composio on uses each
+person's own Composio for Google: no Cloud project and no consent screen,
+and requests pass through Composio
+([composio.md](/docs/agent/setup/composio)). This guide is Google with your
+own client, which is what the Gateway uses once it is set.
+
 | Name                             | Required | What it holds                                                                     |
 | -------------------------------- | -------- | --------------------------------------------------------------------------------- |
 | `GOOGLE_WORKSPACE_CLIENT_ID`     | required | The client's id, ending in `.apps.googleusercontent.com`; public, not a secret    |
@@ -267,8 +273,9 @@ before step 8.
 | `SECRET_SEVERAL_NAMES` | A pipe or `--from-env` with two names | One `secret set` per name |
 | `SECRET_NOT_DECLARED` with `data.didYouMean` | Name typed wrong | rerun with the name in `data.didYouMean` and the same value source (`--from-env VAR --json`, or the same pipe); `data.rerun` carries only the names, so run as is it stops with `SECRET_VALUE_REQUIRED` |
 | `has("web")` prints `false`; `jq -r .web.client_id` prints `null` | A Desktop client's file (`installed` key); `null` must never be piped | Create a Web application client; unset anything set from it |
-| App shows Google as not set up, no Connect button | `integrationStatus()` answers `configured: false`: the Gateway holds no client (or one name only) | Step 8; then reload |
-| `integration_not_configured` (503) in the app's logs | A call while the Gateway holds no client | `secret list --json`; set both names |
+| App shows Google as not set up, no Connect button | `integrationStatus()` answers `configured: false`: the Gateway holds no client (or one name only), and Composio is off | Step 8; then reload |
+| `integration_not_configured` (503) in the app's logs | A call while the Gateway holds no client and Composio is off | `secret list --json`; set both names |
+| The Connect button opens the Gateway's Composio page instead of Google's | The Gateway holds no client (or one name only) and Composio is on, so Google is served through each person's own Composio ([composio.md](/docs/agent/setup/composio)) | Step 8. Connections made through Composio then read Needs reconnect, and Reconnect goes through Google |
 | `capability_not_requested` (403) | The deployed manifest doesn't list `google-workspace` | Add `"google-workspace": { scopes: [...], why }` to everyapp.config.ts, deploy |
 | `integration_not_connected` (409) | The person hasn't connected Google, hasn't allowed this app, the connection expired, or the app now lists a scope the connection lacks or the person hasn't allowed (`missingScopes`) | The person opens `connectPath` from the app: it leads to Google, or to the Gateway's page that allows the app |
 | After Allow, the Gateway's error page says Google granted more than the apps here list | Google granted a scope no app in the organization lists, so the token was refused and dropped | Remove the extra scopes from the consent screen if no app lists them, and connect again; nothing to revoke |

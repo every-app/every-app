@@ -12,9 +12,12 @@ import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import { parseSecretNames } from "@every-app/perimeter/registry";
 import {
+  ConnectionVia,
   aiRequiredSettings,
   capabilitySettings,
   checkProviderRow,
+  composioServes,
+  composioServicesOf,
   describeSpecProblems,
   canonicalScopes,
   isPresetRow,
@@ -34,6 +37,7 @@ import {
 import { gatewaySettingIsSet } from "@/server/ai-default";
 import { resolveDeploymentMode } from "@/server/deployment-mode";
 import { appSettingsReport } from "@/server/app-setup";
+import { providerServing } from "@/server/composio/link";
 import { emit } from "@/server/events/bus";
 import { catalogue, type EventActor } from "@/server/events/catalogue";
 import { userActor, userSubject } from "@/server/events/subjects";
@@ -47,6 +51,7 @@ import {
 } from "@/server/providers";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { OAuthClientRepository } from "@/server/repositories/OAuthClientRepository";
+import { OrgSettingsRepository } from "@/server/repositories/OrgSettingsRepository";
 import { ProviderAppAccessRepository as Access } from "@/server/repositories/ProviderAppAccessRepository";
 import {
   ProviderConnectionRepository as Connections,
@@ -82,6 +87,13 @@ export interface OAuthProviderSummary {
   };
   /** Whether a client is live for the provider as it is now. */
   bound: boolean;
+  /**
+   * Whether the provider is served through Composio in this organization:
+   * no client is live, Composio is on and serves it
+   * (docs/design/2026-11-composio.md). Whether Composio could serve it at
+   * all is the SDK's `composioServes`.
+   */
+  composio: boolean;
   redirectUri: string;
   /** The only hosts the Gateway sends a held token to. */
   hosts: string[];
@@ -104,7 +116,8 @@ export interface ProviderSummary {
   /**
    * Whether its credential is set: an AI or API-key provider's every
    * Gateway setting it needs (a registered row's only while bound), an
-   * OAuth provider's live client from either source. Never a value.
+   * OAuth provider's live client from either source, or Composio serving
+   * it in this organization. Never a value.
    */
   configured: boolean;
   /** The Gateway settings it needs, by name: what `everyapp secret set` takes. */
@@ -146,14 +159,19 @@ export interface ConnectionSummary {
   apps: ConnectionApp[];
   /** How the provider names the account ("ben@example.com"). */
   label: string | null;
-  /** The scopes the token holds, as the Gateway compares them (the provider's prefix taken off). */
+  /** How it was made: with the Gateway's client, or through the person's Composio. */
+  via: ConnectionVia;
+  /** The scopes the token holds, as the Gateway compares them (the provider's prefix taken off); none on a connection through Composio. */
   scopes: string[];
+  /** On a connection through Composio, what it holds instead of scopes: each service ("Gmail") with its account there. */
+  services: { name: string; account: string }[];
   status: "active" | "expired";
   /**
    * An app the person allowed needs them to select Reconnect: the
    * connection expired, the provider was never asked for a scope the app
-   * lists now, or the app lists more than the person allowed it. A scope
-   * the person declined at the provider is not that (`notGranted`).
+   * lists now, was made another way than the provider is served now, or
+   * the app lists more than the person allowed it. A scope the person
+   * declined at the provider is not that (`notGranted`).
    */
   needsReconnect: boolean;
   /**
@@ -250,6 +268,10 @@ async function oauthSummary(
     kind: "oauth",
     client,
     bound,
+    composio:
+      !bound &&
+      composioServes(id) &&
+      (await OrgSettingsRepository.isComposioOn(org.orgId)),
     redirectUri: redirectUriFor(id),
     hosts: [...capability.api],
     console: capability.console,
@@ -344,6 +366,7 @@ async function appsByProvider(
       appId: app.appSlug,
       tier: app.tier,
       manifest: app.manifest,
+      organizationId: org.orgId,
       canFix: true,
     }).catch(() => null);
     for (const setting of report?.settings ?? []) {
@@ -403,7 +426,8 @@ export async function listProviders(
     };
     if (capability.mode === "oauth_client") {
       summary.oauth = await oauthSummary(org, id, capability, registry, counts);
-      summary.configured = summary.oauth.client.source !== null;
+      summary.configured =
+        summary.oauth.client.source !== null || summary.oauth.composio;
     } else {
       summary.configured = settingsConfigured(id, summary.settings, registry);
     }
@@ -909,13 +933,15 @@ async function needsReconnect(
   capability: Capability | undefined,
   row: ProviderConnection,
   allowed: readonly (AccessApp & { scopes: string[] })[],
+  via: ConnectionVia | null,
 ): Promise<boolean> {
   if (capability?.mode !== "oauth_client") return false;
+  const provider = { id: row.providerId, flow: capability.flow, via };
   for (const each of allowed) {
     const declared = declaredScopes(each.manifest, row.providerId);
     if (
       declared === null ||
-      connectionAction(capability.flow, row, each, declared) === null
+      connectionAction(provider, row, each, declared) === null
     ) {
       continue;
     }
@@ -931,6 +957,9 @@ function permissionsOf(
   allowed: readonly AccessApp[],
 ): ConnectionSummary["permissions"] {
   if (capability?.mode !== "oauth_client") return null;
+  // A connection through Composio holds services, not scopes: nothing of
+  // it was granted in part.
+  if (row.via === ConnectionVia.Composio) return null;
   const flow = capability.flow;
   const listed = new Map<string, string>();
   for (const each of allowed) {
@@ -958,6 +987,26 @@ async function summarize(
     org,
     access.map((each) => each.appRowId),
   );
+  // How each provider is served in the organization, read once.
+  const served = new Map<string, ConnectionVia | null>();
+  const servedFor = async (providerId: string, capability: Capability) => {
+    if (!served.has(providerId)) {
+      served.set(
+        providerId,
+        capability.mode === "oauth_client"
+          ? (
+              await providerServing({
+                organizationId: org.orgId,
+                providerId,
+                capability,
+                lookup: registry,
+              })
+            ).via
+          : null,
+      );
+    }
+    return served.get(providerId) ?? null;
+  };
   const out: ConnectionSummary[] = [];
   for (const row of rows) {
     const capability = registry.get(row.providerId);
@@ -983,9 +1032,21 @@ async function summarize(
         .map((each) => each.app)
         .sort((a, b) => a.name.localeCompare(b.name)),
       label: row.label,
+      via: row.via,
       scopes: [...row.scopes],
+      services: composioServicesOf(row.providerId).flatMap(
+        ({ slug, label }) => {
+          const account = row.accounts.find((each) => each.service === slug);
+          return account ? [{ name: label, account: account.account }] : [];
+        },
+      ),
       status: row.status,
-      needsReconnect: await needsReconnect(capability, row, allowed),
+      needsReconnect: await needsReconnect(
+        capability,
+        row,
+        allowed,
+        capability ? await servedFor(row.providerId, capability) : null,
+      ),
       permissions: permissionsOf(capability, row, allowed),
       createdAt: row.createdAt,
       lastUsedAt: row.lastUsedAt,
@@ -1094,7 +1155,9 @@ export async function removeAppAccess(
  * Disconnect a connection: a person's own on any role, anyone's for an
  * owner or admin. Every app they allowed stops using it at once. Revokes
  * at the provider when its flow names a revoke endpoint and a client is
- * live, then drops the tokens.
+ * live, then drops the tokens. A connection made through Composio holds
+ * no token: nothing is revoked at the provider, nothing is called at
+ * Composio, and the person's link stays.
  */
 export async function disconnect(
   org: OrgContext,
@@ -1112,7 +1175,11 @@ export async function disconnect(
   const registry = await gatewayProviders();
   const capability = registry.get(connection.providerId);
   let revoked = false;
-  if (capability?.mode === "oauth_client" && capability.flow.revokeUrl) {
+  if (
+    connection.via === ConnectionVia.OAuth &&
+    capability?.mode === "oauth_client" &&
+    capability.flow.revokeUrl
+  ) {
     const client = await resolveOAuthClient({
       id: connection.providerId,
       capability,
@@ -1136,6 +1203,7 @@ export async function disconnect(
     org: org.orgId,
     user_id: org.userId,
     revoked,
+    via: connection.via,
   });
   const member = await userSubject(connection.userId).catch(() => null);
   await emit(async () => ({
@@ -1154,6 +1222,7 @@ export async function disconnect(
         label: connection.label,
       },
       revoked,
+      via: connection.via,
     }),
   }));
   return { removed, revoked, connection: summary! };

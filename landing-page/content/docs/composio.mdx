@@ -1,0 +1,79 @@
+---
+title: Use accounts from Composio
+description: How Composio lets people use their Gmail, Slack or GitHub accounts in your apps with no OAuth app to register, why you might want it, and how to set it up.
+---
+
+[Composio](https://composio.dev) is a third-party service where a person connects their accounts, like Gmail, Slack or GitHub. With Composio turned on, your apps can use those accounts. It is optional and off by default.
+
+## Why use it
+
+Without Composio, an app can't use a person's Google account until an owner or admin [registers an OAuth app](/docs/connect-oauth) at Google: a Cloud project, a consent screen, scopes, a client id and secret. That repeats for Slack, GitHub and every other provider, and it is the slowest part of setting up a Gateway.
+
+With Composio, nobody registers an OAuth app. Each person uses the accounts they already connected in their own Composio.
+
+The trade-off: requests to those accounts pass through Composio on their way to Google or Slack. If that doesn't suit your data, register the provider yourself instead. You can do that for some providers and use Composio for the rest.
+
+## How it works
+
+1. **An owner or admin turns Composio on** for the workspace. A provider Composio covers that has no OAuth app then reads **Ready**.
+2. **Each person links their own Composio**, once, by signing in there and approving. Nobody types a key. Linking connects nothing yet.
+3. **Each app asks.** The first time an app needs an account, EveryApp asks, for example, **Allow OpenMail to use your Google account from Composio?** Yes makes the connection. Another app asks again.
+4. **The app calls the provider as before.** The Gateway sends the request through Composio, which adds the person's account. The app never sees a key or a token, and its code doesn't change.
+
+From there it is a connection like any other. It shows in **Your connections** → **Accounts**, where you can disconnect it or remove one app's access.
+
+A provider is used one way. Where the Gateway has an OAuth app for a provider, Composio is never used for it.
+
+## Set it up
+
+### Turn it on
+
+An owner or admin does this once.
+
+1. Open **Manage workspace** → **Providers**.
+2. At the top, in **Composio**, select **Turn on**, and confirm.
+
+Or from a terminal:
+
+```bash
+everyapp workspace composio on
+```
+
+### Link your Composio
+
+Each person does this once. You need a Composio account with the accounts you want to use connected there.
+
+1. Open **Your connections** in the sidebar, then **Accounts**, and select **Link Composio**.
+2. Sign in at Composio and approve.
+
+Or from a terminal:
+
+```bash
+everyapp provider link composio
+```
+
+You can skip this. The first app that needs an account asks you to sign in to Composio.
+
+### Use an account in an app
+
+1. Open the app and select **Connect**.
+2. EveryApp shows the service and the account, like Gmail and your address. Select **Allow**.
+3. You're back in the app.
+
+If the account isn't in your Composio yet, the page links to where you connect it there. Connect it, then select **Check again**.
+
+## What to know
+
+- It works for GitHub, Slack, Notion, Linear, GitLab, HubSpot, Zoom, Dropbox, Google, Microsoft 365 and Atlassian.
+- Each Google, Microsoft and Atlassian service is its own account in Composio. Connecting Gmail there doesn't connect Calendar.
+- An app you allowed can do whatever your account in Composio allows.
+- Each request takes about half a second longer, and an app can't upload a file this way.
+- If an owner or admin later adds the provider with its own OAuth app, your apps use that instead. **Accounts** marks the connection **Needs reconnect**. Select **Reconnect**.
+
+## Stop
+
+- **One account.** Open **Your connections** → **Accounts**, open the connection's menu and select **Disconnect**. Every app stops using it at once.
+- **Your Composio.** On the same page, select **Unlink**. Every connection you made through Composio is removed. EveryApp deletes the key it held. The key still works at Composio until you revoke it there.
+- **Everyone.** An owner or admin opens **Manage workspace** → **Providers** and, in **Composio**, selects **Turn off**. Everyone's link and every connection made through Composio are removed.
+
+For the full reference, see [the Composio guide](/docs/agent/setup/composio).

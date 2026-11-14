@@ -3392,6 +3392,22 @@ describe("with MCP_OAUTH_ENABLED off", () => {
     }
   });
 
+  it("leaves the Composio page (/oauth/composio) to the control plane with OAuth off or on, and nothing under it", async () => {
+    const route = (path: string) =>
+      serveMcpAuthRoute(new Request(`${GATEWAY}${path}`));
+    const composioPage = "/oauth/composio?state=a-state";
+    expect(await route(composioPage)).toBeNull();
+    expect((await route("/oauth/composio/more"))?.status).toBe(404);
+
+    hoisted.env["MCP_OAUTH_ENABLED"] = "false";
+    expect(await route(composioPage)).toBeNull();
+    expect((await route("/oauth/composio/more"))?.status).toBe(404);
+    const page = await send(composioPage);
+    expect(page.status).toBe(200);
+    expect(await page.text()).toBe("control plane");
+    expect(page.headers.get("cache-control")).toBe("no-store");
+  });
+
   it("leaves the page where a person allows an app (/oauth/app-access) to the control plane with OAuth off or on, while the consent page is 404 with it off", async () => {
     // The Allow page is no part of the Gateway's own OAuth server: it is
     // where a person allows an app to use their connection to a provider.

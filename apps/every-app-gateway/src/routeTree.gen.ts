@@ -25,6 +25,7 @@ import { Route as AppConnectionsRouteImport } from './routes/_app/connections'
 import { Route as AppDirectoryRouteImport } from './routes/_app/directory'
 import { Route as AppOrganizationsRouteImport } from './routes/_app/organizations'
 import { Route as OauthAppAccessRouteImport } from './routes/oauth/app-access'
+import { Route as OauthComposioRouteImport } from './routes/oauth/composio'
 import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
 import { Route as AppAdminIndexRouteImport } from './routes/_app/admin/index'
 import { Route as AppAdminActivityRouteImport } from './routes/_app/admin/activity'
@@ -126,6 +127,11 @@ const AppOrganizationsRoute = AppOrganizationsRouteImport.update({
 const OauthAppAccessRoute = OauthAppAccessRouteImport.update({
   id: '/oauth/app-access',
   path: '/oauth/app-access',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OauthComposioRoute = OauthComposioRouteImport.update({
+  id: '/oauth/composio',
+  path: '/oauth/composio',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OauthConsentRoute = OauthConsentRouteImport.update({
@@ -261,6 +267,7 @@ export interface FileRoutesByFullPath {
   '/directory': typeof AppDirectoryRoute
   '/organizations': typeof AppOrganizationsRoute
   '/oauth/app-access': typeof OauthAppAccessRoute
+  '/oauth/composio': typeof OauthComposioRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/admin/activity': typeof AppAdminActivityRoute
   '/admin/apps': typeof AppAdminAppsRoute
@@ -298,6 +305,7 @@ export interface FileRoutesByTo {
   '/directory': typeof AppDirectoryRoute
   '/organizations': typeof AppOrganizationsRoute
   '/oauth/app-access': typeof OauthAppAccessRoute
+  '/oauth/composio': typeof OauthComposioRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/': typeof AppIndexRoute
   '/admin/activity': typeof AppAdminActivityRoute
@@ -340,6 +348,7 @@ export interface FileRoutesById {
   '/_app/directory': typeof AppDirectoryRoute
   '/_app/organizations': typeof AppOrganizationsRoute
   '/oauth/app-access': typeof OauthAppAccessRoute
+  '/oauth/composio': typeof OauthComposioRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/_app/': typeof AppIndexRoute
   '/_app/admin/activity': typeof AppAdminActivityRoute
@@ -383,6 +392,7 @@ export interface FileRouteTypes {
     | '/directory'
     | '/organizations'
     | '/oauth/app-access'
+    | '/oauth/composio'
     | '/oauth/consent'
     | '/admin/activity'
     | '/admin/apps'
@@ -420,6 +430,7 @@ export interface FileRouteTypes {
     | '/directory'
     | '/organizations'
     | '/oauth/app-access'
+    | '/oauth/composio'
     | '/oauth/consent'
     | '/'
     | '/admin/activity'
@@ -461,6 +472,7 @@ export interface FileRouteTypes {
     | '/_app/directory'
     | '/_app/organizations'
     | '/oauth/app-access'
+    | '/oauth/composio'
     | '/oauth/consent'
     | '/_app/'
     | '/_app/admin/activity'
@@ -499,6 +511,7 @@ export interface RootRouteChildren {
   SignUpRoute: typeof SignUpRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
   OauthAppAccessRoute: typeof OauthAppAccessRoute
+  OauthComposioRoute: typeof OauthComposioRoute
   OauthConsentRoute: typeof OauthConsentRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiDevIdentityRoute: typeof ApiDevIdentityRoute
@@ -620,6 +633,13 @@ declare module '@tanstack/react-router' {
       path: '/oauth/app-access'
       fullPath: '/oauth/app-access'
       preLoaderRoute: typeof OauthAppAccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/oauth/composio': {
+      id: '/oauth/composio'
+      path: '/oauth/composio'
+      fullPath: '/oauth/composio'
+      preLoaderRoute: typeof OauthComposioRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/oauth/consent': {
@@ -877,6 +897,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignUpRoute: SignUpRoute,
   VerifyEmailRoute: VerifyEmailRoute,
   OauthAppAccessRoute: OauthAppAccessRoute,
+  OauthComposioRoute: OauthComposioRoute,
   OauthConsentRoute: OauthConsentRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiDevIdentityRoute: ApiDevIdentityRoute,

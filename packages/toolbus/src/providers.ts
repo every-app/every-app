@@ -27,6 +27,17 @@
  * the caller's own, or any for owners and admins, revoking the grant at
  * the provider where the spec knows how, or with `app` takes that one
  * app's access away and leaves the connection. Neither carries a token.
+ *
+ * `everyapp_provider_composio` shows the caller's own Composio link
+ * (docs/design/2026-11-composio.md): whether the organization turned
+ * Composio on, the account it is linked as, and what is in it that
+ * EveryApp supports. `everyapp_provider_composio_link` starts a sign-in
+ * at Composio and answers its page for the person to approve;
+ * `everyapp_provider_composio_link_finish` asks whether they did, and
+ * links when so; `everyapp_provider_composio_unlink` drops the link and
+ * the connections made through it. All four are every member's, for
+ * their own link, and none carries the key. The organization's switch is
+ * `everyapp_workspace_composio` (workspace.ts).
  */
 import type { WorkspaceToolDefinition } from "./workspace";
 
@@ -107,7 +118,7 @@ export const PROVIDER_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "provider_connections",
     title: "List connected accounts",
     description:
-      "List the accounts connected to OAuth providers on this Gateway: the caller's own (any member), or with `all: true` every connection in the organization (owners and admins). A connection is one person's to one provider, used by the apps that person allowed. Each with the provider, the person, the apps allowed to use it (`apps`), the account's label at the provider, the scopes it holds, `permissions` (how many of the scopes its apps list were granted, and `notGranted`: fewer than all is the person's choice at the provider, the connection works, and it is not a problem to report), its status (active, or expired: the provider refused a refresh and the person connects again from inside an app that uses it) and when it was last used. Never a token. A person connects once, from inside an app that lists the provider, and allows each other app on the Gateway's own page; there is no tool for either.",
+      "List the accounts connected to OAuth providers on this Gateway: the caller's own (any member), or with `all: true` every connection in the organization (owners and admins). A connection is one person's to one provider, used by the apps that person allowed. Each with the provider, the person, the apps allowed to use it (`apps`), the account's label at the provider, how it was made (`via`: `oauth`, with the Gateway's own OAuth app, or `composio`, through the person's Composio), the scopes it holds (a connection through Composio holds `services` instead, each with its account there), `permissions` (how many of the scopes its apps list were granted, and `notGranted`: fewer than all is the person's choice at the provider, the connection works, and it is not a problem to report), its status (active, or expired: the person connects again from inside an app that uses it) and when it was last used. Never a token. A person connects once, from inside an app that lists the provider, and allows each other app on the Gateway's own page; there is no tool for either.",
     inputSchema: {
       type: "object",
       properties: {
@@ -132,7 +143,7 @@ export const PROVIDER_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "provider_disconnect",
     title: "Disconnect an account, or one app from it",
     description:
-      "Remove a connection to an OAuth provider, or with `app` take that one app's access to it away: the caller's own (any member), or for owners and admins another person's (`user`: their email or user id). Name the connection by `connection` (its id, from everyapp_provider_connections) or by `provider`. Without `app`, the Gateway drops the tokens it held and revokes the grant at the provider where the spec knows how (`revoked` says whether it did); every app the person allowed gets `integration_not_connected` until they connect again. With `app`, the connection stays for the other apps and nothing is revoked; that app gets `integration_not_connected` until the person allows it again.",
+      "Remove a connection to an OAuth provider, or with `app` take that one app's access to it away: the caller's own (any member), or for owners and admins another person's (`user`: their email or user id). Name the connection by `connection` (its id, from everyapp_provider_connections) or by `provider`. Without `app`, the Gateway drops the tokens it held and revokes the grant at the provider where the spec knows how (`revoked` says whether it did; a connection made through Composio holds no token, so nothing is revoked and nothing changes at Composio); every app the person allowed gets `integration_not_connected` until they connect again. With `app`, the connection stays for the other apps and nothing is revoked; that app gets `integration_not_connected` until the person allows it again.",
     inputSchema: {
       type: "object",
       properties: {
@@ -165,6 +176,58 @@ export const PROVIDER_TOOLS: readonly WorkspaceToolDefinition[] = [
           maxLength: 320,
         },
       },
+      additionalProperties: false,
+    },
+  },
+  {
+    risk: "read",
+    minRole: "member",
+    name: "provider_composio",
+    title: "Show the caller's Composio link",
+    description:
+      "Show the caller's own Composio link on this Gateway. Composio is a third-party service where a person connects their accounts; where an organization turned it on, an OAuth provider with no OAuth app on this Gateway is used through the accounts in each person's own Composio. Answers whether the organization turned it on (`composio`: on or off), whether the caller linked (`linked`), the Composio account it is linked as (`account`), and `providers`: what is in their Composio that EveryApp supports, each provider with its services (`services`: Gmail and Calendar are separate accounts in Composio, each with the accounts' names) and whether the caller's connection to it is one made through Composio (`connected`). The accounts are read from Composio on every call, and nothing of them is stored; `providers` is null when Composio didn't answer. Linking adds no connection: an account becomes the caller's connection when an app asks for it and they say yes, on the Gateway's page in a browser. Never a key. Any member, their own link only.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    risk: "write",
+    minRole: "member",
+    name: "provider_composio_link",
+    title: "Start linking the caller's Composio",
+    description:
+      "Start linking the caller's own Composio account to this Gateway. Answers `url`, a sign-in page at Composio that the person approves in their browser, and `expiresAt`, when that page stops working (about ten minutes). Give the link to the person this connection acts as and to nobody else (until it is used, whoever holds it can take over the sign-in), then call everyapp_provider_composio_link_finish every couple of seconds until it answers `linked` or `expired`. Starting again replaces a sign-in that is waiting. Refused with COMPOSIO_OFF until an owner or admin turns Composio on (everyapp_workspace_composio), and with COMPOSIO_ALREADY_LINKED when Composio is linked already: unlink first. Nobody types or pastes a key, and none passes through a tool. Any member, their own link only.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    risk: "write",
+    minRole: "member",
+    name: "provider_composio_link_finish",
+    title: "Finish linking the caller's Composio",
+    description:
+      "See whether the person approved the sign-in everyapp_provider_composio_link started, and link their Composio when they did. Answers `state`: `waiting` (not approved yet: call again in a couple of seconds), `linked` (with the link as everyapp_provider_composio shows it) or `expired` (the sign-in ran out, or none was started: start again). Linking adds no connection. Never a key. Any member, their own link only.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    risk: "write",
+    minRole: "member",
+    name: "provider_composio_unlink",
+    title: "Unlink the caller's Composio",
+    description:
+      "Unlink the caller's own Composio from this Gateway: the Gateway drops the key it held, any sign-in that is waiting and every connection the caller made through Composio, with the access their apps had to them, so those apps stop at once (`integration_not_connected` until the person links again and connects again). A connection made with the Gateway's own OAuth app stays. Nothing changes at Composio: the accounts stay connected there and the key stays valid until the person revokes it there. `removed` says whether there was a link. Any member, their own link only.",
+    inputSchema: {
+      type: "object",
+      properties: {},
       additionalProperties: false,
     },
   },

@@ -11,7 +11,8 @@ import {
   declaresSettings,
   listAppSecretNames,
   listGatewaySecretNames,
-  oauthClientsHeld,
+  listsComposioProvider,
+  oauthProvidersSetUp,
 } from "@/lib/app/settings";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { certificateStatus } from "@/lib/domains/certificates";
@@ -33,7 +34,7 @@ import {
   PROVIDER_APPS,
   providerAppKeySetting,
 } from "@every-app/sdk/internal";
-import { gatewayRegistry, readUploadedClients } from "@/lib/gateway/providers";
+import { composioOrganizations, gatewayRegistry, readUploadedClients } from "@/lib/gateway/providers";
 import { listApps, writeAppSecretNames, type RegisteredAppInfo } from "@/lib/gateway/registry";
 import { hasGatewaySchema } from "@/lib/gateway/schema";
 import { readOwnerOrganization } from "@/lib/gateway/setup-link";
@@ -394,9 +395,15 @@ async function readSettings(
   let unread: Unread | null = null;
   const gateway = gatewayNames ?? (await readOrUnread(() => listGatewaySecretNames(cf, gatewayOwn)));
   if ("error" in gateway) unread = gateway;
-  // The clients pasted under Manage workspace → Providers count as the Gateway counts them.
+  // The clients pasted under Manage workspace → Providers count as the Gateway counts them,
+  // and so does Composio where an app's organization turned it on (read only when an app
+  // lists a provider it could serve).
   const pasted = await readOrUnread(() => readUploadedClients(db));
   if ("error" in pasted) unread ??= pasted;
+  const composio = declaring.some((app) => listsComposioProvider(app.manifest!))
+    ? await readOrUnread(() => composioOrganizations(db))
+    : { value: new Set<string>() };
+  if ("error" in composio) unread ??= composio;
   for (const app of declaring) {
     const own = await readOrUnread(() => listAppSecretNames(cf, app.workerName));
     if ("error" in own) unread ??= own;
@@ -414,14 +421,15 @@ async function readSettings(
       gatewayNames: "error" in gateway ? null : gateway.value,
       secretNames,
       lookup: registry,
-      ...("error" in pasted
+      ...("error" in pasted || "error" in composio
         ? {}
         : {
-            oauthReady: oauthClientsHeld({
+            oauthReady: oauthProvidersSetUp({
               manifest: app.manifest!,
               lookup: registry,
               gatewayNames: "error" in gateway ? null : gateway.value,
               pasted: pasted.value,
+              composioOn: composio.value.has(app.organizationId),
             }),
           }),
     });

@@ -40,6 +40,8 @@ interface ReplaceOAuthClientDialogProps {
     hosts: readonly string[];
     /** The live client's source, for the warning about a terminal-set one. */
     clientSource: "env" | "d1" | null;
+    /** People connect it through Composio, which a client ends (docs/design/2026-11-composio.md). */
+    throughComposio: boolean;
   };
   onSubmit: (input: {
     clientId: string;
@@ -94,6 +96,11 @@ export function ReplaceOAuthClientDialog({
                   Existing connections work until they expire. Then people
                   reconnect.
                 </DialogDescription>
+              ) : provider.throughComposio ? (
+                <DialogDescription>
+                  People who connected {provider.name} through Composio
+                  reconnect.
+                </DialogDescription>
               ) : null}
             </DialogHeader>
 
@@ -113,7 +120,6 @@ export function ReplaceOAuthClientDialog({
               console={provider.console}
               providerName={provider.name}
             />
-            <ProviderHosts hosts={provider.hosts} what="connected accounts" />
 
             <form.AppField name="clientId">
               {(field) => (
@@ -135,6 +141,8 @@ export function ReplaceOAuthClientDialog({
                 />
               )}
             </form.AppField>
+
+            <ProviderHosts hosts={provider.hosts} what="connected accounts" />
 
             {error ? (
               <Alert variant="destructive">

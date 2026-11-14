@@ -116,6 +116,12 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
   ADMIN_REQUIRED: "Only an owner or admin can do that.",
   PROVIDER_HOSTED:
     "On a hosted gateway the platform's operator manages providers and their clients.",
+  COMPOSIO_OFF:
+    "Composio is off for this organization. An owner or admin turns it on under Manage workspace → Providers.",
+  COMPOSIO_UNAVAILABLE: "Composio could not be reached. Try again.",
+  COMPOSIO_ALREADY_LINKED: "Composio is already linked. Unlink it first.",
+  COMPOSIO_LINK_FAILED:
+    "Composio approved the sign-in, but the link could not be finished. Start again.",
 };
 
 /**

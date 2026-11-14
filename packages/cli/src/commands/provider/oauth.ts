@@ -14,6 +14,12 @@
  * `disconnect` deletes the connection and says where to revoke the grant;
  * with `--app` it takes that one app's access away and leaves the
  * connection.
+ *
+ * Composio (docs/design/2026-11-composio.md): a preset Composio serves
+ * needs no client while the organization has Composio on, so `add` asks a
+ * person at a terminal who linked their own Composio whether they want a
+ * client at all, and `connections` says how each was made. The switch is
+ * read from D1 and never written here.
  */
 import { stripVTControlCharacters } from "node:util";
 import {
@@ -21,6 +27,8 @@ import {
   missingScopes,
   CAPABILITIES,
   capabilitySettings,
+  composioServes,
+  ConnectionVia,
   isPresetRow,
   OAUTH_PRESETS,
   oauthPreset,
@@ -36,8 +44,10 @@ import { EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import {
   addProvider,
+  composioLinked,
   countConnections,
   gatewayRegistry,
+  installComposio,
   listConnections,
   readUploadedClients,
   removeAppAccess,
@@ -48,7 +58,7 @@ import {
 import { installOrganization } from "@/lib/gateway/registry";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
-import { canPromptInTerminal } from "@/lib/output/prompt";
+import { canPromptInTerminal, confirmAtTerminal, type Confirm } from "@/lib/output/prompt";
 import { factLines, finish } from "@/lib/output/result";
 import { formatSteps } from "@/lib/output/steps";
 import { formatTable } from "@/lib/output/table";
@@ -130,9 +140,12 @@ export function oauthFacts(
     gatewayNames: readonly string[];
     uploaded: ReadonlyMap<string, UploadedClient>;
     connections: ReadonlyMap<string, number>;
+    /** Whether the install's organization turned Composio on. */
+    composioOn: boolean;
   },
 ): Record<string, unknown> {
   const client = clientSourceOf(capability, context.gatewayNames, context.uploaded, id);
+  const held = client === "uploaded" || capabilitySettings(capability).every((name) => context.gatewayNames.includes(name));
   return {
     redirectUri: redirectUriFor(context.gatewayUrl, id),
     console: capability.console,
@@ -142,6 +155,8 @@ export function oauthFacts(
       source: client,
       ...(client === "uploaded" ? { clientId: context.uploaded.get(id)!.clientId } : {}),
     },
+    // Served through people's own Composio in the organization: no client is held, Composio is on and serves it.
+    composio: !held && context.composioOn && composioServes(id),
     connections: context.connections.get(id) ?? 0,
   };
 }
@@ -245,6 +260,11 @@ async function resolveOAuthSource(value: string, options: OAuthAddOptions): Prom
  * the client set in the same run (credentials.ts): from `--client-id`,
  * piped `NAME=value` lines or `--from-env`, else asked for at the
  * terminal. Unattended or skipped, the `secret set` to run next.
+ *
+ * A preset Composio serves is ready with no client while Composio is on.
+ * A person at a terminal who linked their own Composio and gave no client
+ * is told so and asked `Add your own OAuth app instead?`: No ends the run
+ * there. Nobody else is asked.
  */
 export async function addOAuth(options: OAuthAddOptions, value: string): Promise<void> {
   const { out, flags } = options;
@@ -303,17 +323,11 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
   }
   const settings = [...capabilitySettings(capability)];
   const redirectUri = redirectUriFor(gateway.gatewayUrl, id);
-  out.emit({
-    type: "step",
-    step: "provider.redirect",
-    status: "ok",
-    message: `Register the redirect URI ${redirectUri} at ${capability.console}`,
-    data: { id, redirectUri, console: capability.console },
-  });
-  const [gatewayNames, uploaded, connections] = await Promise.all([
+  const [gatewayNames, uploaded, connections, composio] = await Promise.all([
     listWorkerSecrets(gateway.cf, gateway.names.worker),
     readUploadedClients(gateway.db),
     countConnections(gateway.db),
+    installComposio(gateway.db),
   ]);
   const before = clientSourceOf(capability, gatewayNames, uploaded, id);
   // A row's client is set again after it is written: secret set binds it to the row's hosts.
@@ -325,6 +339,48 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
   const added = registered
     ? `${name} (${id}) is on ${gatewayHost}`
     : `${replaced ? "Replaced" : "Registered"} ${name} (${id}) on ${gatewayHost}`;
+  const factsWith = (names: readonly string[], composioOn: boolean) =>
+    oauthFacts(id, capability, { gatewayUrl: gateway.gatewayUrl, gatewayNames: names, uploaded, connections, composioOn });
+  // A preset Composio serves needs no client while the organization has
+  // Composio on. Only a person at a terminal who linked theirs and gave no client is asked.
+  let addedSaid = false;
+  if (
+    composio?.on &&
+    source.kind === "preset" &&
+    composioServes(id) &&
+    interactive &&
+    before === "none" &&
+    !flags["from-env"] &&
+    Object.keys(given).length === 0 &&
+    (await composioLinked(gateway.db, composio.organizationId, gateway.deployer.email))
+  ) {
+    out.emit({
+      type: "step",
+      step: "provider.setup",
+      status: "ok",
+      message: `${added}.`,
+      display: setupShown({ added, steps: [], docs: null }),
+      data: { id, docs },
+    });
+    addedSaid = true;
+    const ready = `${name} is ready through Composio`;
+    const own = await (options.confirm ?? confirmAtTerminal)("Add your own OAuth app instead?", [`${ready}.`]);
+    if (!own) {
+      finish(out, {
+        headline: ready,
+        message: [`${added}.`, `${ready}: it needs no OAuth app.`],
+        data: { id, name: capability.label, kind: "oauth", replaced, settings, docs, ...factsWith(gatewayNames, true) },
+      });
+      return;
+    }
+  }
+  out.emit({
+    type: "step",
+    step: "provider.redirect",
+    status: "ok",
+    message: `Register the redirect URI ${redirectUri} at ${capability.console}`,
+    data: { id, redirectUri, console: capability.console },
+  });
   // No punctuation right after a URL: terminals link it too.
   const register = `Register this redirect URI at ${capability.console}\n   ${redirectUri}`;
   // The provider page's own steps, or one step for a provider whose page has none.
@@ -349,7 +405,8 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
     status: "ok",
     message: setup.join("\n"),
     display: setupShown({
-      added,
+      // Said already, before Composio was asked about.
+      added: addedSaid ? null : added,
       steps:
         needed.length === 0
           ? []
@@ -391,12 +448,7 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
       setting === capability.secrets.clientId ? "Client id" : setting === capability.secrets.clientSecret ? "Client secret" : setting,
   });
   const set = outcome === "set";
-  const facts = oauthFacts(id, capability, {
-    gatewayUrl: gateway.gatewayUrl,
-    gatewayNames: set ? [...gatewayNames, ...settings] : gatewayNames,
-    uploaded,
-    connections,
-  });
+  const facts = factsWith(set ? [...gatewayNames, ...settings] : gatewayNames, composio?.on ?? false);
   const client = (facts["client"] as { source: ClientSource }).source;
   const result = set
     ? [`Apps can now list ${id}. Live now, no deploy needed.`]
@@ -467,6 +519,8 @@ interface GrantedPermissions {
 /** {@link GrantedPermissions} of a connection, or null when its apps list no scope (or the provider isn't an OAuth one here). */
 function permissionsOf(connection: ProviderConnection, capability: Capability | undefined): GrantedPermissions | null {
   if (capability?.mode !== "oauth_client" || connection.listedScopes.length === 0) return null;
+  // A connection through Composio holds services, not scopes: nothing of it was granted in part.
+  if (connection.via === ConnectionVia.Composio) return null;
   const listed = new Map<string, string>();
   for (const scope of connection.listedScopes) {
     const key = canonicalScopes(capability.flow, [scope])[0];
@@ -499,7 +553,10 @@ function reported(
     userEmail: connection.userEmail,
     apps: connection.apps,
     label: connection.label,
+    via: connection.via,
     scopes: connection.scopes,
+    // A connection through Composio holds services in place of scopes, each with its account there.
+    ...(connection.services.length > 0 ? { services: connection.services } : {}),
     status: connection.status,
     ...(permissions ? { permissions } : {}),
     createdAt: new Date(connection.createdAt).toISOString(),
@@ -514,7 +571,10 @@ function reported(
  * organization (each one person's, to one provider, with the apps they
  * allowed to use it), newest first; with `--all` every organization's (a
  * hosted Gateway has several), `--user` one person's, `--provider` one
- * provider's, `--app` the ones one app may use. Never a token.
+ * provider's, `--app` the ones one app may use. Each says how it was made
+ * (VIA: `oauth`, with the Gateway's client, or `composio`) and what it
+ * holds (ACCESS): the scopes granted, or for one made through Composio
+ * its services. Never a token.
  */
 export async function listProviderConnections(
   options: ProviderOptions & { flags: ConnectionsFlags },
@@ -536,13 +596,17 @@ export async function listProviderConnections(
     connections.map((connection) => [connection.id, permissionsOf(connection, registry.get(connection.providerId))]),
   );
   const table = formatTable(
-    ["PROVIDER", "PERSON", "APPS", "ACCOUNT", "SCOPES", "STATUS", "LAST USED", "CONNECTED"],
+    ["PROVIDER", "PERSON", "APPS", "ACCOUNT", "VIA", "ACCESS", "STATUS", "LAST USED", "CONNECTED"],
     connections.map((connection) => [
       `${nameOf(connection.providerId)} (${connection.providerId})`,
       personOf(connection),
       connection.apps.map((app) => app.id).join(", ") || chalk.dim("-"),
       connection.label ?? chalk.dim("-"),
-      connection.scopes.join(", ") || chalk.dim("-"),
+      connection.via,
+      (connection.via === ConnectionVia.Composio
+        ? connection.services.map((service) => service.name)
+        : connection.scopes
+      ).join(", ") || chalk.dim("-"),
       statusText(connection, granted.get(connection.id) ?? null),
       when(connection.lastUsedAt),
       when(connection.createdAt),
@@ -582,8 +646,10 @@ export interface DisconnectFlags {
  * the connections deleted from the Gateway's D1, each with the access apps
  * had to it, and `provider.disconnected` queued for each. The CLI holds no
  * token, so the grant stays at the provider until the person revokes it
- * there; the output says where. With `--app`, that one app's access to
- * those connections is taken away and the connections stay.
+ * there; the output says where. A connection made through Composio holds
+ * no token, so nothing is left to revoke and nothing changes at Composio.
+ * With `--app`, that one app's access to those connections is taken away
+ * and the connections stay.
  */
 export async function disconnectProvider(
   options: ProviderOptions & { flags: DisconnectFlags },
@@ -635,9 +701,13 @@ export async function disconnectProvider(
       message: `Removed ${app}'s access to ${plural(kept.length, "connection")} to ${capability.label}`,
       data: { id, app, removed: kept.length },
     });
+    // A connection made through Composio holds no token to keep.
+    const stays = kept.every((connection) => connection.via === ConnectionVia.Composio)
+      ? "The connection stays"
+      : "The Gateway keeps the tokens";
     const lines = [
       `${app} can no longer use ${kept.length === 1 ? `${personOf(kept[0]!)}'s connection` : `${kept.length} connections`} to ${capability.label} (${id}).`,
-      `The Gateway keeps the tokens for the other apps; ${app} gets "not connected" until the person allows it again.`,
+      `${stays} for the other apps; ${app} gets "not connected" until the person allows it again.`,
     ];
     finish(out, {
       headline: lines[0]!.replace(/\.$/, ""),
@@ -672,15 +742,29 @@ export async function disconnectProvider(
     message: `Removed ${plural(removed.length, "connection")} to ${capability.label}`,
     data: { id, removed: removed.length },
   });
+  // A connection made with the Gateway's client leaves a grant at the provider; one made through Composio holds no token.
+  const granted = removed.some((connection) => connection.via === ConnectionVia.OAuth);
+  const throughComposio = removed.some((connection) => connection.via === ConnectionVia.Composio);
   const lines = [
     `Removed ${removed.length === 1 ? `${personOf(removed[0]!)}'s connection` : `${removed.length} connections`} to ${capability.label} (${id}).`,
-    "The Gateway no longer holds the tokens; every app that used the connection gets \"not connected\" until the person connects again.",
-    `The grant stays at ${capability.label} until it is revoked there: ${capability.console} (Disconnect in Connected accounts revokes it from the Gateway).`,
+    granted
+      ? "The Gateway no longer holds the tokens; every app that used the connection gets \"not connected\" until the person connects again."
+      : "Every app that used the connection gets \"not connected\" until the person connects again.",
+    ...(granted
+      ? [
+          `The grant stays at ${capability.label} until it is revoked there: ${capability.console} (Disconnect in Connected accounts revokes it from the Gateway).`,
+        ]
+      : []),
+    ...(throughComposio
+      ? ["A connection made through Composio holds no token: nothing is left to revoke, and nothing changed at Composio."]
+      : []),
   ];
   finish(out, {
     headline: lines[0]!.replace(/\.$/, ""),
     blocks: [
-      factLines([{ label: "Revoke", value: `${chalk.cyan(capability.console)} ${chalk.dim(`· the grant stays at ${capability.label} until then`)}` }]),
+      granted
+        ? factLines([{ label: "Revoke", value: `${chalk.cyan(capability.console)} ${chalk.dim(`· the grant stays at ${capability.label} until then`)}` }])
+        : [],
     ],
     message: lines,
     detail: lines.slice(1),
@@ -689,7 +773,7 @@ export async function disconnectProvider(
       name: capability.label,
       removed: removed.map((connection) => reported(connection, capability.label)),
       revoked: false,
-      revokeAt: capability.console,
+      ...(granted ? { revokeAt: capability.console } : {}),
     },
   });
 }

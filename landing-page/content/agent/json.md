@@ -70,6 +70,7 @@ On `error` and `action_required` events, `data` may carry:
 | `choose_account` | Picks one of `data.choices` (several accounts or Gateways). | Each choice's `rerun` adds `--account-id` or `--gateway`. |
 | `install_gateway` | Runs `everyapp setup`: no account has a Gateway. | `data.accounts` lists the accounts the login sees. |
 | `rerun_interactive` | Runs `data.rerun` in a terminal to confirm replacing a Worker changed outside everyapp. | `needsTerminal: true`; `--yes` doesn't skip it. |
+| `composio_sign_in` | Opens `data.url` and approves the sign-in at Composio. | `provider link composio`. `data.waiting: true`: the run goes on by itself once approved. Show the link to the person the run acts as and nobody else. Not approved by `data.expiresAt`: `COMPOSIO_LINK_EXPIRED`. |
 
 ## Prompts under `--json`
 
@@ -85,6 +86,7 @@ Nothing prompts. A yes/no question is `CONFIRMATION_REQUIRED` (pass `--yes` once
 - `secret set`: `gateway.bound` lists the provider rows (a remote MCP app's `<id>-mcp` among them) whose key is now bound to their hosts.
 - `deploy`: `{ url, workerName, versionId, live, organization, publicRoutes, next }`.
 - `workspace …`, `events …`, `ai show|default`, `call <tool>`: the Gateway tool's answer. With no stored sign-in and no `EVERYAPP_TOKEN`, the run first emits a `gateway.signin` progress event whose URL the person opens, and waits. A tool's refusal is `GATEWAY_TOOL_ERROR` (`data.code`, `data.tool`); a refused credential `GATEWAY_REFUSED`.
+- `workspace composio`, `provider link composio`, `provider unlink composio`: the Gateway tool's answer too, by the same sign-in rule. `provider link composio` ends with the person's link: `composio` (on or off), `linked`, `account` and `providers` (each with its `services` and their accounts; null when Composio didn't answer).
 - `setup` and `update`: `{ gatewayUrl, adminUrl, organizationName, owner, release, gateway, accessOn, next }`. `gateway` is `installed`, `upgraded`, `repaired` or `up-to-date`.
 - `mcp add`: `{ id, url, auth, credential, connect?, oauth?, verify?, probe, mcp, next }`. `credential.kind` is `none`, `bearer`, `header`, `query`, `basic`, `oauth` or `provider`; `connect.url` is where each member connects an OAuth server; `verify` is the static key's check.
 - `create`: `{ appId, dir, next }`. `release`: `{ tarball, shown, version, sha256, next }`. `delete`: `{ appId, workerName, alreadyDeleted, purged }`.

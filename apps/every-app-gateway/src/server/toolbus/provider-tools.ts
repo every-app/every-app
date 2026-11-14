@@ -193,6 +193,9 @@ function listed(
               redirectUri: oauth.redirectUri,
               console: oauth.console,
               connections: oauth.connections,
+              // Served through people's own Composio in this organization
+              // (docs/design/2026-11-composio.md): it needs no client.
+              composio: oauth.composio,
               ...(options.admin
                 ? {
                     client: {

@@ -13,7 +13,6 @@ import {
   PROVIDER_APP_TIER,
   jsonObject,
   missingScopes,
-  type OAuthClientCapability,
 } from "@every-app/sdk/internal";
 import { db } from "@/db";
 import { apps, members, users } from "@/db/schema";
@@ -22,6 +21,14 @@ import { platformPolicy } from "@/server/platform-policy";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { accessToApp } from "@/server/repositories/effective-access";
 import { isUserBanned } from "@/server/user-ban";
+import {
+  connectionLacks,
+  unaskedScopes,
+  type ConnectionHolding,
+  type ServedProvider,
+} from "./holding";
+
+export { connectionLacks, unaskedScopes };
 
 /** The app a connect is for, as the flow needs it. */
 export interface ConnectApp {
@@ -225,53 +232,28 @@ export async function memberAppByRow(input: {
   return app?.rowId === input.appRowId ? app : null;
 }
 
-/** A connection as the scope rules read it: what its token holds, and what the provider was last asked for. */
-export interface ScopedConnection {
-  scopes: readonly string[];
-  /** Null when the last connect was before the Gateway kept it. */
-  askedScopes?: readonly string[] | null;
-}
-
-/**
- * The scopes an app lists (`declared`) that the provider was never asked
- * for on this connection: neither held nor asked at the last connect. A
- * Reconnect gets these, where the provider grants them. A scope that was
- * asked and isn't held was declined, or the provider didn't grant it: the
- * person's choice, and nothing to prompt for.
- */
-export function unaskedScopes(
-  flow: OAuthClientCapability["flow"],
-  connection: ScopedConnection,
-  declared: readonly string[],
-): string[] {
-  return missingScopes(
-    flow,
-    [...connection.scopes, ...(connection.askedScopes ?? [])],
-    declared,
-  );
-}
-
 /**
  * What a person does before an app may use their connection, for what the
  * app lists (`declared`) now; null when nothing. The one rule behind the
  * connect link, the setup dialog's buttons and Needs reconnect: Reconnect
- * is for a connection that stopped working (expired) or was never asked
- * for a scope the app lists now, not for one the person granted in part.
+ * is for a connection that stopped working (expired), was never asked for
+ * a scope the app lists now, or was made the other way than the provider
+ * is served now (through Composio after an admin added a client, or with
+ * a client that is gone while Composio is on). Not for one the person
+ * granted in part.
  */
 export function connectionAction(
-  flow: OAuthClientCapability["flow"],
-  connection:
-    | ({
-        status: "active" | "expired";
-      } & ScopedConnection)
-    | null,
+  provider: ServedProvider,
+  connection: (ConnectionHolding & { status: "active" | "expired" }) | null,
   access: { scopes: readonly string[] } | null,
   declared: readonly string[],
 ): ConnectionAction | null {
   if (!connection) return ConnectionAction.Connect;
+  const flow = provider.flow;
   if (
     connection.status === "expired" ||
-    unaskedScopes(flow, connection, declared).length > 0
+    (provider.via !== null && connection.via !== provider.via) ||
+    connectionLacks(provider, connection, declared).length > 0
   ) {
     return ConnectionAction.Reconnect;
   }

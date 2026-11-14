@@ -73,6 +73,8 @@ The perimeter asks twice before an app's private page opens. `needsSetup`, befor
 
 One rule decides whether the Gateway holds an OAuth provider's client, the SDK's `oauthClientSource`: the Worker's settings (set from the terminal) while the registry may read them, else the client pasted under Manage workspace → Providers while it was pasted for the provider as it is now and has its secret. The Gateway's client lookup, the setup gate and the app lists use it, and so do the CLI's `status`, `deploy` and `configure`, which read the pasted client's binding from D1 (never its secret).
 
+Since [2026-11-composio.md](2026-11-composio.md), a provider with no client is also set up where an organization turned Composio on and it serves what the app lists. The rules on this page hold for a connection made that way too.
+
 ## A call
 
 `handleHeldTokenCall` finds the connection by person and provider, then requires the person's access row for the calling app. No row answers `409 integration_not_connected` with the same `connectPath`, so an app's Connect button needs no change: it now leads to the Allow page. The status route reports `connection: null` for an app the person hasn't allowed.

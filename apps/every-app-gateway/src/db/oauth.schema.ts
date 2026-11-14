@@ -75,6 +75,16 @@ export const providerConnections = sqliteTable(
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
     // "active" | "expired".
     status: text("status").notNull(),
+    // How the connection was made (the SDK's ConnectionVia): "oauth", with
+    // the Gateway's client, or "composio", through the person's Composio
+    // (docs/design/2026-11-composio.md). A "composio" row holds no token:
+    // `access_token_enc` is a sealed empty string nothing reads, `scopes`
+    // is empty, and what it holds is `composio_accounts`.
+    via: text("via").notNull().default("oauth"),
+    // On a "composio" row, each service with Composio's id for the account
+    // and the account's name: JSON array of `{ service, id, account }`.
+    // Null otherwise.
+    composioAccounts: text("composio_accounts"),
     // Counts every write of the tokens (a connect, a refresh). A refresh
     // stores its result, and a refused one marks the row expired, only
     // while this is still the number it read: a write decided on tokens
@@ -146,7 +156,8 @@ export const oauthStates = sqliteTable("oauth_states", {
   appRowId: text("app_row_id").notNull(),
   // OAuthStatePurpose: "authorize" and "reconnect" the provider's callback
   // spends ("reconnect" also allows the person's apps again); "allow" the
-  // Gateway's own Allow page does, and no provider is asked.
+  // Gateway's own Allow page does, and "composio" its Composio page, and
+  // no provider is asked.
   purpose: text("purpose").notNull().default("authorize"),
   codeVerifier: text("code_verifier").notNull(),
   // The scopes asked for, in the provider's spelling, JSON array.

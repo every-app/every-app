@@ -542,6 +542,14 @@ export function createAuth() {
               organization.id,
               user.id,
             );
+            // So does their Composio link there, with any sign-in waiting.
+            const { ComposioLinkRepository } = await import(
+              "@/server/repositories/ComposioLinkRepository"
+            );
+            await ComposioLinkRepository.remove({
+              organizationId: organization.id,
+              userId: user.id,
+            });
           },
         },
       }),

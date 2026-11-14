@@ -13,7 +13,10 @@
  * connect, no background; no token is ever on the page. Under them,
  * native apps in "Apps on your devices" with the one app each opens,
  * signed out by revoking that connection by id; the section is absent
- * until there is one.
+ * until there is one. A connection made through Composio is a row like
+ * any other, with its services where another has scopes, and the person's
+ * own Composio sits under the accounts (ComposioSection.test.tsx has the
+ * linking).
  */
 import { act, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -27,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   reconnectConnection: vi.fn(),
   listMyMcpConnections: vi.fn(),
   revokeMyMcpConnection: vi.fn(),
+  getComposioStatus: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
@@ -44,6 +48,17 @@ vi.mock("@/serverFunctions/connections", () => ({
 vi.mock("@/serverFunctions/mcpConnections", () => ({
   listMyMcpConnections: mocks.listMyMcpConnections,
   revokeMyMcpConnection: mocks.revokeMyMcpConnection,
+}));
+vi.mock("@/serverFunctions/composio", () => ({
+  getComposioStatus: mocks.getComposioStatus,
+  getComposioSwitch: vi.fn(),
+  setComposioSwitch: vi.fn(),
+  startComposioLink: vi.fn(),
+  finishComposioLink: vi.fn(),
+  unlinkComposio: vi.fn(),
+}));
+vi.mock("@/client/auth-client", () => ({
+  authClient: { useActiveMemberRole: () => ({ data: { role: "member" } }) },
 }));
 vi.mock("sonner", () => ({ toast: mocks.toast }));
 
@@ -96,6 +111,13 @@ beforeEach(() => {
   mocks.revokeMyMcpConnection.mockResolvedValue({ ok: true });
   mocks.disconnectConnection.mockResolvedValue({ ok: true, revoked: true });
   mocks.removeConnectionApp.mockResolvedValue({ ok: true });
+  mocks.getComposioStatus.mockReset();
+  mocks.getComposioStatus.mockResolvedValue({
+    composio: "off",
+    linked: false,
+    account: null,
+    providers: null,
+  });
   mocks.listMyConnections.mockResolvedValue({
     connections: [
       {
@@ -338,6 +360,113 @@ describe("Connected accounts", () => {
     await render();
     expect(body()).toContain("No connected accounts yet");
     expect(body()).toContain("Connect one from inside an app.");
+  });
+});
+
+describe("a connection made through Composio", () => {
+  const viaComposio = {
+    id: "conn_c",
+    providerId: "google-workspace",
+    providerName: "Google Workspace",
+    userId: "user_1",
+    userEmail: "ada@acme.com",
+    apps: [{ rowId: "app_mail", id: "openmail", name: "OpenMail" }],
+    label: "ada@gmail.com",
+    via: "composio",
+    scopes: [],
+    services: [
+      { name: "Gmail", account: "ada@gmail.com" },
+      { name: "Search Console", account: "ada@work.com" },
+    ],
+    status: "active",
+    needsReconnect: false,
+    createdAt: 1,
+    lastUsedAt: null,
+    expiresAt: null,
+  };
+
+  it("shows its services under Access, where another row shows what its scopes allow", async () => {
+    mocks.listMyConnections.mockResolvedValue({ connections: [viaComposio] });
+    await render();
+    expect(rowFor("Google Workspace").slice(0, 3)).toEqual([
+      "Google Workspaceada@gmail.com · Used by OpenMail",
+      "Gmail and Search Console",
+      "Never",
+    ]);
+  });
+
+  it("lists each service with its account in the row's details, in place of permissions", async () => {
+    mocks.listMyConnections.mockResolvedValue({ connections: [viaComposio] });
+    await render();
+    const row = container.querySelector<HTMLElement>("tbody tr")!;
+    await act(async () => row.click());
+    await settle();
+    const sheet = document.body.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(
+      [...sheet.querySelectorAll('[aria-label="From Composio"] li')].map(
+        (item) => item.textContent,
+      ),
+    ).toEqual(["Gmailada@gmail.com", "Search Consoleada@work.com"]);
+    expect(sheet.textContent).toContain(
+      "Apps can do whatever these accounts allow in Composio.",
+    );
+    expect(sheet.textContent).not.toContain("Permissions");
+    expect(sheet.textContent).not.toContain("holds no permissions");
+  });
+
+  it("reads Needs reconnect and reconnects exactly as another row does, to the Gateway's own page", async () => {
+    mocks.listMyConnections.mockResolvedValue({
+      connections: [{ ...viaComposio, needsReconnect: true }],
+    });
+    mocks.reconnectConnection.mockResolvedValue({
+      outcome: "provider",
+      url: "/oauth/composio?state=s1",
+    });
+    const assign = vi
+      .spyOn(window.location, "assign")
+      .mockImplementation(() => undefined);
+    await render();
+    expect(rowFor("Google Workspace")[0]).toContain("Needs reconnect");
+    const reconnect = [
+      ...container.querySelectorAll<HTMLElement>("tbody button"),
+    ].find((element) => element.textContent?.trim() === "Reconnect")!;
+    await act(async () => reconnect.click());
+    await settle();
+    expect(mocks.reconnectConnection.mock.calls[0]![0]).toEqual({
+      data: { providerId: "google-workspace", fresh: false },
+    });
+    // A path on this Gateway: the browser follows it from where it is.
+    expect(assign).toHaveBeenCalledWith("/oauth/composio?state=s1");
+    assign.mockRestore();
+  });
+});
+
+describe("the person's own Composio", () => {
+  it("sits under the accounts once Composio is on, and adds no row to them", async () => {
+    mocks.getComposioStatus.mockResolvedValue({
+      composio: "on",
+      linked: true,
+      account: "ada@composio.example",
+      providers: null,
+    });
+    await render();
+    const composio = section("Composio")!;
+    expect(composio.textContent).toContain("Linked as ada@composio.example.");
+    expect(
+      [...composio.querySelectorAll("button")].map((button) =>
+        button.textContent?.trim(),
+      ),
+    ).toEqual(["Unlink"]);
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(3);
+    expect(
+      section("Connected accounts")!.compareDocumentPosition(composio) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("is absent for a member while Composio is off", async () => {
+    await render();
+    expect(section("Composio")).toBeNull();
   });
 });
 

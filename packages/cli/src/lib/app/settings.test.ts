@@ -11,6 +11,8 @@ import {
   CAPABILITIES,
   CATALOG,
   DEV_AI_PROVIDERS,
+  OAUTH_PRESETS,
+  oauthPreset,
   oauthPresetIds,
   parseProviderSpec,
   providerBindingKey,
@@ -30,6 +32,7 @@ import {
   featuresLine,
   helperRows,
   namesToSet,
+  oauthProvidersSetUp,
   renderSettingsTable,
   settingsRows,
   settingStatus,
@@ -371,6 +374,63 @@ describe("a gateway's registered providers", () => {
     expect(appSetupFrom({ ...set, lookup: bound }).setup.ready).toBe(true);
     // The catalog alone has nothing to leave out.
     expect(boundGatewayNames(["NORTHWIND_API_KEY"])).toEqual(["NORTHWIND_API_KEY"]);
+  });
+});
+
+describe("an OAuth provider an app lists (the SDK's oauthProviderSetUp)", () => {
+  const GOOGLE = ["GOOGLE_WORKSPACE_CLIENT_ID", "GOOGLE_WORKSPACE_CLIENT_SECRET"];
+  const rows = (bound = false) => [
+    {
+      id: "google-workspace",
+      spec: OAUTH_PRESETS["google-workspace"],
+      ...(bound ? { boundTo: providerBindingKey(oauthPreset("google-workspace")!) } : {}),
+    },
+    { id: "spotify", spec: OAUTH_PRESETS["spotify"] },
+  ];
+  const registry = providerRegistry(rows());
+  const lists = (id: string, scopes: string[]) => ({ capabilities: { [id]: { scopes, why: "Reads it." } } });
+  const mail = lists("google-workspace", ["gmail.readonly", "openid"]);
+  const nothing = { lookup: registry, gatewayNames: [] as string[], pasted: new Map(), composioOn: false };
+
+  it("is not set up with no client while Composio is off, and is once it is on, serves it and covers every scope the app lists", () => {
+    expect(oauthProvidersSetUp({ ...nothing, manifest: mail })).toEqual(new Map([["google-workspace", false]]));
+    const on = oauthProvidersSetUp({ ...nothing, manifest: mail, composioOn: true });
+    expect(on).toEqual(new Map([["google-workspace", true]]));
+
+    // The app stops needing setup, and its client's names read set: nothing is asked for.
+    const input = { manifest: mail, appId: "mail", gatewayNames: [], secretNames: [], lookup: registry };
+    const off = appSetupFrom({ ...input, oauthReady: oauthProvidersSetUp({ ...nothing, manifest: mail }) }).setup;
+    expect(off.ready).toBe(false);
+    expect(off.unmet.map((setting) => setting.names)).toEqual([GOOGLE]);
+    const ready = appSetupFrom({ ...input, oauthReady: on }).setup;
+    expect(ready).toMatchObject({ ready: true, unmet: [], command: null });
+    expect(ready.settings).toEqual([expect.objectContaining({ id: "google-workspace", names: GOOGLE, set: true })]);
+  });
+
+  it("still needs a client where Composio has no service for a scope the app lists, or doesn't serve the provider", () => {
+    const on = { ...nothing, composioOn: true };
+    // No service of Google's at Composio covers cloud-platform.
+    expect(oauthProvidersSetUp({ ...on, manifest: lists("google-workspace", ["gmail.readonly", "cloud-platform"]) }).get("google-workspace")).toBe(false);
+    // Sign-in scopes alone name none of a provider's several services.
+    expect(oauthProvidersSetUp({ ...on, manifest: lists("google-workspace", ["openid", "email"]) }).get("google-workspace")).toBe(false);
+    expect(oauthProvidersSetUp({ ...on, manifest: lists("spotify", ["user-read-email"]) })).toEqual(new Map([["spotify", false]]));
+  });
+
+  it("is set up by a client the Gateway holds, whatever Composio is: its Worker settings while bound, or a pasted one", () => {
+    const anything = lists("google-workspace", ["cloud-platform"]);
+    // Set but not bound to the row: the Gateway doesn't read it.
+    expect(oauthProvidersSetUp({ ...nothing, manifest: anything, gatewayNames: GOOGLE }).get("google-workspace")).toBe(false);
+    expect(
+      oauthProvidersSetUp({ ...nothing, manifest: anything, gatewayNames: GOOGLE, lookup: providerRegistry(rows(true)) }).get("google-workspace"),
+    ).toBe(true);
+    const pasted = new Map([
+      ["google-workspace", { boundTo: providerBindingKey(oauthPreset("google-workspace")!), hasSecret: true }],
+    ]);
+    expect(oauthProvidersSetUp({ ...nothing, manifest: anything, pasted }).get("google-workspace")).toBe(true);
+  });
+
+  it("leaves a provider out when the Gateway's names couldn't be listed, so it reads unknown and never blocks", () => {
+    expect(oauthProvidersSetUp({ ...nothing, manifest: mail, gatewayNames: null, composioOn: true })).toEqual(new Map());
   });
 });
 

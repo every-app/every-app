@@ -979,6 +979,8 @@ export const catalogue = {
     scopes: readonly string[];
     /** True when the connection replaced an earlier one. */
     reconnected?: boolean;
+    /** How the connection was made: "oauth" (the default), or "composio". */
+    via?: string;
   }): BuiltEvent {
     return built("provider.connected", {
       provider: provider(input.provider),
@@ -986,6 +988,7 @@ export const catalogue = {
       app: app(input.app),
       scopes: [...input.scopes],
       reconnected: input.reconnected ?? false,
+      via: input.via ?? "oauth",
     });
   },
 
@@ -1055,11 +1058,14 @@ export const catalogue = {
     account: EventProviderAccount;
     /** Whether the Gateway revoked the grant at the provider too. */
     revoked: boolean;
+    /** How the connection was made: "oauth" (the default), or "composio". */
+    via?: string;
   }): BuiltEvent {
     return built("provider.disconnected", {
       provider: provider(input.provider),
       account: account(input.account),
       revoked: input.revoked,
+      via: input.via ?? "oauth",
     });
   },
 

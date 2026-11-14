@@ -439,7 +439,8 @@ console, with `https://<gateway>/connect/<id>/callback` as its redirect URI
 and the scopes your apps list allowed on it, then hand it to the Gateway
 (the commands are below), or paste it in Manage workspace → Providers
 (sealed in `oauth_clients`; the Worker secret wins). A client you skip is
-simply not offered: its status answers `configured: false`. One client
+simply not offered: its status answers `configured: false`, unless an owner
+or admin turned Composio on and it serves what the app lists (below). One client
 serves every app and organization on the Gateway, so a provider's limits
 are shared too. Microsoft and Slack may hand back every scope a person ever
 approved on a client. A connect asks for every scope the organization's
@@ -506,10 +507,10 @@ refusal with its code in `x-everyapp-error`:
 | Code                           | Status | When                                                                                                    |
 | ------------------------------ | ------ | ------------------------------------------------------------------------------------------------------- |
 | `capability_not_requested`     | 403    | the deployed manifest doesn't list the provider                                                         |
-| `integration_not_configured`   | 503    | the Gateway holds no client for it                                                                      |
+| `integration_not_configured`   | 503    | the Gateway holds no client for it, and Composio is off for the organization or doesn't serve what the app lists |
 | `integration_body_invalid`     | 400    | `x-everyapp-user` isn't a user id                                                                       |
 | `integration_user_not_allowed` | 403    | a shared app or linked dev named a member with `x-everyapp-user`                                        |
-| `integration_not_connected`    | 409    | no connection for this person (or the named member), they haven't allowed this app, it expired, or the app now lists a scope the connection lacks or the person hasn't allowed; the answer carries `connectPath` (`/connect/<id>?app=<app>`), `reconnect` and `missingScopes`. A named member who left, was deactivated or lost the app gets this too, and the app's access to their connection is removed |
+| `integration_not_connected`    | 409    | no connection for this person (or the named member), they haven't allowed this app, it expired, it was made another way than the provider is served now, or the app now lists a scope the connection lacks or the person hasn't allowed; the answer carries `connectPath` (`/connect/<id>?app=<app>`), `reconnect` and `missingScopes`. A named member who left, was deactivated or lost the app gets this too, and the app's access to their connection is removed |
 | `invalid_integration_route`    | 400    | the host isn't one of the provider's API hosts                                                          |
 | `integration_upstream_failed`  | 502    | the provider couldn't be reached                                                                        |
 
@@ -521,6 +522,17 @@ the answer back. There are no route, set or method rules: what the app may
 do is what the scopes the connection holds let it do. Each call is logged
 (`integration.proxy.call`) without the query, the body or the answer, and
 an app's first call of a UTC day on a connection emits `connection.used`.
+
+**With no client: Composio.** An owner or admin can turn Composio on for
+the organization. A provider the Gateway holds no client for is then set up
+when Composio serves it and has a service for every scope the app lists,
+and a person's connection to it is made from an account in their own
+Composio (`via: composio` on the row). The checks above are the same. The
+last step differs: the Gateway sends the request to Composio, which adds
+the token. Only a JSON body can be sent, and a URL none of the provider's
+services there owns is `invalid_integration_route`. What it serves, how a
+person links and connects, and the limits are in
+[design/2026-11-composio.md](design/2026-11-composio.md).
 
 `GET /api/integrations/<id>` answers `{ capability, requested, configured,
 ready, scopes, connectPath, connection }` for the person (or the named

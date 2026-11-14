@@ -1,5 +1,7 @@
 import { db } from "@/db";
 import {
+  composioLinkRequests,
+  composioLinks,
   members,
   providerAppAccess,
   providerConnections,
@@ -67,8 +69,8 @@ async function markEmailVerified(userId: string): Promise<void> {
  * Deactivate a user everywhere, in one D1 transaction: ban the account
  * (Better Auth's admin fields, so new sign-ins fail), end every session,
  * revoke their personal access tokens and drop the OAuth accounts they
- * connected, with the access apps had to them. With `unlessLastOwnerOf`,
- * the ban
+ * connected, with the access apps had to them, and their Composio links
+ * with any sign-in waiting. With `unlessLastOwnerOf`, the ban
  * refuses, in its own WHERE, an owner of that organization no other live
  * owner would outlast (OrganizationMembersRepository.wouldLeaveNoLiveOwner),
  * and the sessions and tokens go only once the account is deactivated, so
@@ -123,6 +125,12 @@ async function deactivate(
     db
       .delete(providerConnections)
       .where(and(eq(providerConnections.userId, userId), deactivatedNow)),
+    db
+      .delete(composioLinkRequests)
+      .where(and(eq(composioLinkRequests.userId, userId), deactivatedNow)),
+    db
+      .delete(composioLinks)
+      .where(and(eq(composioLinks.userId, userId), deactivatedNow)),
   ]);
   return banned.length > 0;
 }

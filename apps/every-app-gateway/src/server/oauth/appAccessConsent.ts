@@ -7,7 +7,13 @@
  * (./flow.ts), which stays in place: the page's form spends it, and the
  * form's handler checks everything here again.
  */
-import { missingScopes } from "@every-app/sdk/internal";
+import {
+  ConnectionVia,
+  composioServicesNeeded,
+  composioServicesOf,
+  missingScopes,
+} from "@every-app/sdk/internal";
+import { providerServing } from "@/server/composio/link";
 import type { OrgContext } from "@/server/organization/orgContext";
 import { gatewayProviders } from "@/server/providers";
 import {
@@ -16,17 +22,18 @@ import {
 } from "@/server/repositories/OAuthStateRepository";
 import { ProviderConnectionRepository } from "@/server/repositories/ProviderConnectionRepository";
 import {
+  connectionAction,
   declaredScopes,
   declaredWhy,
   memberAppByRow,
-  unaskedScopes,
 } from "./appAccess";
+import { ConnectionAction } from "@/schemas/app-access";
 
 /** Why an Allow page, or its form, can't go ahead. */
 export enum AllowRefusal {
   /** The provider is gone, or the app no longer lists it or opens for the person. */
   App = "app",
-  /** The person's connection expired, went, or no longer holds what the app lists. */
+  /** The person's connection expired, went, no longer holds what the app lists, or was made another way than the provider is served now. */
   Connection = "connection",
   /** The app lists more than the state (what the page showed). */
   Scopes = "scopes",
@@ -41,7 +48,8 @@ export async function allowCheck(
   person: { id: string; org: { orgId: string } },
   state: { providerId: string; appRowId: string; scopes: readonly string[] },
 ) {
-  const capability = (await gatewayProviders()).get(state.providerId);
+  const registry = await gatewayProviders();
+  const capability = registry.get(state.providerId);
   const app = await memberAppByRow({
     organizationId: person.org.orgId,
     userId: person.id,
@@ -61,16 +69,43 @@ export async function allowCheck(
     providerId: state.providerId,
     userId: person.id,
   });
-  if (
-    connection?.status !== "active" ||
-    unaskedScopes(capability.flow, connection, declared).length > 0
-  ) {
+  const serving = await providerServing({
+    organizationId: person.org.orgId,
+    providerId: state.providerId,
+    capability,
+    lookup: registry,
+  });
+  // The connection is one a call would use: anything short of that (none,
+  // expired, lacking, made the other way) is a connect, not an Allow.
+  const action = connectionAction(
+    { id: state.providerId, flow: capability.flow, via: serving.via },
+    connection,
+    null,
+    declared,
+  );
+  if (!connection || action !== ConnectionAction.Allow) {
     return { refused: AllowRefusal.Connection, capability, app } as const;
   }
   if (missingScopes(capability.flow, state.scopes, declared).length > 0) {
     return { refused: AllowRefusal.Scopes, capability, app } as const;
   }
   return { refused: null, capability, app, declared, connection } as const;
+}
+
+/** The services of a connection through Composio that an app listing `declared` uses, each with its account. */
+function usedServices(
+  providerId: string,
+  flow: Parameters<typeof composioServicesNeeded>[1],
+  declared: readonly string[],
+  connection: { accounts: readonly { service: string; account: string }[] },
+): { label: string; account: string }[] {
+  const needed = composioServicesNeeded(providerId, flow, declared) ?? [];
+  return composioServicesOf(providerId).flatMap(({ slug, label }) => {
+    const account = connection.accounts.find((each) => each.service === slug);
+    return needed.includes(slug) && account
+      ? [{ label, account: account.account }]
+      : [];
+  });
 }
 
 export type AppAccessContext =
@@ -99,6 +134,13 @@ export type AppAccessContext =
       why: string | null;
       /** The scopes the app lists that the connection holds, as the app wrote them: one the person declined at the provider is left out. */
       scopes: string[];
+      /**
+       * For a connection made through Composio, the services the app uses
+       * with each one's account there: the app can do whatever those
+       * accounts allow in Composio. Null for a connection made with the
+       * Gateway's client.
+       */
+      composio: { label: string; account: string }[] | null;
     };
 
 const GONE: AppAccessContext = {
@@ -148,9 +190,19 @@ export async function buildAppAccessContext(
     },
     account: connection.label,
     why: declaredWhy(app.manifest, state.providerId),
-    scopes: declared.filter(
-      (scope) =>
-        missingScopes(capability.flow, connection.scopes, [scope]).length === 0,
-    ),
+    // A connection through Composio holds services, shown below, and the
+    // app is allowed for what it lists.
+    scopes:
+      connection.via === ConnectionVia.Composio
+        ? [...declared]
+        : declared.filter(
+            (scope) =>
+              missingScopes(capability.flow, connection.scopes, [scope])
+                .length === 0,
+          ),
+    composio:
+      connection.via === ConnectionVia.Composio
+        ? usedServices(state.providerId, capability.flow, declared, connection)
+        : null,
   };
 }

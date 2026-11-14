@@ -440,14 +440,11 @@ function ClientForm({
               </form.Subscribe>
             </>
           ) : (
-            <>
-              <RedirectUriSection
-                redirectUri={preset.redirectUri}
-                console={preset.console}
-                providerName={preset.name}
-              />
-              <ProviderHosts hosts={preset.hosts} what="connected accounts" />
-            </>
+            <RedirectUriSection
+              redirectUri={preset.redirectUri}
+              console={preset.console}
+              providerName={preset.name}
+            />
           )}
 
           <form.AppField name="clientId">
@@ -473,6 +470,10 @@ function ClientForm({
           <p className="text-xs text-muted-foreground">
             Leave both blank to set the client later.
           </p>
+
+          {preset ? (
+            <ProviderHosts hosts={preset.hosts} what="connected accounts" />
+          ) : null}
 
           {error ? (
             <Alert variant="destructive">

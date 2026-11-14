@@ -646,6 +646,66 @@ describe("configure from a script", () => {
     });
   });
 
+  it("asks for no OAuth client once the app's organization has Composio on and it covers the app's scopes", async () => {
+    const GOOGLE = ["GOOGLE_WORKSPACE_CLIENT_ID", "GOOGLE_WORKSPACE_CLIENT_SECRET"];
+    const lists = (id: string, scopes: string[]): EveryAppCliManifest => ({
+      id,
+      resources: { d1: ["DB"] },
+      capabilities: { "google-workspace": { scopes, why: "Reads mail." } },
+    });
+    const dir = appDir(lists("crm", ["gmail.readonly"]));
+    await deploy(dir, lists("crm", ["gmail.readonly"]));
+    const turnOn = async () =>
+      db().run([
+        {
+          sql: "INSERT INTO org_settings (organization_id, composio, updated_at) VALUES (?, 1, 1)",
+          params: [(await readApp(db(), "crm")).organizationId],
+        },
+      ]);
+
+    // Composio off: the client is what the app waits for.
+    await expect(configureFrom({ appId: "crm" })).rejects.toMatchObject({
+      code: "SECRET_VALUE_REQUIRED",
+      data: { names: GOOGLE },
+    });
+    const before = configureAt(dir, {});
+    await before;
+    expect(before.prompter.asked).toEqual(GOOGLE);
+
+    // On: nothing is asked, by name or in the directory, and the app is ready.
+    await turnOn();
+    events = [];
+    const run = configureAt(dir, {});
+    await run;
+    expect(run.prompter.asked).toEqual([]);
+    expect(run.prompter.questions).toEqual([]);
+    expect(done()).toMatchObject({
+      message: "crm is ready",
+      data: { set: [], app: { setup: expect.objectContaining({ ready: true, unmet: [], command: null }) } },
+    });
+    expect(stripVTControlCharacters(shown ?? "")).toBe(
+      `✓ crm is ready\n\nChange a value:  ${CLI} secret set <NAME> --app crm`,
+    );
+    events = [];
+    await configureFrom({ appId: "crm" });
+    expect(done()).toMatchObject({ message: "crm is ready", data: { set: [] } });
+    expect(gateway().secrets["GOOGLE_WORKSPACE_CLIENT_ID"]).toBeUndefined();
+
+    // An app not deployed yet reads the install's organization, where its first deploy registers it.
+    events = [];
+    const fresh = configureAt(appDir(lists("mail", ["gmail.send"])), {});
+    await fresh;
+    expect(fresh.prompter.asked).toEqual([]);
+
+    // A scope no service at Composio covers still needs the client.
+    const cloud = lists("cloud", ["cloud-platform"]);
+    await deploy(appDir(cloud), cloud);
+    await expect(configureFrom({ appId: "cloud" })).rejects.toMatchObject({
+      code: "SECRET_VALUE_REQUIRED",
+      data: { names: GOOGLE },
+    });
+  });
+
   it("leaves stdin alone with --from-env, and treats a row whose first deploy never finished as undeployed", async () => {
     const dir = appDir(CRM);
     await deploy(dir, CRM);

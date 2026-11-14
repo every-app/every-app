@@ -24,6 +24,7 @@ import { connectPathFor } from "@/server/capabilities/heldToken";
 import { gatewayProviders } from "@/server/providers";
 import { ProviderAppAccessRepository } from "@/server/repositories/ProviderAppAccessRepository";
 import { ProviderConnectionRepository } from "@/server/repositories/ProviderConnectionRepository";
+import { providerServing } from "@/server/composio/link";
 import { connectionAction, declaredScopes } from "./appAccess";
 
 /**
@@ -67,8 +68,14 @@ export async function connectionNeeds(input: {
           appRowId: input.app.rowId,
         })
       : null;
+    const serving = await providerServing({
+      organizationId: input.organizationId,
+      providerId,
+      capability,
+      lookup: registry,
+    });
     const action = connectionAction(
-      capability.flow,
+      { id: providerId, flow: capability.flow, via: serving.via },
       connection,
       access,
       declared,

@@ -7,11 +7,14 @@
 import fs from "node:fs";
 import { stripVTControlCharacters } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { OAUTH_PRESETS } from "@every-app/sdk/internal";
 import { applyEmailRoutes, planEmailRoutes } from "@/lib/app/emailRoutes";
 import { recordOwnedResource } from "@/lib/app/ownership";
 import { cfD1Database } from "@/lib/cf/d1";
 import { applyGateway } from "@/lib/gateway/apply";
 import { discoverGateway } from "@/lib/gateway/discover";
+import { readInstall } from "@/lib/gateway/install";
+import { addProvider } from "@/lib/gateway/providers";
 import { LeasePurpose } from "@/lib/gateway/lease";
 import { holdLease } from "@/test/holdLease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
@@ -542,6 +545,65 @@ describe("everyapp status", () => {
     // Nothing is waiting, so no settings table; --all still lists them.
     expect(live).not.toContain("SETTING");
     expect(await shown(account, true)).toContain("crm  TOKEN_ENCRYPTION_KEY  crm      ✓ set");
+  });
+
+  it("counts an OAuth provider with no client as set up once the app's organization has Composio on and it covers the app's scopes", async () => {
+    const lists = (id: string, scopes: string[]) => ({
+      id,
+      capabilities: { "google-workspace": { scopes, why: "Reads the person's Google account." } },
+    });
+    // mail lists a scope of Gmail's; cloud lists one no service at Composio covers.
+    const mail = await deployed("mail", { manifest: lists("mail", ["gmail.readonly"]) });
+    await deployed("cloud", { manifest: lists("cloud", ["cloud-platform"]) });
+    await addProvider(db(), {
+      spec: OAUTH_PRESETS["google-workspace"],
+      deployer: { actor: "dev@example.com", email: "dev@example.com" },
+      install: (await readInstall(db()))!,
+    });
+    const setupOf = (done: Record<string, any>, id: string) =>
+      (done["data"]["apps"] as Array<Record<string, any>>).find((app) => app["id"] === id)!["setup"];
+    const needing = (done: Record<string, any>) =>
+      (done["data"]["fixes"] as Array<{ code: string; run: string }>)
+        .filter((fix) => fix.code === "APP_NEEDS_SETUP")
+        .map((fix) => fix.run)
+        .sort();
+
+    // Composio off: both wait for Google's client.
+    const off = await status();
+    expect(needing(off)).toEqual(["pnpm everyapp configure cloud", "pnpm everyapp configure mail"]);
+    expect(setupOf(off, "mail")).toMatchObject({
+      ready: false,
+      unmet: [expect.objectContaining({ id: "google-workspace", names: ["GOOGLE_WORKSPACE_CLIENT_ID", "GOOGLE_WORKSPACE_CLIENT_SECRET"] })],
+    });
+    expect(await shown()).toMatch(/\nmail +! needs setup +https:\/\/mail\.example\.com/);
+
+    // Another organization's switch says nothing of these apps.
+    account
+      .database("every-app-gateway")
+      .sqlite.exec(
+        "INSERT INTO organizations (id, name, slug, created_at) VALUES ('org_other', 'Other', 'other', 1); INSERT INTO org_settings (organization_id, composio, updated_at) VALUES ('org_other', 1, 1)",
+      );
+    expect(needing(await status())).toEqual(["pnpm everyapp configure cloud", "pnpm everyapp configure mail"]);
+
+    // On for the apps' organization: mail is set up with no client; cloud still needs one.
+    await db().run([
+      { sql: "INSERT INTO org_settings (organization_id, composio, updated_at) VALUES (?, 1, 1)", params: [mail.organizationId] },
+    ]);
+    const on = await status();
+    expect(needing(on)).toEqual(["pnpm everyapp configure cloud"]);
+    expect(setupOf(on, "mail")).toMatchObject({ ready: true, unmet: [], command: null });
+    expect(setupOf(on, "cloud")).toMatchObject({ ready: false, command: { command: "pnpm everyapp configure cloud" } });
+    const report = await shown();
+    expect(report).not.toMatch(/\nmail +! needs setup/);
+    expect(report).toMatch(/\ncloud +! needs setup +https:\/\/cloud\.example\.com/);
+    expect(report).toContain("cloud  GOOGLE_WORKSPACE_CLIENT_ID+GOOGLE_WORKSPACE_CLIENT_SECRET  Gateway  ! not set");
+    expect(report).not.toContain("mail   GOOGLE_WORKSPACE_CLIENT_ID");
+
+    // A Gateway from before the switch has no such column: off, and nothing is left unread.
+    account.database("every-app-gateway").sqlite.exec("ALTER TABLE org_settings DROP COLUMN composio");
+    const before = await status();
+    expect(needing(before)).toEqual(["pnpm everyapp configure cloud", "pnpm everyapp configure mail"]);
+    expect(fixCodes(before)).not.toContain("SETTINGS_UNKNOWN");
   });
 
   it("says once when the Workers' secrets can't be listed, blocks on nothing, and records nothing", async () => {

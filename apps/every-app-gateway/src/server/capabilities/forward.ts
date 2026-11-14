@@ -28,6 +28,9 @@ const STRIPPED_HEADERS = [
   "x-forwarded-host",
   "x-forwarded-proto",
 ];
+/** The query keys an app's call never carries to the provider: a token of its own. */
+export const STRIPPED_QUERY = ["access_token", "token"];
+
 // Every gateway trust header: none of them is the provider's business.
 const STRIPPED_HEADER_PREFIX = "x-everyapp-";
 

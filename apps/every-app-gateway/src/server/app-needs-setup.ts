@@ -95,6 +95,7 @@ export async function refuseUnreadyApp(
     appId: app.appId,
     tier: app.tier,
     manifest: app.manifest,
+    organizationId: app.organizationId,
     canFix: false,
   });
   if (report && app.rowId) {

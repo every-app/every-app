@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Composio: people's accounts with no OAuth app
+
+An owner or admin can turn Composio on for the organization (**Manage workspace → Providers**, `everyapp workspace composio on|off|show`, `everyapp_workspace_composio`). Composio is a third-party service where a person connects their accounts. While it is on, an OAuth provider the Gateway holds no client for is used through the accounts in each person's own Composio. Nobody registers an OAuth app for it, and an app that lists it no longer reads Needs setup for the missing client. Requests to those accounts pass through Composio. It is off by default, and a provider with a client is never served through it.
+
+Each person links their own Composio once (**Your connections → Accounts → Link Composio**, `everyapp provider link composio`, `everyapp_provider_composio_link`) by approving a sign-in there. Nobody types a key, and linking adds no connection. An account becomes the person's connection when an app asks for it and they select Allow on the Gateway's page. From there it is a connection like any other: one per person per provider, and each app asks. **Your connections → Accounts**, `everyapp provider connections` and `everyapp_provider_connections` say how each connection was made (`via`: `oauth` or `composio`), and so do the `provider.connected` and `provider.disconnected` events. App code and `everyapp.config.ts` don't change.
+
+It covers `github-oauth`, `slack`, `notion-oauth`, `linear-oauth`, `gitlab-oauth`, `hubspot-oauth`, `zoom`, `dropbox`, `google-workspace`, `microsoft-365` and `atlassian`. The limits: a call takes about half a second longer, only a JSON body can be sent, a JSON answer is written again, and each Google, Microsoft and Atlassian service is its own account in Composio. `everyapp provider unlink composio` deletes a person's key and the connections they made through it. Turning Composio off deletes every link and every such connection. Linking, connecting and reading Gmail and Calendar have been tried against the real Composio; the rest of its checks are in `TODO.md`. Design: `docs/design/2026-11-composio.md`; how-to: [Use accounts from Composio](https://everyapp.com/docs/composio); for agents: [setup/composio](https://everyapp.com/docs/agent/setup/composio).
+
+What you do: `pnpm everyapp update` brings the Gateway to migration `0037` (`composio`). This everyapp refuses an older Gateway with `GATEWAY_OUTDATED` until you do. The migration only adds: two tables and three columns. Nothing else changes until an owner or admin turns Composio on.
+
 ## 0.4.0
 
 Breaking for an app that reads `env.EVERYAPP_MANIFEST`. Everything else keeps working as it is: an app pinned to 0.3.x deploys and runs on a 0.4.0 Gateway.

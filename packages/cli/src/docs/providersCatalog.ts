@@ -18,6 +18,8 @@ import {
   CAPABILITIES,
   CAPABILITY_IDS,
   capabilitySettings,
+  composioServes,
+  composioServicesOf,
   isSettableGatewaySetting,
   oauthClientSecretSetCommand,
   oauthPreset,
@@ -248,6 +250,13 @@ function oauthSection(id: string, capability: OAuthClientCapability): string[] {
     `- **Hosts the token goes to:** ${list(capability.api)}, over https`,
     `- **Scopes an app lists:** the provider's own, ${spelled}, as ${code(`${JSON.stringify(id)}: { scopes: [...], why: "..." }`)}${flow.identityScopes.length > 0 ? `; the Gateway adds ${list(flow.identityScopes)} to every connect` : ""}${capability.reference ? `; the provider's list: ${capability.reference}` : ""}`,
     `- **Set it:** deploy an app that lists it (or ${code(`pnpm everyapp provider add ${id}`)}), then ${code(oauthClientSecretSetCommand(capability))} or paste the client in Manage workspace → Providers`,
+    ...(composioServes(id)
+      ? [
+          `- **With no client:** while Composio is on for the organization (${code("pnpm everyapp workspace composio on")}), people use the accounts in their own Composio: ${composioServicesOf(id)
+            .map((service) => service.label)
+            .join(", ")}. ${guideLink("composio.md")}`,
+        ]
+      : []),
     `- **Guide:** ${guide ? guideLink(guide) : "none beyond this section"}`,
     "",
   ];

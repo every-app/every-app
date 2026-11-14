@@ -87,6 +87,12 @@ const PUBLIC_ERROR_CODES = [
   "CONNECTION_UNUSED",
   "SEALING_UNAVAILABLE",
   "ADMIN_REQUIRED",
+  // Composio (server/composio/service.ts): off for the organization, not
+  // reachable, linked already, or a sign-in that couldn't be finished.
+  "COMPOSIO_OFF",
+  "COMPOSIO_UNAVAILABLE",
+  "COMPOSIO_ALREADY_LINKED",
+  "COMPOSIO_LINK_FAILED",
 ] as const;
 
 export type PublicErrorCode = (typeof PUBLIC_ERROR_CODES)[number];

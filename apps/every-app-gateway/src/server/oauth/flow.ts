@@ -20,6 +20,15 @@
  *   POST /connect/<id>/allow  state, decision  ← the Allow page's form
  *     → on "approve" the app allowed; either way 303 to `return`
  *
+ * A provider this Gateway holds no client for is served through Composio
+ * when the organization turned it on (docs/design/2026-11-composio.md).
+ * Connect and Reconnect then lead to the Gateway's own Composio page
+ * (/oauth/composio) and no provider is asked:
+ *
+ *   POST /connect/<id>/composio  state, decision, account.<service>…
+ *     → on "approve" the connection made from the accounts chosen in the
+ *       person's Composio and the app allowed; either way 303 to `return`
+ *
  * Reconnect on Your connections → Accounts (`startReconnect`, a server
  * function) starts the same authorize step for the person's own
  * connection, in the name of an app they allowed that needs it; its
@@ -35,8 +44,10 @@
 import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import {
+  ConnectionVia,
   OAUTH_TOKEN_BODY_LIMIT,
   canonicalScopes,
+  composioServicesOf,
   grantedScopes,
   isRemoteMcpProviderIdOf,
   joinScopes,
@@ -53,6 +64,13 @@ import {
   ConnectionAction,
   ReconnectOutcome,
 } from "@/schemas/app-access";
+import { COMPOSIO_FIELDS, COMPOSIO_PAGE } from "@/schemas/composio";
+import { ComposioRefusal, composioCheck } from "@/server/composio/connect";
+import {
+  composioAccounts,
+  providerServing,
+  servicesThroughComposio,
+} from "@/server/composio/link";
 import { PublicError } from "@/server/errors";
 import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
@@ -70,18 +88,19 @@ import {
 import { ProviderAppAccessRepository } from "@/server/repositories/ProviderAppAccessRepository";
 import {
   ProviderConnectionRepository,
+  type ComposioAccount,
   type ConnectionKey,
 } from "@/server/repositories/ProviderConnectionRepository";
 import { isUserBanned } from "@/server/user-ban";
 import {
   appForMember,
   connectionAction,
+  connectionLacks,
   declaredScopes,
   memberAppByRow,
   scopesListedFor,
   unaskedScopes,
   type ConnectApp,
-  type ScopedConnection,
 } from "./appAccess";
 import { AllowRefusal, allowCheck } from "./appAccessConsent";
 import { resolveOAuthClient, type ResolvedOAuthClient } from "./client";
@@ -124,15 +143,15 @@ function settings(): ConnectEnv {
   return env as ConnectEnv;
 }
 
-type ConnectRouteKind = "start" | "callback" | "allow";
+type ConnectRouteKind = "start" | "callback" | "allow" | "composio";
 
-/** Which route a path is: the start, the callback, the Allow page's form, or none. */
+/** Which route a path is: the start, the callback, the Allow or the Composio page's form, or none. */
 function parseConnectPath(
   pathname: string,
 ): { id: string; kind: ConnectRouteKind } | null {
   if (!pathname.startsWith(CONNECT_PREFIX)) return null;
   const rest = pathname.slice(CONNECT_PREFIX.length);
-  const match = /^([^/]+)(\/callback|\/allow)?\/?$/.exec(rest);
+  const match = /^([^/]+)(\/callback|\/allow|\/composio)?\/?$/.exec(rest);
   if (!match) return null;
   let id: string;
   try {
@@ -148,7 +167,9 @@ function parseConnectPath(
         ? "callback"
         : match[2] === "/allow"
           ? "allow"
-          : "start",
+          : match[2] === "/composio"
+            ? "composio"
+            : "start",
   };
 }
 
@@ -375,13 +396,20 @@ async function serveStart(
       `${app.name} doesn't list ${capability.label} in its everyapp.config.ts, so it can't connect an account there.`,
     );
   }
-  const client = await resolveOAuthClient({
-    id,
+  // How the provider is served: with the Gateway's client, else through
+  // Composio where the organization turned it on and it has a service for
+  // every scope the app lists.
+  const serving = await providerServing({
+    organizationId: person.org.orgId,
+    providerId: id,
     capability,
-    env: settings() as never,
     lookup: registry,
   });
-  if (!client) {
+  if (
+    serving.via === null ||
+    (serving.via === ConnectionVia.Composio &&
+      servicesThroughComposio(app, id, capability.flow, declared) === null)
+  ) {
     return errorPage(
       409,
       CANT_CONNECT,
@@ -400,7 +428,12 @@ async function serveStart(
   const access = connection
     ? await ProviderAppAccessRepository.find({ ...key, appRowId: app.rowId })
     : null;
-  const action = connectionAction(flow, connection, access, declared);
+  const action = connectionAction(
+    { id, flow, via: serving.via },
+    connection,
+    access,
+    declared,
+  );
   if (action === null) return redirect(returnTo);
   if (action === ConnectionAction.Allow) {
     // The connection holds what the app lists: no provider is asked. The
@@ -424,12 +457,25 @@ async function serveStart(
     });
     return redirect(`${ALLOW_PAGE}?state=${encodeURIComponent(state)}`);
   }
+  if (!serving.client) {
+    return redirect(
+      await composioPageUrl({
+        person: key,
+        id,
+        flow,
+        app,
+        declared,
+        returnTo,
+        now,
+      }),
+    );
+  }
   return redirect(
     await authorizeUrl({
       person: key,
       id,
       capability,
-      client,
+      client: serving.client,
       app,
       declared,
       purpose: OAuthStatePurpose.Authorize,
@@ -437,6 +483,44 @@ async function serveStart(
       now,
     }),
   );
+}
+
+/**
+ * Put a one-use state for the Gateway's Composio page and return the
+ * page's address: where a person uses an account from their Composio in
+ * `app`, for a provider served through Composio. No provider is asked.
+ */
+async function composioPageUrl(input: {
+  person: { organizationId: string; userId: string };
+  id: string;
+  flow: OAuthClientCapability["flow"];
+  /** The app the connect is in the name of: the page's form allows it. */
+  app: ConnectApp;
+  /** What that app lists for the provider. */
+  declared: readonly string[];
+  returnTo: string;
+  now: number;
+}): Promise<string> {
+  const state = randomToken(32);
+  await OAuthStateRepository.put({
+    state,
+    organizationId: input.person.organizationId,
+    providerId: input.id,
+    userId: input.person.userId,
+    appRowId: input.app.rowId,
+    purpose: OAuthStatePurpose.Composio,
+    codeVerifier: "",
+    scopes: canonicalScopes(input.flow, input.declared),
+    returnTo: input.returnTo,
+    now: new Date(input.now),
+  });
+  logEvent("oauth.composio_started", {
+    provider: input.id,
+    org: input.person.organizationId,
+    user_id: input.person.userId,
+    app_row_id: input.app.rowId,
+  });
+  return `${COMPOSIO_PAGE}?state=${encodeURIComponent(state)}`;
 }
 
 /**
@@ -536,12 +620,13 @@ async function serveCallback(
   const state = stateParam
     ? await OAuthStateRepository.take(stateParam, new Date(now))
     : null;
-  // An Allow page's state asked no provider anything: it is not this
-  // route's to spend, and is spent all the same.
+  // An Allow or Composio page's state asked no provider anything: it is
+  // not this route's to spend, and is spent all the same.
   if (
     !state ||
     state.providerId !== id ||
-    state.purpose === OAuthStatePurpose.Allow
+    state.purpose === OAuthStatePurpose.Allow ||
+    state.purpose === OAuthStatePurpose.Composio
   ) {
     logEvent("oauth.callback_refused", { ...log, reason: "state" }, "warn");
     return errorPage(
@@ -719,6 +804,9 @@ async function serveCallback(
   const existingKey = existing ? accountKey(existing) : null;
   const sameAccount =
     existing !== null &&
+    // A connection made through Composio was other accounts, whatever
+    // their names: the provider is served with the client now.
+    existing.via === ConnectionVia.OAuth &&
     (flow.identity
       ? named !== null && (existingKey === null || existingKey === named)
       : true);
@@ -772,10 +860,15 @@ async function serveCallback(
       ? await reallowApps({
           key,
           flow,
-          connection: {
-            scopes: granted,
-            askedScopes: canonicalScopes(flow, state.scopes),
-          },
+          lacks: (declared) =>
+            unaskedScopes(
+              flow,
+              {
+                scopes: granted,
+                askedScopes: canonicalScopes(flow, state.scopes),
+              },
+              declared,
+            ),
           now,
         })
       : [];
@@ -835,22 +928,22 @@ async function allowedApps(key: ConnectionKey): Promise<AllowedApp[]> {
 
 /**
  * Allow each app the person allowed for what it lists now, where it lists
- * more than they allowed it and the provider has been asked for all of it
- * on the connection (a scope the person declined there doesn't hold an
- * app back). The apps allowed.
+ * more than they allowed it and the connection doesn't lack it (`lacks`
+ * answers nothing for what the app lists: the provider has been asked for
+ * all of it, and a scope the person declined there doesn't hold an app
+ * back). The apps allowed.
  */
 async function reallowApps(input: {
   key: ConnectionKey;
   flow: OAuthClientCapability["flow"];
-  connection: ScopedConnection;
+  /** The scopes of `declared` the connection would have to be made again for. */
+  lacks: (declared: readonly string[]) => string[];
   now: number;
 }): Promise<ConnectApp[]> {
   const { key, flow } = input;
   const out: ConnectApp[] = [];
   for (const each of await allowedApps(key)) {
-    if (unaskedScopes(flow, input.connection, each.declared).length > 0) {
-      continue;
-    }
+    if (input.lacks(each.declared).length > 0) continue;
     if (missingScopes(flow, each.allowed, each.declared).length === 0) continue;
     await ProviderAppAccessRepository.allow({
       ...key,
@@ -874,20 +967,20 @@ type ReconnectResult =
 /**
  * Reconnect on Your connections → Accounts, for the person's own
  * connection to `providerId` and every app they allowed to use it. When
- * the connection expired, or the provider was never asked for a scope one
- * of those apps lists, the provider is asked again, in the name of the
- * app that needs it, for every scope the organization's apps list: the
- * URL to send the browser to, whose callback allows each of those apps
- * for what it lists now.
- * Otherwise no provider is asked, and each app that lists more than the
- * person allowed it is allowed for what it lists now: selecting
- * Reconnect is the person's OK. With `fresh` (Reconnect from the row's
- * menu, on a connection that may be healthy) the provider is asked
- * either way; the callback replaces the person's one connection to it.
+ * the connection expired, was made another way than the provider is
+ * served now, or the provider was never asked for a scope one of those
+ * apps lists, the person goes through the provider again (or, for a
+ * provider served through Composio, the Gateway's Composio page), in the
+ * name of the app that needs it: the URL to send the browser to.
+ * Otherwise nothing is asked, and each app that lists more than the
+ * person allowed it is allowed for what it lists now: selecting Reconnect
+ * is the person's OK. With `fresh` (Reconnect from the row's menu, on a
+ * connection that may be healthy) they go through it either way; that
+ * replaces the person's one connection.
  */
 export async function startReconnect(
   input: ConnectionKey,
-  options: { fresh?: boolean } = {},
+  options: { fresh?: boolean; fetchUpstream?: Fetch } = {},
 ): Promise<ReconnectResult> {
   const registry = await gatewayProviders();
   const capability = registry.get(input.providerId);
@@ -902,12 +995,48 @@ export async function startReconnect(
     throw new PublicError("CONNECTION_NOT_FOUND", "No such connection");
   }
   const flow = capability.flow;
+  const provider = { id: input.providerId, flow };
   const now = Date.now();
+  const serving = await providerServing({
+    organizationId: input.organizationId,
+    providerId: input.providerId,
+    capability,
+    lookup: registry,
+  });
+  if (serving.via === null) {
+    throw new PublicError(
+      "OAUTH_CLIENT_REQUIRED",
+      `${capability.label} has no client on this Gateway yet. An owner or admin adds one under Manage workspace → Providers.`,
+    );
+  }
   const apps = await allowedApps(input);
   const short = apps.filter(
-    (each) => unaskedScopes(flow, connection, each.declared).length > 0,
+    (each) => connectionLacks(provider, connection, each.declared).length > 0,
   );
-  if (options.fresh || connection.status === "expired" || short.length > 0) {
+  let again =
+    options.fresh === true ||
+    connection.via !== serving.via ||
+    short.length > 0;
+  if (!again && connection.via === ConnectionVia.Composio) {
+    // The accounts on the row have to be in the person's Composio still: a
+    // row that expired because their key was refused turns active again
+    // once they linked again and nothing else changed.
+    const read = await composioAccounts(input, options.fetchUpstream);
+    const listed = read.linked ? read.accounts : null;
+    again =
+      listed === null ||
+      !connection.accounts.every((account) =>
+        listed.some(
+          (each) => each.id === account.id && each.slug === account.service,
+        ),
+      );
+    if (!again && connection.status === "expired") {
+      await ProviderConnectionRepository.markActive(connection.id);
+    }
+  } else if (connection.status === "expired") {
+    again = true;
+  }
+  if (again) {
     const first = short[0] ?? apps[0];
     if (!first) {
       throw new PublicError(
@@ -915,17 +1044,32 @@ export async function startReconnect(
         `No app you allowed uses this ${capability.label} connection. Connect it from inside the app that needs it.`,
       );
     }
-    const client = await resolveOAuthClient({
-      id: input.providerId,
-      capability,
-      env: settings() as never,
-      lookup: registry,
-    });
-    if (!client) {
-      throw new PublicError(
-        "OAUTH_CLIENT_REQUIRED",
-        `${capability.label} has no client on this Gateway yet. An owner or admin adds one under Manage workspace → Providers.`,
-      );
+    if (!serving.client) {
+      if (
+        servicesThroughComposio(
+          first.app,
+          input.providerId,
+          flow,
+          first.declared,
+        ) === null
+      ) {
+        throw new PublicError(
+          "OAUTH_CLIENT_REQUIRED",
+          `${first.app.name} lists a ${capability.label} scope Composio has no service for. An owner or admin adds a client under Manage workspace → Providers.`,
+        );
+      }
+      return {
+        outcome: ReconnectOutcome.Provider,
+        url: await composioPageUrl({
+          person: input,
+          id: input.providerId,
+          flow,
+          app: first.app,
+          declared: first.declared,
+          returnTo: DEFAULT_RETURN,
+          now,
+        }),
+      };
     }
     return {
       outcome: ReconnectOutcome.Provider,
@@ -933,7 +1077,7 @@ export async function startReconnect(
         person: input,
         id: input.providerId,
         capability,
-        client,
+        client: serving.client,
         app: first.app,
         declared: first.declared,
         purpose: OAuthStatePurpose.Reconnect,
@@ -945,7 +1089,7 @@ export async function startReconnect(
   const allowed = await reallowApps({
     key: input,
     flow,
-    connection,
+    lacks: (declared) => connectionLacks(provider, connection, declared),
     now,
   });
   logEvent("oauth.apps_reallowed", {
@@ -1061,9 +1205,214 @@ async function serveAllow(
 }
 
 /**
- * Serve `/connect/<id>`, `/connect/<id>/callback` (GET) and
- * `/connect/<id>/allow` (POST), or null for a path that is none of them
- * (the control plane's).
+ * The Composio page's form (docs/design/2026-11-composio.md): the person
+ * uses the accounts they chose from their Composio in the app the state
+ * names, or leaves things as they were. The state is spent either way.
+ * What the page showed is checked again: the app still lists the provider
+ * and the person still opens it, the provider is still served through
+ * Composio, and each account chosen is still in their Composio, for the
+ * service it was chosen for. Then the connection is written in place of
+ * any they had and the app allowed, as any connect does.
+ */
+async function serveComposio(
+  request: Request,
+  id: string,
+  deps: ConnectRouteDeps,
+): Promise<Response> {
+  const person = await signedIn(request);
+  if (!person) {
+    return errorPage(
+      401,
+      CANT_CONNECT,
+      "Sign in to the Gateway in this browser, then open the app again.",
+    );
+  }
+  const now = (deps.now ?? Date.now)();
+  const log = { provider: id, org: person.org.orgId, user_id: person.id };
+  const form = await request.formData().catch(() => null);
+  const stateParam = form?.get(COMPOSIO_FIELDS.state);
+  const state =
+    typeof stateParam === "string" && stateParam
+      ? await OAuthStateRepository.take(stateParam, new Date(now))
+      : null;
+  if (
+    !state ||
+    state.providerId !== id ||
+    state.purpose !== OAuthStatePurpose.Composio
+  ) {
+    logEvent("oauth.composio_refused", { ...log, reason: "state" }, "warn");
+    return errorPage(
+      400,
+      CANT_CONNECT,
+      "This page was used already or expired. Open the app again.",
+    );
+  }
+  if (state.userId !== person.id || state.organizationId !== person.org.orgId) {
+    logEvent(
+      "oauth.composio_refused",
+      { ...log, reason: "foreign_state" },
+      "warn",
+    );
+    return errorPage(
+      400,
+      CANT_CONNECT,
+      "This was started by someone else, or in another organization. Open the app again.",
+    );
+  }
+  const returnTo = safeReturnTo(state.returnTo);
+  if (form?.get(COMPOSIO_FIELDS.decision) !== ALLOW_APPROVE) {
+    return redirect(returnTo, 303);
+  }
+  const refuse = (reason: string, status: number, message: string) => {
+    logEvent(
+      "oauth.composio_refused",
+      { ...log, app_row_id: state.appRowId, reason },
+      "warn",
+    );
+    return errorPage(status, CANT_CONNECT, message);
+  };
+  const check = await composioCheck(person, state);
+  if (check.refused === ComposioRefusal.App) {
+    return refuse(
+      check.refused,
+      404,
+      "The app or the provider changed since this page opened. Open the app again.",
+    );
+  }
+  if (check.refused !== null) {
+    const { capability, app } = check;
+    return refuse(
+      check.refused,
+      409,
+      check.refused === ComposioRefusal.Served
+        ? `How ${capability.label} is set up on this Gateway changed since this page opened. Open ${app.name} and connect again.`
+        : `${app.name} asks for more than this page showed. Open ${app.name} again.`,
+    );
+  }
+  const { capability, app, declared, needed } = check;
+  const key = {
+    organizationId: person.org.orgId,
+    providerId: id,
+    userId: person.id,
+  };
+  // The person's accounts, read from Composio again: the form names
+  // accounts by id, and only one of theirs, for the service it was chosen
+  // for, is taken.
+  const read = await composioAccounts(key, deps.fetchUpstream);
+  if (!read.linked) {
+    return refuse(
+      "not_linked",
+      409,
+      `Your Composio isn't linked any more. Open ${app.name} and connect again.`,
+    );
+  }
+  if (read.accounts === null) {
+    return refuse(
+      "composio_unavailable",
+      502,
+      "Composio could not be reached. Nothing was connected. Try again.",
+    );
+  }
+  const listed = read.accounts;
+  const chosen: ComposioAccount[] = [];
+  for (const service of needed) {
+    const picked = form?.get(COMPOSIO_FIELDS.account(service));
+    const found = listed.find(
+      (each) => each.slug === service && each.id === picked,
+    );
+    if (!found) {
+      return refuse(
+        "account_gone",
+        409,
+        `The accounts in your Composio changed since this page opened. Open ${app.name} and connect again.`,
+      );
+    }
+    chosen.push({ service, id: found.id, account: found.account });
+  }
+  const existing = await ProviderConnectionRepository.find(key);
+  const before =
+    existing?.via === ConnectionVia.Composio ? existing.accounts : [];
+  // The connection keeps the services its other apps use, where their
+  // accounts are still in the person's Composio, beside the ones chosen
+  // here.
+  const kept = before.filter(
+    (account) =>
+      !needed.includes(account.service) &&
+      listed.some(
+        (each) => each.id === account.id && each.slug === account.service,
+      ),
+  );
+  const accounts = composioServicesOf(id).flatMap(({ slug }) =>
+    [...kept, ...chosen].filter((account) => account.service === slug),
+  );
+  // The apps a person allowed were allowed the accounts the connection
+  // had. A first connection through Composio, or another account for a
+  // service it already had, is not those accounts: each app asks again.
+  // So does an account that is dropped here because it is gone from their
+  // Composio: were its apps to stay allowed, whatever account is chosen
+  // for that service later would be theirs to use unasked. A service
+  // added beside accounts that all stay changes none.
+  const dropped = before.some(
+    (account) => !needed.includes(account.service) && !kept.includes(account),
+  );
+  const sameAccount =
+    existing?.via === ConnectionVia.Composio &&
+    !dropped &&
+    chosen.every((account) => {
+      const was = before.find((each) => each.service === account.service);
+      return !was || was.id === account.id;
+    });
+  if (!sameAccount) {
+    await ProviderAppAccessRepository.removeForConnection(key);
+  }
+  // A page still open in another tab showed the connection as it was.
+  await OAuthStateRepository.removeAllow(key);
+  const flow = capability.flow;
+  await ProviderConnectionRepository.upsertComposio(
+    { ...key, appRowId: state.appRowId, accounts, now: new Date(now) },
+    settings() as never,
+  );
+  await ProviderAppAccessRepository.allow({
+    ...key,
+    appRowId: state.appRowId,
+    scopes: canonicalScopes(flow, declared),
+    now: new Date(now),
+  });
+  logEvent("oauth.connected", {
+    ...log,
+    app_row_id: state.appRowId,
+    via: ConnectionVia.Composio,
+    services: accounts.map((account) => account.service),
+    reconnected: existing !== null,
+    purpose: state.purpose,
+  });
+  const member = await userSubject(person.id).catch(() => null);
+  await emit(async () => ({
+    organizationId: person.org.orgId,
+    actor: await userActor(person.id),
+    ...catalogue.providerConnected({
+      provider: { id, name: capability.label, kind: "oauth" },
+      account: {
+        user: member
+          ? { id: member.id, email: member.email, name: member.name }
+          : { id: person.id },
+        label: [...new Set(accounts.map((account) => account.account))].join(
+          ", ",
+        ),
+      },
+      app: { id: app.slug, rowId: app.rowId, name: app.name },
+      scopes: [],
+      reconnected: existing !== null,
+      via: ConnectionVia.Composio,
+    }),
+  }));
+  return redirect(returnTo, 303);
+}
+
+/**
+ * Serve `/connect/<id>`, `/connect/<id>/callback` (GET), and
+ * `/connect/<id>/allow` and `/connect/<id>/composio` (POST), or null for
+ * a path that is none of them (the control plane's).
  */
 export async function serveConnectRoute(
   request: Request,
@@ -1072,7 +1421,7 @@ export async function serveConnectRoute(
   const parsed = parseConnectPath(new URL(request.url).pathname);
   if (!parsed) return null;
   const method = request.method.toUpperCase();
-  if (parsed.kind === "allow") {
+  if (parsed.kind === "allow" || parsed.kind === "composio") {
     if (method !== "POST") {
       return new Response(null, { status: 405, headers: { allow: "POST" } });
     }
@@ -1084,7 +1433,9 @@ export async function serveConnectRoute(
       ? await serveStart(request, parsed.id, deps)
       : parsed.kind === "callback"
         ? await serveCallback(request, parsed.id, deps)
-        : await serveAllow(request, parsed.id, deps);
+        : parsed.kind === "composio"
+          ? await serveComposio(request, parsed.id, deps)
+          : await serveAllow(request, parsed.id, deps);
   } catch (error) {
     logEvent(
       "oauth.connect_failed",

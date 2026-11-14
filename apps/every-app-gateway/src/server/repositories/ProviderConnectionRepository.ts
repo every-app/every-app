@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { ConnectionVia } from "@every-app/sdk/internal";
 import { db } from "@/db";
 import { providerAppAccess, providerConnections } from "@/db/schema";
 import { open, seal, type SealingEnv } from "@/server/secrets/sealed";
@@ -14,6 +15,12 @@ import { storedStrings } from "./stored-strings";
  * lifecycle deletes: a disconnect (`remove`), a member leaving or
  * deactivated (`removeForMember`), the provider removed
  * (`removeAllForProvider`). Each takes the access apps had with it.
+ *
+ * A connection made through a person's Composio
+ * (docs/design/2026-11-composio.md) is a row here too, marked `via:
+ * composio`. It holds no token: what it holds is the services with their
+ * accounts at Composio (`accounts`). Unlinking and turning Composio off
+ * delete those rows (`removeComposio`).
  */
 type ConnectionStatus = "active" | "expired";
 
@@ -24,6 +31,16 @@ export interface ConnectionKey {
   userId: string;
 }
 
+/** One service of a connection through Composio, with the account it uses there. */
+export interface ComposioAccount {
+  /** Composio's name for the service (`gmail`). */
+  service: string;
+  /** Composio's id for the connected account: another account has another. */
+  id: string;
+  /** How the account is named there. */
+  account: string;
+}
+
 /** A connection as Settings, Admin and the CLI list it: no token. */
 export interface ProviderConnection {
   id: string;
@@ -32,13 +49,17 @@ export interface ProviderConnection {
   userId: string;
   label: string | null;
   externalId: string | null;
-  /** The scopes the token holds, canonical. */
+  /** How it was made: with the Gateway's client, or through the person's Composio. */
+  via: ConnectionVia;
+  /** The scopes the token holds, canonical; none on a connection through Composio. */
   scopes: string[];
   /**
    * The scopes the provider was asked for at the last connect, canonical;
    * null when that isn't known (connected before it was kept).
    */
   askedScopes: string[] | null;
+  /** On a connection through Composio, its services with their accounts; none otherwise. */
+  accounts: ComposioAccount[];
   expiresAt: number | null;
   status: ConnectionStatus;
   createdAt: number;
@@ -66,8 +87,10 @@ const listed = {
   userId: providerConnections.userId,
   label: providerConnections.label,
   externalId: providerConnections.externalId,
+  via: providerConnections.via,
   scopes: providerConnections.scopes,
   askedScopes: providerConnections.askedScopes,
+  composioAccounts: providerConnections.composioAccounts,
   expiresAt: providerConnections.expiresAt,
   status: providerConnections.status,
   createdAt: providerConnections.createdAt,
@@ -82,8 +105,10 @@ type ListedRow = {
   userId: string;
   label: string | null;
   externalId: string | null;
+  via: string;
   scopes: string;
   askedScopes: string | null;
+  composioAccounts: string | null;
   expiresAt: Date | null;
   status: string;
   createdAt: Date;
@@ -91,7 +116,30 @@ type ListedRow = {
   lastUsedAt: Date | null;
 };
 
+/** The accounts a `composio_accounts` column holds; none when it holds anything else. */
+function storedAccounts(json: string | null): ComposioAccount[] {
+  if (json === null) return [];
+  try {
+    const parsed: unknown = JSON.parse(json);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((each: unknown) => {
+      const { service, id, account } = (each ?? {}) as Record<string, unknown>;
+      return typeof service === "string" &&
+        typeof id === "string" &&
+        typeof account === "string"
+        ? [{ service, id, account }]
+        : [];
+    });
+  } catch {
+    return [];
+  }
+}
+
 function shape(row: ListedRow): ProviderConnection {
+  const via =
+    row.via === ConnectionVia.Composio
+      ? ConnectionVia.Composio
+      : ConnectionVia.OAuth;
   return {
     id: row.id,
     organizationId: row.organizationId,
@@ -99,9 +147,14 @@ function shape(row: ListedRow): ProviderConnection {
     userId: row.userId,
     label: row.label,
     externalId: row.externalId,
+    via,
     scopes: storedStrings(row.scopes),
     askedScopes:
       row.askedScopes === null ? null : storedStrings(row.askedScopes),
+    accounts:
+      via === ConnectionVia.Composio
+        ? storedAccounts(row.composioAccounts)
+        : [],
     expiresAt: row.expiresAt?.getTime() ?? null,
     status: row.status === "expired" ? "expired" : "active",
     createdAt: row.createdAt.getTime(),
@@ -240,6 +293,8 @@ async function upsert(
     refreshTokenEnc,
     expiresAt: input.expiresAt === null ? null : new Date(input.expiresAt),
     status: "active" as const,
+    via: ConnectionVia.OAuth,
+    composioAccounts: null,
     refreshingUntil: null,
     updatedAt: now,
   };
@@ -266,6 +321,147 @@ async function upsert(
     })
     .returning(listed);
   return shape(row!);
+}
+
+/** How a connection through Composio is named: each account's name once, in the services' order. */
+function accountsLabel(accounts: readonly ComposioAccount[]): string {
+  return [...new Set(accounts.map((each) => each.account))].join(", ");
+}
+
+/**
+ * Write a connection through Composio, replacing the one the person had
+ * for the provider (the id and `createdAt` stay). It holds `accounts` and
+ * no token: the token column is `NOT NULL`, so it takes a sealed empty
+ * string, which nothing reads. `external_id` is the services and their
+ * account ids as one string.
+ */
+async function upsertComposio(
+  input: ConnectionKey & {
+    /** apps.id of the app the connect started in. */
+    appRowId: string;
+    accounts: readonly ComposioAccount[];
+    now?: Date;
+  },
+  env: SealingEnv,
+): Promise<ProviderConnection> {
+  const now = input.now ?? new Date();
+  const accounts = input.accounts.map(({ service, id, account }) => ({
+    service,
+    id,
+    account,
+  }));
+  const values = {
+    appRowId: input.appRowId,
+    label: accountsLabel(accounts),
+    externalId: accounts
+      .map((each) => `${each.service}:${each.id}`)
+      .sort()
+      .join(","),
+    scopes: "[]",
+    askedScopes: null,
+    accessTokenEnc: await seal("", env),
+    refreshTokenEnc: null,
+    expiresAt: null,
+    status: "active" as const,
+    via: ConnectionVia.Composio,
+    composioAccounts: JSON.stringify(accounts),
+    refreshingUntil: null,
+    updatedAt: now,
+  };
+  const [row] = await db
+    .insert(providerConnections)
+    .values({
+      id: `conn_${crypto.randomUUID()}`,
+      organizationId: input.organizationId,
+      providerId: input.providerId,
+      userId: input.userId,
+      createdAt: now,
+      lastUsedAt: null,
+      ...values,
+    })
+    .onConflictDoUpdate({
+      target: [
+        providerConnections.organizationId,
+        providerConnections.providerId,
+        providerConnections.userId,
+      ],
+      // A refresh still out with the tokens this replaces stores nothing over it.
+      set: {
+        ...values,
+        tokenVersion: sql`${providerConnections.tokenVersion} + 1`,
+      },
+    })
+    .returning(listed);
+  return shape(row!);
+}
+
+/** The connections made through Composio: one person's in an organization, or every member's. */
+function throughComposio(organizationId: string, userId?: string) {
+  return and(
+    eq(providerConnections.organizationId, organizationId),
+    eq(providerConnections.via, ConnectionVia.Composio),
+    userId === undefined ? undefined : eq(providerConnections.userId, userId),
+  );
+}
+
+/** The connections made through Composio in an organization: one person's (`userId`), or every member's. Oldest first. */
+async function listComposio(
+  organizationId: string,
+  userId?: string,
+): Promise<ProviderConnection[]> {
+  const rows = await db
+    .select(listed)
+    .from(providerConnections)
+    .where(throughComposio(organizationId, userId))
+    .orderBy(asc(providerConnections.createdAt), asc(providerConnections.id));
+  return rows.map(shape);
+}
+
+/**
+ * Remove the connections made through Composio in an organization, one
+ * person's (they unlinked) or every member's (Composio was turned off),
+ * with the access apps had to them; the count.
+ */
+async function removeComposio(
+  organizationId: string,
+  userId?: string,
+): Promise<number> {
+  let removed = 0;
+  for (const row of await listComposio(organizationId, userId)) {
+    if (await remove(row)) removed += 1;
+  }
+  return removed;
+}
+
+/**
+ * A person's connections through Composio need a reconnect (Composio
+ * refused their key). Their access rows stay, so linking again and
+ * Reconnect brings them back. The connections that changed.
+ */
+async function expireComposio(
+  organizationId: string,
+  userId: string,
+  now: Date = new Date(),
+): Promise<ProviderConnection[]> {
+  const changed = await db
+    .update(providerConnections)
+    .set({ status: "expired", updatedAt: now })
+    .where(
+      and(
+        throughComposio(organizationId, userId),
+        ne(providerConnections.status, "expired"),
+      ),
+    )
+    .returning(listed);
+  return changed.map(shape);
+}
+
+/** The connection is usable again (Reconnect found its accounts still in the person's Composio). */
+async function markActive(id: string, now: Date = new Date()): Promise<void> {
+  await db
+    .update(providerConnections)
+    .set({ status: "active", updatedAt: now })
+    .where(eq(providerConnections.id, id));
 }
 
 /** The opened tokens, or null when the row is gone or a token does not open (lost). */
@@ -506,6 +702,11 @@ export const ProviderConnectionRepository = {
   latestActiveForApp,
   listByUser,
   upsert,
+  upsertComposio,
+  listComposio,
+  removeComposio,
+  expireComposio,
+  markActive,
   readTokens,
   storeTokens,
   claimRefresh,

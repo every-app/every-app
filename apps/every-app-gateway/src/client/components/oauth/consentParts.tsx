@@ -276,6 +276,30 @@ export function ConsentRow({
 }
 
 /**
+ * Under the accounts an app would use from the person's Composio
+ * (docs/design/2026-11-composio.md): what allowing it lets the app do.
+ * Such a connection holds services and no scopes, so there are none to
+ * list.
+ */
+export function ComposioAllowsNote({
+  app,
+  accounts,
+}: {
+  /** The app's name. */
+  app: string;
+  /** How many accounts the app would use. */
+  accounts: number;
+}) {
+  return (
+    <p className="text-center text-sm text-pretty text-muted-foreground">
+      {app} can do whatever{" "}
+      {accounts === 1 ? "this account allows" : "these accounts allow"} in
+      Composio.
+    </p>
+  );
+}
+
+/**
  * A choice between a few short options, side by side in equal parts of the
  * space it is given. Native radios drawn as one control, not Base UI's
  * toggle group: the form posts natively, so each option must be a real

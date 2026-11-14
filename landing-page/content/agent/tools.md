@@ -166,7 +166,10 @@ Workspace tools (Gateway connector only; every admin action of the UI, listed
          `everyapp_ai_show` (any member), `everyapp_ai_default`,
          `everyapp_workspace_usage`, `everyapp_workspace_activity`,
          `everyapp_workspace_audit` (the audit log: who did what, 90 days),
-         `everyapp_workspace_rename`, `everyapp_workspace_linked_dev`, and the
+         `everyapp_workspace_rename`, `everyapp_workspace_linked_dev`,
+         `everyapp_workspace_composio` (Composio on or off for the
+         organization; off asks `confirm: true` while a link or a connection
+         made through Composio exists), and the
          events tools `everyapp_workspace_events`, `everyapp_workspace_events_add`
          (a generated signing secret comes back once, in that answer: it opens
          nothing on the Gateway, so the person stores it in the receiver now),
@@ -206,7 +209,23 @@ Provider tools (Gateway connector only; one audit row per call like the
          organization's, owners and admins) and
          `everyapp_provider_disconnect` (their own; owners and admins
          anyone's; by `connection` id or `provider`; with `app`, only that
-         app's access goes and the connection stays).
+         app's access goes and the connection stays). A connection says how
+         it was made (`via`: `oauth`, or `composio` with its `services`).
+         Every member also gets the four tools of their own Composio link,
+         for an organization that turned Composio on:
+         `everyapp_provider_composio` (whether it is on, whether they
+         linked and as whom, and what is in their Composio that EveryApp
+         supports, read from Composio on each call),
+         `everyapp_provider_composio_link` (starts a sign-in and answers its
+         `url` and `expiresAt`: give the link to the person the connection
+         acts as and to nobody else, since whoever approves it links their
+         Composio to that account), `everyapp_provider_composio_link_finish`
+         (`waiting`, `linked` or `expired`: call it again every couple of
+         seconds while `waiting`) and `everyapp_provider_composio_unlink`
+         (drops the key and every connection they made through it). None
+         takes an argument, and none answers the Composio key. Linking adds
+         no connection: an account becomes one when an app asks and the
+         person says yes in a browser.
          Connecting, and allowing an app to use a connection, are browser
          flows started inside an app (`connectUrl()`,
          `<gateway>/connect/<provider>?app=<app>`), never a tool. No key, client or

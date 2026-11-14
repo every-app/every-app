@@ -680,6 +680,7 @@ describe("an admin administering the workspace over /mcp", () => {
       role: "admin",
       email: { configured: false },
       linkedDev: "off",
+      composio: "off",
       counts: { members: 3, pendingInvitations: 0, groups: 0, apps: 1 },
     });
   });

@@ -18,11 +18,19 @@
  * docs/design/2026-11-oauth-one-connection.md): the clients uploaded under
  * Admin → Providers, the connections, each one person's to one provider,
  * and the apps that person allowed to use theirs (`provider_app_access`).
+ *
+ * Composio (migration 0037; docs/design/2026-11-composio.md): the
+ * organization's switch (`org_settings.composio`), read here as a pasted
+ * client's binding is, and how each connection was made (`via`), with the
+ * services one made through Composio holds. The switch is the Gateway's
+ * alone to change (`everyapp_workspace_composio`).
  */
 import { DELETED_APP_STATUS } from "@every-app/perimeter/registry";
 import {
   capabilitySettings,
   checkProviderRow,
+  composioServicesOf,
+  ConnectionVia,
   describeSpecProblems,
   gatewayHostRefusal,
   OAUTH_PRESETS,
@@ -37,7 +45,7 @@ import {
   unregisteredPresetIds,
 } from "@every-app/sdk/internal";
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
-import { EveryAppError } from "@/lib/errors";
+import { errorMessage, EveryAppError } from "@/lib/errors";
 import { CLI, thisCommand } from "@/lib/output/command";
 import { listed } from "@/lib/output/text";
 import type { InstallRecord } from "./install";
@@ -264,8 +272,10 @@ interface RemovedProvider {
   settings: string[];
   /** The registered apps that list it (removed anyway with --force). */
   apps: string[];
-  /** The connections (people's tokens) deleted with an OAuth provider's row, each with the access apps had to it. */
+  /** The connections deleted with an OAuth provider's row, each with the access apps had to it. */
   connections: number;
+  /** How many of them held tokens (made with the Gateway's client, not through Composio): their grants stay at the provider. */
+  granted: number;
   /** Whether a client uploaded under Admin → Providers was deleted with the row. */
   client: boolean;
 }
@@ -321,7 +331,7 @@ export async function removeProvider(
   // not inherit them.
   const results = await db.run([
     ...event,
-    { sql: "DELETE FROM provider_connections WHERE provider_id = ? RETURNING id", params: [id] },
+    { sql: "DELETE FROM provider_connections WHERE provider_id = ? RETURNING id, via", params: [id] },
     { sql: "DELETE FROM oauth_clients WHERE provider_id = ? RETURNING provider_id", params: [id] },
     { sql: "DELETE FROM provider_app_access WHERE provider_id = ?", params: [id] },
     { sql: "DELETE FROM providers WHERE id = ?", params: [id] },
@@ -333,6 +343,7 @@ export async function removeProvider(
     settings: parsed.ok ? [...capabilitySettings(parsed.capability)] : [],
     apps,
     connections: deleted[0]?.length ?? 0,
+    granted: (deleted[0] ?? []).filter((connection) => connection["via"] !== ConnectionVia.Composio).length,
     client: (deleted[1]?.length ?? 0) > 0,
   };
 }
@@ -530,6 +541,12 @@ interface ConnectionApp {
   name: string;
 }
 
+/** A service a connection through Composio holds: what a person calls it ("Gmail"), and its account there. */
+interface ConnectionService {
+  name: string;
+  account: string;
+}
+
 /**
  * One person's connection to an OAuth provider, as `provider connections`
  * reports it: never a token. `apps` are the apps that person allowed to
@@ -544,8 +561,12 @@ export interface ProviderConnection {
   userName: string | null;
   apps: ConnectionApp[];
   label: string | null;
-  /** The scopes the provider granted, canonical (Google's without its prefix). */
+  /** How it was made: with the Gateway's OAuth client, or through the person's Composio. */
+  via: ConnectionVia;
+  /** The scopes the provider granted, canonical (Google's without its prefix); none on a connection through Composio. */
   scopes: string[];
+  /** On a connection through Composio, what it holds instead of scopes: each service with its account there. */
+  services: ConnectionService[];
   /** The scopes the allowed apps list for the provider, as they wrote them, each once. */
   listedScopes: string[];
   status: string;
@@ -622,13 +643,37 @@ function listedScopes(value: unknown): string[] {
   return [...new Set(scopes)];
 }
 
+/**
+ * The services a connection through Composio holds, in the provider's own
+ * order, from its `composio_accounts` column (a JSON array of
+ * `{ service, id, account }`); none when the column holds anything else.
+ */
+function connectionServices(providerId: string, value: unknown): ConnectionService[] {
+  let accounts: unknown;
+  try {
+    accounts = JSON.parse(String(value ?? "[]"));
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(accounts)) return [];
+  const held = new Map<string, string>();
+  for (const each of accounts as Array<Record<string, unknown> | null>) {
+    if (typeof each?.["service"] === "string" && typeof each["account"] === "string") {
+      held.set(each["service"], each["account"]);
+    }
+  }
+  return composioServicesOf(providerId).flatMap(({ slug, label }) =>
+    held.has(slug) ? [{ name: label, account: held.get(slug)! }] : [],
+  );
+}
+
 /** The connections `filter` names, newest first, each with the apps allowed to use it. */
 export async function listConnections(db: D1Database, filter: ConnectionFilter = {}): Promise<ProviderConnection[]> {
   const where = connectionWhere(filter);
   const [rows = []] = await db.run([
     {
       sql: `SELECT c.id, c.organization_id, c.provider_id, c.user_id, u.email AS user_email, u.name AS user_name,
-  c.label, c.scopes, c.status, c.created_at, c.last_used_at, c.expires_at,
+  c.label, c.via, c.scopes, c.composio_accounts, c.status, c.created_at, c.last_used_at, c.expires_at,
   (SELECT json_group_array(json_object('id', a.app_slug, 'rowId', a.id, 'name', a.name,
       'scopes', CASE WHEN json_valid(a.manifest)
         THEN json(json_extract(a.manifest, '$.capabilities."' || c.provider_id || '".scopes')) END))
@@ -639,22 +684,28 @@ ORDER BY c.created_at DESC, c.id`,
       params: where.params,
     },
   ]);
-  return rows.map((row) => ({
-    id: String(row["id"]),
-    organizationId: String(row["organization_id"]),
-    providerId: String(row["provider_id"]),
-    userId: String(row["user_id"]),
-    userEmail: text(row["user_email"]),
-    userName: text(row["user_name"]),
-    apps: connectionApps(row["apps"]),
-    label: text(row["label"]),
-    scopes: safeStringArray(row["scopes"]),
-    listedScopes: listedScopes(row["apps"]),
-    status: String(row["status"] ?? "active"),
-    createdAt: Number(row["created_at"]),
-    lastUsedAt: row["last_used_at"] == null ? null : Number(row["last_used_at"]),
-    expiresAt: row["expires_at"] == null ? null : Number(row["expires_at"]),
-  }));
+  return rows.map((row) => {
+    const providerId = String(row["provider_id"]);
+    const via = row["via"] === ConnectionVia.Composio ? ConnectionVia.Composio : ConnectionVia.OAuth;
+    return {
+      id: String(row["id"]),
+      organizationId: String(row["organization_id"]),
+      providerId,
+      userId: String(row["user_id"]),
+      userEmail: text(row["user_email"]),
+      userName: text(row["user_name"]),
+      apps: connectionApps(row["apps"]),
+      label: text(row["label"]),
+      via,
+      scopes: safeStringArray(row["scopes"]),
+      services: via === ConnectionVia.Composio ? connectionServices(providerId, row["composio_accounts"]) : [],
+      listedScopes: listedScopes(row["apps"]),
+      status: String(row["status"] ?? "active"),
+      createdAt: Number(row["created_at"]),
+      lastUsedAt: row["last_used_at"] == null ? null : Number(row["last_used_at"]),
+      expiresAt: row["expires_at"] == null ? null : Number(row["expires_at"]),
+    };
+  });
 }
 
 /** The connections of each provider, by id: what `provider list` and `provider show` count. */
@@ -698,6 +749,7 @@ export async function removeConnections(
             ...(connection.label ? { label: connection.label } : {}),
           },
           revoked: false,
+          via: connection.via,
         },
         onlyIf: { sql: "EXISTS (SELECT 1 FROM provider_connections WHERE id = ?)", params: [connection.id] },
         now,
@@ -741,4 +793,56 @@ export async function removeAppAccess(
     ...connection,
     apps: connection.apps.filter((app) => app.id !== appSlug),
   }));
+}
+
+// Composio: the organization's switch (migration 0037).
+
+/**
+ * The organizations that turned Composio on (`org_settings.composio`), by
+ * id: what `status`, `deploy` and `configure` count an OAuth provider with
+ * no client as set up by (the SDK's `oauthProviderSetUp`). Off without a
+ * row, and for every organization of a Gateway from before the migration,
+ * which has no such column: `status` reads such a Gateway too, to say it
+ * is behind.
+ */
+export async function composioOrganizations(db: D1Database): Promise<Set<string>> {
+  try {
+    const [rows = []] = await db.run([{ sql: "SELECT organization_id FROM org_settings WHERE composio = 1" }]);
+    return new Set(rows.map((row) => String(row["organization_id"])));
+  } catch (error) {
+    if (/no such (column|table)/.test(errorMessage(error))) return new Set();
+    throw error;
+  }
+}
+
+/**
+ * The install's own organization and whether it turned Composio on: the
+ * organization the registry's commands (`provider add`, `list`, `show`)
+ * act for. Null before the Gateway has an organization.
+ */
+export async function installComposio(
+  db: D1Database,
+): Promise<{ organizationId: string; on: boolean } | null> {
+  const [found, on] = await Promise.all([installOrganization(db), composioOrganizations(db)]);
+  if (!found) return null;
+  const { id } = found.organization;
+  return { organizationId: id, on: on.has(id) };
+}
+
+/**
+ * Whether the person behind the Cloudflare login linked their Composio in
+ * the organization: a verified Gateway user with the login's email (as a
+ * deploy gives its app's first access) who has a link. `provider add`
+ * mentions Composio to nobody else.
+ */
+export async function composioLinked(db: D1Database, organizationId: string, email: string | null): Promise<boolean> {
+  if (!email) return false;
+  const [rows = []] = await db.run([
+    {
+      sql: `SELECT 1 FROM composio_links l JOIN users u ON u.id = l.user_id
+WHERE l.organization_id = ?1 AND lower(u.email) = lower(?2) AND u.email_verified = 1 LIMIT 1`,
+      params: [organizationId, email],
+    },
+  ]);
+  return rows.length > 0;
 }

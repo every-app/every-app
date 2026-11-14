@@ -5,8 +5,8 @@ import { organizations, users } from "./auth.schema";
  * What an organization decided for every app it can call: a default
  * monthly cap in dollars on provider-reported cost, binding every app
  * without a cap of its own in `org_app_settings` (and not `unlimited`),
- * the default model, and the linked dev switch. Null, or no row, is no
- * default. One row per organization,
+ * the default model, the linked dev switch and the Composio switch. Null,
+ * or no row, is no default. One row per organization,
  * gone with it; a write of one default keeps the others, and the row goes
  * only when it holds none.
  */
@@ -28,6 +28,11 @@ export const orgSettings = sqliteTable("org_settings", {
   linkedDev: integer("linked_dev", { mode: "boolean" })
     .notNull()
     .default(false),
+  // Composio (docs/design/2026-11-composio.md): whether people may use the
+  // accounts in their own Composio for the OAuth providers this Gateway
+  // holds no client for. Off unless an owner or admin turned it on
+  // (`everyapp workspace composio on`).
+  composio: integer("composio", { mode: "boolean" }).notNull().default(false),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   // The owner or admin who last set it (null once their user row is gone,
   // and from the CLI, which is not a gateway user).

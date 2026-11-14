@@ -367,6 +367,65 @@ describe("the connection tools on /mcp", () => {
     expect(await connections(admin())).toEqual([]);
   });
 
+  it("says how each connection was made, and for one made through Composio its services with their accounts, which hold no scopes", async () => {
+    await connect({ userId: memberId, label: "member@gmail.com" });
+    // The other member uses two accounts from their own Composio.
+    const person = {
+      organizationId,
+      providerId: "google-workspace",
+      userId: otherId,
+    };
+    await ProviderConnectionRepository.upsertComposio(
+      {
+        ...person,
+        appRowId: appRows["seo"]!,
+        accounts: [
+          { service: "gmail", id: "ca_1", account: "other@gmail.com" },
+          {
+            service: "google_search_console",
+            id: "ca_2",
+            account: "sites@gmail.com",
+          },
+        ],
+      },
+      hoisted.env as { BETTER_AUTH_SECRET?: string },
+    );
+    await ProviderAppAccessRepository.allow({
+      ...person,
+      appRowId: appRows["seo"]!,
+      scopes: APP_SCOPES["seo"]!,
+    });
+
+    const all = (await connections(admin(), { all: true })) as (Listed & {
+      via: string;
+      services?: unknown;
+    })[];
+    const made = Object.fromEntries(all.map((each) => [each.userId, each]));
+    expect(made[memberId]).toMatchObject({
+      via: "oauth",
+      scopes: ["webmasters.readonly", "gmail.modify", "openid", "email"],
+    });
+    expect(made[memberId]).not.toHaveProperty("services");
+    expect(made[otherId]).toMatchObject({
+      via: "composio",
+      label: "other@gmail.com, sites@gmail.com",
+      apps: [{ id: "seo" }],
+      scopes: [],
+      services: [
+        { name: "Gmail", account: "other@gmail.com" },
+        { name: "Search Console", account: "sites@gmail.com" },
+      ],
+      status: "active",
+    });
+    // The member sees their own the same way.
+    expect(await connections(callerFor(otherId, "member"))).toMatchObject([
+      {
+        via: "composio",
+        services: [{ name: "Gmail" }, { name: "Search Console" }],
+      },
+    ]);
+  });
+
   it("takes one app's access away with `app` and leaves the connection for the other apps: a member their own, an admin anyone's", async () => {
     const mine = await connect({
       userId: memberId,

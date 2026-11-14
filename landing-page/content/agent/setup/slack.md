@@ -28,7 +28,11 @@ below; a setting set here wins.
 | `SLACK_CLIENT_ID`     | required | The app's **Client ID** (Basic Information → App Credentials), as shown. Public. |
 | `SLACK_CLIENT_SECRET` | required | The app's **Client Secret** from the same section, as shown. The Gateway puts it on `oauth.v2.access` only. |
 
-Set both: the Gateway offers Slack only when it holds the two. Both set
+Set both: the Gateway offers Slack with its own client only when it holds
+the two. With no client at all, an organization that turned Composio on
+uses each person's own Composio for Slack: no Slack app to register, and
+requests pass through Composio
+([composio.md](/docs/agent/setup/composio)). Both set
 as Worker secrets while the Gateway had no `slack` row (an older CLI) are
 read only once `secret set` binds them to the row: set them again, or
 `secret unset` both to use a client pasted in Admin.
@@ -237,7 +241,8 @@ an internal app installed in its own workspace.
 
 | Error or symptom                                                               | Meaning                                                                                  | What to do                                                                                              |
 | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| The app shows Slack as not set up, no Connect button; or `integration_not_configured` (503) | The Gateway holds no client, or one of the two names | `secret set` both, then Verify 1 |
+| The app shows Slack as not set up, no Connect button; or `integration_not_configured` (503) | The Gateway holds no client, or one of the two names, and Composio is off | `secret set` both, then Verify 1 |
+| The Connect Slack button opens the Gateway's Composio page instead of Slack's | The Gateway holds no client, or one of the two names, and Composio is on, so Slack is served through each person's own Composio ([composio.md](/docs/agent/setup/composio)) | `secret set` both, then Verify 1. Connections made through Composio then read Needs reconnect, and Reconnect goes through Slack |
 | `capability_not_requested` (403)                                               | The deployed manifest doesn't list `slack` | Add `"slack": { scopes: [...], why }` to its `everyapp.config.ts`, then `pnpm everyapp deploy --json` in its directory |
 | `integration_not_connected` (409)                                              | The person the call is for hasn't connected Slack, hasn't allowed this app, the connection expired, or the app now lists a scope the connection lacks or the person hasn't allowed (`missingScopes`) | The person opens `connectPath` from the app: it leads to Slack, which asks for the new scopes, or to the Gateway's page that allows the app |
 | After **Allow**, the Gateway's error page says Slack granted more than the apps here list | The workspace's installation of this Slack app carries a scope no app in the organization lists (one an app listed before, or one added in Slack's console), so the Gateway refused the token | List the scope in an app that uses it and deploy. Or make a new Slack app that has only the listed scopes (steps 1 to 3) and set its client |

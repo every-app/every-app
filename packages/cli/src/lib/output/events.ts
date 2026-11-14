@@ -50,6 +50,7 @@ const REQUIRED_ACTIONS = [
   "add_domain",
   "choose_account",
   "install_gateway",
+  "composio_sign_in",
 ] as const;
 export type RequiredAction = (typeof REQUIRED_ACTIONS)[number];
 
@@ -815,6 +816,9 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
     // `provider on|off`, said before `mcp on|off` runs for it.
     "provider.alias": (event) =>
       event.status === "ok" && event.message ? { line: chalk.dim(event.message) } : null,
+    // `workspace composio on`: what turning it on means, said before it is.
+    "composio.notice": (event) =>
+      event.status === "ok" && event.message ? { line: event.message } : null,
     // `events test`: a spinner while the Gateway's sweep sends the ping; the done line says how it went.
     "events.deliver": saidByMessage,
     "create.skill": saidByMessage,

@@ -17,6 +17,7 @@
     "ai",
     "providers",
     "connect-oauth",
+    "composio",
     "usage",
     "events",
     "resources",

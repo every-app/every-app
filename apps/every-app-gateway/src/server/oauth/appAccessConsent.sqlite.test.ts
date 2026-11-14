@@ -196,6 +196,8 @@ describe("the Allow page's context (SQLite)", () => {
       // Not `mail.send`, which the connection holds for another app, nor
       // `profile`, the Gateway's own ask.
       scopes: ["mail.read", "contacts.read"],
+      // The connection was made with the Gateway's client.
+      composio: null,
     });
     // Never a token.
     expect(JSON.stringify(context)).not.toContain("nobody-sees");

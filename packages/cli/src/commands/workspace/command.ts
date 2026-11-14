@@ -648,9 +648,10 @@ const renameCommand = buildCommand({
   },
 });
 
-export type LinkedDevSetting = "on" | "off" | "show";
+/** What a switch of the organization's takes: turn it on or off, or show it. */
+export type SwitchSetting = "on" | "off" | "show";
 
-function parseLinkedDevSetting(value: string): LinkedDevSetting {
+function parseSwitchSetting(value: string): SwitchSetting {
   const setting = value.trim().toLowerCase();
   if (setting === "on" || setting === "off" || setting === "show") return setting;
   throw new Error("Use on, off or show.");
@@ -665,7 +666,7 @@ const linkedDevCommand = buildCommand({
         {
           placeholder: "on|off|show",
           brief: "Turn linked dev on or off for the organization, or show it (default)",
-          parse: parseLinkedDevSetting,
+          parse: parseSwitchSetting,
           optional: true,
         },
       ],
@@ -681,6 +682,45 @@ const linkedDevCommand = buildCommand({
       "Examples:",
       `  ${CLI} workspace linked-dev on`,
       `  ${CLI} workspace linked-dev show`,
+    ]),
+  },
+});
+
+const composioCommand = buildCommand({
+  loader: async () => (await import(".")).composio,
+  parameters: {
+    positional: {
+      kind: "tuple",
+      parameters: [
+        {
+          placeholder: "on|off|show",
+          brief: "Turn Composio on or off for the organization, or show it (default)",
+          parse: parseSwitchSetting,
+          optional: true,
+        },
+      ],
+    },
+    flags: { yes: yesFlag("Turn it off, deleting the links and connections,"), ...apiFlags },
+    aliases: { y: "yes" },
+  },
+  docs: {
+    brief: "Let people use the accounts in their own Composio for OAuth providers the Gateway has no OAuth app for, or stop it",
+    fullDescription: docs("everyapp_workspace_show, everyapp_workspace_composio", [
+      "Composio is a third-party service where a person connects their accounts (Gmail, Slack,",
+      "GitHub). Off by default. While it is on, an OAuth provider Composio serves that this Gateway",
+      "holds no OAuth app for counts as set up, for each app whose scopes Composio covers. Each",
+      `person links their own Composio once (${CLI} provider link composio), and an account there`,
+      "becomes their connection when an app asks for it and they say yes. Requests to the accounts",
+      "people use from Composio pass through Composio. A provider the Gateway holds an OAuth app",
+      "for is never served through it.",
+      "",
+      "off deletes every link in the organization and every connection made through Composio,",
+      "with the access apps had to them. It asks first at a terminal; elsewhere it needs --yes.",
+      "",
+      "Examples:",
+      `  ${CLI} workspace composio on`,
+      `  ${CLI} workspace composio show --json`,
+      `  ${CLI} workspace composio off`,
     ]),
   },
 });
@@ -743,8 +783,9 @@ export const workspaceRoutes = buildRouteMap({
     connections: connectionsCommand,
     connection: connectionRoutes,
     "linked-dev": linkedDevCommand,
+    composio: composioCommand,
   },
   docs: {
-    brief: "Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, the audit log, tokens, AI connections and linked dev",
+    brief: "Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, the audit log, tokens, AI connections, linked dev and Composio",
   },
 });

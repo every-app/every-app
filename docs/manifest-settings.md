@@ -34,6 +34,14 @@ is set when its name is on the app's Worker, as the CLI last recorded it
 names, and a closed app's 503 carries no names: what the gateway holds is
 the organization's to see, not a visitor's.
 
+One more rule, for an OAuth provider only: with no client, it still counts
+as set when Composio is on for the organization, serves the provider and
+has a service for every scope the app lists (`oauthProviderSetUp` in
+`packages/sdk/src/internal/composio.ts`,
+[design](design/2026-11-composio.md)). The app opens, and each person
+connects from inside it. The CLI reads the organization's switch from the
+Gateway's database, so `status`, `deploy` and `configure` say the same.
+
 The model is one SDK module, `packages/sdk/src/internal/appSettings.ts`:
 `appSettings(manifest)` lists the settings in manifest order (providers,
 capabilities, the AI routes, secrets); `evaluateAppSettings` checks them

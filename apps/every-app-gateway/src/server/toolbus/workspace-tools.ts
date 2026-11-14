@@ -62,6 +62,8 @@ import { InvitationService } from "@/server/services/InvitationService";
 import { McpConnectionService } from "@/server/services/McpConnectionService";
 import { MembershipService } from "@/server/services/MembershipService";
 import { OrganizationService } from "@/server/services/OrganizationService";
+import { setComposio, turnComposioOff } from "@/server/composio/service";
+import { COMPOSIO_HANDLERS } from "./composio-tools";
 import { UserPatService } from "@/server/services/UserPatService";
 import { MCP_APP_HANDLERS } from "./mcp-app-tools";
 import { AI_HANDLERS } from "./ai-tools";
@@ -528,28 +530,31 @@ function deliveriesCursor(value: unknown): string | undefined {
 }
 
 const HANDLERS: Record<string, Handler> = {
-  // The provider tools (provider-tools.ts), the sign-in provider tools
-  // (signin-tools.ts) and the model-provider tools (ai-tools.ts), run the
-  // same way.
+  // The provider tools (provider-tools.ts, provider-connection-tools.ts,
+  // composio-tools.ts), the sign-in provider tools (signin-tools.ts) and
+  // the model-provider tools (ai-tools.ts), run the same way.
   ...PROVIDER_HANDLERS,
   ...PROVIDER_CONNECTION_HANDLERS,
+  ...COMPOSIO_HANDLERS,
   ...SIGNIN_HANDLERS,
   ...AI_HANDLERS,
 
   async workspace_show(ctx) {
-    const [organization, { users }, { groups }, apps, linkedDev] =
+    const [organization, { users }, { groups }, apps, linkedDev, composio] =
       await Promise.all([
         OrganizationRepository.findSummaryById(ctx.orgId),
         AdminService.listMembers(ctx),
         GroupService.listGroups(ctx),
         AppRepository.findAll(ctx.orgId),
         OrgSettingsRepository.isLinkedDevOn(ctx.orgId),
+        OrgSettingsRepository.isComposioOn(ctx.orgId),
       ]);
     return {
       organization,
       role: ctx.role,
       email: { configured: isEmailConfigured() },
       linkedDev: linkedDev ? "on" : "off",
+      composio: composio ? "on" : "off",
       counts: {
         members: users.filter((user) => !user.invitationId).length,
         pendingInvitations: users.filter((user) => user.invitationId).length,
@@ -929,6 +934,19 @@ const HANDLERS: Record<string, Handler> = {
 
   async workspace_linked_dev(ctx, args) {
     return OrganizationService.setLinkedDev(ctx, args["on"] === true);
+  },
+
+  async workspace_composio(ctx, args) {
+    if (args["on"] === true) return setComposio(ctx, true);
+    const result = await turnComposioOff(ctx, args["confirm"] === true);
+    if ("needsConfirm" in result) {
+      const { links, connections } = result.needsConfirm;
+      throw new PublicError(
+        "INVALID_INPUT",
+        `Turning Composio off deletes ${links} ${links === 1 ? "link" : "links"} and ${connections} ${connections === 1 ? "connection" : "connections"} made through it; confirm: true is required, and this cannot be undone`,
+      );
+    }
+    return result;
   },
 
   async workspace_events(ctx) {

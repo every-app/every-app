@@ -133,6 +133,10 @@ cf's login didn't complete. Run `everyapp login` again, or set `CLOUDFLARE_API_T
 Cloudflare refused `CLOUDFLARE_API_TOKEN`. Set a valid token, or unset it and `everyapp login`.
 ### COMMAND_FAILED
 The command failed to load or run outside the normal reporting. Read `--help`; report it if it repeats.
+### COMPOSIO_LINK_EXPIRED
+The sign-in `provider link composio` started at Composio ran out (about 10 minutes) before the person approved it. Nothing was linked. Run the `rerun` for a new sign-in page.
+### COMPOSIO_OFF
+`provider link composio` ran while Composio is off for the organization. Nothing was linked. An owner or admin turns it on with the `rerun` (`everyapp workspace composio on`): tell them first that requests to the accounts people use from Composio pass through Composio. Then link again.
 ### CONFIRMATION_REQUIRED
 A step needs a yes and nobody could answer. Ask the person; if they agree, run the `rerun` (it adds `--yes`). `--yes` never approves bundled providers: that's `--register-providers`.
 ### CUSTOM_DOMAIN_OWNER_UNCHECKED

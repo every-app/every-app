@@ -1097,6 +1097,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Hosts the token goes to:** `gmail.googleapis.com`, `www.googleapis.com`, `searchconsole.googleapis.com`, `analyticsdata.googleapis.com`, `analyticsadmin.googleapis.com`, `openidconnect.googleapis.com`, over https
 - **Scopes an app lists:** the provider's own, short (joined onto `https://www.googleapis.com/auth/`) or in full, as `"google-workspace": { scopes: [...], why: "..." }`; the Gateway adds `openid`, `email` to every connect; the provider's list: https://developers.google.com/identity/protocols/oauth2/scopes
 - **Set it:** deploy an app that lists it (or `pnpm everyapp provider add google-workspace`), then `pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **With no client:** while Composio is on for the organization (`pnpm everyapp workspace composio on`), people use the accounts in their own Composio: Gmail, Calendar, Drive, Sheets, Docs, Search Console, Analytics. [composio.md](/docs/agent/setup/composio)
 - **Guide:** [google.md](/docs/agent/setup/google)
 
 ### microsoft-365
@@ -1109,6 +1110,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Hosts the token goes to:** `graph.microsoft.com`, over https
 - **Scopes an app lists:** the provider's own, short (joined onto `https://graph.microsoft.com/`) or in full, as `"microsoft-365": { scopes: [...], why: "..." }`; the Gateway adds `User.Read`, `offline_access` to every connect; the provider's list: https://learn.microsoft.com/graph/permissions-reference
 - **Set it:** deploy an app that lists it (or `pnpm everyapp provider add microsoft-365`), then `pnpm everyapp secret set MICROSOFT_365_CLIENT_ID MICROSOFT_365_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **With no client:** while Composio is on for the organization (`pnpm everyapp workspace composio on`), people use the accounts in their own Composio: Outlook, OneDrive, Teams, SharePoint. [composio.md](/docs/agent/setup/composio)
 - **Guide:** [microsoft-365.md](/docs/agent/setup/microsoft-365)
 
 ### slack
@@ -1121,6 +1123,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Hosts the token goes to:** `slack.com`, over https
 - **Scopes an app lists:** the provider's own, as the provider names them, as `"slack": { scopes: [...], why: "..." }`; the provider's list: https://api.slack.com/scopes
 - **Set it:** deploy an app that lists it (or `pnpm everyapp provider add slack`), then `pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **With no client:** while Composio is on for the organization (`pnpm everyapp workspace composio on`), people use the accounts in their own Composio: Slack. [composio.md](/docs/agent/setup/composio)
 - **Guide:** [slack.md](/docs/agent/setup/slack)
 
 ### github-oauth
@@ -1133,6 +1136,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Hosts the token goes to:** `api.github.com`, over https
 - **Scopes an app lists:** the provider's own, as the provider names them, as `"github-oauth": { scopes: [...], why: "..." }`; the provider's list: https://docs.github.com/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps
 - **Set it:** deploy an app that lists it (or `pnpm everyapp provider add github-oauth`), then `pnpm everyapp secret set GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **With no client:** while Composio is on for the organization (`pnpm everyapp workspace composio on`), people use the accounts in their own Composio: GitHub. [composio.md](/docs/agent/setup/composio)
 - **Guide:** none beyond this section
 
 ### notion-oauth
@@ -1145,6 +1149,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Hosts the token goes to:** `api.notion.com`, over https
 - **Scopes an app lists:** the provider's own, as the provider names them, as `"notion-oauth": { scopes: [...], why: "..." }`; the provider's list: https://developers.notion.com/reference
 - **Set it:** deploy an app that lists it (or `pnpm everyapp provider add notion-oauth`), then `pnpm everyapp secret set NOTION_OAUTH_CLIENT_ID NOTION_OAUTH_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **With no client:** while Composio is on for the organization (`pnpm everyapp workspace composio on`), people use the accounts in their own Composio: Notion. [composio.md](/docs/agent/setup/composio)
 - **Guide:** none beyond this section
 
 ### linear-oauth
@@ -1157,6 +1162,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Hosts the token goes to:** `api.linear.app`, over https
 - **Scopes an app lists:** the provider's own, as the provider names them, as `"linear-oauth": { scopes: [...], why: "..." }`; the provider's list: https://developers.linear.app/docs/oauth/authentication
 - **Set it:** deploy an app that lists it (or `pnpm everyapp provider add linear-oauth`), then `pnpm everyapp secret set LINEAR_OAUTH_CLIENT_ID LINEAR_OAUTH_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **With no client:** while Composio is on for the organization (`pnpm everyapp workspace composio on`), people use the accounts in their own Composio: Linear. [composio.md](/docs/agent/setup/composio)
 - **Guide:** none beyond this section
 
 ### gitlab-oauth
@@ -1169,6 +1175,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Hosts the token goes to:** `gitlab.com`, over https
 - **Scopes an app lists:** the provider's own, as the provider names them, as `"gitlab-oauth": { scopes: [...], why: "..." }`; the Gateway adds `read_user` to every connect; the provider's list: https://docs.gitlab.com/integration/oauth_provider/#view-all-authorized-applications
 - **Set it:** deploy an app that lists it (or `pnpm everyapp provider add gitlab-oauth`), then `pnpm everyapp secret set GITLAB_OAUTH_CLIENT_ID GITLAB_OAUTH_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **With no client:** while Composio is on for the organization (`pnpm everyapp workspace composio on`), people use the accounts in their own Composio: GitLab. [composio.md](/docs/agent/setup/composio)
 - **Guide:** none beyond this section
 
 ### atlassian
@@ -1181,6 +1188,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Hosts the token goes to:** `api.atlassian.com`, over https
 - **Scopes an app lists:** the provider's own, as the provider names them, as `"atlassian": { scopes: [...], why: "..." }`; the Gateway adds `read:me`, `offline_access` to every connect; the provider's list: https://developer.atlassian.com/cloud/jira/platform/scopes-for-oauth-2-3LO-and-forge-apps/
 - **Set it:** deploy an app that lists it (or `pnpm everyapp provider add atlassian`), then `pnpm everyapp secret set ATLASSIAN_CLIENT_ID ATLASSIAN_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **With no client:** while Composio is on for the organization (`pnpm everyapp workspace composio on`), people use the accounts in their own Composio: Jira, Confluence. [composio.md](/docs/agent/setup/composio)
 - **Guide:** none beyond this section
 
 ### hubspot-oauth
@@ -1193,6 +1201,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Hosts the token goes to:** `api.hubapi.com`, over https
 - **Scopes an app lists:** the provider's own, as the provider names them, as `"hubspot-oauth": { scopes: [...], why: "..." }`; the provider's list: https://developers.hubspot.com/docs/api/working-with-oauth
 - **Set it:** deploy an app that lists it (or `pnpm everyapp provider add hubspot-oauth`), then `pnpm everyapp secret set HUBSPOT_OAUTH_CLIENT_ID HUBSPOT_OAUTH_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **With no client:** while Composio is on for the organization (`pnpm everyapp workspace composio on`), people use the accounts in their own Composio: HubSpot. [composio.md](/docs/agent/setup/composio)
 - **Guide:** none beyond this section
 
 ### zoom
@@ -1205,6 +1214,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Hosts the token goes to:** `api.zoom.us`, over https
 - **Scopes an app lists:** the provider's own, as the provider names them, as `"zoom": { scopes: [...], why: "..." }`; the Gateway adds `user:read:user` to every connect; the provider's list: https://developers.zoom.us/docs/integrations/oauth-scopes-overview/
 - **Set it:** deploy an app that lists it (or `pnpm everyapp provider add zoom`), then `pnpm everyapp secret set ZOOM_CLIENT_ID ZOOM_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **With no client:** while Composio is on for the organization (`pnpm everyapp workspace composio on`), people use the accounts in their own Composio: Zoom. [composio.md](/docs/agent/setup/composio)
 - **Guide:** none beyond this section
 
 ### dropbox
@@ -1217,6 +1227,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Hosts the token goes to:** `api.dropboxapi.com`, `content.dropboxapi.com`, over https
 - **Scopes an app lists:** the provider's own, as the provider names them, as `"dropbox": { scopes: [...], why: "..." }`; the provider's list: https://developers.dropbox.com/oauth-guide
 - **Set it:** deploy an app that lists it (or `pnpm everyapp provider add dropbox`), then `pnpm everyapp secret set DROPBOX_OAUTH_CLIENT_ID DROPBOX_OAUTH_CLIENT_SECRET` or paste the client in Manage workspace → Providers
+- **With no client:** while Composio is on for the organization (`pnpm everyapp workspace composio on`), people use the accounts in their own Composio: Dropbox. [composio.md](/docs/agent/setup/composio)
 - **Guide:** none beyond this section
 
 ### spotify

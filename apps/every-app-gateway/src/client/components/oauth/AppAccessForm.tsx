@@ -4,6 +4,7 @@ import { AppIcon } from "@/client/components/AppIcon";
 import { BrandMark } from "@/client/components/BrandLink";
 import { ProviderIcon } from "@/client/components/ProviderIcon";
 import {
+  ComposioAllowsNote,
   ConsentBox,
   ConsentCard,
   ConsentHeader,
@@ -20,9 +21,11 @@ type OkContext = Extract<AppAccessContext, { ok: true }>;
  * The Allow page's form (docs/design/2026-11-oauth-one-connection.md): an
  * app asks to use the person's connection to a provider. It shows the app
  * and the provider by their icons, what the app says it does with the
- * account, the connected account and the scopes the app lists. A native
- * form posting the one-use state and the decision to
- * `/connect/<provider>/allow`, which checks them again.
+ * account, the connected account and the scopes the app lists. For a
+ * connection made through Composio (docs/design/2026-11-composio.md) it
+ * shows the services the app uses, each with its account there, where it
+ * shows scopes. A native form posting the one-use state and the decision
+ * to `/connect/<provider>/allow`, which checks them again.
  */
 export function AppAccessForm({
   context,
@@ -31,7 +34,7 @@ export function AppAccessForm({
   context: OkContext;
   onSwitchAccount?: () => void;
 }) {
-  const { app, provider, account, why, scopes } = context;
+  const { app, provider, account, why, scopes, composio } = context;
   const deliberate = useDeliberateAllow();
   const { sentDecision, onSubmit } = useSendOnce();
 
@@ -66,7 +69,20 @@ export function AppAccessForm({
             onSwitchAccount={onSwitchAccount}
           />
 
-          {account !== null || scopes.length > 0 ? (
+          {composio ? (
+            <>
+              {composio.length > 0 ? (
+                <ConsentBox>
+                  {composio.map((service) => (
+                    <ConsentRow key={service.label} label={service.label}>
+                      {service.account}
+                    </ConsentRow>
+                  ))}
+                </ConsentBox>
+              ) : null}
+              <ComposioAllowsNote app={app.name} accounts={composio.length} />
+            </>
+          ) : account !== null || scopes.length > 0 ? (
             <ConsentBox>
               {account !== null ? (
                 <ConsentRow label={`${provider.name} account`}>

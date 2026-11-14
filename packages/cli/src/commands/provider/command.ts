@@ -1,6 +1,6 @@
 import { buildCommand, buildRouteMap } from "@stricli/core";
 import { CLI } from "@/lib/output/command";
-import { accountFlag, gatewayFlag, jsonFlag, verboseFlag } from "../flags";
+import { accountFlag, apiFlags, gatewayFlag, jsonFlag, verboseFlag } from "../flags";
 
 const connectFlags = {
   gateway: gatewayFlag,
@@ -93,6 +93,12 @@ const addCommand = buildCommand({
       "the scopes it needs in everyapp.config.ts, as the provider names them; each person connects",
       "once and allows each app. --verbose adds the manifest entry.",
       "",
+      "A preset Composio serves (google-workspace, slack, github-oauth and more) needs no OAuth",
+      "client while Composio is on for the organization: people use the accounts in their own",
+      "Composio. Then a person at a terminal who linked their own Composio and gave no client is",
+      "asked whether to add an OAuth app all the same. Nobody else is asked, and add never turns",
+      `Composio on (${CLI} workspace composio on does).`,
+      "",
       "Examples:",
       `  ${CLI} provider add google-workspace`,
       `  ${CLI} provider add openrouter`,
@@ -163,10 +169,12 @@ const connectionsCommand = buildCommand({
     },
   },
   docs: {
-    brief: "List the accounts people connected to OAuth providers on the Gateway, and the apps that use each",
+    brief: "List the accounts people connected to OAuth providers on the Gateway, how each was made, and the apps that use each",
     fullDescription: [
       "A connection is one person's, to one provider: who connected what, the apps they allowed to",
-      "use it, the scopes granted, the status and when it was last used. Never a token.",
+      "use it, how it was made (with the Gateway's OAuth app, or through the person's Composio),",
+      "the scopes granted, the status and when it was last used. A connection through Composio",
+      "holds services in place of scopes, each with its account there. Never a token.",
       "A person may grant fewer scopes than their apps list: that connection is still active, and",
       "its status says how many were granted (\"active, 10 of 18 permissions granted\"; `permissions`",
       "with --json).",
@@ -216,8 +224,9 @@ const disconnectCommand = buildCommand({
       "The Gateway drops the tokens it held; every app that used the connection gets \"not",
       "connected\" until the person connects again. The CLI holds no token, so the grant stays at",
       "the provider until it is revoked there (Disconnect in Connected accounts revokes it from the",
-      "Gateway). With --app the connection stays: that app alone loses its access, until the person",
-      "allows it again.",
+      "Gateway). A connection made through Composio holds no token: nothing is left to revoke, and",
+      "nothing changes at Composio. With --app the connection stays: that app alone loses its",
+      "access, until the person allows it again.",
       "",
       "Examples:",
       `  ${CLI} provider disconnect github-oauth --user ben@example.com`,
@@ -250,6 +259,10 @@ const listCommand = buildCommand({
       "app is waiting on come first, with the setting to set. --all (or --verbose) adds the rest",
       "of the built-in providers; --json always carries every provider, each with inUse. Hosts,",
       "setting names and who registered a provider are in provider show <id>.",
+      "",
+      "An OAuth provider with no client reads \"through Composio\" (composio in --json) while the",
+      "organization has Composio on and Composio serves it: people use the accounts in their own",
+      "Composio, and nothing is left to set.",
       "",
       "Nothing is changed. A key's value can't be read back; only whether it is set, and for a",
       "registered provider whether it was set for the hosts it names now (bound).",
@@ -376,11 +389,82 @@ const mcpAlias = (verb: "on" | "off") =>
     },
   });
 
+const noArgs = { kind: "tuple", parameters: [] } as const;
+
+const composioLinkCommand = buildCommand({
+  loader: async () => (await import("./composio")).link,
+  parameters: { positional: noArgs, flags: apiFlags },
+  docs: {
+    brief: "Link your Composio: approve a sign-in in the browser, then see what is in it",
+    fullDescription: [
+      "Composio is a third-party service where you connect your accounts (Gmail, Slack, GitHub).",
+      "Where the organization turned it on, an OAuth provider the Gateway has no OAuth app for is",
+      "used through the accounts in each person's own Composio. Linking is a sign-in at Composio:",
+      "nobody types or pastes a key.",
+      "",
+      "Starts the sign-in and prints its link, which opens in your browser at a terminal. Under",
+      "--json the link is an action_required event (composio_sign_in, data.url, waiting: true) for",
+      "the person to open; give it to nobody else, since whoever approves it links their Composio to",
+      "your account. The Gateway is asked every 2 seconds until you approve, then what was found in",
+      "your Composio is listed: each provider with its services and their accounts. A sign-in that",
+      "runs out first (about 10 minutes) is COMPOSIO_LINK_EXPIRED: run it again for a new one.",
+      "",
+      "Linking adds no connection: an account becomes yours here when an app asks for it and you",
+      "say yes, on the Gateway's page. Run again once linked, it lists what is in your Composio",
+      "now. While Composio is off for the organization it stops with COMPOSIO_OFF",
+      `(${CLI} workspace composio on, an owner's or admin's). Your own link, whatever your role.`,
+      "",
+      "Examples:",
+      `  ${CLI} provider link composio`,
+      `  ${CLI} provider link composio --json`,
+      "",
+      "The Gateway tools: everyapp_provider_composio to read, everyapp_provider_composio_link to start,",
+      "everyapp_provider_composio_link_finish to check.",
+    ].join("\n"),
+  },
+});
+
+const composioUnlinkCommand = buildCommand({
+  loader: async () => (await import("./composio")).unlink,
+  parameters: { positional: noArgs, flags: apiFlags },
+  docs: {
+    brief: "Unlink your Composio: the connections you made through it are removed",
+    fullDescription: [
+      "The Gateway deletes the key it held and every connection you made through Composio, with",
+      "the access apps had to them, so those apps stop using the accounts at once. A connection",
+      "made with the Gateway's own OAuth app stays. Nothing changes at Composio: the accounts stay",
+      "connected there, and the key stays valid until you revoke it there.",
+      "",
+      "Example:",
+      `  ${CLI} provider unlink composio`,
+      "",
+      `The Gateway tool: everyapp_provider_composio_unlink (${CLI} call everyapp_provider_composio_unlink).`,
+    ].join("\n"),
+  },
+});
+
 /**
- * `everyapp provider add|update|list|show|remove|presets|connections|disconnect`:
+ * `provider link composio` and `provider unlink composio`: the verb first,
+ * as in `provider add google-workspace`. Composio is the one service a
+ * person links (docs/design/2026-11-composio.md).
+ */
+const linkRoutes = buildRouteMap({
+  routes: { composio: composioLinkCommand },
+  docs: { brief: "Link your Composio, whose accounts serve the OAuth providers the Gateway has no OAuth app for" },
+});
+
+const unlinkRoutes = buildRouteMap({
+  routes: { composio: composioUnlinkCommand },
+  docs: { brief: "Unlink your Composio: the connections you made through it are removed" },
+});
+
+/**
+ * `everyapp provider add|update|list|show|remove|presets|connections|disconnect|link|unlink`:
  * the provider registry, the API providers the Gateway brokers
- * (docs/design/2026-10-provider-registry.md), and the OAuth providers people
- * connect their accounts to (docs/design/2026-11-oauth-one-connection.md).
+ * (docs/design/2026-10-provider-registry.md), the OAuth providers people
+ * connect their accounts to (docs/design/2026-11-oauth-one-connection.md),
+ * and a person's Composio link (docs/design/2026-11-composio.md): `link
+ * composio` and `unlink composio`, each a Gateway tool run as the caller.
  * `on` and `off` are hidden: they run `mcp on|off` and say so, for
  * documents that still say `provider on`.
  */
@@ -394,12 +478,14 @@ export const providerRoutes = buildRouteMap({
     presets: presetsCommand,
     connections: connectionsCommand,
     disconnect: disconnectCommand,
+    link: linkRoutes,
+    unlink: unlinkRoutes,
     on: mcpAlias("on"),
     off: mcpAlias("off"),
   },
   aliases: { ls: "list", rm: "remove" },
   docs: {
-    brief: "Register API providers for apps to call with the Gateway's key, and OAuth providers people connect their accounts to",
+    brief: "Register API providers for apps to call with the Gateway's key, and OAuth providers people connect their accounts to or use through their Composio",
     hideRoute: { on: true, off: true },
   },
 });

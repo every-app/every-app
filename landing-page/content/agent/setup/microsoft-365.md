@@ -20,6 +20,11 @@ and one client secret (which expires), and `MICROSOFT_365_CLIENT_ID` and
 The client may be pasted in Manage workspace → Providers instead of set
 below; a setting set here wins.
 
+With no client at all, an organization that turned Composio on uses each person's own Composio for
+Microsoft 365: no Entra registration, and requests pass through Composio
+([composio.md](/docs/agent/setup/composio)). This guide is Microsoft 365 with your own client, which is
+what the Gateway uses once it is set.
+
 | Name                          | Required | What it holds                                                                              |
 | ----------------------------- | -------- | ------------------------------------------------------------------------------------------ |
 | `MICROSOFT_365_CLIENT_ID`     | required | The registration's **Application (client) ID** (a GUID, shown on its Overview page). Not a secret. |
@@ -193,7 +198,8 @@ secret exists.
 
 | Error or symptom                                                                 | Meaning                                                                                        | What to do                                                                                                   |
 | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `integration_not_configured` (Gateway 503), or the app shows Microsoft as not set up with no Connect button | The Gateway holds neither or only one of the two settings, or a name differs | `pnpm everyapp secret list --json`; set what is missing (steps 5 and 6) |
+| `integration_not_configured` (Gateway 503), or the app shows Microsoft as not set up with no Connect button | The Gateway holds neither or only one of the two settings, or a name differs, and Composio is off | `pnpm everyapp secret list --json`; set what is missing (steps 5 and 6) |
+| The Connect button opens the Gateway's Composio page instead of Microsoft's | The Gateway holds neither or only one of the two settings and Composio is on, so Microsoft 365 is served through each person's own Composio ([composio.md](/docs/agent/setup/composio)) | Set what is missing (steps 5 and 6). Connections made through Composio then read Needs reconnect, and Reconnect goes through Microsoft |
 | `capability_not_requested` (403)                                                 | The deployed manifest doesn't list `microsoft-365` | Add `"microsoft-365": { scopes: ["Mail.Read"], why }` to `everyapp.config.ts`, deploy again |
 | `integration_not_connected` (409)                                                | The person hasn't connected Microsoft 365, hasn't allowed this app, the connection expired, or the app now lists a permission the connection lacks or the person hasn't allowed (`missingScopes`) | The person opens `connectPath` from the app: it leads to Microsoft, or to the Gateway's page that allows the app |
 | After consent, the Gateway's error page says Microsoft granted more than the apps here list; or a connection expires at refresh for the same reason | Microsoft issued a token carrying a permission the person once consented to on this registration that no app in the organization lists now (at a refresh: that the connection doesn't hold), and the Gateway refuses rather than narrow it | The member removes the app at https://myapplications.microsoft.com, which withdraws what they consented to, and connects again. Or list the permission in an app that uses it and deploy |

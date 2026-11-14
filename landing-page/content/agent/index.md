@@ -41,6 +41,7 @@ Two skills ship in the CLI package (`node_modules/everyapp/skills/<name>` in an 
 | A Mac or phone app signing in to one app | [native](/docs/agent/native) |
 | What a deploy does; releases; delete | [deploy](/docs/agent/deploy) |
 | API providers and OAuth providers | [providers](/docs/agent/providers) |
+| People's accounts with no OAuth app (Composio) | [setup/composio](/docs/agent/setup/composio) |
 | The default AI model; AI Gateway | [ai](/docs/agent/ai) |
 | Cloudflare Access | [access](/docs/agent/access) |
 | Continue with Google and the like | [signin](/docs/agent/signin) |

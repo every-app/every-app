@@ -12,9 +12,12 @@
  */
 import {
   CATALOG,
+  ConnectionVia,
   MCP_WRITE_SCOPE,
   authorizationFor,
   capabilitySettings,
+  composioServes,
+  composioServicesNeeded,
   isAccountWidePath,
   missingScopes,
   oauthClientCredentials,
@@ -47,6 +50,8 @@ import {
   type CallingApp,
   type MemberAccessPort,
 } from "./capabilities/heldToken";
+import type { ComposioCallPort } from "./composio/calls";
+import { connectionLacks } from "./oauth/holding";
 import type { OAuthClientResolver } from "./oauth/client";
 import type { HeldTokenPort } from "./oauth/heldTokens";
 import {
@@ -144,6 +149,12 @@ interface HandleIntegrationProxyRequestOptions {
 export interface OAuthProxyDeps {
   resolveClient: OAuthClientResolver;
   connections: HeldTokenPort;
+  /**
+   * Composio (docs/design/2026-11-composio.md): whether the organization
+   * turned it on, and a call sent through a person's link. Absent: a
+   * provider with no client is not set up.
+   */
+  composio?: ComposioCallPort;
   /** The calling app: whose connections a call reads, and where to connect. */
   app?: CallingApp;
   /**
@@ -270,6 +281,7 @@ export async function handleIntegrationProxyRequest({
       fetchUpstream,
       resolveClient: oauth.resolveClient,
       connections: oauth.connections,
+      ...(oauth.composio ? { composio: oauth.composio } : {}),
       ...(oauth.app ? { app: oauth.app } : {}),
       ...(oauth.members ? { members: oauth.members } : {}),
       ...(onCall ? { onCall } : {}),
@@ -642,7 +654,9 @@ interface ConnectionStatus {
 
 /**
  * `GET /api/integrations/<id>` for an OAuth provider: whether the app
- * lists it, whether a client is live, the scopes it declares, where a
+ * lists it, whether it is set up (a live client, or Composio on for the
+ * person's organization and serving what the app lists), the scopes it
+ * declares, where a
  * person connects or allows this app, and the connection of the person
  * behind the request (null without one, or while they haven't allowed
  * this app to use theirs). Only an app that lists the provider
@@ -680,9 +694,19 @@ async function oauthStatus({
         ? oauthClientCredentials(capability, env)
         : null;
   let connection: ConnectionStatus | null = null;
+  let served: ConnectionVia | null = client ? ConnectionVia.OAuth : null;
   if (requested && oauth?.app?.rowId) {
     try {
       const who = await oauth.identify();
+      if (
+        !client &&
+        who &&
+        oauth.composio &&
+        composioServicesNeeded(id, capability.flow, declared) !== null &&
+        (await oauth.composio.on(who.organizationId))
+      ) {
+        served = ConnectionVia.Composio;
+      }
       const owner = who?.user
         ? {
             organizationId: who.organizationId,
@@ -701,22 +725,28 @@ async function oauthStatus({
             })
           : null;
       if (found && allowed) {
-        const lacking = missingScopes(capability.flow, found.scopes, declared);
+        const provider = { id, flow: capability.flow };
+        // What the connection doesn't hold of what the app lists: scopes
+        // its token lacks, or for one made through Composio, scopes whose
+        // service has no account.
+        const lacking =
+          found.via === ConnectionVia.Composio
+            ? connectionLacks(provider, found, declared)
+            : missingScopes(capability.flow, found.scopes, declared);
         // What a trip through the connect link would change: the provider
         // was never asked for it, or the person hasn't allowed this app
         // it. A scope they declined at the provider is neither.
         const fixable = [
-          ...missingScopes(
-            capability.flow,
-            [...found.scopes, ...(found.askedScopes ?? [])],
-            declared,
-          ),
+          ...connectionLacks(provider, found, declared),
           ...missingScopes(capability.flow, allowed, declared),
         ];
         const missing = [...lacking, ...fixable].filter(
           (scope, index, all) => all.indexOf(scope) === index,
         );
-        const reconnect = found.status === "expired" || fixable.length > 0;
+        const reconnect =
+          found.status === "expired" ||
+          (served !== null && found.via !== served) ||
+          fixable.length > 0;
         connection = {
           label: found.label,
           scopes: [...found.scopes],
@@ -737,7 +767,7 @@ async function oauthStatus({
       );
     }
   }
-  const configured = Boolean(client);
+  const configured = served !== null;
   return Response.json({
     capability: id,
     requested,
@@ -753,8 +783,9 @@ async function oauthStatus({
           label: capability.label,
           settings: capabilitySettings(capability),
           command: setupCommand,
-          alternative:
-            "an owner or admin adds a client under Manage workspace → Providers",
+          alternative: composioServes(id)
+            ? "an owner or admin adds a client, or turns Composio on, under Manage workspace → Providers"
+            : "an owner or admin adds a client under Manage workspace → Providers",
         })
       : { settings: [], setup: null, command: null }),
   });

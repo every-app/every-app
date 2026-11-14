@@ -66,6 +66,13 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
   - `update` (migration 0032 registers and binds the Google, Microsoft 365 and Slack rows); existing connections still work.
   - Disconnect an idle Google connection; the grant is gone at myaccount.google.com.
 - [ ] **The one-connection live check** (`docs/design/2026-11-oauth-one-connection.md`; replaces #942's): two apps on one Google client. Connecting in the first asks Google for both apps' scopes. The second shows the Allow page and never leaves the Gateway. An app that isn't allowed gets `integration_not_connected`. Disconnect stops both. `update` on a Gateway with per-app connections keeps one per person (migration 0034). A live test, run on a test Gateway.
+- [ ] **The Composio checks against the real service** (`docs/design/2026-11-composio.md`, "Not checked against the real Composio"). The Gateway is tested against a test double only. One script with a person's own Composio key, which changes nothing on Cloudflare:
+  - A session opened with `connected_accounts` sends through those accounts only, and a removed account is refused, never replaced by another.
+  - Whether unlinking can revoke the key at Composio.
+  - Whether `binary_body` sends a file.
+  - One call that writes.
+- [ ] **The Composio live check**: on a test Gateway with no Google client, turn Composio on, link, connect Gmail in one app and call it, allow a second app, unlink, turn it off. A live test.
+- [ ] **Ask Composio whether a product may link with its CLI's sign-in** (`/cli/create-session`) before Composio linking is released.
 - [ ] **The apps move to provider scope names** in `everyapp.config.ts` (OpenMail, OpenSEO, OpenCRM; CHANGELOG.md has the before and after) and redeploy; migration 0025 drops existing connections, so people connect again, once per provider. The rollout steps for everyapp.team are in #943.
 - [ ] **Update everyapp.team after 0.3.0 is published** (migration 0033 only): `pnpm everyapp update --gateway https://everyapp.team --release https://github.com/every-app/every-app`, then `pnpm everyapp login --gateway https://everyapp.team` only if admin commands say signed out.
 - [ ] **Re-pin the apps exactly to 0.3.0.**

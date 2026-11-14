@@ -1,6 +1,8 @@
 import { db } from "@/db";
 import {
   apps,
+  composioLinkRequests,
+  composioLinks,
   groupMembers,
   members,
   organizations,
@@ -290,8 +292,9 @@ async function updateRole(
  * Take a user out of an organization in one D1 transaction: the membership,
  * their app access there (direct, and their place in its groups), the
  * personal access tokens they hold for it, the OAuth accounts they
- * connected there and the access its apps had to them. Tokens and
- * connections act for the user, so they go too. The membership's delete
+ * connected there and the access its apps had to them, and their Composio
+ * link there with any sign-in waiting. Tokens, connections and the link
+ * act for the user, so they go too. The membership's delete
  * refuses an owner no other live
  * owner would outlast (wouldLeaveNoLiveOwner), and the rest applies only
  * once the membership is gone, so a refused removal changes nothing: false
@@ -370,6 +373,24 @@ async function removeMember(
         and(
           eq(providerConnections.userId, userId),
           eq(providerConnections.organizationId, organizationId),
+          membershipGone,
+        ),
+      ),
+    db
+      .delete(composioLinkRequests)
+      .where(
+        and(
+          eq(composioLinkRequests.userId, userId),
+          eq(composioLinkRequests.organizationId, organizationId),
+          membershipGone,
+        ),
+      ),
+    db
+      .delete(composioLinks)
+      .where(
+        and(
+          eq(composioLinks.userId, userId),
+          eq(composioLinks.organizationId, organizationId),
           membershipGone,
         ),
       ),

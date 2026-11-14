@@ -1,4 +1,4 @@
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, inArray, lt } from "drizzle-orm";
 import { db } from "@/db";
 import { oauthStates } from "@/db/schema";
 import type { ConnectionKey } from "./ProviderConnectionRepository";
@@ -22,7 +22,17 @@ export enum OAuthStatePurpose {
    * allowed for what it lists now.
    */
   Reconnect = "reconnect",
+  /**
+   * The Gateway's own Composio page posts it
+   * (docs/design/2026-11-composio.md): the provider has no client here,
+   * and the person's yes makes the connection from an account in their
+   * Composio.
+   */
+  Composio = "composio",
 }
+
+/** The purposes a Gateway page's own form spends: no provider sends them back. */
+const PAGE_PURPOSES = [OAuthStatePurpose.Allow, OAuthStatePurpose.Composio];
 
 const PURPOSES = new Set<string>(Object.values(OAuthStatePurpose));
 
@@ -41,7 +51,7 @@ interface OAuthState {
   appRowId: string;
   purpose: OAuthStatePurpose;
   codeVerifier: string;
-  /** The scopes asked for: the provider's spelling (authorize), or the app's, canonical (allow). */
+  /** The scopes asked for: the provider's spelling (authorize), or the app's, canonical (allow, composio). */
   scopes: string[];
   returnTo: string | null;
   createdAt: number;
@@ -133,16 +143,16 @@ async function take(
 }
 
 /**
- * Delete a person's unspent `allow` states for a provider (they connected
- * again, and an open Allow page showed the connection as it was); the
- * count.
+ * Delete a person's unspent `allow` and `composio` states for a provider
+ * (they connected again, and an open Allow or Composio page showed the
+ * connection as it was); the count.
  */
 async function removeAllow(input: ConnectionKey): Promise<number> {
   const removed = await db
     .delete(oauthStates)
     .where(
       and(
-        eq(oauthStates.purpose, OAuthStatePurpose.Allow),
+        inArray(oauthStates.purpose, PAGE_PURPOSES),
         eq(oauthStates.organizationId, input.organizationId),
         eq(oauthStates.providerId, input.providerId),
         eq(oauthStates.userId, input.userId),

@@ -46,8 +46,8 @@ export interface CredentialSeams {
 /**
  * How a person sees what `provider add` did and what is left to do at the
  * provider, before the key or client is asked for: the ticked line of what
- * is on the Gateway (`added`), its notes dim under it, the steps, and the
- * provider's page.
+ * is on the Gateway (`added`; null when the run said it already), its
+ * notes dim under it, the steps, and the provider's page.
  */
 export function setupShown({
   added,
@@ -55,14 +55,14 @@ export function setupShown({
   steps,
   docs,
 }: {
-  added: string;
+  added: string | null;
   notes?: readonly string[];
   /** The steps' lines, as lib/output/steps.ts draws them; none when nothing is left to do. */
   steps: readonly string[];
   docs: string | null;
 }): string {
   return [
-    ticked(added),
+    ...(added === null ? [] : [ticked(added)]),
     ...notes.flatMap((note) => wrap(note, proseWidth() - 2)).map((line) => chalk.dim(`  ${line}`)),
     ...(steps.length > 0 ? ["", ...steps] : []),
     ...(docs ? ["", ...formatFacts([{ label: "Docs", value: chalk.cyan(docs) }])] : []),

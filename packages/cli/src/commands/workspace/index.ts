@@ -6,11 +6,15 @@
  * line a person reads after it. `reset-link` and `invite-link` are in
  * ./links.ts.
  */
+import { COMPOSIO_NOTICE } from "@every-app/sdk/internal";
 import { formatAnswer, formatRows, listChange, runTool, type ToolCommandFlags, type ToolRun } from "@/lib/gatewayApi/command";
-import type { JsonObject } from "@/lib/gatewayApi";
+import { openGatewayApi, type JsonObject } from "@/lib/gatewayApi";
 import { CLI } from "@/lib/output/command";
-import { commandLines } from "@/lib/output/result";
-import type { LinkedDevSetting, WorkspaceRole } from "./command";
+import { canPromptInTerminal, confirmUnlessYes, type Confirm } from "@/lib/output/prompt";
+import { commandLines, factLines, finish } from "@/lib/output/result";
+import { runCommand } from "@/lib/output/run";
+import { plural } from "@/lib/output/text";
+import type { SwitchSetting, WorkspaceRole } from "./command";
 
 const W = (name: string) => `everyapp_workspace_${name}`;
 
@@ -270,10 +274,74 @@ export const connectionRevoke = (flags: ToolCommandFlags, connection: string) =>
   });
 
 /** `show` reads it from everyapp_workspace_show (a read-only credential can); on and off are the write. */
-export const linkedDev = (flags: ToolCommandFlags, setting: LinkedDevSetting = "show") =>
+export const linkedDev = (flags: ToolCommandFlags, setting: SwitchSetting = "show") =>
   runTool(flags, {
     tool: setting === "show" ? W("show") : W("linked_dev"),
     args: setting === "show" ? {} : { on: setting === "on" },
     done: (answer) => `Linked dev is ${str(answer["linkedDev"])}${answer["changed"] === true ? " now" : ""}`,
     display: () => "",
+  });
+
+/** The step that says what turning Composio on means, before it is turned on (its milestone prints the line). */
+const COMPOSIO_NOTICE_STEP = "composio.notice";
+
+const linksAndConnections = (counts: { links: number; connections: number }) =>
+  `${plural(counts.links, "link")} and ${plural(counts.connections, "connection")} made through it`;
+
+/**
+ * `workspace composio [on|off|show]` (docs/design/2026-11-composio.md).
+ * `show` reads the switch from everyapp_workspace_show. `on` says what it
+ * means first. `off` deletes every link and every connection made through
+ * Composio, so a person is asked first (`--yes` skips the question;
+ * unattended without it is CONFIRMATION_REQUIRED), and the result says how
+ * many were removed.
+ */
+export const composio = (
+  flags: ToolCommandFlags & { yes?: boolean },
+  setting: SwitchSetting = "show",
+  /** Tests: the person's answer to the question `off` asks. */
+  confirm?: Confirm,
+) =>
+  runCommand(flags, async (out) => {
+    const api = await openGatewayApi({ flags, out });
+    const tool = setting === "show" ? W("show") : W("composio");
+    const data = (answer: JsonObject) => ({ gateway: api.gateway, tool, ...answer });
+    if (setting === "show") {
+      const answer = await api.call(tool);
+      // A Gateway from before Composio doesn't say: it has none to turn on.
+      finish(out, { headline: `Composio is ${answer["composio"] === "on" ? "on" : "off"}`, ticked: false, data: data(answer) });
+      return;
+    }
+    if (setting === "on") {
+      out.emit({ type: "step", step: COMPOSIO_NOTICE_STEP, status: "ok", message: COMPOSIO_NOTICE });
+      const answer = await api.call(tool, { on: true });
+      const link = `${CLI} provider link composio`;
+      const headline = answer["changed"] === true ? "Turned Composio on" : "Composio was already on";
+      finish(out, {
+        headline,
+        message: [headline, COMPOSIO_NOTICE, `Each person links their own Composio: ${link}`],
+        data: { ...data(answer), next: [{ command: link, note: "link your own Composio" }] },
+      });
+      return;
+    }
+    const question = "Turn Composio off? It deletes every link and every connection made through it. This can't be undone.";
+    await confirmUnlessYes({
+      yes: flags.yes,
+      interactive: canPromptInTerminal(flags.json ?? false),
+      ...(confirm ? { confirm } : {}),
+      question,
+      unattended: `${question} That needs confirmation at a terminal, or --yes`,
+      data: { gateway: api.gateway, tool },
+    });
+    const answer = await api.call(tool, { on: false, confirm: true });
+    const removed = obj(answer["removed"]);
+    const counts = { links: Number(removed["links"] ?? 0), connections: Number(removed["connections"] ?? 0) };
+    const headline = answer["changed"] === true ? "Turned Composio off" : "Composio was already off";
+    const any = counts.links + counts.connections > 0;
+    finish(out, {
+      headline,
+      blocks: [any ? factLines([{ label: "Removed", value: linksAndConnections(counts) }]) : []],
+      message: [headline, ...(any ? [`Removed ${linksAndConnections(counts)}.`] : [])],
+      data: data(answer),
+    });
   });

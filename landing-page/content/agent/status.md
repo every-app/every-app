@@ -29,6 +29,8 @@ With no Gateway in any account it ends with `action_required` `install_gateway`:
 
 For an app that needs setup, the block names each unmet setting, what it is for, where the key comes from and the setup guide for a Gateway setting (`Guide: https://everyapp.com/docs/agent/setup/<name>.md`; offline, `everyapp docs setup/<name>`). An app's own values are explained by their feature's steps and `how`, which `everyapp configure <app> --json` returns in `data.features`. Read them, then have the person run `everyapp configure <app>`.
 
+An OAuth provider an app requires is set when the Gateway holds a client for it, or when Composio is on for the organization and has a service for every scope the app lists ([setup/composio](/docs/agent/setup/composio)). Through Composio nobody sets a client: each person connects from inside the app.
+
 ## Fixes
 
 | Code | Run |

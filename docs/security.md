@@ -57,6 +57,7 @@ and turns every capability off (`apps/every-app-gateway/src/server/platform-poli
 | An AI client over MCP | List and call the tools of the apps the person can open, within the connection's apps and scopes; read-only callers see no write tools | Use its token on an app route; call a tool with a scope it lacks |
 | A third-party app (hosted) | Serve its organization through a per-host session | Reach the internet except through the egress allowlist; see the first-party session cookie |
 | Cloudflare, dependencies | Trusted as given (runtime, D1, KV, Access, Email Sending; installed packages with the floors in `pnpm-workspace.yaml`) | Out of scope |
+| Composio, where an organization turned it on | Hold the tokens of the accounts people use from it; send each request to those accounts and see each answer (`docs/design/2026-11-composio.md`) | Be sent a call from an organization that hasn't turned it on, or a call to a provider the Gateway holds a client for; see a Gateway session, token or provider key |
 
 The operator is root by design: one credential (the Cloudflare login) rather
 than a second Gateway token that could only confirm what the login already
@@ -142,6 +143,11 @@ per package (`pnpm -C <package> exec vitest run <file>`, the Gateway with
 | B4 | An OAuth MCP server is called with each member's own connection, which they allowed the app to use | `apps/every-app-gateway/src/server/remote-mcp/remote-mcp.sqlite.test.ts` :: calls with each member's own connection |
 | B4 | The Gateway's client metadata document (`/oauth-clients/<id>-mcp`, public) is a public client whose one redirect URI is its own callback, the same for any well-formed id and read from no row | `apps/every-app-gateway/src/server/remote-mcp/remote-mcp.sqlite.test.ts` :: serves the app's client metadata document |
 | B4 | A host the Gateway holds a key for takes a remote app only with that provider or the app's own OAuth row; never an own static key | `apps/every-app-gateway/src/server/remote-mcp/remote-mcp.sqlite.test.ts` :: lets an app's own OAuth row reach a host the Gateway holds a key for |
+| B4 | A person's Composio key is sealed in D1 as that person's alone. It never reaches an app, a tool's answer or a log | `apps/every-app-gateway/src/server/composio/service.sqlite.test.ts` :: links once approved: the key sealed, the sign-in dropped, what is in their Composio answered, and no connection added; `apps/every-app-gateway/src/server/toolbus/composio-tools.sqlite.test.ts` :: link a member's own Composio, show it, and unlink it, never answering with the key or the sign-in id; `apps/every-app-gateway/src/server/composio/calls.sqlite.test.ts` :: carry the app's request under the person's key, with nothing of the app's own credentials, and the key in no log line; `apps/every-app-gateway/src/server/composio/client.test.ts` :: logs neither the key nor a sign-in id, whatever fails |
+| B4 | A Composio sign-in's id is sealed until it is used. Its page goes once, to the person who started it | `apps/every-app-gateway/src/server/composio/service.sqlite.test.ts` :: creates a sign-in at Composio and keeps its id sealed, returning only the page to open |
+| B4 | Composio is used only where an owner or admin turned it on, and never for a provider the Gateway holds a client for | `apps/every-app-gateway/src/server/composio/service.sqlite.test.ts` :: is refused while Composio is off, without asking Composio; `apps/every-app-gateway/src/server/composio/connect.sqlite.test.ts` :: refuses once the provider gained a client, or Composio was turned off, after the page opened; `apps/every-app-gateway/src/server/composio/calls.sqlite.test.ts` :: through Composio, once the provider has a client: refused to reconnect, and Composio isn't asked |
+| B4 | A call through Composio goes out for the person it is for, with the account they chose from their own Composio and no other. An account that is gone is refused, never replaced | `apps/every-app-gateway/src/server/composio/connect.sqlite.test.ts` :: refuses an account that isn't in the person's Composio, is of another service, or isn't named; `apps/every-app-gateway/src/server/composio/calls.sqlite.test.ts` :: are the service that owns the URL and the account the connection names for it, through a session opened for exactly the person's accounts; `apps/every-app-gateway/src/server/composio/calls.sqlite.test.ts` :: are each person's own: a member with no connection is sent to connect, whatever a colleague linked; `apps/every-app-gateway/src/server/composio/calls.sqlite.test.ts` :: removed after the session was opened: the call answers 409 to reconnect, the connection turns expired once, and nothing is sent with another account |
+| B4 | A binary answer that came through Composio is fetched only from Composio's storage host, over https, without the key and without following a redirect | `apps/every-app-gateway/src/server/composio/client.test.ts` :: is never fetched from another host, over plain http, or past 25 MB; `apps/every-app-gateway/src/server/composio/calls.sqlite.test.ts` :: comes back as bytes fetched from Composio's storage, without the key and without following a redirect |
 | B5 AI client → `/mcp` | Write tools are hidden from read-only callers | `packages/toolbus/src/policy.test.ts` :: hides write tools from read-only callers |
 | B5 | Consent is a same-origin form POST from the signed-in person, spent once | `apps/every-app-gateway/src/server/mcp-auth/gateway-mcp.e2e.sqlite.test.ts` :: refuses a decision from another site, another browser, or twice |
 | B5 | A revoked connection stops on its next request and its next refresh | `apps/every-app-gateway/src/server/mcp-auth/gateway-mcp.e2e.sqlite.test.ts` :: stops a revoked connection at once, and its refresh |
@@ -176,7 +182,7 @@ From `docs/hosted-vision.md`, section 3:
    Pinned by `packages/sdk/src/server/everyApp.test.ts` :: takes the
    audience from EVERYAPP_AUDIENCE, never the app id, outside dev.
 
-## Known gaps, top 11
+## Known gaps, top 12
 
 1. **Browser installs spend an account-wide token** (B7, high). With
    `BROWSER_APP_INSTALLS` on (off by default), an owner or admin signed in
@@ -227,6 +233,23 @@ From `docs/hosted-vision.md`, section 3:
     page per app, since that page couldn't limit the app either. An app
     the person hasn't allowed can't use the connection at all. On self-host only the
     operator deploys apps.
+12. **Where Composio is on, the Gateway holds a key that can do more than
+    it uses** (B4, medium). Composio is off until an owner or admin turns
+    it on. Each person then links their own Composio, and the Gateway keeps
+    their key sealed. The key can do more in their Composio than the
+    Gateway uses (it lists accounts, opens a session and sends requests),
+    and it stays valid there after Unlink until they revoke it at Composio.
+    Each request and answer of an account used from Composio passes through
+    Composio, which holds the token. An allowed app can use every service
+    the connection holds and do whatever those accounts allow there: the
+    Gateway can't see or narrow their scopes. That a call goes out with the
+    account the person chose and no other follows Composio's API reference
+    and was not checked on the real service. A person who approves a
+    sign-in page someone else sent them links their Composio to that
+    person's EveryApp account. The sign-in's id is sealed until it is used
+    and deleted afterwards, and the page's address goes only to the person
+    who started it. Linking uses the sign-in Composio's own CLI uses, and
+    Composio hasn't been asked (`docs/design/2026-11-composio.md`).
 
 Lower, still open:
 

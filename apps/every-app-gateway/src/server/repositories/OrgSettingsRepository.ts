@@ -101,6 +101,39 @@ async function setLinkedDev(input: {
   await dropEmptyRow(organizationId);
 }
 
+/**
+ * Whether Composio is on for the organization
+ * (docs/design/2026-11-composio.md): people may use the accounts in their
+ * own Composio for the OAuth providers the Gateway holds no client for.
+ * Off without a row.
+ */
+async function isComposioOn(organizationId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ composio: orgSettings.composio })
+    .from(orgSettings)
+    .where(eq(orgSettings.organizationId, organizationId))
+    .limit(1);
+  return row?.composio ?? false;
+}
+
+/** Turn Composio on or off; the row goes when nothing else is left in it. */
+async function setComposio(input: {
+  organizationId: string;
+  on: boolean;
+  updatedBy: string;
+}): Promise<void> {
+  const { organizationId, on, updatedBy } = input;
+  const updatedAt = new Date();
+  await db
+    .insert(orgSettings)
+    .values({ organizationId, composio: on, updatedAt, updatedBy })
+    .onConflictDoUpdate({
+      target: orgSettings.organizationId,
+      set: { composio: on, updatedAt, updatedBy },
+    });
+  await dropEmptyRow(organizationId);
+}
+
 /** No default of any kind needs no row. */
 async function dropEmptyRow(organizationId: string): Promise<void> {
   const [row] = await db
@@ -108,11 +141,18 @@ async function dropEmptyRow(organizationId: string): Promise<void> {
       costCap: orgSettings.defaultMonthlyCostCapMicros,
       aiDefault: orgSettings.aiDefault,
       linkedDev: orgSettings.linkedDev,
+      composio: orgSettings.composio,
     })
     .from(orgSettings)
     .where(eq(orgSettings.organizationId, organizationId))
     .limit(1);
-  if (row && row.costCap === null && row.aiDefault === null && !row.linkedDev) {
+  if (
+    row &&
+    row.costCap === null &&
+    row.aiDefault === null &&
+    !row.linkedDev &&
+    !row.composio
+  ) {
     await db
       .delete(orgSettings)
       .where(eq(orgSettings.organizationId, organizationId));
@@ -126,4 +166,6 @@ export const OrgSettingsRepository = {
   setAiDefault,
   isLinkedDevOn,
   setLinkedDev,
+  isComposioOn,
+  setComposio,
 } as const;

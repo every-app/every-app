@@ -40,6 +40,7 @@ import {
   addProvider,
   countConnections,
   gatewayRegistry,
+  installComposio,
   readUploadedClients,
   removeProvider,
   type UploadedClient,
@@ -774,12 +775,14 @@ interface ListedProvider {
   addedBy?: string | null;
   addedAt?: number | null;
   apps: string[];
-  /** An OAuth entry's redirect URI, console, API hosts, scope rules, client source and connections (`oauthFacts`). */
+  /** An OAuth entry's redirect URI, console, API hosts, scope rules, client source, whether Composio serves it here and connections (`oauthFacts`). */
   redirectUri?: string;
   console?: string;
   apiHosts?: string[];
   scopes?: unknown;
   client?: { source: "env" | "uploaded" | "none"; clientId?: string };
+  /** Served through people's own Composio in the organization: it needs no client (docs/design/2026-11-composio.md). */
+  composio?: boolean;
   connections?: number;
 }
 
@@ -789,6 +792,8 @@ interface OAuthContext {
   gatewayNames: readonly string[];
   uploaded: ReadonlyMap<string, UploadedClient>;
   connections: ReadonlyMap<string, number>;
+  /** Whether the install's organization turned Composio on. */
+  composioOn: boolean;
 }
 
 /** Every provider the registry has but the Gateway's services, as `provider list` reports it. */
@@ -833,12 +838,13 @@ export async function listProviders(
 ): Promise<void> {
   const { out, flags } = options;
   const gateway = await connect(options);
-  const [registry, gatewayNames, apps, uploaded, connections] = await Promise.all([
+  const [registry, gatewayNames, apps, uploaded, connections, composio] = await Promise.all([
     gatewayRegistry(gateway.db, gateway.install),
     listWorkerSecrets(gateway.cf, gateway.names.worker),
     listApps(gateway.db),
     readUploadedClients(gateway.db),
     countConnections(gateway.db),
+    installComposio(gateway.db),
   ]);
   const providers = withInUse(
     providersOf(registry, gatewayNames, apps, {
@@ -846,6 +852,7 @@ export async function listProviders(
       gatewayNames,
       uploaded,
       connections,
+      composioOn: composio?.on ?? false,
     }),
   );
   const gatewayHost = gateway.gatewayUrl.replace(/^https:\/\//, "");
@@ -946,27 +953,33 @@ function withInUse(providers: ListedProvider[]): Array<ListedProvider & { inUse:
   }));
 }
 
-/** The settings a provider still needs; none once a client was uploaded (the Gateway reads it when the env lacks them). */
+/**
+ * The settings a provider still needs; none once a client was uploaded
+ * (the Gateway reads it when the env lacks them), or while people's own
+ * Composio serves it.
+ */
 function missingOf(provider: ListedProvider): string[] {
-  if (provider.client?.source === "uploaded") return [];
+  if (provider.client?.source === "uploaded" || provider.composio) return [];
   return provider.settings.filter((setting) => !setting.set).map((setting) => setting.name);
 }
 
-/** A provider's key at a glance: "set", "needs STRIPE_API_KEY", "needs A (+1 more)", "client uploaded, 2 connected", "set, not bound". */
+/** A provider's key at a glance: "set", "needs STRIPE_API_KEY", "needs A (+1 more)", "client uploaded, 2 connected", "through Composio, 1 connected", "set, not bound". */
 function keyCell(provider: ListedProvider): string {
   const missing = missingOf(provider);
   const oauth = provider.kind === "oauth client";
   const state =
     missing.length > 0
       ? chalk.yellow(`needs ${missing[0]}${missing.length > 1 ? ` (+${missing.length - 1} more)` : ""}`)
-      : provider.client?.source === "uploaded"
-        ? `client ${chalk.green("uploaded")}`
-        : oauth
-          ? `client ${chalk.green("set")}`
-          : chalk.green("set");
+      : provider.composio
+        ? `through ${chalk.green("Composio")}`
+        : provider.client?.source === "uploaded"
+          ? `client ${chalk.green("uploaded")}`
+          : oauth
+            ? `client ${chalk.green("set")}`
+            : chalk.green("set");
   return [
     state,
-    ...(missing.length === 0 && provider.source === "row" && provider.client?.source !== "uploaded" && !provider.bound
+    ...(missing.length === 0 && provider.source === "row" && provider.client?.source !== "uploaded" && !provider.composio && !provider.bound
       ? [chalk.yellow("not bound")]
       : []),
     ...(provider.connections !== undefined ? [`${provider.connections} connected`] : []),
@@ -1066,12 +1079,13 @@ export async function showProvider(
     );
   }
   const gateway = await connect(options);
-  const [registry, apps, gatewayNames, uploaded, connections] = await Promise.all([
+  const [registry, apps, gatewayNames, uploaded, connections, composio] = await Promise.all([
     gatewayRegistry(gateway.db, gateway.install),
     listApps(gateway.db),
     listWorkerSecrets(gateway.cf, gateway.names.worker),
     readUploadedClients(gateway.db),
     countConnections(gateway.db),
+    installComposio(gateway.db),
   ]);
   const capability = registry.get(id);
   if (!capability || capability.mode === "service") {
@@ -1108,9 +1122,12 @@ export async function showProvider(
         gatewayNames,
         uploaded,
         connections,
+        composioOn: composio?.on ?? false,
       })
     : null;
   const client = oauth?.["client"] as { source: "env" | "uploaded" | "none"; clientId?: string } | undefined;
+  // No client held, and people's own Composio serves it: nothing is left to set.
+  const throughComposio = oauth?.["composio"] === true;
   const settings = capabilitySettings(capability).map((name) => ({ name, set: gatewayNames.includes(name) }));
   // Set, but for the hosts of an earlier spec: the Gateway doesn't send it until it is set again.
   const stale = row && !bound && settings.every((setting) => setting.set);
@@ -1125,7 +1142,9 @@ export async function showProvider(
       value:
         client?.source === "uploaded"
           ? `${chalk.green("uploaded")} under Admin → Providers`
-          : `${settingsShown(settings)}${stale ? chalk.yellow(" but not for these hosts") : ""}`,
+          : throughComposio
+            ? `${chalk.green("none needed")}  ${chalk.dim("served through each person's own Composio")}`
+            : `${settingsShown(settings)}${stale ? chalk.yellow(" but not for these hosts") : ""}`,
     },
     {
       label: "Source",
@@ -1181,7 +1200,7 @@ export async function showProvider(
       addedAt: row?.addedAt ?? null,
       apps: using,
       ...(saved ? { saved } : {}),
-      ...(row && !bound && client?.source !== "uploaded"
+      ...(row && !bound && client?.source !== "uploaded" && !throughComposio
         ? {
             next: [
               {
@@ -1227,7 +1246,12 @@ export async function removeRegistered(
     `Removed ${removed.name} (${id}) from ${gatewayHost}.`,
     "The Gateway stops serving it within 30 seconds.",
     ...(removed.connections > 0
-      ? [`${removed.connections} connection${removed.connections === 1 ? "" : "s"} to it ${removed.connections === 1 ? "was" : "were"} deleted (the grants stay at the provider until revoked there).`]
+      ? [
+          `${removed.connections} connection${removed.connections === 1 ? "" : "s"} to it ${removed.connections === 1 ? "was" : "were"} deleted${
+            // One made through Composio held no token: it leaves no grant.
+            removed.granted > 0 ? " (the grants stay at the provider until revoked there)" : ""
+          }.`,
+        ]
       : []),
     ...(removed.client ? ["The client uploaded under Admin → Providers was deleted with it."] : []),
     ...(removed.apps.length > 0

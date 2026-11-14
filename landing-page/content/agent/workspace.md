@@ -32,7 +32,7 @@ Each command is one Gateway tool, run as you through the Gateway's admin API: it
 
 **As whom.** `EVERYAPP_TOKEN` (a personal access token; a read-only or one-app token sees what it would on `/mcp`), else the sign-in `everyapp login --gateway <url>` stored in `~/.config/everyapp/gateways.json`, else that sign-in now: the browser opens at the Gateway's consent page (under `--json` its URL is in a `gateway.signin` progress event and the run waits). Choose read & write and all apps there: a grant narrowed to some apps sees no workspace tool. `everyapp login --gateway <url> --sign-out` revokes and forgets it. **Which Gateway**: `--gateway <url>`, else `EVERYAPP_GATEWAY_URL`, else the one this machine signed in to (`GATEWAY_AMBIGUOUS` among several), else the one the Cloudflare login finds. A refusal is `GATEWAY_TOOL_ERROR` with the Gateway's code in `data.code`; a refused credential `GATEWAY_REFUSED`.
 
-People are named by email or user id, apps by manifest id or row id, groups by name or `grp_` id. `--yes` skips the confirmation of `remove` and `group delete`.
+People are named by email or user id, apps by manifest id or row id, groups by name or `grp_` id. `--yes` skips the confirmation of `remove`, `group delete` and `composio off`.
 
 | Command | Tool |
 |---|---|
@@ -58,6 +58,7 @@ People are named by email or user id, apps by manifest id or row id, groups by n
 | `workspace tokens [--all]`, `workspace token revoke <id>` | `everyapp_my_tokens`, `everyapp_revoke_token`: your own, never a value |
 | `workspace connections`, `workspace connection revoke <id>` | `everyapp_my_connections`, `everyapp_revoke_connection`: your own |
 | `workspace linked-dev [on\|off\|show]` | `everyapp_workspace_linked_dev`; `show` reads `linkedDev` from `everyapp_workspace_show` |
+| `workspace composio [on\|off\|show] [--yes]` | `everyapp_workspace_composio`: whether people may use the accounts in their own Composio for OAuth providers the Gateway holds no client for; `show` reads `composio` from `everyapp_workspace_show`. Off deletes every link and every connection made through Composio ([setup/composio](/docs/agent/setup/composio)) |
 | `workspace invite-link <email\|id>` | none: a new link for a pending invitation, printed to hand over, written under the Cloudflare login (for a Gateway that sends no email) |
 | `workspace reset-link <email>` | none: the recovery link, a one-hour reset link printed to hand over, written under the Cloudflare login: the way back in for an owner who can't sign in |
 
@@ -70,5 +71,5 @@ Owners and admins see the `everyapp_workspace_*` tools; members see none. A read
 Rules every tool holds:
 
 - No tool returns an invite link, a reset link or a token value, and none creates a token; the CLI's two links (`invite-link`, `reset-link`) come from the Cloudflare login instead. The one secret a tool returns is a new webhook's signing secret, once.
-- `everyapp_workspace_remove`, `everyapp_workspace_app_delete` and `everyapp_workspace_events_remove` need `confirm: true`. `app_delete` removes the catalog row; the Worker stays until `everyapp delete`.
+- `everyapp_workspace_remove`, `everyapp_workspace_app_delete` and `everyapp_workspace_events_remove` need `confirm: true`. `app_delete` removes the catalog row; the Worker stays until `everyapp delete`. `everyapp_workspace_composio` needs it to turn Composio off while a link or a connection made through Composio exists, and without it the refusal says how many there are.
 - A refusal is a tool error, `CODE: message`, with the UI's codes (`OWNER_REQUIRED`, `CANNOT_MANAGE_SELF`, `CANNOT_MANAGE_OWNER`, `USER_NOT_FOUND`, `APP_NOT_FOUND`, `INVALID_INPUT`). Every call is audited with an argument digest, never the arguments.

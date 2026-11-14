@@ -4,10 +4,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { flexRender, type ColumnDef } from "@tanstack/react-table";
 import { KeyRound, Plus, Trash2, Unplug } from "lucide-react";
 import { toast } from "sonner";
+import { ConnectionVia } from "@every-app/sdk/internal";
 import { AddOAuthProviderDialog } from "@/client/components/admin/AddOAuthProviderDialog";
 import { ProviderHosts } from "@/client/components/admin/ProviderHosts";
 import { ReplaceOAuthClientDialog } from "@/client/components/admin/ReplaceOAuthClientDialog";
 import { CodeBlock } from "@/client/components/CodeBlock";
+import { ComposioSwitchSection } from "@/client/components/composio/ComposioSwitchSection";
 import { ConfirmDialog } from "@/client/components/ConfirmDialog";
 import { ConnectionApps } from "@/client/components/ConnectionApps";
 import {
@@ -444,7 +446,12 @@ function TitleCell({
   );
 }
 
-/** The line under a provider's name: its id, what the CLI and an app's config call it, then its kind (the default model's provider says so). */
+/**
+ * The line under a provider's name: its id, what the CLI and an app's
+ * config call it, then its kind (the default model's provider says so, and
+ * so does an OAuth provider served through Composio, which has no client
+ * here).
+ */
 function ProviderSubtitle({
   provider,
   isAiDefault,
@@ -456,7 +463,11 @@ function ProviderSubtitle({
     <>
       <span className="font-mono">{provider.id}</span>
       {" · "}
-      {isAiDefault ? "AI default" : KIND_LABEL[provider.kind]}
+      {isAiDefault
+        ? "AI default"
+        : provider.oauth?.composio
+          ? "OAuth via Composio"
+          : KIND_LABEL[provider.kind]}
     </>
   );
 }
@@ -647,9 +658,16 @@ function connectionColumns({
         cellClassName: "max-w-[240px] font-mono text-xs text-muted-foreground",
         card: CardSlot.Hidden,
       },
-      cell: ({ row: { original: connection } }) => (
-        <ScopesCell scopes={connection.scopes} />
-      ),
+      // A connection through Composio holds services, not scopes.
+      cell: ({ row: { original: connection } }) =>
+        connection.via === ConnectionVia.Composio ? (
+          <span className="block truncate font-sans">
+            Composio:{" "}
+            {connection.services.map((service) => service.name).join(", ")}
+          </span>
+        ) : (
+          <ScopesCell scopes={connection.scopes} />
+        ),
     },
     {
       accessorKey: "status",
@@ -718,7 +736,8 @@ function removalText(provider: Provider): string {
  * (docs/design/2026-11-oauth-one-connection.md): one person's to one
  * provider, with the apps they allowed to use it, searchable and ten to a
  * page. One app's access can be taken away, and Disconnect stops every
- * app at once. Owners and admins.
+ * app at once. Composio has a section of its own above both
+ * (ComposioSwitchSection). Owners and admins.
  */
 function ProvidersPage() {
   const queryClient = useQueryClient();
@@ -859,6 +878,8 @@ function ProvidersPage() {
 
   return (
     <SettingsTab>
+      <ComposioSwitchSection />
+
       <SettingsSection
         title="Providers"
         hint="Set up the outside services your apps use, like OpenAI or Google."
@@ -933,6 +954,7 @@ function ProvidersPage() {
             console: replacing.console,
             hosts: replacing.hosts,
             clientSource: replacing.client.source,
+            throughComposio: replacing.composio,
           }}
           onSubmit={async (client) => {
             await replaceMutation.mutateAsync({

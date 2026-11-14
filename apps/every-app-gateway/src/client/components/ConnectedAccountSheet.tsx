@@ -1,4 +1,5 @@
 import { TriangleAlert } from "lucide-react";
+import { ConnectionVia } from "@every-app/sdk/internal";
 import { ProviderTile } from "@/client/components/ProviderIcon";
 import { DateCell } from "@/client/components/table/DateCell";
 import { Alert, AlertDescription } from "@/client/components/ui/alert";
@@ -20,7 +21,10 @@ interface Account {
   providerName: string;
   label: string | null;
   apps: { rowId: string; id: string; name: string }[];
+  via: ConnectionVia;
   scopes: string[];
+  /** On a connection through Composio, what it holds instead of scopes: each service with its account there. */
+  services: { name: string; account: string }[];
   needsReconnect: boolean;
   permissions: { listed: number; granted: number; notGranted: string[] } | null;
   createdAt: number;
@@ -33,7 +37,9 @@ interface Account {
  * takes that app's access away, and every permission it holds in the
  * provider's own names (the row says them in a few words), then the ones
  * its apps list that weren't granted, said plainly: granting part is the
- * person's choice. Reconnect and Disconnect are at the bottom. Render it only while it is open.
+ * person's choice. A connection through Composio shows each service with
+ * its account there instead. Reconnect and Disconnect are at the bottom.
+ * Render it only while it is open.
  */
 export function ConnectedAccountSheet<TAccount extends Account>({
   account,
@@ -135,69 +141,77 @@ export function ConnectedAccountSheet<TAccount extends Account>({
             )}
           </section>
 
-          <section className="space-y-2">
-            <div className="flex items-baseline justify-between gap-3">
-              <h3 className="text-sm font-medium">
-                Permissions
-                {account.scopes.length > 1 ? (
-                  <span className="ml-1.5 font-normal text-muted-foreground">
-                    {account.scopes.length}
-                  </span>
-                ) : null}
-              </h3>
-              {summary ? (
-                <span className="text-xs text-muted-foreground">{summary}</span>
-              ) : null}
-            </div>
-            {account.scopes.length > 0 ? (
-              <ul
-                aria-label="Permissions"
-                className="divide-y divide-border rounded-lg border border-border"
-              >
-                {account.scopes.map((scope) => (
-                  <li
-                    key={scope}
-                    className="px-3 py-1.5 font-mono text-xs wrap-anywhere"
+          {account.via === ConnectionVia.Composio ? (
+            <ComposioServices services={account.services} />
+          ) : (
+            <>
+              <section className="space-y-2">
+                <div className="flex items-baseline justify-between gap-3">
+                  <h3 className="text-sm font-medium">
+                    Permissions
+                    {account.scopes.length > 1 ? (
+                      <span className="ml-1.5 font-normal text-muted-foreground">
+                        {account.scopes.length}
+                      </span>
+                    ) : null}
+                  </h3>
+                  {summary ? (
+                    <span className="text-xs text-muted-foreground">
+                      {summary}
+                    </span>
+                  ) : null}
+                </div>
+                {account.scopes.length > 0 ? (
+                  <ul
+                    aria-label="Permissions"
+                    className="divide-y divide-border rounded-lg border border-border"
                   >
-                    {scope}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-muted-foreground">
-                This connection holds no permissions.
-              </p>
-            )}
-          </section>
+                    {account.scopes.map((scope) => (
+                      <li
+                        key={scope}
+                        className="px-3 py-1.5 font-mono text-xs wrap-anywhere"
+                      >
+                        {scope}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-muted-foreground">
+                    This connection holds no permissions.
+                  </p>
+                )}
+              </section>
 
-          {notGranted.length > 0 ? (
-            <section className="space-y-2">
-              <h3 className="text-sm font-medium">
-                Not granted
-                <span className="ml-1.5 font-normal text-muted-foreground">
-                  {notGranted.length}
-                </span>
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Your apps also list these, and {name.title} didn't grant them
-                when you connected. Everything else works. Reconnect asks for
-                them again.
-              </p>
-              <ul
-                aria-label="Permissions not granted"
-                className="divide-y divide-border rounded-lg border border-border text-muted-foreground"
-              >
-                {notGranted.map((scope) => (
-                  <li
-                    key={scope}
-                    className="px-3 py-1.5 font-mono text-xs wrap-anywhere"
+              {notGranted.length > 0 ? (
+                <section className="space-y-2">
+                  <h3 className="text-sm font-medium">
+                    Not granted
+                    <span className="ml-1.5 font-normal text-muted-foreground">
+                      {notGranted.length}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Your apps also list these, and {name.title} didn't grant
+                    them when you connected. Everything else works. Reconnect
+                    asks for them again.
+                  </p>
+                  <ul
+                    aria-label="Permissions not granted"
+                    className="divide-y divide-border rounded-lg border border-border text-muted-foreground"
                   >
-                    {scope}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
+                    {notGranted.map((scope) => (
+                      <li
+                        key={scope}
+                        className="px-3 py-1.5 font-mono text-xs wrap-anywhere"
+                      >
+                        {scope}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+            </>
+          )}
         </div>
 
         <SheetFooter className="flex-row justify-end border-t border-border">
@@ -216,5 +230,39 @@ export function ConnectedAccountSheet<TAccount extends Account>({
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  );
+}
+
+/** What a connection through Composio holds: each service with its account there. */
+function ComposioServices({
+  services,
+}: {
+  services: { name: string; account: string }[];
+}) {
+  return (
+    <section className="space-y-2">
+      <h3 className="text-sm font-medium">From Composio</h3>
+      <ul
+        aria-label="From Composio"
+        className="divide-y divide-border rounded-lg border border-border"
+      >
+        {services.map((service) => (
+          <li
+            key={service.name}
+            className="flex items-baseline justify-between gap-3 px-3 py-1.5"
+          >
+            <span>{service.name}</span>
+            <span className="min-w-0 truncate text-xs text-muted-foreground">
+              {service.account}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted-foreground">
+        Apps can do whatever{" "}
+        {services.length === 1 ? "this account allows" : "these accounts allow"}{" "}
+        in Composio.
+      </p>
+    </section>
   );
 }

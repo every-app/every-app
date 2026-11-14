@@ -22,12 +22,12 @@ Owners and admins only. Each tab has a CLI command and an MCP tool: [workspace](
 | **Apps** | `/admin/apps` | Every app and MCP app; **Manage access**, **Available to everyone**, edit, delete; **Add app** (install a release); **Add MCP server**. |
 | **Groups** | `/admin/groups` | A set of members with the same apps. |
 | **Tokens** | `/admin/tokens` | Personal access tokens: read-only (the default) or full access, all apps or one app, 7, 30 or 90 days or a year; shown once. |
-| **Providers** | `/admin/providers` | API and OAuth providers, their keys or clients, people's connections; **Add OAuth provider**. |
+| **Providers** | `/admin/providers` | API and OAuth providers, their keys or clients, people's connections; **Add OAuth provider**; Composio on or off for the organization. |
 | **Usage** | `/admin/usage` | Calls and cost per app, member and provider; **Default monthly cap** and each app's **Monthly cap** in dollars, **Paused** apps and **Raise**; the AI default. |
 | **Activity** | `/admin/activity` | Every tool call by AI clients, allowed or blocked; the **Audit** toggle shows the audit log. |
 | **Events** | `/admin/events` | Webhooks and email alerts. [events](/docs/agent/events) |
 
-Each person manages their own AI connections under Your connections → Agents in the sidebar.
+Each person manages their own AI connections under Your connections → Agents in the sidebar, and their connected accounts and Composio link under Your connections → Accounts.
 
 ## The CLI by job
 
@@ -50,6 +50,7 @@ All run as `everyapp …` (with `--json` for an agent); every flag is on [cli](/
 | Offer an MCP app | `everyapp mcp on dataforseo`, `everyapp mcp add <url>`, `everyapp mcp connect <id>`, `everyapp mcp off <id>`, `everyapp mcp remove <id>`, `everyapp mcp list`, `everyapp mcp show <id>`, `everyapp mcp refresh <id>`, `everyapp mcp tool <id> <tool>` |
 | The model apps get | `everyapp ai show`, `everyapp ai default <provider>[/<model>]`, `everyapp ai gateway on`, `everyapp ai gateway off` ([ai](/docs/agent/ai)) |
 | API and OAuth providers | `everyapp provider add <id\|spec>`, `everyapp provider list`, `everyapp provider show <id>`, `everyapp provider remove <id>`, `everyapp provider presets`, `everyapp provider connections`, `everyapp provider disconnect <id>` ([providers](/docs/agent/providers)) |
+| People's accounts with no OAuth app (Composio) | `everyapp workspace composio on`, `everyapp workspace composio off`, `everyapp workspace composio show`; each person: `everyapp provider link composio`, `everyapp provider unlink composio` ([setup/composio](/docs/agent/setup/composio)) |
 | Events out | `everyapp events add <url>`, `everyapp events list`, `everyapp events remove <id>`, `everyapp events enable <id>`, `everyapp events disable <id>`, `everyapp events test <id>`, `everyapp events deliveries`, `everyapp events redeliver <id>`, `everyapp events types` |
 | An app's email addresses | `everyapp email show`, `everyapp email set`, `everyapp email unset` ([email](/docs/agent/email)) |
 | Cloudflare Access | `everyapp access on`, `everyapp access off`, `everyapp access show` ([access](/docs/agent/access)) |

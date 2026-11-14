@@ -63,16 +63,17 @@ import {
   guideLine,
   listAppSecretNames,
   listGatewaySecretNames,
+  listsComposioProvider,
   namesToSet,
-  oauthClientsHeld,
+  oauthProvidersSetUp,
   renderSettingsTable,
   settingsRows,
 } from "@/lib/app/settings";
 import type { CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
-import { gatewayRegistry, readUploadedClients } from "@/lib/gateway/providers";
-import { findRegisteredApp } from "@/lib/gateway/registry";
+import { composioOrganizations, gatewayRegistry, readUploadedClients } from "@/lib/gateway/providers";
+import { findRegisteredApp, installOrganization } from "@/lib/gateway/registry";
 import { loadEveryAppManifestIfPresent } from "@/lib/manifest";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
@@ -158,6 +159,12 @@ interface Target {
   source: ManifestSource;
   /** The app's Worker and registry row; null before its first deploy. */
   deployed: { workerName: string; rowId: string } | null;
+  /**
+   * The app's organization, whose Composio switch counts: its row's, or
+   * before it has one the install's, where its first deploy registers it.
+   * Null when the Gateway has no organization yet.
+   */
+  organizationId: string | null;
   connection: Awaited<ReturnType<typeof connectToGateway>>;
   /** The catalog and the Gateway's registered providers, which the manifest's capabilities are read against. */
   registry: ProviderRegistry;
@@ -321,6 +328,7 @@ async function findTarget(options: ConfigureOptions): Promise<Target> {
       manifest,
       source: ManifestSource.Registry,
       deployed: { workerName: found.workerName, rowId: found.id },
+      organizationId: found.organizationId,
       connection,
       registry: await gatewayRegistry(connection.db, connection.install),
       urls: urlsOf(connection, found.hostname),
@@ -341,6 +349,7 @@ async function findTarget(options: ConfigureOptions): Promise<Target> {
     manifest: local,
     source: ManifestSource.Directory,
     deployed: found && found.status !== "pending" ? { workerName: found.workerName, rowId: found.id } : null,
+    organizationId: found?.organizationId ?? (await installOrganization(connection.db))?.organization.id ?? null,
     connection,
     registry: await gatewayRegistry(connection.db, connection.install),
     urls: urlsOf(connection, found?.hostname || `${local.id}.${connection.install.appBaseDomain}`),
@@ -368,11 +377,15 @@ async function readState(target: Target): Promise<State> {
     gatewayNames,
     secretNames,
     lookup: target.registry,
-    oauthReady: oauthClientsHeld({
+    oauthReady: oauthProvidersSetUp({
       manifest: target.manifest,
       lookup: target.registry,
       gatewayNames: listed,
       pasted: await readUploadedClients(target.connection.db),
+      composioOn:
+        target.organizationId !== null &&
+        listsComposioProvider(target.manifest) &&
+        (await composioOrganizations(target.connection.db)).has(target.organizationId),
     }),
   });
   const held = new Set<string>();

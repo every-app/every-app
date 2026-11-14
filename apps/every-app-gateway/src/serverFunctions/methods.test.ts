@@ -60,6 +60,8 @@ const READS = [
   "getAiDefault",
   "getAppAccessState",
   "getApps",
+  "getComposioStatus",
+  "getComposioSwitch",
   "getEmailStatus",
   "getGroupApps",
   "getGroupMembers",

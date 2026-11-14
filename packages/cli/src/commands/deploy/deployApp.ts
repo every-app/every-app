@@ -101,8 +101,9 @@ import {
   declaresSettings,
   describeUnmet,
   listGatewaySecretNames,
+  listsComposioProvider,
   namesToSet,
-  oauthClientsHeld,
+  oauthProvidersSetUp,
 } from "@/lib/app/settings";
 import { emailInstaller } from "@/lib/app/emailRoutes";
 import type { D1Database } from "@/lib/cf/d1";
@@ -118,7 +119,7 @@ import { directoryExists } from "@/lib/file-operations";
 import { connectToGateway } from "@/lib/gateway/connect";
 import type { InstallRecord } from "@/lib/gateway/install";
 import { acquireAppLease, LeasePurpose } from "@/lib/gateway/lease";
-import { gatewayRegistry, readUploadedClients, registerPresetProviders } from "@/lib/gateway/providers";
+import { composioOrganizations, gatewayRegistry, readUploadedClients, registerPresetProviders } from "@/lib/gateway/providers";
 import {
   assertMayRenameShared,
   findRegisteredApp,
@@ -714,7 +715,18 @@ async function deploySteps(
     // What the app still needs set, once its upload is on record: a
     // warning with the one command, said again under Next. The Gateway
     // records the app's setup state when it next evaluates it.
-    await warnIfNeedsSetup({ cf, db: registry, gateway: names, manifest, appId: manifest.id, secretNames, out, next, providers });
+    await warnIfNeedsSetup({
+      cf,
+      db: registry,
+      gateway: names,
+      manifest,
+      appId: manifest.id,
+      organizationId: organization.id,
+      secretNames,
+      out,
+      next,
+      providers,
+    });
   } finally {
     await lease.release();
   }
@@ -974,18 +986,21 @@ async function warnIfNeedsSetup({
   gateway,
   manifest,
   appId,
+  organizationId,
   secretNames,
   out,
   next,
   providers,
 }: {
   cf: CfRunner;
-  /** The Gateway's database: the OAuth clients pasted under Manage workspace → Providers. */
+  /** The Gateway's database: the OAuth clients pasted under Manage workspace → Providers, and the Composio switch. */
   db: D1Database;
   /** The Gateway's names: its Worker holds the settings. */
   gateway: GatewayNames;
   manifest: EveryAppCliManifest;
   appId: string;
+  /** The app's organization: its Composio switch counts. */
+  organizationId: string;
   secretNames: string[] | null;
   out: EventSink;
   next: DeployAppResult["next"];
@@ -998,13 +1013,25 @@ async function warnIfNeedsSetup({
   }
   const gatewayNames = await listGatewaySecretNames(cf, gateway).catch(() => null);
   const pasted = await readUploadedClients(db).catch(() => null);
+  // The organization's Composio switch, read only for an app it could serve a provider of.
+  const composio = listsComposioProvider(manifest) ? await composioOrganizations(db).catch(() => null) : new Set<string>();
   const { setup } = appSetupFrom({
     manifest,
     appId,
     gatewayNames,
     secretNames,
     lookup: providers,
-    ...(pasted ? { oauthReady: oauthClientsHeld({ manifest, lookup: providers, gatewayNames, pasted }) } : {}),
+    ...(pasted && composio
+      ? {
+          oauthReady: oauthProvidersSetUp({
+            manifest,
+            lookup: providers,
+            gatewayNames,
+            pasted,
+            composioOn: composio.has(organizationId),
+          }),
+        }
+      : {}),
   });
   if (setup.ready || !setup.command) return setup;
   const names = namesToSet(setup);

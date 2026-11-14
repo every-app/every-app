@@ -3,12 +3,17 @@
  * hands it its flags. These pin which tool and which arguments; the tools
  * themselves are the Gateway's (workspace-tools.sqlite.test.ts).
  */
+import { stripVTControlCharacters } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listBuiltinTools } from "@every-app/toolbus";
+import { COMPOSIO_NOTICE } from "@every-app/sdk/internal";
+import { EveryAppError } from "@/lib/errors";
 import type { GatewayApi, JsonObject } from "@/lib/gatewayApi";
 
 const calls: Array<[string, JsonObject]> = [];
 let answer: JsonObject = {};
+/** What a call answers when a test says so by tool and arguments; an Error is thrown instead. */
+let respond: ((name: string, args: JsonObject) => JsonObject | Error) | null = null;
 
 vi.mock("@/lib/gatewayApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/gatewayApi")>()),
@@ -16,7 +21,9 @@ vi.mock("@/lib/gatewayApi", async (importOriginal) => ({
     gateway: "https://apps.example.com",
     call: async (name, args = {}) => {
       calls.push([name, args]);
-      return answer;
+      const answered = respond ? respond(name, args) : answer;
+      if (answered instanceof Error) throw answered;
+      return answered;
     },
     list: async () => [],
   }),
@@ -27,16 +34,33 @@ const events = await import("../events");
 const ai = await import("../ai");
 
 const lines: string[] = [];
+const terminal = { stdin: process.stdin.isTTY, stderr: process.stderr.isTTY };
+/** A person at a terminal, or nobody. */
+function atTerminal(on: boolean) {
+  Object.defineProperty(process.stdin, "isTTY", { value: on, configurable: true });
+  Object.defineProperty(process.stderr, "isTTY", { value: on, configurable: true });
+}
 beforeEach(() => {
   calls.length = 0;
   lines.length = 0;
   answer = {};
+  respond = null;
+  vi.stubEnv("CI", "");
   vi.spyOn(process.stdout, "write").mockImplementation((chunk) => (lines.push(String(chunk)), true));
+  vi.spyOn(process.stderr, "write").mockImplementation((chunk) => (lines.push(String(chunk)), true));
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+  Object.defineProperty(process.stdin, "isTTY", { value: terminal.stdin, configurable: true });
+  Object.defineProperty(process.stderr, "isTTY", { value: terminal.stderr, configurable: true });
+});
 
 const json = { json: true } as const;
-const done = () => lines.map((line) => JSON.parse(line) as JsonObject).find((event) => event["type"] === "done");
+const emitted = () => lines.map((line) => JSON.parse(line) as JsonObject);
+const done = () => emitted().find((event) => event["type"] === "done");
+/** What a person read: stdout and stderr in order, colors off. */
+const printed = () => stripVTControlCharacters(lines.join(""));
 
 describe("the workspace commands", () => {
   it("each call one tool with its flags as arguments", async () => {
@@ -106,5 +130,148 @@ describe("the workspace commands", () => {
       ["everyapp_ai_default", { provider: "openrouter", model: "anthropic/claude-sonnet-5.5" }],
       ["everyapp_ai_default", { clear: true }],
     ]);
+  });
+});
+
+describe("workspace composio", () => {
+  const TOOL = "everyapp_workspace_composio";
+  it("show, the default, reads the switch from everyapp_workspace_show and changes nothing", async () => {
+    answer = { organization: { name: "Acme" }, role: "owner", composio: "on" };
+    await workspace.composio(json);
+    await workspace.composio(json, "show");
+    expect(calls).toEqual([
+      ["everyapp_workspace_show", {}],
+      ["everyapp_workspace_show", {}],
+    ]);
+    expect(done()).toMatchObject({
+      message: "Composio is on",
+      data: { gateway: "https://apps.example.com", tool: "everyapp_workspace_show", composio: "on" },
+    });
+
+    lines.length = 0;
+    await workspace.composio({});
+    expect(printed()).toBe("Composio is on\n");
+
+    // Off, and off on a Gateway from before Composio, whose answer doesn't say.
+    lines.length = 0;
+    answer = { composio: "off" };
+    await workspace.composio({}, "show");
+    expect(printed()).toBe("Composio is off\n");
+    lines.length = 0;
+    answer = { organization: { name: "Acme" } };
+    await workspace.composio({}, "show");
+    expect(printed()).toBe("Composio is off\n");
+  });
+
+  it("on says what it means before turning it on, then names the command each person links with", async () => {
+    answer = { composio: "on", changed: true, removed: { links: 0, connections: 0 } };
+    await workspace.composio(json, "on");
+    expect(calls).toEqual([[TOOL, { on: true }]]);
+    // The sentence is said before the tool is called, and is in the result's account too.
+    expect(emitted().map((event) => event["type"])).toEqual(["step", "done"]);
+    expect(emitted()[0]).toMatchObject({ step: "composio.notice", status: "ok", message: COMPOSIO_NOTICE });
+    expect(done()).toMatchObject({
+      message: `Turned Composio on\n${COMPOSIO_NOTICE}\nEach person links their own Composio: pnpm everyapp provider link composio`,
+      data: {
+        tool: TOOL,
+        composio: "on",
+        changed: true,
+        next: [{ command: "pnpm everyapp provider link composio", note: "link your own Composio" }],
+      },
+    });
+
+    lines.length = 0;
+    await workspace.composio({}, "on");
+    expect(printed()).toBe(
+      [
+        "Requests to the accounts people use from Composio pass through Composio.",
+        "✓ Turned Composio on",
+        "",
+        "Next:",
+        "  pnpm everyapp provider link composio  link your own Composio",
+        "",
+      ].join("\n"),
+    );
+
+    lines.length = 0;
+    answer = { composio: "on", changed: false, removed: { links: 0, connections: 0 } };
+    await workspace.composio({}, "on");
+    expect(printed()).toContain("✓ Composio was already on\n");
+  });
+
+  const QUESTION = "Turn Composio off? It deletes every link and every connection made through it. This can't be undone.";
+
+  it("off asks first at a terminal, turns it off with confirm, and says how many links and connections it removed", async () => {
+    answer = { composio: "off", changed: true, removed: { links: 2, connections: 3 } };
+    atTerminal(true);
+    const asked: string[] = [];
+    await workspace.composio({}, "off", async (question) => (asked.push(question), true));
+    expect(asked).toEqual([QUESTION]);
+    expect(calls).toEqual([[TOOL, { on: false, confirm: true }]]);
+    expect(printed()).toBe(
+      ["✓ Turned Composio off", "", "Removed  2 links and 3 connections made through it", ""].join("\n"),
+    );
+
+    // Nothing was linked: no count to report.
+    lines.length = 0;
+    answer = { composio: "off", changed: true, removed: { links: 0, connections: 0 } };
+    await workspace.composio({}, "off", async () => true);
+    expect(printed()).toBe("✓ Turned Composio off\n");
+
+    lines.length = 0;
+    answer = { composio: "off", changed: false, removed: { links: 0, connections: 0 } };
+    await workspace.composio({}, "off", async () => true);
+    expect(printed()).toBe("✓ Composio was already off\n");
+
+    // No: nothing is called.
+    calls.length = 0;
+    lines.length = 0;
+    await workspace.composio({}, "off", async () => false);
+    expect(calls).toEqual([]);
+    expect(printed()).toBe("Cancelled. Nothing changed.\n");
+    atTerminal(false);
+  });
+
+  it("off needs --yes where nobody can answer", async () => {
+    answer = { composio: "off", changed: true, removed: { links: 2, connections: 3 } };
+    await workspace.composio(json, "off");
+    expect(calls).toEqual([]);
+    const error = emitted().find((event) => event["type"] === "error");
+    expect(error).toMatchObject({
+      code: "CONFIRMATION_REQUIRED",
+      message: `${QUESTION} That needs confirmation at a terminal, or --yes`,
+      data: { tool: TOOL, authorize: true, rerun: expect.stringMatching(/--yes$/) },
+    });
+    expect(done()).toBeUndefined();
+
+    // A terminal with --json is nobody to ask either.
+    lines.length = 0;
+    atTerminal(true);
+    await workspace.composio(json, "off", async () => true);
+    expect(calls).toEqual([]);
+    expect(emitted().at(-1)).toMatchObject({ type: "error", code: "CONFIRMATION_REQUIRED" });
+    atTerminal(false);
+
+    lines.length = 0;
+    await workspace.composio({ ...json, yes: true }, "off");
+    expect(calls).toEqual([[TOOL, { on: false, confirm: true }]]);
+    expect(done()).toMatchObject({
+      message: "Turned Composio off\nRemoved 2 links and 3 connections made through it.",
+      data: { tool: TOOL, composio: "off", changed: true, removed: { links: 2, connections: 3 } },
+    });
+  });
+
+  it("passes on the Gateway's refusal as it is, and names only tools the Gateway has", async () => {
+    respond = () =>
+      new EveryAppError("GATEWAY_TOOL_ERROR", "Only an owner or admin can turn Composio on or off", {
+        data: { gateway: "https://apps.example.com", tool: TOOL, code: "ADMIN_REQUIRED" },
+      });
+    await workspace.composio({ ...json, yes: true }, "off");
+    expect(calls).toEqual([[TOOL, { on: false, confirm: true }]]);
+    expect(emitted().at(-1)).toMatchObject({ type: "error", code: "GATEWAY_TOOL_ERROR", data: { code: "ADMIN_REQUIRED" } });
+
+    const known = new Set(listBuiltinTools().map((tool) => tool.name));
+    expect(known.has(TOOL)).toBe(true);
+    expect(known.has("everyapp_workspace_show")).toBe(true);
   });
 });

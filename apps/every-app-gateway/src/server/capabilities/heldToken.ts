@@ -7,26 +7,35 @@
  * Checked in order, each a refusal with its code:
  *
  *  1. the app's manifest lists the provider;
- *  2. the provider has a live client;
+ *  2. the provider is set up: a live client, or Composio on for the
+ *     organization and serving what the app lists
+ *     (docs/design/2026-11-composio.md);
  *  3. whose connection: the member `x-everyapp-user` names (an
  *     organization's own app only, the member still active and opening the
  *     app), else the person behind the call;
  *  4. that person's connection to the provider exists, they allowed this
- *     app to use it, and it isn't expired;
- *  5. it holds every scope the app's entry declares, and the person
- *     allowed the app for every one of them;
+ *     app to use it, it isn't expired, and it was made the way the
+ *     provider is served now;
+ *  5. it holds what the app's entry declares, and the person allowed the
+ *     app for every scope of it;
  *  6. the host is one of the provider's (the route already parsed it);
- *  7. the token (refreshed first when due) goes on as the bearer, the
- *     app's own credentials and cookies stripped, no redirect followed,
- *     and the provider's answer comes back without its cookies.
+ *  7. by how the connection was made. With the client: the token
+ *     (refreshed first when due) goes on as the bearer, the app's own
+ *     credentials and cookies stripped, no redirect followed, and the
+ *     provider's answer comes back without its cookies. Through Composio:
+ *     one request to Composio, which adds the token
+ *     (capabilities/composioCall.ts).
  *
  * The token, the refresh token and the client never reach the app
  * (`oauth.held-token-never-to-app`).
  */
 import {
+  ConnectionVia,
   GATEWAY_ERROR_HEADER,
   USER_HEADER,
   capabilitySettings,
+  composioServes,
+  composioServicesNeeded,
   missingScopes,
   type CapabilityLookup,
   type CapabilitySettings,
@@ -34,15 +43,16 @@ import {
 } from "@every-app/sdk/internal";
 import { logEvent } from "@every-app/perimeter";
 import type { CapabilityRequest } from "@every-app/perimeter/manifest";
+import type { ComposioCallPort } from "@/server/composio/calls";
 import type { IntegrationCallAdmission } from "@/server/integration-proxy";
+import { connectionLacks } from "@/server/oauth/holding";
 import type { OAuthClientResolver } from "@/server/oauth/client";
 import type { HeldTokenPort } from "@/server/oauth/heldTokens";
-import { forwardableHeaders } from "./forward";
+import { sendThroughComposio } from "./composioCall";
+import { STRIPPED_QUERY, forwardableHeaders } from "./forward";
 import { setupInfo } from "@/server/setup-info";
 import { capabilityRefusal, notConfiguredRefusal } from "./refusal";
 
-/** The query keys an app's call never carries to the provider: a token of its own. */
-const STRIPPED_QUERY = ["access_token", "token"];
 /** What `x-everyapp-user` may hold: a user id. */
 const USER_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
@@ -101,6 +111,8 @@ interface HeldTokenCallOptions {
   fetchUpstream: (request: Request) => Promise<Response>;
   resolveClient: OAuthClientResolver;
   connections: HeldTokenPort;
+  /** Composio, for a provider with no client; absent, such a provider is not set up. */
+  composio?: ComposioCallPort;
   /** The calling app; absent, no connection can be found (409). */
   app?: CallingApp;
   /** For background work naming a member; absent, `x-everyapp-user` is refused. */
@@ -144,6 +156,7 @@ export async function handleHeldTokenCall({
   fetchUpstream,
   resolveClient,
   connections,
+  composio,
   app,
   members,
   onCall,
@@ -178,21 +191,37 @@ export async function handleHeldTokenCall({
       `This app doesn't list ${capability.label} in its capabilities. Add it to everyapp.config.ts (capabilities.${id}) and deploy again.`,
     );
   }
-  // 2. A live client.
+  // The call is admitted once, by whichever step first needs to know whom
+  // it is for.
+  let admission: IntegrationCallAdmission | null = null;
+  const admitted = async () => (admission ??= await admit());
+  const declared = entryScopes(entry);
+  // 2. A live client, or Composio: on for the organization, with a
+  // service for every scope the app lists.
   const client = await resolveClient({
     id,
     capability,
     env: env as never,
     lookup,
   });
-  if (!client) {
+  let served: ConnectionVia | null = client ? ConnectionVia.OAuth : null;
+  if (
+    !client &&
+    composio &&
+    composioServicesNeeded(id, capability.flow, declared) !== null &&
+    (await composio.on((await admitted()).caller.organizationId))
+  ) {
+    served = ConnectionVia.Composio;
+  }
+  if (served === null) {
     return notConfiguredRefusal(
       setupInfo({
         label: capability.label,
         settings: capabilitySettings(capability),
         command: setupCommand ?? null,
-        alternative:
-          "an owner or admin adds a client under Manage workspace → Providers",
+        alternative: composioServes(id)
+          ? "an owner or admin adds a client, or turns Composio on, under Manage workspace → Providers"
+          : "an owner or admin adds a client under Manage workspace → Providers",
       }),
     );
   }
@@ -207,7 +236,7 @@ export async function handleHeldTokenCall({
       `${USER_HEADER} must be a user id.`,
     );
   }
-  const { caller, user } = await admit();
+  const { caller, user } = await admitted();
   if (named !== null) {
     if (!app || !members || !namesMembers(app, caller.organizationId)) {
       return capabilityRefusal(
@@ -275,19 +304,28 @@ export async function handleHeldTokenCall({
   }
   if (connection.status === "expired") {
     return notConnected(
-      `${capability.label} refused to refresh this connection; connect it again at ${connectPath}.`,
+      `This ${capability.label} connection can't be used any more; connect it again at ${connectPath}.`,
       { reconnect: true },
     );
   }
-  // 5. The provider has been asked for every scope the app declares, and
-  // the person allowed the app for each: an app that lists more than it
-  // did then asks again. A scope the person declined at the provider
+  // A provider is served one way: a connection made the other way (through
+  // Composio before an admin added a client, or with a client that is
+  // gone) is reconnected.
+  if (connection.via !== served) {
+    return notConnected(
+      `This ${capability.label} connection was made ${connection.via === ConnectionVia.Composio ? "through Composio, and this Gateway has its own OAuth app for the provider now" : "with an OAuth app this Gateway no longer has"}; connect it again at ${connectPath}.`,
+      { reconnect: true },
+    );
+  }
+  // 5. The provider has been asked for every scope the app declares (a
+  // connection through Composio: has an account for each one's service),
+  // and the person allowed the app for each: an app that lists more than
+  // it did then asks again. A scope the person declined at the provider
   // (asked, not held) refuses nothing here: the call goes, and the
   // provider refuses the ones that need it.
-  const declared = entryScopes(entry);
-  const missing = missingScopes(
-    capability.flow,
-    [...connection.scopes, ...(connection.askedScopes ?? [])],
+  const missing = connectionLacks(
+    { id, flow: capability.flow },
+    connection,
     declared,
   );
   if (missing.length > 0) {
@@ -314,6 +352,83 @@ export async function handleHeldTokenCall({
       "invalid_integration_route",
       `${capability.label} calls go to ${capability.api.join(", ")}.`,
     );
+  }
+  const method = request.method.toUpperCase();
+  const logged = {
+    capability: id,
+    ...caller,
+    host: upstream.host,
+    path: upstream.pathname,
+    method,
+    attribution: user ? "user" : "app",
+    ...(user ? { userId: user.id } : {}),
+    ...(named !== null ? { onBehalfOf: named } : {}),
+  };
+  /** The call went through: counted, logged, and the connection marked used. */
+  const answered = async (status: number, extra: Record<string, unknown>) => {
+    onCall?.({ capability: id, status });
+    logEvent("integration.proxy.call", { ...logged, ...extra, status });
+    await connections
+      .used({
+        connection,
+        providerId: id,
+        capability,
+        organizationId: caller.organizationId,
+        appId: app.appId,
+        appRowId: app.rowId!,
+      })
+      .catch(() => undefined);
+  };
+  // 7. Through Composio, for a connection made there.
+  if (!client || served !== ConnectionVia.OAuth) {
+    // Served through Composio only with its port, and with the client
+    // only with one: anything else has no way to the provider.
+    if (!composio || served !== ConnectionVia.Composio) {
+      return capabilityRefusal(
+        502,
+        "integration_upstream_failed",
+        `${capability.label} could not be reached.`,
+      );
+    }
+    const outcome = await sendThroughComposio({
+      request,
+      id,
+      capability,
+      upstream,
+      composio,
+      connection,
+      organizationId: caller.organizationId,
+      connectPath,
+    });
+    const via = { via: ConnectionVia.Composio };
+    switch (outcome.kind) {
+      case "answer":
+        await answered(outcome.response.status, {
+          ...via,
+          service: outcome.service,
+        });
+        return outcome.response;
+      case "reconnect":
+        if (outcome.expired) {
+          await connections.expired({
+            connection,
+            providerId: id,
+            capability,
+            organizationId: caller.organizationId,
+            appRowId: app.rowId,
+          });
+        }
+        return notConnected(outcome.message, { reconnect: true });
+      case "refusal":
+        if (outcome.response.status === 502) {
+          logEvent(
+            "integration.proxy.upstream_failed",
+            { ...logged, ...via, service: outcome.service },
+            "error",
+          );
+        }
+        return outcome.response;
+    }
   }
   // 7. The token, refreshed first when due.
   const token = await connections.accessToken({
@@ -346,7 +461,6 @@ export async function handleHeldTokenCall({
     );
   }
 
-  const method = request.method.toUpperCase();
   const headers = forwardableHeaders(request.headers);
   headers.delete("x-http-method-override");
   headers.set("authorization", `Bearer ${token.accessToken}`);
@@ -361,16 +475,6 @@ export async function handleHeldTokenCall({
     redirect: "manual",
     ...(body ? { duplex: "half" } : {}),
   } as RequestInit);
-  const logged = {
-    capability: id,
-    ...caller,
-    host: upstream.host,
-    path: upstream.pathname,
-    method,
-    attribution: user ? "user" : "app",
-    ...(user ? { userId: user.id } : {}),
-    ...(named !== null ? { onBehalfOf: named } : {}),
-  };
   let response: Response;
   try {
     response = await fetchUpstream(upstreamRequest);
@@ -428,18 +532,7 @@ export async function handleHeldTokenCall({
   }
   const responseHeaders = new Headers(response.headers);
   responseHeaders.delete("set-cookie");
-  onCall?.({ capability: id, status: response.status });
-  logEvent("integration.proxy.call", { ...logged, status: response.status });
-  await connections
-    .used({
-      connection,
-      providerId: id,
-      capability,
-      organizationId: caller.organizationId,
-      appId: app.appId,
-      appRowId: app.rowId,
-    })
-    .catch(() => undefined);
+  await answered(response.status, {});
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,

@@ -20,6 +20,7 @@ import {
   CAPABILITY_IDS,
   SIGN_IN_PROVIDER_LIST,
   capabilitySettings,
+  composioServes,
   isSettableGatewaySetting,
   oauthPreset,
   oauthPresetIds,
@@ -269,6 +270,9 @@ function connectSection(company: Company, { id, client }: ClientEntry, heading: 
     "",
   );
   if (client.description && company.clients.length > 1) out.push(prose(sentence(client.description)), "");
+  if (composioServes(id)) {
+    out.push(`To skip registering an OAuth app, people can use the ${name} account in their own [Composio](/docs/composio) instead.`, "");
+  }
   out.push("The redirect URI to register, with your Gateway's address (like `apps.example.com`):", "", "```text", `https://<your gateway>/connect/${id}/callback`, "```", "");
 
   if (guide.connect && company.clients.length === 1) {

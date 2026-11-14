@@ -360,6 +360,7 @@ async function gatewayView(input: GatewayViewInput): Promise<ToolBusView> {
         appId: catalog.appSlug,
         tier: catalog.tier,
         manifest: catalog.manifest,
+        organizationId: principal.organizationId,
         // The command is for the app's own organization; a shared app seen
         // from another is named without one, as the app lists do.
         canFix: catalog.organizationId === principal.organizationId,
@@ -430,6 +431,7 @@ async function gatewayView(input: GatewayViewInput): Promise<ToolBusView> {
       appId: app.appSlug,
       tier: app.tier,
       manifest: app.manifest,
+      organizationId: principal.organizationId,
       canFix: app.organizationId === principal.organizationId,
     });
     unavailable.push({

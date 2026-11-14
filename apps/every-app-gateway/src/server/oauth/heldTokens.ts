@@ -8,7 +8,10 @@
  */
 import { env, waitUntil } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
-import type { OAuthClientCapability } from "@every-app/sdk/internal";
+import type {
+  ConnectionVia,
+  OAuthClientCapability,
+} from "@every-app/sdk/internal";
 import { emit } from "@/server/events/bus";
 import {
   catalogue,
@@ -26,14 +29,18 @@ import { accessTokenFor, type Fetch, type RefreshOutcome } from "./tokens";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** What the proxy learns about a connection: never a token. */
-interface HeldConnection {
+export interface HeldConnection {
   id: string;
   userId: string;
   label: string | null;
-  /** The scopes the token holds, canonical. */
+  /** How it was made: with the Gateway's client, or through the person's Composio. */
+  via: ConnectionVia;
+  /** The scopes the token holds, canonical; none on a connection through Composio. */
   scopes: string[];
   /** The scopes the provider was asked for at the last connect, canonical; null or absent when not known. */
   askedScopes?: string[] | null;
+  /** On a connection through Composio, each service with Composio's id for its account. */
+  accounts: { service: string; id: string }[];
   status: "active" | "expired";
   expiresAt: number | null;
 }
@@ -130,8 +137,10 @@ export function gatewayHeldTokens(options: {
         id: row.id,
         userId: row.userId,
         label: row.label,
+        via: row.via,
         scopes: row.scopes,
         askedScopes: row.askedScopes,
+        accounts: row.accounts.map(({ service, id }) => ({ service, id })),
         status: row.status,
         expiresAt: row.expiresAt,
       };

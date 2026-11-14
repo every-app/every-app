@@ -205,6 +205,14 @@ describe("help", () => {
     expect(groupHelp(["provider"])).toMatch(/\n {2}add {2,}Add a provider and set its key/);
     expect(groupHelp(["provider"])).not.toMatch(/\n {2}(on|off) /);
     expect(commandPaths()).toEqual(expect.arrayContaining(["provider on", "provider off", "mcp on"]));
+    // A person's Composio link is verb first, as `provider add` is; the organization's switch is the workspace's.
+    expect(groupHelp(["provider"])).toMatch(/\n {2}link {2,}Link your Composio/);
+    expect(groupHelp(["provider"])).toMatch(/\n {2}unlink {2,}Unlink your Composio/);
+    expect(groupHelp(["provider"])).toContain(`  $ ${CLI} provider link composio`);
+    expect(commandPaths()).toEqual(
+      expect.arrayContaining(["provider link composio", "provider unlink composio", "workspace composio"]),
+    );
+    expect(groupHelp(["workspace"])).toMatch(/\n {2}composio {2,}Let people use the accounts in their own Composio/);
     expect(groupHelp(["mcp"])).toContain(`  $ ${CLI} mcp on dataforseo`);
     // `mcp enable` and `mcp disable` are `mcp on` and `mcp off` for people who type them, and nothing shows them.
     const mcpGroup = mcpRoutes as unknown as { getRoutingTargetForInput(input: string): unknown };

@@ -179,6 +179,40 @@ describe("deploy and the app's settings", () => {
     expect(result.next).toEqual([]);
   });
 
+  it("stops warning about an OAuth provider's client once the organization has Composio on and it covers the app's scopes", async () => {
+    const lists = (scopes: string[]): EveryAppCliManifest => ({
+      id: "crm",
+      resources: { d1: ["DB"] },
+      capabilities: { "google-workspace": { scopes, why: "Reads the person's mail." } },
+    });
+    const configure = { command: "pnpm everyapp configure crm", note: "asks for each; crm opens once they are set" };
+
+    // No client, Composio off: the app needs Google's client. (The deploy registers the preset.)
+    const first = await deploy(lists(["gmail.readonly"]));
+    expect(warnings()).toEqual([
+      expect.objectContaining({
+        message: expect.stringMatching(
+          /^crm won't open until GOOGLE_WORKSPACE_CLIENT_ID and GOOGLE_WORKSPACE_CLIENT_SECRET are set\n/,
+        ),
+      }),
+    ]);
+    expect(first.next).toEqual([configure]);
+
+    // On for its organization: set up with no client, so nothing is said and nothing is next.
+    const { organizationId } = await readApp(registry(), "crm");
+    await registry().run([
+      { sql: "INSERT INTO org_settings (organization_id, composio, updated_at) VALUES (?, 1, 1)", params: [organizationId] },
+    ]);
+    const on = await deploy(lists(["gmail.readonly"]));
+    expect(warnings()).toEqual([]);
+    expect(on.next).toEqual([]);
+
+    // A scope no service at Composio covers still needs an OAuth app.
+    const uncovered = await deploy(lists(["gmail.readonly", "cloud-platform"]));
+    expect(warnings()).toHaveLength(1);
+    expect(uncovered.next).toEqual([configure]);
+  });
+
   it("still warns about the app's own unset secret when the Gateway's names can't be listed", async () => {
     account.cf.override(
       (args) => args.slice(0, 3).join(" ") === "workers secrets list" && args.includes("every-app-gateway"),

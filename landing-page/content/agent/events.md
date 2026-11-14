@@ -42,7 +42,7 @@ In a Worker, `verifyWebhook(request, { provider: "everyapp", secret })` from `@e
 
 ## Patterns
 
-A subscription's `events` list takes exact types (`member.joined`), prefixes (`member.*`), an app's own (`app.crm.*`), or `*`. `*` matches everything except `ping` and `subscription.*`. `everyapp events types` prints the catalogue. Families: `member.*`, `organization.*`, `app.*`, `cap.*`, `group.*`, `tool.*`, `connection.*`, `token.*`, `access.*`, `signin_provider.*`, `mcp_app.*`, `provider.*`, `subscription.*`, `ai.*` and `ping` (tests).
+A subscription's `events` list takes exact types (`member.joined`), prefixes (`member.*`), an app's own (`app.crm.*`), or `*`. `*` matches everything except `ping` and `subscription.*`. `everyapp events types` prints the catalogue. Families: `member.*`, `organization.*`, `app.*`, `cap.*`, `group.*`, `tool.*`, `connection.*`, `token.*`, `access.*`, `signin_provider.*`, `mcp_app.*`, `provider.*`, `subscription.*`, `ai.*` and `ping` (tests). `provider.connected` and `provider.disconnected` say how the connection was made in `data.via`: `oauth`, or `composio` for one made through a person's Composio.
 
 ## Delivery
 

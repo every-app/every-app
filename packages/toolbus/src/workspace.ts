@@ -232,7 +232,7 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "workspace_show",
     title: "Show the workspace",
     description:
-      "Show this organization: its id, name and slug, your role, whether the Gateway can send email, whether linked dev is on (`linkedDev`: on or off), and how many members, pending invitations, groups and apps it has. Owners and admins.",
+      "Show this organization: its id, name and slug, your role, whether the Gateway can send email, whether linked dev is on (`linkedDev`: on or off), whether Composio is on (`composio`: on or off), and how many members, pending invitations, groups and apps it has. Owners and admins.",
     inputSchema: NO_INPUT,
   },
   {
@@ -735,6 +735,27 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
         on: {
           type: "boolean",
           description: "true turns it on, false off.",
+        },
+      },
+      ["on"],
+    ),
+  },
+  {
+    ...ADMIN_WRITE,
+    name: "workspace_composio",
+    title: "Composio on or off",
+    description:
+      "Turn Composio on or off for the organization. Composio is a third-party service where a person connects their accounts (Gmail, Slack, GitHub). While it is on, an OAuth provider this Gateway holds no OAuth app for is used through the accounts in each person's own Composio: each person links theirs once (everyapp_provider_composio_link), and an account becomes their connection when an app asks for it and they say yes. Requests to the accounts people use from Composio pass through Composio: say so to the person before turning it on. A provider the Gateway holds an OAuth app for is never served through Composio. Off by default. Turning it off deletes every link in the organization and every connection made through Composio, with the access apps had to them (`removed` counts them): while any exists it needs confirm: true, and without it the refusal says how many there are. Answers `composio` (on or off) and whether it `changed`; everyapp_workspace_show reads it. Owners and admins.",
+    inputSchema: objectWith(
+      {
+        on: {
+          type: "boolean",
+          description: "true turns it on, false off.",
+        },
+        confirm: {
+          type: "boolean",
+          description:
+            "Needed to turn it off while a link or a connection made through Composio exists: they are deleted and cannot be brought back. Ask the person before passing true.",
         },
       },
       ["on"],

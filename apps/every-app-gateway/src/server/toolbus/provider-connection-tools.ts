@@ -54,7 +54,16 @@ function listed(connection: ConnectionSummary): JsonObject {
       name: app.name,
     })),
     label: connection.label,
+    via: connection.via,
     scopes: [...connection.scopes],
+    ...(connection.services.length > 0
+      ? {
+          services: connection.services.map((service) => ({
+            name: service.name,
+            account: service.account,
+          })),
+        }
+      : {}),
     status: connection.status,
     needsReconnect: connection.needsReconnect,
     // How much of what the person's apps list the connection holds. Fewer

@@ -5,6 +5,8 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { PanelRight, RotateCw, Unplug, UserMinus } from "lucide-react";
 import { cn } from "cn";
 import { toast } from "sonner";
+import { ConnectionVia } from "@every-app/sdk/internal";
+import { ComposioSection } from "@/client/components/composio/ComposioSection";
 import { ConnectedAccountSheet } from "@/client/components/ConnectedAccountSheet";
 import {
   useConnectionRemoval,
@@ -75,8 +77,11 @@ import {
  * app with the button that takes its access away. The row's menu has
  * those too, with Reconnect (on a healthy connection it asks the provider
  * again, `fresh`, and the new grant replaces the person's one connection
- * to it) and Disconnect, which stops every app at once. Under the
- * accounts, the apps signed in on their devices.
+ * to it) and Disconnect, which stops every app at once. A connection made
+ * through Composio (docs/design/2026-11-composio.md) is a row like any
+ * other, and holds services where another holds scopes. Under the
+ * accounts, the person's own Composio, to link or unlink, and the apps
+ * signed in on their devices.
  */
 export const Route = createFileRoute("/_app/connections/accounts")({
   component: AccountsTab,
@@ -142,6 +147,10 @@ function accountColumns({
       enableSorting: false,
       meta: { cellClassName: "max-w-[260px] truncate" },
       cell: ({ row: { original: account } }) => {
+        // A connection through Composio holds services, not scopes.
+        if (account.via === ConnectionVia.Composio) {
+          return namesText(account.services.map((service) => service.name));
+        }
         if (account.scopes.length === 0) {
           return <span className="text-muted-foreground">None</span>;
         }
@@ -367,6 +376,8 @@ function AccountsTab() {
             }}
           />
         </SettingsSection>
+
+        <ComposioSection />
 
         <DeviceApps />
       </SettingsTab>

@@ -46,6 +46,7 @@ export async function listedAppSetup(
       appId: row.appId,
       tier: row.tier,
       manifest: row.manifest,
+      organizationId: row.organizationId,
       canFix,
     };
     const report = await appSettingsReport(input);

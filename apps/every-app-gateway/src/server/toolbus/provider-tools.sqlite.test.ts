@@ -335,18 +335,26 @@ beforeEach(async () => {
 });
 
 describe("the provider tools on /mcp", () => {
-  it("lists all five to an owner and an admin, the reads alone to a read-only admin, the list and the connection tools to a member, and hides the registry writers on a hosted gateway", async () => {
+  it("lists every one to an owner and an admin, the reads alone to a read-only admin, the list, the connection tools and the Composio link's to a member, and hides the registry writers on a hosted gateway", async () => {
+    // What every member has: the list, their connections, and their own
+    // Composio link.
+    const MEMBERS = [
+      "everyapp_provider_list",
+      "everyapp_provider_connections",
+      "everyapp_provider_disconnect",
+      "everyapp_provider_composio",
+      "everyapp_provider_composio_link",
+      "everyapp_provider_composio_link_finish",
+      "everyapp_provider_composio_unlink",
+    ];
     expect(await providerToolNames(owner())).toEqual(PROVIDER_NAMES);
     expect(await providerToolNames(admin())).toEqual(PROVIDER_NAMES);
     expect(await providerToolNames(admin({ access: "read" }))).toEqual([
       "everyapp_provider_list",
       "everyapp_provider_connections",
+      "everyapp_provider_composio",
     ]);
-    expect(await providerToolNames(member())).toEqual([
-      "everyapp_provider_list",
-      "everyapp_provider_connections",
-      "everyapp_provider_disconnect",
-    ]);
+    expect(await providerToolNames(member())).toEqual(MEMBERS);
     // A member calling a writer: Unknown tool, as for any hidden tool.
     expect(
       await call("everyapp_provider_add", { spec: northwind }, member()),
@@ -355,15 +363,11 @@ describe("the provider tools on /mcp", () => {
       unknown: true,
       message: "Unknown tool: everyapp_provider_add",
     });
-    // A hosted gateway: the list and the connection tools stay, the
-    // registry writers are gone for the owner too.
+    // A hosted gateway: the list, the connection tools and the Composio
+    // link's stay, the registry writers are gone for the owner too.
     hoisted.env["GATEWAY_DEPLOYMENT_MODE"] = "hosted";
     resetToolBusForTests();
-    expect(await providerToolNames(owner())).toEqual([
-      "everyapp_provider_list",
-      "everyapp_provider_connections",
-      "everyapp_provider_disconnect",
-    ]);
+    expect(await providerToolNames(owner())).toEqual(MEMBERS);
     expect(
       await call("everyapp_provider_add", { spec: northwind }, owner()),
     ).toEqual({

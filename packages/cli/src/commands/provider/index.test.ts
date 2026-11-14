@@ -342,6 +342,9 @@ describe("provider add", () => {
       rerun: "pnpm everyapp update",
     });
     await expect(list()).rejects.toMatchObject({ code: "GATEWAY_OUTDATED" });
+    // The same check stands in front of every column a newer migration added: a Gateway from
+    // before 0037 is never asked for a connection's `via`.
+    await expect(listProviderConnections({ flags, out: out(), createCf })).rejects.toMatchObject({ code: "GATEWAY_OUTDATED" });
     expect(await rows()).toEqual([]);
   });
 });
@@ -874,6 +877,47 @@ ORDER BY x.provider_id, x.user_id, a.app_slug`,
         sql: "INSERT INTO oauth_clients (provider_id, client_id, client_secret_enc, bound_to, added_by, added_at, updated_at) VALUES ('github-oauth', 'Iv1.ui', 'v1.sealed', 'x', 'owner@example.com', 1, 1)",
       },
     ]);
+  /**
+   * A connection made through Composio, as the Gateway's Composio page
+   * writes one: no scopes, a sealed empty string for a token, and each
+   * service with Composio's id for its account and the account's name.
+   */
+  async function seedComposioConnection(
+    providerId: string,
+    userId: string,
+    accounts: Array<{ service: string; id: string; account: string }>,
+    apps: string[],
+  ) {
+    const organizationId = await orgId();
+    const now = Date.now();
+    const label = [...new Set(accounts.map((each) => each.account))].join(", ");
+    const access = [];
+    for (const slug of apps) {
+      access.push({
+        sql: `INSERT INTO provider_app_access (organization_id, provider_id, user_id, app_row_id, scopes, created_at, updated_at)
+VALUES (?1, ?2, ?3, ?4, '[]', ?5, ?5)`,
+        params: [organizationId, providerId, userId, await appRowId(slug), now],
+      });
+    }
+    await db().run([
+      {
+        sql: `INSERT INTO provider_connections (id, organization_id, provider_id, user_id, app_row_id, label, external_id, scopes, access_token_enc, refresh_token_enc, expires_at, status, created_at, updated_at, last_used_at, via, composio_accounts)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '[]', 'v1.sealed.empty', NULL, NULL, 'active', ?8, ?8, NULL, 'composio', ?9)`,
+        params: [
+          `conn_composio_${providerId}`,
+          organizationId,
+          providerId,
+          userId,
+          await appRowId(apps[0] ?? "shop"),
+          label,
+          accounts.map((each) => `${each.service}:${each.id}`).join(","),
+          now,
+          JSON.stringify(accounts),
+        ],
+      },
+      ...access,
+    ]);
+  }
 
   it("lists the presets without reaching the Gateway, Google, Microsoft and Slack first", async () => {
     createCf.mockClear();
@@ -1126,10 +1170,13 @@ ORDER BY x.provider_id, x.user_id, a.app_slug`,
         { id: "notes", rowId: await appRowId("notes"), name: "notes" },
         { id: "shop", rowId: await appRowId("shop"), name: "shop" },
       ],
+      via: "oauth",
       scopes: ["repo"],
       status: "active",
     });
     for (const each of listed) {
+      // Only a connection through Composio holds services.
+      expect(each).not.toHaveProperty("services");
       expect(each).not.toHaveProperty("app");
       expect(each).not.toHaveProperty("account");
       expect(each).not.toHaveProperty("scopeSets");
@@ -1153,9 +1200,9 @@ ORDER BY x.provider_id, x.user_id, a.app_slug`,
     await db().run([{ sql: "UPDATE apps SET status = 'active' WHERE app_slug = 'notes'" }]);
     // One row per person per provider: the apps in one column, a dash for none.
     const table = await human((sink) => listProviderConnections({ flags: {}, out: sink, createCf }));
-    expect(table).toMatch(/PROVIDER\s+PERSON\s+APPS\s+ACCOUNT\s+SCOPES/);
-    expect(table).toMatch(/GitHub \(github-oauth\)\s+dev@example\.com\s+notes, shop\s+ben\s+repo/);
-    expect(table).toMatch(/GitHub \(github-oauth\)\s+ada@example\.com\s+-\s+ada\s+repo/);
+    expect(table).toMatch(/PROVIDER\s+PERSON\s+APPS\s+ACCOUNT\s+VIA\s+ACCESS\s+STATUS/);
+    expect(table).toMatch(/GitHub \(github-oauth\)\s+dev@example\.com\s+notes, shop\s+ben\s+oauth\s+repo/);
+    expect(table).toMatch(/GitHub \(github-oauth\)\s+ada@example\.com\s+-\s+ada\s+oauth\s+repo/);
     // Everything its apps list was granted (they list nothing here): no count.
     expect(table).not.toContain("permissions granted");
     for (const each of listed) expect(each).not.toHaveProperty("permissions");
@@ -1168,7 +1215,7 @@ ORDER BY x.provider_id, x.user_id, a.app_slug`,
     ]);
     expect(
       await human((sink) => listProviderConnections({ flags: { provider: "github-oauth", app: "shop" }, out: sink, createCf })),
-    ).toMatch(/ben\s+repo\s+active, 1 of 2 permissions granted/);
+    ).toMatch(/ben\s+oauth\s+repo\s+active, 1 of 2 permissions granted/);
     events = [];
     await connections({ provider: "github-oauth", app: "shop" });
     expect((done()!["data"]["connections"] as Array<Record<string, any>>)[0]).toMatchObject({
@@ -1178,6 +1225,146 @@ ORDER BY x.provider_id, x.user_id, a.app_slug`,
     expect(await human((sink) => listProviderConnections({ flags: { app: "nothing" }, out: sink, createCf }))).toBe(
       "No connections that nothing may use. Each person connects once, from inside an app that lists the provider.\n",
     );
+  });
+
+  it("says how each connection was made, and shows a connection through Composio's services where another shows scopes", async () => {
+    await registerApp("shop", {});
+    await addOAuthProvider("github-oauth");
+    await addOAuthProvider("google-workspace");
+    const userId = await devUserId();
+    await seedConnection("github-oauth", userId, "ben", ["shop"]);
+    // Stored in another order than the provider's own, with a service of no provider here beside them.
+    await seedComposioConnection(
+      "google-workspace",
+      userId,
+      [
+        { service: "googlecalendar", id: "ca_2", account: "work@example.com" },
+        { service: "gmail", id: "ca_1", account: "alex@example.com" },
+        { service: "notaservice", id: "ca_3", account: "x@example.com" },
+      ],
+      ["shop"],
+    );
+
+    events = [];
+    await connections();
+    const listed = done()!["data"]["connections"] as Array<Record<string, any>>;
+    expect(listed.find((each) => each["provider"] === "github-oauth")).toMatchObject({ via: "oauth", scopes: ["repo"] });
+    expect(listed.find((each) => each["provider"] === "github-oauth")).not.toHaveProperty("services");
+    expect(listed.find((each) => each["provider"] === "google-workspace")).toMatchObject({
+      via: "composio",
+      label: "work@example.com, alex@example.com, x@example.com",
+      scopes: [],
+      services: [
+        { name: "Gmail", account: "alex@example.com" },
+        { name: "Calendar", account: "work@example.com" },
+      ],
+      apps: [expect.objectContaining({ id: "shop" })],
+    });
+    // Composio's ids for the accounts stay in the Gateway.
+    expect(JSON.stringify(events)).not.toContain("ca_1");
+    expect(JSON.stringify(events)).not.toContain("sealed");
+
+    const table = await human((sink) => listProviderConnections({ flags: {}, out: sink, createCf }));
+    // Newest first; these two were made in the same instant, so the rows are compared in any order.
+    const [header, ...connected] = table.replace(/\d{4}-\d\d-\d\d \d\d:\d\d/g, "<when>").trimEnd().split("\n");
+    expect([header, ...connected.sort()]).toEqual([
+      "PROVIDER                   PERSON           APPS  ACCOUNT                                            VIA       ACCESS           STATUS  LAST USED  CONNECTED",
+      "GitHub (github-oauth)      dev@example.com  shop  ben                                                oauth     repo             active  -          <when>",
+      "Google (google-workspace)  dev@example.com  shop  work@example.com, alex@example.com, x@example.com  composio  Gmail, Calendar  active  -          <when>",
+    ]);
+
+    // Disconnecting one made through Composio leaves no grant to revoke, and its event says how it was made.
+    events = [];
+    await disconnect("google-workspace", { user: "dev@example.com", app: "shop" });
+    expect(done()!["message"]).toBe(
+      [
+        "shop can no longer use dev@example.com's connection to Google (google-workspace).",
+        'The connection stays for the other apps; shop gets "not connected" until the person allows it again.',
+      ].join("\n"),
+    );
+    events = [];
+    await disconnect("google-workspace", { user: "dev@example.com" });
+    expect(done()).toMatchObject({
+      message: [
+        "Removed dev@example.com's connection to Google (google-workspace).",
+        'Every app that used the connection gets "not connected" until the person connects again.',
+        "A connection made through Composio holds no token: nothing is left to revoke, and nothing changed at Composio.",
+      ].join("\n"),
+      data: { id: "google-workspace", revoked: false, removed: [expect.objectContaining({ via: "composio" })] },
+    });
+    expect(done()!["data"]).not.toHaveProperty("revokeAt");
+    const [queued = []] = await db().run([{ sql: "SELECT data FROM events WHERE type = 'provider.disconnected'" }]);
+    expect(queued.map((row) => JSON.parse(String(row["data"])))).toEqual([
+      expect.objectContaining({ provider: { id: "google-workspace", name: "Google" }, revoked: false, via: "composio" }),
+    ]);
+    // A person reads no Revoke line for it; one made with the Gateway's client still has it.
+    await seedComposioConnection("google-workspace", userId, [{ service: "gmail", id: "ca_1", account: "alex@example.com" }], ["shop"]);
+    expect(
+      await human((sink) => disconnectProvider({ flags: { user: "dev@example.com" }, out: sink, createCf }, "google-workspace")),
+    ).toBe("✓ Removed dev@example.com's connection to Google (google-workspace)\n\nMore: --verbose\n");
+    expect(
+      await human((sink) => disconnectProvider({ flags: { user: "dev@example.com" }, out: sink, createCf }, "github-oauth")),
+    ).toMatch(/^✓ Removed dev@example\.com's connection to GitHub \(github-oauth\)\n\nRevoke  https:\/\/github\.com/);
+  });
+
+  it("lists and shows an OAuth provider with no client as served through Composio once the organization has it on", async () => {
+    await registerApp("shop", { capabilities: { "google-workspace": { scopes: ["gmail.readonly"], why: "Reads mail." } } });
+    await addOAuthProvider("google-workspace");
+    await addOAuthProvider("spotify");
+    const google = async () => {
+      events = [];
+      await list();
+      return (done()!["data"]["providers"] as Array<Record<string, any>>).find((provider) => provider["id"] === "google-workspace")!;
+    };
+    // Off: the client is what it needs, and shop is waiting on it.
+    expect(await google()).toMatchObject({ composio: false, client: { source: "none" }, apps: ["shop"] });
+    expect(done()!["data"]["next"]).toEqual(
+      expect.arrayContaining([
+        {
+          command: "pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET",
+          note: "shop is waiting on it",
+        },
+      ]),
+    );
+    expect(await human((sink) => listProviders({ flags: {}, out: sink, createCf }))).toMatch(
+      /\ngoogle-workspace +needs GOOGLE_WORKSPACE_CLIENT_ID \(\+1 more\), 0 connected +shop\n/,
+    );
+
+    await db().run([
+      { sql: "INSERT INTO org_settings (organization_id, composio, updated_at) VALUES (?, 1, 1)", params: [await orgId()] },
+    ]);
+    expect(await google()).toMatchObject({ composio: true, client: { source: "none" }, apps: ["shop"] });
+    // Nothing is left to set for it, and nothing waits on it; Spotify, which Composio doesn't serve, still needs its client.
+    const next = (done()!["data"]["next"] ?? []) as Array<{ command: string }>;
+    expect(next.filter((step) => step.command.includes("GOOGLE_WORKSPACE"))).toEqual([]);
+    const spotify = (done()!["data"]["providers"] as Array<Record<string, any>>).find((provider) => provider["id"] === "spotify")!;
+    expect(spotify).toMatchObject({ composio: false });
+    const table = await human((sink) => listProviders({ flags: {}, out: sink, createCf }));
+    expect(table).toContain(
+      [
+        "✓ 2 providers in use on example.com, 1 needs a key",
+        "",
+        "PROVIDER          KEY                                             APPS",
+        "google-workspace  through Composio, 0 connected                   shop",
+        "spotify           needs SPOTIFY_CLIENT_ID (+1 more), 0 connected  -",
+        "",
+      ].join("\n"),
+    );
+    expect(table).not.toContain("secret set");
+
+    events = [];
+    await show("google-workspace");
+    expect(done()!["data"]).toMatchObject({ composio: true, client: { source: "none" } });
+    expect(done()!["data"]["next"]).toBeUndefined();
+    const shown = await human((sink) =>
+      showProvider({ flags: {}, out: sink, cwd: tempDir("everyapp-provider-x-"), createCf }, "google-workspace"),
+    );
+    expect(shown).toContain("\nClient        none needed  served through each person's own Composio\n");
+
+    // A client the Gateway holds is how the provider is served, whatever Composio is.
+    gatewayWorker().secrets["GOOGLE_WORKSPACE_CLIENT_ID"] = "id";
+    gatewayWorker().secrets["GOOGLE_WORKSPACE_CLIENT_SECRET"] = "secret";
+    expect(await google()).toMatchObject({ composio: false, client: { source: "env" } });
   });
 
   it("disconnects a connection with every app's access to it, queueing the event without an app; --app takes one app's access away and keeps the connection", async () => {
@@ -1261,6 +1448,7 @@ ORDER BY x.provider_id, x.user_id, a.app_slug`,
         provider: { id: "github-oauth", name: "GitHub" },
         account: { user: { id: userId, email: "dev@example.com", name: "Dev" }, label: "ben" },
         revoked: false,
+        via: "oauth",
       },
     ]);
 
@@ -1298,6 +1486,15 @@ ORDER BY x.provider_id, x.user_id, a.app_slug`,
       data: { id: "github-oauth", removed: true, connections: 1, client: true },
     });
     expect(done()!["message"]).toContain("The client uploaded under Admin → Providers was deleted with it.");
+    expect(done()!["message"]).toContain("1 connection to it was deleted (the grants stay at the provider until revoked there).");
+
+    // A connection made through Composio held no token: it leaves no grant behind.
+    await addOAuthProvider("slack");
+    await seedComposioConnection("slack", await devUserId(), [{ service: "slack", id: "ca_9", account: "acme" }], ["shop"]);
+    events = [];
+    await remove("slack");
+    expect(done()!["message"]).toMatch(/\n1 connection to it was deleted\.$/);
+    expect(done()!["message"]).not.toContain("grants");
   });
 });
 
@@ -1319,15 +1516,22 @@ describe("provider add, one step: the key or client asked for in the same run", 
     options: {
       interactive?: boolean;
       ask?: (name: string, question: string) => Promise<string>;
+      /** Answers a yes/no question (tests record it). */
+      confirm?: (question: string, context?: readonly string[]) => Promise<boolean>;
       env?: Record<string, string>;
       fromEnv?: boolean;
+      clientId?: string;
       verbose?: boolean;
       stdin?: string;
     } = {},
   ) => (sink: EventSink) =>
     addAny(
       {
-        flags: { ...(options.fromEnv ? { "from-env": true } : {}), ...(options.verbose ? { verbose: true } : {}) },
+        flags: {
+          ...(options.fromEnv ? { "from-env": true } : {}),
+          ...(options.clientId ? { "client-id": options.clientId } : {}),
+          ...(options.verbose ? { verbose: true } : {}),
+        },
         out: sink,
         createCf,
         cwd: tempDir("everyapp-provider-one-step-"),
@@ -1335,9 +1539,36 @@ describe("provider add, one step: the key or client asked for in the same run", 
         env: options.env ?? {},
         interactive: options.interactive ?? false,
         ...(options.ask ? { ask: options.ask } : {}),
+        ...(options.confirm ? { confirm: options.confirm } : {}),
       },
       spec,
     );
+  /** Answers each yes/no question with `yes`, and records what was asked with the lines above it. */
+  function confirmer(yes: boolean) {
+    const asked: Array<{ question: string; context: readonly string[] }> = [];
+    return {
+      asked,
+      confirm: async (question: string, context: readonly string[] = []) => {
+        asked.push({ question, context });
+        return yes;
+      },
+    };
+  }
+  const installOrgId = async () => String(((await db().run([{ sql: "SELECT id FROM organizations LIMIT 1" }]))[0] ?? [])[0]!["id"]);
+  const turnComposioOnInD1 = async () =>
+    db().run([
+      { sql: "INSERT INTO org_settings (organization_id, composio, updated_at) VALUES (?, 1, 1)", params: [await installOrgId()] },
+    ]);
+  /** A Gateway user with their Composio linked in the install's organization, as the Gateway stores both. */
+  const linkedUser = async (id: string, email: string, verified = true) =>
+    db().run([
+      { sql: "INSERT INTO users (id, name, email, email_verified) VALUES (?, ?, ?, ?)", params: [id, id, email, verified ? 1 : 0] },
+      {
+        sql: `INSERT INTO composio_links (organization_id, user_id, key_enc, account_label, composio_org_id, composio_project_id, composio_user_id, created_at, updated_at)
+VALUES (?, ?, 'sealed', ?, 'org', 'project', 'user', 1, 1)`,
+        params: [await installOrgId(), id, email],
+      },
+    ]);
 
   /**
    * The Google page's steps, as a terminal 80 columns wide shows them: the
@@ -1416,6 +1647,117 @@ describe("provider add, one step: the key or client asked for in the same run", 
         "",
       ].join("\n"),
     );
+  });
+
+  it("while Composio is on, tells a person who linked theirs that the provider is ready through it, and asks whether to add an OAuth app all the same", async () => {
+    await registerApp("shop", {});
+    await turnComposioOnInD1();
+    // The Cloudflare login's email is a verified Gateway user's, and that user linked.
+    await linkedUser("u_dev", "Dev@example.com");
+    // No: it ends there.
+    const no = confirmer(false);
+    const none = asker({});
+    const shown = await human(run("slack", { interactive: true, ask: none.ask, confirm: no.confirm }));
+    expect(no.asked).toEqual([{ question: "Add your own OAuth app instead?", context: ["Slack is ready through Composio."] }]);
+    expect(none.asked).toEqual([]);
+    expect(shown).toBe(
+      [
+        "✓ Registered Slack (slack) on example.com",
+        "✓ Slack is ready through Composio",
+        "",
+      ].join("\n"),
+    );
+    expect(gatewayWorker().secrets["SLACK_CLIENT_ID"]).toBeUndefined();
+
+    // What a script reads of such a run.
+    events = [];
+    await run("slack", { interactive: true, confirm: confirmer(false).confirm })(out());
+    expect(steps("provider.redirect")).toEqual([]);
+    expect(done()).toMatchObject({
+      message: "Slack (slack) is on example.com.\nSlack is ready through Composio: it needs no OAuth app.",
+      data: { id: "slack", kind: "oauth", client: { source: "none" }, composio: true },
+    });
+
+    // Yes: the client is asked for and set, and the provider is served with it from then on.
+    const yes = confirmer(true);
+    const { asked, ask } = asker({ SLACK_CLIENT_ID: "123.456", SLACK_CLIENT_SECRET: "slack-shh" });
+    const again = await human(run("slack", { interactive: true, ask, confirm: yes.confirm }));
+    expect(yes.asked.map((each) => each.question)).toEqual(["Add your own OAuth app instead?"]);
+    expect(asked).toEqual(["Client id", "Client secret"]);
+    expect(again).toMatch(/^✓ Slack \(slack\) is on example\.com\n\n1\. /);
+    expect(again).toContain("\n✓ Set SLACK_CLIENT_ID and SLACK_CLIENT_SECRET on the Gateway\nApps can now list slack. Live now, no deploy needed.\n");
+    expect(gatewayWorker().secrets).toMatchObject({ SLACK_CLIENT_ID: "123.456", SLACK_CLIENT_SECRET: "slack-shh" });
+
+    // A client is held now: Composio isn't offered for the provider any more.
+    const never = confirmer(true);
+    await human(run("slack", { interactive: true, ask: asker({}).ask, confirm: never.confirm }));
+    expect(never.asked).toEqual([]);
+  });
+
+  it("asks nobody about Composio who hasn't linked theirs, isn't a person at a terminal with no client in hand, or adds a provider it doesn't serve", async () => {
+    await registerApp("shop", {});
+    const never = confirmer(true);
+
+    // While Composio is off nobody is asked: the client is asked for, as before.
+    const off = asker({});
+    await human(run("hubspot-oauth", { interactive: true, ask: off.ask, confirm: never.confirm }));
+    expect(off.asked).toEqual(["Client id"]);
+
+    // While it is on, the same for a person who hasn't linked theirs: someone else's link is not theirs,
+    // and an unverified user with the login's email is not them.
+    await turnComposioOnInD1();
+    await linkedUser("u_ada", "ada@example.com");
+    await linkedUser("u_claimed", "dev@example.com", false);
+    const unlinked = asker({});
+    await human(run("zoom", { interactive: true, ask: unlinked.ask, confirm: never.confirm }));
+    expect(unlinked.asked).toEqual(["Client id"]);
+    await db().run([{ sql: "DELETE FROM org_settings" }, { sql: "DELETE FROM composio_links" }, { sql: "DELETE FROM users" }]);
+    const next = { command: "pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET" };
+
+    // Nobody at a terminal (--json, CI, piped): the steps and the command next, as before.
+    events = [];
+    await run("google-workspace", { confirm: never.confirm })(out());
+    expect(steps("provider.redirect")).toHaveLength(1);
+    expect(done()).toMatchObject({ data: { id: "google-workspace", composio: false, client: { source: "none" }, next: [next] } });
+    expect(await human(run("google-workspace", { confirm: never.confirm }))).toContain(
+      "\n7. Set the Client ID and Client Secret with the command below.\n",
+    );
+
+    // The same with Composio on and their own linked: nothing is asked, and the data says the provider is served through it.
+    await turnComposioOnInD1();
+    await linkedUser("u_dev", "dev@example.com");
+    events = [];
+    await run("google-workspace", { confirm: never.confirm })(out());
+    expect(done()).toMatchObject({ data: { id: "google-workspace", composio: true, client: { source: "none" }, next: [next] } });
+
+    // A person who gave the client, by flag and pipe or from the environment, is setting it.
+    await human(
+      run("github-oauth", {
+        interactive: true,
+        clientId: "Iv1.abc",
+        stdin: "GITHUB_OAUTH_CLIENT_SECRET=gh-shh\n",
+        confirm: never.confirm,
+      }),
+    );
+    expect(gatewayWorker().secrets).toMatchObject({ GITHUB_OAUTH_CLIENT_ID: "Iv1.abc", GITHUB_OAUTH_CLIENT_SECRET: "gh-shh" });
+    await human(
+      run("notion-oauth", {
+        interactive: true,
+        fromEnv: true,
+        env: { NOTION_OAUTH_CLIENT_ID: "notion-id", NOTION_OAUTH_CLIENT_SECRET: "notion-shh" },
+        confirm: never.confirm,
+      }),
+    );
+    expect(gatewayWorker().secrets).toMatchObject({ NOTION_OAUTH_CLIENT_ID: "notion-id" });
+    // --from-env says where the client comes from, even with nothing exported.
+    await human(run("linear-oauth", { interactive: true, fromEnv: true, ask: asker({}).ask, confirm: never.confirm }));
+
+    // Composio doesn't serve Spotify: its client is asked for.
+    const { asked, ask } = asker({});
+    await human(run("spotify", { interactive: true, ask, confirm: never.confirm }));
+    expect(asked).toEqual(["Client id"]);
+
+    expect(never.asked).toEqual([]);
   });
 
   it("a preset whose page has no steps of its own gets one: its console and the redirect URI under it", async () => {

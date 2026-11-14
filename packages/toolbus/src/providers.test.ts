@@ -1,10 +1,11 @@
 /**
- * The provider tools (providers.ts): three host-kind built-ins beside the
+ * The provider tools (providers.ts): host-kind built-ins beside the
  * workspace tools. The list is every member's; the two writers are owners'
  * and admins', and only where the host registers providers
  * (`WorkspaceHost.providers`): elsewhere they are absent from tools/list
  * and from the search, and a call answers Unknown tool, like a tool
- * without a host.
+ * without a host. The connection tools and the four of a member's own
+ * Composio link are every member's, on any host.
  */
 import { beforeAll, describe, expect, it } from "vitest";
 import { builtinToolKind, listBuiltinTools } from "./builtins";
@@ -41,14 +42,22 @@ const readOnly = (principal: McpPrincipal): McpPrincipal => ({
 });
 const listed = (name: string) => `everyapp_${name}`;
 const PROVIDER_NAMES = PROVIDER_TOOLS.map((tool) => listed(tool.name));
-/** What a member sees: the list and the two connection tools (their own account). */
+/** What a member sees: the list, the two connection tools (their own account) and the four of their own Composio link. */
 const MEMBER_NAMES = [
   "everyapp_provider_list",
   "everyapp_provider_connections",
   "everyapp_provider_disconnect",
+  "everyapp_provider_composio",
+  "everyapp_provider_composio_link",
+  "everyapp_provider_composio_link_finish",
+  "everyapp_provider_composio_unlink",
 ];
 /** What a read-only connection sees: the reads alone. */
-const READ_NAMES = ["everyapp_provider_list", "everyapp_provider_connections"];
+const READ_NAMES = [
+  "everyapp_provider_list",
+  "everyapp_provider_connections",
+  "everyapp_provider_composio",
+];
 
 /** A host that records every call, registering providers or not. */
 function harness(providers?: boolean) {
@@ -76,7 +85,7 @@ function harness(providers?: boolean) {
 }
 
 describe("the provider tool definitions", () => {
-  it("are the five the designs name: the list and the connections for any member, add and remove for admins where the host registers providers, disconnect for a member's own", () => {
+  it("are the nine the designs name: the list and the connections for any member, add and remove for admins where the host registers providers, disconnect for a member's own, and the four of a member's own Composio link", () => {
     expect(
       PROVIDER_TOOLS.map((tool) => [
         tool.name,
@@ -90,6 +99,10 @@ describe("the provider tool definitions", () => {
       ["provider_remove", "write", "admin", "providers"],
       ["provider_connections", "read", "member", null],
       ["provider_disconnect", "write", "member", null],
+      ["provider_composio", "read", "member", null],
+      ["provider_composio_link", "write", "member", null],
+      ["provider_composio_link_finish", "write", "member", null],
+      ["provider_composio_unlink", "write", "member", null],
     ]);
     for (const tool of PROVIDER_TOOLS) {
       expect(tool.title, tool.name).toBeTruthy();
@@ -176,6 +189,13 @@ describe("the provider tool definitions", () => {
       "id",
     ]);
     expect(remove.inputSchema["required"]).toEqual(["id"]);
+    // The Composio link's tools take nothing: a caller acts on their own
+    // link, and no key or sign-in passes through a tool.
+    for (const tool of PROVIDER_TOOLS.filter((each) =>
+      each.name.startsWith("provider_composio"),
+    )) {
+      expect(tool.inputSchema["properties"], tool.name).toEqual({});
+    }
   });
 });
 
@@ -208,7 +228,7 @@ describe("listing the provider tools", () => {
     expect(names(OWNER, registering, "compact")).toEqual([]);
     // A credential narrowed to apps sees none, whatever the role.
     expect(names({ ...OWNER, appScope: "selected" }, registering)).toEqual([]);
-    // No view (the docs' drift test) lists all five, right after the
+    // No view (the docs' drift test) lists them all, right after the
     // workspace tools (the five core built-ins first).
     const every = listBuiltinTools().map((tool) => tool.name);
     const start = 5 + WORKSPACE_TOOLS.length;

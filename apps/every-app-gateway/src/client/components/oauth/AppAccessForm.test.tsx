@@ -3,7 +3,9 @@
  * The Allow page's form rendered for real: which app asks to use which
  * account, each by its icon, what the app says it does with the account,
  * the scopes it lists, and what it posts: the one-use state and the
- * decision, to the action the server named.
+ * decision, to the action the server named. For a connection made through
+ * Composio it shows the services the app uses with their accounts where
+ * it shows scopes.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -31,6 +33,7 @@ const CONTEXT: OkContext = {
   account: "ada@gmail.com",
   why: "Charts your Search Console clicks.",
   scopes: ["webmasters.readonly", "analytics.readonly"],
+  composio: null,
 };
 
 (
@@ -167,6 +170,54 @@ describe("what the Allow page says", () => {
     act(() => button("Switch account").click());
     expect(switchAccount).toHaveBeenCalledOnce();
     expect(sent).toHaveLength(0);
+  });
+});
+
+describe("a connection made through Composio", () => {
+  const COMPOSIO: OkContext = {
+    ...CONTEXT,
+    scopes: ["gmail.readonly", "webmasters.readonly"],
+    composio: [
+      { label: "Gmail", account: "ada@gmail.com" },
+      { label: "Search Console", account: "ada@work.com" },
+    ],
+  };
+
+  it("shows the services the app uses with their accounts where it shows scopes", () => {
+    render(COMPOSIO);
+    expect(container.querySelector("h1")?.textContent).toBe(
+      "Allow OpenSEO to use your Google Workspace account?",
+    );
+    expect(text()).toContain("Gmailada@gmail.com");
+    expect(text()).toContain("Search Consoleada@work.com");
+    expect(text()).not.toContain("Scopes");
+    expect(chips()).toEqual([]);
+    // Each service names its account: the connection's own name says no more.
+    expect(text().split("Google Workspace account")).toHaveLength(2);
+  });
+
+  it("says the app can do whatever those accounts allow in Composio", () => {
+    render(COMPOSIO);
+    expect(text()).toContain(
+      "OpenSEO can do whatever these accounts allow in Composio.",
+    );
+    render({ ...COMPOSIO, composio: [COMPOSIO.composio![0]!] });
+    expect(text()).toContain(
+      "OpenSEO can do whatever this account allows in Composio.",
+    );
+    render();
+    expect(text()).not.toContain("Composio");
+  });
+
+  it("posts the state and the decision, as any Allow does", () => {
+    render(COMPOSIO);
+    armAllow();
+    act(() => button("Allow").click());
+    expect(sent[0]!.action).toBe("/connect/google-workspace/allow");
+    expect([...sent[0]!.data.entries()]).toEqual([
+      [ALLOW_FIELDS.state, "state-1"],
+      [ALLOW_FIELDS.decision, ALLOW_APPROVE],
+    ]);
   });
 });
 

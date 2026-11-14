@@ -29,6 +29,7 @@ click when they have to do something themselves.
 | Google (Gmail, Calendar, Search Console and Analytics) | [google.md](/docs/agent/setup/google)        | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`                  | Open CRM                                                                |
 | Microsoft 365 (Outlook mail and calendar)     | [microsoft-365.md](/docs/agent/setup/microsoft-365)   | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET`                        | Open CRM                                                                |
 | Slack (OAuth client)                          | [slack.md](/docs/agent/setup/slack)                   | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`                                        | Open CRM                                                                |
+| Composio (people's accounts, with no OAuth app) | [composio.md](/docs/agent/setup/composio)           | none: the organization's switch (`everyapp workspace composio on`), then each person links their own Composio | apps listing an OAuth provider the Gateway holds no client for |
 | Every catalog provider, one section each (generated) | [providers.md](/docs/agent/setup/providers)    | each provider's own, named there                                                | apps listing the provider                                               |
 | Sign in with Google                           | [signin-google.md](/docs/agent/setup/signin-google)   | `GOOGLE_SIGNIN_CLIENT_ID`, `GOOGLE_SIGNIN_CLIENT_SECRET`                        | the Gateway's sign-in page (Continue with Google)                       |
 | Sign in with Microsoft                        | [signin-microsoft.md](/docs/agent/setup/signin-microsoft) | `MICROSOFT_SIGNIN_CLIENT_ID`, `MICROSOFT_SIGNIN_CLIENT_SECRET` (optional: `MICROSOFT_SIGNIN_TENANT`) | the Gateway's sign-in page (Continue with Microsoft)          |
@@ -73,6 +74,12 @@ Each other app then asks the member to allow it, on the Gateway's own page
 (Your connections → Accounts in the sidebar lists the connections with the
 apps allowed, and disconnects them). Google, Microsoft 365 and Slack below are
 the same: their files set the client and the scopes to allow on it.
+
+Every preset but Spotify can also be used with no OAuth app at all: an
+owner or admin turns Composio on, and each person uses the account in
+their own Composio. Requests to those accounts then pass through Composio,
+a third-party service. [composio.md](/docs/agent/setup/composio) says when
+to suggest it, which services it has for each provider, and its limits.
 
 Which integrations a person needs: the apps they deploy decide. Four
 EveryApp apps (OpenCRM, OpenSEO, OpenScribe, OpenAnalytics) are

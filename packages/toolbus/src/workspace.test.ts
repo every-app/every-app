@@ -128,6 +128,7 @@ describe("the workspace tool definitions", () => {
       "workspace_audit",
       "workspace_rename",
       "workspace_linked_dev",
+      "workspace_composio",
       "workspace_events",
       "workspace_events_add",
       "workspace_events_set",
@@ -230,6 +231,25 @@ describe("the workspace tool definitions", () => {
     // No workspace tool is the owner's alone (Ben's ruling of 2026-10-25:
     // owners and admins control the Gateway).
     expect(OWNER_TOOLS).toEqual([]);
+  });
+
+  it("turn Composio on or off with `on` and take `confirm` for off: an owner's or admin's write that says what on means", () => {
+    const tool = WORKSPACE_TOOLS.find(
+      (each) => each.name === "workspace_composio",
+    )!;
+    expect([tool.risk, tool.minRole]).toEqual(["write", "admin"]);
+    // Turning it on deletes nothing, so `confirm` is not the schema's to
+    // require: the handler asks for it when off would delete something.
+    expect(tool.irreversible).toBeUndefined();
+    expect(tool.inputSchema["required"]).toEqual(["on"]);
+    expect(tool.inputSchema["properties"]).toMatchObject({
+      on: { type: "boolean" },
+      confirm: { type: "boolean" },
+    });
+    // The sentence said before every Yes.
+    expect(tool.description).toContain(
+      "Requests to the accounts people use from Composio pass through Composio",
+    );
   });
 
   it("split the member-level tools from the admin ones: the four on the caller's own account", () => {
@@ -936,15 +956,19 @@ describe("running a workspace tool", () => {
     // By app id, the gateway's own tools come as a list, by name, as many
     // as the search returns at once (25) out of the total.
     // (The host registers no providers here, so of the provider tools the
-    // list and the connection tools are found, not the registry writers;
-    // providers.test.ts has the rest. The two sign-in provider reads are an
-    // owner's too; signin.test.ts.)
+    // list, the connection tools and the Composio link's are found, not the
+    // registry writers; providers.test.ts has the rest. The two sign-in
+    // provider reads are an owner's too; signin.test.ts.)
     const own = await search(OWNER, "full", { app: "everyapp" });
     const everyName = [
       ...WORKSPACE_TOOLS.map((tool) => listed(tool.name)),
       "everyapp_provider_list",
       "everyapp_provider_connections",
       "everyapp_provider_disconnect",
+      "everyapp_provider_composio",
+      "everyapp_provider_composio_link",
+      "everyapp_provider_composio_link_finish",
+      "everyapp_provider_composio_unlink",
       "everyapp_signin_list",
       "everyapp_signin_show",
     ].sort();
@@ -963,12 +987,13 @@ describe("running a workspace tool", () => {
         ...READ_TOOLS.filter((name) => !OWNER_TOOLS.includes(name)),
         "everyapp_provider_list",
         "everyapp_provider_connections",
+        "everyapp_provider_composio",
         "everyapp_signin_list",
         "everyapp_signin_show",
       ].sort(),
     );
-    // A member finds their own four (and the provider list and their own
-    // connections), and nothing of the admin's.
+    // A member finds their own four (and the provider list, their own
+    // connections and their own Composio link), and nothing of the admin's.
     expect(
       (await search(MEMBER, "compact", { app: "everyapp" })).tools.map(
         (tool) => tool.name,
@@ -979,6 +1004,10 @@ describe("running a workspace tool", () => {
         "everyapp_provider_list",
         "everyapp_provider_connections",
         "everyapp_provider_disconnect",
+        "everyapp_provider_composio",
+        "everyapp_provider_composio_link",
+        "everyapp_provider_composio_link_finish",
+        "everyapp_provider_composio_unlink",
       ].sort(),
     );
     expect((await search(MEMBER, "full", { query: "invite" })).tools).toEqual(

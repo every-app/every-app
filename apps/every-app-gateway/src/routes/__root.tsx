@@ -37,6 +37,8 @@ const PUBLIC_ROUTES = [
   // The same, for the page where a person allows an app to use their
   // connection to a provider.
   "/oauth/app-access",
+  // And for the page where they use an account from their Composio in an app.
+  "/oauth/composio",
 ];
 
 // Inner component that handles routing and session management (must be inside QueryClientProvider)

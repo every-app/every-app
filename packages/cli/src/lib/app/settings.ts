@@ -12,10 +12,13 @@ import {
   appSettings,
   appSetupOf,
   CATALOG,
+  composioServes,
   evaluateAppSettings,
   featureEntries,
   isReservedAppSecretName,
+  manifestScopes,
   oauthClientSource,
+  oauthProviderSetUp,
   settingValueTakes,
   type AppSettingsReport,
   type CapabilityLookup,
@@ -65,7 +68,7 @@ interface AppSetupInput {
   secretNames: readonly string[] | null;
   /** The catalog (the default) or the Gateway's registry. */
   lookup?: SettingsLookup;
-  /** Whether the Gateway holds each listed OAuth provider's client, by id ({@link oauthClientsHeld}); a provider left out reads by its names. */
+  /** Whether each listed OAuth provider is set up, by id ({@link oauthProvidersSetUp}); a provider left out reads by its names. */
   oauthReady?: ReadonlyMap<string, boolean>;
 }
 
@@ -107,22 +110,34 @@ export function appSetupFrom(input: AppSetupInput): AppSetupResult {
 }
 
 /**
- * Whether the Gateway holds the client of each OAuth provider the manifest
- * lists, decided as the Gateway decides it (the SDK's `oauthClientSource`):
- * its Worker settings while bound, else the client pasted under Manage
+ * Whether the manifest lists a provider Composio can serve: only then does
+ * its organization's Composio switch say anything, so only then is it read.
+ */
+export function listsComposioProvider(manifest: SettingsManifestLike): boolean {
+  return Object.keys(manifest.capabilities ?? {}).some((id) => composioServes(id));
+}
+
+/**
+ * Whether each OAuth provider the manifest lists is set up, decided as the
+ * Gateway decides it (the SDK's `oauthProviderSetUp`): the Gateway holds
+ * its client, or Composio is on for the app's organization, serves the
+ * provider, and has a service for every scope the app lists. The client is
+ * the Worker's settings while bound, else the one pasted under Manage
  * workspace → Providers (`oauth_clients`: the CLI reads its binding, never
  * the secret, so it can't tell a copy that no longer opens). A provider
  * whose Worker settings couldn't be listed is left out.
  */
-export function oauthClientsHeld(input: {
+export function oauthProvidersSetUp(input: {
   manifest: SettingsManifestLike;
   lookup: ProviderRegistry;
   /** The Gateway Worker's setting names, before any binding filter; null when cf couldn't list them. */
   gatewayNames: readonly string[] | null;
   pasted: ReadonlyMap<string, { boundTo: string | null; hasSecret: boolean }>;
+  /** Whether the app's organization turned Composio on (`org_settings.composio`). */
+  composioOn: boolean;
 }): Map<string, boolean> {
-  const held = new Map<string, boolean>();
-  if (input.gatewayNames === null) return held;
+  const setUp = new Map<string, boolean>();
+  if (input.gatewayNames === null) return setUp;
   const names = input.gatewayNames;
   for (const setting of appSettings(input.manifest, input.lookup)) {
     const capability = setting.kind === "capability" ? input.lookup.get(setting.id) : undefined;
@@ -135,9 +150,18 @@ export function oauthClientsHeld(input: {
       envBound: input.lookup.bound(setting.id),
       pasted: pasted ? { ...pasted, opens: true } : null,
     });
-    held.set(setting.id, source !== null);
+    setUp.set(
+      setting.id,
+      oauthProviderSetUp({
+        providerId: setting.id,
+        rules: capability.flow,
+        declared: manifestScopes(input.manifest, setting.id),
+        clientHeld: source !== null,
+        composioOn: input.composioOn,
+      }),
+    );
   }
-  return held;
+  return setUp;
 }
 
 /** Whether the manifest declares anything to set (a capability with no setting, like members, doesn't count). */

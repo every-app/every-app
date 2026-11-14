@@ -22,6 +22,8 @@ import {
   CATALOG,
   evaluateAppSettings,
   featureEntries,
+  manifestScopes,
+  oauthProviderSetUp,
   providerIds,
   type AppSetting,
   type AppSettingsReport,
@@ -46,6 +48,12 @@ export interface AppSetupInput {
   tier: string;
   /** The stored manifest: parsed, or its JSON. */
   manifest: unknown;
+  /**
+   * The organization whose Composio switch decides whether an OAuth
+   * provider with no client is set up (docs/design/2026-11-composio.md):
+   * the reader's, else the app's own. Absent, Composio counts as off.
+   */
+  organizationId?: string;
   /**
    * Whether whoever reads this can run the command: the app is their
    * organization's (a shared app seen from another organization is the
@@ -77,6 +85,8 @@ export interface AppSetupDeps {
     capability: OAuthClientCapability,
     registry: ProviderRegistry,
   ) => Promise<boolean>;
+  /** Whether the organization turned Composio on. Absent, it counts as off. */
+  composioOn?: (organizationId: string) => Promise<boolean>;
 }
 
 const defaultDeps: AppSetupDeps = {
@@ -99,6 +109,16 @@ const defaultDeps: AppSetupDeps = {
     clientsHeld.set(key, { ready: client !== null, at: Date.now() });
     return client !== null;
   },
+  composioOn: async (organizationId) => {
+    const held = composioSwitches.get(organizationId);
+    if (held && held.at > Date.now() - CLIENT_HELD_TTL_MS) return held.ready;
+    const { OrgSettingsRepository } = await import(
+      "@/server/repositories/OrgSettingsRepository"
+    );
+    const on = await OrgSettingsRepository.isComposioOn(organizationId);
+    composioSwitches.set(organizationId, { ready: on, at: Date.now() });
+    return on;
+  },
 };
 
 /**
@@ -108,6 +128,13 @@ const defaultDeps: AppSetupDeps = {
  */
 const CLIENT_HELD_TTL_MS = 30_000;
 const clientsHeld = new Map<string, { ready: boolean; at: number }>();
+/** Whether each organization turned Composio on, held the same way. */
+const composioSwitches = new Map<string, { ready: boolean; at: number }>();
+
+/** A change to an organization's Composio switch is read at once in this isolate. */
+export function forgetComposioSwitch(organizationId: string): void {
+  composioSwitches.delete(organizationId);
+}
 
 const REPORTS_MAX_ENTRIES = 500;
 /** Per isolate, by row, version and recorded names: env changes mean a new version and fresh isolates. */
@@ -116,6 +143,7 @@ const reports = new Map<string, AppSettingsReport>();
 export function resetAppSetupCacheForTests(): void {
   reports.clear();
   clientsHeld.clear();
+  composioSwitches.clear();
 }
 
 function cacheKey(input: AppSetupInput): string {
@@ -222,16 +250,38 @@ export async function appSettingsReport(
   // the cache instead.
   const remote = remoteMcpOf(manifest);
   // An OAuth provider's client comes from the env or from D1, so whether
-  // it is held is read before the cache and keys it.
+  // it is held is read before the cache and keys it. Without one, the
+  // provider is still set up when Composio is on for the organization and
+  // has a service for every scope the app lists (the SDK's
+  // `oauthProviderSetUp`).
   const oauthReady = new Map<string, boolean>();
   if (deps.oauthClientReady) {
     for (const setting of settings) {
       if (setting.kind !== "capability" || oauthReady.has(setting.id)) continue;
       const capability = registry.get(setting.id);
       if (capability?.mode !== "oauth_client") continue;
+      const clientHeld = await deps.oauthClientReady(
+        setting.id,
+        capability,
+        registry,
+      );
       oauthReady.set(
         setting.id,
-        await deps.oauthClientReady(setting.id, capability, registry),
+        oauthProviderSetUp({
+          providerId: setting.id,
+          rules: capability.flow,
+          declared: manifestScopes(manifest, setting.id),
+          clientHeld,
+          // Never for a remote MCP app: its server is reached with a
+          // token the Gateway holds, so its provider needs a client.
+          composioOn:
+            !clientHeld &&
+            !remote &&
+            input.organizationId !== undefined &&
+            deps.composioOn
+              ? await deps.composioOn(input.organizationId)
+              : false,
+        }),
       );
     }
   }

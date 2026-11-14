@@ -206,15 +206,18 @@ async function loadOAuthProxyDeps(
       { gatewayHeldTokens },
       { memberMayUseApp },
       { ProviderAppAccessRepository },
+      { gatewayComposioCalls },
     ] = await Promise.all([
       import("./oauth/client"),
       import("./oauth/heldTokens"),
       import("./oauth/appAccess"),
       import("./repositories/ProviderAppAccessRepository"),
+      import("./composio/calls"),
     ]);
     return {
       resolveClient: resolveOAuthClient,
       connections: gatewayHeldTokens({ fetchUpstream }),
+      composio: gatewayComposioCalls({ fetchUpstream }),
       members: {
         mayUse: memberMayUseApp,
         async revoke(input) {
@@ -451,6 +454,7 @@ export async function handleAppGatewayRequest({
               oauth: {
                 resolveClient: oauthDeps.resolveClient,
                 connections: oauthDeps.connections,
+                ...(oauthDeps.composio ? { composio: oauthDeps.composio } : {}),
                 ...(oauthDeps.members ? { members: oauthDeps.members } : {}),
                 app: {
                   ...(app.rowId ? { rowId: app.rowId } : {}),

@@ -13,14 +13,19 @@
  * one person's to one provider with the apps allowed to use it and its
  * scopes folded to the first, one app's access taken away by the
  * connection's id and the app's row id, and Disconnect. No scope sets, no
- * organization connect, no background.
+ * organization connect, no background. Composio is a section of its own,
+ * Off or On, turned on and off behind a confirm, and never a row; a
+ * provider it serves reads Ready and says so.
  */
 import { act, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { COMPOSIO_IS, COMPOSIO_NOTICE } from "@every-app/sdk/internal";
 
 const mocks = vi.hoisted(() => ({
+  getComposioSwitch: vi.fn(),
+  setComposioSwitch: vi.fn(),
   listProviders: vi.fn(),
   listOAuthPresets: vi.fn(),
   addOAuthProvider: vi.fn(),
@@ -54,6 +59,11 @@ vi.mock("@/serverFunctions/connections", () => ({
 }));
 vi.mock("@/serverFunctions/ai", () => ({
   getAiDefault: mocks.getAiDefault,
+}));
+vi.mock("@/serverFunctions/composio", () => ({
+  getComposioSwitch: mocks.getComposioSwitch,
+  setComposioSwitch: mocks.setComposioSwitch,
+  getComposioStatus: vi.fn(),
 }));
 vi.mock("sonner", () => ({ toast: mocks.toast }));
 
@@ -261,6 +271,8 @@ beforeEach(() => {
   for (const fn of Object.values(mocks)) {
     if (typeof fn === "function") fn.mockReset();
   }
+  mocks.toast.success.mockReset();
+  mocks.toast.error.mockReset();
   mocks.listProviders.mockResolvedValue({
     providers: [openrouter, google, dataforseo, exa, email, github],
   });
@@ -271,6 +283,11 @@ beforeEach(() => {
   });
   mocks.listOAuthPresets.mockResolvedValue({ presets });
   mocks.listAllConnections.mockResolvedValue({ connections });
+  mocks.getComposioSwitch.mockResolvedValue({
+    composio: "off",
+    links: 0,
+    connections: 0,
+  });
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -360,6 +377,13 @@ async function pressMenuItem(label: string) {
   );
 }
 
+/** The hosts a dialog says a credential can go to: behind Allowed hosts, closed until pressed. */
+async function allowedHosts(dialog: Element): Promise<string> {
+  expect(dialog.textContent).not.toContain("only to call");
+  await press(button("Allowed hosts", dialog));
+  return dialog.textContent ?? "";
+}
+
 const dialogText = () =>
   document.body.querySelector('[role="alertdialog"], [role="dialog"]')
     ?.textContent ?? "";
@@ -418,7 +442,7 @@ describe("the providers table", () => {
     expect(dialog.textContent).toContain(
       "pnpm everyapp secret set DATAFORSEO_API_KEY",
     );
-    expect(dialog.textContent).toContain(
+    expect(await allowedHosts(dialog)).toContain(
       "Apps can use this key only to call api.dataforseo.com.",
     );
     expect(dialog.querySelector("input")).toBeNull();
@@ -443,8 +467,204 @@ describe("the providers table", () => {
     const dialog = document.body.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain("Slack");
     expect(dialog.textContent).toContain(slack.oauth.redirectUri);
-    expect(dialog.textContent).toContain(
+    expect(await allowedHosts(dialog)).toContain(
       `Apps can use connected accounts only to call ${slack.oauth.hosts.join(", ")}.`,
+    );
+  });
+});
+
+/** The open confirmation's button, by its label. */
+async function confirmWith(label: string) {
+  await press(
+    [
+      ...document.querySelectorAll<HTMLButtonElement>(
+        '[role="alertdialog"] button',
+      ),
+    ].find((element) => element.textContent?.trim() === label)!,
+  );
+}
+
+const confirmText = () =>
+  document.body.querySelector('[role="alertdialog"]')?.textContent ?? "";
+
+/** Composio's section: its heading's, above the providers. */
+function composioSection(): HTMLElement | null {
+  const heading = [...container.querySelectorAll("h2")].find((element) =>
+    element.textContent?.startsWith("Composio"),
+  );
+  return heading?.closest("section") ?? null;
+}
+
+describe("Composio's section", () => {
+  it("is a section of its own above the providers, Off with Turn on and a link to its docs, and no row of theirs", async () => {
+    await render();
+    expect(rowNames()).not.toContain("Composio");
+    const section = composioSection()!;
+    expect(section.querySelector("h2")!.textContent).toBe("ComposioOff");
+    expect(
+      [...section.querySelectorAll("button")].map((b) => b.textContent),
+    ).toEqual(["Turn on"]);
+    expect(section.querySelector("p")!.textContent).toBe(
+      "Gateway users can optionally use Composio to link their accounts. How it works",
+    );
+    expect(section.querySelector("a")!.getAttribute("href")).toBe(
+      "https://everyapp.com/docs/composio",
+    );
+    expect(
+      [...container.querySelectorAll("h2")].map((h) => h.textContent),
+    ).toEqual(["ComposioOff", "Providers", "Organization connections"]);
+  });
+
+  it("says what Composio is and where requests go before it turns on", async () => {
+    mocks.setComposioSwitch.mockResolvedValue({
+      composio: "on",
+      changed: true,
+      removed: { links: 0, connections: 0 },
+    });
+    await render();
+    await press(button("Turn on", composioSection()!));
+    expect(confirmText()).toContain("Turn on Composio?");
+    expect(confirmText()).toContain(COMPOSIO_IS);
+    expect(confirmText()).toContain(COMPOSIO_NOTICE);
+    expect(mocks.setComposioSwitch).not.toHaveBeenCalled();
+    mocks.getComposioSwitch.mockResolvedValue({
+      composio: "on",
+      links: 0,
+      connections: 0,
+    });
+    await confirmWith("Turn on");
+    expect(mocks.setComposioSwitch.mock.calls).toEqual([
+      [{ data: { on: true } }],
+    ]);
+    expect(mocks.toast.success).toHaveBeenCalledWith("Composio turned on");
+    expect(document.body.querySelector('[role="alertdialog"]')).toBeNull();
+    // The lists are read again: the section is On, with Turn off.
+    expect(mocks.listProviders).toHaveBeenCalledTimes(2);
+    expect(composioSection()!.querySelector("h2")!.textContent).toBe(
+      "ComposioOn",
+    );
+    expect(button("Turn off", composioSection()!)).toBeTruthy();
+  });
+
+  it("leaves Composio off when the confirm is cancelled", async () => {
+    await render();
+    await press(button("Turn on", composioSection()!));
+    await confirmWith("Cancel");
+    expect(mocks.setComposioSwitch).not.toHaveBeenCalled();
+    expect(composioSection()!.querySelector("h2")!.textContent).toBe(
+      "ComposioOff",
+    );
+  });
+
+  it("turns off only after a yes to what the server says that deletes", async () => {
+    mocks.getComposioSwitch.mockResolvedValue({
+      composio: "on",
+      links: 0,
+      connections: 0,
+    });
+    // The page read nothing to delete; by the press there is: the server's count is the one asked about.
+    mocks.setComposioSwitch.mockResolvedValueOnce({
+      needsConfirm: { links: 2, connections: 3 },
+    });
+    await render();
+    await press(button("Turn off", composioSection()!));
+    expect(mocks.setComposioSwitch.mock.calls).toEqual([
+      [{ data: { on: false } }],
+    ]);
+    expect(confirmText()).toContain("Turn off Composio?");
+    expect(confirmText()).toContain(
+      "This deletes 2 people's Composio links and 3 connections made through Composio.",
+    );
+    // Nothing is said to have happened yet.
+    expect(mocks.toast.success).not.toHaveBeenCalled();
+    expect(mocks.listProviders).toHaveBeenCalledTimes(1);
+
+    mocks.setComposioSwitch.mockResolvedValueOnce({
+      composio: "off",
+      changed: true,
+      removed: { links: 2, connections: 3 },
+    });
+    await confirmWith("Turn off");
+    expect(mocks.setComposioSwitch.mock.calls).toEqual([
+      [{ data: { on: false } }],
+      [{ data: { on: false, confirm: true } }],
+    ]);
+    expect(mocks.toast.success).toHaveBeenCalledWith("Composio turned off");
+    expect(document.body.querySelector('[role="alertdialog"]')).toBeNull();
+  });
+
+  it("counts one link, and leaves Composio on when the confirm is cancelled", async () => {
+    mocks.getComposioSwitch.mockResolvedValue({
+      composio: "on",
+      links: 1,
+      connections: 0,
+    });
+    mocks.setComposioSwitch.mockResolvedValueOnce({
+      needsConfirm: { links: 1, connections: 0 },
+    });
+    await render();
+    await press(button("Turn off", composioSection()!));
+    expect(confirmText()).toContain("This deletes 1 person's Composio link.");
+    await confirmWith("Cancel");
+    expect(mocks.setComposioSwitch).toHaveBeenCalledTimes(1);
+    expect(mocks.toast.success).not.toHaveBeenCalled();
+  });
+
+  it("turns off without asking when the server finds nothing to delete", async () => {
+    mocks.getComposioSwitch.mockResolvedValue({
+      composio: "on",
+      links: 0,
+      connections: 0,
+    });
+    mocks.setComposioSwitch.mockResolvedValueOnce({
+      composio: "off",
+      changed: true,
+      removed: { links: 0, connections: 0 },
+    });
+    await render();
+    await press(button("Turn off", composioSection()!));
+    expect(document.body.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(mocks.setComposioSwitch.mock.calls).toEqual([
+      [{ data: { on: false } }],
+    ]);
+    expect(mocks.toast.success).toHaveBeenCalledWith("Composio turned off");
+  });
+
+  it("lists the providers without the section when the switch can't be read", async () => {
+    mocks.getComposioSwitch.mockRejectedValue(new Error("down"));
+    await render();
+    expect(composioSection()).toBeNull();
+    expect(rowNames()).toContain("GitHub");
+  });
+
+  it("reads a provider served through Composio as Ready, and says so under its name", async () => {
+    mocks.getComposioSwitch.mockResolvedValue({
+      composio: "on",
+      links: 0,
+      connections: 0,
+    });
+    mocks.listProviders.mockResolvedValue({
+      providers: [
+        {
+          ...slack,
+          configured: true,
+          apps: [{ rowId: "app_chat", name: "chat", needs: false }],
+          oauth: { ...slack.oauth, composio: true },
+        },
+      ],
+    });
+    await render();
+    expect(cells("Slack").slice(0, 4)).toEqual([
+      "Slackslack · OAuth via Composio",
+      "chat",
+      "Ready",
+      "",
+    ]);
+    // Its own client can still be set, and that ends Composio for it.
+    await openRowMenu("Slack");
+    await pressMenuItem("Set client");
+    expect(dialogText()).toContain(
+      "People who connected Slack through Composio reconnect.",
     );
   });
 });
@@ -580,7 +800,7 @@ describe("Add OAuth provider", () => {
       step.querySelector("[data-slot='dialog-description'] code")?.textContent,
       "a hint's backticked words read as code",
     ).toBe("GitHub App");
-    expect(step.textContent).toContain(
+    expect(await allowedHosts(step)).toContain(
       "Apps can use connected accounts only to call api.github.com.",
     );
     expect(step.textContent).toContain(
@@ -665,6 +885,33 @@ describe("the connections table", () => {
       "Expired",
     ]);
     expect(body()).not.toMatch(/organization's|background|each app/i);
+  });
+
+  it("shows the services of a connection made through Composio where another shows scopes", async () => {
+    mocks.listAllConnections.mockResolvedValue({
+      connections: [
+        {
+          ...connections[0]!,
+          providerId: "google-workspace",
+          providerName: "Google Workspace",
+          label: "ada@gmail.com",
+          via: "composio",
+          scopes: [],
+          services: [
+            { name: "Gmail", account: "ada@gmail.com" },
+            { name: "Search Console", account: "ada@gmail.com" },
+          ],
+        },
+      ],
+    });
+    await render();
+    expect(connectionRow("ada@acme.com").slice(0, 5)).toEqual([
+      "ada@acme.comada@gmail.com",
+      "Google Workspace",
+      "CICRM",
+      "Composio: Gmail, Search Console",
+      "Connected",
+    ]);
   });
 
   it("opens a connection's scopes, and folds them again", async () => {

@@ -587,6 +587,14 @@ answers 409 `integration_not_connected` with `connectPath` (and
 declined at the provider refuses nothing here: the call goes, and the
 provider refuses the ones that need it.
 
+A gateway may hold no client for a provider and use the accounts in each
+person's own Composio instead, where its organization turned that on. Your
+code is the same, and `connectUrl()` then leads to the gateway's page for
+it. Two things differ there: only a JSON request body can be sent
+(`integration_body_invalid` otherwise), and a URL none of the provider's
+services in Composio owns is refused (`invalid_integration_route`). The
+services and the limits: https://everyapp.com/docs/agent/setup/composio.
+
 `integrationStatus` for an OAuth provider adds `scopes` (as the manifest
 lists them), `connectPath` (`/connect/<id>?app=<app>`, or null) and
 `connection` (`{ label, scopes, ready, missingScopes?, reconnect? }`, or
