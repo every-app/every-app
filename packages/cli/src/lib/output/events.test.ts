@@ -763,7 +763,7 @@ describe("createHumanSink", () => {
       data: { appId: "todo" },
     });
     sink.emit({ type: "step", step: "dev.ready", status: "ok", data: { port: 8787 } });
-    sink.emit({ type: "progress", step: "dev.session", message: "Every request goes through the real perimeter. Ctrl+C to stop." });
+    sink.emit({ type: "progress", step: "dev.session", message: "Ctrl+C to stop." });
     sink.emit({ type: "progress", step: "dev.mcp", message: "MCP  list_todos  ok  12ms" });
     sink.emit({ type: "step", step: "dev.stop", status: "ok", data: { appId: "todo", started: true } });
 
@@ -774,7 +774,7 @@ describe("createHumanSink", () => {
       "",
       "  App  http://todo.localhost:8787",
       "",
-      "Every request goes through the real perimeter. Ctrl+C to stop.",
+      "Ctrl+C to stop.",
       "MCP  list_todos  ok  12ms",
       "✓ todo stopped",
     ]);

@@ -26,7 +26,7 @@ export const installCommand = buildCommand({
       "no-wait": {
         kind: "boolean",
         brief:
-          "Don't wait for the app to go live (a new hostname's certificate included); the Gateway makes it live within a minute, or on its first visit",
+          "Don't wait for the app to go live; the Gateway makes it live within a minute, or on its first visit",
         optional: true,
       },
       "dry-run": {
@@ -38,7 +38,7 @@ export const installCommand = buildCommand({
       yes: {
         kind: "boolean",
         brief:
-          "With no Gateway yet, install one at apps.<zone> without asking, and rename the app the release's previousIds names without asking (never registers the providers the app bundles, cf's questions, or the one before replacing a Worker changed outside everyapp)",
+          "With no Gateway yet, install one at apps.<zone> without asking, and rename the app the release's previousIds names without asking (never Cloudflare's own questions, or replacing a Worker changed outside everyapp)",
         optional: true,
       },
       json: jsonFlag,
@@ -65,9 +65,6 @@ export const installCommand = buildCommand({
       "No Gateway in any account the login sees, and none named? At a terminal it offers to install one at",
       `apps.<zone> (what ${CLI} setup does, owner link included), then installs the app; otherwise`,
       "it stops with action_required install_gateway and the setup command to run.",
-      "--gateway <url> (or EVERYAPP_GATEWAY_URL) names the Gateway when your login sees several.",
-      "--dry-run says whether this everyapp would install the release, and installs nothing.",
-      "With --json, each step is an NDJSON event.",
     ].join("\n"),
   },
 });

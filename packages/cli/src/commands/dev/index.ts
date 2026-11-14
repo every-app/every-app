@@ -362,7 +362,7 @@ export async function runDev(
       out.emit({
         type: "progress",
         step: "dev.session",
-        message: "Every request goes through the real perimeter. Ctrl+C to stop.",
+        message: "Ctrl+C to stop.",
       });
 
       await appServer.exited;

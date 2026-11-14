@@ -163,7 +163,7 @@ export async function removeApp({
     type: "step",
     step: "app.delete",
     status: "ok",
-    message: `${appId} is deleted on the gateway; ${deleted.hostname} stops serving it.`,
+    message: `${appId} is deleted on the Gateway; ${deleted.hostname} stops serving it.`,
     data: {
       appId,
       hostname: deleted.hostname,

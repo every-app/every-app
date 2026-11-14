@@ -159,7 +159,7 @@ describe("waitForCertificates", () => {
       }),
     ]);
     expect(stale[0].message).toBe(
-      "https://everyapp.example.com has its certificate and the gateway serves it, but this computer's DNS resolver, or this network's, still remembers everyapp.example.com as missing from before it existed. That clears by itself within 30 minutes; a browser with its own DNS, such as Chrome, works now. On macOS, `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder` clears this computer's own cache, but not the network's.",
+      "https://everyapp.example.com has its certificate and the Gateway serves it, but this computer's DNS resolver, or this network's, still remembers everyapp.example.com as missing from before it existed. That clears by itself within 30 minutes; a browser with its own DNS, such as Chrome, works now. On macOS, `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder` clears this computer's own cache, but not the network's.",
     );
     expect(out.exitCode).toBe(0);
   });

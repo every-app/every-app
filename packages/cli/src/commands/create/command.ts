@@ -38,10 +38,7 @@ export const createCommand = buildCommand({
     brief: "Create a new app from the starter template",
     fullDescription: [
       "A bare name makes ./<name>; a path (../my-app, ~/apps/my-app) makes the app there,",
-      "named after its last part. Each is its own git repository, its pnpm-lock.yaml in",
-      "the first commit. Made by everyapp installed from npm, it is pinned to the published",
-      "@every-app/sdk and everyapp; made from a checkout, it is linked to that checkout's,",
-      "so its deploy runs the checkout's CLI.",
+      "named after its last part. Each is its own git repository.",
       "Dependencies are installed and the local database is ready, so `pnpm dev` works",
       "straight away. Then: cd into it and `pnpm run deploy`.",
       "",

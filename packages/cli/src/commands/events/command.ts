@@ -116,7 +116,7 @@ const listCommand = buildCommand({
     brief: "List the organization's subscriptions: where each goes, what it takes, how its last delivery went",
     fullDescription: [
       "A webhook shows its URL's host and path (never its query or secret); an email one, whom it",
-      "mails. Nothing is changed.",
+      "mails.",
       "",
       "Example:",
       `  ${CLI} events list`,
@@ -151,7 +151,7 @@ const enableCommand = buildCommand({
   docs: {
     brief: "Resume a subscription: new events are queued for it again",
     fullDescription: [
-      "What happened while it was disabled isn't sent. Safe to repeat.",
+      "What happened while it was disabled isn't sent.",
       "",
       "Example:",
       `  ${CLI} events enable sub_0123456789abcdef01234567`,
@@ -168,7 +168,7 @@ const disableCommand = buildCommand({
   docs: {
     brief: "Pause a subscription: no new events are queued for it, and what is queued is dropped",
     fullDescription: [
-      "Turn the built-in cap alerts off this way. Safe to repeat; events enable resumes it.",
+      "Turn the built-in cap alerts off this way; events enable resumes it.",
       "",
       "Example:",
       `  ${CLI} events disable sub_0123456789abcdef01234567`,
@@ -238,7 +238,7 @@ const deliveriesCommand = buildCommand({
     brief: "List the last deliveries (30 days): the event, its subscription, attempts, status, next attempt, last error",
     fullDescription: [
       "A delivery is retried after 1, 5 and 30 minutes, then 2, 8 and 24 hours; the seventh failure",
-      "is dead. Nothing is changed.",
+      "is dead.",
       "",
       "Examples:",
       `  ${CLI} events deliveries`,
@@ -281,8 +281,7 @@ const typesCommand = buildCommand({
   docs: {
     brief: "List the event types --events takes, with their versions",
     fullDescription: [
-      "The catalogue this CLI knows, and how a pattern names several (member.*, app.crm.*, *). No",
-      "Gateway is needed.",
+      "The catalogue this CLI knows, and how a pattern names several (member.*, app.crm.*, *).",
       "",
       "Example:",
       `  ${CLI} events types`,

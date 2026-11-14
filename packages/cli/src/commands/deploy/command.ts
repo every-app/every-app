@@ -16,13 +16,13 @@ export const deployCommand = buildCommand({
       "no-wait": {
         kind: "boolean",
         brief:
-          "Don't wait for the app to go live (a new hostname's certificate included); the Gateway makes it live within a minute, or on its first visit",
+          "Don't wait for the app to go live; the Gateway makes it live within a minute, or on its first visit",
         optional: true,
       },
       yes: {
         kind: "boolean",
         brief:
-          "With no Gateway yet, install one at apps.<zone> without asking, and rename the app previousIds names without asking (never registers the providers the app bundles, cf's questions, or the one before replacing a Worker changed outside everyapp)",
+          "With no Gateway yet, install one at apps.<zone> without asking, and rename the app previousIds names without asking (never Cloudflare's own questions, or replacing a Worker changed outside everyapp)",
         optional: true,
       },
       json: jsonFlag,
@@ -42,8 +42,7 @@ export const deployCommand = buildCommand({
       "  4. Bookmarks the production D1 database, then applies its migrations",
       "  5. Uploads the Worker with its secrets, its helper Workers, its Workflows and the Email",
       "     Routing rules for its inbound addresses (turning routing on for a domain asks first)",
-      "  6. Binds a new app on the Gateway by redeploying the live Gateway's own release (never a",
-      `     newer one: that is ${CLI} update), then waits for the app's hostname to go live`,
+      "  6. Binds a new app on the Gateway, then waits for the app's hostname to go live",
       "",
       "No Gateway in any account the login sees, and none named? At a terminal it offers to install one at",
       `apps.<zone> (what ${CLI} setup does), then deploys; otherwise it stops with action_required`,
@@ -55,13 +54,9 @@ export const deployCommand = buildCommand({
       "keeps working. When no app has or had any of the previous ids, there is nothing to rename and the",
       "app is deployed as a new one.",
       "",
-      "Nothing else asks first. Install and build",
-      "output goes to a log file, never to stdout. Safe to run again: a redeploy of an app the",
-      "Gateway already serves never touches the Gateway.",
+      "Install and build output goes to a log file. Safe to run again.",
       "",
       `Someone else's published app: ${CLI} install <url>. To publish this one: ${CLI} release.`,
-      "--gateway <url> (or EVERYAPP_GATEWAY_URL) names the Gateway when your login sees several.",
-      "With --json, each step is an NDJSON event.",
     ].join("\n"),
   },
 });

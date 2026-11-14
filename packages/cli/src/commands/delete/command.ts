@@ -41,9 +41,8 @@ export const deleteCommand = buildCommand({
   docs: {
     brief: "Remove an app from the Gateway",
     fullDescription: [
-      "Deletes the app in the Gateway's D1 database (its name stays reserved; deploy it again to",
-      "bring it back) and removes its Gateway binding and hostname, with a redeploy of the Gateway",
-      "from this checkout.",
+      "Removes the app from the Gateway: its hostname stops serving it. Its name stays reserved;",
+      "deploy it again to bring it back.",
       "The app's Worker and data are kept unless --purge, which deletes them for good.",
       "Asks first at a terminal; elsewhere it needs --yes.",
     ].join("\n"),

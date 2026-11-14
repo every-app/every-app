@@ -277,8 +277,8 @@ describe("configure at a terminal", () => {
     });
     await run;
 
-    // One line on where the values go, then the table, before the first prompt.
-    expect(run.prompter.told[0]).toMatch(/^crm's settings are held as the Gateway's secrets/);
+    // One line on when a change takes effect, then the table, before the first prompt.
+    expect(run.prompter.told[0]).toBe("Changes are live at once, no deploy needed.");
     // The SETTING column is as wide as the two-name email row.
     expect(run.prompter.told.slice(2, 4)).toEqual([
       "SETTING                     WHERE    STATUS",

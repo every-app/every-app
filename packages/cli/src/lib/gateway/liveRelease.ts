@@ -277,7 +277,7 @@ export function liveGatewaySource({
 function unavailable(install: LiveInstall, origin: ReleaseOrigin, root: string | null, why: string): EveryAppError {
   return new EveryAppError(
     "GATEWAY_RELEASE_UNAVAILABLE",
-    `The live Gateway ${install.releaseVersion} (from ${describeOrigin(origin)}) can't be fetched again: ${why}\nDeploying or deleting an app never changes the Gateway's code, so nothing has changed. Update the Gateway first: that also saves its release in its Cloudflare account, so every machine can do this afterwards.`,
+    `The live Gateway ${install.releaseVersion} (from ${describeOrigin(origin)}) can't be fetched again: ${why}\nNothing changed. Update the Gateway first: that also saves its release in its Cloudflare account, so every machine can do this afterwards.`,
     {
       rerun: `${CLI} update`,
       // A checkout's Gateway is updated from a checkout: a published

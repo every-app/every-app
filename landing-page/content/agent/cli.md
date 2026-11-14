@@ -31,7 +31,7 @@ Not repeated under each command below:
 ### `everyapp create [<name or path>]`
 Create a new app from the starter template.
 
-A bare name makes ./<name>; a path (../my-app, ~/apps/my-app) makes the app there, named after its last part. Each is its own git repository, its pnpm-lock.yaml in the first commit. Made by everyapp installed from npm, it is pinned to the published @every-app/sdk and everyapp; made from a checkout, it is linked to that checkout's, so its deploy runs the checkout's CLI. Dependencies are installed and the local database is ready, so `pnpm dev` works straight away. Then: cd into it and `pnpm run deploy`.
+A bare name makes ./<name>; a path (../my-app, ~/apps/my-app) makes the app there, named after its last part. Each is its own git repository. Dependencies are installed and the local database is ready, so `pnpm dev` works straight away. Then: cd into it and `pnpm run deploy`.
 
 Run from a checkout of the EveryApp repository, a bare name goes in apps/<name> (on the checkout's own packages); a path inside the checkout must be apps/<name>.
 
@@ -47,13 +47,13 @@ everyapp create ~/apps/crm  # ~/apps/crm, its own repository
 ### `everyapp dev`
 Run the app locally behind a dev Gateway.
 
-Runs the app under `cf dev` (or the manifest's dev command) on an internal port and a gateway-lite in front of it on $PORT (default 8787) — the REAL perimeter: public-route policy, header strip/inject, a real RS256 identity JWT, and a seeded dev user. Open http://<app-id>.localhost:8787 — the first Host label selects the app, so portless per-worktree hosts work with no configuration.
+Runs the app (`cf dev`, or the manifest's dev command) behind a dev Gateway on $PORT (default 8787), signed in as a seeded dev user. Open http://<app-id>.localhost:8787: the first Host label selects the app.
 
-Identities are signed with the SDK's well-known dev keypair, which the app's development build trusts on its own: nothing is written into the app. The key is public, so the gateway listens on 127.0.0.1 unless --host says otherwise. Before starting, dev generates the Worker's types when .cloudflare/types is missing and applies local D1 migrations (cf d1 migrations apply --local) to .cloudflare/state.
+Before starting, dev generates the Worker's types when .cloudflare/types is missing and applies local D1 migrations to .cloudflare/state.
 
 With no Gateway in local runs, the app reads its manifest's secrets and the keys of its providers and capabilities (OPENROUTER_API_KEY, DATAFORSEO_API_KEY, ...) from .dev.vars in its directory, one NAME=value per line, gitignored. The ready block names the ones that file is missing and the app can't run without; until they are set, AI calls and integrations answer that they aren't set up (email needs none: sendEmail() prints until EMAIL_FROM and a transport are set).
 
-Every request goes through the real perimeter (identity header, public-route policy, CSRF). Public routes are auth-optional; to call them anonymously send the header x-everyapp-dev-anon: 1 (curl) or set the cookie everyapp_dev_anon=1 (browser). Requests straight to the app's internal port get 401 unless they carry an identity token in x-everyapp-identity: `everyapp dev token` prints one.
+Every request goes through the same perimeter as production (identity header, public-route policy, CSRF). To call a public route anonymously, send the header x-everyapp-dev-anon: 1 (curl) or set the cookie everyapp_dev_anon=1 (browser). Requests straight to the app's internal port get 401 unless they carry an identity token in x-everyapp-identity: `everyapp dev token` prints one.
 
 An app that declares crons runs one on demand with
 ```sh
@@ -62,7 +62,7 @@ curl -X POST http://<app-id>.localhost:8787/__everyapp/cron -d '<schedule>'
 
 An app that receives mail gets a curl command that delivers message.eml to its email() handler: a raw message with From, To, Subject and Message-ID headers, to any address. email() gets no identity.
 
---mode stub (default): seeded dev user, zero setup. --mode mirror: authenticate against a SEPARATELY-running local Gateway (run `pnpm dev` in apps/every-app-gateway first). Real login/launcher are forwarded to it. Requires a two-label base host (e.g. everyapp.localhost) so the session cookie crosses the subdomain boundary; the CLI prints setup guidance if the host is unusable. Also settable via EVERYAPP_DEV_MODE; the flag wins. --gateway https://<your gateway> (linked dev): the app runs here as you, and its AI, email, provider, member and event calls go through that Gateway, with no provider key on this computer. The first run signs you in once in the browser (owners and admins, on a workspace that ran `everyapp workspace linked-dev on`); the token lives in ~/.config/everyapp/linked-dev.json, never in the app. Calls bill the workspace's providers. Data (D1, KV, R2) stays local; the app's own secrets still come from .dev.vars. `everyapp dev unlink` signs out.
+--mode stub (default): seeded dev user, zero setup. --mode mirror: sign in through a local Gateway running separately (run `pnpm dev` in apps/every-app-gateway first). Needs a two-label base host (e.g. everyapp.localhost) so the session cookie reaches the app's subdomain. --mode is also settable via EVERYAPP_DEV_MODE; the flag wins. --gateway https://<your gateway> (linked dev): the app runs here as you, and its AI, email, provider, member and event calls go through that Gateway, with no provider key on this computer. The first run signs you in once in the browser (owners and admins, on a workspace that ran `everyapp workspace linked-dev on`); the token lives in ~/.config/everyapp/linked-dev.json, never in the app. Calls bill the workspace's providers. Data (D1, KV, R2) stays local; the app's own secrets still come from .dev.vars. `everyapp dev unlink` signs out.
 
 Ctrl+C stops the app and exits with 130.
 
@@ -76,9 +76,9 @@ Ctrl+C stops the app and exits with 130.
 ### `everyapp dev token`
 Print a dev identity token for scripts that call the app's dev port.
 
-Prints an identity token the app accepts while it runs under `everyapp dev`, for scripts and curl that call the app's internal dev port directly as someone other than the gateway-lite's seeded user: a member, an admin, another organization. Send it as the x-everyapp-identity header. The gateway-lite itself replaces that header with its own, so use the internal port the ready block prints (App port).
+Prints an identity token the app accepts while it runs under `everyapp dev`, for scripts and curl that call the app's internal dev port directly as someone other than the seeded dev user: a member, an admin, another organization. Send it as the x-everyapp-identity header. The dev Gateway replaces that header with its own, so use the internal port the ready block prints (App port).
 
-The token is minted as the gateway-lite mints its own: the SDK's well-known dev key and kid, the dev issuer https://gateway.dev.localhost, aud = the app id, a full session (channel web, scopes *). Only a development build of the app (EVERYAPP_DEV, set by everyAppWorker() under dev) accepts it; a deployed app refuses it whatever it says.
+Only a development build of the app accepts it; a deployed app refuses it.
 
 Without --user, owner is the dev user (dev@everyapp.localhost, sub dev-user); admin and member are people of their own (<role>@everyapp.localhost, sub dev-<role>). With --user, the sub is dev-<email>. Agent tools are reached through <app-id>.localhost:8787/mcp, not with this token.
 
@@ -129,24 +129,24 @@ Deploys the app in this directory as a private Cloudflare Worker defined by clou
 3. Installs dependencies and builds (cf build, or the manifest's build command), then checks the built Worker against the app policy and the drizzle migrations against the schema
 4. Bookmarks the production D1 database, then applies its migrations
 5. Uploads the Worker with its secrets, its helper Workers, its Workflows and the Email Routing rules for its inbound addresses (turning routing on for a domain asks first)
-6. Binds a new app on the Gateway by redeploying the live Gateway's own release (never a newer one: that is everyapp update), then waits for the app's hostname to go live
+6. Binds a new app on the Gateway, then waits for the app's hostname to go live
 
 No Gateway in any account the login sees, and none named? At a terminal it offers to install one at apps.<zone> (what everyapp setup does), then deploys; otherwise it stops with action_required install_gateway and the setup command to run.
 
 A rename: change id in everyapp.config.ts and list the old one under previousIds. When the new id isn't registered and a previous one is, the deploy shows what moves (the id and hostname; the Worker, its data and the Gateway's state stay) and asks first (--yes for CI); the old hostname keeps working. When no app has or had any of the previous ids, there is nothing to rename and the app is deployed as a new one.
 
-Nothing else asks first. Install and build output goes to a log file, never to stdout. Safe to run again: a redeploy of an app the Gateway already serves never touches the Gateway.
+Install and build output goes to a log file. Safe to run again.
 
-Someone else's published app: everyapp install <url>. To publish this one: everyapp release. --gateway <url> (or EVERYAPP_GATEWAY_URL) names the Gateway when your login sees several. With --json, each step is an NDJSON event.
+Someone else's published app: everyapp install <url>. To publish this one: everyapp release.
 
 - `--allow-delete-durable-object-data`: Deploy even though Durable Object classes were removed, deleting their data
 - `--allow-delete-workflows`: Deploy even though Workflows were removed, deleting them and their instances
 - `--force-dns`: Publish the app's new hostname even where a DNS record answers it (one at the hostname is replaced)
-- `--enable-email-routing`: Turn on Email Routing for the domains the app's inbound addresses (everyapp email set --inbound) name that don't route mail yet (locks their MX and SPF records to Cloudflare)
+- `--enable-email-routing`: Turn on Email Routing for the app's inbound domains that don't route mail yet (locks their MX and SPF records to Cloudflare)
 - `--replace-mx`: Turn on Email Routing even for a domain whose MX records deliver its mail elsewhere (Google Workspace...): they are replaced, and that mail stops arriving there
 - `--register-providers`: Register the providers the app bundles, which tell the Gateway where to send their keys (--yes doesn't)
-- `--no-wait`: Don't wait for the app to go live (a new hostname's certificate included); the Gateway makes it live within a minute, or on its first visit
-- `--yes`: With no Gateway yet, install one at apps.<zone> without asking, and rename the app previousIds names without asking (never registers the providers the app bundles, cf's questions, or the one before replacing a Worker changed outside everyapp)
+- `--no-wait`: Don't wait for the app to go live; the Gateway makes it live within a minute, or on its first visit
+- `--yes`: With no Gateway yet, install one at apps.<zone> without asking, and rename the app previousIds names without asking (never Cloudflare's own questions, or replacing a Worker changed outside everyapp)
 
 ### `everyapp release`
 Pack the app in this directory as a release others can install.
@@ -242,49 +242,47 @@ The workspace, events, ai and call commands are the Gateway's own tools, run as 
 ### `everyapp setup`
 Install or repair the Gateway.
 
-One command from an empty Cloudflare account (Workers Paid) to a working Gateway and its owner, and the one to run when something is off. Run it again any time: it picks up where it stopped, and does nothing once everything is there. everyapp update takes a newer Gateway later (setup does that too, on its way).
+One command from an empty Cloudflare account (Workers Paid) to a working Gateway and its owner, and the one to run when something is off. Run it again any time: it picks up where it stopped. everyapp update takes a newer Gateway later.
 
 A fresh install takes 5 to 20 minutes, most of it waiting for you at the owner link: give it a long timeout, or run it in the background and watch its output.
 
-1. Logs in to Cloudflare (cf auth login, or CLOUDFLARE_API_TOKEN) and finds the Gateway in the login's accounts; with none, picks the account to install it in. A second Gateway in the same account (staging, a demo) is --name <name>: every-app-gateway-<name>, with its own database, queue and apps (every-<name>--…), beside the first, never touching it
+1. Logs in to Cloudflare (cf auth login, or CLOUDFLARE_API_TOKEN) and finds the Gateway in the login's accounts; with none, picks the account to install it in
 2. Picks where the Gateway lives (--domain, or asked): any hostname under one of the account's domains, apps.example.com; apps get one each below it, todo.apps.example.com
-3. Installs the Gateway, or repairs it, and waits for its certificate. Where the Gateway comes from: --release (a GitHub repository or release URL, a tarball's URL, or a downloaded every-app-gateway-release.tar.gz); otherwise this checkout's build when everyapp runs from one; otherwise the published release for this everyapp version (https://github.com/every-app/every-app, gateway-v<version>)
+3. Installs the Gateway, or repairs it, and waits for its certificate
 4. Opens a one-time link to create the owner account and waits up to 15 minutes for it; in CI there is no link, and the run ends with a warning to run setup at a terminal
-5. Puts Cloudflare Access in front of the Gateway (asked at a terminal, Yes by default; with --yes or --json, done without asking). An account with no Zero Trust team needs its name: asked at a terminal, else --team. --no-access leaves it off (not recommended)
+5. Puts Cloudflare Access in front of the Gateway (asked at a terminal, Yes by default; with --yes or --json, done without asking). An account with no Zero Trust team needs its name: asked at a terminal, else --team
 
-The flags people use: --domain, --account-id, and --yes for a script (it answers setup's own questions; never cf's). With --json each step is an NDJSON event; a run that stops on something only a person can do exits 2 with action_required. Then: everyapp create ../my-app, cd into it, everyapp dev, everyapp deploy. More: https://everyapp.com/docs/quickstart
+With --json, a run that stops on something only a person can do exits 2 with action_required. Then: everyapp create ../my-app, cd into it, everyapp dev, everyapp deploy. More: https://everyapp.com/docs/quickstart
 
-- `--domain <value>`: Where the Gateway lives: any hostname under one of the account's domains, e.g. apps.example.com (asked at a terminal; remembered after that)
+- `--domain <value>`: Where the Gateway lives: any hostname under one of the account's domains, e.g. apps.example.com (asked at a terminal)
 - `--account-id <value>`: The Cloudflare account of the Gateway, or with none yet, the one to install it in (default: CLOUDFLARE_ACCOUNT_ID, or the only one)
-- `--name <name>`: A second Gateway in the same Cloudflare account, by name (1 to 16 lowercase letters or digits): its Worker is every-app-gateway-<name> and its apps every-<name>--…; setup finds or installs that one only. Without it, the Gateway is every-app-gateway, as always
+- `--name <name>`: A second Gateway in the same Cloudflare account, by name (1 to 16 lowercase letters or digits)
 - `--release <value>`: The Gateway release to deploy: a GitHub repository URL (its latest release) or release page, a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz (default: this checkout's build, or without a checkout, the published release for this everyapp version)
 - `--force-dns`: Publish new hostnames even where a DNS record answers them (one at a hostname is replaced)
 - `--downgrade`: Replace a live Gateway that is newer than this one (a rollback: the older code goes back, the database keeps its migrations)
-- `--unmerged`: From a checkout: replace the live Gateway even when the checkout has uncommitted Gateway changes or isn't on the remote's main branch (a fork, or a branch you deploy on purpose)
+- `--unmerged`: From a checkout: replace the live Gateway even when the checkout has uncommitted Gateway changes or isn't on the remote's main branch
 - `--redeploy` (hidden): Upload the Gateway even when it is up to date (after a change in the dashboard, such as a key rotation)
-- `--no-access`: Leave Cloudflare Access off (not recommended): by default setup puts it in front of the Gateway once the owner exists. Remembered, so a later unattended setup leaves it off too; everyapp access on turns it on
+- `--no-access`: Leave Cloudflare Access off (not recommended). A later unattended setup leaves it off too; everyapp access on turns it on
 - `--team <value>`: The Zero Trust team's name, when the Cloudflare account has none yet: people sign in at <name>.cloudflareaccess.com, and it can't be changed later (ignored once a team exists)
-- `--yes`: Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)
+- `--yes`: Skip everyapp's confirmations (never Cloudflare's own questions, or replacing a Worker changed outside everyapp)
 - `--verbose`: Show every step and progress line, and stream the Gateway's build output to stderr
 
 ### `everyapp update`
 Update the Gateway to a newer release.
 
-Deploys a newer Gateway over the one your Cloudflare login finds, where it is, keeping its data, users and apps. It never installs a Gateway: with none, it stops and says to run everyapp setup. The Gateway comes from --release (a GitHub repository or release URL, a tarball's URL, or a downloaded every-app-gateway-release.tar.gz); otherwise this checkout's build when everyapp runs from one; otherwise the published release for this everyapp version (https://github.com/every-app/every-app, gateway-v<version>).
+Deploys a newer Gateway over the one your Cloudflare login finds, where it is, keeping its data, users and apps. With no Gateway, it stops and says to run everyapp setup.
 
 1. Logs in to Cloudflare (cf auth login, or CLOUDFLARE_API_TOKEN) and finds the Gateway in the login's accounts (--account-id when there is one in more than one)
 2. Upgrades it (migrations first, with a restore point). When it runs that Gateway already, binds and publishes every registered app if the live Gateway doesn't, and otherwise says it is up to date. A live Gateway newer than this one is left alone (GATEWAY_DOWNGRADE) unless --downgrade says to replace it: that is how a rollback goes. The older code goes back and the database keeps its migrations; in a checkout, git pull to go forward
 
-From a checkout, a live Gateway is replaced only by what the remote's main branch holds: an update stops when the Gateway's sources have uncommitted changes (CHECKOUT_UNCOMMITTED) or the commit isn't on origin/main (CHECKOUT_UNMERGED), because a migration it applies can't be taken back. --unmerged deploys it anyway (a fork, or a branch you deploy on purpose).
-
-A checkout's Gateway is named by its version when it is that version's release (the gateway-v<version> tag), and by the checkout's commit otherwise. With --json, each step is an NDJSON event.
+From a checkout, a live Gateway is replaced only by what the remote's main branch holds: an update stops when the Gateway's sources have uncommitted changes (CHECKOUT_UNCOMMITTED) or the commit isn't on origin/main (CHECKOUT_UNMERGED), because a migration it applies can't be taken back. --unmerged deploys it anyway.
 
 - `--release <value>`: The Gateway release to deploy: a GitHub repository URL (its latest release) or release page, a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz (default: this checkout's build, or without a checkout, the published release for this everyapp version)
 - `--force-dns`: Publish new hostnames even where a DNS record answers them (one at a hostname is replaced)
 - `--downgrade`: Replace a live Gateway that is newer than this one (a rollback: the older code goes back, the database keeps its migrations)
-- `--unmerged`: From a checkout: replace the live Gateway even when the checkout has uncommitted Gateway changes or isn't on the remote's main branch (a fork, or a branch you deploy on purpose)
+- `--unmerged`: From a checkout: replace the live Gateway even when the checkout has uncommitted Gateway changes or isn't on the remote's main branch
 - `--redeploy` (hidden): Upload the Gateway even when it is up to date (after a change in the dashboard, such as a key rotation)
-- `--yes`: Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)
+- `--yes`: Skip everyapp's confirmations (never Cloudflare's own questions, or replacing a Worker changed outside everyapp)
 
 ### `everyapp install <source>`
 Install an app someone published, from GitHub or a release file.
@@ -293,18 +291,18 @@ Installs an app release on your Gateway with no checkout of the app, as everyapp
 
 A repository without a release is never built from its URL: clone it, run pnpm install in it, then everyapp deploy from its directory. Postgres migrations need the app's source, so their releases are refused.
 
-No Gateway in any account the login sees, and none named? At a terminal it offers to install one at apps.<zone> (what everyapp setup does, owner link included), then installs the app; otherwise it stops with action_required install_gateway and the setup command to run. --gateway <url> (or EVERYAPP_GATEWAY_URL) names the Gateway when your login sees several. --dry-run says whether this everyapp would install the release, and installs nothing. With --json, each step is an NDJSON event.
+No Gateway in any account the login sees, and none named? At a terminal it offers to install one at apps.<zone> (what everyapp setup does, owner link included), then installs the app; otherwise it stops with action_required install_gateway and the setup command to run.
 
 - `<source>`: The app release to install: a GitHub repository URL (its latest release), a release tarball's URL, or a downloaded everyapp-release.tar.gz
 - `--allow-delete-durable-object-data`: Deploy even though Durable Object classes were removed, deleting their data
 - `--allow-delete-workflows`: Deploy even though Workflows were removed, deleting them and their instances
 - `--force-dns`: Publish the app's new hostname even where a DNS record answers it (one at the hostname is replaced)
-- `--enable-email-routing`: Turn on Email Routing for the domains the app's inbound addresses (everyapp email set --inbound) name that don't route mail yet (locks their MX and SPF records to Cloudflare)
+- `--enable-email-routing`: Turn on Email Routing for the app's inbound domains that don't route mail yet (locks their MX and SPF records to Cloudflare)
 - `--replace-mx`: Turn on Email Routing even for a domain whose MX records deliver its mail elsewhere (Google Workspace...): they are replaced, and that mail stops arriving there
 - `--register-providers`: Register the providers the app bundles, which tell the Gateway where to send their keys (--yes doesn't)
-- `--no-wait`: Don't wait for the app to go live (a new hostname's certificate included); the Gateway makes it live within a minute, or on its first visit
+- `--no-wait`: Don't wait for the app to go live; the Gateway makes it live within a minute, or on its first visit
 - `--dry-run`: Download and check the release, as an install would before deploying, and deploy nothing: no Gateway and no Cloudflare login
-- `--yes`: With no Gateway yet, install one at apps.<zone> without asking, and rename the app the release's previousIds names without asking (never registers the providers the app bundles, cf's questions, or the one before replacing a Worker changed outside everyapp)
+- `--yes`: With no Gateway yet, install one at apps.<zone> without asking, and rename the app the release's previousIds names without asking (never Cloudflare's own questions, or replacing a Worker changed outside everyapp)
 
 ### `everyapp deploy-token add`
 Give the Gateway its own Cloudflare token, so it installs apps itself.
@@ -330,7 +328,7 @@ everyapp deploy-token remove
 - `--yes`: Remove the token without asking
 
 ### `everyapp configure [<app>]`
-Set up an app: asks for what it needs, feature by feature, with each feature's steps.
+Set up an app: asks for each setting it needs.
 
 Reads what the app's everyapp.config.ts declares (AI providers, capabilities, its own secrets and settings, grouped into features) and what is set. It asks for each top-level value that isn't set (hidden input, with where to get it beside each), then walks each required feature: its numbered steps, then each value with where it lives. Then it asks "Set up <name>?" for each optional feature that's off. A generated secret is made for you (and shown once when you paste it somewhere); a file's prompt takes its path. Run it again any time: it shows what is set (names only, never values). Once everything is set it asks nothing and exits; to change a set value, use secret set (below). With --json, the done event's data.features has every feature's steps, values and state.
 
@@ -348,19 +346,19 @@ printf 'OPENROUTER_API_KEY=%s\n' "$OPENROUTER_API_KEY" | everyapp configure crm 
 Change a set value, by name: everyapp secret set <NAME> --app <id> (a Gateway setting changes for every app).
 
 - `<app>`: The app to configure (default: the app in this directory)
-- `--from-env`: Take each unset setting's value, optional features' too, from the environment variable of its name (DATAFORSEO_API_KEY from $DATAFORSEO_API_KEY; multi-line values such as a PEM are kept); a set name is never replaced; stdin isn't read; the rest are asked for at a terminal
+- `--from-env`: Take each unset setting's value, optional features' too, from the environment variable of its name (DATAFORSEO_API_KEY from $DATAFORSEO_API_KEY); the rest are asked for at a terminal
 
 ### `everyapp status`
 Show the Gateway, its apps and anything to fix.
 
-One screen, all of it from the Gateway's D1 database and cf, nothing asked of the Gateway: its URL and release (and whether this checkout builds it), its owner, the apps its registry lists and whether the live Gateway binds them, each hostname's certificate, any deploy in progress, the settings an app is waiting for (--all lists every setting), and what to run when something is off. With --json, the `done` event's data has all of it, `fixes` included: the one state query an agent needs. An account with several Gateways: --gateway <url|name> says which.
+One screen: the Gateway's URL and release (and whether this checkout builds it), its owner, the apps its registry lists and whether the live Gateway binds them, each hostname's certificate, any deploy in progress, the settings an app is waiting for (--all lists every setting), and what to run when something is off. With --json, the `done` event's data has all of it, `fixes` included: the one state query an agent needs.
 
 - `--all`: List every app setting, set or not (by default only the ones an app is waiting for)
 
 ### `everyapp delete [<id>]`
 Remove an app from the Gateway.
 
-Deletes the app in the Gateway's D1 database (its name stays reserved; deploy it again to bring it back) and removes its Gateway binding and hostname, with a redeploy of the Gateway from this checkout. The app's Worker and data are kept unless --purge, which deletes them for good. Asks first at a terminal; elsewhere it needs --yes.
+Removes the app from the Gateway: its hostname stops serving it. Its name stays reserved; deploy it again to bring it back. The app's Worker and data are kept unless --purge, which deletes them for good. Asks first at a terminal; elsewhere it needs --yes.
 
 - `<id>`: App id (default: the app in this directory)
 - `--purge`: Also delete the app's Worker and helper Workers, D1 databases, KV namespaces, Workflows and Email Routing routes
@@ -394,7 +392,7 @@ everyapp access off
 ### `everyapp access show`
 Show how Cloudflare Access fronts the Gateway.
 
-The Zero Trust team, whether the allow policy asks the Gateway who is a member, the sign-in methods, the two Access applications, and which Access settings the Gateway has (their values can't be read back). Nothing is changed.
+The Zero Trust team, whether the allow policy asks the Gateway who is a member, the sign-in methods, the two Access applications, and which Access settings the Gateway has (their values can't be read back).
 
 ```sh
 everyapp access show
@@ -403,7 +401,7 @@ everyapp access show
 ### `everyapp signin add <id>`
 Turn a sign-in provider on: "Continue with Google" (or Microsoft, GitHub, Apple, Cloudflare, your SSO).
 
-Says where to create the OAuth app and the redirect URL to register with it (https://<gateway>/api/auth/callback/<id>), then sets the provider's settings on the Gateway Worker, all in one new version under your Cloudflare login, live on the next request. At a terminal it asks for each setting: the client id shown as typed, the client secret hidden, an optional one (microsoft's tenant, oidc's label) left as it is when you press Enter. Unattended (--json, or no terminal) every required setting comes from a flag: --client-id, --client-secret-from-env VAR, and for oidc --issuer. The client secret is never taken from the command line.
+Says where to create the OAuth app and the redirect URL to register with it (https://<gateway>/api/auth/callback/<id>), then sets the provider's settings on the Gateway, live on the next request. At a terminal it asks for each setting: the client id shown as typed, the client secret hidden, an optional one (microsoft's tenant, oidc's label) left as it is when you press Enter. Unattended (--json, or no terminal) every required setting comes from a flag: --client-id, --client-secret-from-env VAR, and for oidc --issuer.
 
 A provider says who someone is; the Gateway still decides who gets in: a member, or someone with a pending invitation for that exact, verified email. Nobody else.
 
@@ -426,7 +424,7 @@ everyapp signin add oidc --issuer https://acme.okta.com --label Okta
 ### `everyapp signin list`
 List the sign-in providers: on, needs setup (naming what is missing) or off.
 
-Reads which of each provider's settings the Gateway Worker holds (names only: a value can't be read back) and says whether the provider is on (every required setting set), needs setup (some set, the rest named; the Gateway keeps it off rather than half configured) or off. A value that is set but malformed also keeps a provider off; the Gateway's log says so (signin.config_problem). Nothing is changed.
+Reads which of each provider's settings the Gateway Worker holds (names only: a value can't be read back) and says whether the provider is on (every required setting set), needs setup (some set, the rest named; the Gateway keeps it off rather than half configured) or off. A value that is set but malformed also keeps a provider off; the Gateway's log says so (signin.config_problem).
 
 ```sh
 everyapp signin list
@@ -435,7 +433,7 @@ everyapp signin list
 ### `everyapp signin show <id>`
 Show a sign-in provider: where to make its OAuth app, the redirect URL, its settings and whether each is set.
 
-The provider's console and what the OAuth app is called there, the redirect URL to register for this Gateway, the scopes asked for (identity only), which claim becomes the email and when it counts as verified, every setting with what it holds and whether it is set, the provider's caveats and its setup guide. Nothing is changed.
+The provider's console and what the OAuth app is called there, the redirect URL to register for this Gateway, the scopes asked for (identity only), which claim becomes the email and when it counts as verified, every setting with what it holds and whether it is set, the provider's caveats and its setup guide.
 
 ```sh
 everyapp signin show apple
@@ -446,14 +444,14 @@ everyapp signin show apple
 ### `everyapp signin remove <id>`
 Turn a sign-in provider off: its settings leave the Gateway; accounts stay.
 
-Asks first (--yes doesn't), then removes every setting of the provider from the Gateway Worker in one new version: the button leaves the sign-in page on the next request. People who signed in with it keep their accounts and sign in another way (a password via Forgot password, another provider, Access). Delete the OAuth app at the provider too: a client the Gateway no longer holds is still a client.
+Asks first (--yes doesn't), then removes every setting of the provider from the Gateway Worker in one new version: the button leaves the sign-in page on the next request. People who signed in with it keep their accounts and sign in another way (a password via Forgot password, another provider, Access). Delete the OAuth app at the provider too.
 
 ```sh
 everyapp signin remove github
 ```
 
 - `<id>`: The sign-in provider: google, microsoft, github, apple, cloudflare, oidc
-- `--yes`: Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)
+- `--yes`: Skip everyapp's confirmations (never Cloudflare's own questions, or replacing a Worker changed outside everyapp)
 
 ### `everyapp secret set <name>...`
 Set secrets on your app or your Gateway.
@@ -516,7 +514,7 @@ An OpenAI-compatible model provider is a spec with mode "ai": its baseUrl, the k
 
 --oauth takes an OAuth spec file (auth.kind oauth2-user), or a preset by name. An app lists the scopes it needs in everyapp.config.ts, as the provider names them; each person connects once and allows each app. --verbose adds the manifest entry.
 
-A preset Composio serves (google-workspace, slack, github-oauth and more) needs no OAuth client while Composio is on for the organization: people use the accounts in their own Composio. Then a person at a terminal who linked their own Composio and gave no client is asked whether to add an OAuth app all the same. Nobody else is asked, and add never turns Composio on (everyapp workspace composio on does).
+A preset Composio serves (google-workspace, slack, github-oauth and more) needs no OAuth client while Composio is on for the organization (everyapp workspace composio on): people use the accounts in their own Composio. Then a person at a terminal who linked their own Composio and gave no client is asked whether to add an OAuth app all the same.
 
 ```sh
 everyapp provider add google-workspace
@@ -559,7 +557,7 @@ In use: its key or client is set, it was registered here, or an app lists it. Th
 
 An OAuth provider with no client reads "through Composio" (composio in --json) while the organization has Composio on and Composio serves it: people use the accounts in their own Composio, and nothing is left to set.
 
-Nothing is changed. A key's value can't be read back; only whether it is set, and for a registered provider whether it was set for the hosts it names now (bound).
+A key's value can't be read back; only whether it is set, and for a registered provider whether it was set for the hosts it names now (bound).
 
 ```sh
 everyapp provider list
@@ -596,7 +594,7 @@ everyapp provider remove stripe
 ### `everyapp provider presets`
 List the OAuth presets provider add takes: Google, Microsoft 365, Slack, GitHub and more.
 
-Each with its first API host (--json names them all) and the console where its client is made. An app lists the scopes it needs in everyapp.config.ts, as the provider names them. Nothing is read from the Gateway.
+Each with its first API host (--json names them all) and the console where its client is made. An app lists the scopes it needs in everyapp.config.ts, as the provider names them.
 
 ```sh
 everyapp provider presets
@@ -640,7 +638,7 @@ Link your Composio: approve a sign-in in the browser, then see what is in it.
 
 Composio is a third-party service where you connect your accounts (Gmail, Slack, GitHub). Where the organization turned it on, an OAuth provider the Gateway has no OAuth app for is used through the accounts in each person's own Composio. Linking is a sign-in at Composio: nobody types or pastes a key.
 
-Starts the sign-in and prints its link, which opens in your browser at a terminal. Under --json the link is an action_required event (composio_sign_in, data.url, waiting: true) for the person to open; give it to nobody else, since whoever approves it links their Composio to your account. The Gateway is asked every 2 seconds until you approve, then what was found in your Composio is listed: each provider with its services and their accounts. A sign-in that runs out first (about 10 minutes) is COMPOSIO_LINK_EXPIRED: run it again for a new one.
+Starts the sign-in and prints its link, which opens in your browser at a terminal. Under --json the link is an action_required event (composio_sign_in, data.url, waiting: true) for the person to open; give it to nobody else, since whoever approves it links their Composio to your account. Once you approve, what was found in your Composio is listed: each provider with its services and their accounts. A sign-in that runs out first (about 10 minutes) is COMPOSIO_LINK_EXPIRED: run it again for a new one.
 
 Linking adds no connection: an account becomes yours here when an app asks for it and you say yes, on the Gateway's page. Run again once linked, it lists what is in your Composio now. While Composio is off for the organization it stops with COMPOSIO_OFF (everyapp workspace composio on, an owner's or admin's). Your own link, whatever your role.
 
@@ -684,7 +682,7 @@ everyapp ai show
 ### `everyapp ai default <provider[/model]|off>`
 Choose the default model (provider and model) for every app that asks for one, or off for the shipped order.
 
-The workspace's one AI setting, the same as Manage workspace → Usage → AI default. The provider id is everything up to the first slash, the model everything after it (a model id may hold slashes); without a model, the provider's catalog model serves. Embeddings always use the provider's catalog model. A provider whose key isn't set is accepted; one the default can't be (an API provider, an entry without an OpenAI-shaped chat route, AI Gateway) is refused by the Gateway. The Gateway reads the change within 30 seconds; a change queues ai.default_changed. The Gateway tool: everyapp_ai_default, run as you.
+The workspace's one AI setting, the same as Manage workspace → Usage → AI default. The provider id is everything up to the first slash, the model everything after it (a model id may hold slashes); without a model, the provider's catalog model serves. Embeddings always use the provider's catalog model. A provider whose key isn't set is accepted; one the default can't be (an API provider, an entry without an OpenAI-shaped chat route, AI Gateway) is refused by the Gateway. The Gateway reads the change within 30 seconds. The Gateway tool: everyapp_ai_default, run as you.
 
 ```sh
 everyapp ai default openrouter
@@ -696,9 +694,9 @@ everyapp ai default off
 - `<provider[/model]|off>`: The provider's id (openrouter), or the id and a model (openrouter/anthropic/claude-sonnet-5.5), or off
 
 ### `everyapp ai gateway on`
-Put Cloudflare AI Gateway in front of every model call: find or make the gateway, set AI_GATEWAY_ID.
+Put Cloudflare AI Gateway in front of every model call.
 
-Finds the AI Gateway in the Gateway's Cloudflare account (or makes it, logs on, no cache) and records its id as the Gateway setting AI_GATEWAY_ID. From the Gateway's next request every call to a model provider that AI Gateway fronts (OpenRouter, OpenAI, Anthropic, Groq, Mistral, Workers AI) goes through it with the provider's own key still on the call; Gemini and Cohere go direct. Changes no app and no key. For an authenticated gateway, set its token afterwards: everyapp secret set AI_GATEWAY_API_KEY.
+Finds the AI Gateway in the Gateway's Cloudflare account (or makes it, logs on, no cache) and records its id as the Gateway setting AI_GATEWAY_ID. From the Gateway's next request every call to a model provider that AI Gateway fronts (OpenRouter, OpenAI, Anthropic, Groq, Mistral, Workers AI) goes through it with the provider's own key still on the call; Gemini and Cohere go direct. For an authenticated gateway, set its token afterwards: everyapp secret set AI_GATEWAY_API_KEY.
 
 ```sh
 everyapp ai gateway on
@@ -708,7 +706,7 @@ everyapp ai gateway on --id acme-models
 - `--id <id>`: The AI Gateway's id (its name in the dashboard): lowercase letters, digits and single hyphens; everyapp by default
 
 ### `everyapp ai gateway off`
-Send model calls direct again: unset AI_GATEWAY_ID (the Cloudflare resource stays).
+Send model calls direct again (the AI Gateway stays in the account).
 
 Unsets AI_GATEWAY_ID on the Gateway; every model call goes direct from its next request. The AI Gateway and its logs stay in the account. AI_GATEWAY_API_KEY stays until everyapp secret unset.
 
@@ -719,15 +717,13 @@ everyapp ai gateway off
 ### `everyapp mcp add <url>`
 Add any remote MCP server as an MCP app: its tools reach members' AI clients through the Gateway's /mcp.
 
-The Gateway serves the server's tools on its own /mcp under <id>_<tool> names, holding the server's credential itself: every call is attributed to the member, audited and counted (MCP servers added by URL aren't metered: no cap applies), and read tools are told apart from write tools. The owners and the admins can use it at once; an admin grants others in Admin → Apps → Manage access. Nothing is deployed.
+The Gateway serves the server's tools on its own /mcp under <id>_<tool> names, holding the server's credential itself: every call is attributed to the member, audited and counted (MCP servers added by URL aren't metered: no cap applies), and read tools are told apart from write tools. The owners and the admins can use it at once; an admin grants others in Admin → Apps → Manage access.
 
 A server that is added already is left as it is: add says where it stands and the one command that fixes it, and at a terminal offers to connect an account to an OAuth one.
 
 add looks at the URL once from this machine before writing anything. A server that answers without a credential is added with none. One whose 401 names its OAuth metadata is added with OAuth. One that asks for a credential otherwise is refused (REMOTE_MCP_NEEDS_CREDENTIAL) until you say how it authenticates; --force adds it anyway.
 
 The credential is a provider: the app's own <id>-mcp row, written beside it, or --provider <id> for one the Gateway has (its host must be the URL's). --auth bearer|header|query|basic: a static value, <ID>_MCP_TOKEN. At a terminal add offers to set it (hidden input); --from-env VAR sets it from a variable; later: everyapp secret set TREG_MCP_TOKEN Once set, add checks it with one tools/list from here. The Gateway sends it only to the URL's host. --auth oauth: the Gateway signs in to the server. add discovers its authorization server and registers a client with it, or, where the server takes client metadata documents instead, gives it the URL of the Gateway's own; for a server that takes neither, register one with the redirect URI add prints and give --client-id (--client-secret-from-env). Each member then connects their own account, at the connect page add prints and opens (--no-open: print only).
-
-The Gateway follows no redirects.
 
 ```sh
 everyapp mcp add https://mcp.deepwiki.com/mcp
@@ -791,8 +787,6 @@ A built-in's first on adds it: the owners and the admins can use it at once, and
 everyapp secret set DATAFORSEO_API_KEY
 ```
 
-Safe to repeat: an app that is on stays on, with its access.
-
 ```sh
 everyapp mcp on dataforseo
 everyapp mcp on treg --json
@@ -805,8 +799,6 @@ Turn an MCP app off: its tools leave /mcp, and everyone's access is kept for on.
 
 The Gateway stops serving the app's tools within 30 seconds and the home page stops listing it. Everyone's access, the personal tokens bound to it and its tools snapshot are kept, so everyapp mcp on <id> serves it again at once. To remove it for good, with all of that: everyapp mcp remove <id>.
 
-(Until 2026-10-25 off removed the app; that is remove now.)
-
 ```sh
 everyapp mcp off dataforseo
 ```
@@ -816,7 +808,7 @@ everyapp mcp off dataforseo
 ### `everyapp mcp list`
 List the MCP apps: built-in and added, on or off, their tools and whether each key is set.
 
-Nothing is changed. A key's value can't be read back; only whether it is set.
+A key's value can't be read back; only whether it is set.
 
 ```sh
 everyapp mcp list
@@ -825,7 +817,7 @@ everyapp mcp list
 ### `everyapp mcp show <id>`
 Show an MCP app: its address, credential, status, last tool listing and every tool with its risk.
 
-For a remote server: the URL, how the Gateway authenticates, its provider, whether the key is set (and set for the hosts it has now), or for OAuth who has connected (never a token) and the connect page, the risk default, when the tools were last listed (and the error if that failed), then every tool the server listed: its name on the Gateway, the server's own name, its risk and where that comes from (the server's hint, the app's default, your override), and whether it is on. Nothing is changed.
+For a remote server: the URL, how the Gateway authenticates, its provider, whether the key is set (and set for the hosts it has now), or for OAuth who has connected (never a token) and the connect page, the risk default, when the tools were last listed (and the error if that failed), then every tool the server listed: its name on the Gateway, the server's own name, its risk and where that comes from (the server's hint, the app's default, your override), and whether it is on.
 
 ```sh
 everyapp mcp show treg
@@ -932,7 +924,7 @@ everyapp events add https://n8n.example.com/webhook/x --secret-from-env N8N_SECR
 ### `everyapp events list`
 List the organization's subscriptions: where each goes, what it takes, how its last delivery went.
 
-A webhook shows its URL's host and path (never its query or secret); an email one, whom it mails. Nothing is changed.
+A webhook shows its URL's host and path (never its query or secret); an email one, whom it mails.
 
 ```sh
 everyapp events list
@@ -952,7 +944,7 @@ everyapp events remove sub_0123456789abcdef01234567
 ### `everyapp events enable <id>`
 Resume a subscription: new events are queued for it again.
 
-What happened while it was disabled isn't sent. Safe to repeat.
+What happened while it was disabled isn't sent.
 
 ```sh
 everyapp events enable sub_0123456789abcdef01234567
@@ -963,7 +955,7 @@ everyapp events enable sub_0123456789abcdef01234567
 ### `everyapp events disable <id>`
 Pause a subscription: no new events are queued for it, and what is queued is dropped.
 
-Turn the built-in cap alerts off this way. Safe to repeat; events enable resumes it.
+Turn the built-in cap alerts off this way; events enable resumes it.
 
 ```sh
 everyapp events disable sub_0123456789abcdef01234567
@@ -986,7 +978,7 @@ everyapp events test sub_0123456789abcdef01234567 --json
 ### `everyapp events deliveries [<id>]`
 List the last deliveries (30 days): the event, its subscription, attempts, status, next attempt, last error.
 
-A delivery is retried after 1, 5 and 30 minutes, then 2, 8 and 24 hours; the seventh failure is dead. Nothing is changed.
+A delivery is retried after 1, 5 and 30 minutes, then 2, 8 and 24 hours; the seventh failure is dead.
 
 ```sh
 everyapp events deliveries
@@ -1013,7 +1005,7 @@ everyapp events redeliver dlv_0123456789abcdef01234567
 ### `everyapp events types`
 List the event types --events takes, with their versions.
 
-The catalogue this CLI knows, and how a pattern names several (member.*, app.crm.*, *). No Gateway is needed.
+The catalogue this CLI knows, and how a pattern names several (member.*, app.crm.*, *).
 
 ```sh
 everyapp events types
@@ -1067,7 +1059,7 @@ The Gateway tool: everyapp_workspace_role (everyapp call everyapp_workspace_role
 ### `everyapp workspace invite <email>`
 Invite someone by email: the Gateway mails the invitation when it can send email.
 
-The answer says whether it was mailed. The tool never returns the link: where the Gateway sends no email, everyapp workspace invite-link <email> prints one (under your Cloudflare login), or copy it from Admin → Users.
+The answer says whether it was mailed. Where the Gateway sends no email, everyapp workspace invite-link <email> prints the link (under your Cloudflare login), or copy it from Admin → Users.
 
 ```sh
 everyapp workspace invite ann@example.com
@@ -1082,7 +1074,7 @@ The Gateway tool: everyapp_workspace_invite (everyapp call everyapp_workspace_in
 ### `everyapp workspace invite-link <email|id>`
 Print a new link for a pending invitation, under the Cloudflare login (for a Gateway that sends no email).
 
-The CLI twin of Admin → Users → Copy invite link: a new invite link for a pending, unexpired invitation of the install organization, written into the Gateway's D1 with your Cloudflare login. The Gateway's tools never return a link to their caller, so this is one of the two workspace commands that write D1 (ADR-0003). Earlier links keep working until the invitation is accepted or canceled. Hand the link to the person yourself.
+The same as Admin → Users → Copy invite link: a new invite link for a pending, unexpired invitation of the install organization, made with your Cloudflare login. Earlier links keep working until the invitation is accepted or canceled. Hand the link to the person yourself.
 
 ```sh
 everyapp workspace invite ann@example.com
@@ -1152,7 +1144,7 @@ The Gateway tool: everyapp_workspace_reset_email (everyapp call everyapp_workspa
 ### `everyapp workspace reset-link <email>`
 The way back in: print a one-hour, single-use password-reset link for a member, under the Cloudflare login.
 
-For an owner locked out of the Gateway (a lost password, no email sending): Better Auth's own reset token, written into the Gateway's D1 with your Cloudflare login, consumed by the Gateway's /reset-password page. Whoever opens it sets the account's password, so hand it to the person yourself. Only for an active member of the install organization that belongs to no other (USER_IN_OTHER_ORGANIZATION: a password is account-wide). Password sign-in must be on (EMAIL_PASSWORD_SIGN_IN). Everything else here but invite-link goes through the Gateway as you; this is the recovery path that can't (ADR-0003). A member who can sign in uses everyapp workspace reset-email.
+For an owner locked out of the Gateway (a lost password, no email sending). Whoever opens it sets the account's password, so hand it to the person yourself. Only for an active member of the install organization that belongs to no other (USER_IN_OTHER_ORGANIZATION: a password is account-wide). Password sign-in must be on (EMAIL_PASSWORD_SIGN_IN). A member who can sign in uses everyapp workspace reset-email.
 
 ```sh
 everyapp workspace reset-link owner@example.com

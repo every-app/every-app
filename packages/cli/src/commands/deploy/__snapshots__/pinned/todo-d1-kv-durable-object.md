@@ -18,10 +18,10 @@
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.migrations","status":"ok","message":"Applied 0000_init.sql.","data":{"applied":["0000_init.sql"],"fresh":true}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"start","message":"Uploading every-acme-todo..."}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"ok","message":"Uploaded version every-acme-todo-version-8.","data":{"versionId":"every-acme-todo-version-8"}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.bind","status":"start","message":"Binding APP__every-acme-todo on the gateway and publishing its hostname...","data":{"appId":"todo"}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.bind","status":"start","message":"Binding APP__every-acme-todo on the Gateway and publishing its hostname...","data":{"appId":"todo"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"start","message":"Uploading Gateway 0.2.0 with 1 app","data":{"appWorkers":["every-acme-todo"],"domains":["example.com","todo.example.com"]}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-10","data":{"versionId":"every-app-gateway-version-10"}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.bind","status":"ok","message":"The gateway binds APP__every-acme-todo (gateway version every-app-gateway-version-10).","data":{"versionId":"every-app-gateway-version-10","newHosts":["todo.example.com"]}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.bind","status":"ok","message":"The Gateway binds APP__every-acme-todo (Gateway version every-app-gateway-version-10).","data":{"versionId":"every-app-gateway-version-10","newHosts":["todo.example.com"]}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.live","status":"ok","message":"todo is live at https://todo.example.com.","data":{"hostname":"todo.example.com","url":"https://todo.example.com"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.connect","status":"start","message":"Finding your Gateway..."}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.connect","status":"ok","data":{"gatewayUrl":"https://example.com"}}
@@ -42,7 +42,7 @@
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.delete","status":"start","message":"Removing todo from the Gateway...","data":{"appId":"todo"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"start","message":"Uploading Gateway 0.2.0 with 0 apps","data":{"appWorkers":[],"domains":["example.com"]}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-15","data":{"versionId":"every-app-gateway-version-15"}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.delete","status":"ok","message":"todo is deleted on the gateway; todo.example.com stops serving it.","data":{"appId":"todo","hostname":"todo.example.com","workerName":"every-acme-todo","alreadyDeleted":false}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.delete","status":"ok","message":"todo is deleted on the Gateway; todo.example.com stops serving it.","data":{"appId":"todo","hostname":"todo.example.com","workerName":"every-acme-todo","alreadyDeleted":false}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.certificate","status":"ok","message":"Removed todo.example.com's certificate.","data":{"hostname":"todo.example.com","certificatePacks":["pack-12"]}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.purge","status":"start","message":"Deleting todo's Worker and data...","data":{"appId":"todo"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.purge","status":"ok","message":"Deleted Worker \"every-acme-todo\", D1 database \"every-acme-todo\", KV namespace \"every-acme-todo\".","data":{"appId":"todo","removed":["Worker \"every-acme-todo\"","D1 database \"every-acme-todo\"","KV namespace \"every-acme-todo\""],"kinds":["Worker","D1 database","KV namespace"]}}

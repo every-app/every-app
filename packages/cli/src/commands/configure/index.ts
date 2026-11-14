@@ -415,14 +415,14 @@ function planOf({ report }: State, target: Target): Plan {
   };
 }
 
-/** The one line on where the values go, then each setting with whether it is set. */
+/** One line on when a change takes effect, then each setting with whether it is set. */
 function introduction(target: Target, { report }: State): string[] {
   const rows = settingsRows(target.appId, report.settings).map((row) =>
     !target.deployed && row.where === target.appId ? { ...row, status: chalk.dim("after first deploy") } : row,
   );
   return [
     chalk.dim(
-      `${target.appId}'s settings are held as the Gateway's secrets: an AI key or a capability's client on the Gateway Worker, once for every app; ${target.appId}'s own secrets and settings on its Worker. Changes are live at once, no deploy needed.`,
+      "Changes are live at once, no deploy needed.",
     ),
     "",
     ...(rows.length > 0

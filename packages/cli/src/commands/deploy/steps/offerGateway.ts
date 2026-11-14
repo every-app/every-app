@@ -155,7 +155,7 @@ async function refuseServingGateway(
     if (hosts === null) continue;
     throw new EveryAppError(
       "GATEWAY_CHECK_FAILED",
-      `${name} already runs a Gateway${hosts.length ? ` at ${hosts.join(", ")}` : ""}, but its database couldn't be found\nNothing was installed: a second Gateway beside it is never offered.`,
+      `${name} already runs a Gateway${hosts.length ? ` at ${hosts.join(", ")}` : ""}, but its database couldn't be found\nNothing was installed.`,
       {
         retryable: true,
         rerunNote: `in a moment; if it fails again, ${CLI} status --account-id ${account.id} says what is there`,

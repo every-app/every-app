@@ -234,7 +234,7 @@ SELECT ?1, ?2, ?3, ?4 WHERE NOT EXISTS (SELECT 1 FROM organizations)`,
     OLDEST_ORGANIZATION,
   ]);
   const created = pickInstallOrganization(owned, oldest);
-  if (!created) throw new Error("The gateway's database has no organization.");
+  if (!created) throw new Error("The Gateway's database has no organization.");
   return created;
 }
 
@@ -348,7 +348,7 @@ WHERE app_row_id = (SELECT id FROM apps WHERE organization_id = ?1 AND app_slug 
     throw new RegistrationError({
       status: 409,
       code: "ORG_KEY_UNAVAILABLE",
-      message: `Every key for organization "${organization.slug}" is taken by another organization on this gateway.`,
+      message: `Every key for organization "${organization.slug}" is taken by another organization on this Gateway.`,
     });
   }
   const existingApp = existing[0] ? toAppRow(existing[0]) : null;

@@ -323,7 +323,7 @@ function checkFailed(discovery: Discovery, whoami: CfWhoami, host?: string): Eve
       names.length === 1
         ? `Couldn't check ${names[0]} for a Gateway${host ? ` (looking for ${host})` : ""}`
         : `Couldn't check ${names.length} accounts for a Gateway${host ? ` (looking for ${host})` : ""}: ${names.join(", ")}`,
-      `${answer}, twice.${others > 0 ? ` No Gateway in the ${others} other account${others === 1 ? "" : "s"} this login sees.` : ""} Nothing was changed, and no Gateway is installed while one may already exist.`,
+      `${answer}, twice.${others > 0 ? ` No Gateway in the ${others} other account${others === 1 ? "" : "s"} this login sees.` : ""} Nothing changed.`,
       ...(whoami.email ? [`Logged in to Cloudflare as ${whoami.email}.`] : []),
     ].join("\n"),
     {

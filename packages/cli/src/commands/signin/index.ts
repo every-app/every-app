@@ -558,7 +558,7 @@ export async function removeProvider(options: SigninOptions<RemoveFlags>, id: st
       `${titleOf(provider)} is off.`,
       `Removed ${listed(toRemove)}.`,
       "People who signed in with it keep their accounts: they sign in with a password (Forgot password sets one), another provider or Cloudflare Access.",
-      `Delete the ${provider.appNoun} at ${provider.console} too: a client the Gateway no longer holds is still a client.`,
+      `Delete the ${provider.appNoun} at ${provider.console} too.`,
     ],
     { id: provider.id, removed: toRemove },
     {

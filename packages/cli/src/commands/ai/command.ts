@@ -51,8 +51,8 @@ const defaultCommand = buildCommand({
       "may hold slashes); without a model, the provider's catalog model serves. Embeddings always",
       "use the provider's catalog model. A provider whose key isn't set is accepted; one the",
       "default can't be (an API provider, an entry without an OpenAI-shaped chat route, AI",
-      "Gateway) is refused by the Gateway. The Gateway reads the change within 30 seconds; a",
-      "change queues ai.default_changed. The Gateway tool: everyapp_ai_default, run as you.",
+      "Gateway) is refused by the Gateway. The Gateway reads the change within 30 seconds.",
+      "The Gateway tool: everyapp_ai_default, run as you.",
       "",
       "Examples:",
       `  ${CLI} ai default openrouter`,
@@ -79,14 +79,14 @@ const gatewayOnCommand = buildCommand({
     },
   },
   docs: {
-    brief: "Put Cloudflare AI Gateway in front of every model call: find or make the gateway, set AI_GATEWAY_ID",
+    brief: "Put Cloudflare AI Gateway in front of every model call",
     fullDescription: [
       "Finds the AI Gateway in the Gateway's Cloudflare account (or makes it, logs on, no cache)",
       "and records its id as the Gateway setting AI_GATEWAY_ID. From the Gateway's next request",
       "every call to a model provider that AI Gateway fronts (OpenRouter, OpenAI, Anthropic, Groq,",
       "Mistral, Workers AI) goes through it with the provider's own key still on the call; Gemini",
-      "and Cohere go direct. Changes no app and no key. For an authenticated gateway, set its",
-      `token afterwards: ${CLI} secret set AI_GATEWAY_API_KEY.`,
+      "and Cohere go direct. For an authenticated gateway, set its token afterwards:",
+      `${CLI} secret set AI_GATEWAY_API_KEY.`,
       "",
       "Examples:",
       `  ${CLI} ai gateway on`,
@@ -99,7 +99,7 @@ const gatewayOffCommand = buildCommand({
   loader: async () => (await import(".")).gatewayOff,
   parameters: { positional: { kind: "tuple", parameters: [] }, flags: connectFlags },
   docs: {
-    brief: "Send model calls direct again: unset AI_GATEWAY_ID (the Cloudflare resource stays)",
+    brief: "Send model calls direct again (the AI Gateway stays in the account)",
     fullDescription: [
       "Unsets AI_GATEWAY_ID on the Gateway; every model call goes direct from its next request.",
       `The AI Gateway and its logs stay in the account. AI_GATEWAY_API_KEY stays until ${CLI} secret unset.`,

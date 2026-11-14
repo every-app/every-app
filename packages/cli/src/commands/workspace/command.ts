@@ -118,8 +118,8 @@ const inviteCommand = buildCommand({
   docs: {
     brief: "Invite someone by email: the Gateway mails the invitation when it can send email",
     fullDescription: docs("everyapp_workspace_invite", [
-      "The answer says whether it was mailed. The tool never returns the link: where the Gateway",
-      `sends no email, ${CLI} workspace invite-link <email> prints one (under your Cloudflare login),`,
+      "The answer says whether it was mailed. Where the Gateway",
+      `sends no email, ${CLI} workspace invite-link <email> prints the link (under your Cloudflare login),`,
       "or copy it from Admin → Users.",
       "",
       "Examples:",
@@ -138,11 +138,9 @@ const inviteLinkCommand = buildCommand({
   docs: {
     brief: "Print a new link for a pending invitation, under the Cloudflare login (for a Gateway that sends no email)",
     fullDescription: [
-      "The CLI twin of Admin → Users → Copy invite link: a new invite link for a pending, unexpired",
-      "invitation of the install organization, written into the Gateway's D1 with your Cloudflare",
-      "login. The Gateway's tools never return a link to their caller, so this is one of the two",
-      "workspace commands that write D1 (ADR-0003). Earlier links keep working until the invitation",
-      "is accepted or canceled. Hand the link to the person yourself.",
+      "The same as Admin → Users → Copy invite link: a new invite link for a pending, unexpired",
+      "invitation of the install organization, made with your Cloudflare login. Earlier links keep",
+      "working until the invitation is accepted or canceled. Hand the link to the person yourself.",
       "",
       "Examples:",
       `  ${CLI} workspace invite ann@example.com`,
@@ -238,13 +236,11 @@ const resetLinkCommand = buildCommand({
   docs: {
     brief: "The way back in: print a one-hour, single-use password-reset link for a member, under the Cloudflare login",
     fullDescription: [
-      "For an owner locked out of the Gateway (a lost password, no email sending): Better Auth's",
-      "own reset token, written into the Gateway's D1 with your Cloudflare login, consumed by the",
-      "Gateway's /reset-password page. Whoever opens it sets the account's password, so hand it",
-      "to the person yourself. Only for an active member of the install organization that belongs",
-      "to no other (USER_IN_OTHER_ORGANIZATION: a password is account-wide). Password sign-in must",
-      "be on (EMAIL_PASSWORD_SIGN_IN). Everything else here but invite-link goes through the Gateway",
-      `as you; this is the recovery path that can't (ADR-0003). A member who can sign in uses ${CLI} workspace reset-email.`,
+      "For an owner locked out of the Gateway (a lost password, no email sending). Whoever opens",
+      "it sets the account's password, so hand it to the person yourself. Only for an active",
+      "member of the install organization that belongs to no other",
+      "(USER_IN_OTHER_ORGANIZATION: a password is account-wide). Password sign-in must",
+      `be on (EMAIL_PASSWORD_SIGN_IN). A member who can sign in uses ${CLI} workspace reset-email.`,
       "",
       `Example:\n  ${CLI} workspace reset-link owner@example.com`,
     ].join("\n"),

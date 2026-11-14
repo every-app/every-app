@@ -4,7 +4,7 @@ export const gatewayFlag = {
   kind: "parsed",
   parse: String,
   brief:
-    "The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)",
+    "The Gateway's URL or name, when your Cloudflare login finds several (default: EVERYAPP_GATEWAY_URL)",
   optional: true,
 } as const;
 
@@ -33,7 +33,7 @@ const apiGatewayFlag = {
 export const jsonFlag = {
   kind: "boolean",
   brief:
-    "Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)",
+    "Print NDJSON events on stdout and never prompt",
   optional: true,
 } as const;
 
@@ -47,7 +47,7 @@ export const resultJsonFlag = {
 export const verboseFlag = {
   kind: "boolean",
   brief:
-    "Show every step and progress line, the detail a result's short form leaves out, the output of what everyapp runs, and an unexpected error's stack trace",
+    "Show every step, the full result and the output of what everyapp runs",
   optional: true,
 } as const;
 
@@ -66,7 +66,7 @@ export const apiFlags = {
 export const yesFlag = {
   kind: "boolean",
   brief:
-    "Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)",
+    "Skip everyapp's confirmations (never Cloudflare's own questions, or replacing a Worker changed outside everyapp)",
   optional: true,
 } as const;
 
@@ -89,7 +89,7 @@ export const downgradeFlag = {
 export const unmergedFlag = {
   kind: "boolean",
   brief:
-    "From a checkout: replace the live Gateway even when the checkout has uncommitted Gateway changes or isn't on the remote's main branch (a fork, or a branch you deploy on purpose)",
+    "From a checkout: replace the live Gateway even when the checkout has uncommitted Gateway changes or isn't on the remote's main branch",
   optional: true,
 } as const;
 
@@ -117,7 +117,7 @@ export const appTakeoverFlags = {
   "enable-email-routing": {
     kind: "boolean",
     brief:
-      "Turn on Email Routing for the domains the app's inbound addresses (everyapp email set --inbound) name that don't route mail yet (locks their MX and SPF records to Cloudflare)",
+      "Turn on Email Routing for the app's inbound domains that don't route mail yet (locks their MX and SPF records to Cloudflare)",
     optional: true,
   },
   "replace-mx": {

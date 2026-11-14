@@ -698,7 +698,7 @@ async function checkR2(cf: CfRunner, accountId: string, out: EventSink): Promise
   if (!enabled) {
     throw new ActionRequiredError(
       "enable_r2",
-      "Turn on R2 in this Cloudflare account\nMost apps store their files in R2, Cloudflare's file storage. The first 10 GB a month is free, which should be plenty for your apps.",
+      "Turn on R2 in this Cloudflare account\nMost apps store their files in R2, Cloudflare's file storage. The first 10 GB a month is free.",
       url,
       { data: { r2: false } },
     );

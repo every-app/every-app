@@ -130,7 +130,7 @@ export async function bindIfNeeded({
     type: "step",
     step: "app.bind",
     status: "start",
-    message: `Binding ${appBindingName(workerName)} on the gateway${publishHost ? " and publishing its hostname" : ""}...`,
+    message: `Binding ${appBindingName(workerName)} on the Gateway${publishHost ? " and publishing its hostname" : ""}...`,
     data: { appId },
   });
   // The Gateway this run deploys is the live one (lib/gateway/liveRelease.ts):
@@ -152,7 +152,7 @@ export async function bindIfNeeded({
       type: "step",
       step: "app.bind",
       status: "ok",
-      message: `The gateway binds ${appBindingName(workerName)} (gateway version ${result.versionId ?? "unknown"}).`,
+      message: `The Gateway binds ${appBindingName(workerName)} (Gateway version ${result.versionId ?? "unknown"}).`,
       data: { versionId: result.versionId, newHosts: result.newHosts },
     });
   } catch (error) {

@@ -90,7 +90,7 @@ const showCommand = buildCommand({
     fullDescription: [
       "The Zero Trust team, whether the allow policy asks the Gateway who is a member, the sign-in",
       "methods, the two Access applications, and which Access settings the Gateway has (their",
-      "values can't be read back). Nothing is changed.",
+      "values can't be read back).",
       "",
       "Example:",
       `  ${CLI} access show`,

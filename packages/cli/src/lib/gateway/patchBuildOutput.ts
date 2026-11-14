@@ -111,7 +111,7 @@ export async function patchGatewayBuildOutput(releaseDir: string, patch: Gateway
   if (patch.gatewayHost !== patch.appBaseDomain) {
     throw new EveryAppError(
       "INVALID_APP_BASE_DOMAIN",
-      `Apps live one label below the gateway host ${patch.gatewayHost}, so APP_BASE_DOMAIN must be ${patch.gatewayHost}, not ${patch.appBaseDomain}.`,
+      `Apps live one label below the Gateway's host ${patch.gatewayHost}, so APP_BASE_DOMAIN must be ${patch.gatewayHost}, not ${patch.appBaseDomain}.`,
     );
   }
   // Apps are published one by one; a stray host would take over a name
@@ -122,7 +122,7 @@ export async function patchGatewayBuildOutput(releaseDir: string, patch: Gateway
   if (stray.length > 0) {
     throw new EveryAppError(
       "INVALID_APP_HOST",
-      `Refusing to publish ${stray.join(", ")} on the gateway: app hosts are one label below ${patch.appBaseDomain}.`,
+      `Refusing to publish ${stray.join(", ")} on the Gateway: app hosts are one label below ${patch.appBaseDomain}.`,
     );
   }
   env["APP_BASE_DOMAIN"] = { type: "text", value: patch.appBaseDomain };

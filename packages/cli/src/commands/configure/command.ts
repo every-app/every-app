@@ -23,7 +23,7 @@ export const configureCommand = buildCommand({
       "from-env": {
         kind: "boolean",
         brief:
-          "Take each unset setting's value, optional features' too, from the environment variable of its name (DATAFORSEO_API_KEY from $DATAFORSEO_API_KEY; multi-line values such as a PEM are kept); a set name is never replaced; stdin isn't read; the rest are asked for at a terminal",
+          "Take each unset setting's value, optional features' too, from the environment variable of its name (DATAFORSEO_API_KEY from $DATAFORSEO_API_KEY); the rest are asked for at a terminal",
         optional: true,
       },
       gateway: gatewayFlag,
@@ -33,7 +33,7 @@ export const configureCommand = buildCommand({
     },
   },
   docs: {
-    brief: "Set up an app: asks for what it needs, feature by feature, with each feature's steps",
+    brief: "Set up an app: asks for each setting it needs",
     fullDescription: [
       "Reads what the app's everyapp.config.ts declares (AI providers, capabilities, its own",
       "secrets and settings, grouped into features) and what is set. It asks for each top-level",
