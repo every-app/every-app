@@ -69,6 +69,11 @@ export interface GatewayRelease {
   manifest: ReleaseManifest;
   /** What it was built from. */
   source: ReleaseSource;
+  /**
+   * It came from the Gateway's saved releases in R2 (./releaseStore.ts), so
+   * a deploy of it needn't save it again.
+   */
+  saved?: boolean;
   cleanup(): Promise<void>;
 }
 

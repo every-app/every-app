@@ -17,7 +17,7 @@ import { deletionSummary, removeApp } from "@/commands/delete";
 import { queryAppD1 } from "@/commands/db";
 import { restoreDatabase } from "@/commands/db/restore";
 import { readOwnedResources, recordOwnedResource } from "@/lib/app/ownership";
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import { DEFAULT_GATEWAY_NAMES, GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { cfD1Database } from "@/lib/cf/d1";
 import { FakeCf } from "@/lib/cf/fakeCf";
 import type { CfRunner } from "@/lib/cf/runner";
@@ -1056,11 +1056,13 @@ describe("deploy", () => {
   });
 
   it("never changes the Gateway's code: refuses, before anything happens, when the live release can't be had again", async () => {
-    // A Gateway built from a checkout whose build this machine doesn't have.
+    // A Gateway built from a checkout whose build this machine doesn't have,
+    // last updated before releases were saved in R2.
     const gatewayDb = account.database("every-app-gateway").sqlite;
     gatewayDb.exec(
       `UPDATE _everyapp_install SET release_origin = '{"kind":"checkout"}', source_tree_sha256 = NULL`,
     );
+    account.emptyBucket(DEFAULT_GATEWAY_NAMES.releases);
     const versionBefore = (await getWorkerDeployment(account.cf, GATEWAY_WORKER_NAME))?.versionId;
 
     const refused = await deploy(TODO, { reconcile: seams }).catch((error: unknown) => error);
@@ -1077,6 +1079,7 @@ describe("deploy", () => {
     gatewayDb.exec(`UPDATE _everyapp_install SET release_origin = NULL`);
     await deploy();
     gatewayDb.exec(`UPDATE _everyapp_install SET release_origin = '{"kind":"checkout"}', source_tree_sha256 = NULL`);
+    account.emptyBucket(DEFAULT_GATEWAY_NAMES.releases);
     const versionBound = (await getWorkerDeployment(account.cf, GATEWAY_WORKER_NAME))?.versionId;
     await expect(deploy(TODO, { reconcile: seams })).resolves.toMatchObject({ live: true });
     await expect(
@@ -1085,6 +1088,24 @@ describe("deploy", () => {
     expect(appRow("todo")).toMatchObject({ status: "active" });
     expect((await getWorkerDeployment(account.cf, GATEWAY_WORKER_NAME))?.versionId).toBe(versionBound);
     expect(versionBound).not.toBe(versionBefore);
+  });
+
+  it("binds a new app from a machine without the Gateway's build: the live release comes from the account's R2", async () => {
+    // Built from a checkout this machine doesn't have; setup saved the release.
+    const gatewayDb = account.database("every-app-gateway").sqlite;
+    gatewayDb.exec(
+      `UPDATE _everyapp_install SET release_origin = '{"kind":"checkout"}', source_tree_sha256 = NULL`,
+    );
+    const row = () => gatewayDb.prepare("SELECT release_sha256, release_origin FROM _everyapp_install").get();
+    const before = row();
+
+    await expect(deploy(TODO, { reconcile: seams })).resolves.toMatchObject({ live: true });
+    expect(events.filter((event) => event["step"] === "gateway.release").map((event) => event["message"])).toEqual([
+      "Using the live Gateway 0.2.0 from its saved copy in R2",
+    ]);
+    // The same release is live, bound to the app; nothing was saved again.
+    expect(row()).toEqual(before);
+    expect(account.cf.calls.filter((call) => call.args.slice(0, 3).join(" ") === "r2 objects put")).toHaveLength(1);
   });
 
   it("refuses a --gateway that isn't the one in the Cloudflare account, before anything happens", async () => {
@@ -1327,6 +1348,7 @@ describe("deploy of an app without helper Workers", () => {
           "workers deployments list --worker every-acme-todo --per-page 10",
           "dns records list -z zone-1 --name-exact todo.example.com --per-page 100",
           "dns records list -z zone-1 --name-exact *.example.com --per-page 100",
+          "r2 objects list --bucket-name every-app-gateway--releases --per-page 100",
           "workers deployments list --worker every-app-gateway --per-page 10",
           "deploy --prebuilt --no-provision --mode production --message everyapp <version> gateway 0.2.0 (reconcile)",
           "workers deployments list --worker every-app-gateway --per-page 10",

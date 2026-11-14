@@ -139,6 +139,17 @@ export const R2BucketListOutput = z
   .transform((value) => value.buckets ?? []);
 
 /**
+ * `cf r2 objects list`: an array of objects, each with its key and when it
+ * was last written (cf@1.0.0-beta.14's local simulation, 2026-11-14; not
+ * yet seen against a live account, so an `objects` wrapper is read too).
+ */
+const R2Objects = z.array(z.looseObject({ key: z.string(), last_modified: z.string().nullish() }));
+export const R2ObjectListOutput = z.union([
+  R2Objects,
+  z.looseObject({ objects: R2Objects.nullish() }).transform((value) => value.objects ?? []),
+]);
+
+/**
  * `cf artifacts namespaces repos list`: the API's `result`, an array of
  * repos (Cloudflare's OpenAPI spec, 2026-11-01; not yet seen live).
  */

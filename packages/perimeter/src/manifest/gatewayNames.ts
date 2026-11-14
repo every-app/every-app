@@ -10,6 +10,7 @@
  *
  *   Gateway Worker, D1      every-app-gateway
  *   OAuth KV                every-app-gateway-OAUTH_KV
+ *   releases bucket (R2)    every-app-gateway--releases
  *   app Worker              every-<orgKey>-<appId>
  *   app resource            every-<orgKey>-<appId>--<binding>
  *   app AI Gateway          every-<orgKey>-<appId>-<binding>
@@ -20,6 +21,7 @@
  *
  *   Gateway Worker, D1      every-app-gateway-demo
  *   OAuth KV                every-app-gateway-demo-OAUTH_KV
+ *   releases bucket (R2)    every-app-gateway-demo--releases
  *   app Worker              every-demo--<orgKey>-<appId>
  *   app resource            every-demo--<orgKey>-<appId>--<binding>
  *   app AI Gateway          every-app-gateway-demo-<orgKey>-<appId>-<binding>
@@ -35,8 +37,10 @@
  *     hyphen, so `every-a--` is a prefix of `every-b--…` only when a = b).
  *   - Everything under the root `every-app-gateway-…` is reserved from apps
  *     on every Gateway (`isReservedName`), so the default Gateway owns only
- *     its three exact names there, and a named Gateway owns
- *     `every-app-gateway-<name>` and `every-app-gateway-<name>-…`. AI
+ *     its exact names there, and a named Gateway owns
+ *     `every-app-gateway-<name>` and `every-app-gateway-<name>-…`. The
+ *     releases bucket's `--` keeps the default's (`every-app-gateway--releases`)
+ *     from ever being a named Gateway's name: a name is never empty. AI
  *     Gateway ids may not hold `--`, which is why a named Gateway's go
  *     under this root instead of behind `every-<name>--`.
  *   - The default Gateway's scan is what it was (`every-*`), minus those
@@ -94,6 +98,11 @@ export interface GatewayNames {
   d1: string;
   /** The MCP OAuth server's KV namespace (its title). */
   oauthKv: string;
+  /**
+   * The R2 bucket that keeps the Gateway releases it was deployed from
+   * (docs/design/2026-11-gateway-release-store.md).
+   */
+  releases: string;
   /** What every app Worker of this Gateway starts with. */
   appPrefix: string;
   /** What every app AI Gateway id of this Gateway starts with (`--` isn't allowed in one). */
@@ -111,6 +120,7 @@ export function gatewayNames(name?: string | null): GatewayNames {
       worker: GATEWAY_ROOT,
       d1: GATEWAY_ROOT,
       oauthKv: `${GATEWAY_ROOT}-OAUTH_KV`,
+      releases: `${GATEWAY_ROOT}${RESOURCE_SEPARATOR}releases`,
       appPrefix: EVERY_PREFIX,
       aiGatewayPrefix: EVERY_PREFIX,
       label: "the Gateway",
@@ -127,6 +137,7 @@ export function gatewayNames(name?: string | null): GatewayNames {
     worker,
     d1: worker,
     oauthKv: `${worker}-OAUTH_KV`,
+    releases: `${worker}${RESOURCE_SEPARATOR}releases`,
     appPrefix: `${EVERY_PREFIX}${normalized}${RESOURCE_SEPARATOR}`,
     aiGatewayPrefix: `${worker}-`,
     label: `Gateway ${normalized}`,
@@ -152,8 +163,8 @@ export function gatewayNameOf(resourceName: string): GatewayNames | null {
 }
 
 /**
- * The names a Worker, D1 database, KV namespace or queue of the Gateway
- * itself takes. The queue is the activation queue earlier releases made
+ * The names a Worker, D1 database, KV namespace, R2 bucket or queue of the
+ * Gateway itself takes. The queue is the activation queue earlier releases made
  * (`<worker>-activate`): nothing makes it any more, but teardown still
  * removes one an older install holds.
  */
@@ -164,6 +175,7 @@ export function isGatewayOwnName(
   return (
     resourceName === names.worker ||
     resourceName === names.oauthKv ||
+    resourceName === names.releases ||
     resourceName === `${names.worker}-activate`
   );
 }

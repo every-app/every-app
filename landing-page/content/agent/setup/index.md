@@ -67,7 +67,7 @@ Then offer, one at a time: an AI key (`everyapp provider add openrouter`), email
 - A deploy broke the database: `everyapp db restore` (asks; loses writes since).
 - Locked out by Access: see [access](/docs/agent/access#recovery).
 - Something else: [troubleshooting](/docs/agent/troubleshooting).
-- Remove everything: delete each app with `--purge`, `everyapp access off`, then delete the `every-app-gateway` Worker, D1 database and KV namespace in the dashboard. [/docs/update](/docs/update#remove-everything)
+- Remove everything: delete each app with `--purge`, `everyapp access off`, then delete the `every-app-gateway` Worker, D1 database, KV namespace and the `every-app-gateway--releases` R2 bucket in the dashboard. [/docs/update](/docs/update#remove-everything)
 
 ## Safety rules
 

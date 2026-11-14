@@ -32,8 +32,8 @@ export interface ReconcileSeams {
 
 /**
  * The Gateway an app command's rebind deploys, unless a test says: the
- * release that is live, had again from where the install row says it
- * came (lib/gateway/liveRelease.ts), so a deploy never changes the
+ * release that is live, had again from its saved copy in the account's R2
+ * or from where the install row says it came (lib/gateway/liveRelease.ts), so a deploy never changes the
  * Gateway's code on the way; one source for the downgrade guard and the
  * rebind, so a release is fetched once.
  */
@@ -42,8 +42,10 @@ export function gatewayFor(
   install: InstallRecord | null,
   out: EventSink,
   verbose?: boolean,
+  /** The Gateway's account and names: its saved releases in R2 come first (lib/gateway/releaseStore.ts). */
+  store?: { cf: CfRunner; names: GatewayNames },
 ): Required<Pick<ReconcileSeams, "openRelease" | "source">> {
-  const gateway = liveGatewaySource({ install, out, verbose, cliVersion });
+  const gateway = liveGatewaySource({ install, store, out, verbose, cliVersion });
   return {
     openRelease: seams?.openRelease ?? gateway.open,
     source: seams?.source ?? gateway.describe,

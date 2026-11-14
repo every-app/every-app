@@ -30,14 +30,19 @@
  *   7. check every hostname it adds (lib/domains/preflight.ts: DNS
  *      records that answer it, the zone's limit), before the database
  *      changes when it can, and always before the upload;
- *   8. `cf deploy --prebuilt`, once: with the secrets file on a first
+ *   8. save the release in the account's R2 (./releaseStore.ts), unless it
+ *      came from there: before the upload, so the release the install row
+ *      names is there however the upload ends. A save that fails is a
+ *      warning, and the deploy goes on;
+ *   9. `cf deploy --prebuilt`, once: with the secrets file on a first
  *      upload (no Worker yet, or none the row recorded), and the install
  *      row recorded as soon as the upload is known
  *      (on the way out of a Ctrl+C too), with the public half of any
  *      identity key pair the upload sets. The hostnames are recorded only
  *      once cf has published them: when it stops after the upload, only
  *      the version is (record()). An app that registers meanwhile is bound
- *      by its own deploy's rebind, which waits for this lease.
+ *      by its own deploy's rebind, which waits for this lease;
+ *  10. remove the saved releases beyond the live one and the last two.
  *
  * Nothing is asked of the gateway over HTTPS: what cf deployed and the
  * install row are the record. The caller waits for the new hostnames'
@@ -79,6 +84,7 @@ import {
   type CandidateRelease,
   type GatewayRelease,
 } from "./release";
+import { pruneSavedReleases, saveRelease } from "./releaseStore";
 import type { GatewayResources } from "./resources";
 import { newGatewaySecrets, type DeploymentMode } from "./secretsFile";
 
@@ -544,6 +550,9 @@ async function deploy(
   // mode with the upload, for the apps' deploys to hand their Workers and
   // status to show.
   const deploymentMode = options.deploymentMode ?? "self_hosted";
+  // Saved before the upload: whatever the install row then names is in R2.
+  const names = options.names ?? DEFAULT_GATEWAY_NAMES;
+  const saved = release.saved ? null : await saveRelease({ cf, names, out, release });
   const keys = firstUpload
     ? newGatewaySecrets({
         gatewayUrl: `https://${gatewayHost}`,
@@ -565,6 +574,9 @@ async function deploy(
     message: deployed.versionId ? `Uploaded version ${deployed.versionId}` : "Uploaded",
     data: { versionId: deployed.versionId },
   });
+  if (saved) {
+    await pruneSavedReleases({ cf, names, saved, liveSha256: release.manifest.sha256 });
+  }
   return {
     versionId: deployed.versionId,
     firstDeploy,

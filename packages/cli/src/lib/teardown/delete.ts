@@ -7,7 +7,8 @@
  * each deleted with its references, since they bind each other), the
  * hostnames' certificate packs (Cloudflare removes a hostname's pack with
  * its Custom Domain, so a refusal for one it no longer lists is counted as
- * removed), the apps' D1, KV, R2, Hyperdrive, queues (once no Worker binds
+ * removed), the apps' D1, KV, R2 (and the Gateway's bucket of saved
+ * releases, emptied first), Hyperdrive, queues (once no Worker binds
  * them), Vectorize, AI Gateways, Secrets Store secrets (their stores stay),
  * the DNS records left at our names once the
  * Custom Domains went with their Workers, and last of all the Gateway's D1:
@@ -28,6 +29,8 @@ import { deleteHyperdrive } from "@/lib/cf/hyperdrive";
 import { deleteQueue, deleteQueueConsumer, listQueues } from "@/lib/cf/queues";
 import { deleteAiGateway } from "@/lib/cf/aiGateway";
 import { deleteR2Bucket } from "@/lib/cf/r2";
+import { removeSavedReleases } from "@/lib/gateway/releaseStore";
+import { gatewayNames } from "@every-app/perimeter/manifest";
 import { deleteStoreSecret } from "@/lib/cf/secretsStore";
 import { deleteD1, deleteKv } from "@/lib/cf/resources";
 import { deleteVectorizeIndex } from "@/lib/cf/vectorize";
@@ -281,10 +284,16 @@ export async function executeTeardown({
     }
   });
 
-  // 8. R2: a bucket with objects is refused, and kept.
+  // 8. R2: a bucket with objects is refused, and kept. The Gateway's own
+  // bucket of saved releases (lib/gateway/releaseStore.ts) is emptied of
+  // them first: they are everyapp's, and of no use without the Gateway.
+  const gateway = gatewayNames(plan.gatewayName);
   await kindStep("r2", plan.r2.length, async () => {
     for (const name of plan.r2) {
-      await attempt("r2", describe.r2(name), () => deleteR2Bucket(cf, name));
+      await attempt("r2", describe.r2(name), async () => {
+        if (name === gateway.releases) await removeSavedReleases(cf, gateway);
+        await deleteR2Bucket(cf, name);
+      });
     }
   });
 

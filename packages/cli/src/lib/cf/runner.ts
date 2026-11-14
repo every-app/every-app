@@ -20,12 +20,15 @@
  *    and then never exits (a handle Miniflare leaves open), so once stdout
  *    parses and the process has been quiet for a moment, the group is killed
  *    and the result kept;
+ *  - a call whose result is a file's bytes (`cf r2 objects get`) has its
+ *    stdout written to a file as it arrives, never decoded as text;
  *  - on Ctrl+C or SIGTERM, running cf calls are stopped and their private
  *    files removed before everyapp exits (../interrupt.ts).
  *
  * Commands take a {@link CfRunner} so tests can swap in `FakeCf`.
  */
 import { spawn } from "node:child_process";
+import { createWriteStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { trackChild } from "@/lib/interrupt";
@@ -84,6 +87,12 @@ export interface CfCall {
   env?: Record<string, string | undefined>;
   /** Sees stdout and stderr as they arrive (piped modes), e.g. a login's code. */
   onOutput?: (chunk: string) => void;
+  /**
+   * Write stdout's bytes to this file instead of keeping them as text (piped
+   * modes): a command that prints a file (`cf r2 objects get`). The result's
+   * `stdout` is then empty.
+   */
+  stdoutFile?: string;
 }
 
 export interface CfResult {
@@ -176,6 +185,7 @@ export function createCfRunner(options: CfRunnerOptions = {}): CfRunner {
           cwd,
           env,
           onOutput: call.onOutput,
+          stdoutFile: call.stdoutFile,
           mode: call.mode,
           timeoutMs:
             call.timeoutMs ??
@@ -289,6 +299,7 @@ interface SpawnCfOptions {
   cwd: string;
   env: NodeJS.ProcessEnv;
   onOutput?: (chunk: string) => void;
+  stdoutFile?: string;
   mode: CfOutputMode;
   timeoutMs?: number;
   watchdogIdleMs?: number;
@@ -352,8 +363,21 @@ function spawnCf(options: SpawnCfOptions): Promise<CfResult> {
       }, options.watchdogIdleMs);
     };
 
+    // A file's bytes go to the file as they are: decoding them would
+    // change them. The close below waits for the last of them.
+    const sink = options.stdoutFile ? createWriteStream(options.stdoutFile, { mode: 0o600 }) : null;
+    const written = sink
+      ? new Promise<void>((done, failed) => {
+          sink.once("finish", done);
+          sink.once("error", failed);
+        })
+      : Promise.resolve();
+    // Waited for only when cf succeeds; a failed write is then the failure.
+    written.catch(() => undefined);
+    if (sink) child.stdout?.pipe(sink);
+
     for (const [stream, append] of [
-      [child.stdout, (text: string) => (stdout += text)],
+      ...(sink ? [] : [[child.stdout, (text: string) => (stdout += text)] as const]),
       [child.stderr, (text: string) => (stderr += text)],
     ] as const) {
       stream?.on("data", (chunk: Buffer) => {
@@ -369,7 +393,12 @@ function spawnCf(options: SpawnCfOptions): Promise<CfResult> {
         if (code === 0) {
           const aborted = abortedCfError(command, stderr);
           if (aborted) reject(aborted);
-          else resolve({ stdout, stderr, stoppedByWatchdog: false });
+          else {
+            written.then(
+              () => resolve({ stdout, stderr, stoppedByWatchdog: false }),
+              reject,
+            );
+          }
           return;
         }
         const parsed = interactive

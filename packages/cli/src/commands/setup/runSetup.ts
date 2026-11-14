@@ -96,6 +96,7 @@ import { discoverGateway, refuseUnchecked, requireGateway, type Discovery } from
 import { notDeployedByEveryapp, type InstallRecord } from "@/lib/gateway/install";
 import type { DeploymentMode } from "@/lib/gateway/secretsFile";
 import { reconcileGateway, registryDrift } from "@/lib/gateway/reconcile";
+import { ensureLiveReleaseSaved } from "@/lib/gateway/releaseStore";
 import {
   releaseName,
   type CandidateRelease,
@@ -1012,6 +1013,9 @@ async function repairGateway({
   const name = releaseName(source);
   const { inSync, desired } = await registryDrift(cf, db, install, names);
   if (inSync && !flags.redeploy) {
+    // Nothing to deploy, but a Gateway last updated before releases were
+    // saved gets its live one saved now (lib/gateway/releaseStore.ts).
+    await ensureLiveReleaseSaved({ cf, names, out, liveSha256: install.releaseSha256, openRelease });
     out.emit({
       type: "step",
       step: "setup.gateway",

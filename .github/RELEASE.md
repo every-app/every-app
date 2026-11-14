@@ -79,10 +79,13 @@ release after.
 
 While everyapp.team runs a checkout's Gateway:
 
-- An app's pinned `everyapp` (from its `node_modules`) can redeploy an
-  existing app, but can't bind a new app or hostname or delete one
-  (`GATEWAY_RELEASE_UNAVAILABLE`): the live Gateway came from a checkout it
-  doesn't have. Use the linked `everyapp` for those.
+- An `everyapp` from before 0.4.0 pinned in an app (its `node_modules`)
+  can redeploy an existing app, but can't bind a new app or hostname or
+  delete one (`GATEWAY_RELEASE_UNAVAILABLE`): the live Gateway came from a
+  checkout it doesn't have. Use the linked `everyapp` for those. From
+  0.4.0 every `update` saves the Gateway's release in the account's R2
+  bucket and any machine binds from there
+  ([docs/design/2026-11-gateway-release-store.md](../docs/design/2026-11-gateway-release-store.md)).
 - The apps keep their pinned `@every-app/sdk`. A Gateway ahead of an app's
   SDK is what every user has after updating their Gateway, so it has to
   work; nothing checks it but using the apps.

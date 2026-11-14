@@ -132,7 +132,7 @@ export async function removeApp({
   const { cf, db: registry } = connection;
   // The live Gateway again, without the app's binding: refused before the
   // registry changes when it can't be had (GATEWAY_RELEASE_UNAVAILABLE).
-  const newGateway = gatewayFor(reconcile, connection.install, out);
+  const newGateway = gatewayFor(reconcile, connection.install, out, undefined, { cf, names: connection.names });
   await newGateway.source();
   out.emit({
     type: "step",

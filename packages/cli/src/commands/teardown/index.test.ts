@@ -472,7 +472,8 @@ describe("teardown --dry-run", () => {
       workflows: [`${TODO_WORKER}--rank-check`],
       d1: [{ name: TODO_WORKER }, { name: GATEWAY }],
       kv: [{ title: TODO_WORKER }, { title: `${GATEWAY}-OAUTH_KV` }],
-      r2: [`${TODO_WORKER}--media`, `${TODO_WORKER}--uploads`],
+      // The apps' buckets, and the Gateway's own of saved releases.
+      r2: [`${TODO_WORKER}--media`, `${TODO_WORKER}--uploads`, "every-app-gateway--releases"],
       hyperdrive: [{ name: `${TODO_WORKER}--pg`, id: "hd-ours" }],
       vectorize: [`${TODO_WORKER}--vectors`],
       aiGateway: [`${TODO_WORKER}-ai-gateway`],
@@ -511,7 +512,7 @@ describe("teardown --dry-run", () => {
       [`AAAA ${HOST}`, `AAAA todo.${HOST}`, `A todo.${HOST}`],
     );
     expect(plan.kept).toContain(`the TXT record at todo.${HOST}, which EveryApp never created`);
-    expect(plan.counts).toMatchObject({ workers: 2, workflows: 1, d1: 2, kv: 2, r2: 2, hyperdrive: 1, vectorize: 1, aiGateway: 1, secretsStore: 1, access: 3, email: 2, dns: 3 });
+    expect(plan.counts).toMatchObject({ workers: 2, workflows: 1, d1: 2, kv: 2, r2: 3, hyperdrive: 1, vectorize: 1, aiGateway: 1, secretsStore: 1, access: 3, email: 2, dns: 3 });
     expect(plan.secretsStore).toEqual([{ storeId: expect.any(String), name: `${TODO_WORKER}--stripe-key`, id: "ss-ours" }]);
     // Nothing of what isn't ours.
     expect(JSON.stringify(plan)).not.toMatch(/other-worker|customer-data|customer-cache|customer-backups|warehouse|product-search|support-bot|"everyapp"|payroll-api-key|www\.|\*\./);

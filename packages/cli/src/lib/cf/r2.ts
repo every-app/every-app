@@ -4,10 +4,15 @@
  * deleting an empty one for the teardown, and whether the account has R2
  * at all (setup and update check it first).
  * Checked against cf@1.0.0-beta.14 on 2026-10-24.
+ *
+ * And a bucket's objects, for the Gateway releases an update saves
+ * (lib/gateway/releaseStore.ts): list, upload a file, download to a file,
+ * delete. Checked against cf@1.0.0-beta.14's local simulation (`--local`)
+ * on 2026-11-14; not yet seen against a live account.
  */
 import { isCfError } from "./errors";
 import { runCfJson, type CfRunner } from "./runner";
-import { R2BucketListOutput } from "./schemas";
+import { R2BucketListOutput, R2ObjectListOutput } from "./schemas";
 
 /**
  * The most buckets one call returns. R2 paginates with a cursor cf doesn't
@@ -73,5 +78,68 @@ export async function deleteR2Bucket(cf: CfRunner, name: string): Promise<void> 
     plane: "account",
     mode: "json",
     args: ["r2", "buckets", "delete", name, "--force"],
+  });
+}
+
+/** How long an object's upload or download may take: a release is about 10 MB. */
+const OBJECT_TIMEOUT_MS = 10 * 60_000;
+
+/** An object as a listing says it. */
+export interface R2Object {
+  key: string;
+  /** When it was last written, ms since the epoch; 0 when the listing doesn't say. */
+  lastModified: number;
+}
+
+/**
+ * The objects in a bucket (the first page: cf doesn't print the cursor).
+ * A bucket that isn't there is `not_found`.
+ */
+export async function listR2Objects(cf: CfRunner, bucket: string): Promise<R2Object[]> {
+  const objects = await runCfJson(
+    cf,
+    {
+      plane: "account",
+      args: ["r2", "objects", "list", "--bucket-name", bucket, "--per-page", String(PAGE_SIZE)],
+    },
+    R2ObjectListOutput,
+  );
+  return objects.map((object) => ({
+    key: object.key,
+    lastModified: Date.parse(object.last_modified ?? "") || 0,
+  }));
+}
+
+/**
+ * Upload `file` as the object `key`, replacing one already there. Keys here
+ * hold no slash: cf percent-encodes one, which the API says it mustn't be.
+ */
+export async function putR2Object(cf: CfRunner, bucket: string, key: string, file: string): Promise<void> {
+  await cf.run({
+    plane: "account",
+    mode: "json",
+    timeoutMs: OBJECT_TIMEOUT_MS,
+    args: ["r2", "objects", "put", key, "--bucket-name", bucket, "--file", file, "--content-type", "application/gzip"],
+  });
+}
+
+/** Download the object `key` into `file`; `not_found` when it (or the bucket) isn't there. */
+export async function getR2Object(cf: CfRunner, bucket: string, key: string, file: string): Promise<void> {
+  await cf.run({
+    plane: "account",
+    // json for CF_QUIET: nothing but the object's bytes on stdout.
+    mode: "json",
+    timeoutMs: OBJECT_TIMEOUT_MS,
+    stdoutFile: file,
+    args: ["r2", "objects", "get", key, "--bucket-name", bucket],
+  });
+}
+
+/** Delete the object `key` (`--force` answers cf's confirmation). */
+export async function deleteR2Object(cf: CfRunner, bucket: string, key: string): Promise<void> {
+  await cf.run({
+    plane: "account",
+    mode: "json",
+    args: ["r2", "objects", "delete", key, "--bucket-name", bucket, "--force"],
   });
 }

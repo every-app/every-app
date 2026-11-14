@@ -383,7 +383,7 @@ async function deploySteps(
   // The Gateway a rebind deploys: the live one again
   // (lib/gateway/liveRelease.ts). A deploy that will rebind refuses before
   // anything is written when it can't be had (GATEWAY_RELEASE_UNAVAILABLE).
-  const gateway = gatewayFor(options.reconcile, install, out, options.verbose);
+  const gateway = gatewayFor(options.reconcile, install, out, options.verbose, { cf, names });
   // A rename (`previousIds` names the app this one was): planned, checked
   // against everything it needs (the Gateway's release, the new hostname),
   // shown and confirmed before anything is registered; written before the

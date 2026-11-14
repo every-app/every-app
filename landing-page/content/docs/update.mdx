@@ -46,7 +46,7 @@ There's no single command yet. To take EveryApp out of your Cloudflare account, 
 
 1. Remove each app: `everyapp delete my-app --purge`.
 2. If Cloudflare Access is on, run `everyapp access off`.
-3. In the Cloudflare dashboard, delete the Worker `every-app-gateway` (under **Workers & Pages**), then the D1 database `every-app-gateway` and the KV namespace `every-app-gateway-OAUTH_KV` (under **Storage & Databases**).
+3. In the Cloudflare dashboard, delete the Worker `every-app-gateway` (under **Workers & Pages**), then the D1 database `every-app-gateway`, the KV namespace `every-app-gateway-OAUTH_KV` and the R2 bucket `every-app-gateway--releases` (under **Storage & Databases**; empty the bucket first).
 4. To stop the $5 a month, switch [Workers plans](https://dash.cloudflare.com/?to=/:account/workers/plans) to Free.
 
 Then `everyapp setup` installs a fresh Gateway. You create your owner account, invite people and deploy each app again.

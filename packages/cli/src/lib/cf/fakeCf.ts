@@ -11,6 +11,7 @@
  * `exitCode` throws the same `CfError` the real runner would, parsed from
  * its output, and so does cf's `Aborted.` after a confirmation it declined.
  */
+import fs from "node:fs/promises";
 import type {
   CfCall,
   CfProcess,
@@ -25,6 +26,8 @@ export interface FakeCfResponse {
   stderr?: string;
   exitCode?: number;
   stoppedByWatchdog?: boolean;
+  /** What a call with `stdoutFile` finds in that file (`cf r2 objects get`). */
+  stdoutBytes?: Buffer;
 }
 
 export interface RecordedCfCall {
@@ -103,6 +106,9 @@ export class FakeCf implements CfRunner {
     const stdout = response.stdout ?? "";
     const stderr = response.stderr ?? "";
     const exitCode = response.exitCode ?? 0;
+    if (call.stdoutFile && exitCode === 0) {
+      await fs.writeFile(call.stdoutFile, response.stdoutBytes ?? stdout);
+    }
     if (stdout) call.onOutput?.(stdout);
     if (stderr) call.onOutput?.(stderr);
     if (exitCode !== 0) {

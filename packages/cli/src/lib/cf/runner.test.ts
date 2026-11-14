@@ -68,6 +68,12 @@ switch (scenario) {
     forever();
     break;
   }
+  case "bytes":
+    // A file's bytes on stdout, as cf r2 objects get prints them: not text,
+    // and in more than one chunk.
+    process.stdout.write(Buffer.from([0xff, 0xfe, 0x00, 0xc3]));
+    setTimeout(() => process.stdout.write(Buffer.from([0x28, 0x80, 0x0a])), 50);
+    break;
   case "hang-silent":
     forever();
     break;
@@ -294,6 +300,14 @@ describe("createCfRunner", () => {
         cf.run({ args: ["build"], plane: "project", cwd: project, mode: "text" }),
       ).resolves.toMatchObject({ stdout: "" });
     });
+  });
+
+  it("writes a call's stdout to a file byte for byte, never as text", async () => {
+    const cf = createCfRunner(options);
+    const file = path.join(dir, "object.bin");
+    const result = await cf.run({ args: ["bytes"], plane: "account", mode: "json", stdoutFile: file });
+    expect(result.stdout).toBe("");
+    expect([...readFileSync(file)]).toEqual([0xff, 0xfe, 0x00, 0xc3, 0x28, 0x80, 0x0a]);
   });
 
   it("gives piped calls no stdin", async () => {

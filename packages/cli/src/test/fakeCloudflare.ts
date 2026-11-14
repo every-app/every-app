@@ -389,6 +389,17 @@ export class FakeCloudflare {
   readonly hyperdrive = new Map<string, FakeHyperdrive>();
   /** R2 buckets by name, each with how many objects it holds. */
   readonly buckets = new Map<string, { objects: number }>();
+  /** What `cf r2 objects put` stored, by bucket then key (counted in `buckets` too). */
+  readonly bucketObjects = new Map<string, Map<string, { body: Buffer; lastModified: string }>>();
+  /** Each stored object is a second newer than the last. */
+  private objectWrites = 0;
+
+  /** Empty a bucket, as if nothing had been saved to it (a Gateway from before releases were saved). */
+  emptyBucket(name: string): void {
+    this.bucketObjects.delete(name);
+    const bucket = this.buckets.get(name);
+    if (bucket) bucket.objects = 0;
+  }
   /**
    * Artifacts namespaces by name, each with its repos' names. Artifacts
    * makes a namespace with its first repo: a test adds repos with
@@ -806,6 +817,7 @@ export class FakeCloudflare {
       .on(["workflows", "instances"], (call) => this.workflowInstances(call))
       .on(["hyperdrive"], (call) => this.hyperdriveCommand(call))
       .on(["r2", "buckets"], (call) => this.r2Command(call))
+      .on(["r2", "objects"], (call) => this.r2ObjectsCommand(call))
       .on(["artifacts", "namespaces"], (call) => this.artifactsCommand(call))
       .on(["secrets-store"], (call) => this.secretsStoreCommand(call))
       .on(["queues"], (call) => this.queuesCommand(call))
@@ -1342,6 +1354,53 @@ export class FakeCloudflare {
       return { stdout: "{}" };
     }
     return cfError(`unknown command r2 buckets ${action}`);
+  }
+
+  /**
+   * `cf r2 objects list|put|get|delete`, as cf 1.0.0-beta.14's local
+   * simulation answers: a list is an array of `{ key, last_modified }`, a
+   * put stores `--file`'s bytes, a get prints them, and a key or bucket
+   * that isn't there is refused (`[10007]`, `[10006]`).
+   */
+  private r2ObjectsCommand(call: RecordedCfCall): FakeCfResponse {
+    const action = call.args[2];
+    if (this.r2NotEnabled) {
+      return apiError(10042, "Please enable R2 through the Cloudflare Dashboard.", "403 Forbidden", "r2/buckets");
+    }
+    const name = flag(call.args, "--bucket-name") ?? "";
+    const bucket = this.buckets.get(name);
+    if (!bucket) return apiError(10006, "The specified bucket does not exist.", "404 Not Found", `r2/buckets/${name}/objects`);
+    const objects = this.bucketObjects.get(name) ?? new Map<string, { body: Buffer; lastModified: string }>();
+    this.bucketObjects.set(name, objects);
+    if (action === "list") {
+      return {
+        stdout: JSON.stringify(
+          [...objects].map(([key, object]) => ({ key, size: object.body.length, last_modified: object.lastModified })),
+        ),
+      };
+    }
+    const key = call.args[3]!;
+    if (action === "put") {
+      // A test's release may name a tarball that was never written.
+      const file = flag(call.args, "--file") ?? "";
+      const body = fs.existsSync(file) ? fs.readFileSync(file) : Buffer.alloc(0);
+      if (!objects.has(key)) bucket.objects += 1;
+      objects.set(key, { body, lastModified: new Date(Date.UTC(2026, 10, 14) + (this.objectWrites += 1) * 1000).toISOString() });
+      return { stdout: JSON.stringify({ key, size: body.length }) };
+    }
+    const object = objects.get(key);
+    if (!object) {
+      return apiError(10007, "The specified key does not exist.", "404 Not Found", `r2/buckets/${name}/objects/${key}`);
+    }
+    if (action === "get") return { stdoutBytes: object.body };
+    if (action === "delete") {
+      const declined = unconfirmed(call, "This permanently deletes the object.");
+      if (declined) return declined;
+      objects.delete(key);
+      bucket.objects -= 1;
+      return { stdout: JSON.stringify({ key }) };
+    }
+    return cfError(`unknown command r2 objects ${action}`);
   }
 
   /** A repo in a namespace, made as an app's Worker would (`env.MEMORY.create()`). */

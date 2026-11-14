@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### A new app deploys from any machine
+
+`everyapp deploy` of a new app (and `delete`, and a new hostname) re-uploads the Gateway to change what it binds, and needs the exact release that is live. For a Gateway built from a checkout that build was only on the machine that last ran `update`; anywhere else the deploy stopped with `GATEWAY_RELEASE_UNAVAILABLE`. Now `setup` and `update` save the release they deploy in an R2 bucket of the Gateway's own Cloudflare account (`every-app-gateway--releases`, at most three releases, about 30 MB), and a deploy takes the live one from there, checked against the SHA-256 the Gateway records. A save that fails is a warning (`GATEWAY_RELEASE_NOT_SAVED`); the update still succeeds. Design: `docs/design/2026-11-gateway-release-store.md`.
+
+What you do: `pnpm everyapp update` once on each Gateway, from a machine that can (for a Gateway built from a checkout, a checkout). Until then deploys work as before.
+
 ### Rename an app (`previousIds`)
 
 An app can change its id and hostname and keep everything else. Change `id` in `everyapp.config.ts` and list the old one under `previousIds`:
