@@ -40,7 +40,7 @@ import type { ExecutionContextLike } from "./everyApp.js";
  * Reported with every catalog; must match package.json (a test checks).
  * `pnpm release <version>` (scripts/release.mjs) sets both in one commit.
  */
-export const SDK_VERSION = "0.3.3";
+export const SDK_VERSION = "0.4.0";
 
 const JSON_SCHEMA_TARGET = "draft-2020-12";
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";

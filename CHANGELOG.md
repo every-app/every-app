@@ -1,12 +1,50 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
+
+Breaking for an app that reads `env.EVERYAPP_MANIFEST`. Everything else keeps working as it is: an app pinned to 0.3.x deploys and runs on a 0.4.0 Gateway.
+
+### Breaking: the Worker no longer holds the manifest
+
+`everyAppWorker()` stops declaring `env.EVERYAPP_MANIFEST`, and `EveryAppEnv` loses the key and its type parameter. The Gateway's registry is the manifest's one home, so an app's manifest can be any size: a manifest over 5 KB used to fail at the upload (`[10054] Text binding 'EVERYAPP_MANIFEST' is too large`). A release built with an older SDK still installs and still gets the binding, without `why`, `how`, `docs` and `steps` when its manifest is over 5 KB; one that is over 5 KB even without them is refused (`INVALID_MANIFEST`) until it is rebuilt with this SDK. Design: `docs/design/2026-11-worker-manifest.md`.
+
+### A connection granted in part reads as connected
+
+A person who grants fewer permissions than the apps list (or a provider that gives less) has a working connection, not one that **Needs reconnect**. Needs reconnect is now for a connection that expired, or that was never asked for a scope an app lists now. The Gateway keeps what it asked the provider for at the last connect (`provider_connections.asked_scopes`, migration `0036`).
+
+- Calls from an app go through when the missing scope was asked for and declined; the provider refuses the calls that need it. `integrationStatus()` reports `connection.ready: true` with `missingScopes` and no `reconnect`. A scope that was never asked for still answers 409 `integration_not_connected` with `reconnect: true`.
+- `everyapp provider connections` says `active, 10 of 18 permissions granted` in STATUS. With `--json`, and in the `everyapp_provider_connections` tool, a connection whose apps list scopes gains `permissions: { listed, granted, notGranted }`; `needsReconnect` is false for a partial grant.
+
+### R2 is required
+
+`everyapp setup` and `everyapp update` check that R2, Cloudflare's file storage, is on in the account, and stop on a new action, `enable_r2`, before anything is created or deployed ("Turn on R2 in this Cloudflare account", with the account's R2 page as `data.url`). Most apps keep their files in a bucket, and an account that never turned R2 on used to stop an app's install halfway (`R2_NOT_ENABLED`). A check Cloudflare wouldn't answer (an API token without R2's permission) is `step setup.r2 skip` and the run goes on.
 
 ### A new app deploys from any machine
 
 `everyapp deploy` of a new app (and `delete`, and a new hostname) re-uploads the Gateway to change what it binds, and needs the exact release that is live. For a Gateway built from a checkout that build was only on the machine that last ran `update`; anywhere else the deploy stopped with `GATEWAY_RELEASE_UNAVAILABLE`. Now `setup` and `update` save the release they deploy in an R2 bucket of the Gateway's own Cloudflare account (`every-app-gateway--releases`, at most three releases, about 30 MB), and a deploy takes the live one from there, checked against the SHA-256 the Gateway records. A save that fails is a warning (`GATEWAY_RELEASE_NOT_SAVED`); the update still succeeds. Design: `docs/design/2026-11-gateway-release-store.md`.
 
-What you do: `pnpm everyapp update` once on each Gateway, from a machine that can (for a Gateway built from a checkout, a checkout). Until then deploys work as before.
+The save was tested against `cf`'s local simulation of R2 only (cf 1.0.0-beta.14), not a live account.
+
+### Also in the Gateway
+
+Your connections opens on Accounts, one line per row, with the apps on your devices there. Every settings table searches and pages the same way. An App directory tab links to the apps people share on GitHub.
+
+### What you do
+
+1. Turn on R2 in the Cloudflare account, if it never was: `https://dash.cloudflare.com/<account id>/r2/overview`, **R2 Object Storage** → **Get started**. The first 10 GB a month is free. Only the dashboard can do it, and `everyapp update` stops on `enable_r2` until it is on. An account that already has a bucket needs nothing.
+2. Update the Gateway. From a checkout: `pnpm everyapp update`. It brings the Gateway to migration `0036` (`connection_asked_scopes`, one nullable column), and this everyapp refuses an older Gateway with `GATEWAY_OUTDATED` until you do.
+3. That `update`, once on each Gateway, also saves its release in R2, so a new app deploys from any machine. Run it from a machine that can deploy the Gateway (for a Gateway built from a checkout, a checkout). A Gateway that is already up to date deploys nothing: `update` saves the live release when this machine has those exact bytes, and when it has only another build of the same sources it warns `GATEWAY_RELEASE_NOT_SAVED`. Then `pnpm everyapp update --redeploy` deploys this machine's build and saves it. Until a release is saved, deploys work as before.
+4. A connection made before the update that holds fewer scopes than the apps list has no record of what was asked, so it still reads Needs reconnect. The person selects Reconnect once. A connection that holds every listed scope needs nothing.
+5. Apps keep working on their 0.3.x pins. When you move an app to this SDK:
+
+   ```bash
+   pnpm add @every-app/sdk@0.4.0
+   pnpm add -D everyapp@0.4.0
+   ```
+
+   Write what the code read from `env.EVERYAPP_MANIFEST` in the code (a model id, the app's name; `env.EVERYAPP_APP_ID` is still there), run `cf workers types` (code that still reads the key then fails its typecheck), and deploy: `pnpm everyapp deploy`.
+
+## 0.3.0 and 0.3.1
 
 ### Rename an app (`previousIds`)
 
@@ -22,13 +60,11 @@ What you do: `pnpm everyapp update` brings the Gateway to migration `0033` (`app
 
 ### One OAuth connection per person per provider
 
-A person connects a provider once, to EveryApp, and each app then asks them for access (the OAuth bullets under "Unreleased: breaking", below). App code and `everyapp.config.ts` don't change: an app's Connect button and `connectUrl()` now lead to the provider or to EveryApp's Allow page. `everyapp provider connections` lists one row per person per provider, with the apps allowed. `everyapp provider disconnect` removes the connection, and with `--app <id>` takes only that app's access away. The `provider.disconnected` event no longer carries `app`, and `connection.used` is sent once per app per day. Design: `docs/design/2026-11-oauth-one-connection.md`; how-to: [Connect an OAuth provider](https://everyapp.com/docs/connect-oauth).
+A person connects a provider once, to EveryApp, and each app then asks them for access (the OAuth bullets under "0.3.0: breaking", below). App code and `everyapp.config.ts` don't change: an app's Connect button and `connectUrl()` now lead to the provider or to EveryApp's Allow page. `everyapp provider connections` lists one row per person per provider, with the apps allowed. `everyapp provider disconnect` removes the connection, and with `--app <id>` takes only that app's access away. The `provider.disconnected` event no longer carries `app`, and `connection.used` is sent once per app per day. Design: `docs/design/2026-11-oauth-one-connection.md`; how-to: [Connect an OAuth provider](https://everyapp.com/docs/connect-oauth).
 
 What you do: `pnpm everyapp update` brings the Gateway to migration `0034` (`oauth_one_connection`). This everyapp refuses an older Gateway with `GATEWAY_OUTDATED` until you do. Each person keeps one connection per provider: an active one before an expired one, then the one with the most scopes, then the newest. The tokens of their other connections are dropped, not revoked at the provider. An app that was connected to the kept account stays allowed. It keeps working if the kept connection holds its scopes, and otherwise sends the person through the provider once. An app that was connected to a different account asks the person again. While the update swaps the code, connecting and calls to OAuth providers fail for a few seconds.
 
-## Unreleased: breaking
-
-**The Worker no longer holds the manifest.** `everyAppWorker()` stops declaring `env.EVERYAPP_MANIFEST`, and `EveryAppEnv` loses the key and its type parameter. The Gateway's registry is the manifest's one home, so an app's manifest can be any size: a manifest over 5 KB used to fail at the upload (`[10054] Text binding 'EVERYAPP_MANIFEST' is too large`). What you do when you move an app to this SDK: write what the code read from `env.EVERYAPP_MANIFEST` in the code (a model id, the app's name; `env.EVERYAPP_APP_ID` is still there), then `cf workers types` and deploy. A release built with an older SDK still installs and still gets the binding, without `why`, `how`, `docs` and `steps` when its manifest is over 5 KB. Design: `docs/design/2026-11-worker-manifest.md`.
+## 0.3.0: breaking
 
 An app's setup is grouped into **features** (`features` in `everyapp.config.ts`): each a name, a why, numbered steps with URLs, and the secrets, settings, capabilities and providers it needs. `everyapp configure <app>` walks them; `everyapp status` shows each app's features in one line.
 
