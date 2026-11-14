@@ -22,6 +22,11 @@
  *                or one that needs a newer everyapp, stops here
  *    plan        Workers Paid: a Free plan stops the run before anything is
  *                created; one that can't be confirmed is warned about
+ *    r2          R2 (Cloudflare's file storage) is on in the account: one
+ *                without it stops a new install, and an update or repair,
+ *                before anything is created or deployed, with the page
+ *                that turns it on; a check Cloudflare wouldn't answer is
+ *                noted and passed over
  *    domain      where the gateway lives: --domain, the install row's (also
  *                one an install wrote before it stopped), or an address
  *                typed at the terminal, under any of the account's active
@@ -70,6 +75,7 @@ import { PINNED_CF_VERSION } from "@/lib/cf/bin";
 import { cfD1Database, type D1Database } from "@/lib/cf/d1";
 import { workersPlansUrl } from "@/lib/cf/deploy";
 import { WorkersPlan, workersPlan } from "@/lib/cf/plan";
+import { r2Enabled, r2Url } from "@/lib/cf/r2";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import type { CfWhoami } from "@/lib/cf/schemas";
 import { listWorkerSecrets } from "@/lib/cf/secrets";
@@ -423,6 +429,7 @@ export async function installGateway({
   // What this run deploys, before anything is asked or created.
   const source = await deps.source();
   if (!live) await checkPlan(cf, account.id, out);
+  await checkR2(cf, account.id, out);
 
   // Where the gateway lives, and nothing in the way of a new address.
   const target = await gatewayTarget({
@@ -659,6 +666,43 @@ async function runAccessOn(
       },
     );
   }
+}
+
+/**
+ * R2, Cloudflare's file storage, has to be on in the account: most apps
+ * keep their files in a bucket, and an account that never turned it on
+ * refuses every bucket call until someone does, in the dashboard (no API
+ * or cf command can). Checked on a new install and on every update or
+ * repair, before anything is created or deployed, so an app's install
+ * never stops halfway on it (R2_NOT_ENABLED). A check Cloudflare wouldn't
+ * answer is noted and the run goes on: an API token without R2's
+ * permission says nothing about the account.
+ */
+async function checkR2(cf: CfRunner, accountId: string, out: EventSink): Promise<void> {
+  const url = r2Url(accountId);
+  let enabled: boolean;
+  try {
+    enabled = await r2Enabled(cf);
+  } catch (error) {
+    if (error instanceof CancelledError) throw error;
+    out.emit({
+      type: "step",
+      step: "setup.r2",
+      status: "skip",
+      message: "Couldn't check that R2 is on in this account; apps that store files need it",
+      data: { url, cloudflare: errorMessage(error).split("\n")[0] ?? "" },
+    });
+    return;
+  }
+  if (!enabled) {
+    throw new ActionRequiredError(
+      "enable_r2",
+      "Turn on R2 in this Cloudflare account\nMost apps store their files in R2, Cloudflare's file storage. The first 10 GB a month is free, which should be plenty for your apps.",
+      url,
+      { data: { r2: false } },
+    );
+  }
+  out.emit({ type: "step", step: "setup.r2", status: "ok", message: "R2 is on in this account", data: { r2: true } });
 }
 
 function checkToolchain(out: EventSink): void {

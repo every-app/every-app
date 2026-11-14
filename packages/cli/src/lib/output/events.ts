@@ -45,6 +45,7 @@ const REQUIRED_ACTIONS = [
   "register_workers_subdomain",
   "claim_owner",
   "upgrade_workers_paid",
+  "enable_r2",
   "rerun_interactive",
   "add_domain",
   "choose_account",

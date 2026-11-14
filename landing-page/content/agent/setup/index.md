@@ -13,6 +13,7 @@ A fresh `setup` takes 5 to 20 minutes: 5 to 10 for the Gateway upload and its ce
 |---|---|---|
 | Create a Cloudflare account | none; ask first | Sign up at dash.cloudflare.com and verify the email. |
 | Pay for Workers Paid ($5 a month) | `upgrade_workers_paid`, `data.url` | Subscribe at the link, then you rerun. |
+| Turn on R2 (the first 10 GB a month is free) | `enable_r2`, `data.url` | Turn it on at the link, then you rerun. |
 | Get a domain onto Cloudflare | `add_domain`, `data.url`; or `ZONE_NOT_FOUND` | Buy one in the dashboard (about $10 a year) or point an existing one's nameservers at Cloudflare. |
 | Approve the Cloudflare login | `cloudflare_login`, `data.url`, `data.code`, waiting (5 minutes) | Open the link and enter the code. |
 | Pick an account | `choose_account`, `data.choices` | Which account? Run that choice's `rerun`. |

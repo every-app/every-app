@@ -152,6 +152,7 @@ describe("everyapp setup", () => {
       "setup.auth ok",
       "setup.account ok",
       "setup.plan ok",
+      "setup.r2 ok",
       "setup.domain ok",
       "setup.gateway ok",
       "setup.owner ok",
@@ -395,6 +396,7 @@ describe("everyapp setup", () => {
       "setup.toolchain ok",
       "setup.auth ok",
       "setup.account ok",
+      "setup.r2 ok",
       "setup.domain ok",
       "setup.gateway skip",
       "setup.owner skip",
@@ -1180,6 +1182,47 @@ describe("everyapp setup", () => {
     expect(events).toContainEqual(
       expect.objectContaining({ step: "setup.plan", status: "skip", data: expect.objectContaining({ plan: "unreadable" }) }),
     );
+  });
+
+  it("stops on an account without R2: setup before creating anything, update before deploying", async () => {
+    account.r2NotEnabled = true;
+
+    const { exitCode } = await setup({ domain: GW });
+
+    expect(exitCode).toBe(2);
+    expect(events.at(-1)).toMatchObject({
+      type: "action_required",
+      action: "enable_r2",
+      message: expect.stringMatching(/^Turn on R2 in this Cloudflare account\n.*The first 10 GB a month is free/),
+      data: { url: `https://dash.cloudflare.com/${ACCOUNT_ID}/r2/overview`, r2: false },
+    });
+    expect(account.databases.size).toBe(0);
+    expect(account.deploys).toEqual([]);
+
+    // A Gateway installed while R2 was on, in an account that has it no more.
+    account.r2NotEnabled = false;
+    expect((await setup({ domain: GW })).exitCode).toBe(0);
+    account.r2NotEnabled = true;
+    const deploys = account.deploys.length;
+    const newer = await buildGatewayRelease({ builtAt: "2026-10-13T00:00:00.000Z" });
+    const out: EventSink = createNdjsonSink((line) => events.push(JSON.parse(line)));
+
+    await expect(
+      runGatewayDeploy({ json: true }, out, deps({ openRelease: () => openRelease(newer), source: () => releaseSource(newer) })),
+    ).rejects.toMatchObject({ action: "enable_r2", url: `https://dash.cloudflare.com/${ACCOUNT_ID}/r2/overview` });
+    expect(account.deploys).toHaveLength(deploys);
+  });
+
+  it("only notes an R2 check Cloudflare wouldn't answer, for --verbose", async () => {
+    account.cf.override(["r2", "buckets", "list"], {
+      exitCode: 1,
+      stderr: "┌ Error\n│ Authentication error [code: 10000]\n└\n",
+    });
+
+    const { exitCode } = await setup({ domain: GW });
+
+    expect(exitCode).toBe(0);
+    expect(events).toContainEqual(expect.objectContaining({ step: "setup.r2", status: "skip" }));
   });
 
   it("refuses a --domain in no zone of the account, naming the account's domains", async () => {

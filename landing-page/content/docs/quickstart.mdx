@@ -17,6 +17,7 @@ Paste this prompt into Claude Code, Codex or Cursor. It runs the steps on this p
 ## Before you start
 
 - A Cloudflare account on the Workers Paid plan, $5 a month. [Sign up](https://dash.cloudflare.com/sign-up), then [choose Paid](https://dash.cloudflare.com/?to=/:account/workers/plans).
+- R2, Cloudflare's file storage, turned on in that account. The first 10 GB a month is free. [Turn it on](https://dash.cloudflare.com/?to=/:account/r2/overview).
 - A domain on Cloudflare. [Buy one there](https://dash.cloudflare.com/?to=/:account/registrar/register), or [bring one you own](/docs/domain#use-a-domain-you-already-own).
 - [Node.js](https://nodejs.org) 22.18 or newer.
 
@@ -63,8 +64,6 @@ everyapp install https://github.com/every-app/open-seo
 everyapp install https://github.com/every-app/open-scribe
 everyapp install https://github.com/every-app/open-analytics
 ```
-
-Turn on R2 in your Cloudflare dashboard first (R2 Object Storage, then Get started). The first three apps store files there.
 
 Each install asks for the keys the app needs:
 

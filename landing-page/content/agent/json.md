@@ -64,6 +64,7 @@ On `error` and `action_required` events, `data` may carry:
 | `cloudflare_login` | Opens `data.url` and approves the Cloudflare login, entering `data.code` if asked. | With `data.waiting: true` the run goes on by itself once approved. Unattended runs set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` instead. |
 | `claim_owner` | Opens the one-time setup link (`data.url`) and creates the owner account. | It waits up to 15 minutes. The link works once, expires in 24 hours and is a password. Rerun `setup` for a new one. Under `CI` the link is never shown: `done` with the warning `OWNER_NOT_CLAIMED`. |
 | `upgrade_workers_paid` | Subscribes the account to Workers Paid at `data.url`. | Then rerun. |
+| `enable_r2` | Turns on R2, Cloudflare's file storage, for the account at `data.url` (the first 10 GB a month is free). | Then rerun. `setup` and `update` stop on it before anything is created or deployed. |
 | `register_workers_subdomain` | Picks a workers.dev subdomain in the dashboard (`data.url`). | Then rerun. |
 | `add_domain` | Adds a domain to the account, or finishes activating one (`data.url`). | Then rerun. |
 | `choose_account` | Picks one of `data.choices` (several accounts or Gateways). | Each choice's `rerun` adds `--account-id` or `--gateway`. |
