@@ -908,7 +908,7 @@ Agents can do these without a decision.
 | Move `pnpm audit` from PR checks to nightly | `.github/workflows` | 10 |
 | TODO.md rule: a default to confirm is one line under Questions; no "defaults taken" narratives | `TODO.md` header, AGENTS.md | 10 |
 | Close #896 and #909; close #435 but keep its branch | GitHub | 5 |
-| Your step: archive `private-postiz-everyapp`; delete the 59 legacy GitHub releases (v0.1.14 from July is still marked Latest) | GitHub | 15 |
+| Your step: archive the Postiz port's repository; delete the 59 legacy GitHub releases (v0.1.14 from July is still marked Latest) | GitHub | 15 |
 
 ### The six skill rules (B1)
 1. The Gateway signs people in. Read the user only as `context.user` (pages, server functions) or `user` (tools). No login, session or cookie of your own.

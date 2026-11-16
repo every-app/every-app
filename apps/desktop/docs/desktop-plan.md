@@ -1,6 +1,6 @@
 # Talk desktop plan (v1: private alpha, macOS)
 
-> **Historical.** This is Talk's plan from 2026-11-02, kept as written; it was made in every-app/private-talk (now every-app/private-open-scribe), where `desktop/`, `mac/` and `packages/ui` were top-level. The app is now **Every App for Mac** in this repository (`apps/desktop`, `apps/desktop/mac`, `apps/desktop/ui`), Talk's meeting notes are its **Scribe** feature, and the names changed (`talk-helper` → `everyapp-helper`, `com.everyapp.talk` → `com.everyapp.desktop`, `talk://record` → `everyapp://scribe/record`, `TalkCore`/`TalkRecording` → `HelperCore`/`HelperRecording`): see `../README.md`. The helper protocol below is still current.
+> **Historical.** This is Talk's plan from 2026-11-02, kept as written; it was made in Talk's own repository (now Scribe's), where `desktop/`, `mac/` and `packages/ui` were top-level. The app is now **Every App for Mac** in this repository (`apps/desktop`, `apps/desktop/mac`, `apps/desktop/ui`), Talk's meeting notes are its **Scribe** feature, and the names changed (`talk-helper` → `everyapp-helper`, `com.everyapp.talk` → `com.everyapp.desktop`, `talk://record` → `everyapp://scribe/record`, `TalkCore`/`TalkRecording` → `HelperCore`/`HelperRecording`): see `../README.md`. The helper protocol below is still current.
 
 Agreed with Ben on 2026-11-02. Talk becomes a real desktop app. The Mac comes first and Windows comes later. The Every App Worker stays the backend.
 
@@ -19,7 +19,7 @@ Agreed with Ben on 2026-11-02. Talk becomes a real desktop app. The Mac comes fi
 | Signing | **Ben's personal Apple Developer account** (Developer ID + notarization). The credentials go on this Mac through the secret prompt and are never written into the repo. |
 | Distribution | **Direct download** with electron-updater. No Mac App Store. |
 | Web overhaul | **Finish it and open a PR first.** The desktop app builds on its folders/templates server code and its components. |
-| Merging | **The orchestrator merges** into private-talk main after review and green scoped checks. No deploys, releases, public pushes or update-feed uploads without Ben's OK. |
+| Merging | **The orchestrator merges** into that repository's main after review and green scoped checks. No deploys, releases, public pushes or update-feed uploads without Ben's OK. |
 
 ## Architecture
 

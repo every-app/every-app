@@ -71,7 +71,7 @@ Downtime: OpenSEO's Google cards and CRM's mail sync stop between step 2 and the
   - if people use personal @gmail.com accounts, see `/docs/google-personal-accounts`.
 - Microsoft Entra app of `microsoft-365`: add the redirect URI `https://everyapp.team/connect/microsoft-365/callback`. CRM used its own callback before.
 - Google's redirect URI `https://everyapp.team/connect/google-workspace/callback` should already be there (OpenSEO used it).
-- `cf auth login` with access to account `23bc28f0b638fbfc1c7f838573c17ee3`.
+- `cf auth login` with access to account `<account-id>`.
 
 **2. Gateway** (runs migration 0025 and prints a restore bookmark; save it).
 
@@ -79,7 +79,7 @@ Downtime: OpenSEO's Google cards and CRM's mail sync stop between step 2 and the
 git -C ~/workspaces/private-every-app fetch origin
 git -C ~/workspaces/private-every-app worktree add --detach /tmp/ea-deploy/pea origin/main
 cd /tmp/ea-deploy/pea && pnpm install
-pnpm everyapp update --gateway https://everyapp.team --account-id 23bc28f0b638fbfc1c7f838573c17ee3
+pnpm everyapp update --gateway https://everyapp.team --account-id <account-id>
 pnpm everyapp provider list --gateway https://everyapp.team   # a provider added from a preset: re-add with `provider add --oauth <preset> --replace`
 ```
 
@@ -89,7 +89,7 @@ pnpm everyapp provider list --gateway https://everyapp.team   # a provider added
 git -C ~/workspaces/open-seo fetch origin
 git -C ~/workspaces/open-seo worktree add --detach /tmp/ea-deploy/openseo origin/main
 cd /tmp/ea-deploy/openseo && pnpm install --frozen-lockfile
-pnpm exec everyapp deploy --gateway https://everyapp.team --account-id 23bc28f0b638fbfc1c7f838573c17ee3
+pnpm exec everyapp deploy --gateway https://everyapp.team --account-id <account-id>
 ```
 
 **4. CRM**, then remove its old encryption key.
@@ -98,7 +98,7 @@ pnpm exec everyapp deploy --gateway https://everyapp.team --account-id 23bc28f0b
 git -C ~/workspaces/open-crm fetch origin
 git -C ~/workspaces/open-crm worktree add --detach /tmp/ea-deploy/crm origin/main
 cd /tmp/ea-deploy/crm && pnpm install --frozen-lockfile
-pnpm exec everyapp deploy --gateway https://everyapp.team --account-id 23bc28f0b638fbfc1c7f838573c17ee3
+pnpm exec everyapp deploy --gateway https://everyapp.team --account-id <account-id>
 pnpm exec everyapp secret unset TOKEN_ENCRYPTION_KEY --app crm --gateway https://everyapp.team
 ```
 
@@ -108,7 +108,7 @@ pnpm exec everyapp secret unset TOKEN_ENCRYPTION_KEY --app crm --gateway https:/
 git -C ~/private-open-mail fetch origin
 git -C ~/private-open-mail worktree add --detach /tmp/ea-deploy/openmail origin/everyapp
 cd /tmp/ea-deploy/openmail && pnpm install --frozen-lockfile
-pnpm exec everyapp deploy --gateway https://everyapp.team --account-id 23bc28f0b638fbfc1c7f838573c17ee3
+pnpm exec everyapp deploy --gateway https://everyapp.team --account-id <account-id>
 ```
 
 **6. Check.**
@@ -126,4 +126,4 @@ cd /tmp/ea-deploy/pea && pnpm everyapp status --gateway https://everyapp.team
 
 **7. Later.** The old `agentic-inbox` app is unaffected (no OAuth). Delete it once OpenMail works: `pnpm everyapp delete agentic-inbox --gateway https://everyapp.team`. (Done 2026-11-03.)
 
-**Rollback.** `pnpm everyapp db restore --gateway --account-id 23bc28f0b638fbfc1c7f838573c17ee3` (back to before migration 0025; the bookmark from step 2 is the same point), then `pnpm everyapp setup --allow-downgrade` from a checkout of `cc6735233`. The apps' previous versions stay in Cloudflare's version history.
+**Rollback.** `pnpm everyapp db restore --gateway --account-id <account-id>` (back to before migration 0025; the bookmark from step 2 is the same point), then `pnpm everyapp setup --allow-downgrade` from a checkout of `cc6735233`. The apps' previous versions stay in Cloudflare's version history.

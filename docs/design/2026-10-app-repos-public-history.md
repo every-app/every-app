@@ -15,7 +15,7 @@ customer addresses are not. Nothing has been pushed, created or flipped.
 | `every-app/open-mail` (new)      | `private-open-mail` `everyapp` @ 6ed2e87 | 94: 11 upstream agentic-inbox, 83 ours      | **Pass** |
 | `every-app/open-seo` (public)    | `private-open-seo` PR #1067 `t3/everyapp-mode` @ 922ea7f1 | 63 not on open-seo `main` (307c9ec6) | **Pass** |
 
-Skipped as asked: `private-open-seo-everyapp` (old port venue; its PRs #1–#17
+Skipped as asked: the old OpenSEO port repository (old port venue; its PRs #1–#17
 reach open-seo only through #1067's merges, so they were scanned there), RepoLens,
 Mission Control.
 
@@ -79,7 +79,7 @@ ever committed in any of them.
 | `agentic-inbox.everyapp.team` / `openmail.everyapp.team` "with mail on `hi.openseo.so`" | open-mail docs (8ca3700, removed in 05ef46a) | No | Says where the live inbox runs; no mailbox names, no message contents. Fixture mail is `alice@example.org` → `dev@example.com` |
 | Message contents | open-mail `test/fixtures/inbound.eml`, `workers-ai-llama-step*.sse` | No | Synthetic ("order 1042"), a Workers AI weather tool-call stream |
 | `openseo.everyapp.team`, Worker `every-bensenescu-openseo`, the `*-everyapp` Worker names, "set CONTEXT_API_KEY on everyapp.team before Monday" | open-seo #1067 docs and TODO | No | everyapp.team internals: names, not credentials |
-| Private repo names (`private-every-app` ×20–25 per repo, `every-app/private-open-analytics`, `open-seo-everyapp`, `private-open-seo-everyapp` in merge subjects) | all four | No | Readers see links they cannot open; open-analytics names `every-app/private-open-analytics` 9× |
+| Private repo names (`private-every-app` ×20–25 per repo, `every-app/private-open-analytics`, the old port repository in merge subjects) | all four | No | Readers see links they cannot open; open-analytics names `every-app/private-open-analytics` 9× |
 | `bensenescu/open-seo` links | open-seo | No | Old public location, redirects |
 | Cloudflare account / zone / KV ids | none | — | crm's 32-zero placeholder only |
 | D1 id `37bee90a-…` | open-seo `alchemy.run.ts` | No | Already on public open-seo `main` (`wrangler.audit.jsonc`) |

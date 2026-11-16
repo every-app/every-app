@@ -16,3 +16,12 @@ paths = ['''\.test\.tsx?$''']
 description = "Cloudflare permission group names, not credentials"
 targetRules = ["generic-api-key"]
 paths = ['''^packages/cli/src/lib/gateway/deployToken\.ts$''']
+
+# Not a secret, but it says which Cloudflare account to aim at (pen test
+# 2026-Q4, finding 13). Docs write <account-id>; tests use made-up ids and
+# aren't Markdown.
+[[rules]]
+id = "cloudflare-account-id-in-docs"
+description = "A real-looking Cloudflare account id in Markdown: write <account-id>"
+regex = '''(?i)account(?:[-_ ]id)?[\s`'"=:]{1,4}([0-9a-f]{32})\b'''
+path = '''\.mdx?$'''
