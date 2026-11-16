@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { mkdtempSync, readdirSync, statSync } from "node:fs";
+import { afterEach, describe, expect, it } from "vitest";
+import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ApiError } from "../src/main/api/client";
@@ -128,6 +128,127 @@ describe("pending uploads", () => {
     const p = new PendingUploads(join(mkdtempSync(join(tmpdir(), "everyapp-pending-")), "pending"));
     p.add("m1", "https://a", [], false);
     expect(p.count).toBe(0);
+  });
+});
+
+describe("overlapping pending replays", () => {
+  const dirs: string[] = [];
+  afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
+  function pending() {
+    const dir = mkdtempSync(join(tmpdir(), "everyapp-pending-overlap-"));
+    dirs.push(dir);
+    return new PendingUploads(join(dir, "pending"));
+  }
+  function deferred() {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => { resolve = done; });
+    return { promise, resolve };
+  }
+
+  it.each(["append", "finish"] as const)("drains a new meeting signaled during %s, preserving batches and app routing", async (phase) => {
+    const p = pending();
+    const { api, calls } = fakeApi();
+    const entered = deferred();
+    const release = deferred();
+    const append = api.appendSegments;
+    const finish = api.finish;
+    api.appendSegments = async (id, segments) => {
+      if (id === "A" && phase === "append") { entered.resolve(); await release.promise; }
+      await append(id, segments);
+    };
+    api.finish = async (id) => {
+      if (id === "A" && phase === "finish") { entered.resolve(); await release.promise; }
+      await finish(id);
+    };
+    p.add("A", api.appUrl, segs(0, 1), true);
+    const first = p.replay(api);
+    await entered.promise;
+    p.add("B", api.appUrl, segs(10, 60), true);
+    p.add("other", "https://other.example.com", segs(0, 1), true);
+    const second = p.replay(api);
+    release.resolve();
+    await Promise.all([first, second]);
+    expect(calls).toEqual(["segments A 0-0", "finish A", "segments B 10-59", "segments B 60-69", "finish B"]);
+    expect(p.list().map((m) => m.meetingId)).toEqual(["other"]);
+  });
+
+  it.each(["append", "finish"] as const)("stops on a failed %s despite an overlapping wakeup and can retry later", async (phase) => {
+    const p = pending();
+    const { api, calls } = fakeApi();
+    const entered = deferred();
+    const release = deferred();
+    let attempts = 0;
+    const fail = async () => {
+      attempts++;
+      entered.resolve();
+      await release.promise;
+      throw new ApiError("network", "offline");
+    };
+    if (phase === "append") api.appendSegments = fail;
+    else api.finish = fail;
+    p.add("A", api.appUrl, segs(0, 1), true);
+    const first = p.replay(api);
+    await entered.promise;
+    p.add("B", api.appUrl, segs(10, 1), true);
+    const second = p.replay(api);
+    release.resolve();
+    await Promise.all([first, second]);
+    expect(attempts).toBe(1);
+    expect(calls).toEqual(phase === "append" ? [] : ["segments A 0-0"]);
+    expect(p.list().map(({ meetingId, segments, needsFinish }) => ({ meetingId, segments, needsFinish }))).toEqual([
+      { meetingId: "A", segments: phase === "append" ? segs(0, 1) : [], needsFinish: true },
+      { meetingId: "B", segments: segs(10, 1), needsFinish: true },
+    ]);
+    const retry = fakeApi();
+    expect(await p.replay(retry.api)).toBe(0);
+    expect(retry.calls).toEqual([...(phase === "append" ? ["segments A 0-0"] : []), "finish A", "segments B 10-10", "finish B"]);
+  });
+
+  it.each(["B", "C"] as const)("hands the next pass to the latest requested app %s", async (latest) => {
+    const p = pending();
+    const apis = {
+      A: fakeApi("https://a.example.com"),
+      B: fakeApi("https://b.example.com"),
+      C: fakeApi("https://c.example.com"),
+    };
+    const entered = deferred();
+    const release = deferred();
+    const append = apis.A.api.appendSegments;
+    apis.A.api.appendSegments = async (id, segments) => {
+      entered.resolve();
+      await release.promise;
+      await append(id, segments);
+    };
+    for (const [id, { api }] of Object.entries(apis)) p.add(id, api.appUrl, segs(0, 1), true);
+    const first = p.replay(apis.A.api);
+    await entered.promise;
+    const second = p.replay(apis.B.api);
+    const third = latest === "C" ? p.replay(apis.C.api) : Promise.resolve();
+    release.resolve();
+    await Promise.all([first, second, third]);
+    for (const [id, { calls }] of Object.entries(apis)) {
+      expect(calls, id).toEqual(id === "A" || id === latest ? [`segments ${id} 0-0`, `finish ${id}`] : []);
+    }
+    const retained = latest === "B" ? "C" : "B";
+    expect(p.list().map(({ meetingId, appUrl, segments, needsFinish }) => ({ meetingId, appUrl, segments, needsFinish }))).toEqual([
+      { meetingId: retained, appUrl: apis[retained].api.appUrl, segments: segs(0, 1), needsFinish: true },
+    ]);
+  });
+
+  it("retains wakeups received during a follow-up pass", async () => {
+    const p = pending();
+    const { api, calls } = fakeApi();
+    const append = api.appendSegments;
+    api.appendSegments = async (id, segments) => {
+      await append(id, segments);
+      if (id === "A" || id === "B") {
+        p.add(id === "A" ? "B" : "C", api.appUrl, segs(0, 1), true);
+        await p.replay(api);
+      }
+    };
+    p.add("A", api.appUrl, segs(0, 1), true);
+    expect(await p.replay(api)).toBe(0);
+    expect(calls).toEqual(["segments A 0-0", "finish A", "segments B 0-0", "finish B", "segments C 0-0", "finish C"]);
   });
 });
 

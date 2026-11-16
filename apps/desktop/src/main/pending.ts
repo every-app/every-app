@@ -43,6 +43,7 @@ const fileName = (meetingId: string) => `${encodeURIComponent(meetingId)}.json`;
 
 export class PendingUploads {
   private replaying = false;
+  private replayRequested: ReplayApi | undefined;
 
   constructor(
     private readonly dir: string,
@@ -87,48 +88,56 @@ export class PendingUploads {
    * offline) and keeps the rest; a meeting that's gone (404) or too old is dropped. Returns how
    * many meetings are still pending. */
   async replay(api: ReplayApi): Promise<number> {
-    if (this.replaying) return this.count;
+    if (this.replaying) {
+      this.replayRequested = api;
+      return this.count;
+    }
     this.replaying = true;
     try {
-      for (const p of this.list()) {
-        if (this.now() - p.savedAt > MAX_AGE_MS) {
-          this.log(`pending: dropped ${p.meetingId} (too old)`);
-          this.remove(p.meetingId);
-          continue;
-        }
-        if (p.appUrl !== api.appUrl) continue;
-        try {
-          let left = p.segments;
-          let refused = 0;
-          while (left.length) {
-            const batch = left.slice(0, REPLAY_BATCH);
-            try {
-              await api.appendSegments(p.meetingId, batch);
-            } catch (error) {
-              if (!isPermanentRefusal(error)) throw error;
-              // Refused for good: retrying won't help. Drop it, say so, and go on.
-              refused += batch.length;
-              this.log(`pending: the app refused ${batch.length} segments for ${p.meetingId} (${error instanceof Error ? error.message : String(error)}); dropped them`);
-            }
-            left = left.slice(REPLAY_BATCH);
-            // Keep progress, so a failure halfway doesn't resend what landed.
-            this.write({ ...p, segments: left });
-          }
-          if (refused) this.log(`pending: ${refused} of ${p.segments.length} segments for ${p.meetingId} were refused`);
-          if (p.needsFinish) await api.finish(p.meetingId);
-          this.remove(p.meetingId);
-          this.log(`pending: replayed ${p.segments.length} segments for ${p.meetingId}${p.needsFinish ? " and finished it" : ""}`);
-        } catch (error) {
-          if (error instanceof ApiError && error.kind === "server" && error.status === 404) {
-            this.log(`pending: ${p.meetingId} is gone; dropped its leftovers`);
+      do {
+        this.replayRequested = undefined;
+        for (const p of this.list()) {
+          if (this.now() - p.savedAt > MAX_AGE_MS) {
+            this.log(`pending: dropped ${p.meetingId} (too old)`);
             this.remove(p.meetingId);
             continue;
           }
-          this.log(`pending: replay of ${p.meetingId} failed, will retry (${error instanceof Error ? error.message : String(error)})`);
-          break;
+          if (p.appUrl !== api.appUrl) continue;
+          try {
+            let left = p.segments;
+            let refused = 0;
+            while (left.length) {
+              const batch = left.slice(0, REPLAY_BATCH);
+              try {
+                await api.appendSegments(p.meetingId, batch);
+              } catch (error) {
+                if (!isPermanentRefusal(error)) throw error;
+                // Refused for good: retrying won't help. Drop it, say so, and go on.
+                refused += batch.length;
+                this.log(`pending: the app refused ${batch.length} segments for ${p.meetingId} (${error instanceof Error ? error.message : String(error)}); dropped them`);
+              }
+              left = left.slice(REPLAY_BATCH);
+              // Keep progress, so a failure halfway doesn't resend what landed.
+              this.write({ ...p, segments: left });
+            }
+            if (refused) this.log(`pending: ${refused} of ${p.segments.length} segments for ${p.meetingId} were refused`);
+            if (p.needsFinish) await api.finish(p.meetingId);
+            this.remove(p.meetingId);
+            this.log(`pending: replayed ${p.segments.length} segments for ${p.meetingId}${p.needsFinish ? " and finished it" : ""}`);
+          } catch (error) {
+            if (error instanceof ApiError && error.kind === "server" && error.status === 404) {
+              this.log(`pending: ${p.meetingId} is gone; dropped its leftovers`);
+              this.remove(p.meetingId);
+              continue;
+            }
+            this.log(`pending: replay of ${p.meetingId} failed, will retry (${error instanceof Error ? error.message : String(error)})`);
+            return this.count;
+          }
         }
-      }
+        if (this.replayRequested) api = this.replayRequested;
+      } while (this.replayRequested);
     } finally {
+      this.replayRequested = undefined;
       this.replaying = false;
     }
     return this.count;
