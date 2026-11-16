@@ -18,25 +18,7 @@ EveryApp handles all of that: one command sets up a Gateway in your Cloudflare a
 
 We're the team behind [OpenSEO](https://github.com/every-app/open-seo), the open source alternative to Semrush and Ahrefs (25k stars).
 
-## Why use EveryApp?
 
-**Secure by default**
-
-- Every request passes through the Gateway. Apps have no public address.
-- Connect an API once. Apps ask for access, and the Gateway makes the call, so no app ever holds your keys.
-- Don't trust us? Good. Put it all behind [Cloudflare Access](https://everyapp.com/docs/access).
-
-**Scales from zero to infinity**
-
-- Fully serverless, in your own Cloudflare account.
-- An app nobody uses costs $0.
-- $5/month for Cloudflare's Workers Paid plan hosts hundreds of apps.
-
-**Standardized**
-
-- When you add an app, it’s immediately accessible through the Every App MCP Gateway.
-- No infra decisions. Every app runs on Cloudflare's building blocks: Workers, D1, R2 and KV.
-- Your agent builds with our stack and component library, so it never has to invent patterns.
 
 ## Apps
 
@@ -46,7 +28,15 @@ We're the team behind [OpenSEO](https://github.com/every-app/open-seo), the open
 - [OpenAnalytics](https://github.com/every-app/open-analytics): Web analytics without cookies.
 - [OpenMail](https://github.com/every-app/open-mail): An email inbox with an AI assistant.
 
-Run one as it is, or fork it as the starting point for your own. Many more are coming.
+## EveryApp Desktop App
+
+Most apps work through the browser, but some work better with a native app. 
+
+One example is [OpenScribe](https://github.com/every-app/open-scribe), our open source alternative to Granola and WisprFlow. 
+
+Download the [Desktop App](https://updates.everyapp.com/mac/download/arm64) for MacOS to use it. 
+
+If you use Windows or Linux, we're looking for people to test it out, it's just an electron app, so it should work for those platforms as well. 
 
 ## Get started
 
@@ -60,9 +50,24 @@ npm install -g everyapp
 everyapp setup --domain apps.yourcompany.com
 ```
 
-Or [paste one prompt into Claude Code, Codex or Cursor](https://everyapp.com/docs/quickstart) and let it set everything up.
+### Set up Prompt for your Agent.
+Paste one prompt into Claude Code, Codex or Cursor: https://everyapp.com/docs/quickstart and let it set everything up.
 
-Then install an app with `everyapp install https://github.com/every-app/open-seo`, or [build your own](https://everyapp.com/docs/create-an-app) with `everyapp create my-app`.
+### Install open source apps
+```bash
+# Add OpenSEO
+everyapp install https://github.com/every-app/open-seo
+
+# Add OpenScribe
+everyapp install https://github.com/every-app/open-scribe
+```
+
+### Build your own app
+https://everyapp.com/docs/create-an-app
+
+```bash
+everyapp create my-app
+```
 
 ## What's on the roadmap?
 
