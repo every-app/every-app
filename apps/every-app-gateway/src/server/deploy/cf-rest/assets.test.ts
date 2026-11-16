@@ -24,11 +24,16 @@ describe("dispatch assets", () => {
     const files = {
       "index.html": { bytes: bytes("<h1>hi</h1>"), contentType: "text/html" },
       "/app.js": { bytes: bytes("console.log(1)") },
+      "/data.bin": { bytes: bytes("x") },
     };
     const htmlHash = await assetHash(files["index.html"].bytes, "html");
     const jsHash = await assetHash(files["/app.js"].bytes, "js");
+    const binHash = await assetHash(files["/data.bin"].bytes, "bin");
     const { fetch, requests } = mockFetch(
-      envelope({ jwt: "session-jwt", buckets: [[htmlHash], [jsHash]] }),
+      envelope({
+        jwt: "session-jwt",
+        buckets: [[htmlHash], [jsHash, binHash]],
+      }),
       envelope({}),
       envelope({ jwt: "completion-jwt" }),
     );
@@ -47,6 +52,7 @@ describe("dispatch assets", () => {
       manifest: {
         "/index.html": { hash: htmlHash, size: 11 },
         "/app.js": { hash: jsHash, size: 14 },
+        "/data.bin": { hash: binHash, size: 1 },
       },
     });
     expect(requests[1]!.headers.get("Authorization")).toBe(
@@ -55,8 +61,10 @@ describe("dispatch assets", () => {
     const part = (await requests[1]!.formData()).get(htmlHash) as File;
     expect(part.type).toBe("text/html");
     expect(atob(await part.text())).toBe("<h1>hi</h1>");
-    const jsPart = (await requests[2]!.formData()).get(jsHash) as File;
-    expect(jsPart.type).toBe("application/null");
+    // No type given: the extension's, so a nosniff browser runs it.
+    const second = await requests[2]!.formData();
+    expect((second.get(jsHash) as File).type).toBe("application/javascript");
+    expect((second.get(binHash) as File).type).toBe("application/null");
   });
 
   it("returns the session JWT when Cloudflare already has every file", async () => {

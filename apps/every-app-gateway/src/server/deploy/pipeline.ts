@@ -55,31 +55,6 @@ interface DeployInput {
   actor: string;
 }
 
-const CONTENT_TYPES: Record<string, string> = {
-  html: "text/html",
-  css: "text/css",
-  js: "application/javascript",
-  mjs: "application/javascript",
-  json: "application/json",
-  webmanifest: "application/manifest+json",
-  txt: "text/plain",
-  svg: "image/svg+xml",
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-  ico: "image/x-icon",
-  woff: "font/woff",
-  woff2: "font/woff2",
-  map: "application/json",
-};
-
-function contentType(path: string): string | undefined {
-  const extension = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
-  return CONTENT_TYPES[extension];
-}
-
 /** The bundle's modules as the upload takes them; files cf wouldn't upload stay out. */
 function workerModules(bundle: DeployBundle): WorkerModule[] {
   const declared =
@@ -214,10 +189,7 @@ export async function runDeploy(input: DeployInput): Promise<AppRow> {
       ? await deployer.uploadAssets(
           workerName,
           Object.fromEntries(
-            [...bundle.assets].map(([path, bytes]) => {
-              const type = contentType(path);
-              return [path, type ? { bytes, contentType: type } : { bytes }];
-            }),
+            [...bundle.assets].map(([path, bytes]) => [path, { bytes }]),
           ),
         )
       : undefined;

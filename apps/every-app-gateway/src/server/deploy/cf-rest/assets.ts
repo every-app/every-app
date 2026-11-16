@@ -2,8 +2,44 @@ import { json, type CloudflareTransport } from "./client";
 
 export interface AssetFile {
   bytes: Uint8Array;
-  /** Served as this; unknown types go up as "application/null", as wrangler sends them. */
+  /**
+   * Served as this. Left out, it is the type of the path's extension
+   * ({@link assetContentType}); an unknown one goes up as
+   * "application/null", as wrangler sends it.
+   */
   contentType?: string;
+}
+
+const CONTENT_TYPES: Record<string, string> = {
+  html: "text/html",
+  css: "text/css",
+  js: "application/javascript",
+  mjs: "application/javascript",
+  json: "application/json",
+  webmanifest: "application/manifest+json",
+  txt: "text/plain",
+  svg: "image/svg+xml",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  avif: "image/avif",
+  ico: "image/x-icon",
+  woff: "font/woff",
+  woff2: "font/woff2",
+  wasm: "application/wasm",
+  map: "application/json",
+};
+
+/**
+ * The type an asset is served as, from its extension. Cloudflare serves an
+ * asset with the type it was uploaded with, and the perimeter sends
+ * `X-Content-Type-Options: nosniff`, so a stylesheet or module script
+ * uploaded without one is refused by the browser.
+ */
+function assetContentType(path: string): string | undefined {
+  return CONTENT_TYPES[extension(path)];
 }
 
 interface UploadSession {
@@ -65,20 +101,23 @@ function scriptAssets(transport: CloudflareTransport) {
       );
       if (!session.jwt)
         throw new Error(`${context}: the session returned no JWT`);
-      const byHash = new Map(entries.map((entry) => [entry.hash, entry.file]));
+      const byHash = new Map(entries.map((entry) => [entry.hash, entry]));
       let completion = session.jwt;
       for (const bucket of session.buckets ?? []) {
         const form = new FormData();
         for (const hash of bucket) {
-          const file = byHash.get(hash);
-          if (!file)
+          const entry = byHash.get(hash);
+          if (!entry)
             throw new Error(
               `${context}: Cloudflare asked for unknown hash ${hash}`,
             );
           form.set(
             hash,
-            new File([base64(file.bytes)], hash, {
-              type: file.contentType ?? "application/null",
+            new File([base64(entry.file.bytes)], hash, {
+              type:
+                entry.file.contentType ??
+                assetContentType(entry.path) ??
+                "application/null",
             }),
           );
         }
