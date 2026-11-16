@@ -34,6 +34,7 @@
     "brave-search",
     "apify",
     "newsapi",
+    "treg",
     "---Email and messaging---",
     "email",
     "postmark",

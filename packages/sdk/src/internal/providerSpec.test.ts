@@ -277,9 +277,13 @@ describe("parseProviderSpec", () => {
         `${id}: ${parsed.ok ? "" : describeSpecProblems(parsed.problems)}`,
       ).toBe(true);
       if (!parsed.ok) continue;
-      // The catalog's guide path is the one field the JSON shape doesn't carry.
-      const { setup: _setup, ...withoutGuide } = capability;
-      expect(parsed.capability).toEqual(withoutGuide);
+      // The catalog's guide path and path roots are the fields the JSON shape doesn't carry.
+      const {
+        setup: _setup,
+        pathRoots: _pathRoots,
+        ...catalogOnly
+      } = capability;
+      expect(parsed.capability).toEqual(catalogOnly);
     }
   });
 });

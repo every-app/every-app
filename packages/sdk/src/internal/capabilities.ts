@@ -183,6 +183,13 @@ export interface ApiKeyCapability extends ProviderDetails {
    * provider account would show one app another's work.
    */
   accountWidePaths: readonly (readonly string[])[];
+  /**
+   * The only first path segments an app may reach, for a host whose other
+   * routes run the account itself (treg serves its tools under `/call` and
+   * its secrets, teams and billing beside them). Absent: every path but the
+   * account-wide ones. Catalog entries only; a registered row has none.
+   */
+  pathRoots?: readonly string[];
 }
 
 /**
@@ -1029,7 +1036,8 @@ export function isAccountWidePath(
   const decoded = decodePath(pathname);
   if (decoded === null || UNPRINTABLE.test(decoded)) return true;
   const blocked = capability.accountWidePaths;
-  if (blocked.length === 0) return false;
+  const roots = capability.pathRoots;
+  if (blocked.length === 0 && !roots) return false;
   if (!/^[\x20-\x7e]*$/.test(decoded)) return true;
   // Empty segments drop out, as on a server that merges slashes.
   const segments = decoded.split(/[/\\]/).filter(Boolean);
@@ -1041,6 +1049,8 @@ export function isAccountWidePath(
   const names = segments.map(
     (segment) => SEGMENT_NAME.exec(segment)?.[0] ?? "",
   );
+  // Whole first segment, not its name: `/call.json` is not `/call`.
+  if (roots && !roots.includes(segments[0] ?? "")) return true;
   return blocked.some((path) =>
     names.some((_, start) =>
       path.every((name, offset) => names[start + offset] === name),

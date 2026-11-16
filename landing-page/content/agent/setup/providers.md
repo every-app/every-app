@@ -7,7 +7,7 @@ description: "Generated from the built-in catalog: every API-key, AI and OAuth-p
 
 For a coding agent setting up a provider the Gateway's built-in catalog has. Each provider is a section under its id, so `setup/providers.md#<id>` points at it. Where the provider has a guide of its own (its **Guide**), follow that guide and read this section as its summary. Read [the setup rules](/docs/agent/setup/guides) first: its rules hold here too, above all that a key never goes through the chat.
 
-A provider registered on one Gateway (`pnpm everyapp provider add`) is not on this page: `pnpm everyapp provider show <id>` shows its hint, settings, hosts, where the key comes from and its smoke request (`--json` carries its whole spec). The catalog has 58 providers (49 API-key, 9 AI) and 12 OAuth presets.
+A provider registered on one Gateway (`pnpm everyapp provider add`) is not on this page: `pnpm everyapp provider show <id>` shows its hint, settings, hosts, where the key comes from and its smoke request (`--json` carries its whole spec). The catalog has 59 providers (50 API-key, 9 AI) and 12 OAuth presets.
 
 The smoke request needs the key, so it runs where the key is: the person's terminal, with the variable they read in hidden, or through the app that uses it. It is one call that costs nothing (unless marked charged).
 
@@ -72,6 +72,7 @@ The three ways of [the setup rules](/docs/agent/setup/guides), one line each (th
 | [`elevenlabs`](#elevenlabs) | ElevenLabs | API key | `ELEVENLABS_API_KEY` |  |
 | [`assemblyai`](#assemblyai) | AssemblyAI | API key | `ASSEMBLYAI_API_KEY` |  |
 | [`newsapi`](#newsapi) | NewsAPI | API key | `NEWSAPI_API_KEY` |  |
+| [`treg`](#treg) | treg | API key | `TREG_TOKEN` |  |
 | [`openai`](#openai) | OpenAI | AI | `OPENAI_API_KEY` | [openai.md](/docs/agent/setup/openai) |
 | [`openrouter`](#openrouter) | OpenRouter | AI | `OPENROUTER_API_KEY` | [openrouter.md](/docs/agent/setup/openrouter) |
 | [`workers-ai`](#workers-ai) | Workers AI | AI | `WORKERS_AI_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (set by `everyapp setup`) | [workers-ai.md](/docs/agent/setup/workers-ai) |
@@ -928,6 +929,23 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Rate:** 100 a day. Developer plan; Business includes 250,000 requests a month, Advanced 2,000,000.
 - **Verified:** 2026-10-25, docs
 - **Set it:** `pnpm everyapp secret set NEWSAPI_API_KEY`, or `pnpm everyapp configure <app id>` for everything an app needs
+- **Guide:** none beyond this section
+
+### treg
+
+**treg** (`api_key`): One token for thousands of data endpoints across many providers: SEO and SERP, backlinks, social, people and company enrichment, scraping, billed per call.
+
+- **Settings:** `TREG_TOKEN`
+- **What the key is:** A team API key from the treg dashboard (or `treg org agent-new <name>`), in a treg team kept for this Gateway with no tools or connected accounts of its own; the Gateway sends it in the X-Treg-Token header. Calls on treg's keys are paid from the team's prepaid balance. A team-scoped API key or agent token from treg, never a personal sign-in token.
+- **Where the key comes from:** https://treg.to
+- **API reference:** https://treg.to/llms.txt
+- **How it is sent:** `X-Treg-Token: <TREG_TOKEN>`, to `treg.to` only, over https
+- **What apps may do:** access `read`; GET, POST on any grant under `/call`, `/catalog`, `/tasks` only; account-wide paths refused: `call/https`, `call/http`; data `per-call`
+- **Smoke request:** `GET https://treg.to/auth/me`, expecting 200; free. The team the token belongs to; account-wide, so the Gateway refuses it for apps: run it from the person's terminal.
+- **Cost:** per call. Per call at the provider's price, from the team's prepaid treg balance; the X-Treg-Cost-Micro response header says what a call cost (micro-USD). A 4xx or 5xx from the provider costs nothing.
+- **Rate:** not recorded
+- **Verified:** 2026-11-17, docs
+- **Set it:** `pnpm everyapp secret set TREG_TOKEN`, or `pnpm everyapp configure <app id>` for everything an app needs
 - **Guide:** none beyond this section
 
 ## AI providers

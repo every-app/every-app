@@ -596,3 +596,46 @@ describe("the Daytona entry", () => {
     expect(accountWide(path)).toBe(false);
   });
 });
+
+describe("the treg entry", () => {
+  const treg = CAPABILITIES.treg;
+
+  it("sends a team token in X-Treg-Token to treg.to only", () => {
+    expect(treg.hosts).toEqual(["treg.to"]);
+    expect(
+      authorizationFor(treg, { TREG_TOKEN: "t" })?.headers["x-treg-token"],
+    ).toBe("t");
+  });
+
+  const accountWide = (path: string) =>
+    isAccountWidePath(treg, new URL(`https://treg.to${path}`).pathname);
+
+  it.each([
+    "/secrets",
+    "/orgs/1/api-keys",
+    "/orgs/1/balance",
+    "/billing/topup",
+    "/admin/orgs",
+    "/calls",
+    "/auth/me",
+    "/tools/by-name/stripe",
+    "/call.json/x",
+    "/%63all/https://api.stripe.com/v1/charges",
+    "/call/https://api.stripe.com/v1/charges",
+    "/call/HTTP://api.stripe.com/v1/charges",
+    "/",
+  ])("refuses %s", (path) => {
+    expect(accountWide(path)).toBe(true);
+  });
+
+  it.each([
+    "/call/treg.google.keywords.volume",
+    "/call/meta.ads.library.search",
+    "/call/hunter.people.email.find",
+    "/catalog/search",
+    "/catalog/endpoints/treg.web.search",
+    "/tasks/c-1",
+  ])("serves %s", (path) => {
+    expect(accountWide(path)).toBe(false);
+  });
+});

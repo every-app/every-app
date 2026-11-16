@@ -482,4 +482,61 @@ export const SEARCH = {
     },
     tags: ["news"],
   },
+  // Added 2026-11-17 from treg.to/llms.txt, treg.to/integrate.md and its
+  // OpenAPI spec (treg.to/openapi.json). One token reaches thousands of
+  // other providers' endpoints (DataForSEO, SERP, enrichment, scraping),
+  // billed per call to the team's prepaid treg balance.
+  treg: {
+    mode: "api_key",
+    label: "treg",
+    description:
+      "One token for thousands of data endpoints across many providers: SEO and SERP, backlinks, social, people and company enrichment, scraping, billed per call.",
+    auth: {
+      kind: "header",
+      secret: "TREG_TOKEN",
+      header: "X-Treg-Token",
+    },
+    docs: "https://treg.to",
+    api: "https://treg.to/llms.txt",
+    hosts: ["treg.to"],
+    data: "per-call",
+    access: ["read"],
+    // Catalog tools are GET /call/<id>?… or a POST with a JSON body
+    // (keyword volume, SERP); async generation is POST then GET /tasks/<id>.
+    readMethods: ["GET", "POST"],
+    // The same token manages the team: secrets, members, API keys, billing
+    // and top-ups sit beside /call, and a catalog id's first word can be
+    // any provider's (`meta.…`), so apps get these roots and nothing else.
+    pathRoots: ["call", "catalog", "tasks"],
+    // A team's own tools are reached by their upstream URL behind /call;
+    // the Gateway's apps get the catalog, not the team's registered keys.
+    accountWidePaths: [
+      ["call", "https"],
+      ["call", "http"],
+    ],
+    hint: "A team API key from the treg dashboard (or `treg org agent-new <name>`), in a treg team kept for this Gateway with no tools or connected accounts of its own; the Gateway sends it in the X-Treg-Token header. Calls on treg's keys are paid from the team's prepaid balance.",
+    secrets: [
+      {
+        name: "TREG_TOKEN",
+        hint: "A team-scoped API key or agent token from treg, never a personal sign-in token.",
+      },
+    ],
+    smoke: {
+      method: "GET",
+      path: "/auth/me",
+      expect: [200],
+      free: true,
+      note: "The team the token belongs to; account-wide, so the Gateway refuses it for apps: run it from the person's terminal.",
+    },
+    cost: {
+      unit: "call",
+      note: "Per call at the provider's price, from the team's prepaid treg balance; the X-Treg-Cost-Micro response header says what a call cost (micro-USD). A 4xx or 5xx from the provider costs nothing.",
+    },
+    example: "find the monthly search volume of a list of keywords",
+    verified: {
+      on: "2026-11-17",
+      how: "docs",
+    },
+    tags: ["search", "seo", "scrape", "enrichment"],
+  },
 } as const satisfies Record<string, ApiKeyCapability>;

@@ -32,6 +32,7 @@
 import {
   CAPABILITIES,
   apiKeyHosts,
+  type ApiKeyCapability,
   type Capability,
   type CapabilitySettings,
 } from "./capabilities.js";
@@ -361,6 +362,27 @@ export function reservedUpstreamHosts(): string[] {
 }
 
 /**
+ * Whether `pathname` is outside every path the Gateway sends `host`'s key
+ * to: each catalog entry on the host names its `pathRoots`, and the first
+ * segment is none of them (treg's `/mcp/` beside the `/call` its key is for).
+ */
+function outsideKeyedPaths(host: string, pathname: string): boolean {
+  const first = (pathname.split("/")[1] ?? "").toLowerCase();
+  const entries = (Object.values(CAPABILITIES) as Capability[]).filter(
+    (capability): capability is ApiKeyCapability =>
+      capability.mode === "api_key" && capability.hosts.includes(host),
+  );
+  return (
+    entries.length > 0 &&
+    entries.every(
+      ({ pathRoots }) =>
+        pathRoots !== undefined &&
+        !pathRoots.some((root) => first.startsWith(root)),
+    )
+  );
+}
+
+/**
  * Why `url` can't be a remote MCP server's address, or null when it can:
  * `https:` (or `http:` and loopback hosts only while the Gateway itself
  * runs on `http://`, local dev), a host name rather than an address, no
@@ -443,7 +465,11 @@ export function remoteMcpUrlProblem(
   const named = (options.providerHosts ?? []).map((each) =>
     each.toLowerCase().replace(/\.$/, ""),
   );
-  if (reservedUpstreamHosts().includes(host) && !named.includes(host)) {
+  if (
+    reservedUpstreamHosts().includes(host) &&
+    !named.includes(host) &&
+    !outsideKeyedPaths(host, parsed.pathname)
+  ) {
     return `${host} is a provider this Gateway holds a key for; add it with --provider <that provider> so the app uses its key, or reach it through the Gateway's capabilities`;
   }
   return null;

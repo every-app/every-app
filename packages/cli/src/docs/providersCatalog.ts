@@ -201,7 +201,7 @@ function keySection(id: string, capability: ApiKeyCapability | AiProviderCapabil
   const what =
     capability.mode === "api_key"
       ? [
-          `- **What apps may do:** access ${list(capability.access)}; ${capability.readMethods.join(", ")} on any grant${capability.access.includes("write") ? `, and ${writeMethodsOf(capability).join(", ")} for an entry with ${code('access: "write"')}` : ""}${capability.accountWidePaths.length > 0 ? `; account-wide paths refused: ${list(capability.accountWidePaths.map((run) => run.join("/")))}` : ""}${capability.data ? `; data ${code(capability.data)}${capability.data === "account" ? " (served on a self-hosted Gateway only)" : ""}` : ""}`,
+          `- **What apps may do:** access ${list(capability.access)}; ${capability.readMethods.join(", ")} on any grant${capability.pathRoots ? ` under ${list(capability.pathRoots.map((root) => `/${root}`))} only` : ""}${capability.access.includes("write") ? `, and ${writeMethodsOf(capability).join(", ")} for an entry with ${code('access: "write"')}` : ""}${capability.accountWidePaths.length > 0 ? `; account-wide paths refused: ${list(capability.accountWidePaths.map((run) => run.join("/")))}` : ""}${capability.data ? `; data ${code(capability.data)}${capability.data === "account" ? " (served on a self-hosted Gateway only)" : ""}` : ""}`,
         ]
       : capability.kind === "proxy"
         ? [

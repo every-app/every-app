@@ -60,6 +60,7 @@ export const CATEGORY_OF: Readonly<Record<string, ProviderCategory>> = {
   openrouter: "ai",
   openai: "ai",
   dataforseo: "search",
+  treg: "search",
   context: "search",
   github: "dev",
   gitlab: "dev",
@@ -252,6 +253,15 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
       "Leave the **IP Access** list empty.",
       "Optional, before real use: **Add Funds** ($50 minimum) and set a daily limit under [API Settings](https://app.dataforseo.com/api-settings).",
       "The key is `login:password`: the API login, a colon, then the API password.",
+    ],
+  },
+  treg: {
+    blurb:
+      "One token for thousands of data endpoints across many providers (DataForSEO, SERP, backlinks, social, people and company enrichment, scraping), with no account at each provider. Calls are billed per call from a prepaid treg balance. Apps reach the catalog only: `/call/<id>`, `/catalog` and `/tasks`.",
+    key: [
+      "Sign in at [treg.to](https://treg.to) and create a team kept for this Gateway, with no tools or connected accounts of its own: every app on the Gateway shares its balance.",
+      "Add funds to the team (new verified accounts get $1 once).",
+      "Create a team API key from the dashboard, or run `treg org agent-new everyapp` with the treg CLI. Use a team-scoped key, never your personal sign-in token.",
     ],
   },
   context: {
