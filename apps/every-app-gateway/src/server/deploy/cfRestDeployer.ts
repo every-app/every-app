@@ -25,6 +25,9 @@ interface DeployerEnv {
   DISPATCH_NAMESPACE?: string;
 }
 
+/** Between reads of the Gateway's bindings after patching them (about 15s in all). */
+const PATCH_SETTLE_WAITS_MS = [500, 1_000, 2_000, 4_000, 8_000, 0];
+
 export class CfRestDeployer implements DeployerPort {
   constructor(
     private readonly cf: CloudflareRest,
@@ -275,6 +278,11 @@ export class CfRestDeployer implements DeployerPort {
             409,
             "The Gateway already uses this app binding for something else.",
           );
+        // A settings patch deploys a new Gateway version; until Cloudflare
+        // serves it, reads still return the version before.
+        const before = present
+          ? null
+          : await this.servingVersionId(gatewayWorker);
         if (!present) {
           await renew();
           await this.cf.scripts.patchSettings(gatewayWorker, {
@@ -294,17 +302,29 @@ export class CfRestDeployer implements DeployerPort {
             service: gatewayWorker,
             zone_id: primary.zone_id,
           });
-        await renew();
-        const verified = (await this.bindings(gatewayWorker)).find(
-          (binding) => binding.name === bindingName,
-        );
-        if (verified?.type !== "service" || verified.service !== workerName)
+        let versionId: string | null = null;
+        for (const wait of PATCH_SETTLE_WAITS_MS) {
+          await renew();
+          const verified = (await this.bindings(gatewayWorker)).find(
+            (binding) => binding.name === bindingName,
+          );
+          const serving = await this.servingVersionId(gatewayWorker);
+          if (
+            verified?.type === "service" &&
+            verified.service === workerName &&
+            serving !== before
+          ) {
+            versionId = serving;
+            break;
+          }
+          if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+        }
+        if (!versionId)
           throw new DeployError(
             "BINDINGS_MISMATCH",
             502,
             "Cloudflare did not retain the app's Gateway binding. Try again.",
           );
-        const versionId = await this.servingVersionId(gatewayWorker);
         await renew();
         await recordInstallerGatewayDeployment(
           versionId,
