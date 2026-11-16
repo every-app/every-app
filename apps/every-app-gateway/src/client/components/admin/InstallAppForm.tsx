@@ -192,6 +192,7 @@ export function InstallAppForm({
       sessionChecked &&
       sourceUrl &&
       available &&
+      !context?.signInAgain &&
       context?.defaultOrganizationId &&
       isAppInstallUrl(sourceUrl)
     ) {
@@ -200,7 +201,28 @@ export function InstallAppForm({
         organizationId: context.defaultOrganizationId,
       });
     }
-  }, [sessionChecked, sourceUrl, available, context?.defaultOrganizationId]);
+  }, [
+    sessionChecked,
+    sourceUrl,
+    available,
+    context?.signInAgain,
+    context?.defaultOrganizationId,
+  ]);
+
+  // A session the install would refuse as too old: sign in again first,
+  // before anything is filled in.
+  if (context?.signInAgain && !job)
+    return (
+      <AuthCard title="Sign in again">
+        <p className="text-sm text-muted-foreground">
+          For security, you need to sign in again before installing apps.
+        </p>
+        <SignInButton className="w-full" />
+        <Button variant="ghost" className="w-full" onClick={onBack}>
+          Back to apps
+        </Button>
+      </AuthCard>
+    );
 
   return (
     <AuthCard title={review.data?.installed ? "Update app" : "Install app"}>
@@ -500,6 +522,24 @@ function needsSignIn(error: Error | null): boolean {
   );
 }
 
+function SignInButton({ className }: { className?: string }) {
+  return (
+    <Button
+      type="button"
+      className={className}
+      onClick={async () => {
+        // Forget the cached session too, then load this page again: behind
+        // Cloudflare Access its session check signs the browser back in;
+        // otherwise the root route sends it to sign in and back.
+        await signOutAndForget();
+        window.location.reload();
+      }}
+    >
+      Sign in
+    </Button>
+  );
+}
+
 function Refusal({ error }: { error: Error }) {
   if (needsSignIn(error))
     return (
@@ -507,18 +547,7 @@ function Refusal({ error }: { error: Error }) {
         <CircleAlert />
         <AlertDescription className="flex flex-col gap-2">
           <span>{error.message}</span>
-          <Button
-            type="button"
-            onClick={async () => {
-              // Forget the cached session too, then load this page again:
-              // behind Cloudflare Access its session check signs the browser
-              // back in; otherwise the root route sends it to sign in and back.
-              await signOutAndForget();
-              window.location.reload();
-            }}
-          >
-            Sign in again
-          </Button>
+          <SignInButton />
         </AlertDescription>
       </Alert>
     );

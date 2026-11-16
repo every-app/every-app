@@ -263,6 +263,7 @@ async function context(user = "user-carol") {
     available: boolean;
     workspaces: Array<{ id: string; name: string }>;
     defaultOrganizationId: string | null;
+    signInAgain: boolean;
   };
 }
 
@@ -646,10 +647,13 @@ describe("install from GitHub (SQLite, fake GitHub and Cloudflare)", () => {
     expect(await (await availability("user-dave")).json()).toEqual({
       available: true,
     });
+    // A hosted install has no fresh-session rule, however old the session.
+    sessionAge.set("user-dave", 60 * 60 * 1000);
     expect(await context("user-dave")).toEqual({
       available: true,
       workspaces: [{ id: "org-beta", name: "Beta" }],
       defaultOrganizationId: "org-beta",
+      signInAgain: false,
     });
     // Past the gate and the rule: the release is fetched (a repository
     // without one stops there, before anything is written).
@@ -897,7 +901,15 @@ describe("self-hosted Gateway app installs (the gate and the install organizatio
 
     // Her session from an hour ago (a stolen cookie, an idle tab) is asked
     // to sign in again, and nothing is fetched; a poll of a job is not.
+    // The page knows before the form: its context says to sign in again.
     sessionAge.set("user-alice", 60 * 60 * 1000);
+    expect(await context("user-alice")).toMatchObject({
+      workspaces: [{ id: acme, name: "Acme" }],
+      signInAgain: true,
+    });
+    // Dave, offered no workspace, isn't asked to sign in again for nothing.
+    sessionAge.set("user-dave", 60 * 60 * 1000);
+    expect(await context("user-dave")).toMatchObject({ signInAgain: false });
     const stale = await install(
       "https://github.com/acme/no-release",
       "user-alice",
@@ -917,6 +929,7 @@ describe("self-hosted Gateway app installs (the gate and the install organizatio
     expect((await poll("no-such-job", "user-alice", acme)).status).toBe(404);
     // Just inside the window still installs.
     sessionAge.set("user-alice", 9 * 60 * 1000);
+    expect(await context("user-alice")).toMatchObject({ signInAgain: false });
     expect(
       (await install("https://github.com/acme/no-release", "user-alice", acme))
         .status,
@@ -962,6 +975,7 @@ describe("self-hosted Gateway app installs (the gate and the install organizatio
       available: true,
       workspaces: [{ id: acme, name: "Acme" }],
       defaultOrganizationId: acme,
+      signInAgain: false,
     });
     const acmeInstall = await install(
       "https://github.com/acme/no-release",

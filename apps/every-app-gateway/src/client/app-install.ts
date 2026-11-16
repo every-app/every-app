@@ -18,6 +18,8 @@ interface AppInstallContext {
   available: boolean;
   workspaces: Array<{ id: string; name: string }>;
   defaultOrganizationId: string | null;
+  /** This session is too old to install: sign in again before the form. */
+  signInAgain: boolean;
 }
 
 interface InstallReleaseReview {

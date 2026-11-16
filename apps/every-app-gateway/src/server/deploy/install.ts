@@ -6,7 +6,8 @@
  * as a third-party app of that organization.
  *
  *   GET  /api/admin/apps/install        whether this gateway installs apps
- *   GET  /api/admin/apps/install/context eligible workspaces for approval
+ *   GET  /api/admin/apps/install/context eligible workspaces for approval,
+ *                                        and whether to sign in again first
  *   POST /api/admin/apps/install        repoUrl OR releaseUrl, organizationId
  *   GET  /api/admin/deploys/{id}        a deploy job, as the page polls it
  *
@@ -267,13 +268,21 @@ export function serveInstallContext(request: Request): Promise<Response> {
     const session = await authenticateSession(request);
     const workspaces = await installableWorkspaces(session.user.id);
     const active = session.session.activeOrganizationId;
+    const available = installAvailable();
     return json({
-      available: installAvailable(),
+      available,
       workspaces,
       defaultOrganizationId:
         workspaces.find((workspace) => workspace.id === active)?.id ??
         workspaces[0]?.id ??
         null,
+      // The install would refuse this session as too old: the page asks
+      // for a new sign-in before showing the form, not after Install.
+      signInAgain:
+        available &&
+        workspaces.length > 0 &&
+        platformPolicy(env).mode === "self_hosted" &&
+        !isFreshSession(session.session),
     });
   });
 }
