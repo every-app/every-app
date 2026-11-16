@@ -76,11 +76,16 @@ function scriptAssets(transport: CloudflareTransport) {
     ): Promise<string> => {
       const context = `Upload assets of ${namespace === null ? "Worker " : `dispatch script ${namespace}/`}${script}`;
       const entries = await Promise.all(
-        Object.entries(files).map(async ([path, file]) => ({
-          path: normalizeAssetPath(path),
-          file,
-          hash: await assetHash(file.bytes, extension(path)),
-        })),
+        Object.entries(files).map(async ([path, file]) => {
+          const type =
+            file.contentType ?? assetContentType(path) ?? "application/null";
+          return {
+            path: normalizeAssetPath(path),
+            file,
+            type,
+            hash: await assetHash(file.bytes, type),
+          };
+        }),
       );
       const manifest = Object.fromEntries(
         entries.map((entry) => [
@@ -113,12 +118,7 @@ function scriptAssets(transport: CloudflareTransport) {
             );
           form.set(
             hash,
-            new File([base64(entry.file.bytes)], hash, {
-              type:
-                entry.file.contentType ??
-                assetContentType(entry.path) ??
-                "application/null",
-            }),
+            new File([base64(entry.file.bytes)], hash, { type: entry.type }),
           );
         }
         const result = await transport.request<{ jwt?: string } | null>(
@@ -134,17 +134,19 @@ function scriptAssets(transport: CloudflareTransport) {
 }
 
 /**
- * SHA-256 over the content and its extension, truncated to the 32 hex
- * characters the API expects. The extension is mixed in so identical bytes
- * under two extensions don't share a blob (a blob has one content type).
+ * SHA-256 over the content and the type it is served as, truncated to the
+ * 32 hex characters the API expects. A blob keeps the type it was first
+ * uploaded with, and Cloudflare asks only for hashes it doesn't hold, so
+ * the type is mixed in: the same bytes under another type are another
+ * blob, and a file once uploaded untyped goes up again with its type.
  * Hashes only identify files within a session, so differing from
  * wrangler's BLAKE3 costs nothing but cross-client dedup.
  */
 export async function assetHash(
   bytes: Uint8Array,
-  extensionName = "",
+  contentType: string,
 ): Promise<string> {
-  const suffix = new TextEncoder().encode(`\0${extensionName}`);
+  const suffix = new TextEncoder().encode(`\0${contentType}`);
   const combined = new Uint8Array(bytes.byteLength + suffix.byteLength);
   combined.set(bytes);
   combined.set(suffix, bytes.byteLength);

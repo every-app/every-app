@@ -26,9 +26,15 @@ describe("dispatch assets", () => {
       "/app.js": { bytes: bytes("console.log(1)") },
       "/data.bin": { bytes: bytes("x") },
     };
-    const htmlHash = await assetHash(files["index.html"].bytes, "html");
-    const jsHash = await assetHash(files["/app.js"].bytes, "js");
-    const binHash = await assetHash(files["/data.bin"].bytes, "bin");
+    const htmlHash = await assetHash(files["index.html"].bytes, "text/html");
+    const jsHash = await assetHash(
+      files["/app.js"].bytes,
+      "application/javascript",
+    );
+    const binHash = await assetHash(
+      files["/data.bin"].bytes,
+      "application/null",
+    );
     const { fetch, requests } = mockFetch(
       envelope({
         jwt: "session-jwt",
@@ -90,11 +96,11 @@ describe("dispatch assets", () => {
     ).rejects.toThrow(/unknown hash/);
   });
 
-  it("hashes the same bytes differently under different extensions", async () => {
+  it("hashes the same bytes differently under different content types", async () => {
     const same = bytes("x");
     const [a, b] = await Promise.all([
-      assetHash(same, "css"),
-      assetHash(same, "js"),
+      assetHash(same, "text/css"),
+      assetHash(same, "application/null"),
     ]);
     expect(a).toMatch(/^[0-9a-f]{32}$/);
     expect(a).not.toBe(b);
