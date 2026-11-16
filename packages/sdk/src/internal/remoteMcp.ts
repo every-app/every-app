@@ -262,13 +262,17 @@ export function remoteMcpClientMetadataUrl(
  * using it must be on: an API-key provider's `hosts` (and its host
  * setting's value, given `settings`), an OAuth provider's API hosts. Null
  * for a provider a remote MCP app can't use: an AI provider, a service,
- * or an OAuth client the Gateway runs no flow for.
+ * an OAuth client the Gateway runs no flow for, or an API-key provider
+ * whose key is fenced to `pathRoots` (treg's token runs its team beside
+ * them, and an MCP URL may be any path on the host).
  */
 export function remoteMcpProviderHosts(
   capability: Capability,
   settings?: CapabilitySettings,
 ): string[] | null {
-  if (capability.mode === "api_key") return apiKeyHosts(capability, settings);
+  if (capability.mode === "api_key") {
+    return capability.pathRoots ? null : apiKeyHosts(capability, settings);
+  }
   if (capability.mode === "oauth_client" && capability.flow) {
     return [...capability.api];
   }

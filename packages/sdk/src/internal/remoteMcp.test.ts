@@ -165,7 +165,9 @@ describe("the app id", () => {
 describe("the URL rule", () => {
   it("takes a public https URL and refuses everything the Gateway holds or serves", () => {
     expect(remoteMcpUrlProblem("https://treg.to/mcp/", LIVE)).toBeNull();
-    // treg's key goes only to /call, /catalog and /tasks; its /mcp/ is not reserved.
+    // treg's key goes only to /call, /catalog and /tasks; its /mcp/ is not
+    // reserved, and the key is never an MCP server's credential.
+    expect(remoteMcpProviderHosts(CAPABILITIES.treg as Capability)).toBeNull();
     expect(remoteMcpUrlProblem("https://treg.to/call/x", LIVE)).toMatch(
       /holds a key/,
     );
