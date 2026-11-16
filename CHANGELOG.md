@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.4.1
+
+Nothing breaks: no command, flag, `--json` key, SDK export or Worker binding is removed or renamed, and an app pinned to 0.4.0 or 0.3.x deploys and runs on a 0.4.1 Gateway. One migration, `0037`, which only adds.
 
 ### Composio: people's accounts with no OAuth app
 
@@ -10,7 +12,36 @@ Each person links their own Composio once (**Your connections → Accounts → L
 
 It covers `github-oauth`, `slack`, `notion-oauth`, `linear-oauth`, `gitlab-oauth`, `hubspot-oauth`, `zoom`, `dropbox`, `google-workspace`, `microsoft-365` and `atlassian`. The limits: a call takes about half a second longer, only a JSON body can be sent, a JSON answer is written again, and each Google, Microsoft and Atlassian service is its own account in Composio. `everyapp provider unlink composio` deletes a person's key and the connections they made through it. Turning Composio off deletes every link and every such connection. Linking, connecting and reading Gmail and Calendar have been tried against the real Composio; the rest of its checks are in `TODO.md`. Design: `docs/design/2026-11-composio.md`; how-to: [Use accounts from Composio](https://everyapp.com/docs/composio); for agents: [setup/composio](https://everyapp.com/docs/agent/setup/composio).
 
-What you do: `pnpm everyapp update` brings the Gateway to migration `0037` (`composio`). This everyapp refuses an older Gateway with `GATEWAY_OUTDATED` until you do. The migration only adds: two tables and three columns. Nothing else changes until an owner or admin turns Composio on.
+Nothing changes until an owner or admin turns Composio on.
+
+### Installing an app from the Gateway works on a self-hosted Gateway
+
+Four fixes to **Admin → Apps → Install app** and the `/install?source=…` link on a Gateway that installs apps itself (`everyapp deploy-token add`). The CLI's `everyapp install` was not affected.
+
+- An oss.new release downloads. Every install of one failed with "The oss.new release could not be downloaded.", because Cloudflare Workers refuse the `fetch` option the download used. A redirect from oss.new is still refused ("oss.new answered 302.").
+- The first install succeeds. It used to stop with "Cloudflare did not retain the app's Gateway binding. Try again.", and Try again then worked: the Gateway read its own settings back before Cloudflare showed the new version. It now waits up to about 15 seconds for the binding, and records that new version, so the CLI doesn't take the Gateway for one changed outside EveryApp.
+- An installed app has its styles and scripts. The install uploaded the app's static files with no content type, and browsers refused the CSS and JS, so the app loaded as bare HTML. Each file now gets its type from its extension.
+- A session older than 10 minutes is asked to **Sign in again** before the install form, not after it is filled in. Signing in comes back to the form. The rule is the same: an install sent from an older session is refused (`APP_INSTALL_REAUTH_REQUIRED`).
+
+Proof and limits: the oss.new download was run on a real Worker; the first-install wait is unit tested against a fake Cloudflare that serves the old settings for a few reads, and not tried live.
+
+### App icons show without a visit to the app
+
+The launcher, the sidebar and the consent pages drew an app's first letter where its icon belongs on a Gateway with Cloudflare Access on (the default): the icon was asked from the app's own host, and Access lets nothing through there for a browser that hasn't opened the app lately. The Gateway now serves it from its own address, `GET /app-icon/<app hostname>`, read from the app's Worker over its service binding: the manifest's `icon`, then `/favicon.ico`, for a signed-in person who may open the app. The app's own host stays as the fallback. An app whose Worker runs before its static files (`run_worker_first`) answers 401 to that request and keeps the old behaviour until it leaves its icon path out of `run_worker_first`.
+
+### The CLI signs in as EveryApp CLI
+
+The Gateway's consent page says "Connect EveryApp CLI to EveryApp", for admin commands and `everyapp dev` alike. It used to name the command and the machine ("Connect pnpm everyapp on Carters-MacBook-Pro.local to EveryApp"), which read like an unknown app. **Your connections** and the tool-call log show the same name. A Gateway the CLI already registered with keeps the old name until the CLI registers again.
+
+### Shorter `--help`
+
+`everyapp <command> --help` says each thing once: a flag is no longer described in a paragraph and again in the flag list under it, and the lines about how the Gateway works inside are gone. Words only: no command, flag, exit code, error code or `--json` key changed.
+
+### What you do
+
+1. Update the Gateway. From a checkout: `pnpm everyapp update`; otherwise `npx everyapp@0.4.1 update`. It brings the Gateway to migration `0037` (`composio`: two tables and three columns), and this everyapp refuses an older Gateway with `GATEWAY_OUTDATED` until you do.
+2. An app that was installed from the Gateway's own page and loads without styles: install it again from **Admin → Apps → Install app** after the update. Apps deployed with the CLI need nothing.
+3. Apps keep their pins. Nothing in this SDK is new for an app's code, so no app has to move to 0.4.1.
 
 ## 0.4.0
 
