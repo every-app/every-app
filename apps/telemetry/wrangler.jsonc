@@ -1,0 +1,24 @@
+{
+  // telemetry.everyapp.com: receives the daily usage report a Gateway sends (src/index.ts, README.md).
+  // Deploy: README.md, "Deploy" (on Every App's main Cloudflare account).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "everyapp-telemetry",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-26",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "telemetry.everyapp.com", "custom_domain": true }],
+  // No database_id: wrangler finds the database by its name in the account it is logged in to.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "everyapp-telemetry",
+      "migrations_dir": "migrations",
+    },
+  ],
+  // Once a day: delete reports older than 25 months.
+  "triggers": { "crons": ["41 3 * * *"] },
+  // Off on purpose: with Workers Logs on, Cloudflare would keep a line per request, and a request
+  // carries the sending Gateway's zone name (the CF-Worker header). Nothing here reads or logs it.
+  "observability": { "enabled": false },
+}

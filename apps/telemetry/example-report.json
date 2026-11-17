@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "install": "5f0c1e9a7b3d4e21a8c6d2f4b9e07a13",
+  "day": "2026-11-20",
+  "version": "0.4.2",
+  "installed": "2026-11",
+  "members": 7,
+  "active_members_1d": 3,
+  "active_members_7d": 4,
+  "apps": 3,
+  "app_use_1d": [
+    { "app": "openseo", "active_members": 3, "tool_calls": 40 },
+    { "app": "other", "active_members": 2, "tool_calls": 7 }
+  ]
+}
