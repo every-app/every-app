@@ -79,3 +79,5 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
   - Draft re-pin PRs, to merge once 0.3.0 is on npm: one in each app's repository: OpenAnalytics #44, OpenCRM #25, OpenMail #24, OpenSEO #1264, RepoLens #7, Mission Control #5, Workout #1, Scribe #66, Birds #37.
   - The edits that ride the re-pin are done (`risk` in CRM, Analytics and OpenMail; `bearer` in Birds and Talk), or in their PRs (Workout, Mission Control).
   - Knowledge Base still needs its re-pin; its source repository hasn't been found yet.
+- [ ] **Deploy the usage report receiver before the release that sends** (`apps/telemetry/README.md`, "Deploy": the D1 database, the Worker and `telemetry.everyapp.com` on the main Cloudflare account). Until it is up, Gateways fail quietly and try again the next day.
+- [ ] **A lawyer's hour on usage reports** before that release (`docs/design/2026-11-telemetry.md` section 9, on #1088): GDPR for a one-person Gateway, the zone name Cloudflare adds in transit, whether ePrivacy 5(3) reaches a Worker.

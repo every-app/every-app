@@ -1115,6 +1115,24 @@ describe("reconcileGateway", () => {
     expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
   });
 
+  it("marks only a release Every App published, so only those Gateways send usage reports", async () => {
+    const stamp = () => account.deploys.at(-1)!.config["env"].EVERYAPP_RELEASE.value;
+    const newer = await buildGatewayRelease({ version: "0.2.0", builtAt: "2026-10-13T00:00:00.000Z" });
+    const from = (origin: GatewayRelease["source"]["origin"]) =>
+      reconcile({ force: true, openRelease: () => openRelease(newer, { origin }) });
+
+    // A build from a checkout, a fork's release, a URL and a file: never.
+    await from({ kind: "checkout" });
+    expect(stamp()).not.toHaveProperty("published");
+    await from({ kind: "github", repo: "acme/every-app", tag: "gateway-v0.2.0" });
+    expect(stamp()).not.toHaveProperty("published");
+    await from({ kind: "file", path: newer });
+    expect(stamp()).not.toHaveProperty("published");
+
+    await from({ kind: "github", repo: "every-app/every-app", tag: "gateway-v0.2.0" });
+    expect(stamp()).toMatchObject({ version: "0.2.0", published: true });
+  });
+
   it("deploys the release this checkout builds, upgrading the gateway when it is newer", async () => {
     seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active" }]);
     const newer = await buildGatewayRelease({

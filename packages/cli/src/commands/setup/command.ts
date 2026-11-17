@@ -55,6 +55,12 @@ export const setupCommand = buildCommand({
           "Leave Cloudflare Access off (not recommended). A later unattended setup leaves it off too; everyapp access on turns it on",
         optional: true,
       },
+      "no-telemetry": {
+        kind: "boolean",
+        brief:
+          "Leave the Gateway's daily usage report to Every App off (DO_NOT_TRACK=1 in the shell does the same); everyapp telemetry on turns it on",
+        optional: true,
+      },
       team: {
         kind: "parsed",
         parse: String,

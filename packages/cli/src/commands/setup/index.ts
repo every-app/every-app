@@ -7,6 +7,7 @@ import { canPromptInTerminal } from "@/lib/output/prompt";
 import { runCommand } from "@/lib/output/run";
 import { formatFacts } from "@/lib/output/table";
 import { duration } from "@/lib/output/time";
+import type { UsageReportsAtSetup } from "@/lib/gateway/usageReports";
 import { cliVersion } from "@/lib/version";
 import {
   runSetup,
@@ -68,28 +69,33 @@ export function reportGatewayResult(
     mode,
     gateway: result.gateway,
     accessOn: result.accessOn,
+    ...(result.usageReports ? { usageReports: result.usageReports } : {}),
   };
   const gatewayFact = { label: "Gateway", value: gatewayUrl };
   const accessFacts = result.accessOn
     ? [{ label: "Access", value: "on", note: "everyone signs in through Cloudflare Access first" }]
     : [];
 
-  // An upgrade says what it upgraded to, in how long.
+  const usage = usageReportLines(result.usageReports);
+
+  // An upgrade says what it upgraded to, in how long, and what an owner
+  // must know before the Gateway's first usage report.
   if (result.gateway === "upgraded" && !result.ownerCreated) {
     out.emit({
       type: "done",
-      message: `Upgraded to ${releaseName}`,
+      message: [`Upgraded to ${releaseName}`, ...usage.said].join("\n"),
       data,
       display: [
         ...formatFacts([{ label: "Gateway", value: chalk.cyan(gatewayUrl) }]),
         chalk.dim(`Upgraded to ${releaseName} in ${duration(Date.now() - began)}`),
+        ...usage.display,
       ].join("\n"),
     });
     return;
   }
   // Nobody to claim it (CI): where it is; the warning said the rest.
   if (!owner) {
-    out.emit({ type: "done", data: { ...data, facts: [gatewayFact] } });
+    out.emit({ type: "done", data: { ...data, facts: [gatewayFact, ...usage.facts] } });
     return;
   }
   // A new Gateway, or its owner just made: what to do next.
@@ -102,8 +108,9 @@ export function reportGatewayResult(
           gatewayFact,
           { label: "Admin", value: adminUrl, note: "invite people, choose who opens which app" },
           ...accessFacts,
+          ...usage.facts,
         ],
-        next: nextAfterInstall(mode, result.accessOn === true),
+        next: [...nextAfterInstall(mode, result.accessOn === true), ...usage.next],
       },
     });
     return;
@@ -113,12 +120,57 @@ export function reportGatewayResult(
     type: "done",
     data: {
       ...data,
-      facts: [gatewayFact, ...accessFacts],
+      facts: [gatewayFact, ...accessFacts, ...usage.facts],
       ...(result.gateway === "up-to-date"
-        ? { next: [{ command: `${CLI} status`, note: "see apps, domains and certificates" }] }
-        : {}),
+        ? { next: [{ command: `${CLI} status`, note: "see apps, domains and certificates" }, ...usage.next] }
+        : usage.next.length > 0
+          ? { next: usage.next }
+          : {}),
     },
   });
+}
+
+const usageOffBecause = {
+  "no-telemetry": "setup ran with --no-telemetry",
+  "do-not-track": "DO_NOT_TRACK is set in this shell",
+} as const;
+
+/**
+ * What a run says about the Gateway's daily usage report to Every App
+ * (lib/gateway/usageReports.ts): the notice before the first one, or that
+ * this run left them off. `display` is the block under an upgrade's lines,
+ * `said` the same for --json's message, and `facts` and `next` the line and
+ * the command where the result is drawn as facts.
+ */
+function usageReportLines(usage: UsageReportsAtSetup): {
+  display: string[];
+  said: string[];
+  facts: Array<{ label: string; value: string; note: string }>;
+  next: Array<{ command: string; note: string }>;
+} {
+  if (!usage) return { display: [], said: [], facts: [], next: [] };
+  if (usage.usageReports === "off") {
+    const line = `Usage reports are off for this Gateway: ${usageOffBecause[usage.because]}.`;
+    return {
+      display: ["", line],
+      said: [line],
+      facts: [{ label: "Usage reports", value: "off", note: usageOffBecause[usage.because] }],
+      next: [],
+    };
+  }
+  const { headline, detail } = usage.notice;
+  return {
+    display: ["", headline, detail, "", "See the exact report, or turn it off:", `  ${CLI} telemetry`, `  ${CLI} telemetry off`],
+    said: [headline, detail, `See the exact report: ${CLI} telemetry`, `Turn it off: ${CLI} telemetry off`],
+    facts: [
+      {
+        label: "Usage reports",
+        value: "on",
+        note: `${headline.replace(/^Usage reports start/, "start").replace(/ for this Gateway\.$/, "")}: a few rounded counts a day, never names or content`,
+      },
+    ],
+    next: [{ command: `${CLI} telemetry`, note: `see the daily usage report, or turn it off (${CLI} telemetry off)` }],
+  };
 }
 
 /**

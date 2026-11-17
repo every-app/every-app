@@ -73,6 +73,10 @@ everyapp create my-app
 
 Oh, nothing much. Just rebuilding every SaaS for agents.
 
+## Usage reports
+
+A self-hosted Gateway sends us a short usage report once a day: a few rounded counts, never names, your domain or anything inside an app. It is how we know how many people use EveryApp. You can read the exact report and turn it off with `everyapp telemetry off`: [what it sends](https://everyapp.com/docs/telemetry).
+
 ## Community
 
 ⭐ [Star the repo](https://github.com/every-app/every-app) to follow along.

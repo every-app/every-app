@@ -36,7 +36,8 @@ interface GatewayPatch {
   names?: GatewayNames;
   d1Id: string;
   oauthKvId: string;
-  release: { version: string; sha256: string };
+  /** `published`: a release Every App published (release.ts `isPublishedRelease`); left out otherwise. */
+  release: { version: string; sha256: string; published?: true };
   gatewayHost: string;
   /** Where app hosts live. */
   appBaseDomain: string;

@@ -183,6 +183,8 @@ describe("everyapp setup", () => {
       // Left off with --no-access (the helper's default for runs about
       // other steps): one warning says it isn't recommended.
       accessOn: false,
+      // A build from a checkout never sends usage reports, so there is nothing to say.
+      usageReports: null,
     });
     expect(events).toContainEqual(
       expect.objectContaining({

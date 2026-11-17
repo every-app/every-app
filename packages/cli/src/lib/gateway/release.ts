@@ -157,6 +157,16 @@ const ReleaseOriginSchema: z.ZodType<ReleaseOrigin> = z.discriminatedUnion("kind
   z.object({ kind: z.literal("file"), path: z.string() }),
 ]);
 
+/**
+ * Whether a release is one Every App published: downloaded from a GitHub
+ * Release of {@link GATEWAY_RELEASE_REPO}. Only these Gateways send usage
+ * reports (the deploy stamps `EVERYAPP_RELEASE.published`): a build from a
+ * checkout, a fork's release, a URL and a file never do.
+ */
+export function isPublishedRelease(origin: ReleaseOrigin): boolean {
+  return origin.kind === "github" && `https://github.com/${origin.repo}`.toLowerCase() === GATEWAY_RELEASE_REPO.toLowerCase();
+}
+
 /** An origin as the install row keeps it (JSON); null for anything else. */
 export function parseReleaseOrigin(json: unknown): ReleaseOrigin | null {
   if (typeof json !== "string") return null;

@@ -263,6 +263,7 @@ With --json, a run that stops on something only a person can do exits 2 with act
 - `--unmerged`: From a checkout: replace the live Gateway even when the checkout has uncommitted Gateway changes or isn't on the remote's main branch
 - `--redeploy` (hidden): Upload the Gateway even when it is up to date (after a change in the dashboard, such as a key rotation)
 - `--no-access`: Leave Cloudflare Access off (not recommended). A later unattended setup leaves it off too; everyapp access on turns it on
+- `--no-telemetry`: Leave the Gateway's daily usage report to Every App off (DO_NOT_TRACK=1 in the shell does the same); everyapp telemetry on turns it on
 - `--team <value>`: The Zero Trust team's name, when the Cloudflare account has none yet: people sign in at <name>.cloudflareaccess.com, and it can't be changed later (ignored once a team exists)
 - `--yes`: Skip everyapp's confirmations (never Cloudflare's own questions, or replacing a Worker changed outside everyapp)
 - `--verbose`: Show every step and progress line, and stream the Gateway's build output to stderr
@@ -1015,6 +1016,8 @@ everyapp events types
 See the daily usage report this Gateway sends Every App, or turn it off.
 
 Once a day a self-hosted Gateway sends Every App a few rounded counts: members, apps, how many people used each app, AI tool calls, the version. Never a domain, a name, an email or anything inside an app. `show` prints the exact report that goes next. `off` stops reports at once and deletes the random ID they carried. The same as Manage workspace → Usage reports. The CLI itself sends nothing.
+
+To keep reports off on a Gateway from its first minute, run setup with --no-telemetry, or with DO_NOT_TRACK=1 in the shell (update reads it too).
 
 What is sent and why: https://everyapp.com/docs/telemetry
 

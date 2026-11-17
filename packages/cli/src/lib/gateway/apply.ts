@@ -81,6 +81,7 @@ import { gatewayDomains, patchGatewayBuildOutput } from "./patchBuildOutput";
 import {
   compareReleaseOrder,
   describeOrigin,
+  isPublishedRelease,
   type CandidateRelease,
   type GatewayRelease,
 } from "./release";
@@ -652,6 +653,9 @@ async function withPatchedRelease<T>(
       release: {
         version: options.release.manifest.version,
         sha256: options.release.manifest.sha256,
+        // What lets the Gateway send its daily usage report: never set
+        // for a build from a checkout, a fork, a URL or a file.
+        ...(isPublishedRelease(options.release.source.origin) ? { published: true as const } : {}),
       },
       gatewayHost: options.gatewayHost,
       appBaseDomain: options.appBaseDomain,

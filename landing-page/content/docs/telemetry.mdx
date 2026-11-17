@@ -79,6 +79,18 @@ everyapp telemetry off
 
 Reports stop at once and the random ID is deleted. `everyapp telemetry on` turns them back on with a new ID.
 
+### Before a Gateway ever sends one
+
+To set up a Gateway with reports off:
+
+```bash
+everyapp setup --no-telemetry
+```
+
+`DO_NOT_TRACK=1` in the shell that runs `everyapp setup` or `everyapp update` does the same. Both say so when the command finishes. An owner or admin who later turns reports on at the Gateway keeps them on.
+
+### For good
+
 To make it impossible to turn on from the page:
 
 ```bash

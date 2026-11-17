@@ -11,7 +11,7 @@ export const Route = createFileRoute("/privacy")({
       titleSuffix: "EveryApp",
       path: "/privacy",
       description:
-        "What everyapp.com collects: self-hosted page view analytics and the email addresses people leave to hear about releases.",
+        "What everyapp.com collects: self-hosted page view analytics and the email addresses people leave to hear about releases. And the short daily usage report a Gateway sends us.",
     }),
 });
 
@@ -21,7 +21,7 @@ function PrivacyPolicy() {
       <div className="max-w-3xl mx-auto px-6 py-12 md:py-24">
         <h1 className="text-4xl font-bold mb-2">Privacy</h1>
         <p className="text-fd-muted-foreground mb-12">
-          Effective date: October 24, 2026
+          Effective date: November 16, 2026
         </p>
 
         <div className="space-y-10 text-[15px] leading-relaxed">
@@ -54,9 +54,33 @@ function PrivacyPolicy() {
 
           <Section title="Your Gateway">
             <p>
-              EveryApp itself runs in your own Cloudflare account. This page is
-              about everyapp.com only; the data your Gateway and apps hold stays
-              with you.
+              EveryApp itself runs in your own Cloudflare account. The data your
+              Gateway and apps hold stays with you.
+            </p>
+          </Section>
+
+          <Section title="Usage reports from Gateways">
+            <p>
+              Once a day, a self-hosted Gateway sends us a short usage report: a
+              random ID, its version, the month it was set up, and rounded
+              counts of members, active members, apps, and use per app. It holds
+              no domain, name, email, or anything inside an app, and apps you
+              built are never named. We use it to know how many Gateways are
+              running and how many people use them.
+            </p>
+            <p>
+              Reports go to our own receiver on Cloudflare, which already runs
+              your Gateway; no other company receives them. We keep them for 25
+              months. An owner or admin can read the exact report and turn
+              reports off under Manage workspace, or with{" "}
+              <code>everyapp telemetry off</code>.{" "}
+              <a
+                href="/docs/telemetry"
+                className="text-fd-primary hover:underline"
+              >
+                What a report holds
+              </a>
+              .
             </p>
           </Section>
 

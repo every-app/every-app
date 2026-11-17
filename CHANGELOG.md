@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+### Usage reports: a Gateway tells us it is running, and how much it is used
+
+Until now nothing was sent to us, and the docs said so. From this release a self-hosted Gateway sends Every App one short report a day, so we know how many Gateways are running and how many people use them. This is the whole of a report:
+
+```json
+{
+  "schema": 1,
+  "install": "5f0c1e9a7b3d4e21a8c6d2f4b9e07a13",
+  "day": "2026-11-20",
+  "version": "0.4.2",
+  "installed": "2026-11",
+  "members": 7,
+  "active_members_1d": 3,
+  "active_members_7d": 4,
+  "apps": 3,
+  "app_use_1d": [
+    { "app": "openseo", "active_members": 3, "tool_calls": 40 },
+    { "app": "other", "active_members": 2, "tool_calls": 7 }
+  ]
+}
+```
+
+Counts are rounded down to one significant digit. `install` is a random ID. No domain, account, name, email, tool name or content is in it, and an app of your own is the word `other`. Reports go to our own receiver (`apps/telemetry`, one file), and to no other company. [What it sends](https://everyapp.com/docs/telemetry).
+
+- **On by default.** A new Gateway sends its first report a day after setup. A Gateway that existed before this release sends its first report 7 days after it is updated: `everyapp update` prints a notice with the date, and Manage workspace shows it until then.
+- **See it:** Manage workspace → Usage reports shows the next report exactly as it goes and the last one sent. `everyapp telemetry` prints the same; `everyapp_workspace_telemetry_show` is the tool.
+- **Turn it off:** the switch on that page, `everyapp telemetry off` or `everyapp_workspace_telemetry` (owners and admins). Reports stop at once and the random ID is deleted.
+- **Off before it ever sends:** `everyapp setup --no-telemetry`, or `DO_NOT_TRACK=1` in the shell that runs `setup` or `update`.
+- **Off for good:** `everyapp secret set TELEMETRY_DISABLED`. The switch can't turn reports on while it is set.
+- **Never sends:** the CLI, the SDK, apps, a Gateway built from a clone or a fork, and the hosted Gateway.
+
+`setup` and `update` gain `data.usageReports` under `--json` when they have something to say. One migration, `0038`, which only adds.
+
 ## 0.4.1
 
 Nothing breaks: no command, flag, `--json` key, SDK export or Worker binding is removed or renamed, and an app pinned to 0.4.0 or 0.3.x deploys and runs on a 0.4.1 Gateway. One migration, `0037`, which only adds.

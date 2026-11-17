@@ -98,10 +98,12 @@ import type { DeploymentMode } from "@/lib/gateway/secretsFile";
 import { reconcileGateway, registryDrift } from "@/lib/gateway/reconcile";
 import { ensureLiveReleaseSaved } from "@/lib/gateway/releaseStore";
 import {
+  isPublishedRelease,
   releaseName,
   type CandidateRelease,
   type GatewayRelease,
 } from "@/lib/gateway/release";
+import { usageReportsAtSetup, type UsageReportsAtSetup } from "@/lib/gateway/usageReports";
 import {
   maySetupLinkBeShown,
   mintSetupLink,
@@ -141,11 +143,13 @@ export interface SetupFlags {
   "no-access"?: boolean;
   /** The Zero Trust team's name, when the account has none yet (permanent: the person picks it). */
   team?: string;
+  /** Leave the Gateway's daily usage report to Every App off (lib/gateway/usageReports.ts). */
+  "no-telemetry"?: boolean;
   verbose?: boolean;
 }
 
 /** `update` takes setup's flags, but those only a new Gateway needs. */
-export type GatewayDeployFlags = Omit<SetupFlags, "domain" | "name" | "no-access" | "team"> & {
+export type GatewayDeployFlags = Omit<SetupFlags, "domain" | "name" | "no-access" | "team" | "no-telemetry"> & {
   /** The Gateway to update, when the login sees several: its URL or its name. */
   gateway?: string;
 };
@@ -223,6 +227,12 @@ export interface SetupResult {
   mode: DeploymentMode;
   /** Cloudflare Access was turned on by this run (true), declined or failed (false), or not offered (null). */
   accessOn: boolean | null;
+  /**
+   * The Gateway's daily usage report: on with the day the first one goes
+   * (the notice a person reads before it), off because this run was asked
+   * to leave it off, or null when there is nothing to say.
+   */
+  usageReports: UsageReportsAtSetup;
 }
 
 /** setup's own dependencies, deploying `gateway`'s release. */
@@ -542,6 +552,18 @@ export async function installGateway({
     );
   }
 
+  // The daily usage report: off if the person asked (--no-telemetry, or
+  // DO_NOT_TRACK in this shell), else when the first one goes. Read after
+  // the migrations, which made the Gateway's row.
+  const usageReports =
+    mode === "self_hosted"
+      ? await usageReportsAtSetup({
+          db: gateway.db,
+          noTelemetry: "no-telemetry" in flags && Boolean(flags["no-telemetry"]),
+          published: isPublishedRelease(source.origin),
+        })
+      : null;
+
   return {
     gatewayUrl,
     account: accountName,
@@ -553,6 +575,7 @@ export async function installGateway({
     ownerCreated: created,
     mode,
     accessOn,
+    usageReports,
   };
 }
 
