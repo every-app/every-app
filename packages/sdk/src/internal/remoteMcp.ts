@@ -32,6 +32,11 @@
 import {
   CAPABILITIES,
   apiKeyHosts,
+  authorizationOf,
+  capabilitySettings,
+  type ApiKeyAuth,
+  type ApiKeyCapability,
+  type Authorization,
   type Capability,
   type CapabilitySettings,
 } from "./capabilities.js";
@@ -54,8 +59,10 @@ export type RemoteMcpAuthKind = (typeof REMOTE_MCP_AUTH_KINDS)[number];
  * the row `everyapp mcp add` synthesizes for the app,
  * {@link remoteMcpProviderId}). The credential lives with the provider and
  * is bound to its hosts (`providers.value-bound-to-hosts`); the block only
- * names it. With an OAuth provider each member connects their own
- * account in the app.
+ * names it. An API-key provider's key is placed as its `auth` says, or as
+ * its `mcp.auth` says at the address it declares as its own MCP server
+ * ({@link remoteMcpKeyAuth}). With an OAuth provider each member connects
+ * their own account in the app.
  */
 export type RemoteMcpAuth =
   | { kind: "none" }
@@ -274,6 +281,81 @@ export function remoteMcpProviderHosts(
   return null;
 }
 
+/** An MCP address as it is compared: its https origin and its path, trailing slashes dropped; null with a query, a fragment or credentials. */
+function mcpAddressKey(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:" || parsed.search || parsed.hash) return null;
+  if (parsed.username || parsed.password) return null;
+  const host = parsed.hostname.toLowerCase().replace(/\.$/, "");
+  const port = parsed.port ? `:${parsed.port}` : "";
+  return `https://${host}${port}${parsed.pathname.replace(/\/+$/, "")}`;
+}
+
+/**
+ * Whether `url` is the address `capability` declares as its own MCP server
+ * (`mcp.url`): the same https origin and path, a trailing slash aside.
+ */
+export function isProviderMcpUrl(capability: Capability, url: string): boolean {
+  if (capability.mode !== "api_key" || !capability.mcp) return false;
+  const declared = mcpAddressKey(capability.mcp.url);
+  return declared !== null && declared === mcpAddressKey(url);
+}
+
+/**
+ * The provider that declares `url` as its own MCP server, the first in
+ * `entries` (a registry's: the catalog, then the rows); null when none
+ * does. `everyapp mcp add <url>` with no credential named uses it.
+ */
+export function providerOfMcpUrl(
+  entries: Iterable<readonly [string, Capability]>,
+  url: string,
+): { id: string; capability: ApiKeyCapability } | null {
+  for (const [id, capability] of entries) {
+    if (capability.mode === "api_key" && isProviderMcpUrl(capability, url)) {
+      return { id, capability };
+    }
+  }
+  return null;
+}
+
+/**
+ * Where an API-key provider's key goes on a remote MCP app's requests to
+ * `url`: as the provider's `mcp.auth` says at the address it declares as
+ * its MCP server, as its own `auth` says anywhere else. The key is the
+ * same setting either way.
+ */
+export function remoteMcpKeyAuth(
+  capability: ApiKeyCapability,
+  url: string,
+): ApiKeyAuth {
+  if (capability.mcp && isProviderMcpUrl(capability, url)) {
+    return { ...capability.mcp.auth, secret: capability.auth.secret };
+  }
+  return capability.auth;
+}
+
+/**
+ * `authorizationFor` for a remote MCP app at `url`: the headers and query
+ * the provider's key goes in there ({@link remoteMcpKeyAuth}), or null
+ * while the key is unset. Only the settings the provider declares are read.
+ */
+export function remoteMcpAuthorization(
+  capability: ApiKeyCapability,
+  url: string,
+  settings: CapabilitySettings,
+): Authorization | null {
+  const declared: Record<string, unknown> = {};
+  for (const name of capabilitySettings(capability)) {
+    declared[name] = settings[name];
+  }
+  return authorizationOf(remoteMcpKeyAuth(capability, url), declared);
+}
+
 /** Whether `id` can be a remote MCP app's id (kebab-case, at most 32, not reserved, not a built-in's). */
 export function remoteMcpIdProblem(id: string): string | null {
   if (typeof id !== "string" || !ID_PATTERN.test(id)) {
@@ -370,7 +452,8 @@ export function reservedUpstreamHosts(): string[] {
  * `providerHosts` are the hosts of the provider the app's credential is
  * (never an app's own synthesized row), and a reserved host among them is
  * allowed (`mcp add https://api.elevenlabs.io/v1/mcp --provider
- * elevenlabs`). The Gateway's own origin, its app domains and IPs stay
+ * elevenlabs`), as is the one address a catalog provider declares as its
+ * own MCP server ({@link providerOfMcpUrl}). The Gateway's own origin, its app domains and IPs stay
  * refused always. The Gateway checks the stored URL again before every
  * fetch, so a row edited by hand is refused the same way.
  */
@@ -443,7 +526,14 @@ export function remoteMcpUrlProblem(
   const named = (options.providerHosts ?? []).map((each) =>
     each.toLowerCase().replace(/\.$/, ""),
   );
-  if (reservedUpstreamHosts().includes(host) && !named.includes(host)) {
+  // A reserved host gives way at the one address its catalog provider
+  // declares as its MCP server: the vendor serves MCP there, and what is
+  // sent is the provider's key as that server takes it, or the app's own.
+  if (
+    reservedUpstreamHosts().includes(host) &&
+    !named.includes(host) &&
+    !providerOfMcpUrl(Object.entries(CAPABILITIES), url)
+  ) {
     return `${host} is a provider this Gateway holds a key for; add it with --provider <that provider> so the app uses its key, or reach it through the Gateway's capabilities`;
   }
   return null;

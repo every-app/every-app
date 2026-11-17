@@ -8,7 +8,9 @@
  *   Gateway holds in its settings, read only while the row is bound to the
  *   hosts and auth it has now (`providers.value-bound-to-hosts`, the
  *   registry's `bound`), placed on the request as the provider's `auth`
- *   says (headers, or query parameters on the URL the client posts to);
+ *   says (headers, or query parameters on the URL the client posts to),
+ *   or as its `mcp.auth` says at the one address it declares as its own
+ *   MCP server (a vendor whose API and MCP server take the key differently);
  * - an OAuth provider with a Gateway-run flow: a member's connection to
  *   the provider, which they allowed this app to use at
  *   `/connect/<provider>?app=<app>`. A call uses the caller's own
@@ -27,9 +29,9 @@
 import { env, waitUntil } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import {
-  authorizationFor,
   capabilitySettings,
   isRemoteMcpProviderIdOf,
+  remoteMcpAuthorization,
   remoteMcpProviderHosts,
   remoteMcpUrlProblem,
   type ApiKeyCapability,
@@ -151,16 +153,21 @@ function connectMessage(label: string, url: string, again: boolean): string {
     : `Connect your ${label} account to use this tool: ${url}`;
 }
 
-/** An API-key provider's credential: its key while set and bound, placed as its `auth` says. */
+/**
+ * An API-key provider's credential: its key while set and bound, placed as
+ * its `auth` says, or as its `mcp.auth` says when `url` is the address it
+ * declares as its own MCP server (`remoteMcpKeyAuth`).
+ */
 function apiKeyCredential(
   providerId: string,
   capability: ApiKeyCapability,
   registry: ProviderRegistry,
+  url: string,
 ): CredentialState {
   const names = capabilitySettings(capability);
   const command = `${SETUP_CLI} secret set ${names.join(" ")}`;
   const values = settings();
-  const auth = authorizationFor(capability, values);
+  const auth = remoteMcpAuthorization(capability, url, values);
   if (!auth) {
     return {
       kind: "needs_setup",
@@ -396,7 +403,7 @@ export async function credentialFor(
     };
   }
   if (capability.mode === "api_key") {
-    return apiKeyCredential(providerId, capability, registry);
+    return apiKeyCredential(providerId, capability, registry, block.url);
   }
   if (capability.mode === "oauth_client") {
     return oauthCredential(
@@ -420,7 +427,8 @@ export async function credentialFor(
  * anything is read or fetched; null when it isn't. A reserved host (one
  * whose key the Gateway holds for apps) is allowed only for an app that
  * names that host's provider, or whose own row is OAuth (each member's
- * own token goes, never the Gateway's key); never for an own static row.
+ * own token goes, never the Gateway's key); for an own static row only at
+ * the address the host's provider declares as its MCP server.
  */
 export async function urlRefusal(
   block: RemoteMcpBlock,

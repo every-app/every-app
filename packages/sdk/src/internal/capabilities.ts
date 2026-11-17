@@ -73,6 +73,31 @@ export type ApiKeyAuth =
   | { kind: "basic"; secret: string; as: "username" }
   | { kind: "basic"; secret: string; as: "pair" };
 
+/**
+ * Where a provider's own MCP server takes the key, when that is not where
+ * its API takes it: the placements of {@link ApiKeyAuth} without a setting
+ * (the key is the provider's one key, `auth.secret`).
+ */
+export type ProviderMcpAuth =
+  | { kind: "bearer"; scheme?: string }
+  | { kind: "header"; header: string; prefix?: string }
+  | { kind: "query"; param: string };
+
+/**
+ * A provider's own MCP server, for a vendor whose API and MCP server share
+ * a host and a key but not the way the key is sent (Treg: `X-Treg-Token`
+ * on the API, `Authorization: Bearer` on `/mcp/`). A remote MCP app at
+ * exactly `url` that names the provider gets the key placed as `auth`
+ * says; `everyapp mcp add <url>` names the provider by itself. Anywhere
+ * else the key goes as the provider's own `auth` says, as before.
+ */
+export interface ProviderMcp {
+  /** The server's address: https, on one of the provider's `hosts`, no query or fragment. */
+  url: string;
+  /** Where the key goes on a request to it. */
+  auth: ProviderMcpAuth;
+}
+
 /** What a provider says about one of its Gateway settings, for whoever sets it. */
 export interface ProviderSecretDetail {
   name: string;
@@ -162,6 +187,8 @@ export interface ApiKeyCapability extends ProviderDetails {
    * ({@link apiKeyHosts}). Named after the provider like its key.
    */
   hostSetting?: string;
+  /** The provider's own MCP server, when it takes the same key another way ({@link ProviderMcp}). */
+  mcp?: ProviderMcp;
   /**
    * Whose data the key reaches: `per-call` (search, scrape, inference:
    * each call is its own) or `account` (every list is the whole account).

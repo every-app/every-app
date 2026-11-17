@@ -49,8 +49,9 @@ A provider the catalog lacks is one JSON object; `everyapp provider add stripe.j
 ```
 
 - Required: `id` (lowercase, 2 to 40 characters, not a catalog id), `name`, `docs` (where the key comes from), `hosts` (at most 20 bare public hosts: the only ones the key is sent to) or `hostSetting` (a setting naming the operator's own host), and `auth`.
-- Optional: `description`, `api`, `secrets` (`[{ name, hint }]`), `access`, `readMethods`, `writeMethods`, `accountWidePaths` (path segment runs always refused, like an account's keys listing), `data` (`per-call` or `account`; `account` providers are self-hosted only), `hint`, `smoke`, `cost` (with `responseField`, read into the usage counters and dollar caps), `rate`, `example`, `verified`, `tags`.
+- Optional: `description`, `api`, `secrets` (`[{ name, hint }]`), `access`, `readMethods`, `writeMethods`, `accountWidePaths` (path segment runs always refused, like an account's keys listing), `data` (`per-call` or `account`; `account` providers are self-hosted only), `mcp` (the provider's own MCP server, below), `hint`, `smoke`, `cost` (with `responseField`, read into the usage counters and dollar caps), `rate`, `example`, `verified`, `tags`.
 - `auth.kind`: `bearer` (`Authorization: Bearer <KEY>`, `scheme` replaces the word), `header` (`header` and `prefix`), `query` (`param`; the key never comes back in a redirect or answer), or `basic` (`as`: `password` with a `user`, `username`, or `pair`).
+- `mcp`: `{ "url": "https://treg.to/mcp/", "auth": { "kind": "bearer" } }`, for a vendor whose MCP server is on the API's host and takes the same key another way. `url` is https on one of `hosts`, with no query; `auth` is `bearer`, `header` or `query` as above, without a `secret` (it is the provider's one key). An MCP app at exactly that URL gets the key placed as `mcp.auth` says, and `everyapp mcp add <url>` uses the provider without `--provider`. Adding or changing `mcp` on a row unbinds its key until `secret set` runs again.
 - `mode: "ai"` makes an OpenAI-compatible model provider: `baseUrl`, `auth`, `models`, `defaultModel`, optional `embeddingsModel`, `routes`, `chatRoute`, `embeddingsRoute`. [ai](/docs/agent/ai)
 
 The rules (`PROVIDER_SPEC_INVALID` lists every problem): a spec names settings and never holds a value. Every setting starts with the id upper-cased (`STRIPE_` for `stripe`) and is nobody else's (`PROVIDER_SECRET_TAKEN`). Hosts are public DNS names, never the Gateway's own (`PROVIDER_HOST_REFUSED`). A row's key is read only for the hosts and auth it was set for, so after `provider add --replace` the key must be set again. Only the Cloudflare login, or an owner or admin through `everyapp_provider_add`, writes rows.
@@ -107,6 +108,7 @@ A remote MCP app's credential is a provider row `<id>-mcp` (`treg` → `treg-mcp
 - `--auth bearer|header|query|basic`: an `api_key` row whose value is `<ID>_MCP_TOKEN` (`everyapp secret set TREG_MCP_TOKEN`).
 - `--auth oauth`: an `oauth2-user` row from the server's discovered metadata, with `resource` and `issuer`, the client registered by DCR or given with `--client-id`, and the discovered scopes and `scopes_supported` as `tolerated`. Each member connects their own account in the app.
 - `--provider <id>`: an existing provider instead (`elevenlabs`). The URL's host must be one of its hosts (`REMOTE_MCP_PROVIDER_HOST`).
+- No flag, at a URL a provider declares as its own MCP server (`mcp.url`): that provider, with its one key sent as `mcp.auth` says. No row is written and no second setting is needed.
 
 Adding the app again with another credential replaces the row and deletes its connections. `mcp remove` leaves the row with its organization; `provider remove <id>-mcp` removes it.
 

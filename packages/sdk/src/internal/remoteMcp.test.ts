@@ -8,7 +8,7 @@ import { CAPABILITIES, type Capability } from "./capabilities.js";
 import { isSettableGatewaySetting } from "./gatewaySettings.js";
 import { mcpOAuthProviderSpec, mcpStaticProviderSpec } from "./mcpOAuth.js";
 import { providerRegistry, rowSecretProblem } from "./providerRegistry.js";
-import { parseProviderSpec } from "./providerSpec.js";
+import { parseProviderSpec, providerSpecOf } from "./providerSpec.js";
 import {
   normalizeRemoteToolName,
   parseRemoteMcpAuth,
@@ -17,6 +17,10 @@ import {
   remoteMcpAuthLabel,
   remoteMcpBlockProblem,
   isHeaderSafeToolName,
+  isProviderMcpUrl,
+  providerOfMcpUrl,
+  remoteMcpAuthorization,
+  remoteMcpKeyAuth,
   remoteMcpClientIdSetting,
   remoteMcpClientSecretSetting,
   remoteMcpDefaultDescription,
@@ -673,6 +677,85 @@ describe("naming a row from its server", () => {
     });
     expect(
       naming(edited, { title: "Treg", description: "Short links." }),
+    ).toBeNull();
+  });
+});
+
+describe("a provider's own MCP server (`mcp`)", () => {
+  // One key, sent two ways on one host: a header to the API, a bearer
+  // token to the MCP server.
+  const parsed = parseProviderSpec({
+    id: "northwind",
+    name: "Northwind",
+    docs: "https://northwind.io/keys",
+    hosts: ["northwind.io"],
+    auth: {
+      kind: "header",
+      secret: "NORTHWIND_API_TOKEN",
+      header: "X-Northwind-Token",
+    },
+    mcp: { url: "https://northwind.io/mcp/", auth: { kind: "bearer" } },
+  });
+  if (!parsed.ok) throw new Error(JSON.stringify(parsed.problems));
+  const northwind = parsed.capability;
+  if (northwind.mode !== "api_key") throw new Error("mode");
+  const settings = { NORTHWIND_API_TOKEN: "nw-key", OTHER_KEY: "other" };
+
+  it("is the declared address alone, a trailing slash aside", () => {
+    expect(isProviderMcpUrl(northwind, "https://northwind.io/mcp/")).toBe(true);
+    expect(isProviderMcpUrl(northwind, "https://northwind.io/mcp")).toBe(true);
+    expect(isProviderMcpUrl(northwind, "https://NORTHWIND.io/mcp/")).toBe(true);
+    for (const other of [
+      "https://northwind.io/",
+      "https://northwind.io/mcp/v2",
+      "https://northwind.io/call/mcp",
+      "https://northwind.io/mcp/?team=1",
+      "https://northwind.io:8443/mcp/",
+      "http://northwind.io/mcp/",
+      "https://mcp.northwind.io/mcp/",
+      "https://northwind.io.evil.example/mcp/",
+      "https://user:pass@northwind.io/mcp/",
+      "not a url",
+    ]) {
+      expect(isProviderMcpUrl(northwind, other), other).toBe(false);
+    }
+    // A provider that declares none has none.
+    expect(
+      isProviderMcpUrl(CAPABILITIES.dataforseo, "https://api.dataforseo.com/"),
+    ).toBe(false);
+  });
+
+  it("sends the key as the MCP server takes it there, and as the API takes it anywhere else", () => {
+    expect(
+      remoteMcpAuthorization(northwind, "https://northwind.io/mcp/", settings),
+    ).toEqual({ headers: { authorization: "Bearer nw-key" }, query: {} });
+    expect(
+      remoteMcpAuthorization(northwind, "https://northwind.io/other", settings),
+    ).toEqual({ headers: { "x-northwind-token": "nw-key" }, query: {} });
+    // The same setting either way, and nothing while it is unset.
+    expect(remoteMcpKeyAuth(northwind, "https://northwind.io/mcp")).toEqual({
+      kind: "bearer",
+      secret: "NORTHWIND_API_TOKEN",
+    });
+    expect(
+      remoteMcpAuthorization(northwind, "https://northwind.io/mcp/", {
+        OTHER_KEY: "other",
+      }),
+    ).toBeNull();
+  });
+
+  it("names the provider that declares an address, the first in the registry's order", () => {
+    const registry = providerRegistry([
+      { id: "northwind", spec: providerSpecOf("northwind", northwind) },
+    ]);
+    expect(
+      providerOfMcpUrl(registry.entries(), "https://northwind.io/mcp")?.id,
+    ).toBe("northwind");
+    expect(
+      providerOfMcpUrl(registry.entries(), "https://northwind.io/api"),
+    ).toBeNull();
+    expect(
+      providerOfMcpUrl(registry.entries(), "https://mcp.deepwiki.com/mcp"),
     ).toBeNull();
   });
 });

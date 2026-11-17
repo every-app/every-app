@@ -28,6 +28,7 @@ import {
   type ApiKeyCapability,
   type OAuthClientCapability,
   type ProviderCost,
+  type ProviderMcp,
   type ProviderRate,
   type ProviderSecretDetail,
   type ProviderVerification,
@@ -102,6 +103,7 @@ const KNOWN_FIELDS = new Set([
   "api",
   "hosts",
   "hostSetting",
+  "mcp",
   "data",
   "auth",
   "secrets",
@@ -139,6 +141,7 @@ const AI_ONLY_FIELDS = [
 const NOT_AI_FIELDS = [
   "hosts",
   "hostSetting",
+  "mcp",
   "data",
   "access",
   "readMethods",
@@ -148,6 +151,7 @@ const NOT_AI_FIELDS = [
 /** Fields an API-key spec has that an `oauth2-user` spec does not. */
 const API_KEY_ONLY_FIELDS = [
   "hostSetting",
+  "mcp",
   "data",
   "secrets",
   "accountWidePaths",
@@ -424,6 +428,97 @@ function auth(value: unknown, problems: Problems): ApiKeyAuth | undefined {
       });
       return undefined;
   }
+}
+
+/** Headers the MCP transport sets itself: the key can't go in one on the MCP server. */
+const MCP_TRANSPORT_HEADERS = new Set(["accept", "last-event-id"]);
+
+/**
+ * A spec's `mcp` block: the provider's own MCP server (`url`, https, on
+ * one of its `hosts`, no query or fragment) and where the same key goes
+ * there (`auth`: bearer, header or query, with no `secret` of its own).
+ */
+function mcp(
+  value: unknown,
+  hosts: readonly string[],
+  problems: Problems,
+): ProviderMcp | undefined {
+  if (!isRecord(value)) {
+    problems.push({
+      path: "mcp",
+      message: "must be an object with the MCP server's url and its auth",
+    });
+    return undefined;
+  }
+  for (const field of Object.keys(value)) {
+    if (field !== "url" && field !== "auth") {
+      problems.push({ path: `mcp.${field}`, message: "unknown field" });
+    }
+  }
+  const url = httpsUrl(value["url"], "mcp.url", problems);
+  if (value["url"] === undefined) {
+    problems.push({ path: "mcp.url", message: "required" });
+  }
+  if (url !== undefined) {
+    const parsed = new URL(url);
+    if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+      problems.push({
+        path: "mcp.url",
+        message:
+          "must be the server's address alone: no credentials, query or fragment",
+      });
+    } else if (!hosts.includes(parsed.hostname.toLowerCase()) || parsed.port) {
+      problems.push({
+        path: "mcp.url",
+        message:
+          "must be on one of the provider's hosts: the key goes nowhere else",
+      });
+    }
+  }
+  const rawAuth = value["auth"];
+  if (!isRecord(rawAuth)) {
+    problems.push({
+      path: "mcp.auth",
+      message: "must be an object with a kind: bearer, header or query",
+    });
+    return undefined;
+  }
+  if (rawAuth["secret"] !== undefined) {
+    problems.push({
+      path: "mcp.auth.secret",
+      message:
+        "not a field: the MCP server takes the provider's one key (auth.secret)",
+    });
+    return undefined;
+  }
+  const kind = rawAuth["kind"];
+  if (kind !== "bearer" && kind !== "header" && kind !== "query") {
+    problems.push({
+      path: "mcp.auth.kind",
+      message: "must be bearer, header or query",
+    });
+    return undefined;
+  }
+  // The placement rules are auth's own, read with a stand-in setting name.
+  const own: Problems = [];
+  const placed = auth({ ...rawAuth, secret: "MCP_KEY" }, own);
+  for (const problem of own) {
+    problems.push({ path: `mcp.${problem.path}`, message: problem.message });
+  }
+  if (
+    placed?.kind === "header" &&
+    (MCP_TRANSPORT_HEADERS.has(placed.header.toLowerCase()) ||
+      placed.header.toLowerCase().startsWith("mcp-"))
+  ) {
+    problems.push({
+      path: "mcp.auth.header",
+      message: `${placed.header} is a header the MCP transport sets itself`,
+    });
+    return undefined;
+  }
+  if (!placed || placed.kind === "basic" || url === undefined) return undefined;
+  const { secret: _stand, ...placement } = placed;
+  return { url, auth: placement };
 }
 
 function secretDetails(
@@ -899,6 +994,10 @@ export function parseProviderSpec(input: unknown): ParsedProviderSpec {
       message: "must be another setting than the key",
     });
   }
+  const parsedMcp =
+    input["mcp"] === undefined
+      ? undefined
+      : mcp(input["mcp"], hosts ?? [], problems);
   const secrets = secretDetails(
     input["secrets"],
     [
@@ -933,6 +1032,7 @@ export function parseProviderSpec(input: unknown): ParsedProviderSpec {
     docs,
     hosts: hosts ?? [],
     ...(hostSetting === undefined ? {} : { hostSetting }),
+    ...(parsedMcp === undefined ? {} : { mcp: parsedMcp }),
     ...(data === undefined ? {} : { data }),
     access: (access as ("read" | "write")[] | undefined) ?? ["read"],
     readMethods: readMethods ?? ["GET", "HEAD"],
@@ -1262,6 +1362,9 @@ export function providerSpecOf(
     ...(capability.hostSetting === undefined
       ? {}
       : { hostSetting: capability.hostSetting }),
+    ...(capability.mcp === undefined
+      ? {}
+      : { mcp: { url: capability.mcp.url, auth: { ...capability.mcp.auth } } }),
     ...(capability.data === undefined ? {} : { data: capability.data }),
     auth: { ...capability.auth },
     ...(capability.secrets === undefined

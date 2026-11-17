@@ -880,6 +880,48 @@ describe("mcp add --provider", () => {
   });
 });
 
+describe("mcp add at a provider's own MCP server", () => {
+  /** A registered provider whose MCP server shares its API's host and key, and takes the key another way. */
+  const NORTHWIND = {
+    id: "northwind",
+    name: "Northwind",
+    docs: "https://northwind.io/keys",
+    hosts: ["northwind.io"],
+    auth: { kind: "header", secret: "NORTHWIND_API_TOKEN", header: "X-Northwind-Token" },
+    mcp: { url: "https://northwind.io/mcp/", auth: { kind: "bearer" } },
+  };
+  const register = () =>
+    query(
+      "INSERT INTO providers (id, spec, added_by, added_at, updated_at) VALUES (?, ?, ?, 1, 1)",
+      "northwind",
+      JSON.stringify(NORTHWIND),
+      ACTOR,
+    );
+  const asks = () => serverAnswering(() => new Response("", { status: 401, headers: { "www-authenticate": 'Bearer realm="x"' } }));
+
+  it("uses that provider's key with no credential named: no row of the app's own, and no second setting", async () => {
+    await register();
+    await addServer(options<AddFlags>({ fetch: asks() }), "https://northwind.io/mcp");
+    expect(done()!["data"]).toMatchObject({
+      id: "northwind",
+      auth: { kind: "provider", provider: "northwind" },
+      credential: { kind: "provider", setting: "NORTHWIND_API_TOKEN", set: false },
+      next: expect.arrayContaining([{ command: "pnpm everyapp secret set NORTHWIND_API_TOKEN", note: "Northwind's key" }]),
+    });
+    expect(await query("SELECT id FROM providers")).toEqual([{ id: "northwind" }]);
+  });
+
+  it("still takes a credential that is named, and assumes nothing at another address on the host", async () => {
+    await register();
+    await addServer(options<AddFlags>({ flags: { ...flags, name: "nw-own", auth: "bearer" }, fetch: listsTools() }), "https://northwind.io/mcp/");
+    expect(done()!["data"]).toMatchObject({ auth: { kind: "provider", provider: "nw-own-mcp" }, credential: { kind: "bearer" } });
+    events = [];
+    await expect(
+      addServer(options<AddFlags>({ flags: { ...flags, name: "nw-other" }, fetch: asks() }), "https://northwind.io/other"),
+    ).rejects.toMatchObject({ code: "REMOTE_MCP_NEEDS_CREDENTIAL" });
+  });
+});
+
 describe("mcp list", () => {
   it("lists each MCP app with its kind, state, tools and key, and what to run next", async () => {
     await listMcp(options());

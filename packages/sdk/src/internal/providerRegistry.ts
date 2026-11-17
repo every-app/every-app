@@ -64,7 +64,8 @@ export interface ProviderRow {
  * The part of a row a key is set for: its hosts, its host setting and its
  * auth, as one canonical string (sorted keys, sorted hosts), so that
  * replacing a row's hosts or auth changes the key and the value it held
- * is no longer read until the operator sets it again. For an OAuth
+ * is no longer read until the operator sets it again; so does adding or
+ * changing its `mcp` block (another way the same key is sent). For an OAuth
  * provider the client is bound to its authorize, token and revoke URLs,
  * its API hosts, where the client goes on the token request, its client
  * setting names, and its `resource` and `issuer` when it has them
@@ -104,6 +105,15 @@ export function providerBindingKey(capability: RegistrableCapability): string {
     auth: sortedAuth(capability.auth),
     hostSetting: capability.hostSetting ?? null,
     hosts: [...capability.hosts].sort(),
+    // Only when present, so a row without one keeps the key it was bound to.
+    ...(capability.mcp === undefined
+      ? {}
+      : {
+          mcp: {
+            auth: sortedAuth(capability.mcp.auth),
+            url: capability.mcp.url,
+          },
+        }),
   });
 }
 

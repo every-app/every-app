@@ -50,6 +50,7 @@ import {
   mcpOAuthProviderSpec,
   mcpStaticProviderSpec,
   PROVIDER_APPS,
+  providerOfMcpUrl,
   providerAppKeySetting,
   obtainMcpClient,
   remoteMcpAuthLabel,
@@ -510,9 +511,10 @@ export async function addServer(options: McpOptions<AddFlags>, url: string): Pro
   };
   // Every refusal of the registry's before the server is looked at: the
   // URL, the id, the provider's hosts, an app there already.
-  const named = asked.kind === "provider"
-    ? { kind: "provider" as const, provider: asked.provider }
-    : null;
+  // A provider's own MCP server, added with no credential named, takes that provider's key (its `mcp` block says how).
+  const declared = asked.kind === "auto" ? providerOfMcpUrl(registry.entries(), url) : null;
+  const askedProvider = asked.kind === "provider" ? asked.provider : (declared?.id ?? null);
+  const named = askedProvider ? { kind: "provider" as const, provider: askedProvider } : null;
   if (named) checkProvider(url, named, lookup);
   let firstPlan: ReturnType<typeof planRemoteMcpAdd>;
   try {
@@ -540,9 +542,11 @@ export async function addServer(options: McpOptions<AddFlags>, url: string): Pro
 
   // What the credential is: what was asked for, else what the server said.
   let chosen: Exclude<AskedCredential, { kind: "auto" }> = asked.kind === "auto"
-    ? probe.outcome === "needs-credential" && probe.oauth
-      ? { kind: "oauth" }
-      : { kind: "none" }
+    ? named
+      ? named
+      : probe.outcome === "needs-credential" && probe.oauth
+        ? { kind: "oauth" }
+        : { kind: "none" }
     : asked;
   if (chosen.kind === "none" && probe.outcome === "needs-credential" && !flags.force) throw needsCredential(url, probe);
   probeWarnings(out, id, url, chosen.kind === "none", probe);

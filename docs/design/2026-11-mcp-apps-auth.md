@@ -92,6 +92,17 @@ What built-ins give that remote apps don't, and so when to write a pack: `cost` 
 - **Interim, if Ben registers it as a provider app**: a built-in pack `elevenlabs` over the existing `ELEVENLABS_API_KEY` entry. Tools: `compose_music` (`POST /v1/music`), `text_to_speech`, `sound_effects`, `list_voices`. Each audio answer goes to R2 and returns a link (needs the files phase first). As a built-in pack it is metered, but per-call cost isn't in the answer, so no cap would bind it (caps are dollars only since #948).
 - **Later**: if the hosted server gains music, drop the pack.
 
+## One key, two surfaces on one host (2026-11-17)
+
+Treg showed the case the model missed: its API (`treg.to/call/...`) takes the token as `X-Treg-Token` and refuses `Authorization: Bearer`; its MCP server (`treg.to/mcp/`) takes `Authorization: Bearer` and refuses `X-Treg-Token`. Same token, same host.
+
+- **What was assumed.** A provider is one key, its hosts, and one way to send it (`auth`). An MCP app that names a provider reuses that `auth` as is. That holds while the MCP server takes the key the API's way, and no vendor promised it would. ElevenLabs was the first split (key for the API, OAuth for MCP) and got its own rule in #969; Treg is the static-key split.
+- **What the reserved-host rule is for.** A catalog provider's host takes no MCP app with a static key of its own. The key the Gateway holds is never at risk from such an app (a key is read by provider id and only for that provider's hosts, never by host), which is why a registered row never reserved its host. The rule keeps one vendor key from being pasted twice, once under the capability rules and once outside them.
+- **The model now.** A provider may declare its own MCP server: `mcp: { url, auth }` on a catalog entry or a registered spec. `url` is on one of its hosts; `auth` is where the same key goes there (`bearer`, `header` or `query`, no setting of its own). An MCP app at exactly that URL that names the provider gets the key placed as `mcp.auth` says (`remoteMcpKeyAuth`); anywhere else it goes as `auth` says, as before. `mcp add <that URL>` with no credential named uses the provider, so the operator sets one key once. A row's `mcp` is part of its binding key: adding or changing it unbinds the key until `secret set` runs again.
+- **The reserved-host rule gives way at that one address**, for the provider's key, an OAuth row as before, or the app's own static key. An app added with its own key before the vendor joined the catalog keeps working.
+- **Rejected.** Dropping the reservation: every key-holding host would take a second copy of its key outside the capability rules, for nothing gained. Auth per path on a provider (`paths: { "/mcp": ... }`): a general router for a problem with two surfaces. A second provider entry per vendor for MCP (`treg-mcp` in the catalog): the operator sets the same token twice.
+- **OAuth for MCP, a key for the API, one host**: unchanged, the app's own OAuth row (ElevenLabs).
+
 ## Decisions (Ben, 2026-11-02)
 
 1. Per-member OAuth by default, the organization's account opt-in: yes, built; the organization account was removed in the rebase onto #942.

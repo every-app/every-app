@@ -57,6 +57,7 @@ import {
   PROVIDER_APP_TIER,
   obtainMcpClient,
   remoteMcpAuthLabel,
+  providerOfMcpUrl,
   remoteMcpIdFromUrl,
   remoteMcpProviderHosts,
   remoteMcpProviderId,
@@ -492,7 +493,9 @@ async function writeProviderRow(
  * pasted one, Admin → Apps only), writes the app's own `oauth2-user` row
  * and seals the client into `oauth_clients` bound to it; each member then
  * connects their own account. `provider` names an existing provider whose
- * hosts include the URL's (`REMOTE_MCP_PROVIDER_HOST`). For a server that
+ * hosts include the URL's (`REMOTE_MCP_PROVIDER_HOST`); a URL a provider
+ * declares as its own MCP server names that provider when no credential
+ * is given. For a server that
  * needs nothing more, its tools are listed within the request so the
  * answer can say how many.
  */
@@ -504,7 +507,6 @@ async function add(
 ): Promise<AddedRemoteMcpApp> {
   assertAdmin(ctx);
   const url = input.url.trim();
-  const credentialKind = input.auth.kind;
   // The id the rules will settle on, so its row (a tombstone included) is
   // read before they run: they read rows, they don't fetch them.
   const wanted = input.id ?? remoteMcpIdFromUrl(url);
@@ -512,6 +514,14 @@ async function add(
     wanted ? AppRepository.findByAppSlug(wanted, ctx.orgId) : undefined,
     gatewayProviders(),
   ]);
+  // A provider's own MCP server, added with no credential named, takes
+  // that provider's key (its `mcp` block says how).
+  const declared =
+    input.auth.kind === "none"
+      ? providerOfMcpUrl(registry.entries(), url)
+      : null;
+  const credentialKind = declared ? "provider" : input.auth.kind;
+  const providerAsked = declared?.id ?? input.auth.provider;
   const base = {
     organizationId: ctx.orgId,
     url,
@@ -548,7 +558,7 @@ async function add(
   if (credentialKind === "none") {
     added = plan({ auth: { kind: "none" } });
   } else if (credentialKind === "provider") {
-    if (!input.auth.provider) {
+    if (!providerAsked) {
       throw new PublicError(
         "INVALID_INPUT",
         "Choose the provider whose credential the server takes.",
@@ -557,22 +567,22 @@ async function add(
     // Another organization's server's own row (`<appId>-mcp`) holds that
     // organization's key: never one to point a second app at.
     if (
-      input.auth.provider.endsWith("-mcp") &&
-      registry.sourceOf(input.auth.provider) === "row" &&
+      providerAsked.endsWith("-mcp") &&
+      registry.sourceOf(providerAsked) === "row" &&
       (await McpAppRepository.providerUsedByOtherOrganization(
-        input.auth.provider,
+        providerAsked,
         ctx.orgId,
       ))
     ) {
       throw new PublicError(
         "REMOTE_MCP_INVALID",
-        `${input.auth.provider} is the credential of another organization's MCP app on this Gateway.`,
+        `${providerAsked} is the credential of another organization's MCP app on this Gateway.`,
       );
     }
     added = plan({
       auth: {
         kind: "provider",
-        provider: input.auth.provider,
+        provider: providerAsked,
       },
       lookupProvider: (id) => registry.get(id),
       providerSettings: settings() as CapabilitySettings,

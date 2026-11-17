@@ -454,7 +454,7 @@ The server didn't answer the probe from this machine; the app was added anyway.
 ### REMOTE_MCP_TOOL_NOT_LISTED
 The tool isn't in the server's last listing; the override is kept for when it appears.
 ### REMOTE_MCP_URL_REFUSED
-The Gateway won't fetch that MCP URL: it must be public `https://`, not an IP, not on this Gateway, and not a provider's host unless `--provider` names that provider.
+The Gateway won't fetch that MCP URL: it must be public `https://`, not an IP, not on this Gateway, and not a provider's host unless `--provider` names that provider or the URL is the MCP server that provider declares (`mcp.url`).
 ### RENAME_AMBIGUOUS
 `previousIds` names more than one app on this Gateway; a rename moves one. List only the ids of the app being renamed.
 ### RENAME_CONFLICT

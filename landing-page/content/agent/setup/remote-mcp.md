@@ -18,7 +18,8 @@ worked.
 ## Settings
 
 The credential is a provider. `mcp add` writes the app's own provider row,
-`<id>-mcp`, beside the app, or uses one the Gateway has (`--provider <id>`).
+`<id>-mcp`, beside the app, or uses one the Gateway has (`--provider <id>`,
+or by itself at the URL a provider declares as its own MCP server).
 
 | NAME | required or optional | what it holds |
 | ---- | -------------------- | ------------- |
@@ -75,6 +76,9 @@ One step per message: give the step, wait for the words it ends with
 1. **You:** add it. `pnpm everyapp mcp add <url> --json` looks at the server
    first, from this machine, and writes nothing until it knows the
    credential:
+   - the URL is a provider's own MCP server (the provider declares it): added
+     with that provider's key, whatever the probe says. `data.credential.setting`
+     names the one key; nothing else is set;
    - it answers without one: added with none;
    - its 401 names OAuth metadata: added with OAuth (discovered, a client
      registered), and `data.connect.url` is the connect page;

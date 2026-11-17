@@ -1493,6 +1493,73 @@ describe("a remote MCP app whose credential is an OAuth provider", () => {
     ).toBeNull();
   });
 
+  it("sends a provider's key as its MCP server takes it at the address the provider declares, and as its API takes it anywhere else", async () => {
+    const { credentialFor } = await import("./bind");
+    const parsed = parseProviderSpec({
+      id: "northwind",
+      name: "Northwind",
+      docs: "https://northwind.io/keys",
+      hosts: ["northwind.io"],
+      auth: {
+        kind: "header",
+        secret: "NORTHWIND_API_TOKEN",
+        header: "X-Northwind-Token",
+      },
+      mcp: { url: "https://northwind.io/mcp/", auth: { kind: "bearer" } },
+    });
+    if (!parsed.ok) throw new Error("spec");
+    const capability = parsed.capability;
+    let bound = true;
+    const deps = {
+      providers: async () =>
+        ({
+          get: (id: string) => (id === "northwind" ? capability : undefined),
+          bound: () => bound,
+        }) as never,
+    };
+    const route = { rowId: "row", organizationId: orgId, appSlug: "northwind" };
+    const at = (url: string) =>
+      credentialFor(
+        {
+          url,
+          auth: { kind: "provider", provider: "northwind" },
+        } as never,
+        route,
+        null,
+        deps,
+      );
+    hoisted.env["NORTHWIND_API_TOKEN"] = "nw-key";
+    // The one key, as a bearer token on the MCP server.
+    expect(await at("https://northwind.io/mcp")).toMatchObject({
+      kind: "ready",
+      provider: "northwind",
+      headers: { authorization: "Bearer nw-key" },
+      query: {},
+      secrets: ["nw-key"],
+    });
+    // Anywhere else on the host it goes as the API takes it.
+    const elsewhere = await at("https://northwind.io/v2/mcp");
+    expect(elsewhere).toMatchObject({
+      kind: "ready",
+      headers: { "x-northwind-token": "nw-key" },
+    });
+    expect(
+      (elsewhere as { headers: Record<string, string> }).headers[
+        "authorization"
+      ],
+    ).toBeUndefined();
+    // Never off its hosts, and never a key that isn't bound to the row.
+    expect(await at("https://mcp.northwind.example/mcp")).toMatchObject({
+      kind: "needs_setup",
+    });
+    bound = false;
+    expect(await at("https://northwind.io/mcp")).toMatchObject({
+      kind: "needs_setup",
+      reason: expect.stringMatching(/secret set NORTHWIND_API_TOKEN/),
+    });
+    delete hoisted.env["NORTHWIND_API_TOKEN"];
+  });
+
   it("lets an app's own OAuth row reach a host the Gateway holds a key for, and never its own static row", async () => {
     const { urlRefusal } = await import("./bind");
     const url = "https://api.elevenlabs.io/v1/mcp";

@@ -434,4 +434,107 @@ describe("parseProviderSpec with mode ai", () => {
       "hosts: not a field of an ai spec",
     );
   });
+
+  it("takes the provider's own MCP server (`mcp`): an address on its hosts and where the same key goes there", () => {
+    const withMcp = {
+      ...STRIPE,
+      mcp: { url: "https://api.stripe.com/mcp", auth: { kind: "bearer" } },
+    };
+    const parsed = parseProviderSpec(withMcp);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.capability).toMatchObject({
+      mcp: { url: "https://api.stripe.com/mcp", auth: { kind: "bearer" } },
+    });
+    expect(providerSpecOf(parsed.id, parsed.capability)).toEqual(withMcp);
+    const mcp = (block: unknown) => problems({ ...STRIPE, mcp: block });
+    expect(
+      mcp({
+        url: "https://api.stripe.com/mcp",
+        auth: { kind: "header", header: "X-Key", prefix: "Key " },
+      }),
+    ).toEqual([]);
+    expect(
+      mcp({
+        url: "https://api.stripe.com/mcp",
+        auth: { kind: "query", param: "key" },
+      }),
+    ).toEqual([]);
+    // The key goes to the provider's hosts and nowhere else.
+    expect(
+      mcp({
+        url: "https://mcp.elsewhere.example/mcp",
+        auth: { kind: "bearer" },
+      }),
+    ).toEqual([
+      "mcp.url: must be on one of the provider's hosts: the key goes nowhere else",
+    ]);
+    expect(
+      mcp({ url: "https://api.stripe.com:8443/mcp", auth: { kind: "bearer" } }),
+    ).toEqual([
+      "mcp.url: must be on one of the provider's hosts: the key goes nowhere else",
+    ]);
+    expect(
+      mcp({ url: "http://api.stripe.com/mcp", auth: { kind: "bearer" } }),
+    ).toEqual(["mcp.url: must be an https URL"]);
+    expect(
+      mcp({ url: "https://api.stripe.com/mcp?k=1", auth: { kind: "bearer" } }),
+    ).toEqual([
+      "mcp.url: must be the server's address alone: no credentials, query or fragment",
+    ]);
+    // It is the provider's one key: no setting of its own, no second secret.
+    expect(
+      mcp({
+        url: "https://api.stripe.com/mcp",
+        auth: { kind: "bearer", secret: "STRIPE_MCP_KEY" },
+      }),
+    ).toEqual([
+      "mcp.auth.secret: not a field: the MCP server takes the provider's one key (auth.secret)",
+    ]);
+    expect(
+      mcp({ url: "https://api.stripe.com/mcp", auth: { kind: "basic" } }),
+    ).toEqual(["mcp.auth.kind: must be bearer, header or query"]);
+    expect(
+      mcp({
+        url: "https://api.stripe.com/mcp",
+        auth: { kind: "header", header: "Mcp-Session-Id" },
+      }),
+    ).toEqual([
+      "mcp.auth.header: Mcp-Session-Id is a header the MCP transport sets itself",
+    ]);
+    expect(
+      mcp({
+        url: "https://api.stripe.com/mcp",
+        auth: { kind: "header", header: "Cookie" },
+      }),
+    ).toEqual([
+      "mcp.auth.header: Cookie is a header the Gateway sets or strips itself",
+    ]);
+    expect(mcp({ auth: { kind: "bearer" } })).toEqual(["mcp.url: required"]);
+    expect(
+      mcp({
+        url: "https://api.stripe.com/mcp",
+        auth: { kind: "bearer" },
+        path: "/mcp",
+      }),
+    ).toEqual(["mcp.path: unknown field"]);
+    // A provider whose host is a setting has no fixed address to declare.
+    expect(
+      problems({
+        ...STRIPE,
+        hosts: [],
+        hostSetting: "STRIPE_HOST",
+        mcp: { url: "https://api.stripe.com/mcp", auth: { kind: "bearer" } },
+      }),
+    ).toEqual([
+      "mcp.url: must be on one of the provider's hosts: the key goes nowhere else",
+    ]);
+    // Not an AI provider's, nor an OAuth provider's.
+    expect(
+      problems({
+        ...GROQ,
+        mcp: { url: "https://api.groq.com/mcp", auth: { kind: "bearer" } },
+      }),
+    ).toContain("mcp: not a field of an ai spec");
+  });
 });

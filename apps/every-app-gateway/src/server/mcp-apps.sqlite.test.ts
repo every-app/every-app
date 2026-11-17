@@ -741,6 +741,73 @@ describe("adding a remote MCP server", () => {
     ).rejects.toMatchObject({ code: "REMOTE_MCP_INVALID" });
   });
 
+  it("adds a provider's own MCP server with that provider's key when no credential is named: no row and no second setting", async () => {
+    // A registered provider whose MCP server shares its API's host and
+    // key, and takes the key another way.
+    const { providerBindingKey, parseProviderSpec } = await import(
+      "@every-app/sdk/internal"
+    );
+    const spec = {
+      id: "northwind",
+      name: "Northwind",
+      docs: "https://northwind.io/keys",
+      hosts: ["northwind.io"],
+      auth: {
+        kind: "header",
+        secret: "NORTHWIND_API_TOKEN",
+        header: "X-Northwind-Token",
+      },
+      mcp: { url: "https://northwind.io/mcp/", auth: { kind: "bearer" } },
+    };
+    const parsed = parseProviderSpec(spec);
+    if (!parsed.ok) throw new Error("the spec should parse");
+    await db.insert(providers).values({
+      id: "northwind",
+      spec: JSON.stringify(spec),
+      addedBy: "ben@example.com",
+      addedAt: new Date(),
+      updatedAt: new Date(),
+      boundTo: providerBindingKey(parsed.capability),
+      boundAt: new Date(),
+    });
+    hoisted.env["NORTHWIND_API_TOKEN"] = "nw-key";
+    resetGatewayProvidersForTests();
+    const added = await McpAppService.add(
+      as(admin, "admin"),
+      { url: "https://northwind.io/mcp", auth: { kind: "none" } },
+      null,
+    );
+    expect(added).toMatchObject({
+      appId: "northwind",
+      authKind: "provider",
+      credentialKind: "provider",
+      provider: "northwind",
+      secret: "NORTHWIND_API_TOKEN",
+      // Set and bound already: nothing to set, and the tools listed.
+      setupCommand: null,
+      toolCount: 3,
+    });
+    expect(manifestOf(await row(added.rowId)).remote.auth).toEqual({
+      kind: "provider",
+      provider: "northwind",
+    });
+    // No row of the app's own, so no second setting to hold the same key.
+    expect((await db.select().from(providers)).map((each) => each.id)).toEqual([
+      "northwind",
+    ]);
+    // Another address on the host isn't its MCP server: nothing is assumed.
+    const other = await McpAppService.add(
+      as(admin, "admin"),
+      {
+        url: "https://northwind.io/other",
+        id: "other",
+        auth: { kind: "none" },
+      },
+      null,
+    );
+    expect(other).toMatchObject({ authKind: "none", provider: null });
+  });
+
   it("adds an OAuth server: discovery and client registration from the Gateway, the client sealed and bound to the row, a connect link", async () => {
     const fetched: string[] = [];
     let registered: Record<string, unknown> | null = null;

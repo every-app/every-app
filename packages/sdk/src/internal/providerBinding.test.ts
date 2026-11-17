@@ -26,6 +26,43 @@ function capability(input: unknown) {
 }
 
 describe("providerBindingKey", () => {
+  it("changes when a row gains or changes its MCP server's address or auth, and not for a row without one", () => {
+    const mcp = {
+      url: "https://api.northwind.io/mcp",
+      auth: { kind: "bearer" },
+    };
+    const plain = providerBindingKey(capability(spec));
+    const declared = providerBindingKey(capability({ ...spec, mcp }));
+    expect(plain).not.toContain("mcp");
+    expect(declared).not.toBe(plain);
+    expect(
+      providerBindingKey(
+        capability({
+          ...spec,
+          mcp: { ...mcp, url: "https://api.northwind.io/v2/mcp" },
+        }),
+      ),
+    ).not.toBe(declared);
+    expect(
+      providerBindingKey(
+        capability({
+          ...spec,
+          mcp: { ...mcp, auth: { kind: "header", header: "X-Key" } },
+        }),
+      ),
+    ).not.toBe(declared);
+    // A key set before the row declared an MCP server isn't read for it.
+    const row: ProviderRow = {
+      id: "northwind",
+      spec: { ...spec, mcp },
+      boundTo: plain,
+    };
+    expect(providerRegistry([row]).bound("northwind")).toBe(false);
+    expect(
+      providerRegistry([{ ...row, boundTo: declared }]).bound("northwind"),
+    ).toBe(true);
+  });
+
   it("is the row's hosts, host setting and auth, in a canonical order", () => {
     expect(providerBindingKey(capability(spec))).toBe(
       '{"auth":{"kind":"bearer","secret":"NORTHWIND_API_KEY"},"hostSetting":null,"hosts":["api.northwind.io"]}',
