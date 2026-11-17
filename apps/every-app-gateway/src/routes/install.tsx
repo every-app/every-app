@@ -14,10 +14,7 @@ function InstallPage() {
   const navigate = useNavigate();
   return (
     <AuthPageShell>
-      <InstallAppForm
-        sourceUrl={source}
-        onBack={() => navigate({ to: "/admin/apps" })}
-      />
+      <InstallAppForm sourceUrl={source} onBack={() => navigate({ to: "/" })} />
     </AuthPageShell>
   );
 }
