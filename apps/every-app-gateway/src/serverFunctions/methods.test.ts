@@ -70,6 +70,7 @@ const READS = [
   "getMyApps",
   "getOnboardingStatus",
   "getUsage",
+  "getUsageReports",
   "hasOwner",
   "listAllConnections",
   "listAuditActors",

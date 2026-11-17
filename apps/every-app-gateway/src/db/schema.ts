@@ -19,3 +19,4 @@ export * from "./org-settings.schema";
 export * from "./oauth.schema";
 export * from "./composio.schema";
 export * from "./access-evaluation.schema";
+export * from "./telemetry.schema";

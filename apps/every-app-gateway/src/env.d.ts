@@ -46,6 +46,11 @@ declare namespace Cloudflare {
     // (comma or space separated), e.g. MCP Inspector's http://localhost:6274.
     MCP_ALLOWED_ORIGINS?: string;
 
+    // Set to anything but 0, false, no or off: this Gateway never sends a
+    // usage report and the switch in Manage workspace can't turn them on
+    // (server/telemetry/report.ts).
+    TELEMETRY_DISABLED?: string;
+
     // Days of mcp_tool_calls kept by the hourly cron (default 90).
     MCP_AUDIT_RETENTION_DAYS?: string;
 

@@ -1,0 +1,103 @@
+---
+title: Usage reports
+description: The short daily report a Gateway sends Every App, what is in it, what is never in it, and how to turn it off.
+---
+
+Once a day, a self-hosted Gateway sends us a short report so we know how many Gateways are running and how many people use them. We use it to decide what to build and to show that Every App is growing.
+
+Reports are on by default. You can read the exact report before it goes, and turn reports off at any time.
+
+## What is in it
+
+This is a whole report:
+
+```json
+{
+  "schema": 1,
+  "install": "5f0c1e9a7b3d4e21a8c6d2f4b9e07a13",
+  "day": "2026-11-20",
+  "version": "0.4.2",
+  "installed": "2026-11",
+  "members": 7,
+  "active_members_1d": 3,
+  "active_members_7d": 4,
+  "apps": 3,
+  "app_use_1d": [
+    { "app": "openseo", "active_members": 3, "tool_calls": 40 },
+    { "app": "other", "active_members": 2, "tool_calls": 7 }
+  ]
+}
+```
+
+| Field                                    | What it is                                                                                                                                                                                                                                         |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema`                                 | The version of this list of fields.                                                                                                                                                                                                                |
+| `install`                                | A random ID your Gateway made for these reports and nothing else. It is derived from nothing.                                                                                                                                                      |
+| `day`                                    | The day the counts are for (UTC): yesterday.                                                                                                                                                                                                       |
+| `version`                                | The Gateway's version.                                                                                                                                                                                                                             |
+| `installed`                              | The month the Gateway was set up.                                                                                                                                                                                                                  |
+| `members`                                | How many people are in the workspace.                                                                                                                                                                                                              |
+| `active_members_1d`, `active_members_7d` | How many of them used the Gateway or an app that day, and in the 7 days up to it.                                                                                                                                                                  |
+| `apps`                                   | How many apps are installed and active.                                                                                                                                                                                                            |
+| `app_use_1d`                             | For each app used that day: how many people used it through an AI client or a provider call, and how many AI tool calls it had. Our own apps (OpenSEO, CRM, OpenMail, OpenAnalytics, Scribe) are named. Every app of your own is the word `other`. |
+
+Every count is rounded down to one significant digit: 37 members is sent as 30, and 4,812 tool calls as 4000. Member counts stop at 1000.
+
+## What is never in it
+
+- Your domain, your Cloudflare account or your Gateway's address.
+- Anyone's name or email.
+- The names of apps you built or installed from somewhere else.
+- Tool names, prompts, files, or anything inside an app.
+- Which person did what, or at what time of day.
+
+## What we can and can't tell
+
+We can't tell whose Gateway a report is from. We can tell that today's report and yesterday's came from the same Gateway, by the random ID. That is why we don't call the reports anonymous.
+
+Few Gateways exist yet, so a report's shape (the month, the team's size, the apps) could let us guess which report belongs to a customer we already know well. It names no one to anyone else.
+
+Cloudflare, which already runs your Gateway, carries the report. It adds your zone's name to the request, as it does for every request a Worker makes. Our receiver doesn't read, log or keep it: it stores the report's body and nothing else, not even the time it arrived. [Its source](https://github.com/every-app/every-app/tree/main/apps/telemetry) is one short file, and it refuses a report with any field not listed above.
+
+No other company receives the reports.
+
+## See the report
+
+Open **Manage workspace**, then **Usage reports** (owners and admins). It shows the next report exactly as it will be sent, and the last one sent. Or:
+
+```bash
+everyapp telemetry
+```
+
+## Turn it off
+
+Select **Turn off** on that page, or:
+
+```bash
+everyapp telemetry off
+```
+
+Reports stop at once and the random ID is deleted. `everyapp telemetry on` turns them back on with a new ID.
+
+To make it impossible to turn on from the page:
+
+```bash
+everyapp secret set TELEMETRY_DISABLED
+```
+
+Enter `1` when it asks for the value.
+
+## When reports start
+
+- **A new Gateway** sends its first report a day after setup.
+- **A Gateway that was set up before usage reports existed** sends its first report 7 days after the update that brought them. Until then, Manage workspace shows a notice with the date.
+
+A Gateway built from a clone of the repository never sends reports. Neither does the hosted Gateway.
+
+## What else talks to us
+
+The CLI, the SDK and your apps send us nothing. The Mac app checks `updates.everyapp.com` for new versions. This website counts page views: [Privacy](/privacy).
+
+## How long we keep reports
+
+25 months. Then they are deleted.

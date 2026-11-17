@@ -36,6 +36,7 @@ import { Route as AppAdminProvidersRouteImport } from './routes/_app/admin/provi
 import { Route as AppAdminSignInRouteImport } from './routes/_app/admin/sign-in'
 import { Route as AppAdminTokensRouteImport } from './routes/_app/admin/tokens'
 import { Route as AppAdminUsageRouteImport } from './routes/_app/admin/usage'
+import { Route as AppAdminUsageReportsRouteImport } from './routes/_app/admin/usage-reports'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
 import { Route as AppConnectionsIndexRouteImport } from './routes/_app/connections/index'
 import { Route as AppConnectionsAccountsRouteImport } from './routes/_app/connections/accounts'
@@ -184,6 +185,11 @@ const AppAdminUsageRoute = AppAdminUsageRouteImport.update({
   path: '/usage',
   getParentRoute: () => AppAdminRoute,
 } as any)
+const AppAdminUsageReportsRoute = AppAdminUsageReportsRouteImport.update({
+  id: '/usage-reports',
+  path: '/usage-reports',
+  getParentRoute: () => AppAdminRoute,
+} as any)
 const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -277,6 +283,7 @@ export interface FileRoutesByFullPath {
   '/admin/sign-in': typeof AppAdminSignInRoute
   '/admin/tokens': typeof AppAdminTokensRoute
   '/admin/usage': typeof AppAdminUsageRoute
+  '/admin/usage-reports': typeof AppAdminUsageReportsRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/connections/accounts': typeof AppConnectionsAccountsRoute
   '/connections/agents': typeof AppConnectionsAgentsRoute
@@ -316,6 +323,7 @@ export interface FileRoutesByTo {
   '/admin/sign-in': typeof AppAdminSignInRoute
   '/admin/tokens': typeof AppAdminTokensRoute
   '/admin/usage': typeof AppAdminUsageRoute
+  '/admin/usage-reports': typeof AppAdminUsageReportsRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/connections/accounts': typeof AppConnectionsAccountsRoute
   '/connections/agents': typeof AppConnectionsAgentsRoute
@@ -359,6 +367,7 @@ export interface FileRoutesById {
   '/_app/admin/sign-in': typeof AppAdminSignInRoute
   '/_app/admin/tokens': typeof AppAdminTokensRoute
   '/_app/admin/usage': typeof AppAdminUsageRoute
+  '/_app/admin/usage-reports': typeof AppAdminUsageReportsRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/connections/accounts': typeof AppConnectionsAccountsRoute
   '/_app/connections/agents': typeof AppConnectionsAgentsRoute
@@ -402,6 +411,7 @@ export interface FileRouteTypes {
     | '/admin/sign-in'
     | '/admin/tokens'
     | '/admin/usage'
+    | '/admin/usage-reports'
     | '/admin/users'
     | '/connections/accounts'
     | '/connections/agents'
@@ -441,6 +451,7 @@ export interface FileRouteTypes {
     | '/admin/sign-in'
     | '/admin/tokens'
     | '/admin/usage'
+    | '/admin/usage-reports'
     | '/admin/users'
     | '/connections/accounts'
     | '/connections/agents'
@@ -483,6 +494,7 @@ export interface FileRouteTypes {
     | '/_app/admin/sign-in'
     | '/_app/admin/tokens'
     | '/_app/admin/usage'
+    | '/_app/admin/usage-reports'
     | '/_app/admin/users'
     | '/_app/connections/accounts'
     | '/_app/connections/agents'
@@ -712,6 +724,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminUsageRouteImport
       parentRoute: typeof AppAdminRoute
     }
+    '/_app/admin/usage-reports': {
+      id: '/_app/admin/usage-reports'
+      path: '/usage-reports'
+      fullPath: '/admin/usage-reports'
+      preLoaderRoute: typeof AppAdminUsageReportsRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
     '/_app/admin/users': {
       id: '/_app/admin/users'
       path: '/users'
@@ -815,6 +834,7 @@ interface AppAdminRouteChildren {
   AppAdminSignInRoute: typeof AppAdminSignInRoute
   AppAdminTokensRoute: typeof AppAdminTokensRoute
   AppAdminUsageRoute: typeof AppAdminUsageRoute
+  AppAdminUsageReportsRoute: typeof AppAdminUsageReportsRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
   AppAdminIndexRoute: typeof AppAdminIndexRoute
 }
@@ -828,6 +848,7 @@ const AppAdminRouteChildren: AppAdminRouteChildren = {
   AppAdminSignInRoute: AppAdminSignInRoute,
   AppAdminTokensRoute: AppAdminTokensRoute,
   AppAdminUsageRoute: AppAdminUsageRoute,
+  AppAdminUsageReportsRoute: AppAdminUsageReportsRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
   AppAdminIndexRoute: AppAdminIndexRoute,
 }

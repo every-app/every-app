@@ -89,6 +89,12 @@ interface PlatformPolicy {
    * (usage limits are a later feature).
    */
   readonly mailDaily: Readonly<Record<MailKind, MailBudget>>;
+  /**
+   * The Gateway may send us its daily usage report (server/telemetry/):
+   * an operator's own install only. The hosted gateway is ours, and we
+   * count it from its own database.
+   */
+  readonly usageReports: boolean;
 }
 
 /**
@@ -193,6 +199,7 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
           { perAddress: 50, perGateway: 2_000 },
           { perAddress: 100, perGateway: 5_000 },
         ),
+        usageReports: true,
       });
     case "hosted":
       return freeze({
@@ -221,6 +228,7 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
           { perAddress: 20, perGateway: 2_000 },
           { perAddress: 20, perGateway: 5_000 },
         ),
+        usageReports: false,
       });
     default:
       return freeze({
@@ -244,6 +252,7 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
           { perAddress: 0, perGateway: 0 },
           { perAddress: 0, perGateway: 0 },
         ),
+        usageReports: false,
       });
   }
 }

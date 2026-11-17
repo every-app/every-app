@@ -761,6 +761,33 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
       ["on"],
     ),
   },
+  // Usage reports (https://everyapp.com/docs/telemetry): the Gateway's
+  // daily report to Every App, as Manage workspace → Usage reports shows
+  // and switches it.
+  {
+    ...ADMIN_READ,
+    name: "workspace_telemetry_show",
+    title: "Show usage reports",
+    description:
+      "Show whether this Gateway sends Every App its daily usage report, and the report itself. Answers `usageReports` (on or off); `reason` when off (`off`: turned off; `setting`: the TELEMETRY_DISABLED setting is set; `unpublished`: built from source, which never sends; `unavailable`: not a self-hosted Gateway); `startsAt` while the first report is still to come; `nextReport`, the exact JSON that would be sent next (rounded counts: members, apps, people per app, AI tool calls, the version; never a domain, a name, an email or anything inside an app); `lastReport` and `lastReportedDay`; and `endpoint`, where reports go. Owners and admins.",
+    inputSchema: NO_INPUT,
+  },
+  {
+    ...ADMIN_WRITE,
+    name: "workspace_telemetry",
+    title: "Usage reports on or off",
+    description:
+      "Turn this Gateway's daily usage report to Every App on or off. It is the person's choice: turn it off when they ask, and never turn it on without asking them. Off stops reports at once and deletes the random ID they carried; on again starts with a new one. Refused while the TELEMETRY_DISABLED setting is set. Answers what everyapp_workspace_telemetry_show answers, and whether it `changed`. Owners and admins.",
+    inputSchema: objectWith(
+      {
+        on: {
+          type: "boolean",
+          description: "true turns reports on, false off.",
+        },
+      },
+      ["on"],
+    ),
+  },
   // Events out (docs/design/2026-10-events-out.md, section 9): the
   // organization's event subscriptions, a test ping, the delivery log and
   // a redeliver, through the same service as Admin → Events.

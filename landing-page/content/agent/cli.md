@@ -1011,6 +1011,23 @@ The catalogue this CLI knows, and how a pattern names several (member.*, app.crm
 everyapp events types
 ```
 
+### `everyapp telemetry [<on|off|show>]`
+See the daily usage report this Gateway sends Every App, or turn it off.
+
+Once a day a self-hosted Gateway sends Every App a few rounded counts: members, apps, how many people used each app, AI tool calls, the version. Never a domain, a name, an email or anything inside an app. `show` prints the exact report that goes next. `off` stops reports at once and deletes the random ID they carried. The same as Manage workspace → Usage reports. The CLI itself sends nothing.
+
+What is sent and why: https://everyapp.com/docs/telemetry
+
+The Gateway tools: everyapp_workspace_telemetry_show to read, everyapp_workspace_telemetry to change.
+
+```sh
+everyapp telemetry
+everyapp telemetry off
+everyapp telemetry show --json
+```
+
+- `<on|off|show>`: Turn the Gateway's usage reports on or off, or show them with the next report (default)
+
 ### `everyapp workspace show`
 The organization: your role, whether it can send mail, and how many members, invitations, groups and apps it has.
 

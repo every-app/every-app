@@ -16,6 +16,7 @@ export * from "./composio.js";
 export * from "./providerApps.js";
 export * from "./events.js";
 export * from "./audit.js";
+export * from "./telemetry.js";
 export * from "./providerSpec.js";
 export * from "./providerRegistry.js";
 export * from "./remoteMcp.js";

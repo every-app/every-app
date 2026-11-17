@@ -25,6 +25,7 @@ describe("platformPolicy", () => {
         notice: { perAddress: 50, perGateway: 2_000 },
         app: { perAddress: 100, perGateway: 5_000 },
       },
+      usageReports: true,
     });
   });
 
@@ -56,6 +57,7 @@ describe("platformPolicy", () => {
         notice: { perAddress: 20, perGateway: 2_000 },
         app: { perAddress: 20, perGateway: 5_000 },
       },
+      usageReports: false,
     });
   });
 
@@ -85,6 +87,7 @@ describe("platformPolicy", () => {
           notice: { perAddress: 0, perGateway: 0 },
           app: { perAddress: 0, perGateway: 0 },
         },
+        usageReports: false,
       });
     }
   });

@@ -936,6 +936,16 @@ const HANDLERS: Record<string, Handler> = {
     return OrganizationService.setLinkedDev(ctx, args["on"] === true);
   },
 
+  async workspace_telemetry_show() {
+    const { usageReportStatus } = await import("@/server/telemetry/report");
+    return { ...(await usageReportStatus()) };
+  },
+
+  async workspace_telemetry(ctx, args) {
+    const { setUsageReports } = await import("@/server/telemetry/report");
+    return { ...(await setUsageReports(ctx, args["on"] === true)) };
+  },
+
   async workspace_composio(ctx, args) {
     if (args["on"] === true) return setComposio(ctx, true);
     const result = await turnComposioOff(ctx, args["confirm"] === true);

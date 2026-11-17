@@ -19,6 +19,7 @@
     "connect-oauth",
     "composio",
     "usage",
+    "telemetry",
     "events",
     "resources",
     "commands",

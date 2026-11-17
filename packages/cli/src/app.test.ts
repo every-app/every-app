@@ -182,7 +182,7 @@ describe("help", () => {
     expect(help).toMatch(/\nBUILD AN APP\n  create {2,}Create .*\n  dev /);
     expect(help).toMatch(/\nRUN A GATEWAY\n  login {2,}Log in .*\n  setup {2,}Install or repair the Gateway\n  update {2,}Update the Gateway to a newer release\n  install /);
     expect(help).toMatch(
-      /\n  email {2,}.*\n  events {2,}Send the Gateway's events to Slack, Zapier, n8n or your own endpoint \(signed\), or by email\n  teardown /,
+      /\n  email {2,}.*\n  events {2,}Send the Gateway's events to Slack, Zapier, n8n or your own endpoint \(signed\), or by email\n  telemetry {2,}See the daily usage report this Gateway sends Every App, or turn it off\n  teardown /,
     );
     expect(help).toMatch(/\nMANAGE THE WORKSPACE\n  workspace /);
     expect(help).toContain(`USAGE\n  ${CLI} <command> [flags]`);

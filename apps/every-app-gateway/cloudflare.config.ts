@@ -49,6 +49,8 @@ export const OPTIONAL_SECRETS = [
   "MCP_DCR_ENABLED",
   "MCP_ALLOWED_ORIGINS",
   "MCP_AUDIT_RETENTION_DAYS",
+  // Turns usage reports off for good (src/server/telemetry/report.ts).
+  "TELEMETRY_DISABLED",
   // Local testing only: honored only on a localhost GATEWAY_URL.
   "MCP_ACCESS_TOKEN_TTL",
   // Cloudflare Access sign-in (src/auth/cloudflare-access/config.ts).

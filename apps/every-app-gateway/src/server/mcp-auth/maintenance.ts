@@ -19,7 +19,9 @@
  *  - sweep expired and orphaned OAuth grants and tokens from OAUTH_KV with
  *    the library's purgeExpiredData, resuming from a cursor kept in KV;
  *  - re-list the tools of every active remote MCP app whose snapshot is
- *    older than an hour (server/remote-mcp/relist.ts), up to 50 a run.
+ *    older than an hour (server/remote-mcp/relist.ts), up to 50 a run;
+ *  - send yesterday's usage report, once a day, when this Gateway sends
+ *    them (server/telemetry/report.ts).
  *
  * Each step runs even when another fails, and the run logs one summary line.
  */
@@ -182,6 +184,12 @@ export async function runMcpMaintenance(
     );
     return relistStaleRemoteMcpApps(now);
   });
+  // The daily usage report: off, waiting, done, sent or failed. It catches
+  // its own errors, so a receiver that is down is one word here.
+  const usageReport = await step("usage_report", async () => {
+    const { runUsageReport } = await import("@/server/telemetry/report");
+    return runUsageReport(env, now);
+  });
   // Rows left past the retention after a full run: more calls an hour than
   // a run deletes, which needs a look. Usage rows age out a month at a
   // time, so being behind for a few runs after a month boundary is normal.
@@ -207,6 +215,7 @@ export async function runMcpMaintenance(
           : deliveriesPruned.deleted,
       oauth_purge: purge,
       remote_mcp_relisted: remoteMcp,
+      usage_report: usageReport,
     },
     auditBehind ? "warn" : "log",
   );

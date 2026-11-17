@@ -14,6 +14,7 @@ import {
   LogIn,
   Pencil,
   Plug,
+  Radio,
   ScrollText,
   ShieldAlert,
   Users,
@@ -29,6 +30,7 @@ import {
   type ActiveOrganization,
 } from "@/client/hooks/useActiveOrganization";
 import { authClient } from "@/client/auth-client";
+import { UsageReportsNotice } from "@/client/components/admin/UsageReportsNotice";
 import { RenameWorkspaceDialog } from "@/client/components/admin/RenameWorkspaceDialog";
 import { EmptyState } from "@/client/components/EmptyState";
 import { SkeletonPage } from "@/client/components/SkeletonPresets";
@@ -53,6 +55,7 @@ enum AdminTab {
   Usage = "usage",
   Activity = "activity",
   Events = "events",
+  UsageReports = "usage-reports",
 }
 
 const adminTabs = [
@@ -99,6 +102,12 @@ const adminTabs = [
     label: "Events",
     to: "/admin/events",
     icon: Webhook,
+  },
+  {
+    value: AdminTab.UsageReports,
+    label: "Usage reports",
+    to: "/admin/usage-reports",
+    icon: Radio,
   },
 ] as const;
 
@@ -198,6 +207,7 @@ function AdminLayout() {
           }}
         />
       ) : null}
+      <UsageReportsNotice />
       <Tabs
         value={activeTab}
         onValueChange={(value) => {

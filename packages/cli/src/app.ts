@@ -40,6 +40,7 @@ import { setupCommand } from "./commands/setup/command";
 import { signinRoutes } from "./commands/signin/command";
 import { statusCommand } from "./commands/status/command";
 import { teardownCommand } from "./commands/teardown/command";
+import { telemetryCommand } from "./commands/telemetry/command";
 import { updateCommand } from "./commands/update/command";
 import { workspaceRoutes } from "./commands/workspace/command";
 import { errorMessage } from "./lib/errors";
@@ -69,6 +70,7 @@ const routes = buildRouteMap({
     mcp: mcpRoutes,
     email: emailRoutes,
     events: eventsRoutes,
+    telemetry: telemetryCommand,
     workspace: workspaceRoutes,
     call: callCommand,
     docs: docsCommand,
@@ -131,6 +133,7 @@ const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
       "mcp",
       "email",
       "events",
+      "telemetry",
       "teardown",
     ],
   ],

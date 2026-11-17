@@ -129,6 +129,8 @@ describe("the workspace tool definitions", () => {
       "workspace_rename",
       "workspace_linked_dev",
       "workspace_composio",
+      "workspace_telemetry_show",
+      "workspace_telemetry",
       "workspace_events",
       "workspace_events_add",
       "workspace_events_set",

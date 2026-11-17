@@ -167,6 +167,9 @@ Workspace tools (Gateway connector only; every admin action of the UI, listed
          `everyapp_workspace_usage`, `everyapp_workspace_activity`,
          `everyapp_workspace_audit` (the audit log: who did what, 90 days),
          `everyapp_workspace_rename`, `everyapp_workspace_linked_dev`,
+         `everyapp_workspace_telemetry_show` and
+         `everyapp_workspace_telemetry` (the Gateway's daily usage report to
+         Every App: the exact report, and on or off; the person's choice),
          `everyapp_workspace_composio` (Composio on or off for the
          organization; off asks `confirm: true` while a link or a connection
          made through Composio exists), and the

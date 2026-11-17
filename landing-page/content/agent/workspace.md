@@ -58,6 +58,7 @@ People are named by email or user id, apps by manifest id or row id, groups by n
 | `workspace tokens [--all]`, `workspace token revoke <id>` | `everyapp_my_tokens`, `everyapp_revoke_token`: your own, never a value |
 | `workspace connections`, `workspace connection revoke <id>` | `everyapp_my_connections`, `everyapp_revoke_connection`: your own |
 | `workspace linked-dev [on\|off\|show]` | `everyapp_workspace_linked_dev`; `show` reads `linkedDev` from `everyapp_workspace_show` |
+| `telemetry [on\|off\|show]` | `everyapp_workspace_telemetry`; `show` is `everyapp_workspace_telemetry_show`: whether this Gateway sends Every App its daily usage report, with the exact next report (`nextReport`). It is the person's choice: turn it off when they ask, never on without asking ([usage reports](/docs/telemetry)) |
 | `workspace composio [on\|off\|show] [--yes]` | `everyapp_workspace_composio`: whether people may use the accounts in their own Composio for OAuth providers the Gateway holds no client for; `show` reads `composio` from `everyapp_workspace_show`. Off deletes every link and every connection made through Composio ([setup/composio](/docs/agent/setup/composio)) |
 | `workspace invite-link <email\|id>` | none: a new link for a pending invitation, printed to hand over, written under the Cloudflare login (for a Gateway that sends no email) |
 | `workspace reset-link <email>` | none: the recovery link, a one-hour reset link printed to hand over, written under the Cloudflare login: the way back in for an owner who can't sign in |
