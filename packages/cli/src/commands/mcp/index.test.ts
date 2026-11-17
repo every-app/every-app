@@ -911,6 +911,24 @@ describe("mcp add at a provider's own MCP server", () => {
     expect(await query("SELECT id FROM providers")).toEqual([{ id: "northwind" }]);
   });
 
+  it("adds Treg's MCP server on the built-in Treg provider's one key, though its host is the API's", async () => {
+    await addServer(options<AddFlags>({ fetch: asks() }), TREG);
+    expect(done()!["data"]).toMatchObject({
+      id: "treg",
+      auth: { kind: "provider", provider: "treg" },
+      credential: { kind: "provider", setting: "TREG_API_TOKEN", set: false, bound: true },
+    });
+    expect(warnings("PROVIDER_KEY_UNSET")).toEqual([
+      expect.objectContaining({ data: { fix: "pnpm everyapp secret set TREG_API_TOKEN", name: "TREG_API_TOKEN" } }),
+    ]);
+    expect(await query("SELECT id FROM providers")).toEqual([]);
+    // The rest of the host is the API's.
+    events = [];
+    await expect(
+      addServer(options<AddFlags>({ flags: { ...flags, name: "treg-api", auth: "bearer" }, fetch: asks() }), "https://treg.to/call/treg.people.enrich"),
+    ).rejects.toMatchObject({ code: "REMOTE_MCP_URL_REFUSED" });
+  });
+
   it("still takes a credential that is named, and assumes nothing at another address on the host", async () => {
     await register();
     await addServer(options<AddFlags>({ flags: { ...flags, name: "nw-own", auth: "bearer" }, fetch: listsTools() }), "https://northwind.io/mcp/");

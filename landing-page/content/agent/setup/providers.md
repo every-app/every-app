@@ -7,7 +7,7 @@ description: "Generated from the built-in catalog: every API-key, AI and OAuth-p
 
 For a coding agent setting up a provider the Gateway's built-in catalog has. Each provider is a section under its id, so `setup/providers.md#<id>` points at it. Where the provider has a guide of its own (its **Guide**), follow that guide and read this section as its summary. Read [the setup rules](/docs/agent/setup/guides) first: its rules hold here too, above all that a key never goes through the chat.
 
-A provider registered on one Gateway (`pnpm everyapp provider add`) is not on this page: `pnpm everyapp provider show <id>` shows its hint, settings, hosts, where the key comes from and its smoke request (`--json` carries its whole spec). The catalog has 58 providers (49 API-key, 9 AI) and 12 OAuth presets.
+A provider registered on one Gateway (`pnpm everyapp provider add`) is not on this page: `pnpm everyapp provider show <id>` shows its hint, settings, hosts, where the key comes from and its smoke request (`--json` carries its whole spec). The catalog has 59 providers (50 API-key, 9 AI) and 12 OAuth presets.
 
 The smoke request needs the key, so it runs where the key is: the person's terminal, with the variable they read in hidden, or through the app that uses it. It is one call that costs nothing (unless marked charged).
 
@@ -72,6 +72,7 @@ The three ways of [the setup rules](/docs/agent/setup/guides), one line each (th
 | [`elevenlabs`](#elevenlabs) | ElevenLabs | API key | `ELEVENLABS_API_KEY` |  |
 | [`assemblyai`](#assemblyai) | AssemblyAI | API key | `ASSEMBLYAI_API_KEY` |  |
 | [`newsapi`](#newsapi) | NewsAPI | API key | `NEWSAPI_API_KEY` |  |
+| [`treg`](#treg) | Treg | API key | `TREG_API_TOKEN` |  |
 | [`openai`](#openai) | OpenAI | AI | `OPENAI_API_KEY` | [openai.md](/docs/agent/setup/openai) |
 | [`openrouter`](#openrouter) | OpenRouter | AI | `OPENROUTER_API_KEY` | [openrouter.md](/docs/agent/setup/openrouter) |
 | [`workers-ai`](#workers-ai) | Workers AI | AI | `WORKERS_AI_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (set by `everyapp setup`) | [workers-ai.md](/docs/agent/setup/workers-ai) |
@@ -928,6 +929,24 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Rate:** 100 a day. Developer plan; Business includes 250,000 requests a month, Advanced 2,000,000.
 - **Verified:** 2026-10-25, docs
 - **Set it:** `pnpm everyapp secret set NEWSAPI_API_KEY`, or `pnpm everyapp configure <app id>` for everything an app needs
+- **Guide:** none beyond this section
+
+### treg
+
+**Treg** (`api_key`): One token over thousands of data APIs, paid per call: people and company enrichment, email finding, search results, scraping and more.
+
+- **Settings:** `TREG_API_TOKEN`
+- **What the key is:** A team token from treg.to (treg org agent-new <name>, with Treg's CLI); the Gateway sends it in the X-Treg-Token header. Calls spend the team's prepaid balance. Use a team kept for this Gateway: a call can reach any vendor account the team connected. A team (org-scoped) token, which needs no X-Treg-Org header. A personal token from treg login may be refused until it is pinned to a team.
+- **Where the key comes from:** https://treg.to/docs
+- **API reference:** https://treg.to/integrate.md
+- **How it is sent:** `X-Treg-Token: <TREG_API_TOKEN>`, to `treg.to` only, over https
+- **Its MCP server:** `https://treg.to/mcp/` takes the same key as `Authorization: Bearer <TREG_API_TOKEN>`. `pnpm everyapp mcp add https://treg.to/mcp/` adds it on this key: nothing else to set
+- **What apps may do:** access `read`; GET, POST on any grant; account-wide paths refused: `admin`, `auth`, `oauth`, `billing`, `orgs`, `secrets`, `connections`, `invites`, `onboard`, `referrals`, `hub`, `tools`, `skills`, `bundles`, `agents`, `cli`, `run`, `runs`, `calls`, `activity`, `usage`, `home`, `demo`; data `per-call`
+- **Smoke request:** `GET https://treg.to/usage/me`, expecting 200; free. Account-wide, so the Gateway refuses it for apps; run it from the person's terminal.
+- **Cost:** per call. Charged per call at the vendor's own rate, no markup, from a prepaid balance: a people lookup is $0.001 to $0.28. X-Treg-Cost-Micro reports each charge; X-Treg-Route-Max-Cost caps a call.
+- **Rate:** not recorded
+- **Verified:** 2026-11-16, live
+- **Set it:** `pnpm everyapp secret set TREG_API_TOKEN`, or `pnpm everyapp configure <app id>` for everything an app needs
 - **Guide:** none beyond this section
 
 ## AI providers

@@ -242,6 +242,39 @@ describe("the URL rule", () => {
     ).toMatch(/IP address/);
   });
 
+  it("lets a reserved host through at the one address its provider declares as its MCP server", () => {
+    // Treg's API and MCP server share treg.to: the host is reserved, and
+    // its MCP server is still addable, with any credential.
+    expect(reservedUpstreamHosts()).toContain("treg.to");
+    expect(remoteMcpUrlProblem("https://treg.to/mcp/", LIVE)).toBeNull();
+    expect(remoteMcpUrlProblem("https://treg.to/mcp", LIVE)).toBeNull();
+    // Nowhere else on the host: the API, the account, a path under /mcp.
+    for (const url of [
+      "https://treg.to/call/treg.people.enrich",
+      "https://treg.to/billing",
+      "https://treg.to/mcp/other",
+      "https://treg.to/mcp/?org=1",
+      "https://treg.to/",
+    ]) {
+      expect(remoteMcpUrlProblem(url, LIVE), url).toMatch(/holds a key/);
+    }
+    // And the key goes there as the MCP server takes it, as the API takes
+    // it anywhere else: one setting.
+    expect(
+      remoteMcpAuthorization(CAPABILITIES.treg, "https://treg.to/mcp/", {
+        TREG_API_TOKEN: "tk",
+      }),
+    ).toEqual({ headers: { authorization: "Bearer tk" }, query: {} });
+    expect(
+      remoteMcpAuthorization(CAPABILITIES.treg, "https://treg.to/call/x", {
+        TREG_API_TOKEN: "tk",
+      }),
+    ).toEqual({ headers: { "x-treg-token": "tk" }, query: {} });
+    expect(
+      providerOfMcpUrl(Object.entries(CAPABILITIES), "https://treg.to/mcp")?.id,
+    ).toBe("treg");
+  });
+
   it("derives the reserved hosts from the registries", () => {
     const hosts = reservedUpstreamHosts();
     expect(hosts).toContain("api.dataforseo.com");

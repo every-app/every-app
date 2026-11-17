@@ -192,6 +192,29 @@ describe("planRemoteMcpAppAdd", () => {
     });
   });
 
+  it("takes a catalog provider's own MCP server with that provider's key or the app's own, and nothing else on its host", () => {
+    // Treg's API and MCP server share treg.to. With the provider named,
+    // the one key goes (the Gateway places it as the MCP server takes it).
+    const named = planRemoteMcpAppAdd(
+      input({ auth: { kind: "provider", provider: "treg" } }),
+    );
+    expect(named.remote.auth).toEqual({ kind: "provider", provider: "treg" });
+    expect(named.provider?.id).toBe("treg");
+    // An app added with its own key (before Treg was built in, say) stays valid.
+    expect(planRemoteMcpAppAdd(input()).remote.auth).toEqual({
+      kind: "provider",
+      provider: "treg-mcp",
+    });
+    // The rest of the host is the API's: no app of any credential but the provider's.
+    for (const auth of [{ kind: "none" }, { kind: "provider" }]) {
+      expect(() =>
+        planRemoteMcpAppAdd(
+          input({ url: "https://treg.to/call/treg.people.enrich", auth }),
+        ),
+      ).toThrow(expect.objectContaining({ code: "REMOTE_MCP_URL_REFUSED" }));
+    }
+  });
+
   it("uses an existing provider on its own host, a reserved one included, and refuses it elsewhere", () => {
     // ElevenLabs' hosted MCP with the catalog's key: the reserved host
     // gives way to the provider that owns it.

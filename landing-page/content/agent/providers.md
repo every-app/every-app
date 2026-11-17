@@ -103,9 +103,9 @@ What an app author should know: through Composio only a JSON request body can be
 
 ## Rows `mcp add` writes
 
-A remote MCP app's credential is a provider row `<id>-mcp` (`treg` → `treg-mcp`), written with the app by `everyapp mcp add <url>`. Its `hosts` is the MCP URL's host alone, so the key or token goes nowhere else.
+A remote MCP app's credential is a provider row `<id>-mcp` (`notes` → `notes-mcp`), written with the app by `everyapp mcp add <url>`. Its `hosts` is the MCP URL's host alone, so the key or token goes nowhere else.
 
-- `--auth bearer|header|query|basic`: an `api_key` row whose value is `<ID>_MCP_TOKEN` (`everyapp secret set TREG_MCP_TOKEN`).
+- `--auth bearer|header|query|basic`: an `api_key` row whose value is `<ID>_MCP_TOKEN` (`everyapp secret set NOTES_MCP_TOKEN`).
 - `--auth oauth`: an `oauth2-user` row from the server's discovered metadata, with `resource` and `issuer`, the client registered by DCR or given with `--client-id`, and the discovered scopes and `scopes_supported` as `tolerated`. Each member connects their own account in the app.
 - `--provider <id>`: an existing provider instead (`elevenlabs`). The URL's host must be one of its hosts (`REMOTE_MCP_PROVIDER_HOST`).
 - No flag, at a URL a provider declares as its own MCP server (`mcp.url`): that provider, with its one key sent as `mcp.auth` says. No row is written and no second setting is needed.
@@ -146,7 +146,7 @@ Keys can also be set alone with `everyapp secret set STRIPE_API_KEY`. `--from-en
 <!-- prettier-ignore-start -->
 <!-- providers-catalog:begin (generated from packages/sdk/src/internal/capabilities.ts by packages/cli/src/docs/providersCatalog.ts; pnpm -C packages/cli docs:update) -->
 
-The built-in catalog has 58 providers (49 API-key, 9 AI) and 12 OAuth presets. Where each key comes from, and a smoke request, are on [setup/providers](/docs/agent/setup/providers) and on [the provider pages](/docs/providers).
+The built-in catalog has 59 providers (50 API-key, 9 AI) and 12 OAuth presets. Where each key comes from, and a smoke request, are on [setup/providers](/docs/agent/setup/providers) and on [the provider pages](/docs/providers).
 
 | Id | Name | Kind | Settings | Hosts | How the key is sent |
 | --- | --- | --- | --- | --- | --- |
@@ -199,6 +199,7 @@ The built-in catalog has 58 providers (49 API-key, 9 AI) and 12 OAuth presets. W
 | `elevenlabs` | ElevenLabs | `api_key` | `ELEVENLABS_API_KEY` | `api.elevenlabs.io` | `xi-api-key: <ELEVENLABS_API_KEY>` |
 | `assemblyai` | AssemblyAI | `api_key` | `ASSEMBLYAI_API_KEY` | `api.assemblyai.com`, `api.eu.assemblyai.com` | `Authorization: <ASSEMBLYAI_API_KEY>` |
 | `newsapi` | NewsAPI | `api_key` | `NEWSAPI_API_KEY` | `newsapi.org` | `X-Api-Key: <NEWSAPI_API_KEY>` |
+| `treg` | Treg | `api_key` | `TREG_API_TOKEN` | `treg.to` | `X-Treg-Token: <TREG_API_TOKEN>` |
 | `openai` | OpenAI | `ai` | `OPENAI_API_KEY` | `api.openai.com` | `Authorization: Bearer <OPENAI_API_KEY>` |
 | `openrouter` | OpenRouter | `ai` | `OPENROUTER_API_KEY` | `openrouter.ai` | `Authorization: Bearer <OPENROUTER_API_KEY>` |
 | `workers-ai` | Workers AI | `ai` | `WORKERS_AI_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (set by `everyapp setup`) | `api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai` | `Authorization: Bearer <WORKERS_AI_API_TOKEN>` |

@@ -160,7 +160,7 @@ import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 type Role = "owner" | "admin" | "member";
 
 const GATEWAY = "https://gateway.example.com";
-const TREG = "https://treg.to/mcp/";
+const TREG = "https://treg.example/mcp/";
 
 let db: TestDb;
 let acme: string;
@@ -254,14 +254,14 @@ async function addOAuthTreg() {
     if (input.includes("oauth-protected-resource")) {
       return Response.json({
         resource: TREG,
-        authorization_servers: ["https://auth.treg.to"],
+        authorization_servers: ["https://auth.treg.example"],
       });
     }
     if (input.includes("oauth-authorization-server")) {
       return Response.json({
-        issuer: "https://auth.treg.to",
-        authorization_endpoint: "https://auth.treg.to/authorize",
-        token_endpoint: "https://auth.treg.to/token",
+        issuer: "https://auth.treg.example",
+        authorization_endpoint: "https://auth.treg.example/authorize",
+        token_endpoint: "https://auth.treg.example/token",
         code_challenge_methods_supported: ["S256"],
       });
     }
@@ -453,7 +453,7 @@ describe("adding a remote MCP server", () => {
         { url, auth: { kind: "none" } },
         null,
       );
-    await expect(add("http://treg.to/mcp")).rejects.toMatchObject({
+    await expect(add("http://treg.example/mcp")).rejects.toMatchObject({
       name: "PublicError",
       code: "REMOTE_MCP_URL_REFUSED",
       message: "the URL must be https://",
@@ -514,7 +514,7 @@ describe("adding a remote MCP server", () => {
     expect(stored?.boundTo).toBeNull();
     expect(JSON.parse(stored!.spec)).toMatchObject({
       id: "treg-mcp",
-      hosts: ["treg.to"],
+      hosts: ["treg.example"],
       auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
       tags: ["mcp"],
     });
@@ -701,7 +701,7 @@ describe("adding a remote MCP server", () => {
       ),
     ).rejects.toMatchObject({
       code: "REMOTE_MCP_PROVIDER_HOST",
-      message: expect.stringContaining("not to treg.to"),
+      message: expect.stringContaining("not to treg.example"),
     });
     const added = await McpAppService.add(
       as(admin, "admin"),
@@ -808,35 +808,81 @@ describe("adding a remote MCP server", () => {
     expect(other).toMatchObject({ authKind: "none", provider: null });
   });
 
+  it("adds Treg's MCP server on the built-in Treg provider's one key, though its host is the API's", async () => {
+    const url = "https://treg.to/mcp/";
+    // The key isn't set yet: the one command that sets it, for the API and the MCP server both.
+    const first = await McpAppService.add(
+      as(admin, "admin"),
+      { url, auth: { kind: "none" } },
+      null,
+    );
+    expect(first).toMatchObject({
+      appId: "treg",
+      authKind: "provider",
+      credentialKind: "provider",
+      provider: "treg",
+      secret: "TREG_API_TOKEN",
+      setupCommand: "pnpm everyapp secret set TREG_API_TOKEN",
+      toolCount: null,
+    });
+    expect(await db.select().from(providers)).toEqual([]);
+    // Set: nothing more to do, and the tools are listed in the request.
+    hoisted.env["TREG_API_TOKEN"] = "tk";
+    const second = await McpAppService.add(
+      as(admin, "admin"),
+      { url, id: "treg-two", auth: { kind: "none" } },
+      null,
+    );
+    expect(second).toMatchObject({
+      provider: "treg",
+      setupCommand: null,
+      toolCount: 3,
+    });
+    // The rest of the host is the API's.
+    await expect(
+      McpAppService.add(
+        as(admin, "admin"),
+        {
+          url: "https://treg.to/call/treg.people.enrich",
+          id: "treg-api",
+          auth: { kind: "none" },
+        },
+        null,
+      ),
+    ).rejects.toMatchObject({ code: "REMOTE_MCP_URL_REFUSED" });
+  });
+
   it("adds an OAuth server: discovery and client registration from the Gateway, the client sealed and bound to the row, a connect link", async () => {
     const fetched: string[] = [];
     let registered: Record<string, unknown> | null = null;
     setMcpOAuthFetchForTests(async (input, init) => {
       fetched.push(input);
       if (
-        input.startsWith("https://treg.to/.well-known/oauth-protected-resource")
+        input.startsWith(
+          "https://treg.example/.well-known/oauth-protected-resource",
+        )
       ) {
         return Response.json({
           resource: TREG,
-          authorization_servers: ["https://auth.treg.to"],
+          authorization_servers: ["https://auth.treg.example"],
           scopes_supported: ["mcp"],
         });
       }
       if (
         input.startsWith(
-          "https://auth.treg.to/.well-known/oauth-authorization-server",
+          "https://auth.treg.example/.well-known/oauth-authorization-server",
         )
       ) {
         return Response.json({
-          issuer: "https://auth.treg.to",
-          authorization_endpoint: "https://auth.treg.to/authorize",
-          token_endpoint: "https://auth.treg.to/token",
-          registration_endpoint: "https://auth.treg.to/register",
+          issuer: "https://auth.treg.example",
+          authorization_endpoint: "https://auth.treg.example/authorize",
+          token_endpoint: "https://auth.treg.example/token",
+          registration_endpoint: "https://auth.treg.example/register",
           code_challenge_methods_supported: ["S256"],
           token_endpoint_auth_methods_supported: ["client_secret_basic"],
         });
       }
-      if (input === "https://auth.treg.to/register") {
+      if (input === "https://auth.treg.example/register") {
         registered = JSON.parse(String(init.body)) as Record<string, unknown>;
         return Response.json(
           {
@@ -862,7 +908,7 @@ describe("adding a remote MCP server", () => {
       setupCommand: null,
       connectPath:
         "/connect/treg-mcp?app=treg&return=%2Fconnections%2Faccounts",
-      oauth: { issuer: "https://auth.treg.to", registered: "dcr" },
+      oauth: { issuer: "https://auth.treg.example", registered: "dcr" },
       toolCount: null,
     });
     expect(registered).toMatchObject({
@@ -875,7 +921,7 @@ describe("adding a remote MCP server", () => {
       clientSecret: "TREG_MCP_CLIENT_SECRET",
       inject: "basic",
       resource: TREG,
-      issuer: "https://auth.treg.to",
+      issuer: "https://auth.treg.example",
     });
     const [client] = await db.select().from(oauthClients);
     expect(client).toMatchObject({
@@ -883,7 +929,7 @@ describe("adding a remote MCP server", () => {
       clientId: "dcr-client",
     });
     expect(client!.clientSecretEnc).not.toContain("dcr-secret-value");
-    expect(client!.boundTo).toContain("https://auth.treg.to");
+    expect(client!.boundTo).toContain("https://auth.treg.example");
     // The answer never carries the client's secret.
     expect(JSON.stringify(added)).not.toContain("dcr-secret-value");
     // Each member connects their own: the dialog reads it.
@@ -964,18 +1010,18 @@ describe("adding a remote MCP server", () => {
       if (input.includes("oauth-protected-resource")) {
         return Response.json({
           resource: TREG,
-          authorization_servers: ["https://auth.treg.to"],
+          authorization_servers: ["https://auth.treg.example"],
         });
       }
       if (
         input.startsWith(
-          "https://auth.treg.to/.well-known/oauth-authorization-server",
+          "https://auth.treg.example/.well-known/oauth-authorization-server",
         )
       ) {
         return Response.json({
-          issuer: "https://auth.treg.to",
-          authorization_endpoint: "https://auth.treg.to/authorize",
-          token_endpoint: "https://auth.treg.to/token",
+          issuer: "https://auth.treg.example",
+          authorization_endpoint: "https://auth.treg.example/authorize",
+          token_endpoint: "https://auth.treg.example/token",
           code_challenge_methods_supported: ["S256"],
         });
       }
@@ -1014,7 +1060,7 @@ describe("adding a remote MCP server", () => {
       null,
     );
     expect(added.oauth).toEqual({
-      issuer: "https://auth.treg.to",
+      issuer: "https://auth.treg.example",
       registered: "pasted",
     });
     const [client] = await db.select().from(oauthClients);
@@ -1484,7 +1530,7 @@ describe("showing an MCP app", () => {
       name: "treg",
       status: "active",
       kind: "remote",
-      origin: "https://treg.to",
+      origin: "https://treg.example",
       authKind: "none",
       authLabel: "no credential",
       credential: { kind: "none", name: null, set: false, state: "none" },
@@ -1685,7 +1731,7 @@ describe("the events an MCP app's changes announce", () => {
     await expect(
       McpAppService.add(
         as(admin, "admin"),
-        { url: "http://treg.to/mcp/", auth: { kind: "none" } },
+        { url: "http://treg.example/mcp/", auth: { kind: "none" } },
         null,
       ),
     ).rejects.toMatchObject({ code: "REMOTE_MCP_URL_REFUSED" });

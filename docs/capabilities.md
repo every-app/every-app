@@ -194,6 +194,7 @@ own (`pnpm everyapp provider list`):
 | `elevenlabs` | ElevenLabs | `ELEVENLABS_API_KEY` | `api.elevenlabs.io` | `xi-api-key: <ELEVENLABS_API_KEY>` | `read` | GET, POST |
 | `assemblyai` | AssemblyAI | `ASSEMBLYAI_API_KEY` | `api.assemblyai.com`, `api.eu.assemblyai.com` | `Authorization: <ASSEMBLYAI_API_KEY>` | `read`, `write` | GET, POST; with `access: "write"` also DELETE |
 | `newsapi` | NewsAPI | `NEWSAPI_API_KEY` | `newsapi.org` | `X-Api-Key: <NEWSAPI_API_KEY>` | `read` | GET |
+| `treg` | Treg | `TREG_API_TOKEN` | `treg.to` | `X-Treg-Token: <TREG_API_TOKEN>` | `read` | GET, POST |
 
 <!-- api-key-providers:end -->
 

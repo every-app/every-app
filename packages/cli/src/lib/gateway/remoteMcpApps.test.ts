@@ -199,11 +199,11 @@ describe("addRemoteMcpApp", () => {
       .prepare("INSERT INTO remote_mcp_tools (app_row_id, organization_id, upstream_name, risk_hint, listed, listed_at) VALUES (?, ?, 'stale', 'unknown', 1, 0)")
       .run(plan.app.id, organization.id);
 
-    const again = await add({ url: "https://treg.to/v2/mcp", now: NOW + 2 });
+    const again = await add({ url: "https://treg.example/v2/mcp", auth: { kind: "none" }, now: NOW + 2 });
     expect(again.plan.kind).toBe("revived");
     expect(again.plan.app.id).toBe(plan.app.id);
     expect(row("treg")).toMatchObject({ status: "active" });
-    expect(manifestOf("treg").remote.url).toBe("https://treg.to/v2/mcp");
+    expect(manifestOf("treg").remote.url).toBe("https://treg.example/v2/mcp");
     expect(sqlite.all("SELECT * FROM remote_mcp_tools WHERE app_row_id = ?", plan.app.id)).toEqual([]);
     expect(sqlite.all("SELECT * FROM app_tool_catalogs WHERE app_row_id = ?", plan.app.id)).toEqual([]);
     expect(grantees("treg")).toEqual([]);
@@ -505,7 +505,7 @@ describe("the events adding, turning on and off and removing a remote MCP app qu
     expect(await setMcpAppStatus(db(), await current(), "active", BEN, NOW + 4)).toEqual({ changed: true });
     expect(await removeMcpApp(db(), await current(), BEN, NOW + 5)).toEqual({ removed: true });
     expect(await removeMcpApp(db(), await current(), BEN, NOW + 6)).toEqual({ removed: false });
-    await add({ url: "https://treg.to/v2/mcp", now: NOW + 7 });
+    await add({ url: "https://treg.example/v2/mcp", auth: { kind: "none" }, now: NOW + 7 });
 
     const app = { id: "treg", rowId: plan.app.id, name: "treg" };
     const ben = { kind: "operator", id: "ben@example.com", email: "ben@example.com" };

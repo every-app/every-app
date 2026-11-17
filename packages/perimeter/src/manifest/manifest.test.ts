@@ -542,7 +542,7 @@ describe("capabilities manifest field", () => {
     [
       "an unknown capability",
       { nope: { access: "read" } },
-      /capabilities\.nope: unknown capability \(the gateway offers: dataforseo, context, email, members, stripe, .*, newsapi, google-workspace, microsoft-365, slack, .*, spotify\)/,
+      /capabilities\.nope: unknown capability \(the gateway offers: dataforseo, context, email, members, stripe, .*, newsapi, treg, google-workspace, microsoft-365, slack, .*, spotify\)/,
     ],
     [
       "an access level the capability doesn't offer",

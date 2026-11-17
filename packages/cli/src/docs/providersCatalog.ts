@@ -222,6 +222,11 @@ function keySection(id: string, capability: ApiKeyCapability | AiProviderCapabil
     `- **Where the key comes from:** ${capability.docs}`,
     ...(capability.api ? [`- **API reference:** ${capability.api}`] : []),
     `- **How it is sent:** ${authRequest(capability.auth)}, to ${hostsOf(capability)} only, over https`,
+    ...(capability.mode === "api_key" && capability.mcp
+      ? [
+          `- **Its MCP server:** ${code(capability.mcp.url)} takes the same key as ${authRequest({ ...capability.mcp.auth, secret: capability.auth.secret })}. ${code(`pnpm everyapp mcp add ${capability.mcp.url}`)} adds it on this key: nothing else to set`,
+        ]
+      : []),
     ...what,
     `- **Smoke request:** ${smokeOf(capability)}`,
     `- **Cost:** ${costOf(capability)}`,

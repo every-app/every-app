@@ -61,6 +61,7 @@ export const CATEGORY_OF: Readonly<Record<string, ProviderCategory>> = {
   openai: "ai",
   dataforseo: "search",
   context: "search",
+  treg: "search",
   github: "dev",
   gitlab: "dev",
   cloudflare: "dev",
@@ -257,11 +258,36 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
   context: {
     name: "Context.dev",
     blurb: "Reads web pages, JavaScript included: brand data, LinkedIn profiles and clean page text. Free up to 1,000 pages a month.",
-    usedBy: [`${CRM} for company research (required)`, `${OPENSEO} for rendered site audits (optional)`],
+    usedBy: [`${CRM} for enriching contacts and companies, with photos and logos (optional)`, `${OPENSEO} for rendered site audits (optional)`],
     key: [
       "Sign up or sign in at [context.dev](https://www.context.dev/signup), with an email, Google or GitHub.",
       "Open [API keys](https://context.dev/dashboard/api-keys) and create a key. **Full access** is fine.",
       "Copy the key. It may be shown once.",
+    ],
+  },
+  treg: {
+    blurb:
+      "One token over thousands of data APIs from many vendors: people and company enrichment, email finding, search results and scraping. Pay per call from a prepaid balance, at each vendor's own rate.",
+    usedBy: [`${CRM} for enriching contacts and companies (optional)`],
+    key: [
+      "Sign up at [treg.to](https://treg.to). New accounts get $1 of credit.",
+      "Use a team kept for this Gateway: a call can reach any vendor account the team has connected.",
+      "Install Treg's CLI and sign in (`treg login`), then create a team token: `treg org agent-new <name>`.",
+      "Copy the token.",
+    ],
+    extra: [
+      {
+        title: "Treg's MCP server",
+        body: [
+          "Treg also has an MCP server. It takes the same token, so there is nothing more to set:",
+          "",
+          "```bash",
+          "everyapp mcp add https://treg.to/mcp/",
+          "```",
+          "",
+          "Its tools then show up for your AI clients as `treg_<tool>`. More in [MCP apps](/docs/agent/mcp).",
+        ].join("\n"),
+      },
     ],
   },
   stripe: {

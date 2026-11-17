@@ -1599,6 +1599,41 @@ describe("a remote MCP app whose credential is an OAuth provider", () => {
       /holds a key for/,
     );
   });
+
+  it("lets an app's own static row reach the address a provider declares as its MCP server, and nowhere else on that host", async () => {
+    const { urlRefusal } = await import("./bind");
+    // Treg is built in and its MCP server shares the API's host: an app
+    // added with its own key before that keeps its address.
+    const ownStatic = (url: string) => {
+      const built = mcpStaticProviderSpec({
+        appId: "treg",
+        name: "Treg",
+        url,
+        kind: "bearer",
+      });
+      if (!built.ok) throw new Error(built.problem);
+      const parsed = parseProviderSpec(built.spec);
+      if (!parsed.ok) throw new Error("spec");
+      const capability = parsed.capability;
+      return urlRefusal(
+        {
+          url,
+          auth: { kind: "provider" as const, provider: "treg-mcp" },
+        } as never,
+        "treg",
+        {
+          providers: async () =>
+            ({
+              get: (id: string) => (id === "treg-mcp" ? capability : undefined),
+            }) as never,
+        },
+      );
+    };
+    expect(await ownStatic("https://treg.to/mcp/")).toBeNull();
+    expect(await ownStatic("https://treg.to/call/treg.people.enrich")).toMatch(
+      /holds a key for/,
+    );
+  });
 });
 
 describe("a remote MCP app's tool changes on the event bus", () => {

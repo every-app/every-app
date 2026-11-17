@@ -482,4 +482,86 @@ export const SEARCH = {
     },
     tags: ["news"],
   },
+  // Added 2026-11-16 from treg.to/docs, its integration guide and
+  // openapi.json, and checked with a live people lookup. Treg is itself a
+  // broker: one token over many data vendors' APIs, each call paid from a
+  // prepaid balance at the vendor's rate.
+  treg: {
+    mode: "api_key",
+    label: "Treg",
+    description:
+      "One token over thousands of data APIs, paid per call: people and company enrichment, email finding, search results, scraping and more.",
+    auth: {
+      kind: "header",
+      secret: "TREG_API_TOKEN",
+      header: "X-Treg-Token",
+    },
+    docs: "https://treg.to/docs",
+    api: "https://treg.to/integrate.md",
+    hosts: ["treg.to"],
+    // Its MCP server is on the same host and takes the same token, but
+    // only as a bearer token (X-Treg-Token answers 401 there, and Bearer
+    // answers 401 on the API; both checked live 2026-11-16).
+    mcp: { url: "https://treg.to/mcp/", auth: { kind: "bearer" } },
+    data: "per-call",
+    access: ["read"],
+    // A call is a POST (or a GET) to /call/<endpoint id>, relayed to the
+    // vendor; the lookups it is for read.
+    readMethods: ["GET", "POST"],
+    // Everything that is the Treg team's own rather than a call: its
+    // balance and top-ups, members, tokens and budgets, the vendor keys and
+    // accounts it connected, its own tools and skills, and the ledger and
+    // stored answers of every call the team made. What is left is /call,
+    // the catalog, a call's own task, hosted media, and feedback.
+    accountWidePaths: [
+      ["admin"],
+      ["auth"],
+      ["oauth"],
+      ["billing"],
+      ["orgs"],
+      ["secrets"],
+      ["connections"],
+      ["invites"],
+      ["onboard"],
+      ["referrals"],
+      ["hub"],
+      ["tools"],
+      ["skills"],
+      ["bundles"],
+      ["agents"],
+      ["cli"],
+      ["run"],
+      ["runs"],
+      ["calls"],
+      ["activity"],
+      ["usage"],
+      ["home"],
+      ["demo"],
+    ],
+    hint: "A team token from treg.to (treg org agent-new <name>, with Treg's CLI); the Gateway sends it in the X-Treg-Token header. Calls spend the team's prepaid balance. Use a team kept for this Gateway: a call can reach any vendor account the team connected.",
+    secrets: [
+      {
+        name: "TREG_API_TOKEN",
+        hint: "A team (org-scoped) token, which needs no X-Treg-Org header. A personal token from treg login may be refused until it is pinned to a team.",
+      },
+    ],
+    cost: {
+      unit: "call",
+      note: "Charged per call at the vendor's own rate, no markup, from a prepaid balance: a people lookup is $0.001 to $0.28. X-Treg-Cost-Micro reports each charge; X-Treg-Route-Max-Cost caps a call.",
+    },
+    smoke: {
+      method: "GET",
+      path: "/usage/me",
+      expect: [200],
+      free: true,
+      note: "Account-wide, so the Gateway refuses it for apps; run it from the person's terminal.",
+    },
+    example:
+      "find the job title and LinkedIn profile of the person behind an email address",
+    verified: {
+      on: "2026-11-16",
+      how: "live",
+    },
+    tags: ["enrichment", "people", "companies", "search"],
+  },
 } as const satisfies Record<string, ApiKeyCapability>;
