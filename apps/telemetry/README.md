@@ -4,7 +4,7 @@
 
 It is small on purpose, so anyone can check what we keep:
 
-- `src/index.ts` is all of it. `POST /v1/report` takes one JSON report and stores it in the D1 table in `migrations/0001_reports.sql`.
+- `src/index.ts` is all of it. `POST /v1/report` takes one JSON report and stores it in the D1 table the files in `migrations/` make.
 - It stores the report's body and nothing else: no address, no header, no time finer than the report's day.
 - A report with a key the file doesn't name, a count that isn't rounded, or an app name that isn't one of ours is refused, so a field can't be added from either side without changing this file.
 - Workers Logs are off (`wrangler.jsonc`), so Cloudflare keeps no line per request.
@@ -20,7 +20,7 @@ On Every App's main Cloudflare account, from this folder. Once:
 pnpm exec wrangler d1 create everyapp-telemetry
 ```
 
-Then, the first time and after any change here:
+Then, the first time and after any change here (`migrate` applies only the migrations the database doesn't have yet; a migration that has been applied is never edited, a change is a new file):
 
 ```sh
 pnpm migrate
@@ -37,6 +37,6 @@ Until this is deployed, Gateways that try to report fail quietly and try again t
 pnpm numbers
 ```
 
-runs `numbers.sql`: Gateways and people per day, the last 7 days as one line, use per app, versions and new Gateways per month. Counts are rounded down before they are sent, so every sum is "at least".
+runs `numbers.sql`: Gateways and people per day, the last 7 days as one line, use per app, MCP servers and their use, versions and new Gateways per month. Counts are rounded down before they are sent, so every sum is "at least".
 
 A new catalog app is added to `APPS` here, and deployed, before a Gateway release names it (the Gateway's test checks the two lists match).

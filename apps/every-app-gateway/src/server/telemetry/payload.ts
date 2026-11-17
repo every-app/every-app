@@ -3,12 +3,14 @@
  * else (https://everyapp.com/docs/telemetry; apps/telemetry receives it).
  *
  * Counts only, each rounded down to one significant digit, from tables the
- * Gateway already keeps. It reads ids, roles, timestamps and app slugs. It
+ * Gateway already keeps. It reads ids, roles, timestamps, app slugs and
+ * whether an app row is an MCP server. It
  * never reads a name, an email, a hostname, a manifest, a tool's name, a
  * secret, or `_everyapp_install` (the account, the zone and the Gateway's
  * host): payload.test.ts fails if this file names one of those columns,
  * and if the report's keys differ from apps/telemetry/example-report.json.
  */
+import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import { and, asc, eq, exists, gte, lt, lte, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
@@ -21,9 +23,8 @@ import {
 } from "@/db/schema";
 
 /**
- * The apps of ours a report names, by manifest id. Every other app is the
- * word "other": we see that an app of the operator's own is used, never
- * what it is. apps/telemetry's `APPS` is the same list plus "other".
+ * The apps of ours a report names, by manifest id: the ones our public
+ * docs list. apps/telemetry's `APPS` is the same list plus "other".
  */
 export const NAMED_APPS: readonly string[] = [
   "openseo",
@@ -31,7 +32,14 @@ export const NAMED_APPS: readonly string[] = [
   "openmail",
   "analytics",
   "scribe",
+  "repolens",
 ];
+
+/**
+ * Every other deployed app: the operator's own, and nothing else. We see
+ * that an app of theirs is used, never what it is.
+ */
+const OTHER = "other";
 
 /** `members` and the active counts stop here: a very large team would stand out. */
 const MEMBER_CAP = 1000;
@@ -39,6 +47,11 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 interface AppUse {
   app: string;
+  active_members: number;
+  tool_calls: number;
+}
+
+interface McpUse {
   active_members: number;
   tool_calls: number;
 }
@@ -56,8 +69,14 @@ export interface UsageReport {
   members: number;
   active_members_1d: number;
   active_members_7d: number;
+  /** Deployed apps that are active. MCP servers are not among them. */
   apps: number;
+  /** MCP servers connected and turned on: remote ones by URL and the built-in ones. */
+  mcp_servers: number;
+  /** One row per app of ours used that day, and one, "other", for all of the operator's own. */
   app_use_1d: AppUse[];
+  /** Use of the MCP servers that day, all of them together and none named. */
+  mcp_use_1d: McpUse;
 }
 
 /** Rounded down to one significant digit: 7 stays 7, 37 is 30, 4812 is 4000. */
@@ -120,12 +139,22 @@ async function activePeople(
   );
 }
 
-/** Use per app on `day`: the members behind its tool calls and provider calls, and its tool calls. */
-async function appUse(day: string): Promise<AppUse[]> {
+/**
+ * Use on `day`, by what was used: each app of ours by name, the
+ * operator's own apps together as "other", and the MCP servers together.
+ * For each, the members behind its tool calls and provider calls, and its
+ * tool calls. A tool call counts whichever way the AI client reached the
+ * tool (the app's own MCP endpoint or the Gateway's). A call with no app
+ * behind it (the Gateway's own tools, or an app whose row is gone) is in
+ * none of them: it is not use of an app.
+ */
+async function useByKind(
+  day: string,
+): Promise<{ apps: AppUse[]; mcp: McpUse }> {
   const from = new Date(`${day}T00:00:00Z`);
   const until = new Date(from.getTime() + DAY_MS);
-  const [slugs, toolCalls, providerCalls] = await Promise.all([
-    db.select({ id: apps.id, slug: apps.appSlug }).from(apps),
+  const [rows, toolCalls, providerCalls] = await Promise.all([
+    db.select({ id: apps.id, slug: apps.appSlug, tier: apps.tier }).from(apps),
     db
       .select({
         appRowId: mcpToolCalls.appRowId,
@@ -137,7 +166,6 @@ async function appUse(day: string): Promise<AppUse[]> {
         and(
           gte(mcpToolCalls.createdAt, from),
           lt(mcpToolCalls.createdAt, until),
-          eq(mcpToolCalls.surface, "app"),
           eq(mcpToolCalls.decision, "allowed"),
         ),
       )
@@ -150,34 +178,46 @@ async function appUse(day: string): Promise<AppUse[]> {
       .from(usageDaily)
       .where(eq(usageDaily.day, day)),
   ]);
-  const slugOf = new Map(slugs.map((row) => [row.id, row.slug]));
-  const named = (appRowId: string | null) => {
-    const slug = appRowId ? slugOf.get(appRowId) : undefined;
-    return slug && NAMED_APPS.includes(slug) ? slug : "other";
-  };
+  const MCP = "mcp servers";
+  const kindOf = new Map(
+    rows.map((row) => [
+      row.id,
+      row.tier === PROVIDER_APP_TIER
+        ? MCP
+        : NAMED_APPS.includes(row.slug)
+          ? row.slug
+          : OTHER,
+    ]),
+  );
   const use = new Map<string, { people: Set<string>; calls: number }>();
-  const entry = (app: string) => {
-    const found = use.get(app) ?? { people: new Set<string>(), calls: 0 };
-    use.set(app, found);
+  const entry = (appRowId: string | null) => {
+    const kind = appRowId ? kindOf.get(appRowId) : undefined;
+    if (!kind) return null;
+    const found = use.get(kind) ?? { people: new Set<string>(), calls: 0 };
+    use.set(kind, found);
     return found;
   };
   for (const row of toolCalls) {
-    const app = entry(named(row.appRowId));
-    app.people.add(row.user);
-    app.calls += Number(row.calls);
+    const used = entry(row.appRowId);
+    if (!used) continue;
+    used.people.add(row.user);
+    used.calls += Number(row.calls);
   }
   for (const row of providerCalls) {
-    const app = entry(named(row.appRowId));
     // '' is the app's own background work: use, with nobody behind it.
-    if (row.user) app.people.add(row.user);
+    if (row.user) entry(row.appRowId)?.people.add(row.user);
+    else entry(row.appRowId);
   }
-  return [...NAMED_APPS, "other"]
-    .filter((app) => use.has(app))
-    .map((app) => ({
-      app,
-      active_members: roundDown(use.get(app)!.people.size, MEMBER_CAP),
-      tool_calls: roundDown(use.get(app)!.calls),
-    }));
+  const counts = (kind: string) => ({
+    active_members: roundDown(use.get(kind)?.people.size ?? 0, MEMBER_CAP),
+    tool_calls: roundDown(use.get(kind)?.calls ?? 0),
+  });
+  return {
+    apps: [...NAMED_APPS, OTHER]
+      .filter((app) => use.has(app))
+      .map((app) => ({ app, ...counts(app) })),
+    mcp: counts(MCP),
+  };
 }
 
 /** When the Gateway was set up: the month its first organization with an owner was made. */
@@ -215,21 +255,26 @@ export async function buildUsageReport(input: {
 }): Promise<UsageReport | null> {
   const day = reportDay(input.now);
   const weekStart = utcDay(Date.parse(`${day}T00:00:00Z`) - 6 * DAY_MS);
-  const [installed, memberCount, appCount, activeDay, activeWeek, use] =
+  const [installed, memberCount, activeRows, activeDay, activeWeek, use] =
     await Promise.all([
       installedMonth(),
       db
         .select({ count: sql<number>`count(distinct ${members.userId})` })
         .from(members),
       db
-        .select({ count: sql<number>`count(*)` })
+        .select({ tier: apps.tier, count: sql<number>`count(*)` })
         .from(apps)
-        .where(eq(apps.status, "active")),
+        .where(eq(apps.status, "active"))
+        .groupBy(apps.tier),
       activePeople(day, day),
       activePeople(weekStart, day),
-      appUse(day),
+      useByKind(day),
     ]);
   if (!installed) return null;
+  const active = (mcp: boolean) =>
+    activeRows
+      .filter((row) => (row.tier === PROVIDER_APP_TIER) === mcp)
+      .reduce((sum, row) => sum + Number(row.count), 0);
   return {
     schema: 1,
     install: input.install,
@@ -239,7 +284,9 @@ export async function buildUsageReport(input: {
     members: roundDown(Number(memberCount[0]?.count ?? 0), MEMBER_CAP),
     active_members_1d: roundDown(activeDay.size, MEMBER_CAP),
     active_members_7d: roundDown(activeWeek.size, MEMBER_CAP),
-    apps: roundDown(Number(appCount[0]?.count ?? 0)),
-    app_use_1d: use,
+    apps: roundDown(active(false)),
+    mcp_servers: roundDown(active(true)),
+    app_use_1d: use.apps,
+    mcp_use_1d: use.mcp,
   };
 }

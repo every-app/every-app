@@ -6,8 +6,8 @@
 // header); nothing here reads it, and Workers Logs are off (wrangler.jsonc) so it isn't logged.
 // A body with a key this file doesn't name is refused, so a field can't be added quietly.
 
-/** The apps of ours a report may name. Every other app is "other". */
-const APPS = new Set(["openseo", "crm", "openmail", "analytics", "scribe", "other"]);
+/** The apps of ours a report may name. "other" is every app of the operator's own, together. */
+const APPS = new Set(["openseo", "crm", "openmail", "analytics", "scribe", "repolens", "other"]);
 /** `members` and `active_members_7d` are capped here before they are sent. */
 const MEMBER_CAP = 1000;
 const MAX_BODY_BYTES = 4096;
@@ -15,8 +15,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Reports are kept this long (the cron below deletes older ones). */
 const KEEP_MONTHS = 25;
 
-const TOP_KEYS = ["schema", "install", "day", "version", "installed", "members", "active_members_1d", "active_members_7d", "apps", "app_use_1d"];
+const TOP_KEYS = ["schema", "install", "day", "version", "installed", "members", "active_members_1d", "active_members_7d", "apps", "mcp_servers", "app_use_1d", "mcp_use_1d"];
 const APP_USE_KEYS = ["app", "active_members", "tool_calls"];
+const MCP_USE_KEYS = ["active_members", "tool_calls"];
 
 export interface AppUse {
   app: string;
@@ -32,8 +33,12 @@ export interface Report {
   members: number;
   active_members_1d: number;
   active_members_7d: number;
+  /** Deployed apps. MCP servers are counted in `mcp_servers`, not here. */
   apps: number;
+  mcp_servers: number;
   app_use_1d: AppUse[];
+  /** Use of all the MCP servers together; none is named. */
+  mcp_use_1d: { active_members: number; tool_calls: number };
 }
 
 /** A count as a Gateway sends it: a whole number rounded down to one significant digit. */
@@ -64,6 +69,9 @@ export function parseReport(body: unknown, now: number): Report | string {
   if (!isRoundedCount(body.active_members_1d, MEMBER_CAP)) return "active_members_1d";
   if (!isRoundedCount(body.active_members_7d, MEMBER_CAP)) return "active_members_7d";
   if (!isRoundedCount(body.apps)) return "apps";
+  if (!isRoundedCount(body.mcp_servers)) return "mcp_servers";
+  const mcp = body.mcp_use_1d;
+  if (!hasExactly(mcp, MCP_USE_KEYS) || !isRoundedCount(mcp.active_members, MEMBER_CAP) || !isRoundedCount(mcp.tool_calls)) return "mcp_use_1d";
   const use = body.app_use_1d;
   if (!Array.isArray(use) || use.length > APPS.size) return "app_use_1d";
   const seen = new Set<string>();
@@ -106,9 +114,22 @@ export async function handle(request: Request, env: Env, now = Date.now()): Prom
   if (typeof report === "string") return text(400, `Refused: ${report}\n`);
   // The first report for a Gateway's day wins; a second one changes nothing.
   await env.DB.prepare(
-    "INSERT OR IGNORE INTO reports (install, day, version, installed, members, active_members_1d, active_members_7d, apps, app_use_1d) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT OR IGNORE INTO reports (install, day, version, installed, members, active_members_1d, active_members_7d, apps, mcp_servers, app_use_1d, mcp_active_members_1d, mcp_tool_calls_1d) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   )
-    .bind(report.install, report.day, report.version, report.installed, report.members, report.active_members_1d, report.active_members_7d, report.apps, JSON.stringify(report.app_use_1d))
+    .bind(
+      report.install,
+      report.day,
+      report.version,
+      report.installed,
+      report.members,
+      report.active_members_1d,
+      report.active_members_7d,
+      report.apps,
+      report.mcp_servers,
+      JSON.stringify(report.app_use_1d),
+      report.mcp_use_1d.active_members,
+      report.mcp_use_1d.tool_calls,
+    )
     .run();
   return new Response(null, { status: 204 });
 }

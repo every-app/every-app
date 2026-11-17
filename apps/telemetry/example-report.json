@@ -8,8 +8,10 @@
   "active_members_1d": 3,
   "active_members_7d": 4,
   "apps": 3,
+  "mcp_servers": 2,
   "app_use_1d": [
     { "app": "openseo", "active_members": 3, "tool_calls": 40 },
     { "app": "other", "active_members": 2, "tool_calls": 7 }
-  ]
+  ],
+  "mcp_use_1d": { "active_members": 1, "tool_calls": 20 }
 }

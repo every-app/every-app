@@ -769,7 +769,7 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "workspace_telemetry_show",
     title: "Show usage reports",
     description:
-      "Show whether this Gateway sends Every App its daily usage report, and the report itself. Answers `usageReports` (on or off); `reason` when off (`off`: turned off; `setting`: the TELEMETRY_DISABLED setting is set; `unpublished`: built from source, which never sends; `unavailable`: not a self-hosted Gateway); `startsAt` while the first report is still to come; `nextReport`, the exact JSON that would be sent next (rounded counts: members, apps, people per app, AI tool calls, the version; never a domain, a name, an email or anything inside an app); `lastReport` and `lastReportedDay`; and `endpoint`, where reports go. Owners and admins.",
+      "Show whether this Gateway sends Every App its daily usage report, and the report itself. Answers `usageReports` (on or off); `reason` when off (`off`: turned off; `setting`: the TELEMETRY_DISABLED setting is set; `unpublished`: built from source, which never sends; `unavailable`: not a self-hosted Gateway); `startsAt` while the first report is still to come; `nextReport`, the exact JSON that would be sent next (rounded counts: members, apps, MCP servers, people and AI tool calls for each of Every App's own apps, for the organization's own apps together (`other`) and for the MCP servers together, the version; never a domain, a name, an email, the name of an app or MCP server of the organization's own, or anything inside an app); `lastReport` and `lastReportedDay`; and `endpoint`, where reports go. Owners and admins.",
     inputSchema: NO_INPUT,
   },
   {

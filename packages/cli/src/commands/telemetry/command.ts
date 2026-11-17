@@ -31,10 +31,11 @@ export const telemetryCommand = buildCommand({
   docs: {
     brief: "See the daily usage report this Gateway sends Every App, or turn it off",
     fullDescription: [
-      "Once a day a self-hosted Gateway sends Every App a few rounded counts: members, apps, how",
-      "many people used each app, AI tool calls, the version. Never a domain, a name, an email or",
-      "anything inside an app. `show` prints the exact report that goes next. `off` stops reports at",
-      "once and deletes the random ID they carried. The same as Manage workspace → Usage reports.",
+      "Once a day a self-hosted Gateway sends Every App a few rounded counts: members, apps, MCP",
+      "servers, how many people used them, AI tool calls, the version. Never a domain, a name, an",
+      "email or anything inside an app. `show` prints the exact report that goes next. `off` stops",
+      "reports at once and deletes the random ID they carried. The same as Manage workspace → Usage",
+      "reports.",
       "The CLI itself sends nothing.",
       "",
       "To keep reports off on a Gateway from its first minute, run setup with --no-telemetry, or with",

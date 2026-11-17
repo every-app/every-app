@@ -148,7 +148,7 @@ describe("what setup and update say about usage reports", () => {
     notice: {
       headline: "Usage reports start on 23 November for this Gateway.",
       detail:
-        "Once a day it will send Every App a few rounded counts: members, apps, how many people used each app, AI tool calls, the version. Never your domain, names, emails or anything inside an app.",
+        "Once a day it will send Every App a few rounded counts: members, apps, MCP servers, how many people used them, AI tool calls, the version. Never your domain, names, emails or anything inside an app.",
     },
   } as const;
   const UPGRADED: SetupResult = { ...INSTALLED, gateway: "upgraded", ownerCreated: false, release: "0.4.2", releaseName: "0.4.2" };
@@ -161,7 +161,7 @@ describe("what setup and update say about usage reports", () => {
         "Upgraded to 0.4.2 in 41s",
         "",
         "Usage reports start on 23 November for this Gateway.",
-        "Once a day it will send Every App a few rounded counts: members, apps, how many people used each app, AI tool calls, the version. Never your domain, names, emails or anything inside an app.",
+        "Once a day it will send Every App a few rounded counts: members, apps, MCP servers, how many people used them, AI tool calls, the version. Never your domain, names, emails or anything inside an app.",
         "",
         "See the exact report, or turn it off:",
         `  ${CLI} telemetry`,

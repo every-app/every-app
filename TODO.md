@@ -80,4 +80,4 @@ gaps are in [docs/security.md](docs/security.md), "Known gaps".
   - The edits that ride the re-pin are done (`risk` in CRM, Analytics and OpenMail; `bearer` in Birds and Talk), or in their PRs (Workout, Mission Control).
   - Knowledge Base still needs its re-pin; its source repository hasn't been found yet.
 - [ ] **Deploy the usage report receiver before the release that sends** (`apps/telemetry/README.md`, "Deploy": the D1 database, the Worker and `telemetry.everyapp.com` on the main Cloudflare account). Until it is up, Gateways fail quietly and try again the next day.
-- [ ] **A lawyer's hour on usage reports** before that release (`docs/design/2026-11-telemetry.md` section 9, on #1088): GDPR for a one-person Gateway, the zone name Cloudflare adds in transit, whether ePrivacy 5(3) reaches a Worker.
+- [ ] **A lawyer's hour on usage reports**, as a follow-up after the release (Ben, 2026-11-17: ship, follow up) (`docs/design/2026-11-telemetry.md` section 9, on #1088): GDPR for a one-person Gateway, the zone name Cloudflare adds in transit, whether ePrivacy 5(3) reaches a Worker.

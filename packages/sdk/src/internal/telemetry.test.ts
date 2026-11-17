@@ -96,7 +96,7 @@ describe("the usage report policy", () => {
     expect(usageReportNotice(existing, T0)).toEqual({
       headline: "Usage reports start on 23 November for this Gateway.",
       detail:
-        "Once a day it will send Every App a few rounded counts: members, apps, how many people used each app, AI tool calls, the version. Never your domain, names, emails or anything inside an app.",
+        "Once a day it will send Every App a few rounded counts: members, apps, MCP servers, how many people used them, AI tool calls, the version. Never your domain, names, emails or anything inside an app.",
     });
     expect(usageReportNotice(existing, T0 + 7 * DAY)).toBeNull();
     expect(

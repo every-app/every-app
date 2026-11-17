@@ -63,16 +63,15 @@ function PrivacyPolicy() {
             <p>
               Once a day, a self-hosted Gateway sends us a short usage report: a
               random ID, its version, the month it was set up, and rounded
-              counts of members, active members, apps, and use per app. It holds
-              no domain, name, email, or anything inside an app, and apps you
-              built are never named. We use it to know how many Gateways are
-              running and how many people use them.
+              counts of members, apps, MCP servers and how much they are used.
+              It holds no domain, name or email, and nothing inside an app. Apps
+              you built and MCP servers you connected are never named.
             </p>
             <p>
-              Reports go to our own receiver on Cloudflare, which already runs
-              your Gateway; no other company receives them. We keep them for 25
-              months. An owner or admin can read the exact report and turn
-              reports off under Manage workspace, or with{" "}
+              We don't store your domain or the time a report arrived, and no
+              other company receives the reports. We keep them for 25 months. An
+              owner or admin can read the exact report and turn reports off
+              under Manage workspace, or with{" "}
               <code>everyapp telemetry off</code>.{" "}
               <a
                 href="/docs/telemetry"

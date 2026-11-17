@@ -117,13 +117,31 @@ describe("usage reports (SQLite)", () => {
         description: "",
         status: "disabled",
       },
+      // Two MCP servers: a remote one by URL and the built-in one, both tier "provider".
+      {
+        id: "mcp-stripe",
+        organizationId: acme,
+        appSlug: "stripe",
+        name: "Stripe",
+        description: "",
+        tier: "provider",
+      },
+      {
+        id: "mcp-dfs",
+        organizationId: acme,
+        appSlug: "dataforseo",
+        name: "DataForSEO",
+        description: "",
+        tier: "provider",
+      },
     ]);
     const call = (
       id: string,
       userId: string,
-      appRowId: string,
+      appRowId: string | null,
       when: string,
       decision = "allowed",
+      surface = "app",
     ) => ({
       id,
       createdAt: at(when),
@@ -132,7 +150,7 @@ describe("usage reports (SQLite)", () => {
       credentialKind: "oauth",
       credentialId: "mcpc_1",
       clientName: "Claude",
-      surface: "app",
+      surface,
       appRowId,
       appSlug: "x",
       toolName: "secret_tool_name",
@@ -146,6 +164,39 @@ describe("usage reports (SQLite)", () => {
       call("p1", member, "app-pay", "2026-11-20T11:00:00"),
       call("p2", member, "app-pay", "2026-11-20T23:59:59"),
       call("blocked", member, "app-pay", "2026-11-20T12:00:00", "blocked"),
+      // Through the Gateway's own MCP endpoint, as most AI clients call: the same app's use.
+      ...Array.from({ length: 5 }, (_, i) =>
+        call(
+          `g${i}`,
+          member,
+          "app-seo",
+          "2026-11-20T13:00:00",
+          "allowed",
+          "gateway",
+        ),
+      ),
+      // MCP servers: their own count, never "other".
+      ...Array.from({ length: 21 }, (_, i) =>
+        call(
+          `m${i}`,
+          owner,
+          "mcp-stripe",
+          "2026-11-20T14:00:00",
+          "allowed",
+          "gateway",
+        ),
+      ),
+      call(
+        "m-dfs",
+        member,
+        "mcp-dfs",
+        "2026-11-20T14:30:00",
+        "allowed",
+        "gateway",
+      ),
+      // The Gateway's own tools, and a call for an app whose row is gone: use of no app.
+      call("builtin", third, null, "2026-11-20T15:00:00", "allowed", "gateway"),
+      call("gone", third, "app-gone", "2026-11-20T15:05:00"),
       // Other days don't count for the day; the 15th counts for the week.
       call("today", third, "app-seo", "2026-11-21T00:05:00"),
       call("week", third, "app-seo", "2026-11-15T10:00:00"),
@@ -187,20 +238,25 @@ describe("usage reports (SQLite)", () => {
       version: "0.4.2",
       installed: "2026-10",
       members: 3,
-      // The owner and the member; the third person only on other days.
-      active_members_1d: 2,
+      // All three called a tool that day, the third only the Gateway's own.
+      active_members_1d: 3,
       active_members_7d: 3,
-      // The disabled app isn't counted.
+      // The disabled app isn't counted, and neither are the MCP servers.
       apps: 2,
+      mcp_servers: 2,
       app_use_1d: [
-        { app: "openseo", active_members: 2, tool_calls: 30 },
+        // 37 calls on the app's endpoint and 5 on the Gateway's: 42, sent as 40.
+        { app: "openseo", active_members: 2, tool_calls: 40 },
+        // The operator's own app, and nothing else.
         { app: "other", active_members: 1, tool_calls: 2 },
       ],
+      // 22 calls to the two servers, sent as 20; neither is named.
+      mcp_use_1d: { active_members: 2, tool_calls: 20 },
     });
     expect(Object.keys(status.nextReport!)).toEqual(Object.keys(example));
     // Nothing the seed named reaches the report.
     expect(JSON.stringify(status.nextReport)).not.toMatch(
-      /acme|payroll|example\.com|secret_tool_name|Claude|User /i,
+      /acme|payroll|example\.com|secret_tool_name|Claude|User |stripe|dataforseo/i,
     );
   });
 
@@ -216,7 +272,10 @@ describe("usage reports (SQLite)", () => {
     expect(nextReport).toMatchObject({
       active_members_1d: 1,
       active_members_7d: 1,
+      apps: 0,
+      mcp_servers: 0,
       app_use_1d: [],
+      mcp_use_1d: { active_members: 0, tool_calls: 0 },
     });
   });
 
@@ -340,7 +399,7 @@ describe("usage reports (SQLite)", () => {
     expect(status.notice).toEqual({
       headline: "Usage reports start on 17 November for this Gateway.",
       detail:
-        "Once a day it will send Every App a few rounded counts: members, apps, how many people used each app, AI tool calls, the version. Never your domain, names, emails or anything inside an app.",
+        "Once a day it will send Every App a few rounded counts: members, apps, MCP servers, how many people used them, AI tool calls, the version. Never your domain, names, emails or anything inside an app.",
     });
     expect(
       await runUsageReport(PUBLISHED, new Date(SINCE + 7 * DAY + HOUR), send),

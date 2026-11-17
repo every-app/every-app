@@ -31,6 +31,9 @@ describe("the usage report", () => {
     expect(keysOf("AppUse")).toEqual(
       Object.keys((example["app_use_1d"] as object[])[0]!),
     );
+    expect(keysOf("McpUse")).toEqual(
+      Object.keys(example["mcp_use_1d"] as object),
+    );
   });
 
   it("names only the apps the receiver accepts", () => {

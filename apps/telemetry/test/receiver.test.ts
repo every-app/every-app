@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
 import { handle, parseReport, prune, type D1, type Env } from "../src/index";
@@ -11,7 +11,8 @@ const NOW = Date.parse("2026-11-21T00:17:00Z");
 /** The real schema on an in-memory SQLite, behind the slice of D1 the Worker uses. */
 function database(): { d1: D1; sqlite: DatabaseSync } {
   const sqlite = new DatabaseSync(":memory:");
-  sqlite.exec(file("migrations/0001_reports.sql"));
+  // Every migration in order, as `wrangler d1 migrations apply` runs them.
+  for (const name of readdirSync(new URL("../migrations", import.meta.url)).sort()) sqlite.exec(file(`migrations/${name}`));
   const d1: D1 = {
     prepare(sql) {
       let values: unknown[] = [];
@@ -64,7 +65,10 @@ describe("the receiver", () => {
         active_members_1d: 3,
         active_members_7d: 4,
         apps: 3,
+        mcp_servers: 2,
         app_use_1d: JSON.stringify(example.app_use_1d),
+        mcp_active_members_1d: 1,
+        mcp_tool_calls_1d: 20,
       },
     ]);
     // No address, zone name or receive time has a column to go in.
@@ -112,6 +116,18 @@ describe("the receiver", () => {
     expect(typeof parseReport({ ...example, app_use_1d: [] }, NOW)).toBe("object");
   });
 
+  it("takes MCP servers apart from apps, as counts only", () => {
+    expect(parseReport({ ...example, mcp_servers: 12 }, NOW)).toBe("mcp_servers");
+    const { mcp_servers: _servers, ...none } = example;
+    expect(parseReport(none, NOW)).toBe("keys");
+    expect(parseReport({ ...example, mcp_use_1d: { active_members: 1, tool_calls: 21 } }, NOW)).toBe("mcp_use_1d");
+    expect(parseReport({ ...example, mcp_use_1d: { active_members: 1, tool_calls: 20, servers: ["stripe"] } }, NOW)).toBe("mcp_use_1d");
+    expect(parseReport({ ...example, mcp_use_1d: [] }, NOW)).toBe("mcp_use_1d");
+    expect(typeof parseReport({ ...example, mcp_servers: 0, mcp_use_1d: { active_members: 0, tool_calls: 0 } }, NOW)).toBe("object");
+    // An MCP server is never a row of app_use_1d.
+    expect(parseReport({ ...example, app_use_1d: [{ app: "mcp", active_members: 1, tool_calls: 1 }] }, NOW)).toBe("app_use_1d");
+  });
+
   it("refuses a malformed install ID, version or month", () => {
     expect(parseReport({ ...example, install: "5F0C1E9A7B3D4E21A8C6D2F4B9E07A13" }, NOW)).toBe("install");
     expect(parseReport({ ...example, install: "acme.com" }, NOW)).toBe("install");
@@ -135,6 +151,16 @@ describe("the receiver", () => {
     expect(rows()).toHaveLength(1);
     await prune(env, Date.parse("2028-12-21T00:00:00Z"));
     expect(rows()).toHaveLength(0);
+  });
+
+  it("adds the MCP columns to a table that already holds the first migration's rows", () => {
+    const old = new DatabaseSync(":memory:");
+    old.exec(file("migrations/0001_reports.sql"));
+    old.prepare("INSERT INTO reports VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run("a".repeat(32), "2026-11-19", "0.4.2", "2026-11", 7, 3, 4, 3, "[]");
+    old.exec(file("migrations/0002_mcp_servers.sql"));
+    expect(old.prepare("SELECT mcp_servers, mcp_active_members_1d, mcp_tool_calls_1d FROM reports").all()).toEqual([
+      { mcp_servers: 0, mcp_active_members_1d: 0, mcp_tool_calls_1d: 0 },
+    ]);
   });
 
   it("never reads a request header or logs", () => {

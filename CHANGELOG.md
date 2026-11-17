@@ -17,14 +17,16 @@ Until now nothing was sent to us, and the docs said so. From this release a self
   "active_members_1d": 3,
   "active_members_7d": 4,
   "apps": 3,
+  "mcp_servers": 2,
   "app_use_1d": [
     { "app": "openseo", "active_members": 3, "tool_calls": 40 },
     { "app": "other", "active_members": 2, "tool_calls": 7 }
-  ]
+  ],
+  "mcp_use_1d": { "active_members": 1, "tool_calls": 20 }
 }
 ```
 
-Counts are rounded down to one significant digit. `install` is a random ID. No domain, account, name, email, tool name or content is in it, and an app of your own is the word `other`. Reports go to our own receiver (`apps/telemetry`, one file), and to no other company. [What it sends](https://everyapp.com/docs/telemetry).
+Counts are rounded down to one significant digit. `install` is a random ID. No domain, account, name, email, tool name or content is in it. Our own apps are named; all the apps of your own are one row, `other`; MCP servers are counted apart, together, and never named. Reports go to our own receiver (`apps/telemetry`, one file), and to no other company. [What it sends](https://everyapp.com/docs/telemetry).
 
 - **On by default.** A new Gateway sends its first report a day after setup. A Gateway that existed before this release sends its first report 7 days after it is updated: `everyapp update` prints a notice with the date, and Manage workspace shows it until then.
 - **See it:** Manage workspace → Usage reports shows the next report exactly as it goes and the last one sent. `everyapp telemetry` prints the same; `everyapp_workspace_telemetry_show` is the tool.

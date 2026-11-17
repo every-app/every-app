@@ -111,7 +111,7 @@ export function usageReportDate(time: number): string {
 
 /** What a report holds, in one sentence, wherever a notice says it. */
 export const USAGE_REPORT_CONTENTS =
-  "a few rounded counts: members, apps, how many people used each app, AI tool calls, the version. Never your domain, names, emails or anything inside an app.";
+  "a few rounded counts: members, apps, MCP servers, how many people used them, AI tool calls, the version. Never your domain, names, emails or anything inside an app.";
 
 export const USAGE_REPORT_DOCS_URL = "https://everyapp.com/docs/telemetry";
 
