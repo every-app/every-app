@@ -603,7 +603,7 @@ describe("the treg entry", () => {
   it("sends a team token in X-Treg-Token to treg.to only", () => {
     expect(treg.hosts).toEqual(["treg.to"]);
     expect(
-      authorizationFor(treg, { TREG_TOKEN: "t" })?.headers["x-treg-token"],
+      authorizationFor(treg, { TREG_API_TOKEN: "t" })?.headers["x-treg-token"],
     ).toBe("t");
   });
 

@@ -177,7 +177,7 @@ The built-in catalog has 59 providers (50 API-key, 9 AI) and 12 OAuth presets. W
 | `elevenlabs` | ElevenLabs | `api_key` | `ELEVENLABS_API_KEY` | `api.elevenlabs.io` | `xi-api-key: <ELEVENLABS_API_KEY>` |
 | `assemblyai` | AssemblyAI | `api_key` | `ASSEMBLYAI_API_KEY` | `api.assemblyai.com`, `api.eu.assemblyai.com` | `Authorization: <ASSEMBLYAI_API_KEY>` |
 | `newsapi` | NewsAPI | `api_key` | `NEWSAPI_API_KEY` | `newsapi.org` | `X-Api-Key: <NEWSAPI_API_KEY>` |
-| `treg` | treg | `api_key` | `TREG_TOKEN` | `treg.to` | `X-Treg-Token: <TREG_TOKEN>` |
+| `treg` | treg | `api_key` | `TREG_API_TOKEN` | `treg.to` | `X-Treg-Token: <TREG_API_TOKEN>` |
 | `openai` | OpenAI | `ai` | `OPENAI_API_KEY` | `api.openai.com` | `Authorization: Bearer <OPENAI_API_KEY>` |
 | `openrouter` | OpenRouter | `ai` | `OPENROUTER_API_KEY` | `openrouter.ai` | `Authorization: Bearer <OPENROUTER_API_KEY>` |
 | `workers-ai` | Workers AI | `ai` | `WORKERS_AI_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (set by `everyapp setup`) | `api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai` | `Authorization: Bearer <WORKERS_AI_API_TOKEN>` |

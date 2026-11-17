@@ -486,6 +486,9 @@ export const SEARCH = {
   // OpenAPI spec (treg.to/openapi.json). One token reaches thousands of
   // other providers' endpoints (DataForSEO, SERP, enrichment, scraping),
   // billed per call to the team's prepaid treg balance.
+  // The setting is TREG_API_TOKEN, the name Open CRM's bundled spec
+  // (every-app/open-crm, .everyapp/providers/treg.json) already set on
+  // Gateways: this entry supersedes that row and keeps its key.
   treg: {
     mode: "api_key",
     label: "treg",
@@ -493,7 +496,7 @@ export const SEARCH = {
       "One token for thousands of data endpoints across many providers: SEO and SERP, backlinks, social, people and company enrichment, scraping, billed per call.",
     auth: {
       kind: "header",
-      secret: "TREG_TOKEN",
+      secret: "TREG_API_TOKEN",
       header: "X-Treg-Token",
     },
     docs: "https://treg.to",
@@ -517,7 +520,7 @@ export const SEARCH = {
     hint: "A team API key from the treg dashboard (or `treg org agent-new <name>`), in a treg team kept for this Gateway with no tools or connected accounts of its own; the Gateway sends it in the X-Treg-Token header. Calls on treg's keys are paid from the team's prepaid balance.",
     secrets: [
       {
-        name: "TREG_TOKEN",
+        name: "TREG_API_TOKEN",
         hint: "A team-scoped API key or agent token from treg, never a personal sign-in token.",
       },
     ],
