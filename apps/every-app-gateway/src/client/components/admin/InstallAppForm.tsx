@@ -20,6 +20,7 @@ import { Input } from "@/client/components/ui/input";
 import { Spinner } from "@/client/components/ui/spinner";
 import { useSession } from "@/client/hooks/useSession";
 import { signOutAndForget } from "@/client/sign-out";
+import { deployStalled } from "@/client/lib/appStatus";
 import { adminAppsCollection } from "@/client/tanstack-db";
 import { isAppInstallUrl, OSS_NEW_RELEASE_URL } from "@/schemas/app-install";
 import { revalidateLogic } from "@tanstack/react-form";
@@ -84,22 +85,22 @@ export function InstallAppForm({
   const jobId = install.data?.id ?? null;
 
   // Self-hosted requests stay open for the install; hosted jobs may
-  // answer early and are polled until they finish.
+  // answer early. Either is polled until the app is live, not only until
+  // the deploy finishes: the app stays `binding` until the Gateway reaches
+  // its Worker, and opening it before then only answers "app_deploying".
   const { data: polled, error: pollError } = useQuery({
     queryKey: ["admin", "deploys", jobId, install.variables?.organizationId],
     queryFn: () => fetchInstallJob(jobId!, install.variables!.organizationId),
-    enabled: jobId !== null && install.data?.status === "running",
+    enabled: jobId !== null && settling(install.data),
     refetchInterval: (query) =>
-      query.state.data && query.state.data.status !== "running"
-        ? false
-        : POLL_MS,
+      settling(query.state.data ?? install.data) ? POLL_MS : false,
   });
   const job: InstallJob | undefined = polled ?? install.data;
-  const finished = polled !== undefined && polled.status !== "running";
+  const settled = polled !== undefined && !settling(polled);
   useEffect(() => {
     // The row's status and version changed with the deploy.
-    if (finished) void adminAppsCollection.utils.refetch();
-  }, [finished]);
+    if (settled) void adminAppsCollection.utils.refetch();
+  }, [settled]);
 
   const busy = install.isPending || job?.status === "running";
   // Installing or installed: the release and the values it took are settled.
@@ -574,12 +575,55 @@ function Refusal({ error }: { error: Error }) {
   );
 }
 
+/**
+ * Whether the page keeps polling the job: while it runs, and after it
+ * succeeds while its app is `binding` (until the deploy stalls, when a
+ * visit may be what finishes it).
+ */
+function settling(job: InstallJob | undefined): boolean {
+  if (job?.status === "running") return true;
+  return job?.status === "succeeded" && startingApp(job) && !stalled(job);
+}
+
+/** A succeeded job whose app has a hostname but isn't live yet. */
+function startingApp(job: InstallJob): boolean {
+  return job.app?.status === "binding" && job.app.hostname !== null;
+}
+
+function stalled(job: InstallJob): boolean {
+  return deployStalled({
+    status: job.app?.status ?? "",
+    updatedAt: job.finishedAt,
+  });
+}
+
 function JobStatus({ job }: { job: InstallJob }) {
   if (job.status === "running") {
     return (
       <p className="flex items-center gap-2 text-sm text-muted-foreground">
         <Spinner /> Deploying {job.app?.id ?? "the app"}…
       </p>
+    );
+  }
+  if (job.status === "succeeded" && startingApp(job) && !stalled(job)) {
+    return (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner /> Starting {job.app!.id}…
+      </p>
+    );
+  }
+  if (job.status === "succeeded" && startingApp(job)) {
+    return (
+      <Alert variant="warning">
+        <CircleAlert />
+        <AlertDescription className="flex flex-col gap-1">
+          <span>
+            {job.app!.id} is taking longer than usual to start. Opening it may
+            finish the deploy.
+          </span>
+          <AppLink app={job.app!} />
+        </AlertDescription>
+      </Alert>
     );
   }
   if (job.status === "failed") {
@@ -598,15 +642,7 @@ function JobStatus({ job }: { job: InstallJob }) {
       <AlertDescription className="flex flex-col gap-1">
         <span>{job.app?.id ?? "The app"} is installed.</span>
         {job.app?.url ? (
-          <a
-            href={job.app.url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 font-mono text-foreground underline underline-offset-4"
-          >
-            {job.app.hostname}
-            <ExternalLink className="size-3.5" />
-          </a>
+          <AppLink app={job.app} />
         ) : (
           <span>
             It has no hostname yet: this gateway has no third-party domain.
@@ -614,5 +650,19 @@ function JobStatus({ job }: { job: InstallJob }) {
         )}
       </AlertDescription>
     </Alert>
+  );
+}
+
+function AppLink({ app }: { app: NonNullable<InstallJob["app"]> }) {
+  return (
+    <a
+      href={app.url!}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1 font-mono text-foreground underline underline-offset-4"
+    >
+      {app.hostname}
+      <ExternalLink className="size-3.5" />
+    </a>
   );
 }

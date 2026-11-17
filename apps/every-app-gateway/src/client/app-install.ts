@@ -11,7 +11,15 @@ export interface InstallJob {
   status: "running" | "succeeded" | "failed";
   error: { code: string; message: string } | null;
   source: { repoUrl: string; tag: string | null; version: string } | null;
-  app: { id: string; hostname: string | null; url: string | null } | null;
+  /** When the deploy finished: a succeeded job's app may still be `binding` for a while after. */
+  finishedAt: string | null;
+  /** The app's row as it is now: `binding` until the Gateway reaches its Worker, then `active`. */
+  app: {
+    id: string;
+    hostname: string | null;
+    url: string | null;
+    status: string;
+  } | null;
 }
 
 interface AppInstallContext {
