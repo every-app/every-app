@@ -4,9 +4,7 @@ From the team behind [OpenSEO](https://github.com/every-app/open-seo) (28k ⭐)
 
 > Make every SaaS open source
 
-Lots of people are cloning desktop apps, but what about SaaS?
-
-EveryApp is focused on what's after "cloning" by making the next generation of web apps, built for agents.
+Lots of people are cloning desktop apps, but what about the next generation of web apps?
 
 > Self host open source apps and personal software with one command.
 
@@ -16,7 +14,12 @@ Your agent can build an internal tool in an afternoon, but hosting is still hard
 - Auth, Permissions and User Management
 - MCP, Integrations and managing API Keys
 
-EveryApp handles all of that: one command sets up a Gateway in your own Cloudflare account.
+EveryApp handles all of that. One command sets up a Gateway in your own Cloudflare account:
+
+```
+npm install -g everyapp
+everyapp setup --domain home.yourdomain.com
+```
 
 |                | SaaS                     | EveryApp                              |
 | -------------- | ------------------------ | ------------------------------------- |
