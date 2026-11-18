@@ -43,6 +43,8 @@ const fileName = (meetingId: string) => `${encodeURIComponent(meetingId)}.json`;
 
 export class PendingUploads {
   private replaying = false;
+  /** The latest replay asked for while one was running: it runs once that one ends. */
+  private requested: (() => ReplayApi | undefined) | undefined;
 
   constructor(
     private readonly dir: string,
@@ -83,12 +85,20 @@ export class PendingUploads {
     return this.list().length;
   }
 
-  /** Replays everything pending for `api`'s app. Stops at the first network failure (still
-   * offline) and keeps the rest; a meeting that's gone (404) or too old is dropped. Returns how
-   * many meetings are still pending. */
-  async replay(api: ReplayApi): Promise<number> {
-    if (this.replaying) return this.count;
+  /** Replays everything pending for the app `currentApi` is signed in to (none when it returns
+   * undefined). Stops at the first network failure (still offline) and keeps the rest; a meeting
+   * that's gone (404) or too old is dropped. Returns how many meetings are still pending. A call
+   * during a replay runs after it, so a meeting kept meanwhile isn't left waiting for the next
+   * reconnect; it reads `currentApi` only then, so it never uses a session that has since ended. */
+  async replay(currentApi: () => ReplayApi | undefined): Promise<number> {
+    if (this.replaying) {
+      this.requested = currentApi;
+      return this.count;
+    }
+    const api = currentApi();
+    if (!api) return this.count;
     this.replaying = true;
+    let next: (() => ReplayApi | undefined) | undefined;
     try {
       for (const p of this.list()) {
         if (this.now() - p.savedAt > MAX_AGE_MS) {
@@ -130,8 +140,10 @@ export class PendingUploads {
       }
     } finally {
       this.replaying = false;
+      next = this.requested;
+      this.requested = undefined;
     }
-    return this.count;
+    return next ? this.replay(next) : this.count;
   }
 
   private read(meetingId: string): PendingMeeting | undefined {

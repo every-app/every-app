@@ -150,10 +150,8 @@ async function main(): Promise<void> {
   recording.transcription = () => recordingTranscription(settings.value, store.transcriptionKey);
   /** Sends what earlier recordings couldn't save, when the app is reachable and signed in. */
   const replayPending = async () => {
-    const api = auth.api;
-    if (!api || online.state !== "online") return;
     try {
-      await pending.replay(api);
+      await pending.replay(() => (online.state === "online" ? auth.api : undefined));
     } catch (error) {
       log(`pending replay failed: ${errorMessage(error)}`);
     }

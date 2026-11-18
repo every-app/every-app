@@ -34,7 +34,7 @@ describe("pending uploads", () => {
     expect(p.count).toBe(1);
     expect(statSync(join(dir, readdirSync(dir)[0]!)).mode & 0o777).toBe(0o600);
     const { api, calls } = fakeApi();
-    expect(await p.replay(api)).toBe(0);
+    expect(await p.replay(() => api)).toBe(0);
     expect(REPLAY_BATCH).toBe(50);
     expect(calls).toHaveLength(10); // 9 batches of ≤ 50, then /finish
     expect(calls.slice(0, 2)).toEqual(["segments m1 0-49", "segments m1 50-99"]);
@@ -54,11 +54,11 @@ describe("pending uploads", () => {
     const p = new PendingUploads(join(mkdtempSync(join(tmpdir(), "everyapp-pending-")), "pending"));
     p.add("m1", "https://talk.example.com", segs(0, 300), true);
     const first = fakeApi("https://talk.example.com", 4);
-    expect(await p.replay(first.api)).toBe(1);
+    expect(await p.replay(() => first.api)).toBe(1);
     expect(first.calls).toEqual(["segments m1 0-49", "segments m1 50-99", "segments m1 100-149", "segments m1 150-199"]);
     expect(p.list()[0]!.segments.map((s) => s.seq)[0]).toBe(200);
     const second = fakeApi();
-    expect(await p.replay(second.api)).toBe(0);
+    expect(await p.replay(() => second.api)).toBe(0);
     expect(second.calls).toEqual(["segments m1 200-249", "segments m1 250-299", "finish m1"]);
   });
 
@@ -71,10 +71,10 @@ describe("pending uploads", () => {
     api.appendSegments = async () => {
       throw new ApiError("server", "not found", 404);
     };
-    expect(await p.replay(api)).toBe(1);
+    expect(await p.replay(() => api)).toBe(1);
     expect(p.list().map((m) => m.meetingId)).toEqual(["other"]);
     now += 15 * 24 * 60 * 60_000;
-    expect(await p.replay(fakeApi("https://talk.example.com").api)).toBe(0);
+    expect(await p.replay(() => fakeApi("https://talk.example.com").api)).toBe(0);
   });
 
   it("keeps time-based seqs (not consecutive, replays in between) in order without duplicates", async () => {
@@ -90,7 +90,7 @@ describe("pending uploads", () => {
     p.add("m1", "https://talk.example.com", [seg(5_000, true, true), seg(12_000, true, false)], true);
     expect(p.list()[0]!.segments.map((s) => s.seq)).toEqual([4_000, 20_003, 48_002]);
     const { api, calls } = fakeApi();
-    await p.replay(api);
+    await p.replay(() => api);
     expect(calls).toEqual(["segments m1 4000-48002", "finish m1"]);
   });
 
@@ -104,7 +104,7 @@ describe("pending uploads", () => {
       if (n++ === 1) throw new ApiError("server", "invalid segment", 422);
       return append(id, s);
     };
-    expect(await p.replay(api)).toBe(0);
+    expect(await p.replay(() => api)).toBe(0);
     expect(calls).toEqual(["segments m1 0-49", "segments m1 100-119", "finish m1"]);
   });
 
@@ -116,12 +116,54 @@ describe("pending uploads", () => {
       api.appendSegments = async () => {
         throw new ApiError("server", "try later", status);
       };
-      expect(await p.replay(api), String(status)).toBe(1);
+      expect(await p.replay(() => api), String(status)).toBe(1);
       expect(p.list()[0]!.segments).toHaveLength(10);
     }
     expect(isPermanentRefusal(ApiError.signedOut())).toBe(false);
     expect(isPermanentRefusal(new ApiError("server", "bad", 400))).toBe(true);
     expect(isPermanentRefusal(new ApiError("server", "gone", 404))).toBe(false);
+  });
+
+  it("replays a meeting kept while another was replaying", async () => {
+    const p = new PendingUploads(join(mkdtempSync(join(tmpdir(), "everyapp-pending-")), "pending"));
+    p.add("m1", "https://talk.example.com", segs(0, 1), true);
+    const { api, calls } = fakeApi();
+    const append = api.appendSegments;
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    api.appendSegments = async (id, s) => {
+      if (id === "m1") await held;
+      return append(id, s);
+    };
+    const first = p.replay(() => api);
+    p.add("m2", "https://talk.example.com", segs(0, 1), true);
+    const second = p.replay(() => api);
+    release();
+    await Promise.all([first, second]);
+    expect(calls).toEqual(["segments m1 0-0", "finish m1", "segments m2 0-0", "finish m2"]);
+    expect(p.count).toBe(0);
+  });
+
+  it("doesn't run the later replay after a sign-out", async () => {
+    const p = new PendingUploads(join(mkdtempSync(join(tmpdir(), "everyapp-pending-")), "pending"));
+    p.add("m1", "https://talk.example.com", segs(0, 1), true);
+    const { api, calls } = fakeApi();
+    let signedIn: ReplayApi | undefined = api;
+    const append = api.appendSegments;
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    api.appendSegments = async (id, s) => {
+      if (id === "m1") await held;
+      return append(id, s);
+    };
+    const first = p.replay(() => signedIn);
+    p.add("m2", "https://talk.example.com", segs(0, 1), true);
+    const second = p.replay(() => signedIn);
+    signedIn = undefined;
+    release();
+    await Promise.all([first, second]);
+    expect(calls).toEqual(["segments m1 0-0", "finish m1"]);
+    expect(p.list().map((m) => m.meetingId)).toEqual(["m2"]);
   });
 
   it("ignores an empty hand-back", () => {
