@@ -9,6 +9,13 @@ export enum EmailList {
 }
 
 const appFlags = {
+  app: {
+    kind: "parsed",
+    parse: String,
+    brief: "The app's id, for an app installed without its source here (default: the app in this directory, else a pick of the Gateway's apps)",
+    placeholder: "id",
+    optional: true,
+  },
   manifest: {
     kind: "parsed",
     parse: String,
@@ -68,14 +75,15 @@ const setCommand = buildCommand({
       "the app's first upload are routed by its next deploy.",
       "",
       "Requirements:",
-      "  --sender   everyapp.config.ts lists capabilities.email; each domain is set up for Email Sending",
-      "  --inbound  everyapp.config.ts declares email: { inbound: true }; the domain is on Cloudflare DNS",
+      "  --sender   the app's manifest lists capabilities.email; each domain is set up for Email Sending",
+      "  --inbound  the app's manifest declares email: { inbound: true }; the domain is on Cloudflare DNS",
       "             and doesn't get its mail elsewhere already (its MX records), unless --replace-mx",
       "",
       "Examples:",
       `  ${CLI} email set --sender '*@mail.example.com'`,
       `  ${CLI} email set --inbound reports@mail.example.com`,
       `  ${CLI} email set --inbound '*@example.com' --enable-email-routing`,
+      `  ${CLI} email set --app document-signing --sender '*@mail.example.com'`,
     ].join("\n"),
   },
 });
@@ -129,6 +137,7 @@ const showCommand = buildCommand({
       "Examples:",
       `  ${CLI} email show`,
       `  ${CLI} email show --manifest ../analytics/everyapp.config.ts`,
+      `  ${CLI} email show --app document-signing`,
     ].join("\n"),
   },
 });

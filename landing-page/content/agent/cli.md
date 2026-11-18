@@ -864,8 +864,10 @@ Lists the app's senders and inbound addresses on the Gateway, and whether each i
 ```sh
 everyapp email show
 everyapp email show --manifest ../analytics/everyapp.config.ts
+everyapp email show --app document-signing
 ```
 
+- `--app <id>`: The app's id, for an app installed without its source here (default: the app in this directory, else a pick of the Gateway's apps)
 - `--manifest <path>`: Path to everyapp.config.ts, if it isn't in this directory
 
 ### `everyapp email set`
@@ -873,18 +875,20 @@ Set senders or inbound addresses, without a deploy.
 
 Each flag replaces its whole list; a list you don't name is kept. The Gateway picks up a change within 30 seconds, without a deploy. Addresses set before the app's first upload are routed by its next deploy.
 
-Requirements: --sender everyapp.config.ts lists capabilities.email; each domain is set up for Email Sending --inbound everyapp.config.ts declares email: { inbound: true }; the domain is on Cloudflare DNS and doesn't get its mail elsewhere already (its MX records), unless --replace-mx
+Requirements: --sender the app's manifest lists capabilities.email; each domain is set up for Email Sending --inbound the app's manifest declares email: { inbound: true }; the domain is on Cloudflare DNS and doesn't get its mail elsewhere already (its MX records), unless --replace-mx
 
 ```sh
 everyapp email set --sender '*@mail.example.com'
 everyapp email set --inbound reports@mail.example.com
 everyapp email set --inbound '*@example.com' --enable-email-routing
+everyapp email set --app document-signing --sender '*@mail.example.com'
 ```
 
 - `--sender <pattern>` (repeatable): Address the app may send as: '*@<domain>' or one address (repeat, up to 20)
 - `--inbound <address>` (repeatable): Address whose mail goes to the app: '*@<apex>' or one address (repeat, up to 50)
 - `--enable-email-routing`: Turn on Email Routing for inbound domains without asking
 - `--replace-mx`: Turn on Email Routing even for a domain whose MX records deliver its mail elsewhere (Google Workspace...): they are replaced, and that mail stops arriving there
+- `--app <id>`: The app's id, for an app installed without its source here (default: the app in this directory, else a pick of the Gateway's apps)
 - `--manifest <path>`: Path to everyapp.config.ts, if it isn't in this directory
 
 ### `everyapp email unset <senders|inbound>...`
@@ -898,6 +902,7 @@ everyapp email unset senders inbound
 ```
 
 - `<senders|inbound>`: List to clear: senders or inbound
+- `--app <id>`: The app's id, for an app installed without its source here (default: the app in this directory, else a pick of the Gateway's apps)
 - `--manifest <path>`: Path to everyapp.config.ts, if it isn't in this directory
 
 ### `everyapp events add [<url>]`

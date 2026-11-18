@@ -500,14 +500,14 @@ describe("email set refuses before anything is read or changed", () => {
     await expect(set(appDir(NOTES), { senders: ["*@example.com"] })).rejects.toMatchObject({
       code: "EMAIL_NOT_DECLARED",
       message: "notes can't send mail yet\neveryapp.config.ts doesn't list email in its capabilities.",
-      fix: 'add capabilities: { email: { access: "write" } } to everyapp.config.ts',
+      fix: 'capabilities: { email: { access: "write" } } to everyapp.config.ts, or pass --app <id> if you meant another app',
       rerun: "pnpm everyapp deploy",
       rerunNote: "then this command again",
     });
     await expect(set(appDir(MAILER), { inbound: ["*@example.com"] })).rejects.toMatchObject({
       code: "EMAIL_INBOUND_NOT_DECLARED",
       message: "mailer can't receive mail yet\neveryapp.config.ts doesn't declare email: { inbound: true }.",
-      fix: "declare email: { inbound: true } and export email() from the app's Worker",
+      fix: "email: { inbound: true } (and an email() export from the Worker) to everyapp.config.ts, or pass --app <id> if you meant another app",
     });
     // The manifest is read, the Gateway isn't.
     expect(createCf).not.toHaveBeenCalled();
@@ -794,6 +794,56 @@ describe("email set keeps the row and the routes consistent", () => {
     events = [];
     await showEmail({ flags: { ...flags, manifest }, out: out(), cwd: emptyDir(), createCf });
     expect(done()!["data"]).toMatchObject({ senders: SENDERS });
+  });
+
+  it("takes --app for an installed app, reading its deployed manifest from the Gateway", async () => {
+    await deploy(appDir(INBOX), INBOX);
+    // Another app's config here doesn't matter: --app names the app.
+    const elsewhere = appDir(NOTES);
+
+    await set(elsewhere, { senders: SENDERS, flags: { app: "inbox" } });
+    expect(done()!["message"]).toMatch(/^inbox sends as \*@example\.com, ceo@example\.com\./);
+    expect(row()).toMatchObject({ email_senders: JSON.stringify(SENDERS) });
+
+    events = [];
+    await showEmail({ flags: { ...flags, app: "inbox" }, out: out(), cwd: emptyDir(), createCf });
+    expect(done()!["data"]).toMatchObject({ senders: SENDERS });
+
+    await expect(set(emptyDir(), { senders: SENDERS, flags: { app: "missing" } })).rejects.toMatchObject({
+      code: "APP_NOT_FOUND",
+      message: "missing isn't deployed to this Gateway\nAn app's email can be set after its first deploy. Nothing was changed.",
+    });
+  });
+
+  it("with no app named and no config here, lets a person at a terminal pick one of the Gateway's apps", async () => {
+    await deploy(appDir(INBOX), INBOX);
+    await deploy(appDir(NOTES), NOTES);
+    const chooseApp = vi.fn(async () => "inbox");
+
+    await set(emptyDir(), { senders: SENDERS, interactive: true, chooseApp });
+    expect(chooseApp).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ value: "inbox" }),
+        expect.objectContaining({ value: "notes" }),
+      ]),
+    );
+    expect(done()!["message"]).toMatch(/^inbox sends as /);
+    expect(row()).toMatchObject({ email_senders: JSON.stringify(SENDERS) });
+
+    // A config here names the app: no question.
+    chooseApp.mockClear();
+    await set(appDir(INBOX), { senders: SENDERS, interactive: true, chooseApp });
+    expect(chooseApp).not.toHaveBeenCalled();
+  });
+
+  it("with --app, refuses what the deployed release doesn't declare, without a deploy to rerun", async () => {
+    await deploy(appDir(NOTES), NOTES);
+    await expect(set(emptyDir(), { senders: SENDERS, flags: { app: "notes" } })).rejects.toMatchObject({
+      code: "EMAIL_NOT_DECLARED",
+      message: "notes can't send mail yet\nIts deployed manifest doesn't list email in its capabilities.",
+      fix: 'deploy notes from source with capabilities: { email: { access: "write" } }; an installed release can\'t change it',
+      rerun: undefined,
+    });
   });
 });
 

@@ -7,7 +7,9 @@
  * app does (`capabilities.email` says it sends, `email: { inbound: true }`
  * says its Worker exports an `email()` handler); the installation
  * configures as whom and at which addresses, with this command, in the
- * app's directory (or with `--manifest <path>`) after its first deploy.
+ * app's directory (or with `--manifest <path>`, or `--app <id>` for an app
+ * installed without its source, whose deployed manifest the Gateway's row
+ * holds) after its first deploy.
  *
  * `set` replaces each list it names and keeps the other; `unset` clears
  * the lists it names. Every check runs before the first write: the lists'
@@ -26,6 +28,7 @@
  * change within 30 seconds (it caches the app's row that long); the CLI
  * says "on the Gateway", never "live".
  */
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { emailListProblems, type AppEmailConfig } from "@every-app/sdk/internal";
@@ -43,6 +46,7 @@ import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { acquireAppLease, LeasePurpose } from "@/lib/gateway/lease";
 import {
   findRegisteredApp,
+  listApps,
   readApp,
   readAppEmail,
   writeAppEmail,
@@ -50,13 +54,16 @@ import {
 import { loadEveryAppManifestFile, type EveryAppCliManifest } from "@/lib/manifest";
 import { CLI, thisCommand } from "@/lib/output/command";
 import { ticked, type EventSink } from "@/lib/output/events";
-import { canPromptInTerminal, type Confirm } from "@/lib/output/prompt";
+import { canPromptInTerminal, choose, type Confirm } from "@/lib/output/prompt";
 import { runCommand } from "@/lib/output/run";
 import { formatTable } from "@/lib/output/table";
 import type { GatewayCommandFlags } from "../flags";
+import { storedManifestOf } from "../secret";
 import { EmailList } from "./command";
 
 interface EmailFlags extends GatewayCommandFlags {
+  /** The installed app's id: its manifest is read from the Gateway's registry row. */
+  app?: string;
   manifest?: string;
 }
 
@@ -72,6 +79,10 @@ interface EmailOptions {
   interactive?: boolean;
   /** The Email Routing confirm (tests). */
   confirm?: Confirm;
+  /** Which of the Gateway's apps, when nothing names one (default: a terminal prompt); tests. */
+  chooseApp?: (choices: ReadonlyArray<{ label: string; hint?: string; value: string }>) => Promise<string>;
+  /** The Gateway connection `--app` made to read the manifest, reused by the change. */
+  connection?: Connection;
 }
 
 /** The step a change runs under: its spinner says what it does. */
@@ -162,27 +173,38 @@ export async function setEmail(
   if (inbound !== undefined) assertValidList("inbound", inbound);
 
   // The manifest: what the app declares.
-  const manifest = await loadManifest(options);
+  const { manifest, connection, deployed } = await loadManifest(options);
   const declares = emailDeclarations(manifest);
-  const thenAgain = { rerun: `${CLI} deploy`, rerunNote: "then this command again" };
+  const declaredIn = deployed ? "Its deployed manifest" : (options.flags.manifest ?? "everyapp.config.ts");
+  // From the directory: the fix is the source's, or the app is another one.
+  // From the row (`--app`): the deployed release is what it is.
+  const remedy = (fix: string) =>
+    deployed
+      ? { fix: `deploy ${manifest.id} from source with ${fix}; an installed release can't change it` }
+      : {
+          fix: `${fix} to everyapp.config.ts, or pass --app <id> if you meant another app`,
+          rerun: `${CLI} deploy`,
+          rerunNote: "then this command again",
+        };
   if (senders !== undefined && !declares.sends) {
     throw new EveryAppError(
       "EMAIL_NOT_DECLARED",
-      `${manifest.id} can't send mail yet\neveryapp.config.ts doesn't list email in its capabilities.`,
-      { fix: 'add capabilities: { email: { access: "write" } } to everyapp.config.ts', ...thenAgain },
+      `${manifest.id} can't send mail yet\n${declaredIn} doesn't list email in its capabilities.`,
+      remedy('capabilities: { email: { access: "write" } }'),
     );
   }
   if (inbound !== undefined && !declares.receives) {
     throw new EveryAppError(
       "EMAIL_INBOUND_NOT_DECLARED",
-      `${manifest.id} can't receive mail yet\neveryapp.config.ts doesn't declare email: { inbound: true }.`,
-      { fix: "declare email: { inbound: true } and export email() from the app's Worker", ...thenAgain },
+      `${manifest.id} can't receive mail yet\n${declaredIn} doesn't declare email: { inbound: true }.`,
+      remedy("email: { inbound: true } (and an email() export from the Worker)"),
     );
   }
 
   await changeEmail({
     ...options,
     manifest,
+    connection,
     change: {
       ...(senders !== undefined ? { senders: [...senders] } : {}),
       ...(inbound !== undefined ? { inbound: [...inbound] } : {}),
@@ -200,10 +222,11 @@ export async function setEmail(
 /** `email unset`: the same pipeline with a list emptied. */
 export async function unsetEmail(options: EmailOptions & { lists: readonly EmailList[] }): Promise<void> {
   // The manifest names the app; a declaration it dropped may still need clearing.
-  const manifest = await loadManifest(options);
+  const { manifest, connection } = await loadManifest(options);
   await changeEmail({
     ...options,
     manifest,
+    connection,
     change: {
       ...(options.lists.includes(EmailList.Senders) ? { senders: [] } : {}),
       ...(options.lists.includes(EmailList.Inbound) ? { inbound: [] } : {}),
@@ -216,10 +239,10 @@ export async function unsetEmail(options: EmailOptions & { lists: readonly Email
 /** `email show`: the installation's lists against what the manifest declares and what is routed. */
 export async function showEmail(options: EmailOptions): Promise<void> {
   const { out } = options;
-  const manifest = await loadManifest(options);
+  const { manifest, connection } = await loadManifest(options);
   const { id } = manifest;
   const declares = emailDeclarations(manifest);
-  const { db, install } = await connect(options);
+  const { db, install } = await connect({ ...options, connection });
   // A hosted Gateway takes no app senders (`set --sender` refuses there), so
   // no next step names that command on one.
   const sendersSettable = declares.sends && install.deploymentMode !== "hosted";
@@ -321,17 +344,61 @@ export async function showEmail(options: EmailOptions): Promise<void> {
   );
 }
 
-/** The manifest of the app in `cwd`, or the one `--manifest` names. */
-function loadManifest(options: EmailOptions): Promise<EveryAppCliManifest> {
-  return options.flags.manifest
-    ? loadEveryAppManifestFile(options.flags.manifest)
-    : loadEveryAppManifestFile(path.join(options.cwd ?? process.cwd(), "everyapp.config.ts"), {
-        message: "No everyapp.config.ts in this directory",
-        fix: "run this from the app's directory, or pass --manifest <path>",
-      });
+/**
+ * The app's manifest: the deployed one its Gateway row stores (`--app`,
+ * which wins over the others), the file `--manifest` names, or the
+ * everyapp.config.ts in `cwd`. With none of those, a person at a terminal
+ * picks one of the Gateway's apps, as if they had passed `--app`.
+ */
+async function loadManifest(options: EmailOptions): Promise<{
+  manifest: EveryAppCliManifest;
+  connection?: Connection;
+  /** Read from the Gateway's row (`--app` or the pick), not a file. */
+  deployed: boolean;
+}> {
+  const { flags } = options;
+  if (flags.app) return { ...(await deployedManifest(options, flags.app)), deployed: true };
+  if (flags.manifest) return { manifest: await loadEveryAppManifestFile(flags.manifest), deployed: false };
+  const file = path.join(options.cwd ?? process.cwd(), "everyapp.config.ts");
+  const notHere = {
+    message: "No everyapp.config.ts in this directory",
+    fix: "run this from the app's directory, or pass --app <id> or --manifest <path>",
+  };
+  if (existsSync(file) || !(options.interactive ?? canPromptInTerminal(flags.json ?? false))) {
+    return { manifest: await loadEveryAppManifestFile(file, notHere), deployed: false };
+  }
+  const connection = await connect(options);
+  const apps = (await listApps(connection.db)).filter((app) => app.workerName);
+  if (apps.length === 0) {
+    throw new EveryAppError("APP_NOT_FOUND", "No apps are deployed to this Gateway yet", { fix: notHere.fix });
+  }
+  const pick =
+    options.chooseApp ??
+    ((choices: ReadonlyArray<{ label: string; hint?: string; value: string }>) =>
+      choose("Which app?", choices));
+  const appId = await pick(apps.map((app) => ({ label: app.appSlug, hint: app.hostname, value: app.appSlug })));
+  return { ...(await deployedManifest({ ...options, connection }, appId)), deployed: true };
 }
 
-function connect({ flags, out, createCf }: EmailOptions) {
+/** A registered app's deployed manifest, from its Gateway row. */
+async function deployedManifest(options: EmailOptions, appId: string) {
+  const connection = await connect(options);
+  const found = await findRegisteredApp(connection.db, appId);
+  if (!found) {
+    throw new EveryAppError(
+      "APP_NOT_FOUND",
+      `${appId} isn't deployed to this Gateway\nAn app's email can be set after its first deploy. Nothing was changed.`,
+      { rerun: `${CLI} status`, rerunNote: "lists its apps" },
+    );
+  }
+  return { manifest: storedManifestOf(found), connection };
+}
+
+type Connection = Awaited<ReturnType<typeof connectToGateway>>;
+
+/** The Gateway: the connection `--app` already made, or a new one. */
+function connect({ flags, out, createCf, connection }: EmailOptions): Promise<Connection> {
+  if (connection) return Promise.resolve(connection);
   return connectToGateway({
     gateway: requestedGatewayUrl(flags.gateway),
     accountId: flags["account-id"],
