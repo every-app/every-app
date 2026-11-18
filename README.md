@@ -1,12 +1,16 @@
 # EveryApp
 
-> Open source SaaS for you and your agent, self-hosted in one command.
+> Make every SaaS open source
 
-Run your team's apps in your own Cloudflare account. Everyone signs in once, and your agent uses every app through one MCP server.
+Lots of people are cloning desktop apps, but what about SaaS?
 
-From the team behind [OpenSEO](https://github.com/every-app/open-seo) (28k ⭐) · [Docs](https://everyapp.com/docs) · [Discord](https://discord.gg/c9uGs3cFXr)
+EveryApp is focused on what's after "cloning" by making the next generation of web apps, built for agents.
 
-[![EveryApp app launcher, OpenSEO, and secure Gateway demo](docs/assets/everyapp-demo.gif)](https://youtu.be/krDediTp0MI)
+> Self host open source apps and personal software with one command.
+
+Your agent can build an internal tool in an afternoon, but hosting, database, sign-in, permissions, API keys and backups are still hard. 
+
+EveryApp handles all of that: one command sets up a Gateway in your Cloudflare account, and your team signs in once to use every app.
 
 |                | SaaS                     | EveryApp                              |
 | -------------- | ------------------------ | ------------------------------------- |
@@ -14,6 +18,14 @@ From the team behind [OpenSEO](https://github.com/every-app/open-seo) (28k ⭐) 
 | Your data      | On their servers         | In your Cloudflare account            |
 | Your agent     | A new connection per app | One MCP server for every app          |
 | Need a change? | File a feature request   | Fork it and have your agent change it |
+
+[![EveryApp app launcher, OpenSEO, and secure Gateway demo](docs/assets/everyapp-demo.gif)](https://youtu.be/krDediTp0MI)
+
+## Who are we?
+
+We're the team behind [OpenSEO](https://github.com/every-app/open-seo), the open source alternative to Semrush and Ahrefs (25k stars).
+
+
 
 ## Apps
 
