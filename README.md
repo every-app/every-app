@@ -1,5 +1,7 @@
 # EveryApp
 
+From the team behind [OpenSEO](https://github.com/every-app/open-seo) (28k ⭐)
+
 > Make every SaaS open source
 
 Lots of people are cloning desktop apps, but what about SaaS?
@@ -8,11 +10,13 @@ EveryApp is focused on what's after "cloning" by making the next generation of w
 
 > Self host open source apps and personal software with one command.
 
-Your agent can build an internal tool in an afternoon, but hosting, database, sign-in, permissions, API keys and backups are still hard. 
+Your agent can build an internal tool in an afternoon, but hosting is still hard:
 
-EveryApp handles all of that: one command sets up a Gateway in your Cloudflare account, and your team signs in once to use every app.
+- Database, Infra and Security
+- Auth, Permissions and User Management
+- MCP, Integrations and managing API Keys
 
-From the team behind [OpenSEO](https://github.com/every-app/open-seo) (28k ⭐)
+EveryApp handles all of that: one command sets up a Gateway in your own Cloudflare account.
 
 |                | SaaS                     | EveryApp                              |
 | -------------- | ------------------------ | ------------------------------------- |
@@ -27,8 +31,6 @@ From the team behind [OpenSEO](https://github.com/every-app/open-seo) (28k ⭐)
 
 We're the team behind [OpenSEO](https://github.com/every-app/open-seo), the open source alternative to Semrush and Ahrefs (25k stars).
 
-
-
 ## Apps
 
 - [OpenSEO](https://github.com/every-app/open-seo): Keyword research, rank tracking and site audits.
@@ -39,13 +41,13 @@ We're the team behind [OpenSEO](https://github.com/every-app/open-seo), the open
 
 ## EveryApp Desktop App
 
-Most apps work through the browser, but some work better with a native app. 
+Most apps work through the browser, but some work better with a native app.
 
-One example is [OpenScribe](https://github.com/every-app/open-scribe), our open source alternative to Granola and WisprFlow. 
+One example is [OpenScribe](https://github.com/every-app/open-scribe), our open source alternative to Granola and WisprFlow.
 
-Download the [Desktop App](https://updates.everyapp.com/mac/download/arm64) for MacOS to use it. 
+Download the [Desktop App](https://updates.everyapp.com/mac/download/arm64) for MacOS to use it.
 
-If you use Windows or Linux, we're looking for people to test it out, it's just an electron app, so it should work for those platforms as well. 
+If you use Windows or Linux, we're looking for people to test it out, it's just an electron app, so it should work for those platforms as well.
 
 ## Get started
 
@@ -60,9 +62,11 @@ everyapp setup --domain apps.yourcompany.com
 ```
 
 ### Set up Prompt for your Agent.
+
 Paste one prompt into Claude Code, Codex or Cursor: https://everyapp.com/docs/quickstart and let it set everything up.
 
 ### Install open source apps
+
 ```bash
 # Add OpenSEO
 everyapp install https://github.com/every-app/open-seo
@@ -72,6 +76,7 @@ everyapp install https://github.com/every-app/open-scribe
 ```
 
 ### Build your own app
+
 https://everyapp.com/docs/create-an-app
 
 ```bash
