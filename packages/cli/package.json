@@ -9,7 +9,7 @@
     "directory": "packages/cli"
   },
   "type": "module",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "files": [
     "dist",
     "bin",

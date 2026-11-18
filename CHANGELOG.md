@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.4.2
+
+Nothing breaks: no command, flag, `--json` key, error code, SDK export or Worker binding is removed or renamed, and an app pinned to 0.4.1, 0.4.0 or 0.3.x deploys and runs on a 0.4.2 Gateway. One migration, `0038`, which only adds. One thing to know before you update: from this release a self-hosted Gateway sends Every App a short usage report once a day, and a Gateway you already run starts 7 days after its update. What it sends and how to turn it off are just below.
 
 ### Usage reports: a Gateway tells us it is running, and how much it is used
 
@@ -35,7 +37,41 @@ Counts are rounded down to one significant digit. `install` is a random ID. No d
 - **Off for good:** `everyapp secret set TELEMETRY_DISABLED`. The switch can't turn reports on while it is set.
 - **Never sends:** the CLI, the SDK, apps, a Gateway built from a clone or a fork, and the hosted Gateway.
 
-`setup` and `update` gain `data.usageReports` under `--json` when they have something to say. One migration, `0038`, which only adds.
+`setup` and `update` gain `data.usageReports` under `--json` when they have something to say. Migration `0038` adds one table, `telemetry_state`, which holds the switch and the random ID.
+
+### Treg is a built-in provider, and a provider can name its own MCP server
+
+Treg (treg.to: one token over many data APIs, paid per call) is in the provider catalog as `treg`. `everyapp provider add treg` says where the token comes from and asks for it (`TREG_API_TOKEN`), and an app lists `treg` in its `capabilities` like any other built-in provider. [Set up Treg](https://everyapp.com/docs/providers/treg).
+
+Treg's MCP server is on the same host and takes the same token, sent another way (`Authorization: Bearer`, where its API takes `X-Treg-Token`). So an API-key provider can now declare its own MCP server, in the catalog or in a registered spec:
+
+```json
+"mcp": { "url": "https://treg.to/mcp/", "auth": { "kind": "bearer" } }
+```
+
+`everyapp mcp add https://treg.to/mcp/` with no `--provider` and no `--auth` then uses the provider's one key, placed as `mcp.auth` says; so do **Add MCP server** in Manage workspace and `everyapp_mcp_add`. There is no second token to set. Anywhere else on the host the key goes as before. Adding or changing `mcp` on a registered provider unbinds its key until `everyapp secret set` runs again; a provider without `mcp` is untouched. [Providers, for agents](https://everyapp.com/docs/agent/providers).
+
+A Gateway that already has Treg:
+
+- **Registered by an app** (OpenCRM bundles `.everyapp/providers/treg.json`): the built-in entry takes over under the same id and the same `TREG_API_TOKEN`, so the app keeps working and nothing needs setting. Deploying or installing that app prints one warning, `PROVIDER_BUNDLED_BUILTIN` (the file is ignored), and goes on. `everyapp provider remove treg --force` clears the old row.
+- **Treg's MCP server added earlier with its own token** (`TREG_MCP_TOKEN`): keeps working. To move it to the one token: `everyapp mcp remove treg`, then `everyapp mcp add https://treg.to/mcp/`.
+
+Proof and limits: Treg's two ways of taking the token were checked against Treg itself on 2026-11-16. The takeover of a registered `treg` row and `mcp add` on the provider's key are unit tested, and not tried on a live Gateway.
+
+### Installing an app from the Gateway: three more fixes
+
+To **Admin → Apps → Install app** and the `/install?source=…` link. The CLI's `everyapp install` was not affected.
+
+- An app first installed before 0.4.1 gets its styles and scripts when it is installed again. 0.4.1 gave each static file its content type, but Cloudflare only asks for files it doesn't already have, so it kept the copies an older install had uploaded with no type. A file's type is now part of how it is recognized, so those files are uploaded again.
+- The page waits until the app answers before it says "x is installed": Deploying x… → Starting x… → x is installed. The link used to show while the app was still starting, and answered `app_deploying`. If the app is still starting 10 minutes after the deploy, the page says it is taking longer than usual and shows the link.
+- **Back to apps** on the install page goes to All apps, not to Workspace settings.
+
+### What you do
+
+1. Decide about usage reports before you update, if you want them off: run the update with `DO_NOT_TRACK=1` in the shell, or turn them off any time in the 7 days after it (`everyapp telemetry off`, or the switch in Manage workspace → Usage reports). To leave them on, do nothing.
+2. Update the Gateway. From a checkout: `pnpm everyapp update`; otherwise `npx everyapp@0.4.2 update`. It brings the Gateway to migration `0038`, and this everyapp refuses an older Gateway with `GATEWAY_OUTDATED` until you do. A Gateway built from a checkout or a fork never sends reports.
+3. An app that was installed from the Gateway's own page and still loads without styles: install it again from **Admin → Apps → Install app** after the update, then reload it once with the browser's cache bypassed (a hard reload). Apps deployed with the CLI need nothing.
+4. Apps keep their pins. Nothing in this SDK is new for an app's code, so no app has to move to 0.4.2.
 
 ## 0.4.1
 
