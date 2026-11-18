@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
-import { defineConfig } from "vite";
+import { defineConfig, normalizePath } from "vite";
 import tsConfigPaths from "vite-tsconfig-paths";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -22,6 +23,8 @@ const gatewayBuild = (() => {
   }
 })();
 
+const optimizeDepsEsbuild = { supported: { "import-attributes": true } };
+
 export default defineConfig(({ isPreview }) => ({
   define: {
     __GATEWAY_BUILD__: JSON.stringify(gatewayBuild),
@@ -40,11 +43,20 @@ export default defineConfig(({ isPreview }) => ({
   resolve: {
     dedupe: ["jose"],
   },
+  // @cloudflare/config (reached through @every-app/perimeter/install) calls
+  // import() with computed import attributes, which esbuild refuses to
+  // pre-bundle for the client's and the Worker's targets unless told the
+  // runtime supports them. The Worker's environment sets its own esbuild
+  // options, so it repeats this below.
+  optimizeDeps: { esbuildOptions: optimizeDepsEsbuild },
   // Source maps for the Worker bundle only: "hidden" leaves no
   // sourceMappingURL and keeps maps out of the public assets. The deploy
   // uploads them so Workers logs and Issues point at source lines.
   environments: {
-    ssr: { build: { sourcemap: "hidden" } },
+    ssr: {
+      build: { sourcemap: "hidden" },
+      optimizeDeps: { esbuildOptions: optimizeDepsEsbuild },
+    },
   },
   plugins: [
     // Cloudflare plugin must come first - it sets up the SSR environment.
@@ -58,6 +70,24 @@ export default defineConfig(({ isPreview }) => ({
       // second database in .cloudflare/state next to the one `cf dev` uses.
       persistState: !isPreview,
     }),
+    {
+      // The Cloudflare plugin denies dev access to every module
+      // cloudflare.config.ts loads. That includes the SDK's sentinel leaf
+      // (through @every-app/sdk/cloudflare), which the Worker also loads
+      // through @every-app/perimeter/install. It holds only placeholder
+      // strings, so let it through.
+      name: "every-app-gateway:allow-sdk-sentinel",
+      enforce: "post",
+      config(config) {
+        const sentinel = normalizePath(
+          fileURLToPath(
+            import.meta.resolve("@every-app/sdk/cloudflare/sentinel"),
+          ),
+        );
+        const fs = config.server?.fs;
+        if (fs?.deny) fs.deny = fs.deny.filter((path) => path !== sentinel);
+      },
+    },
     tsConfigPaths({
       projects: ["./tsconfig.json"],
     }),
