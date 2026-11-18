@@ -1,4 +1,5 @@
-import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useRouter } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { AppLaunchPrefetch } from "@/client/components/AppLaunchPrefetch";
 import { AppShell } from "@/client/layout/AppShell";
 
@@ -13,10 +14,37 @@ export const Route = createFileRoute("/_app")({
 });
 
 function AppLayout() {
+  usePageCodeLoaded();
   return (
     <AppShell>
       <AppLaunchPrefetch />
       <Outlet />
     </AppShell>
   );
+}
+
+/**
+ * Downloads the code of every signed-in page once the shell is up. Each page
+ * is its own chunk, and a click waits for the chunk before it shows the page,
+ * so without this the first visit to each page lags by a download. One page
+ * at a time: all at once, they take the connection from the requests of the
+ * page being opened, which then shows its data seconds later on a slow link.
+ */
+function usePageCodeLoaded() {
+  const router = useRouter();
+  useEffect(() => {
+    let stopped = false;
+    const load = async () => {
+      for (const route of Object.values(router.routesById)) {
+        if (stopped) return;
+        if (!route.id.startsWith(`${Route.id}/`)) continue;
+        // A chunk that fails here is asked for again by the click that needs it.
+        await router.loadRouteChunk(route)?.catch(() => undefined);
+      }
+    };
+    void load();
+    return () => {
+      stopped = true;
+    };
+  }, [router]);
 }

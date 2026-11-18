@@ -1,8 +1,7 @@
 import {
   createFileRoute,
   Outlet,
-  useLocation,
-  useNavigate,
+  useChildMatches,
 } from "@tanstack/react-router";
 import { Bot, CircleUserRound } from "lucide-react";
 import { Page, PageHeader } from "@/client/components/PageHeader";
@@ -43,8 +42,11 @@ const TABS = [
 ] as const;
 
 function ConnectionsLayout() {
-  const pathname = useLocation({ select: (location) => location.pathname });
-  const navigate = useNavigate();
+  // The page in the outlet below: its tab is the active one, so the tab and
+  // the page change in the same render.
+  const shownPath = useChildMatches({
+    select: (matches) => matches[0]?.fullPath,
+  });
   // An account that needs Reconnect is counted on its tab, so it isn't
   // missed from the Agents tab.
   const { data: accounts } = useConnectedAccounts();
@@ -53,19 +55,12 @@ function ConnectionsLayout() {
   ).length;
 
   const activeTab =
-    TABS.find((tab) => tab.to === pathname)?.value ?? ConnectionsTab.Accounts;
+    TABS.find((tab) => tab.to === shownPath)?.value ?? ConnectionsTab.Accounts;
 
   return (
     <Page>
       <PageHeader title="Your connections" />
-      <Tabs
-        value={activeTab}
-        onValueChange={(value) => {
-          const tab = TABS.find((tab) => tab.value === value);
-          if (tab) void navigate({ to: tab.to });
-        }}
-        className="gap-6"
-      >
+      <Tabs value={activeTab} className="gap-6">
         <PageTabStrip
           label="Your connections"
           tabs={TABS.map((tab) =>
@@ -83,11 +78,9 @@ function ConnectionsLayout() {
           )}
           activeTab={activeTab}
         />
-        {TABS.map((tab) => (
-          <TabsContent key={tab.value} value={tab.value}>
-            {activeTab === tab.value ? <Outlet /> : null}
-          </TabsContent>
-        ))}
+        <TabsContent value={activeTab}>
+          <Outlet />
+        </TabsContent>
       </Tabs>
     </Page>
   );

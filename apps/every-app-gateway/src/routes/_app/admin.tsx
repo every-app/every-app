@@ -2,8 +2,7 @@ import {
   createFileRoute,
   Outlet,
   Link,
-  useLocation,
-  useNavigate,
+  useChildMatches,
 } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -113,8 +112,11 @@ const adminTabs = [
 
 // One administration page; each tab has a URL and inherits the same access gate.
 function AdminLayout() {
-  const pathname = useLocation({ select: (location) => location.pathname });
-  const navigate = useNavigate();
+  // The page in the outlet below: its tab is the active one, so the tab and
+  // the page change in the same render.
+  const shownPath = useChildMatches({
+    select: (matches) => matches[0]?.fullPath,
+  });
   const queryClient = useQueryClient();
   const { data: session, isPending } = useSession();
   const { data: activeMemberRole, isPending: isRolePending } =
@@ -155,7 +157,7 @@ function AdminLayout() {
   }
 
   const activeTab =
-    adminTabs.find((tab) => tab.to === pathname)?.value ?? AdminTab.Users;
+    adminTabs.find((tab) => tab.to === shownPath)?.value ?? AdminTab.Users;
 
   return (
     <Page>
@@ -208,24 +210,15 @@ function AdminLayout() {
         />
       ) : null}
       <UsageReportsNotice />
-      <Tabs
-        value={activeTab}
-        onValueChange={(value) => {
-          const tab = adminTabs.find((tab) => tab.value === value);
-          if (tab) void navigate({ to: tab.to });
-        }}
-        className="gap-6"
-      >
+      <Tabs value={activeTab} className="gap-6">
         <PageTabStrip
           label="Manage workspace"
           tabs={adminTabs}
           activeTab={activeTab}
         />
-        {adminTabs.map((tab) => (
-          <TabsContent key={tab.value} value={tab.value}>
-            {activeTab === tab.value ? <Outlet /> : null}
-          </TabsContent>
-        ))}
+        <TabsContent value={activeTab}>
+          <Outlet />
+        </TabsContent>
       </Tabs>
     </Page>
   );

@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { useMatches } from "@tanstack/react-router";
 import type { LinkOptions } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import type { ComponentType } from "react";
@@ -24,6 +24,7 @@ import {
   useSignInMethods,
 } from "@/client/sign-in-methods";
 import { BrandLink } from "@/client/components/BrandLink";
+import { NavLink } from "@/client/components/NavLink";
 import { BuildStamp } from "@/client/components/BuildStamp";
 import { OrganizationSwitcher } from "@/client/components/OrganizationSwitcher";
 import { ThemePreferenceRadio } from "@/client/components/ThemePreferenceMenuItems";
@@ -60,50 +61,44 @@ const navButtonClass =
 function SidebarNavLink({
   icon: Icon,
   label,
-  linkProps,
+  to,
+  exact = false,
   count,
 }: {
   icon: ComponentType<{ className?: string }>;
   label: string;
-  linkProps: LinkOptions;
+  to: LinkOptions["to"];
+  /** Lit only on `to` itself, not on the pages under it. */
+  exact?: boolean;
   count?: number;
 }) {
   const { setOpenMobile } = useSidebar();
-  const contents = (
-    <>
-      <span className="flex size-6 shrink-0 items-center justify-center">
-        <Icon className="size-4" />
-      </span>
-      <span className="truncate">{label}</span>
-      {count !== undefined ? (
-        <span className="ml-auto flex w-4 shrink-0 items-center justify-center text-xs font-normal tabular-nums text-sidebar-foreground/50">
-          {count}
-        </span>
-      ) : null}
-    </>
-  );
+  // Lit for the page that is rendered, so it changes in the same render.
+  const isActive = useMatches({
+    select: (matches) =>
+      exact
+        ? matches.at(-1)?.fullPath === to
+        : matches.some((match) => match.fullPath === to),
+  });
   return (
     <SidebarMenuItem>
-      <Link
-        {...linkProps}
-        activeOptions={{
-          exact: false,
-          includeSearch: false,
-          ...linkProps.activeOptions,
-        }}
-        onClick={() => setOpenMobile(false)}
-      >
-        {({ isActive }) => (
-          <SidebarMenuButton
-            render={<span />}
-            isActive={isActive}
-            className={navButtonClass}
-            aria-current={isActive ? "page" : undefined}
-          >
-            {contents}
-          </SidebarMenuButton>
-        )}
-      </Link>
+      <NavLink to={to} current={isActive} onClick={() => setOpenMobile(false)}>
+        <SidebarMenuButton
+          render={<span />}
+          isActive={isActive}
+          className={navButtonClass}
+        >
+          <span className="flex size-6 shrink-0 items-center justify-center">
+            <Icon className="size-4" />
+          </span>
+          <span className="truncate">{label}</span>
+          {count !== undefined ? (
+            <span className="ml-auto flex w-4 shrink-0 items-center justify-center text-xs font-normal tabular-nums text-sidebar-foreground/50">
+              {count}
+            </span>
+          ) : null}
+        </SidebarMenuButton>
+      </NavLink>
     </SidebarMenuItem>
   );
 }
@@ -143,15 +138,13 @@ export function Sidebar() {
                   icon={LayoutGrid}
                   label="All apps"
                   count={!isLoading && !isError ? apps.length : undefined}
-                  linkProps={{
-                    to: "/",
-                    activeOptions: { exact: true },
-                  }}
+                  to="/"
+                  exact
                 />
                 <SidebarNavLink
                   icon={Compass}
                   label="App directory"
-                  linkProps={{ to: "/directory" }}
+                  to="/directory"
                 />
               </SidebarMenu>
             </SidebarGroupContent>
@@ -191,7 +184,7 @@ export function Sidebar() {
                                 onTouchStart={warm}
                               />
                             ) : needsSetup ? (
-                              <Link
+                              <NavLink
                                 to="/"
                                 search={{ setup: app.appId }}
                                 onClick={() => setOpenMobile(false)}
@@ -278,13 +271,13 @@ function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
           <SidebarNavLink
             icon={Cable}
             label="Your connections"
-            linkProps={{ to: "/connections" }}
+            to="/connections"
           />
           {canManageApps ? (
             <SidebarNavLink
               icon={Settings}
               label="Manage workspace"
-              linkProps={{ to: "/admin" }}
+              to="/admin"
             />
           ) : null}
         </SidebarMenu>

@@ -1,5 +1,7 @@
-import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_app/admin/")({
-  component: () => <Navigate to="/admin/users" replace />,
+  beforeLoad: () => {
+    throw redirect({ to: "/admin/users", replace: true });
+  },
 });

@@ -1,5 +1,7 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
+import type { LinkOptions } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
+import { NavLink } from "@/client/components/NavLink";
 import { useScrollEdges } from "@/client/hooks/useScrollEdges";
 import { TabsList, TabsTrigger } from "@/client/components/ui/tabs";
 
@@ -7,6 +9,8 @@ import { TabsList, TabsTrigger } from "@/client/components/ui/tabs";
 interface PageTab<Value extends string> {
   value: Value;
   label: string;
+  /** The tab's page: each tab is a link to it. */
+  to: LinkOptions["to"];
   icon: LucideIcon;
   /** After the label: a count that needs attention, for example. */
   badge?: ReactNode;
@@ -62,10 +66,16 @@ export function PageTabStrip<Value extends string>({
         className="gap-6 p-0 group-data-horizontal/tabs:h-10"
         aria-label={label}
       >
-        {tabs.map(({ value, label: tabLabel, icon: Icon, badge }) => (
+        {tabs.map(({ value, label: tabLabel, to, icon: Icon, badge }) => (
           <TabsTrigger
             key={value}
             value={value}
+            nativeButton={false}
+            // The open tab links to its page as it is now, so a click on it
+            // keeps what the page holds in the address (Activity's view).
+            render={
+              <NavLink to={to} search={value === activeTab || undefined} />
+            }
             className="h-full gap-2 rounded-none border-0 px-0 group-data-horizontal/tabs:after:bottom-0"
           >
             <Icon className="size-4" aria-hidden />
