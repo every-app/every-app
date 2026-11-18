@@ -407,9 +407,24 @@ describe("applyGateway", () => {
     expect(rollbackFor(failure)).toBeUndefined();
   });
 
+  it("replaces its own version unattended, though Cloudflare counts it as changed through the API", async () => {
+    await deployGateway();
+    // What a browser install leaves: the Gateway uploaded itself through
+    // Cloudflare's API and recorded the version, and cf refuses a Worker
+    // last uploaded that way unless the deploy says --force.
+    account.strictAbortNextDeploy = true;
+
+    await deployGateway();
+
+    expect(account.deploys.at(-1)!.args).toContain("--force");
+    expect(account.deploys.at(-1)!.mode).toBe("text");
+  });
+
   it("asks for a terminal when the Worker was last changed in the dashboard", async () => {
     await deployGateway();
-    // cf says so on stdout, with no error box.
+    // A version the install row doesn't name, which an earlier run's upload
+    // could be: cf says so on stdout, with no error box.
+    await writeInstall(gatewayD1(), { ...(await readInstall(gatewayD1()))!, liveVersionId: null });
     account.strictAbortNextDeploy = true;
 
     // The rerun is for a person at a terminal: built without the run's --json.

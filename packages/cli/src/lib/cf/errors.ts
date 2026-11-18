@@ -93,8 +93,8 @@ export class CfOutputError extends Error {
 
 /**
  * cf's strict-mode abort at the upload (a Worker changed in the dashboard or
- * through the API, run without a terminal). cf 1.0.0-beta.14 prints it on
- * stdout with no box on stderr and exits 1, so it is looked for in both.
+ * through the API, run without a terminal, and no `--force`). cf prints it
+ * on stdout with no box on stderr and exits 1, so it is looked for in both.
  */
 const STRICT_CONFLICT = /Aborting the upload operation because of conflicts/;
 

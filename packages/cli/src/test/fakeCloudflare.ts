@@ -302,13 +302,13 @@ function cfError(message: string): FakeCfResponse {
 }
 
 /**
- * cf 1.0.0-beta.14's strict-mode abort at the upload: on stdout, with no
+ * cf 1.0.0-beta.30's strict-mode abort at the upload: on stdout, with no
  * box on stderr, and exit 1.
  */
 const STRICT_ABORT: FakeCfResponse = {
   exitCode: 1,
   stdout:
-    "Aborting the upload operation because of conflicts. To override and upload anyway, remove the `--strict` flag\n",
+    "Aborting the upload operation because of conflicts. Rerun with `cf deploy --force` to override and upload anyway.\n",
 };
 
 /** A missing Workflow, as cf 1.0.0-beta.14 prints the API's answer. */
@@ -440,7 +440,8 @@ export class FakeCloudflare {
   failNextDeploy: string | null = null;
   /**
    * The next `cf deploy` aborts in strict mode, as cf does unattended for a
-   * Worker last changed in the dashboard or through the API.
+   * Worker last changed in the dashboard or through the API, unless the
+   * deploy says `--force`.
    */
   strictAbortNextDeploy = false;
   /** The next `cf deploy` uploads nothing and exits 0, as when a person declines its prompt. */
@@ -2064,7 +2065,7 @@ export class FakeCloudflare {
     }
     if (this.strictAbortNextDeploy) {
       this.strictAbortNextDeploy = false;
-      return STRICT_ABORT;
+      if (!call.args.includes("--force")) return STRICT_ABORT;
     }
     if (this.declineNextDeploy) {
       this.declineNextDeploy = false;

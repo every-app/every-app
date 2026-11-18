@@ -144,10 +144,10 @@ its `everyapp.config.ts` lists under `secrets`) from the app's directory,
 or from anywhere with `--app <id>` (against the manifest its last deploy
 stored; `setup.command` carries the flag when it sets one), either way
 after its first deploy. Every `cf …` in these files is the CLI's pinned
-`cf` (1.0.0-beta.14, which `pnpm install` puts under `packages/cli`, not
+`cf` (1.0.0-beta.30, which `pnpm install` puts under `packages/cli`, not
 on PATH): from the `every-app` folder, run it as `pnpm --filter everyapp
 exec cf …` (the root's bare `pnpm exec cf` finds none). A bare `cf` only
-when `cf --version` answers `1.0.0-beta.14` (a global install); never
+when `cf --version` answers `1.0.0-beta.30` (a global install); never
 install one.
 
 **Deep references.** A command's flags and exit codes:

@@ -1350,7 +1350,7 @@ describe("deploy of an app without helper Workers", () => {
           "dns records list -z zone-1 --name-exact *.example.com --per-page 100",
           "r2 objects list --bucket-name every-app-gateway--releases --per-page 100",
           "workers deployments list --worker every-app-gateway --per-page 10",
-          "deploy --prebuilt --no-provision --mode production --message everyapp <version> gateway 0.2.0 (reconcile)",
+          "deploy --prebuilt --no-provision --mode production --message everyapp <version> gateway 0.2.0 (reconcile) --force",
           "workers deployments list --worker every-app-gateway --per-page 10",
         ],
         "owned": [

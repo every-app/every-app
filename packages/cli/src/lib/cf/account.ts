@@ -44,7 +44,7 @@ export function loggedInAs(): string | null {
 
 /**
  * How long a person has to approve cf's device login: cf's device code
- * lives 5 minutes (the pinned cf 1.0.0-beta.14 caps it at 300 s,
+ * lives 5 minutes (cf 1.0.0-beta.14 caps it at 300 s,
  * `Math.min(expires_in, 300)`), so this run stops waiting then too.
  */
 const DEVICE_LOGIN_TIMEOUT_MS = 5 * 60 * 1000;

@@ -17,7 +17,8 @@
  * asking (../domains/preflight.ts warns first), and aborts before uploading
  * over a Worker changed outside everyapp: at a terminal, it then runs again
  * attached to ask. Unattended runs can't answer: cf aborts, and this says
- * what to do.
+ * what to do. cf counts any upload through Cloudflare's API as such a
+ * change, the Gateway's own included (`recordedVersionIds`).
  *
  * An upload the network drops (`fetch failed`, a reset connection, cf's
  * "Envelope Error") is tried again, twice, after 2 s and 5 s; uploading
@@ -55,6 +56,15 @@ interface CfDeployOptions {
   dryRun?: boolean;
   /** Deploy with the CLI's own cf: `cwd` is a gateway release, not an app. */
   cliCf?: boolean;
+  /**
+   * The versions everyapp recorded uploading of this Worker. When the one
+   * serving is among them, cf is told to replace it (`--force`): the
+   * Gateway uploads itself through Cloudflare's API when it installs an
+   * app from the browser, and cf refuses a Worker last uploaded that way.
+   * Only the Gateway's upload passes this: an app deploys with its own cf,
+   * which may be older than the flag (1.0.0-beta.29).
+   */
+  recordedVersionIds?: ReadonlyArray<string | null>;
   /**
    * Upload this Worker of the Build Output (an app's helper Worker) rather
    * than its default one; it is `workerName` too.
@@ -155,6 +165,10 @@ async function deployAndRecord(
   onFinished: () => void,
 ): Promise<CfDeployResult> {
   const attached = options.interactive && options.attach && !options.dryRun;
+  const serving = before?.versionId;
+  const ownVersion = serving
+    ? (options.recordedVersionIds?.includes(serving) ?? false)
+    : false;
   const deploy = (mode: "interactive" | "text") =>
     options.cf.run({
       plane: "project",
@@ -176,6 +190,7 @@ async function deployAndRecord(
           : []),
         ...(secrets ? ["--secrets-file", files["secrets.json"]!] : []),
         ...(options.dryRun ? ["--dry-run"] : []),
+        ...(ownVersion ? ["--force"] : []),
       ],
     });
   const once = () =>
@@ -191,7 +206,10 @@ async function deployAndRecord(
   let output: string;
   for (let attempt = 0; ; attempt += 1) {
     try {
-      output = (await once()).stdout;
+      // cf prints a deploy's steps on stderr (1.0.0-beta.30); the cf an app
+      // pins may be an older one that prints them on stdout.
+      const ran = await once();
+      output = `${ran.stdout}${ran.stderr}`;
       break;
     } catch (error) {
       if (!isNetworkDrop(error) || isInterrupted()) throw explainDeployFailure(error, options);

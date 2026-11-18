@@ -597,8 +597,8 @@ function upload(
     jwtPublicKey,
     deploymentMode,
   }: {
-    /** What stays recorded if cf stops after the upload. */
-    before: Publication;
+    /** What the install row records: it stays if cf stops after the upload. */
+    before: Recorded;
     secrets: Record<string, string>;
     /**
      * The identity key's public half, whenever this upload sets a new pair:
@@ -620,6 +620,7 @@ function upload(
       interactive: options.interactive,
       attach: options.out.verbose,
       cliCf: true,
+      recordedVersionIds: [before.liveVersionId],
       out: options.out,
       step: "gateway.deploy",
       sleep: options.sleep,
