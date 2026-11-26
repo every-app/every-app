@@ -372,7 +372,9 @@ describe("configure at a terminal", () => {
     expect(done()!["data"]).not.toHaveProperty("changed");
     expect(done()!["data"]).not.toHaveProperty("next");
     expect(stripVTControlCharacters(shown ?? "")).toBe(
-      `✓ crm is ready\n\nChange a value:  ${CLI} secret set <NAME> --app crm`,
+      `✓ crm is ready\n\nChange a value:  ${CLI} secret set <NAME> --app crm\n\n` +
+        // Optional features held only on the Gateway aren't asked about; each is named with its command.
+        `Optional, set on the Gateway:\nRendering:  ${CLI} provider add context\nMail:  ${CLI} secret set EMAIL_FROM EMAIL_FROM_NAME`,
     );
     // Nothing was written: no secrets bulk call.
     expect(account.cf.calls.slice(versions).map((call) => call.args.slice(0, 3).join(" "))).not.toContain("workers secrets bulk");

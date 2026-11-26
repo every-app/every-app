@@ -773,6 +773,15 @@ function finish(
     });
   }
   const features: FeatureData[] = featuresData(after.report.features, target.urls, target.registry);
+  // An optional feature held only on the Gateway is never asked about: say the command that turns it on.
+  const offOnGateway = features.flatMap((feature) => {
+    if (feature.required || feature.state !== "off" || feature.values.length > 0) return [];
+    const commands = feature.needs.flatMap((need) => (need.command ? [need.command] : []));
+    return commands.length > 0 ? [commandLines(feature.name, commands)] : [];
+  });
+  if (offOnGateway.length > 0) {
+    short.blocks = [...(short.blocks ?? []), [chalk.dim("Optional, set on the Gateway:"), ...offOnGateway.flat()]];
+  }
   finishResult(out, {
     ...short,
     message: [message],
