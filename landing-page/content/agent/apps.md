@@ -25,11 +25,11 @@ A Gateway key serves every app that lists it: one `OPENROUTER_API_KEY` or `EMAIL
 
 ## OpenSEO (`openseo`)
 
-Keyword research, rank tracking and site audits. It needs an AI key (OpenRouter) and `DATAFORSEO_API_KEY` (the value is `login:password` from the DataForSEO dashboard). Context.dev (JavaScript-heavy pages) and Google (Search Console and GA4, connected per person) are optional. No public routes. Its tools are served on the Gateway's `/mcp` as `openseo_<tool>`.
+Keyword research, rank tracking and site audits. It needs an AI key (OpenRouter) and SEO data from either `DATAFORSEO_API_KEY` (the value is `login:password` from the DataForSEO dashboard) or a treg team token (`everyapp provider add treg`). Context.dev (JavaScript-heavy pages) and Google (Search Console and GA4, connected per person) are optional. No public routes. Its tools are served on the Gateway's `/mcp` as `openseo_<tool>`.
 
 ## OpenCRM (`crm`)
 
-Companies, contacts and deals, with mail, meetings and website visits filed on them. Nothing is required to open it. Optional: Google Workspace and Microsoft 365 clients so members can connect their mail and calendar (read only), with the app's own `TOKEN_ENCRYPTION_KEY` (32+ random characters) set before anyone connects. Public routes `GET /t/*` and `POST /t/e` serve website tracking on the organization's own site.
+Companies, contacts and deals, with mail, meetings and website visits filed on them. Nothing is required to open it. Optional: Google Workspace and Microsoft 365 clients so members can connect their mail and calendar (read only), with the app's own `TOKEN_ENCRYPTION_KEY` (32+ random characters) set before anyone connects, and Context.dev or treg (`everyapp provider add treg`) to enrich the contacts and companies a member selects. Public routes `GET /t/*` and `POST /t/e` serve website tracking on the organization's own site.
 
 ## OpenScribe (`scribe`)
 

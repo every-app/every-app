@@ -44,13 +44,13 @@ describe("the featured apps", () => {
     expect(app.line).not.toContain("organization");
   });
 
-  // What each app's everyapp.config.ts requires, checked on 2026-11-12.
+  // What each app's everyapp.config.ts requires, checked on 2026-11-26.
   // R2 isn't a need: setup and update stop on an account without it.
   it("say what each app needs before it opens, and nothing it doesn't", () => {
     expect(
       Object.fromEntries(FEATURED_APPS.map((app) => [app.id, app.needs])),
     ).toEqual({
-      openseo: ["An OpenRouter key", "A DataForSEO key"],
+      openseo: ["An OpenRouter key", "A DataForSEO key or a treg token"],
       crm: [],
       analytics: [],
       openmail: [

@@ -24,7 +24,7 @@ export interface FeaturedApp {
    * generates. R2 isn't listed: setup and update stop on an account
    * without it. Empty when the app opens with nothing set. After the
    * install, the app's setup dialog names each key and the one command that
-   * sets it. Checked against each app's everyapp.config.ts on 2026-11-12.
+   * sets it. Checked against each app's everyapp.config.ts on 2026-11-26.
    */
   needs: readonly string[];
 }
@@ -35,7 +35,7 @@ export const FEATURED_APPS: readonly FeaturedApp[] = [
     name: "OpenSEO",
     line: "Keyword research, rank tracking and site audits.",
     repo: `${FEATURED_APPS_OWNER}/open-seo`,
-    needs: ["An OpenRouter key", "A DataForSEO key"],
+    needs: ["An OpenRouter key", "A DataForSEO key or a treg token"],
   },
   {
     id: "crm",
